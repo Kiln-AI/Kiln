@@ -1645,7 +1645,7 @@ wheels = [
 
 [[package]]
 name = "kiln-ai"
-version = "1.0.3"
+version = "1.0.4"
 source = { editable = "libs/core" }
 dependencies = [
     { name = "anyio" },
@@ -1734,7 +1734,7 @@ dev = [
 
 [[package]]
 name = "kiln-root"
-version = "1.0.3"
+version = "1.0.4"
 source = { virtual = "." }
 dependencies = [
     { name = "certifi" },
@@ -1785,7 +1785,7 @@ dev = [
 
 [[package]]
 name = "kiln-server"
-version = "1.0.3"
+version = "1.0.4"
 source = { editable = "libs/server" }
 dependencies = [
     { name = "fastapi" },
@@ -1832,7 +1832,7 @@ dev = [
 
 [[package]]
 name = "kiln-studio-desktop"
-version = "1.0.3"
+version = "1.0.4"
 source = { editable = "app/desktop" }
 dependencies = [
     { name = "kiln-server" },

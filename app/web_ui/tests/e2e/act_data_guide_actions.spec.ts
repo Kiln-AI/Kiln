@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures"
 
 const SEED_GUIDE =
-  "# Reference Examples\n\n## Example 1\n```input\nHello\n```\n\n```output\nHi there\n```\n\n# Guidelines & Rules\n\nBe concise and friendly."
+  "# Reference Inputs\n\n## Example 1\n```input\nHello\n```\n\n# Input Guidelines & Rules\n\nBe concise and friendly."
 
 async function seedDataGuide(
   apiRequest: import("@playwright/test").APIRequestContext,
@@ -21,31 +21,35 @@ async function seedDataGuide(
 
 /* @act
 ## Goals
-The /synth page's "Set Up Data Guide" Intro card opens an Add-Example dialog;
-submitting the dialog seeds the user's example onto the pending_data_guide_example
-store and navigates to /data_guide_setup, where the setup form pre-fills with
-that example. This locks in the cross-page handoff between the synth flow and
-the data guide builder.
+On a fresh task, the /synth page intro is the single entry point for creating
+an input data guide. The single primary CTA "Set Up Data Guide" routes to a
+comparison page (`/data_guide_chooser`) that lets the user pick Manual vs
+Kiln Pro. From there, "Create Manually" lands on the manual setup form.
 
 ## Fixtures
 - registeredUser
 - seededProjectWithTask
 
 ## Hints
-- /synth?reason=fine_tune triggers is_setup=true. With a fresh task the
-  "Create a Data Guide" Intro renders before the SDG wizard.
-- The Intro's primary CTA is "Set Up Data Guide" — opens AddExampleDialog.
-- Dialog FormElements have id="example_input" and id="example_output".
-- After clicking the dialog's "Add" button, the page navigates to
-  /data_guide_setup. The example renders as a row in the setup form's
-  example table.
+- /synth?reason=fine_tune triggers is_setup=true. With a fresh task and no
+  saved guide, the "Create a Data Guide" Intro renders before the SDG
+  wizard.
+- Intro CTAs: primary "Set Up Data Guide" → /data_guide_chooser, secondary
+  "Continue Without" sets skip_data_guide=true (no nav).
+- On the chooser, "Create Manually" no longer navigates directly: it opens
+  the Add-Example dialog (include_output=false) first. The dialog captures
+  one input, then handle_data_guide_example_added stashes it on the pending
+  store and navigates to /data_guide_setup.
+- The fixture task is plaintext with no runs, so the dialog skips method
+  selection and renders the free-text input textarea (#example_input); the
+  submit button is labelled "Add".
 
 ## Assertions
-- After dialog submit, URL is /data_guide_setup.
-- The submitted input string is visible in the setup form (the row in the
-  examples table).
+- "Set Up Data Guide" navigates to /data_guide_chooser.
+- From the chooser, "Create Manually" → fill example → "Add" navigates to
+  /data_guide_setup.
 */
-test("/synth Add-Example dialog seeds the setup form", async ({
+test("/synth intro routes through chooser to manual setup", async ({
   page,
   registeredUser,
   seededProjectWithTask,
@@ -53,21 +57,24 @@ test("/synth Add-Example dialog seeds the setup form", async ({
   void registeredUser
   const { project, task } = seededProjectWithTask
 
-  const exampleInput = `act-input-${Date.now()}`
-  const exampleOutput = `act-output-${Date.now()}`
-
   await page.goto(`/generate/${project.id}/${task.id}/synth?reason=fine_tune`)
 
   await page.getByRole("button", { name: "Set Up Data Guide" }).click()
 
-  await page.locator("#example_input").fill(exampleInput)
-  await page.locator("#example_output").fill(exampleOutput)
+  await expect(page).toHaveURL(
+    `/generate/${project.id}/${task.id}/data_guide_chooser`,
+  )
+
+  await page.getByRole("button", { name: "Create Manually" }).click()
+
+  // "Create Manually" opens the Add-Example dialog; fill the first input and
+  // submit it to trigger the navigation to the manual setup form.
+  await page.locator("#example_input").fill("First example input")
   await page.getByRole("button", { name: "Add", exact: true }).click()
 
   await expect(page).toHaveURL(
     `/generate/${project.id}/${task.id}/data_guide_setup`,
   )
-  await expect(page.getByText(exampleInput).first()).toBeVisible()
 })
 
 /* @act
@@ -85,7 +92,9 @@ click Save Without Verifying, confirm the new content is persisted.
 
 ## Hints
 - Pre-seed a guide via PUT.
-- The Edit action button is rendered by AppPage with label "Edit".
+- The Edit action button is rendered by AppPage with label "Edit". It opens
+  an edit chooser dialog first (open_edit_chooser); pick "Edit Manually" to
+  reach the textarea dialog (open_edit_dialog).
 - The dialog's textarea has id="edit_guide_text".
 - The "Save Without Verifying" affordance is a link styled <button> that
   appears below the FormContainer only when editing_guide !== guide
@@ -112,10 +121,16 @@ test("edit dialog Save Without Verifying does a direct PUT", async ({
 
   await page.getByRole("button", { name: "Edit", exact: true }).click()
 
-  const editedGuide = `# Reference Examples\n\n## Example 1\n\`\`\`input\nedited-${Date.now()}\n\`\`\`\n\n\`\`\`output\nedited-out\n\`\`\``
+  // The Edit action opens a chooser first; pick manual editing to reach the
+  // textarea dialog.
+  await page.getByText("Edit Manually", { exact: true }).click()
+
+  const editedGuide = `# Reference Inputs\n\n## Example 1\n\`\`\`input\nedited-${Date.now()}\n\`\`\``
   await page.locator("#edit_guide_text").fill(editedGuide)
 
-  await page.getByRole("button", { name: "Save Without Verifying" }).click()
+  await page
+    .getByRole("button", { name: "Save Without Verifying", exact: true })
+    .click()
 
   await expect
     .poll(
@@ -176,7 +191,5 @@ test("delete data guide from saved-guide page", async ({
   await expect(page).toHaveURL(`/generate/${project.id}/${task.id}/synth`)
 
   await page.goto(`/generate/${project.id}/${task.id}/data_guide`)
-  await expect(page).toHaveURL(
-    `/generate/${project.id}/${task.id}/data_guide_setup`,
-  )
+  await expect(page).toHaveURL(`/generate/${project.id}/${task.id}/synth`)
 })

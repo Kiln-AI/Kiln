@@ -24,6 +24,7 @@
     <FormElement
       id="data_guide_toggle"
       label="Use Data Guide"
+      description="A saved description of what realistic inputs to this task look like, so generated inputs match the structure and style of your real data."
       inputType="checkbox"
       bind:value={$use_data_guide_store}
       inline_action={{

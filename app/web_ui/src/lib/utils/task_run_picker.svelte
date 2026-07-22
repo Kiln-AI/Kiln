@@ -6,6 +6,9 @@
   import { formatExpandedContent } from "$lib/utils/format_expanded_content"
 
   export let available_runs: TaskRun[] = []
+  // When true, hide the Output column. Used by the input data guide flows
+  // (manual + copilot) where outputs are out of scope.
+  export let inputs_only: boolean = false
 
   const PAGE_SIZE = 5
   let current_page = 0
@@ -27,7 +30,9 @@
       <thead>
         <tr>
           <th>Input</th>
-          <th>Output</th>
+          {#if !inputs_only}
+            <th>Output</th>
+          {/if}
           <th style="width: 80px"></th>
         </tr>
       </thead>
@@ -46,16 +51,18 @@
                 on:see_all={() => see_all_dialog.show("Input", input_text)}
               />
             </td>
-            <td class="py-2">
-              <ClampedText
-                content={output_content.isJson ? "" : output_content.value}
-                html_content={output_content.isJson
-                  ? output_content.value
-                  : null}
-                text_class="whitespace-pre-wrap break-words text-xs text-gray-600"
-                on:see_all={() => see_all_dialog.show("Output", output_text)}
-              />
-            </td>
+            {#if !inputs_only}
+              <td class="py-2">
+                <ClampedText
+                  content={output_content.isJson ? "" : output_content.value}
+                  html_content={output_content.isJson
+                    ? output_content.value
+                    : null}
+                  text_class="whitespace-pre-wrap break-words text-xs text-gray-600"
+                  on:see_all={() => see_all_dialog.show("Output", output_text)}
+                />
+              </td>
+            {/if}
             <td class="py-2 text-center align-middle">
               <button
                 type="button"

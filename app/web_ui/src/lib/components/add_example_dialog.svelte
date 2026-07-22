@@ -39,6 +39,10 @@
   // guide) pass include_output={false}; the default captures both.
   export let include_input: boolean = true
   export let include_output: boolean = true
+  // Dialog sub-subtitle. Callers override it to frame the specific flow — e.g.
+  // the data-guide chooser uses "To start, ..." for the very first example.
+  export let sub_subtitle: string =
+    "Add a task data example to guide generation."
 
   let example_dialog: Dialog
   let mode: "add" | "edit" = "add"
@@ -218,7 +222,7 @@
   bind:this={example_dialog}
   width="wide"
   title={mode === "edit" ? "Edit Example" : "Add Example"}
-  sub_subtitle="Add a task data example to guide generation."
+  {sub_subtitle}
 >
   {#if mode === "add" && (loading_runs || schema_loading)}
     <div class="flex justify-center items-center py-8">
@@ -245,6 +249,7 @@
         <div class="flex flex-col mt-2 gap-2">
           <TaskRunPicker
             available_runs={filtered_available_runs}
+            inputs_only={!include_output}
             on:select={(e) => select_existing_run(e.detail)}
           />
         </div>
