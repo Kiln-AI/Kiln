@@ -96,6 +96,125 @@ class TestLlmJudgeTask:
         assert task.output_json_schema == _VALID_SCHEMA
 
 
+class TestLlmJudgeReasoningCapture:
+    """A judge with no persisted reasoning cannot be audited: EvalRun
+    intermediate_outputs is the only record of WHY a verdict was reached, and
+    the web UI's "View reasoning" control reads it."""
+
+    @staticmethod
+    def _mock(mock_adapter_for_task, output=None, intermediate_outputs=None):
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            Mock(),
+            RunOutput(
+                output=output if output is not None else {"quality": "4"},
+                intermediate_outputs=intermediate_outputs,
+            ),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+        return mock_adapter
+
+    @staticmethod
+    def _judge_schema(mock_adapter_for_task):
+        return json.loads(mock_adapter_for_task.call_args.args[0].output_json_schema)
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_judge_asked_for_reasoning_first(self, mock_adapter_for_task):
+        """The rationale field leads the schema so scores are conditioned on it
+        rather than rationalised after the fact."""
+        self._mock(
+            mock_adapter_for_task,
+            output={"reasoning": "Fails: it invented an assignee.", "quality": "1"},
+        )
+
+        cfg = _make_config(_make_props(thinking_instruction="Explain your reasoning."))
+        result = await LlmJudgeEval(cfg).evaluate(_inp())
+
+        schema = self._judge_schema(mock_adapter_for_task)
+        assert list(schema["properties"]) == ["reasoning", "quality"]
+        assert schema["properties"]["reasoning"]["description"] == (
+            "Explain your reasoning."
+        )
+        assert "reasoning" in schema["required"]
+
+        # reasoning is persisted, and never leaks into scores
+        assert result.intermediate_outputs == {
+            "reasoning": "Fails: it invented an assignee."
+        }
+        assert result.scores == {"quality": 1.0}
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_no_thinking_instruction_means_no_reasoning_field(
+        self, mock_adapter_for_task
+    ):
+        self._mock(mock_adapter_for_task)
+
+        cfg = _make_config(_make_props(thinking_instruction=None))
+        result = await LlmJudgeEval(cfg).evaluate(_inp())
+
+        assert list(self._judge_schema(mock_adapter_for_task)["properties"]) == [
+            "quality"
+        ]
+        assert result.scores == {"quality": 4.0}
+        assert result.intermediate_outputs is None
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_native_provider_reasoning_is_not_clobbered(
+        self, mock_adapter_for_task
+    ):
+        """Reasoning-capable providers already deposit native reasoning under
+        the same key — keep both records."""
+        self._mock(
+            mock_adapter_for_task,
+            output={"reasoning": "Stated rationale.", "quality": "4"},
+            intermediate_outputs={"reasoning": "Native model thinking."},
+        )
+
+        cfg = _make_config(_make_props(thinking_instruction="Explain your reasoning."))
+        result = await LlmJudgeEval(cfg).evaluate(_inp())
+
+        assert result.intermediate_outputs == {
+            "reasoning": "Native model thinking.",
+            "judge_rationale": "Stated rationale.",
+        }
+        assert result.scores == {"quality": 4.0}
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_g_eval_keeps_schema_free_of_reasoning(self, mock_adapter_for_task):
+        """g_eval rebuilds raw JSON from logprobs and needs each metric name to
+        appear exactly once — a free-text rationale quoting a score name would
+        turn a missing rationale into a hard scoring failure."""
+        self._mock(mock_adapter_for_task, output={"quality": "5"})
+
+        cfg = _make_config(
+            _make_props(g_eval=True, thinking_instruction="Explain your reasoning.")
+        )
+        with patch(
+            "kiln_ai.adapters.eval.v2_eval_llm_judge.build_g_eval_score"
+        ) as mock_g_eval_score:
+            mock_g_eval_score.return_value = {"quality": 4.3}
+            await LlmJudgeEval(cfg).evaluate(_inp())
+
+        assert list(self._judge_schema(mock_adapter_for_task)["properties"]) == [
+            "quality"
+        ]
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_blank_reasoning_is_not_persisted(self, mock_adapter_for_task):
+        self._mock(mock_adapter_for_task, output={"reasoning": "   ", "quality": "4"})
+
+        cfg = _make_config(_make_props(thinking_instruction="Explain your reasoning."))
+        result = await LlmJudgeEval(cfg).evaluate(_inp())
+
+        assert result.scores == {"quality": 4.0}
+        assert result.intermediate_outputs is None
+
+
 class TestLlmJudgeEvalLlmAsJudge:
     @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")

@@ -13,7 +13,12 @@ from typing import TYPE_CHECKING
 from jinja2 import UndefinedError
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
+from kiln_ai.adapters.eval.base_eval import (
+    JUDGE_RATIONALE_KEY,
+    REASONING_SCHEMA_KEY,
+    BaseEval,
+    BaseV2EvalBridge,
+)
 
 if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
@@ -116,8 +121,22 @@ class LlmJudgeEval(BaseV2EvalBridge):
                 skipped_detail=f"Template references missing data: {e}",
             )
 
+        # Ask the judge to state WHY in the same structured response as the
+        # scores. Without this the judge leaves no rationale behind: V2 runs a
+        # single SIMPLE call (no chain-of-thought turn), so unless the provider
+        # happens to return native reasoning content, EvalRun
+        # intermediate_outputs is empty and no verdict can be audited.
+        #
+        # Not in g_eval mode: that path rebuilds raw JSON from logprobs and
+        # requires each metric name to appear EXACTLY once in it, so a free-text
+        # rationale that happens to quote a score name would turn a missing
+        # rationale into a hard scoring failure. g_eval keeps native provider
+        # reasoning only.
+        reasoning_instruction = None if props.g_eval else props.thinking_instruction
         output_json_schema = BaseEval.build_score_schema(
-            self.eval, allow_float_scores=False
+            self.eval,
+            allow_float_scores=False,
+            reasoning_instruction=reasoning_instruction,
         )
 
         system_prompt = props.system_prompt or _DEFAULT_SYSTEM_PROMPT
@@ -167,6 +186,15 @@ class LlmJudgeEval(BaseV2EvalBridge):
 
         _, run_output = await adapter.invoke_returning_run_output(rendered_prompt)
 
+        # Lift the rationale out of the scored output. Both scoring paths derive
+        # their metric list from output.keys(), so leaving it in would fail as
+        # "No score found for metric: reasoning".
+        judge_reasoning: str | None = None
+        if reasoning_instruction and isinstance(run_output.output, dict):
+            popped = run_output.output.pop(REASONING_SCHEMA_KEY, None)
+            if isinstance(popped, str) and popped.strip():
+                judge_reasoning = popped.strip()
+
         if props.g_eval:
             scores = build_g_eval_score(
                 run_output,
@@ -180,7 +208,17 @@ class LlmJudgeEval(BaseV2EvalBridge):
                 score_from_token_string,
             )
 
+        # Reasoning-capable providers already deposit native reasoning under the
+        # same key. Keep both rather than clobbering either: the web UI reads
+        # `reasoning` first, so whichever is present still surfaces.
+        intermediate_outputs = dict(run_output.intermediate_outputs or {})
+        if judge_reasoning:
+            if intermediate_outputs.get(REASONING_SCHEMA_KEY):
+                intermediate_outputs[JUDGE_RATIONALE_KEY] = judge_reasoning
+            else:
+                intermediate_outputs[REASONING_SCHEMA_KEY] = judge_reasoning
+
         return V2EvalResult(
             scores=scores,
-            intermediate_outputs=run_output.intermediate_outputs,
+            intermediate_outputs=intermediate_outputs or None,
         )
