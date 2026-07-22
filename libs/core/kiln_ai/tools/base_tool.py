@@ -30,6 +30,12 @@ class ToolCallContext:
     """Used for Kiln Tasks as Tools, to know if the tool call should save the task run it invoked to that task's Dataset."""
     allow_saving: bool = True
 
+    """ID spanning one whole multi-turn conversation (episode), when the caller
+    is a driver that owns the full turn loop (e.g. the synthetic-user drive
+    loop). None outside such drivers. Lets tools key state to the conversation
+    rather than the turn."""
+    episode_id: str | None = None
+
 
 class ToolCallResult(BaseModel):
     output: str

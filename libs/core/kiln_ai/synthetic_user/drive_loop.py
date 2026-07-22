@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.run_context import clear_episode_id, generate_episode_id, set_episode_id
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
@@ -108,6 +109,38 @@ async def drive_case(
     chain: list[TaskRun] = []
     su_total_cost: float = 0.0
 
+    # One episode ID for the whole case: every turn's adapter invoke (and any
+    # tool call it makes) sees the same ID via the run-context contextvar,
+    # while concurrently-driven cases each carry their own.
+    set_episode_id(generate_episode_id())
+    try:
+        return await _drive_case_turns(
+            user_msg=user_msg,
+            prev_run=prev_run,
+            prev_trace=prev_trace,
+            chain=chain,
+            su_total_cost=su_total_cost,
+            target_invoker=target_invoker,
+            su_driver=su_driver,
+            turns=turns,
+            on_turn=on_turn,
+        )
+    finally:
+        clear_episode_id()
+
+
+async def _drive_case_turns(
+    *,
+    user_msg: str,
+    prev_run: TaskRun | None,
+    prev_trace: list[ChatCompletionMessageParam] | None,
+    chain: list[TaskRun],
+    su_total_cost: float,
+    target_invoker: TargetInvoker,
+    su_driver: SyntheticUserDriver,
+    turns: int,
+    on_turn: TurnHook | None,
+) -> DriveCaseResult:
     for _ in range(turns):
         new_run = await target_invoker(
             input=user_msg,

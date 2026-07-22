@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 import traceback
 from multiprocessing import Queue
@@ -27,11 +28,17 @@ def child_main(
     kwargs: dict[str, Any],
     requests: Queue,  # type: ignore[type-arg]
     responses: Queue,  # type: ignore[type-arg]
+    episode_id: str | None = None,
 ) -> None:
     """Entry point for the code-tool child process.
 
     Puts exactly one ``result`` message on *requests* and then returns.
+    When the invoking conversation has an episode ID (multi-turn drivers), it
+    is exposed to the sandboxed code as the KILN_EPISODE_ID env var so tools
+    can key state to the conversation.
     """
+    if episode_id:
+        os.environ["KILN_EPISODE_ID"] = episode_id
     captured_stdout = io.StringIO()
     captured_stderr = io.StringIO()
     old_stdout = sys.stdout

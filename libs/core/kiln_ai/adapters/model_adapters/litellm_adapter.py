@@ -50,6 +50,7 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     as_kiln_agent_run_config,
 )
+from kiln_ai.run_context import get_episode_id
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallContext,
@@ -898,7 +899,8 @@ class LiteLlmAdapter(BaseAdapter):
 
             # Create context with the calling task's allow_saving setting
             context = ToolCallContext(
-                allow_saving=self.base_adapter_config.allow_saving
+                allow_saving=self.base_adapter_config.allow_saving,
+                episode_id=get_episode_id(),
             )
 
             async def run_tool_and_format(

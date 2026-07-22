@@ -176,6 +176,7 @@ class PythonCodeTool(KilnToolInterface):
                 kwargs,
                 requests,
                 responses,
+                context.episode_id if context else None,
             ),
             daemon=True,
         )

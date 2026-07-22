@@ -306,3 +306,51 @@ async def test_drive_case_returns_chain_in_order_leaf_last() -> None:
     assert [r.id for r in result.chain] == ["run-turn-1", "run-turn-2", "run-turn-3"]
     # Leaf's trace is the longest — covers all three round-trips.
     assert len(result.chain[-1].trace) > len(result.chain[0].trace)
+
+
+# ───────────────────────── episode id scoping ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_drive_case_sets_one_episode_id_for_all_turns() -> None:
+    from kiln_ai.run_context import get_episode_id
+
+    seen: list[str | None] = []
+
+    class _RecordingInvoker(_FakeInvoker):
+        async def __call__(self, **kwargs):  # type: ignore[override]
+            seen.append(get_episode_id())
+            return await super().__call__(**kwargs)
+
+    invoker = _RecordingInvoker(["a1", "a2", "a3"])
+    await drive_case(
+        seed_prompt="seed",
+        target_invoker=invoker,
+        su_driver=_su_driver_with_replies(["u2", "u3", "done"]),
+        turns=3,
+    )
+    assert len(seen) == 3
+    assert seen[0] is not None
+    assert len(set(seen)) == 1, "all turns of one case share one episode id"
+    assert get_episode_id() is None, "cleared after the case"
+
+
+@pytest.mark.asyncio
+async def test_drive_case_episode_ids_differ_across_cases() -> None:
+    from kiln_ai.run_context import get_episode_id
+
+    ids: list[str | None] = []
+
+    class _RecordingInvoker(_FakeInvoker):
+        async def __call__(self, **kwargs):  # type: ignore[override]
+            ids.append(get_episode_id())
+            return await super().__call__(**kwargs)
+
+    for _ in range(2):
+        await drive_case(
+            seed_prompt="seed",
+            target_invoker=_RecordingInvoker(["a1"]),
+            su_driver=_su_driver_with_replies(["done"]),
+            turns=1,
+        )
+    assert len(ids) == 2 and ids[0] != ids[1]

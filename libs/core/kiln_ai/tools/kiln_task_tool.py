@@ -6,6 +6,7 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.datamodel.tool_id import ToolId
+from kiln_ai.run_context import get_episode_id
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallContext,
@@ -68,6 +69,7 @@ class KilnTaskTool(KilnToolInterface):
         if context is None:
             context = ToolCallContext(
                 allow_saving=False,
+                episode_id=get_episode_id(),
             )
 
         # Determine the input format
