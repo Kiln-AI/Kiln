@@ -151,12 +151,12 @@ class EvalRun(KilnParentedModel):
             return self
 
         evaluation_data_type = parent_eval.evaluation_data_type
+        # task_run_trace is persisted for every eval run when available — it is
+        # the only record of what the model actually saw, needed to verify
+        # input_transform rendering and debug eval failures after the fact.
+        # evaluation_data_type still gates judging behavior; it no longer
+        # constrains whether the trace is set.
         if (
-            evaluation_data_type == EvalDataType.final_answer
-            and self.task_run_trace is not None
-        ):
-            raise ValueError("final_answer runs should not set trace")
-        elif (
             not self.eval_config_eval
             and evaluation_data_type == EvalDataType.full_trace
             and self.task_run_trace is None
