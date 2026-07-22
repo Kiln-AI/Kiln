@@ -1,0 +1,32 @@
+{
+  "scenario": "auto_disable_stale_refusal",
+  "bodies": [
+    {
+      "trace_id": "tr-0",
+      "messages": [
+        {
+          "role": "tool",
+          "tool_call_id": "enable-1",
+          "content": "{\"status\": \"enabled\"}"
+        }
+      ],
+      "auto_mode": true
+    },
+    {
+      "trace_id": "tr-1",
+      "messages": [
+        {
+          "role": "tool",
+          "tool_call_id": "tc_disable",
+          "content": "{\"status\": \"not_available\", \"message\": \"Auto mode can only be turned off by the user (Stop button).\"}"
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "tc_add",
+          "content": "2"
+        }
+      ],
+      "auto_mode": true
+    }
+  ]
+}

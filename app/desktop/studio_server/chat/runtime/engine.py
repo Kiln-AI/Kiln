@@ -41,17 +41,15 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 import httpx
-from app.desktop.studio_server.chat.constants import CHAT_TIMEOUT, DENIED_TOOL_OUTPUT
+from app.desktop.studio_server.chat.constants import CHAT_TIMEOUT
 from app.desktop.studio_server.chat.debug_log import chat_debug_log
 from app.desktop.studio_server.chat.stream_session import (
     RetryRoundResult,
-    RoundState,
     ToolCallInfo,
     _build_openai_tool_continuation,
     _pending_item_from_event,
     execute_tool_batch,
     iter_round_with_retries,
-    iter_upstream_round,
 )
 from app.desktop.studio_server.chat.tool_metadata import (
     tool_input_executor_is_server,
@@ -60,7 +58,6 @@ from app.desktop.studio_server.chat.tool_metadata import (
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 
 from .interceptors import (
-    SPAWN_SUBAGENT_TOOL_NAME,
     InterceptContext,
     InterceptResult,
 )
@@ -195,17 +192,6 @@ class EngineIO:
     # polled self.stop_requested. (The old interactive loop had no stop
     # polling; its io returns False forever, so behavior is unchanged there.)
     stop_requested: Callable[[], bool] = field(default=lambda: False)
-    # Fired when the interactive disable_auto_mode interception actually
-    # cleared a set flag (phase 4). The supervisor wires it to the full old
-    # disable cascade — publish the flag-off state NOW and stop the
-    # conversation's sub-agent children — which the old world reached via
-    # ChatStreamSession._clear_auto_mode_flag →
-    # auto_chat_registry.disable_for_trace (later
-    # supervisor.disable_auto_for_trace). Out-of-band by design: the old
-    # cascade published before the interactive turn settled, so waiting for
-    # this run's settle would delay the off indicator and leave children
-    # running mid-turn. None (tests / already-off flags) is a no-op.
-    on_auto_flag_cleared: Callable[[], Awaitable[None]] | None = None
     # Opaque conversation identity for sub-agent orchestration tool calls,
     # passed straight through to execute_tool_batch (which dispatches
     # spawn/status/wait/stop). None resolves those calls to an "unavailable"
@@ -252,7 +238,7 @@ class ConversationEngine:
         role:tool results → fresh ChatStreamSession), now in-process.
         """
         if resume_batch is not None:
-            body = await self._execute_resumed_batch(record, policy, io, resume_batch)
+            body = await self._execute_resumed_batch(io, resume_batch)
         elif initial_body is not None:
             body = dict(initial_body)
         else:
@@ -460,8 +446,8 @@ class ConversationEngine:
 
                 # Priority scan: the first interceptor (in chain order) whose
                 # result takes over the round wins — this reproduces the old
-                # `next(...)` scans (interactive checked enable before
-                # disable; auto checked disable first). Plain resolves are
+                # `next(...)` scans (the interactive consent interception
+                # always outranked the rest of the batch). Plain resolves are
                 # collected afterwards; interceptors are pure so re-invoking
                 # them below is safe.
                 takeover: tuple[ToolInputAvailableEvent, InterceptResult] | None = None
@@ -475,63 +461,21 @@ class ConversationEngine:
                         break
 
                 if takeover is not None:
-                    event, res = takeover
-                    if res.kind == "control":
-                        # enable_auto_mode consent (interactive): emit the
-                        # consent-required control event and END the turn
-                        # without executing anything. The call is resolved
-                        # out-of-band by the accept/decline flow, which flips
-                        # the policy — old ChatStreamSession enable branch.
-                        assert res.control_bytes is not None
-                        io.emit(res.control_bytes)
-                        # The old stream just ended here; in the unified model
-                        # that is an idle turn boundary (the consent-pending
-                        # bookkeeping is the enable endpoint's job, phase 3).
-                        record.state = RunState.IDLE
-                        return
-                    if res.kind == "resolve_terminal":
-                        # disable_auto_mode during an auto burst: resolve +
-                        # siblings + ONE final resolving continuation, then
-                        # the burst ends with the flag off. (Old
-                        # AutoChatRunner._resolve_disable, CR Moderate 3.)
-                        await self._resolve_terminal(
-                            client, record, io, body, round_state, event, res
-                        )
-                        if res.clear_auto_flag:
-                            record.auto_flag = False
-                        # Preserved off-reason vocabulary: the model asked.
-                        self._finish_idle(record, "user_disabled")
-                        return
-                    if res.kind == "resolve_immediate":
-                        # disable_auto_mode on the interactive path: resolve
-                        # the signal, clear the flag, execute siblings through
-                        # the per-tool gate WITH NO DECISIONS (an
-                        # approval-requiring sibling is denied rather than run
-                        # without consent), and CONTINUE the loop. Old
-                        # ChatStreamSession disable branch — including its
-                        # quirk of NOT draining reports/inbox on this
-                        # continuation (`continue` skipped the report append).
-                        if res.clear_auto_flag:
-                            flag_was_on = record.auto_flag
-                            record.auto_flag = False
-                            if flag_was_on and io.on_auto_flag_cleared is not None:
-                                # The full old disable CASCADE (phase-4 wiring
-                                # of the interceptors TODO): the supervisor
-                                # publishes the flag-off state NOW and
-                                # cascade-stops the conversation's sub-agent
-                                # children — exactly what the old loop reached
-                                # via _clear_auto_mode_flag →
-                                # disable_auto_for_trace. Skipped when the
-                                # flag was already off (the common case: the
-                                # model calls disable_auto_mode in a plain
-                                # interactive conversation), where the old
-                                # path was a no-op too (disable_for_trace
-                                # found no flag-on record).
-                                await io.on_auto_flag_cleared()
-                        body = await self._resolve_immediate(
-                            record, io, body, round_state, event, res, client_events
-                        )
-                        continue
+                    _, res = takeover
+                    # "control" is the only takeover kind: the interactive
+                    # consent interceptions (enable_auto_mode consent, or the
+                    # FR2 spawn-requires-auto gate) — emit the
+                    # consent-required control event and END the turn without
+                    # executing anything. The gating call is resolved
+                    # out-of-band by the accept/decline flow, which flips the
+                    # policy on accept — old ChatStreamSession enable branch.
+                    assert res.kind == "control" and res.control_bytes is not None
+                    io.emit(res.control_bytes)
+                    # The old stream just ended here; in the unified model
+                    # that is an idle turn boundary (the consent-pending
+                    # bookkeeping is the enable endpoint's job, phase 3).
+                    record.state = RunState.IDLE
+                    return
 
                 # ── 8. Graceful stop at a tool boundary (auto policy only):
                 # the in-flight round finished streaming (no cut-off). Do NOT
@@ -539,8 +483,8 @@ class ConversationEngine:
                 # new round — surface them for normal approval via
                 # tool-calls-pending (everything after the stop is subject to
                 # approval), then settle stopped. Old AutoChatRunner behavior;
-                # its position (after the disable interception, before
-                # execution) is preserved. ────────────────────────────────────
+                # its position (after the takeover scan, before execution) is
+                # preserved. ─────────────────────────────────────────────────
                 if (
                     policy.graceful_stop_surfaces_pending
                     and io.stop_requested()
@@ -550,9 +494,10 @@ class ConversationEngine:
                     self._finish_stopped(record, policy)
                     return
 
-                # Plain per-event resolves (auto enable no-op, child depth
-                # guard / auto-signal noops): the call is answered locally,
-                # never executed, and the batch otherwise proceeds.
+                # Plain per-event resolves (auto enable no-op, the stale
+                # disable_auto_mode refusal, child depth guard / auto-signal
+                # noops): the call is answered locally, never executed, and
+                # the batch otherwise proceeds.
                 intercepted: dict[str, str] = {}
                 executable: list[ToolInputAvailableEvent] = []
                 for e in client_events:
@@ -564,12 +509,9 @@ class ConversationEngine:
 
                 # ── 5b. Approval gate (gated policy; architecture §3.5). ─────
                 decisions: dict[str, bool] = {}
-                parked = False
                 if policy.approvals == "gated":
                     needs_approval = [
-                        e
-                        for e in executable
-                        if self._effective_requires_approval(e, record)
+                        e for e in executable if tool_requires_user_approval(e)
                     ]
                     if needs_approval:
                         # The pending event lists the WHOLE client batch (the
@@ -594,25 +536,20 @@ class ConversationEngine:
                         record.state = RunState.AWAITING_APPROVAL
                         decisions = await io.await_decisions(batch)
                         record.state = RunState.RUNNING
-                        parked = True
 
                 # ── 6. Execute the batch. ────────────────────────────────────
                 # requiresApproval per call:
                 # - auto policy: False for everything (AUTO-APPROVE — the old
                 #   runners' unattended contract).
-                # - gated, parked: the metadata verdict — exactly the flags
-                #   the pending event surfaced, which is what the old browser
-                #   echoed back to /execute-tools. (A user's denial must deny
-                #   even a call the effective verdict would have downgraded.)
-                # - gated, not parked: the effective verdict (all False by
-                #   construction — otherwise we'd have parked), matching the
-                #   old non-parked interactive execution.
+                # - gated: the metadata verdict — exactly the flags the
+                #   pending event surfaced, which is what the old browser
+                #   echoed back to /execute-tools (all False when the round
+                #   never parked, by construction — otherwise we'd have
+                #   parked).
                 def _requires_approval(e: ToolInputAvailableEvent) -> bool:
                     if policy.approvals != "gated":
                         return False
-                    if parked:
-                        return tool_requires_user_approval(e)
-                    return self._effective_requires_approval(e, record)
+                    return tool_requires_user_approval(e)
 
                 tool_calls = [
                     ToolCallInfo(
@@ -644,18 +581,6 @@ class ConversationEngine:
                 for tc_id, output in results.items():
                     io.emit(format_tool_output(tc_id, output))
                 io.emit(format_tool_exec_end(len(results)))
-
-                # Spawn-consent memory: an EXECUTED spawn_subagent means the
-                # user approved it (or consent already existed) — later spawns
-                # in this conversation skip the approval gate. Mirrors the old
-                # registry-authoritative mark_consented inside the spawn
-                # executor; keyed by session id simply by living on the record.
-                for tc in tool_calls:
-                    if (
-                        tc.tool_name == SPAWN_SUBAGENT_TOOL_NAME
-                        and results.get(tc.tool_call_id) != DENIED_TOOL_OUTPUT
-                    ):
-                        record.spawn_consent_granted = True
 
                 # ── 4b. No client tool results to feed back (e.g. a
                 # server-only batch): nothing to continue with. ───────────────
@@ -749,8 +674,6 @@ class ConversationEngine:
 
     async def _execute_resumed_batch(
         self,
-        record: ConversationRecord,
-        policy: ConversationPolicy,
         io: EngineIO,
         batch: PendingApprovalBatch,
     ) -> dict[str, Any]:
@@ -807,15 +730,6 @@ class ConversationEngine:
         for tc_id, output in results.items():
             io.emit(format_tool_output(tc_id, output))
         io.emit(format_tool_exec_end(len(results)))
-
-        # Spawn-consent memory: same rule as the main loop — an executed
-        # (non-denied) spawn means the user approved it.
-        for tc in tool_calls:
-            if (
-                tc.tool_name == SPAWN_SUBAGENT_TOOL_NAME
-                and results.get(tc.tool_call_id) != DENIED_TOOL_OUTPUT
-            ):
-                record.spawn_consent_granted = True
 
         return _build_openai_tool_continuation(
             batch.body,
@@ -888,141 +802,3 @@ class ConversationEngine:
                 return res.result_json
             return None
         return None
-
-    async def _resolve_terminal(
-        self,
-        client: httpx.AsyncClient,
-        record: ConversationRecord,
-        io: EngineIO,
-        body: dict[str, Any],
-        round_state: RoundState,
-        event: ToolInputAvailableEvent,
-        res: InterceptResult,
-    ) -> None:
-        """Resolve an intercepted signal back to the backend and end the run
-        after ONE final continuation (old ``AutoChatRunner._resolve_disable``).
-
-        The backend persisted an assistant turn carrying the signal tool call;
-        if that call is never answered the next turn on this trace has a
-        dangling, unanswered tool call (the provider requires every tool call
-        be answered before a new user message) and can error. So we resolve
-        the call — and execute any siblings in the same turn, auto-approved —
-        then send one final continuation so the backend persists a clean
-        snapshot. The model's reply to that continuation is forwarded to
-        observers, but the run does NOT continue past it: this is the terminal
-        round.
-        """
-        assert res.result_json is not None
-        siblings = [e for e in round_state.tool_input_events if e is not event]
-        siblings = [e for e in siblings if not tool_input_executor_is_server(e)]
-        sibling_results = (
-            await execute_tool_batch(
-                [
-                    ToolCallInfo(
-                        toolCallId=e.toolCallId,
-                        toolName=e.toolName,
-                        input=e.input,
-                        requiresApproval=False,
-                    )
-                    for e in siblings
-                ],
-                {},
-                orchestration_ctx=io.orchestration_ctx,
-            )
-            if siblings
-            else {}
-        )
-        tool_results = {event.toolCallId: res.result_json, **sibling_results}
-        # Surface the resolved results to observers so the UI sees them.
-        io.emit(format_tool_exec_start(len(tool_results)))
-        for tc_id, output in tool_results.items():
-            io.emit(format_tool_output(tc_id, output))
-        io.emit(format_tool_exec_end(len(tool_results)))
-
-        continuation = _build_openai_tool_continuation(
-            body,
-            round_state.assistant_text,
-            round_state.tool_input_events,
-            tool_results,
-        )
-        # Deliberately the PLAIN round iterator (no retry wrapper) — the old
-        # terminal resolve did not retry this best-effort final continuation,
-        # and the run is ending regardless of its outcome.
-        final_state = RoundState(trace_id_for_error=round_state.trace_id_for_error)
-        async for payload in iter_upstream_round(
-            client, self._url, self._headers, continuation, final_state
-        ):
-            io.emit(payload)
-        if final_state.trace_id is not None:
-            # The clean snapshot's leaf becomes the conversation's resume
-            # point (old disable_trace_id + on_trace bookkeeping).
-            record.current_leaf_trace_id = final_state.trace_id
-            if final_state.trace_id not in record.seen_trace_ids:
-                record.seen_trace_ids.append(final_state.trace_id)
-            if io.on_trace is not None:
-                await io.on_trace(final_state.trace_id)
-
-    async def _resolve_immediate(
-        self,
-        record: ConversationRecord,
-        io: EngineIO,
-        body: dict[str, Any],
-        round_state: RoundState,
-        event: ToolInputAvailableEvent,
-        res: InterceptResult,
-        client_events: list[ToolInputAvailableEvent],
-    ) -> dict[str, Any]:
-        """Resolve an intercepted signal inline and continue the loop (old
-        interactive ``disable_auto_mode`` branch of ``ChatStreamSession``).
-
-        Siblings execute through the normal per-tool approval verdict with NO
-        decisions: an approval-requiring sibling gets DENIED_TOOL_OUTPUT
-        rather than running without consent (auto-approval is the auto
-        policy's job, not this path's). The model is instructed to call the
-        signal alone, so siblings are normally empty. Returns the continuation
-        body for the next round.
-        """
-        assert res.result_json is not None
-        siblings = [e for e in client_events if e is not event]
-        sibling_results = await execute_tool_batch(
-            [
-                ToolCallInfo(
-                    toolCallId=e.toolCallId,
-                    toolName=e.toolName,
-                    input=e.input,
-                    requiresApproval=self._effective_requires_approval(e, record),
-                )
-                for e in siblings
-            ],
-            {},
-            orchestration_ctx=io.orchestration_ctx,
-        )
-        tool_results = {event.toolCallId: res.result_json, **sibling_results}
-        io.emit(format_tool_exec_start(len(tool_results)))
-        for tc_id, output in tool_results.items():
-            io.emit(format_tool_output(tc_id, output))
-        io.emit(format_tool_exec_end(len(tool_results)))
-        # NOTE: deliberately no report/inbox drain on this continuation — the
-        # old interactive disable branch `continue`d before the report append,
-        # and the golden protocol pins that shape.
-        return _build_openai_tool_continuation(
-            body,
-            round_state.assistant_text,
-            round_state.tool_input_events,
-            tool_results,
-        )
-
-    # ── Approval verdict. ─────────────────────────────────────────────────────
-
-    def _effective_requires_approval(
-        self, event: ToolInputAvailableEvent, record: ConversationRecord
-    ) -> bool:
-        """Per-tool approval verdict, with the spawn-consent downgrade: once a
-        conversation has approved its first spawn_subagent, later spawns run
-        without asking again. Consent memory lives on the record (keyed by
-        session id), replacing the old registry + parent-alias lookup."""
-        if not tool_requires_user_approval(event):
-            return False
-        if event.toolName == SPAWN_SUBAGENT_TOOL_NAME and record.spawn_consent_granted:
-            return False
-        return True

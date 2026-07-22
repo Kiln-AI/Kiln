@@ -128,7 +128,13 @@ export interface StreamEvent {
   messageMetadata?: { finishReason?: string; usage?: unknown }
   items?: ToolCallsPendingItem[]
   tool_count?: number
-  /** ``auto-mode-consent-required`` carries the enable call + siblings */
+  /** ``auto-mode-consent-required`` carries the gating call + siblings.
+   * ``trigger``/``gating_tool_call_id``/``spawn`` are the generalized shape
+   * (FR2: an interactive ``spawn_subagent`` also rides the consent flow);
+   * all optional — absent means the legacy enable-only shape. */
+  trigger?: string
+  gating_tool_call_id?: string
+  spawn?: { agent_type?: string; name?: string; prompt?: string } | null
   enable_tool_call_id?: string
   reason?: string | null
   sibling_tool_calls?: ToolCallsPendingItem[]
@@ -173,16 +179,37 @@ export interface ToolCallsPendingPayload {
   items: ToolCallsPendingItem[]
 }
 
+/** What gated the turn behind auto-mode consent (FR2). */
+export type AutoModeConsentTrigger = "enable_auto_mode" | "spawn_subagent"
+
+/** The sub-agent a spawn-triggered consent request is about to spawn. */
+export interface SpawnConsentInfo {
+  agentType: string
+  name: string
+  prompt: string
+  /** The wire ``spawn`` object exactly as the engine sent it. Accept echoes
+   * this verbatim as the rebuilt gating call's input (the typed fields above
+   * are display-only and lossy: missing fields coerce to "" and unknown keys
+   * drop), so accept stays faithful if the spawn schema grows fields. */
+  rawInput?: Record<string, unknown>
+}
+
 /**
  * Payload of the ``auto-mode-consent-required`` event. The engine emits this
- * (then idles the turn) when the model calls ``enable_auto_mode``; the UI must
- * gate auto-mode behind explicit consent. Phase 5: the payload carries no
- * trace id — accept/decline is keyed by the observed conversation's session
- * id (functional spec §4).
+ * (then idles the turn) when the model calls ``enable_auto_mode`` — or, since
+ * FR2, ``spawn_subagent`` while auto mode is off (spawning requires auto
+ * mode, so the spawn call takes the gating role). The UI must gate auto mode
+ * behind explicit consent. ``gatingToolCallId`` is the call accept/decline
+ * owes an answer to; ``reason`` rides only the enable trigger and ``spawn``
+ * only the spawn trigger. Phase 5: the payload carries no trace id —
+ * accept/decline is keyed by the observed conversation's session id
+ * (functional spec §4).
  */
 export interface AutoModeConsentRequiredPayload {
-  enableToolCallId: string
+  trigger: AutoModeConsentTrigger
+  gatingToolCallId: string
   reason: string | null
+  spawn: SpawnConsentInfo | null
   siblingToolCalls: ToolCallsPendingItem[]
 }
 
@@ -522,13 +549,39 @@ export class StreamEventProcessor {
   }
 }
 
-/** Map a raw ``auto-mode-consent-required`` event to its typed payload. */
+/** Parse the ``spawn`` field of a spawn-triggered consent event; null on a
+ * malformed value so a bad payload never crashes the consent flow. */
+function spawnConsentInfoFromEvent(raw: unknown): SpawnConsentInfo | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null
+  const record = raw as Record<string, unknown>
+  return {
+    agentType: typeof record.agent_type === "string" ? record.agent_type : "",
+    name: typeof record.name === "string" ? record.name : "",
+    prompt: typeof record.prompt === "string" ? record.prompt : "",
+    rawInput: record,
+  }
+}
+
+/**
+ * Map a raw ``auto-mode-consent-required`` event to its typed payload.
+ * Tolerates the legacy enable-only wire shape (no ``trigger`` /
+ * ``gating_tool_call_id``): an unknown or absent trigger reads as the enable
+ * variant and the gating id falls back to ``enable_tool_call_id``.
+ */
 export function autoModeConsentPayloadFromEvent(
   event: StreamEvent,
 ): AutoModeConsentRequiredPayload {
+  const trigger: AutoModeConsentTrigger =
+    event.trigger === "spawn_subagent" ? "spawn_subagent" : "enable_auto_mode"
   return {
-    enableToolCallId: event.enable_tool_call_id ?? "",
-    reason: event.reason ?? null,
+    trigger,
+    gatingToolCallId:
+      event.gating_tool_call_id ?? event.enable_tool_call_id ?? "",
+    reason: trigger === "enable_auto_mode" ? event.reason ?? null : null,
+    spawn:
+      trigger === "spawn_subagent"
+        ? spawnConsentInfoFromEvent(event.spawn)
+        : null,
     siblingToolCalls: Array.isArray(event.sibling_tool_calls)
       ? event.sibling_tool_calls
       : [],

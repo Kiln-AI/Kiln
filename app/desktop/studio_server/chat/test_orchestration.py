@@ -8,11 +8,12 @@ they are the behavior contract of functional spec §3 "Sub-agents".
 Phase 4: EVERY parent is a supervisor record, so the ctx carries only
 ``{parent_session_id, depth}`` — the ``ParentConversationIndex`` alias chain,
 its consent set (``is_spawn_consented``), and the trace-keyed report drain
-(``pending_reports_for_trace``) died with the old interactive loop. Consent
-lives on ``ConversationRecord.spawn_consent_granted`` (engine-written, tested
-in runtime/test_engine.py) and report drains are session-keyed
-(supervisor.drain_reports, exercised end-to-end in runtime/test_supervisor.py's
-idle-start drain test)."""
+(``pending_reports_for_trace``) died with the old interactive loop. The
+first-spawn consent memory itself died with FR3 (auto-mode consent is the one
+consent surface; spawn gating is the interceptor chain's job, tested in
+runtime/test_interceptors.py + test_engine.py) and report drains are
+session-keyed (supervisor.drain_reports, exercised end-to-end in
+runtime/test_supervisor.py's idle-start drain test)."""
 
 from __future__ import annotations
 
@@ -277,20 +278,21 @@ async def test_auto_parent_report_injected_natively_via_supervisor_inbox(supervi
 
 
 async def test_in_burst_disable_reports_queue_for_the_swapped_parent(supervisor):
-    # An auto burst spawns a child → the model calls disable_auto_mode
-    # IN-BURST (resolve_terminal: flag off + user_disabled, deliberately NO
-    # child cascade — the old _supervise never cascaded on the tool path) →
-    # the child settles AFTER the flag cleared → its report queues under the
-    # parent's SESSION id, where the conversation's next interactive turn
-    # (supervisor.send_message idle-start drain) picks it up.
+    # An auto burst spawns a child → the parent's flag clears mid-flight
+    # WITHOUT the child being stopped first (FR1 removed the model-initiated
+    # disable; this window is now a user-disable race — e.g. the child
+    # settles after the flag cleared but before/without a cascade reaching
+    # it) → the report queues under the parent's SESSION id, where the
+    # conversation's next interactive turn (supervisor.send_message
+    # idle-start drain) picks it up.
     parent = supervisor.create_conversation(
         "auto", upstream_url="https://example.test", headers={}
     )
     ctx = OrchestrationContext(parent_session_id=parent.session_id)
     sid = (await _call("spawn_subagent", _spawn_args(), ctx))["subagent_id"]
 
-    # In-burst disable: the engine clears the flag and ends the burst; the
-    # child survives and keeps running.
+    # Simulate the user-disable race: the flag clears while the child is
+    # still running.
     parent.auto_flag = False
     parent.idle_reason = "user_disabled"
 

@@ -254,7 +254,104 @@ describe("conversation_store", () => {
       expect(get(store.children).map((c) => c.session_id)).toEqual(["cv_1"])
     })
 
-    it("re-fetches the list when a state event arrives for an unknown child", async () => {
+    it("adds an unknown child directly from a lineage-carrying event, with no fetch", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]))
+      vi.stubGlobal("fetch", fetchMock)
+      await store.syncForConversation("cv_parent")
+
+      store.connect()
+      FakeEventSource.latest().message({
+        type: "conversation-state",
+        session_id: "cv_new",
+        kind: "subagent",
+        state: "running",
+        auto_flag: false,
+        name: "Agent cv_new",
+        agent_type: "general",
+        parent_session_id: "cv_parent",
+      })
+      await flush()
+
+      // Attributed straight from the event: only the initial sync fetched —
+      // no list re-fetch competing for connection-pool slots.
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(get(store.children)).toMatchObject([
+        {
+          session_id: "cv_new",
+          kind: "subagent",
+          state: "running",
+          name: "Agent cv_new",
+          agent_type: "general",
+          parent_session_id: "cv_parent",
+          report_available: false,
+        },
+      ])
+    })
+
+    it("backfills a null agent_type from a later state event, never overwriting a known one", async () => {
+      // A child added from an event predating the agent_type field carries
+      // null identity; the next state event patches it in. Identity is
+      // immutable, so an established value is never replaced.
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]))
+      vi.stubGlobal("fetch", fetchMock)
+      await store.syncForConversation("cv_parent")
+
+      store.connect()
+      const source = FakeEventSource.latest()
+      source.message({
+        type: "conversation-state",
+        session_id: "cv_new",
+        kind: "subagent",
+        state: "running",
+        auto_flag: false,
+        parent_session_id: "cv_parent",
+      })
+      expect(get(store.children)[0].agent_type).toBeNull()
+
+      source.message({
+        type: "conversation-state",
+        session_id: "cv_new",
+        kind: "subagent",
+        state: "running",
+        auto_flag: false,
+        agent_type: "general",
+        parent_session_id: "cv_parent",
+      })
+      expect(get(store.children)[0].agent_type).toBe("general")
+
+      source.message({
+        type: "conversation-state",
+        session_id: "cv_new",
+        kind: "subagent",
+        state: "completed",
+        auto_flag: false,
+        agent_type: "other",
+        parent_session_id: "cv_parent",
+      })
+      expect(get(store.children)[0].agent_type).toBe("general")
+    })
+
+    it("ignores a lineage-carrying event for another conversation's child (no fetch)", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]))
+      vi.stubGlobal("fetch", fetchMock)
+      await store.syncForConversation("cv_parent")
+
+      store.connect()
+      FakeEventSource.latest().message({
+        type: "conversation-state",
+        session_id: "cv_foreign",
+        kind: "subagent",
+        state: "running",
+        auto_flag: false,
+        parent_session_id: "cv_other_parent",
+      })
+      await flush()
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(get(store.children)).toEqual([])
+    })
+
+    it("falls back to a list re-fetch for an unknown child WITHOUT lineage (older desktop)", async () => {
       const fetchMock = vi
         .fn()
         .mockResolvedValueOnce(jsonResponse([]))
@@ -313,10 +410,11 @@ describe("conversation_store", () => {
     })
 
     it("reconciles children on a timer so a missed running child appears", async () => {
-      // The safety net for a missed single-shot running-child event: while the
-      // firehose is connected and a parent is set, a periodic reconcile
-      // re-fetches the list, so a child whose "running" event never arrived
-      // converges within seconds instead of only on a manual refresh.
+      // Old-desktop-compat / freak-loss safety net: direct attribution from
+      // lineage-carrying events is the primary path now, but while the
+      // firehose is connected and a parent is set a low-frequency reconcile
+      // still re-fetches the list, so a child that slipped through every
+      // event path converges without a manual refresh.
       vi.useFakeTimers()
       try {
         const fetchMock = vi
@@ -329,7 +427,7 @@ describe("conversation_store", () => {
         store.connect()
         expect(get(store.children)).toEqual([])
 
-        await vi.advanceTimersByTimeAsync(3500)
+        await vi.advanceTimersByTimeAsync(20_000)
 
         expect(get(store.children).map((c) => c.session_id)).toEqual([
           "cv_late",
@@ -347,12 +445,12 @@ describe("conversation_store", () => {
 
         await store.syncForConversation("trace-leaf")
         store.connect()
-        await vi.advanceTimersByTimeAsync(3500) // one reconcile fetch
+        await vi.advanceTimersByTimeAsync(20_000) // one reconcile fetch
         const callsAfterOneTick = fetchMock.mock.calls.length
         expect(callsAfterOneTick).toBeGreaterThan(1)
 
         store.disconnect()
-        await vi.advanceTimersByTimeAsync(14000) // several intervals
+        await vi.advanceTimersByTimeAsync(80_000) // several intervals
 
         // No further reconcile fetches once the firehose is disconnected.
         expect(fetchMock.mock.calls.length).toBe(callsAfterOneTick)
@@ -370,7 +468,7 @@ describe("conversation_store", () => {
         vi.stubGlobal("fetch", fetchMock)
 
         store.connect()
-        await vi.advanceTimersByTimeAsync(14000)
+        await vi.advanceTimersByTimeAsync(80_000)
 
         expect(fetchMock).not.toHaveBeenCalled()
       } finally {
@@ -393,7 +491,7 @@ describe("conversation_store", () => {
         store.connect()
         expect(get(store.children).map((c) => c.session_id)).toEqual(["cv_1"])
 
-        await vi.advanceTimersByTimeAsync(3500) // reconcile tick fails
+        await vi.advanceTimersByTimeAsync(20_000) // reconcile tick fails
 
         // A timeout/blip must not yank running tabs away.
         expect(get(store.children).map((c) => c.session_id)).toEqual(["cv_1"])
@@ -419,14 +517,193 @@ describe("conversation_store", () => {
         await store.syncForConversation("trace-leaf")
         store.connect()
 
-        await vi.advanceTimersByTimeAsync(3500) // tick 1: times out
+        await vi.advanceTimersByTimeAsync(20_000) // tick 1: times out
         expect(get(store.children)).toEqual([])
-        await vi.advanceTimersByTimeAsync(3500) // tick 2: recovers
+        await vi.advanceTimersByTimeAsync(20_000) // tick 2: recovers
 
         expect(get(store.children).map((c) => c.session_id)).toEqual([
           "cv_recovered",
         ])
         expect(fetchMock.mock.calls.length).toBe(3)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("a stale in-flight list fetch does not clobber a child added meanwhile from a state event", async () => {
+      // Direct attribution doesn't supersede an in-flight fetch: a list
+      // computed BEFORE a spawn can land AFTER the spawn's event already
+      // added the tab. The success path must merge the event-added child in —
+      // clobbering would blank its tab until the next reconcile and, if
+      // selected, abort its observation and yank the selection.
+      let resolveList!: (r: Response) => void
+      const fetchMock = vi.fn().mockImplementation((url: string) => {
+        if (String(url).includes("/api/conversations?")) {
+          return new Promise<Response>((resolve) => (resolveList = resolve))
+        }
+        // The selected child's hydration/events: hang, irrelevant here.
+        return new Promise<never>(() => {})
+      })
+      vi.stubGlobal("fetch", fetchMock)
+
+      const sync = store.syncForConversation("cv_parent")
+      store.connect()
+      FakeEventSource.latest().message({
+        type: "conversation-state",
+        session_id: "cv_new",
+        kind: "subagent",
+        state: "running",
+        auto_flag: false,
+        parent_session_id: "cv_parent",
+      })
+      expect(get(store.children).map((c) => c.session_id)).toEqual(["cv_new"])
+      store.select("cv_new")
+
+      // The pre-spawn list (fetched before cv_new existed) lands late.
+      resolveList(
+        jsonResponse([child("cv_old", { parent_session_id: "cv_parent" })]),
+      )
+      await sync
+
+      expect(get(store.children).map((c) => c.session_id)).toEqual([
+        "cv_old",
+        "cv_new",
+      ])
+      // The event-added tab kept its selection (and thus its observation).
+      expect(get(store.selectedId)).toBe("cv_new")
+    })
+
+    it("a child that settles inside the stale-fetch window survives the fetch with selection intact", async () => {
+      // The shield deliberately ignores terminal state: this child was added
+      // AFTER the stale fetch started, so the fetch's answer says nothing
+      // about it — settling meanwhile must not let the stale fetch yank the
+      // transcript and selection while the user reads the failure output.
+      let resolveList!: (r: Response) => void
+      const fetchMock = vi.fn().mockImplementation((url: string) => {
+        if (String(url).includes("/api/conversations?")) {
+          return new Promise<Response>((resolve) => (resolveList = resolve))
+        }
+        // The selected child's hydration/events: hang, irrelevant here.
+        return new Promise<never>(() => {})
+      })
+      vi.stubGlobal("fetch", fetchMock)
+
+      const sync = store.syncForConversation("cv_parent")
+      store.connect()
+      FakeEventSource.latest().message({
+        type: "conversation-state",
+        session_id: "cv_flash",
+        kind: "subagent",
+        state: "running",
+        auto_flag: false,
+        parent_session_id: "cv_parent",
+      })
+      store.select("cv_flash")
+      // The child settles (terminal) before the pre-spawn list lands.
+      FakeEventSource.latest().message({
+        type: "conversation-state",
+        session_id: "cv_flash",
+        kind: "subagent",
+        state: "failed",
+        auto_flag: false,
+        parent_session_id: "cv_parent",
+      })
+      expect(get(store.children)[0]?.state).toBe("failed")
+
+      // The pre-spawn list (computed before cv_flash existed) lands late.
+      resolveList(jsonResponse([]))
+      await sync
+
+      expect(get(store.children).map((c) => c.session_id)).toEqual(["cv_flash"])
+      expect(get(store.children)[0]?.state).toBe("failed")
+      expect(get(store.selectedId)).toBe("cv_flash")
+    })
+
+    it("a stale successful fetch does not revert a terminal child to running", async () => {
+      // Terminal is monotone: a reconcile row computed before the child
+      // settled still says "running" — applying it verbatim would resurrect
+      // the tab's live state (and drop the report affordance) for up to a
+      // reconcile interval. The event-carried fields must win.
+      vi.useFakeTimers()
+      try {
+        let resolveList!: (r: Response) => void
+        const fetchMock = vi
+          .fn()
+          .mockResolvedValueOnce(
+            jsonResponse([child("cv_1", { parent_session_id: "cv_parent" })]),
+          )
+          .mockImplementationOnce(
+            () => new Promise<Response>((resolve) => (resolveList = resolve)),
+          )
+        vi.stubGlobal("fetch", fetchMock)
+
+        await store.syncForConversation("cv_parent")
+        store.connect()
+        expect(get(store.children)[0]?.state).toBe("running")
+
+        // Reconcile tick starts the (soon-stale) fetch…
+        await vi.advanceTimersByTimeAsync(20_000)
+        // …then the child settles via a live state event while it's pending.
+        FakeEventSource.latest().message({
+          type: "conversation-state",
+          session_id: "cv_1",
+          kind: "subagent",
+          state: "completed",
+          auto_flag: false,
+          parent_session_id: "cv_parent",
+          report_available: true,
+        })
+        expect(get(store.children)[0]?.state).toBe("completed")
+
+        // The stale row (computed before the settle) lands: still "running".
+        resolveList(
+          jsonResponse([child("cv_1", { parent_session_id: "cv_parent" })]),
+        )
+        await vi.advanceTimersByTimeAsync(1)
+
+        const merged = get(store.children)[0]
+        expect(merged?.state).toBe("completed")
+        expect(merged?.report_available).toBe(true)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("a fetch started AFTER the event-add that lacks the child drops it (no ghost tab)", async () => {
+      // Counterpart to the stale-fetch shield above: the shield is scoped to
+      // fetches that started BEFORE the child was added (they couldn't have
+      // known it). A fetch that started after the add and still lacks the
+      // child is authoritative absence — e.g. a desktop restart emptied the
+      // in-memory registry, so no terminal event will ever arrive. Without
+      // the started-at check every reconcile would re-shield the ghost
+      // "running" tab forever.
+      vi.useFakeTimers()
+      try {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse([]))
+        vi.stubGlobal("fetch", fetchMock)
+        await store.syncForConversation("cv_parent")
+
+        store.connect()
+        FakeEventSource.latest().message({
+          type: "conversation-state",
+          session_id: "cv_ghost",
+          kind: "subagent",
+          state: "running",
+          auto_flag: false,
+          parent_session_id: "cv_parent",
+        })
+        expect(get(store.children).map((c) => c.session_id)).toEqual([
+          "cv_ghost",
+        ])
+
+        // Reconcile tick: this fetch starts 20s after the add and the server
+        // (restarted, registry empty) doesn't know the child.
+        await vi.advanceTimersByTimeAsync(20_000)
+        expect(get(store.children)).toEqual([])
+
+        // And it STAYS gone on subsequent ticks (no re-shield loop).
+        await vi.advanceTimersByTimeAsync(20_000)
+        expect(get(store.children)).toEqual([])
       } finally {
         vi.useRealTimers()
       }
@@ -446,6 +723,41 @@ describe("conversation_store", () => {
 
       // Another conversation's children must never linger under this one.
       expect(get(store.children)).toEqual([])
+    })
+
+    it("a failed cross-parent fetch keeps the NEW parent's children added from events meanwhile", async () => {
+      // Switch A→B whose first fetch fails: A's children must clear, but a
+      // B-child attributed from a state event during the fetch window is
+      // event-proven — a fetch FAILURE is not authoritative and must not
+      // wipe it.
+      let rejectList!: (e: Error) => void
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(
+          jsonResponse([child("cv_a", { parent_session_id: "parent-a" })]),
+        )
+        .mockImplementationOnce(
+          () => new Promise<Response>((_, reject) => (rejectList = reject)),
+        )
+      vi.stubGlobal("fetch", fetchMock)
+
+      await store.syncForConversation("parent-a")
+      expect(get(store.children).map((c) => c.session_id)).toEqual(["cv_a"])
+
+      const sync = store.syncForConversation("parent-b")
+      store.connect()
+      FakeEventSource.latest().message({
+        type: "conversation-state",
+        session_id: "cv_b",
+        kind: "subagent",
+        state: "running",
+        auto_flag: false,
+        parent_session_id: "parent-b",
+      })
+      rejectList(new Error("unreachable"))
+      await sync
+
+      expect(get(store.children).map((c) => c.session_id)).toEqual(["cv_b"])
     })
 
     it("reconnects when the firehose connect wedges before open", async () => {
@@ -596,6 +908,73 @@ describe("conversation_store", () => {
         .map((c) => String(c[0]))
         .filter((u) => u.endsWith("/api/conversations/cv_1"))
       expect(itemCalls).toEqual([])
+    })
+
+    it("a failed re-hydration on re-select keeps the transcript from the previous observation", async () => {
+      // select() keeps a deselected child's transcript for instant repaint
+      // and re-hydrates on re-select; a hydration blip (network throw or a
+      // non-404 error status) must not blank what was deliberately kept.
+      let hydrationResult: "ok" | "network" | "http500" = "ok"
+      const fetchMock = vi.fn().mockImplementation((url: string) => {
+        const u = String(url)
+        if (u.includes("/api/conversations?")) {
+          return Promise.resolve(jsonResponse([child("cv_1")]))
+        }
+        if (u.includes("/api/conversations/cv_1/events")) {
+          return Promise.resolve(sseResponse([]))
+        }
+        if (u.includes("/api/chat/sessions/cv_1")) {
+          if (hydrationResult === "network") {
+            return Promise.reject(new Error("network down"))
+          }
+          if (hydrationResult === "http500") {
+            return Promise.resolve({
+              ok: false,
+              status: 500,
+            } as unknown as Response)
+          }
+          return Promise.resolve(
+            jsonResponse({
+              id: "trace-cv_1",
+              task_run: {
+                trace: [
+                  { role: "user", content: "briefing" },
+                  { role: "assistant", content: "persisted turn" },
+                ],
+              },
+            }),
+          )
+        }
+        return Promise.reject(new Error(`Unmatched fetch: ${u}`))
+      })
+      vi.stubGlobal("fetch", fetchMock)
+      await store.syncForConversation("trace-leaf")
+
+      store.select("cv_1")
+      await flush()
+      expect(
+        (get(store.transcripts).get("cv_1") ?? []).map((m) => m.role),
+      ).toEqual(["user", "assistant"])
+
+      // Switch away (stream torn down, transcript kept), then back with the
+      // hydration endpoint throwing.
+      store.select(null)
+      hydrationResult = "network"
+      store.select("cv_1")
+      await flush()
+      expect(
+        (get(store.transcripts).get("cv_1") ?? []).map((m) => m.role),
+      ).toEqual(["user", "assistant"])
+
+      // Same for an error status (a 404 stays authoritative: not covered
+      // here — "nothing persisted" makes the empty transcript the truth).
+      store.select(null)
+      hydrationResult = "http500"
+      store.select("cv_1")
+      await flush()
+      expect(
+        (get(store.transcripts).get("cv_1") ?? []).map((m) => m.role),
+      ).toEqual(["user", "assistant"])
     })
 
     it("strips steer framing from replayed user-message echoes", async () => {
@@ -878,6 +1257,90 @@ describe("conversation_store", () => {
 
       store.select(null)
       expect(get(store.selectedId)).toBeNull()
+    })
+
+    // A never-ending events body + per-child signal capture, so observer
+    // stream lifetime can be asserted across tab switches.
+    function hangingObserverRoutes(signals: Map<string, AbortSignal>) {
+      const hangingBody = {
+        getReader: () => ({
+          read: () => new Promise<never>(() => {}),
+        }),
+      }
+      const fetchMock = vi
+        .fn()
+        .mockImplementation((url: string, init?: RequestInit) => {
+          const u = String(url)
+          if (u.includes("/api/conversations?")) {
+            return Promise.resolve(jsonResponse([child("cv_1"), child("cv_2")]))
+          }
+          const events = u.match(/\/api\/conversations\/(cv_\d+)\/events/)
+          if (events) {
+            signals.set(events[1], init?.signal as AbortSignal)
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              body: hangingBody,
+            } as unknown as Response)
+          }
+          if (u.includes("/api/chat/sessions/")) {
+            return Promise.resolve(
+              jsonResponse({ id: "trace", task_run: { trace: [] } }),
+            )
+          }
+          return Promise.reject(new Error(`Unmatched fetch: ${u}`))
+        })
+      vi.stubGlobal("fetch", fetchMock)
+      return fetchMock
+    }
+
+    it("only the selected child keeps a live observer stream (switch tears the old one down)", async () => {
+      // Every open child stream holds one of the browser's few per-origin
+      // connections; the firehose covers status for unselected tabs, so a
+      // deselected child's stream must close.
+      const signals = new Map<string, AbortSignal>()
+      hangingObserverRoutes(signals)
+      await store.syncForConversation("trace-leaf")
+
+      store.select("cv_1")
+      await flush()
+      expect(signals.get("cv_1")?.aborted).toBe(false)
+
+      store.select("cv_2")
+      await flush()
+      expect(signals.get("cv_1")?.aborted).toBe(true)
+      expect(signals.get("cv_2")?.aborted).toBe(false)
+      // The deselected child's transcript survives for an instant repaint.
+      expect(get(store.transcripts).has("cv_1")).toBe(true)
+    })
+
+    it("selecting back to the main agent (null) closes the child's observer", async () => {
+      const signals = new Map<string, AbortSignal>()
+      hangingObserverRoutes(signals)
+      await store.syncForConversation("trace-leaf")
+
+      store.select("cv_1")
+      await flush()
+      expect(signals.get("cv_1")?.aborted).toBe(false)
+
+      store.select(null)
+      expect(signals.get("cv_1")?.aborted).toBe(true)
+    })
+
+    it("re-selecting the same child does not tear down its stream", async () => {
+      const signals = new Map<string, AbortSignal>()
+      const fetchMock = hangingObserverRoutes(signals)
+      await store.syncForConversation("trace-leaf")
+
+      store.select("cv_1")
+      await flush()
+      const callsAfterFirst = fetchMock.mock.calls.length
+
+      store.select("cv_1")
+      await flush()
+      expect(signals.get("cv_1")?.aborted).toBe(false)
+      // observe() is idempotent while active: no re-hydration, no new stream.
+      expect(fetchMock.mock.calls.length).toBe(callsAfterFirst)
     })
   })
 
@@ -1447,30 +1910,282 @@ describe("main_conversation_store", () => {
     expect(calls.working[calls.working.length - 1]).toBe(false)
   })
 
-  it("an observer drop mid-turn surfaces an inline error; an idle drop stays silent (MEDIUM-1)", () => {
-    // Mid-turn drop: like the old streamChat fetch-error path, the user
-    // sees an error and the composer resets (working false).
-    store.attach("cv_drop")
-    let source = FakeEventSource.latest()
-    source.message(stateRunning("cv_drop", "interactive"))
-    expect(get(store.working)).toBe(true)
-    source.fail()
-    expect(get(store.working)).toBe(false)
-    expect(calls.errors).toEqual([
-      "Lost the connection to the assistant. Please try again.",
-    ])
-    // The session id survives so the next send/ensure re-attaches.
-    expect(get(store.sessionId)).toBe("cv_drop")
-    expect(get(store.connection)).toBe("closed")
+  describe("FR5: observer drop → no fake off, bounded re-attach", () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
 
-    // Idle drop: no request was in flight (old world showed nothing).
-    store.attach("cv_drop_idle")
-    source = FakeEventSource.latest()
-    source.message(stateInteractiveIdle("cv_drop_idle"))
-    source.fail()
-    expect(calls.errors).toEqual([
-      "Lost the connection to the assistant. Please try again.",
-    ])
+    const EVENTS_URL = (sid: string) =>
+      `http://localhost:8757/api/conversations/${sid}/events`
+
+    it("an AUTO drop keeps flag/offReason and schedules a 2s re-attach", () => {
+      store.attach("cv_auto_drop", undefined, false, true)
+      const first = FakeEventSource.latest()
+      first.open()
+      first.message(stateRunning("cv_auto_drop"))
+      expect(get(store.autoModeOn)).toBe(true)
+
+      first.fail()
+      // A connection fact, never a run fact: no off transition, no fake off.
+      expect(get(store.autoModeOn)).toBe(true)
+      expect(calls.offReasons).toEqual([])
+      expect(get(store.offReason)).toBeNull()
+      expect(get(store.connection)).toBe("closed")
+      expect(get(store.reconnecting)).toBe(true)
+      // No inline error yet — the bounded re-attach owns recovery.
+      expect(calls.errors).toEqual([])
+      // The working affordance resets (composer unstuck) without any settle.
+      expect(get(store.working)).toBe(false)
+
+      // 2s later a fresh observer attaches to the SAME events URL, carrying
+      // the current flag (assumeAutoOn) so the indicator never flickers.
+      vi.advanceTimersByTime(2000)
+      const second = FakeEventSource.latest()
+      expect(second).not.toBe(first)
+      expect(second.url).toBe(EVENTS_URL("cv_auto_drop"))
+      expect(get(store.autoModeOn)).toBe(true)
+      second.open()
+      expect(get(store.connection)).toBe("open")
+      expect(get(store.reconnecting)).toBe(false)
+    })
+
+    it("re-attaches at 2s/5s/10s then surfaces ONE inline error, flag still on", () => {
+      store.attach("cv_bounded", undefined, false, true)
+      FakeEventSource.latest().open()
+      FakeEventSource.latest().message(stateRunning("cv_bounded"))
+      const baseline = FakeEventSource.instances.length
+
+      // Attempt 1 after 2s.
+      FakeEventSource.latest().fail()
+      vi.advanceTimersByTime(1999)
+      expect(FakeEventSource.instances.length).toBe(baseline)
+      vi.advanceTimersByTime(1)
+      expect(FakeEventSource.instances.length).toBe(baseline + 1)
+
+      // Attempt 2 after 5s (not sooner).
+      FakeEventSource.latest().fail()
+      vi.advanceTimersByTime(4999)
+      expect(FakeEventSource.instances.length).toBe(baseline + 1)
+      vi.advanceTimersByTime(1)
+      expect(FakeEventSource.instances.length).toBe(baseline + 2)
+
+      // Attempt 3 after 10s.
+      FakeEventSource.latest().fail()
+      vi.advanceTimersByTime(10000)
+      expect(FakeEventSource.instances.length).toBe(baseline + 3)
+
+      // Budget exhausted: give up with ONE inline error; the flag holds
+      // (the run is desktop-owned — the next send/ensure re-attaches).
+      FakeEventSource.latest().fail()
+      expect(calls.errors).toEqual([
+        "Lost the connection to the assistant. Please try again.",
+      ])
+      expect(get(store.reconnecting)).toBe(false)
+      expect(get(store.autoModeOn)).toBe(true)
+      expect(calls.offReasons).toEqual([])
+      expect(get(store.sessionId)).toBe("cv_bounded")
+      vi.advanceTimersByTime(60_000)
+      expect(FakeEventSource.instances.length).toBe(baseline + 3)
+    })
+
+    it("a successful re-attach (first event delivered) resets the attempt budget", () => {
+      store.attach("cv_reset", undefined, false, true)
+      FakeEventSource.latest().open()
+      FakeEventSource.latest().fail()
+      vi.advanceTimersByTime(2000)
+      const second = FakeEventSource.latest()
+      // Established again — the stream DELIVERED an event, not merely
+      // opened: a later drop starts a FRESH bounded cycle.
+      second.open()
+      second.message(stateRunning("cv_reset"))
+      second.fail()
+      const count = FakeEventSource.instances.length
+      // Back at the first backoff step (2s), not the second (5s).
+      vi.advanceTimersByTime(2000)
+      expect(FakeEventSource.instances.length).toBe(count + 1)
+      expect(calls.errors).toEqual([])
+    })
+
+    it("a flapping stream (opens, then drops before any event) still exhausts the budget", () => {
+      store.attach("cv_flap", undefined, false, true)
+      FakeEventSource.latest().open()
+      FakeEventSource.latest().message(stateRunning("cv_flap"))
+      const baseline = FakeEventSource.instances.length
+
+      // Every re-attach OPENS but delivers nothing before dropping — onopen
+      // alone must not refill the budget, or this flaps forever.
+      FakeEventSource.latest().fail()
+      for (const delay of [2000, 5000, 10000]) {
+        vi.advanceTimersByTime(delay)
+        const source = FakeEventSource.latest()
+        source.open()
+        source.fail()
+      }
+      expect(FakeEventSource.instances.length).toBe(baseline + 3)
+      expect(calls.errors).toEqual([
+        "Lost the connection to the assistant. Please try again.",
+      ])
+      expect(get(store.reconnecting)).toBe(false)
+      vi.advanceTimersByTime(60_000)
+      expect(FakeEventSource.instances.length).toBe(baseline + 3)
+    })
+
+    it("a direct attach() starts a fresh budget (spent attempts don't leak across streams)", () => {
+      // Burn two attempts on the first conversation's stream…
+      store.attach("cv_spend", undefined, false, true)
+      FakeEventSource.latest().open()
+      FakeEventSource.latest().message(stateRunning("cv_spend"))
+      FakeEventSource.latest().fail()
+      vi.advanceTimersByTime(2000)
+      FakeEventSource.latest().open()
+      FakeEventSource.latest().fail()
+
+      // …then attach directly to a DIFFERENT conversation: the budget is
+      // per-stream, so its first drop re-attaches at the first backoff step
+      // with the full three attempts ahead of it.
+      store.attach("cv_fresh", undefined, false, true)
+      const fresh = FakeEventSource.latest()
+      expect(fresh.url).toBe(EVENTS_URL("cv_fresh"))
+      fresh.open()
+      fresh.fail()
+      const count = FakeEventSource.instances.length
+      vi.advanceTimersByTime(2000)
+      expect(FakeEventSource.instances.length).toBe(count + 1)
+      expect(FakeEventSource.latest().url).toBe(EVENTS_URL("cv_fresh"))
+      expect(calls.errors).toEqual([])
+    })
+
+    it("detach during the backoff window cancels the pending re-attach", () => {
+      store.attach("cv_cancel", undefined, false, true)
+      FakeEventSource.latest().open()
+      FakeEventSource.latest().fail()
+      expect(get(store.reconnecting)).toBe(true)
+      const count = FakeEventSource.instances.length
+      store.detach()
+      expect(get(store.reconnecting)).toBe(false)
+      vi.advanceTimersByTime(60_000)
+      expect(FakeEventSource.instances.length).toBe(count)
+      expect(calls.errors).toEqual([])
+    })
+
+    it("a mid-turn INTERACTIVE drop re-attaches; an idle drop stays silent", () => {
+      // Mid-turn: a turn was visibly in flight, so the connection still
+      // matters — reconnect instead of the old immediate inline error.
+      store.attach("cv_int_drop")
+      let source = FakeEventSource.latest()
+      source.open()
+      source.message(stateRunning("cv_int_drop", "interactive"))
+      expect(get(store.working)).toBe(true)
+      source.fail()
+      expect(calls.errors).toEqual([])
+      expect(get(store.working)).toBe(false)
+      expect(get(store.reconnecting)).toBe(true)
+      const count = FakeEventSource.instances.length
+      vi.advanceTimersByTime(2000)
+      expect(FakeEventSource.instances.length).toBe(count + 1)
+      // The session id survives throughout (manual paths keep working).
+      expect(get(store.sessionId)).toBe("cv_int_drop")
+
+      // Idle drop: no request was in flight (the old world showed nothing
+      // either) — no re-attach, no error; the next send/ensure recovers.
+      store.detach()
+      store.attach("cv_idle_drop")
+      source = FakeEventSource.latest()
+      source.open()
+      source.message(stateInteractiveIdle("cv_idle_drop"))
+      const idleCount = FakeEventSource.instances.length
+      source.fail()
+      expect(get(store.reconnecting)).toBe(false)
+      vi.advanceTimersByTime(60_000)
+      expect(FakeEventSource.instances.length).toBe(idleCount)
+      expect(calls.errors).toEqual([])
+      expect(get(store.connection)).toBe("closed")
+    })
+
+    it("an interactive mid-turn drop chains 2s/5s/10s then surfaces ONE inline error", () => {
+      // Each scheduled re-attach resets `working`, so the chain must carry
+      // on via the unsettled attempt count (reattachAttempt > 0), not the
+      // working flag — otherwise the interactive chain dies silently after
+      // one attempt with no inline error ever surfacing.
+      store.attach("cv_int_chain")
+      FakeEventSource.latest().open()
+      FakeEventSource.latest().message(
+        stateRunning("cv_int_chain", "interactive"),
+      )
+      const baseline = FakeEventSource.instances.length
+
+      FakeEventSource.latest().fail()
+      for (const [i, delay] of [2000, 5000, 10000].entries()) {
+        expect(calls.errors).toEqual([])
+        expect(get(store.reconnecting)).toBe(true)
+        vi.advanceTimersByTime(delay)
+        expect(FakeEventSource.instances.length).toBe(baseline + i + 1)
+        const source = FakeEventSource.latest()
+        source.open()
+        source.fail()
+      }
+
+      // Budget exhausted: exactly ONE inline error, then the manual paths
+      // own recovery (no further scheduled attempts).
+      expect(calls.errors).toEqual([
+        "Lost the connection to the assistant. Please try again.",
+      ])
+      expect(get(store.reconnecting)).toBe(false)
+      expect(get(store.sessionId)).toBe("cv_int_chain")
+      vi.advanceTimersByTime(60_000)
+      expect(FakeEventSource.instances.length).toBe(baseline + 3)
+
+      // The chain state doesn't strand: after a direct re-attach delivers
+      // an event, a later IDLE drop is silent again.
+      store.attach("cv_int_chain")
+      const fresh = FakeEventSource.latest()
+      fresh.open()
+      fresh.message(stateInteractiveIdle("cv_int_chain"))
+      const count = FakeEventSource.instances.length
+      fresh.fail()
+      expect(get(store.reconnecting)).toBe(false)
+      vi.advanceTimersByTime(60_000)
+      expect(FakeEventSource.instances.length).toBe(count)
+      expect(calls.errors.length).toBe(1)
+    })
+
+    it("stop while 'connection lost' one-shot re-attaches so the off transition renders", async () => {
+      // Exhaust the FR5 chain on an auto conversation: connection "closed",
+      // no timer pending, flag still on ("connection lost" limbo).
+      store.attach("cv_stop_lost", undefined, false, true)
+      FakeEventSource.latest().open()
+      FakeEventSource.latest().message(stateRunning("cv_stop_lost"))
+      FakeEventSource.latest().fail()
+      for (const delay of [2000, 5000, 10000]) {
+        vi.advanceTimersByTime(delay)
+        const source = FakeEventSource.latest()
+        source.open()
+        source.fail()
+      }
+      expect(get(store.connection)).toBe("closed")
+      expect(get(store.autoModeOn)).toBe(true)
+      const count = FakeEventSource.instances.length
+
+      const stopFetch = vi.fn().mockResolvedValue({ ok: true })
+      vi.stubGlobal("fetch", stopFetch)
+      await store.stop()
+      expect(stopFetch).toHaveBeenCalledTimes(1)
+
+      // A fresh observer opens immediately (no backoff wait); its
+      // on-subscribe marker delivers the authoritative flag-off, which the
+      // attach's flagSeenOn (assumeAutoOn) renders as a real off transition.
+      expect(FakeEventSource.instances.length).toBe(count + 1)
+      const fresh = FakeEventSource.latest()
+      fresh.open()
+      fresh.message(stateOff("cv_stop_lost", "user_stopped"))
+      expect(get(store.autoModeOn)).toBe(false)
+      expect(get(store.offReason)).toBe("user_stopped")
+      expect(calls.offReasons).toEqual(["user_stopped"])
+      expect(get(store.working)).toBe(false)
+    })
   })
 
   it("an interactive turn: running → idle fires onInteractiveIdle with NO reason exposure", async () => {
@@ -1519,15 +2234,18 @@ describe("main_conversation_store", () => {
     expect(calls.idleMarkers).toBe(0)
   })
 
-  it("an auto (flag-on) idle marker does NOT fire onIdleMarker (BUG 2 scope)", () => {
-    // The flush-only marker hook is scoped to flag-off (interactive) idle
-    // markers; auto idle markers keep their existing settle-silent behavior
-    // (auto queue flushing rides round boundaries / onAutoModeIdle).
+  it("an auto (flag-on) idle ATTACH MARKER fires the flush-only onIdleMarker too", () => {
+    // A message queued mid-burst can strand when the observer drops and the
+    // burst settles during the outage: the re-attach marker arrives as
+    // idle+flag-on and no live onAutoModeIdle ever fires. The flush-only
+    // hook covers that path; the settle hooks stay marker-silent (a marker
+    // is not a settle).
     store.attach("cv_auto_marker", undefined, false, true)
     const source = FakeEventSource.latest()
     source.message(stateIdle("cv_auto_marker", "asked_user"))
-    expect(calls.idleMarkers).toBe(0)
+    expect(calls.idleMarkers).toBe(1)
     expect(calls.interactiveIdles).toBe(0)
+    expect(calls.idleReasons).toEqual([])
   })
 
   it("awaiting_approval signals the approvals hook on marker AND transition", () => {
@@ -1584,6 +2302,8 @@ describe("main_conversation_store", () => {
     source.message(stateRunning("cv_consent", "interactive"))
     source.message({
       type: "auto-mode-consent-required",
+      trigger: "enable_auto_mode",
+      gating_tool_call_id: "call_enable",
       enable_tool_call_id: "call_enable",
       reason: "let me work",
       sibling_tool_calls: [],
@@ -1592,12 +2312,42 @@ describe("main_conversation_store", () => {
     // the observed conversation's session id.
     expect(calls.consentPayloads).toEqual([
       {
-        enableToolCallId: "call_enable",
+        trigger: "enable_auto_mode",
+        gatingToolCallId: "call_enable",
         reason: "let me work",
+        spawn: null,
         siblingToolCalls: [],
       },
     ])
     // The turn ended with the consent event (the idle state follows).
+    expect(get(store.working)).toBe(false)
+  })
+
+  it("a spawn-triggered consent event hands off the spawn variant (FR2)", () => {
+    store.attach("cv_spawn_consent")
+    const source = FakeEventSource.latest()
+    source.message(stateRunning("cv_spawn_consent", "interactive"))
+    source.message({
+      type: "auto-mode-consent-required",
+      trigger: "spawn_subagent",
+      gating_tool_call_id: "call_spawn",
+      spawn: { agent_type: "general", name: "Helper", prompt: "dig in" },
+      sibling_tool_calls: [],
+    })
+    expect(calls.consentPayloads).toEqual([
+      {
+        trigger: "spawn_subagent",
+        gatingToolCallId: "call_spawn",
+        reason: null,
+        spawn: {
+          agentType: "general",
+          name: "Helper",
+          prompt: "dig in",
+          rawInput: { agent_type: "general", name: "Helper", prompt: "dig in" },
+        },
+        siblingToolCalls: [],
+      },
+    ])
     expect(get(store.working)).toBe(false)
   })
 
@@ -1676,18 +2426,20 @@ describe("main_conversation_store", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     await store.decline({
-      enable_tool_call_id: "call_1",
+      gating_tool_call_id: "call_1",
       siblings: [],
     })
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0]
     // The old /api/conversations/auto/decline endpoint died in phase 4; the
-    // decline rides POST /{sid}/auto with enabled=false + the consent ctx.
+    // decline rides POST /{sid}/auto with enabled=false + the consent ctx
+    // (gating_tool_call_id since FR2 — the gating call can be an enable OR a
+    // spawn; the desktop route also accepts the legacy spelling).
     expect(url).toBe("http://localhost:8757/api/conversations/cv_dec/auto")
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       enabled: false,
-      decline: { enable_tool_call_id: "call_1", siblings: [] },
+      decline: { gating_tool_call_id: "call_1", siblings: [] },
     })
     // A fresh assistant turn renders the declined continuation, which
     // streams on the ALREADY-OPEN observer (the old endpoint streamed the
@@ -1841,17 +2593,28 @@ describe("main_conversation_store", () => {
     expect(last.parts?.[0]).toEqual({ type: "text", text: "buffered + live" })
   })
 
-  it("connection failure on an AUTO conversation falls back to off without throwing", () => {
-    store.attach("cv_gone", undefined, false, true)
-    const source = FakeEventSource.latest()
-    expect(get(store.autoModeOn)).toBe(true)
+  it("connection failure on an AUTO conversation keeps the flag on (FR5: no fake off)", () => {
+    vi.useFakeTimers()
+    try {
+      store.attach("cv_gone", undefined, false, true)
+      const source = FakeEventSource.latest()
+      expect(get(store.autoModeOn)).toBe(true)
 
-    // EventSource errors before opening (events 404 → unknown/GC'd record).
-    expect(() => source.fail()).not.toThrow()
-    expect(get(store.autoModeOn)).toBe(false)
-    expect(source.closed).toBe(true)
-    expect(calls.offReasons).toEqual([null])
-    expect(get(store.connection)).toBe("closed")
+      // EventSource errors before opening (events 404 → unknown/GC'd record).
+      expect(() => source.fail()).not.toThrow()
+      // The desktop-owned run is unaffected by observer connection loss:
+      // the flag holds and the bounded re-attach owns recovery (a real off
+      // that happened server-side arrives via the re-attach marker).
+      expect(get(store.autoModeOn)).toBe(true)
+      expect(source.closed).toBe(true)
+      expect(calls.offReasons).toEqual([])
+      expect(get(store.connection)).toBe("closed")
+      expect(get(store.reconnecting)).toBe(true)
+      // Cancel the scheduled re-attach so no timer leaks past the test.
+      store.detach()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("connection failure on an INTERACTIVE conversation keeps the session id (re-attachable)", () => {

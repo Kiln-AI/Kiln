@@ -52,10 +52,6 @@ from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEven
 from kiln_ai.tools.tool_registry import tool_from_id
 from pydantic import BaseModel, ConfigDict, Field
 
-# The tool result the app server resolves an intercepted disable_auto_mode call
-# to, fed back to the backend so it continues interactively.
-DISABLE_AUTO_MODE_RESULT = json.dumps({"status": "disabled"}, ensure_ascii=False)
-
 logger = logging.getLogger(__name__)
 
 
@@ -150,29 +146,48 @@ def _format_tool_calls_pending_sse(events: list[ToolInputAvailableEvent]) -> byt
 
 
 def _format_consent_required_sse(
-    enable_tool_call_id: str,
-    reason: str | None,
+    *,
+    trigger: Literal["enable_auto_mode", "spawn_subagent"],
+    gating_tool_call_id: str,
     siblings: list[ToolInputAvailableEvent],
+    reason: str | None = None,
+    spawn: dict[str, Any] | None = None,
 ) -> bytes:
-    """Format the ``auto-mode-consent-required`` SSE the engine emits when the
-    model calls ``enable_auto_mode`` on an interactive conversation.
+    """Format the ``auto-mode-consent-required`` SSE the engine emits when an
+    interactive conversation needs the user's auto-mode consent — either the
+    model called ``enable_auto_mode`` (``trigger="enable_auto_mode"``) or it
+    called ``spawn_subagent`` with auto mode off (``trigger="spawn_subagent"``,
+    FR2: spawning requires auto mode, so the spawn call takes the gating role).
+
+    ``gating_tool_call_id`` is the call whose accept/decline resolution the
+    consent flow owes an answer to; ``enable_tool_call_id`` is kept as a
+    duplicate of it for the enable trigger only (wire compat — legacy browser
+    bundles key on that name), and ``reason`` (the model's stated reason)
+    rides only with the enable trigger too. The spawn trigger instead carries
+    ``spawn`` — the gating call's input (``agent_type``/``name``/``prompt``)
+    so the dialog can name what is about to be spawned.
 
     ``sibling_tool_calls`` carries any other (non-server) client tool calls from
     the same round so the accept/decline paths can resolve every ``tool_call_id``
     the backend is waiting on. The model is instructed to call ``enable_auto_mode``
-    alone, so this is normally empty.
+    alone, so this is normally empty for the enable trigger.
 
     Phase 5: the payload no longer carries ``trace_id`` — consent accept
     (``POST /api/conversations`` kind=auto) and decline (``POST /{sid}/auto``)
     are keyed by the conversation's session id and the record's own leaf is
     authoritative (functional spec §4: browsers never see trace ids).
     """
-    payload = {
+    payload: dict[str, Any] = {
         "type": SSE_TYPE_AUTO_MODE_CONSENT_REQUIRED,
-        "enable_tool_call_id": enable_tool_call_id,
-        "reason": reason,
-        "sibling_tool_calls": [_pending_item_from_event(e) for e in siblings],
+        "trigger": trigger,
+        "gating_tool_call_id": gating_tool_call_id,
     }
+    if trigger == "enable_auto_mode":
+        payload["enable_tool_call_id"] = gating_tool_call_id
+        payload["reason"] = reason
+    else:
+        payload["spawn"] = spawn
+    payload["sibling_tool_calls"] = [_pending_item_from_event(e) for e in siblings]
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 

@@ -28,7 +28,11 @@ from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
 from app.desktop.studio_server.chat.stream_session import MAX_CHAT_RETRIES
 
 from .engine import ConversationEngine, EngineIO
-from .interceptors import AUTO_MODE_NOOP_RESULT, DEPTH_LIMIT_RESULT
+from .interceptors import (
+    AUTO_MODE_NOOP_RESULT,
+    DEPTH_LIMIT_RESULT,
+    DISABLE_AUTO_MODE_STALE_RESULT,
+)
 from .models import (
     INTERACTIVE_MAX_ROUNDS_MESSAGE,
     SUBAGENT_MAX_ROUNDS_MESSAGE,
@@ -461,60 +465,86 @@ async def test_auto_enable_noop_rides_continuation_with_old_framing_counts():
     assert tool_msgs == {"tc_add": "5", "tc_enable": ENABLE_AUTO_MODE_RESULT}
 
 
-async def test_spawn_consent_downgrade_skips_park():
-    # Once the record carries spawn consent, an approval-flagged
-    # spawn_subagent no longer parks the run (old is_spawn_consented
-    # downgrade, now keyed on the record).
+_SPAWN_INPUT = {"agent_type": "general", "name": "helper", "prompt": "Dig in."}
+
+
+async def test_interactive_spawn_without_auto_emits_consent_and_ends_turn():
+    # FR2: an interactive spawn_subagent with auto mode off never executes
+    # and never parks — the turn ends on the spawn-triggered auto-mode
+    # consent control event; accept/decline resolves out-of-band.
     round1 = [
-        tool_input_available("tc_spawn", "spawn_subagent", {}, APPROVAL_META),
+        text_delta("spawning a helper"),
+        tool_input_available("tc_spawn", "spawn_subagent", dict(_SPAWN_INPUT)),
+        tool_input_available("tc_sib", "add", {"a": 1, "b": 2}, APPROVAL_META),
         trace("tr-1"),
         finish_tool_calls(),
     ]
-    round2 = [text_delta("spawned"), trace("tr-2"), finish("stop")]
-    client = FakeUpstreamClient(
-        [FakeUpstreamResponse(round1), FakeUpstreamResponse(round2)]
-    )
-    record = ConversationRecord(kind="interactive", spawn_consent_granted=True)
-    h = _harness(record=record)
-    await _run(h, client, interactive_policy(), dict(_USER_TURN))
+    client = FakeUpstreamClient([FakeUpstreamResponse(round1)])
+    h = _harness()
+    with patch(
+        "app.desktop.studio_server.chat.stream_session.execute_tool"
+    ) as execute_tool_mock:
+        await _run(h, client, interactive_policy(), dict(_USER_TURN))
+    execute_tool_mock.assert_not_called()
+    consent = [
+        e for e in _events(h.emitted) if e["type"] == "auto-mode-consent-required"
+    ]
+    assert len(consent) == 1
+    assert consent[0]["trigger"] == "spawn_subagent"
+    assert consent[0]["gating_tool_call_id"] == "tc_spawn"
+    assert consent[0]["spawn"] == _SPAWN_INPUT
+    assert [s["toolCallId"] for s in consent[0]["sibling_tool_calls"]] == ["tc_sib"]
+    # No park, no execution, no continuation — resolution is out-of-band.
     assert h.parked_batches == []
     assert '"type": "tool-calls-pending"' not in _decoded(h.emitted)
-    # Phase 1: no orchestration ctx is wired yet, so the spawn resolves to the
-    # structured "unavailable" error rather than executing (phase 2 retargets
-    # orchestration onto the supervisor).
+    assert len(client.bodies) == 1
+    assert h.record.state == RunState.IDLE
+
+
+async def test_interactive_spawn_with_auto_flag_on_proceeds():
+    # FR2: a set flag IS the consent (armed record / racing user enable) —
+    # the spawn passes the gate and reaches execution. The harness wires no
+    # orchestration ctx, so it resolves to the structured "unavailable"
+    # error, which is enough to prove it went to execution rather than the
+    # consent flow.
+    round1 = [
+        tool_input_available("tc_spawn", "spawn_subagent", dict(_SPAWN_INPUT)),
+        trace("tr-1"),
+        finish_tool_calls(),
+    ]
+    round2 = [text_delta("ok"), trace("tr-2"), finish("stop")]
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse(round1), FakeUpstreamResponse(round2)]
+    )
+    record = ConversationRecord(kind="interactive", auto_flag=True)
+    h = _harness(record=record)
+    await _run(h, client, interactive_policy(), dict(_USER_TURN))
+    assert '"type": "auto-mode-consent-required"' not in _decoded(h.emitted)
     assert "unavailable" in _outputs(h.emitted)["tc_spawn"]
+    assert len(client.bodies) == 2
 
 
-async def test_approved_spawn_records_consent_on_record():
+async def test_enable_consent_outranks_spawn_gate_in_combined_batch():
+    # Chain priority: enable+spawn in one round surfaces the ENABLE consent
+    # (the spawn rides as a sibling, resolved by the same accept/decline).
     round1 = [
-        tool_input_available("tc_spawn", "spawn_subagent", {}, APPROVAL_META),
+        tool_input_available("tc_enable", "enable_auto_mode", {"reason": "big"}),
+        tool_input_available("tc_spawn", "spawn_subagent", dict(_SPAWN_INPUT)),
         trace("tr-1"),
         finish_tool_calls(),
     ]
-    round2 = [text_delta("ok"), trace("tr-2"), finish("stop")]
-    client = FakeUpstreamClient(
-        [FakeUpstreamResponse(round1), FakeUpstreamResponse(round2)]
-    )
-    h = _harness(decisions={"tc_spawn": True})
+    client = FakeUpstreamClient([FakeUpstreamResponse(round1)])
+    h = _harness()
     await _run(h, client, interactive_policy(), dict(_USER_TURN))
-    # The spawn executed (approved) → consent memory set for later spawns.
-    assert h.record.spawn_consent_granted is True
-
-
-async def test_denied_spawn_does_not_record_consent():
-    round1 = [
-        tool_input_available("tc_spawn", "spawn_subagent", {}, APPROVAL_META),
-        trace("tr-1"),
-        finish_tool_calls(),
+    consent = [
+        e for e in _events(h.emitted) if e["type"] == "auto-mode-consent-required"
     ]
-    round2 = [text_delta("ok"), trace("tr-2"), finish("stop")]
-    client = FakeUpstreamClient(
-        [FakeUpstreamResponse(round1), FakeUpstreamResponse(round2)]
-    )
-    h = _harness(decisions={"tc_spawn": False})
-    await _run(h, client, interactive_policy(), dict(_USER_TURN))
-    assert h.record.spawn_consent_granted is False
-    assert _outputs(h.emitted)["tc_spawn"] == DENIED_TOOL_OUTPUT
+    assert len(consent) == 1
+    assert consent[0]["trigger"] == "enable_auto_mode"
+    assert consent[0]["gating_tool_call_id"] == "tc_enable"
+    assert [s["toolCallId"] for s in consent[0]["sibling_tool_calls"]] == ["tc_spawn"]
+    assert len(client.bodies) == 1
+    assert h.record.state == RunState.IDLE
 
 
 # ── Interceptions ─────────────────────────────────────────────────────────────
@@ -545,14 +575,17 @@ async def test_enable_auto_mode_interactive_emits_consent_and_ends_turn():
     assert h.record.state == RunState.IDLE
 
 
-async def test_disable_auto_mode_auto_terminal_resolve():
+async def test_stale_disable_mid_auto_burst_refuses_and_continues():
+    # FR1: the model has no auto-mode off-switch. A stale disable_auto_mode
+    # call mid-burst resolves as the refusal — no flag clear, no terminal
+    # round — and the burst CONTINUES through a normal continuation.
     round1 = [
         text_delta("turning off"),
         tool_input_available("tc_disable", "disable_auto_mode", {}),
         trace("tr-1"),
         finish_tool_calls(),
     ]
-    round2 = [text_delta("okay, off"), trace("tr-2"), finish("stop")]
+    round2 = [text_delta("understood, continuing"), trace("tr-2"), finish("stop")]
     client = FakeUpstreamClient(
         [FakeUpstreamResponse(round1), FakeUpstreamResponse(round2)]
     )
@@ -562,43 +595,66 @@ async def test_disable_auto_mode_auto_terminal_resolve():
     ) as execute_tool_mock:
         await _run(h, client, auto_policy(), dict(_AUTO_SEED))
     execute_tool_mock.assert_not_called()
-    # Flag cleared, preserved off-reason vocabulary, run ended after the ONE
-    # resolving continuation (its trace becomes the resume leaf).
-    assert h.record.auto_flag is False
-    assert h.record.idle_reason == "user_disabled"
+    # The flag survives; the burst ran the continuation round and settled
+    # idle with the NORMAL text-turn reason, not the old "user_disabled".
+    assert h.record.auto_flag is True
+    assert h.record.idle_reason == "asked_user"
     assert h.record.state == RunState.IDLE
-    assert json.loads(_outputs(h.emitted)["tc_disable"]) == {"status": "disabled"}
+    assert _outputs(h.emitted)["tc_disable"] == DISABLE_AUTO_MODE_STALE_RESULT
+    # The refusal rode the continuation (no dangling tool call upstream).
+    tool_rows = {
+        m["tool_call_id"]: m["content"]
+        for m in client.bodies[1]["messages"]
+        if m.get("role") == "tool"
+    }
+    assert tool_rows == {"tc_disable": DISABLE_AUTO_MODE_STALE_RESULT}
     assert len(client.bodies) == 2
     assert h.record.current_leaf_trace_id == "tr-2"
     assert h.traces == ["tr-1", "tr-2"]
 
 
-async def test_disable_auto_mode_interactive_resolves_inline_and_denies_sibling():
-    # Old ChatStreamSession disable branch: the signal resolves inline, an
-    # approval-requiring sibling is DENIED (no decisions on this path), and
-    # the stream CONTINUES.
+async def test_stale_disable_interactive_refuses_and_sibling_parks_normally():
+    # FR1: the stale refusal is a PLAIN resolve, not a round takeover — an
+    # approval-requiring sibling in the same batch goes through the normal
+    # approval park instead of the old immediate-resolve denial.
     round1 = [
         tool_input_available("tc_disable", "disable_auto_mode", {}),
         tool_input_available("tc_sib", "add", {"a": 1, "b": 2}, APPROVAL_META),
         trace("tr-1"),
         finish_tool_calls(),
     ]
-    round2 = [text_delta("continuing without auto"), trace("tr-2"), finish("stop")]
+    round2 = [text_delta("continuing"), trace("tr-2"), finish("stop")]
+    client = FakeUpstreamClient(
+        [FakeUpstreamResponse(round1), FakeUpstreamResponse(round2)]
+    )
+    h = _harness(decisions={"tc_sib": True})
+    await _run(h, client, interactive_policy(), dict(_USER_TURN))
+    # The sibling parked for a normal decision and executed on approval.
+    assert len(h.parked_batches) == 1
+    outputs = _outputs(h.emitted)
+    assert outputs["tc_disable"] == DISABLE_AUTO_MODE_STALE_RESULT
+    assert outputs["tc_sib"] == "3"
+    assert len(client.bodies) == 2
+    assert h.record.state == RunState.IDLE
+
+
+async def test_stale_disable_never_clears_a_set_flag():
+    # An interactive record whose flag is on (a mid-flip race) keeps it on
+    # through a stale disable call — the whole clear_auto_flag/cascade
+    # mechanism is gone; only user-initiated paths clear the flag.
+    round1 = [
+        tool_input_available("tc_disable", "disable_auto_mode", {}),
+        trace("tr-1"),
+        finish_tool_calls(),
+    ]
+    round2 = [text_delta("ok"), trace("tr-2"), finish("stop")]
     client = FakeUpstreamClient(
         [FakeUpstreamResponse(round1), FakeUpstreamResponse(round2)]
     )
     record = ConversationRecord(kind="interactive", auto_flag=True)
     h = _harness(record=record)
     await _run(h, client, interactive_policy(), dict(_USER_TURN))
-    outputs = _outputs(h.emitted)
-    assert json.loads(outputs["tc_disable"]) == {"status": "disabled"}
-    assert outputs["tc_sib"] == DENIED_TOOL_OUTPUT
-    # No park despite the approval-flagged sibling — the interception
-    # preempts the gate this round (old behavior).
-    assert h.parked_batches == []
-    # Flag cleared; the loop continued to a second round and settled idle.
-    assert record.auto_flag is False
-    assert len(client.bodies) == 2
+    assert record.auto_flag is True
     assert h.record.state == RunState.IDLE
 
 
@@ -949,8 +1005,7 @@ async def test_gated_policy_requires_await_decisions():
             await h.engine.run(h.record, interactive_policy(), h.io, dict(_USER_TURN))
 
 
-# ── Phase 4: resume runs (runless-batch recovery) + interactive disable
-#    cascade hook ──────────────────────────────────────────────────────────────
+# ── Phase 4: resume runs (runless-batch recovery) ─────────────────────────────
 
 
 def _staged_batch(trace_id: str = "tr-1") -> PendingApprovalBatch:
@@ -1020,83 +1075,3 @@ async def test_resume_batch_executes_decisions_and_continues():
     # The loop then ran the continuation round to a natural idle end.
     assert h.record.state == RunState.IDLE
     assert h.record.current_leaf_trace_id == "tr-2"
-
-
-async def test_resume_batch_marks_spawn_consent_on_executed_spawn():
-    from kiln_ai.adapters.model_adapters.stream_events import (
-        ToolInputAvailableEvent,
-    )
-
-    from app.desktop.studio_server.chat.stream_session import (
-        _pending_item_from_event,
-    )
-
-    events = [
-        ToolInputAvailableEvent(
-            toolCallId="tc_spawn",
-            toolName="spawn_subagent",
-            input={"agent_type": "general", "name": "h", "prompt": "p"},
-            kiln_metadata=APPROVAL_META,
-        )
-    ]
-    batch = PendingApprovalBatch(
-        items=[_pending_item_from_event(e) for e in events],
-        body={"trace_id": "tr-1", "messages": []},
-        assistant_text="",
-        tool_input_events=events,
-    )
-    batch.decisions = {"tc_spawn": True}
-    batch.decided.set()
-    client = FakeUpstreamClient(
-        [FakeUpstreamResponse([text_delta("ok"), trace("tr-2"), finish("stop")])]
-    )
-    h = _harness()
-    # No orchestration ctx wired → the spawn resolves to the structured
-    # "unavailable" error, which is NOT a denial — consent was still granted
-    # by the user's approval (mirrors the main loop's rule).
-    with patch.object(httpx, "AsyncClient", return_value=client):
-        await h.engine.run(
-            h.record, interactive_policy(), h.io, None, resume_batch=batch
-        )
-    assert h.record.spawn_consent_granted is True
-
-
-async def test_interactive_disable_fires_cascade_hook_only_when_flag_was_on():
-    # Phase-4 wiring of the interceptors TODO: the engine calls
-    # io.on_auto_flag_cleared exactly when the interactive disable
-    # interception cleared a SET flag (the supervisor wires the old
-    # disable_for_trace cascade there); a flag already off — the common
-    # plain-interactive case — stays a no-op, like the old
-    # disable_for_trace miss.
-    def _rounds():
-        return [
-            FakeUpstreamResponse(
-                [
-                    tool_input_available("tc_disable", "disable_auto_mode", {}),
-                    trace("tr-1"),
-                    finish_tool_calls(),
-                ]
-            ),
-            FakeUpstreamResponse([text_delta("ok"), trace("tr-2"), finish("stop")]),
-        ]
-
-    cascades: list[bool] = []
-
-    async def on_cleared() -> None:
-        cascades.append(True)
-
-    # Flag ON (a mid-flip race): the hook fires once.
-    h = _harness(record=ConversationRecord(kind="interactive", auto_flag=True))
-    h.io.on_auto_flag_cleared = on_cleared
-    await _run(h, FakeUpstreamClient(_rounds()), interactive_policy(), dict(_USER_TURN))
-    assert cascades == [True]
-    assert h.record.auto_flag is False
-
-    # Flag OFF (plain interactive conversation): no cascade.
-    cascades.clear()
-    h2 = _harness()
-    h2.io.on_auto_flag_cleared = on_cleared
-    await _run(
-        h2, FakeUpstreamClient(_rounds()), interactive_policy(), dict(_USER_TURN)
-    )
-    assert cascades == []

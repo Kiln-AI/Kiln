@@ -77,18 +77,16 @@ const CHILDREN_FETCH_TIMEOUT_MS = 10_000
 // nor onerror, so without a bound it never reconnects.
 const FIREHOSE_CONNECT_TIMEOUT_MS = 15_000
 // Low-frequency safety-net re-fetch of the children list while the firehose is
-// connected and a parent is set (see `updateReconcileTimer`). WHY: the children
-// strip is populated only when a child's firehose `conversation-state` event
-// triggers a fetch, and a running child publishes that event exactly ONCE (at
-// spawn) — nothing more until it settles. If that single event is missed (a
-// firehose micro-drop, a server snapshot/subscribe race on (re)connect, or a
-// fetch-race edge), a RUNNING child is absent from the strip with no further
-// trigger until it COMPLETES (whose terminal tab is dropped by design) or the
-// user refreshes. This periodic reconcile re-fetches the authoritative list
-// (`children_of` always returns the complete current set) so any missed child
-// converges within a few seconds instead of never. Cheap: localhost, and the
-// server fix closes the snapshot gap so this rarely has anything to correct.
-const RECONCILE_INTERVAL_MS = 3500
+// connected and a parent is set (see `updateReconcileTimer`). Since
+// `conversation-state` events carry `parent_session_id`, an unknown child is
+// attributed to the current parent DIRECTLY from the event (no fetch), so this
+// reconcile is no longer load-bearing for tab appearance. It survives only as
+// a cheap safety net for two residual cases: an older desktop whose events
+// lack the lineage field (there the fetch fallback can lose a race), and a
+// freak loss where both the live event and the reconnect snapshot were
+// missed. Hence the long interval — frequent ticks would just compete for the
+// connection-pool slots the page's SSE streams already strain.
+const RECONCILE_INTERVAL_MS = 20_000
 
 // Lifecycle of the state-firehose EventSource, surfaced for tests / debugging.
 // A pure observer: this only reports the connection, it never mutates a run.
@@ -110,7 +108,20 @@ interface ConversationStateEvent {
   auto_flag?: boolean
   idle_reason?: string
   name?: string
+  /**
+   * Sub-agent lineage: the parent conversation's session id. Rides every
+   * sub-agent state event (live publish and snapshot replay) so an unknown
+   * child can be attributed to the current parent straight from the event.
+   * Absent on events from desktops predating the field — those fall back to
+   * the list fetch.
+   */
+  parent_session_id?: string
   report_available?: boolean
+  /**
+   * Sub-agent identity (rides subagent state events), so a directly-attributed
+   * child renders its type badge/tooltip without waiting for a list fetch.
+   */
+  agent_type?: string
 }
 
 // Terminal = the run can never advance again (one-shot kinds only). Same
@@ -180,7 +191,11 @@ export interface ConversationStore {
    * it is safe to call reactively.
    */
   syncForConversation(parentId: string | null): Promise<void>
-  /** Select a tab; selecting a child starts observing it. */
+  /**
+   * Select a tab; selecting a child starts observing it, and the previously
+   * selected child's observer stream is torn down (only the selected child
+   * holds a live per-child SSE connection).
+   */
   select(sessionId: string | null): void
   /**
    * Observe one child: hydrate its persisted history, then attach the live
@@ -238,6 +253,13 @@ export function createConversationStore(): ConversationStore {
   let firehoseActive = false
 
   const observations = new Map<string, ChildObservation>()
+
+  // When each event-attributed child was appended (Date.now()), keyed by
+  // session id. Lets a landing list fetch decide whether a child it lacks is
+  // one it could not have known about (added after the fetch STARTED → shield
+  // it) or one the server authoritatively no longer knows (added before →
+  // drop it). Entries are pruned alongside the child (see pruneToChildren).
+  const eventAddedAt = new Map<string, number>()
 
   // --- Transcript bookkeeping ------------------------------------------------
 
@@ -318,6 +340,10 @@ export function createConversationStore(): ConversationStore {
               ...child,
               name: event.name ?? child.name,
               state: (event.state ?? child.state) as RunState,
+              // Identity backfill for an event-attributed child added before
+              // its agent_type was known; an established value is never
+              // overwritten (identity is immutable).
+              agent_type: child.agent_type ?? event.agent_type ?? null,
               report_available:
                 event.report_available ?? child.report_available,
             }
@@ -326,10 +352,59 @@ export function createConversationStore(): ConversationStore {
     )
   }
 
+  // An unknown sub-agent attributed to the current parent straight from a
+  // lineage-carrying state event: append it from the fields the event carries
+  // (everything the tab strip renders). The remaining ConversationItem fields
+  // take their schema defaults; the initial-hydration fetch or later state
+  // events fill them in.
+  function addChildFromStateEvent(event: ConversationStateEvent): void {
+    if (!event.session_id) return
+    if (get(children).some((c) => c.session_id === event.session_id)) return
+    eventAddedAt.set(event.session_id, Date.now())
+    const item: ConversationItem = {
+      session_id: event.session_id,
+      kind: "subagent",
+      state: (event.state ?? "running") as RunState,
+      name: event.name ?? null,
+      agent_type: event.agent_type ?? null,
+      parent_session_id: event.parent_session_id ?? null,
+      auto_flag: event.auto_flag ?? false,
+      rounds_used: 0,
+      report_available: event.report_available ?? false,
+      report_delivered: false,
+    }
+    children.update((list) => [...list, item])
+  }
+
+  // The event-added children a list fetch that started at `startedAt` must not
+  // drop: same parent and appended AFTER the fetch started — so the server's
+  // answer (or failure) predates their existence and says nothing about them.
+  // Deliberately NOT filtered by terminal state: a child that spawns AND
+  // settles inside the fetch window stays shielded, so the transcript and
+  // selection aren't yanked while the user reads its failure output. The
+  // startedAt check alone removes ghosts — a fetch started after the add is
+  // authoritative about the child's absence. `>=` on the timestamp: a
+  // same-millisecond tie is unresolvable, and shielding errs toward keeping a
+  // live tab (a real ghost still dies on the next fetch, whose start strictly
+  // postdates the add).
+  function shieldedEventChildren(
+    parentId: string,
+    startedAt: number,
+  ): ConversationItem[] {
+    return get(children).filter(
+      (c) =>
+        c.parent_session_id === parentId &&
+        (eventAddedAt.get(c.session_id) ?? -Infinity) >= startedAt,
+    )
+  }
+
   // Drop observations/transcripts for children no longer in the list, and clear
   // the selection if the selected child disappeared (conversation switch).
   function pruneToChildren(list: ConversationItem[]): void {
     const ids = new Set(list.map((c) => c.session_id))
+    for (const id of eventAddedAt.keys()) {
+      if (!ids.has(id)) eventAddedAt.delete(id)
+    }
     for (const [id, obs] of observations) {
       if (!ids.has(id)) {
         obs.abort.abort()
@@ -366,6 +441,9 @@ export function createConversationStore(): ConversationStore {
 
   async function fetchChildren(parentId: string): Promise<void> {
     const thisGeneration = ++syncGeneration
+    // Anchors the shield decision on landing (see shieldedEventChildren): the
+    // server computed its answer no earlier than this instant.
+    const startedAt = Date.now()
     let list: ConversationItem[] = []
     let failed = false
     try {
@@ -396,18 +474,66 @@ export function createConversationStore(): ConversationStore {
       // Failure handling depends on WHOSE children are currently shown:
       // - same parent → keep them. Clearing on a blip/timeout would flicker
       //   running tabs away; the reconcile loop retries in a few seconds.
-      // - different parent (a switch whose first fetch failed) → clear, so
-      //   another conversation's children never linger under this one.
+      // - different parent (a switch whose first fetch failed) → clear the old
+      //   parent's children, so another conversation's tabs never linger under
+      //   this one — but keep any child of THIS parent attributed from a state
+      //   event while the fetch was in flight (a failure is not authoritative,
+      //   and dropping it would blank a live tab the events already proved).
       if (renderedParentId !== parentId) {
         renderedParentId = parentId
-        children.set([])
-        pruneToChildren([])
+        const kept = shieldedEventChildren(parentId, startedAt)
+        children.set(kept)
+        pruneToChildren(kept)
       }
       return
     }
     renderedParentId = parentId
-    children.set(list)
-    pruneToChildren(list)
+    // Merge, don't clobber: a fetch computed BEFORE a spawn can land AFTER the
+    // spawn's state event already added the child directly (the fetch isn't
+    // generation-bumped by direct attribution). Shield ONLY children added
+    // after this fetch started — the server's answer predates them, so their
+    // absence proves nothing. A child the fetch SHOULD have known (added
+    // before it started) yet lacks is authoritatively gone and gets dropped:
+    // this is what removes a ghost whose terminal event will never arrive
+    // (e.g. a desktop restart emptied the in-memory registry), instead of
+    // every fetch re-shielding it forever.
+    const fetchedIds = new Set(list.map((c) => c.session_id))
+    const eventAdded = shieldedEventChildren(parentId, startedAt).filter(
+      (c) => !fetchedIds.has(c.session_id),
+    )
+    // For ids the fetch DOES know, the fetched fields normally win (the
+    // reconcile heals events the firehose missed) — with one exception:
+    // terminal is monotone, so if the store already saw a child settle (via a
+    // state event) and the fetched row still says non-terminal, the row is
+    // provably stale (computed before the settle) and must not revert the tab
+    // to running for up to a reconcile interval. In that one case the
+    // event-carried fields (state / name / agent_type / report_available)
+    // keep the in-store values; everything else still comes from the fetch.
+    // Chosen over "in-store always wins on state" because that would stop the
+    // reconcile from healing a missed transition; terminal-wins is the only
+    // ordering that is always provable.
+    const storedById = new Map(get(children).map((c) => [c.session_id, c]))
+    const reconciled = list.map((fetched) => {
+      const stored = storedById.get(fetched.session_id)
+      if (
+        !stored ||
+        !isTerminalState(stored.state) ||
+        isTerminalState(fetched.state)
+      ) {
+        return fetched
+      }
+      return {
+        ...fetched,
+        state: stored.state,
+        name: stored.name ?? fetched.name,
+        agent_type: stored.agent_type ?? fetched.agent_type,
+        report_available: stored.report_available || fetched.report_available,
+      }
+    })
+    const merged =
+      eventAdded.length > 0 ? [...reconciled, ...eventAdded] : reconciled
+    children.set(merged)
+    pruneToChildren(merged)
   }
 
   async function syncForConversation(parentId: string | null): Promise<void> {
@@ -440,8 +566,20 @@ export function createConversationStore(): ConversationStore {
       updateChildFromStateEvent(event)
       return
     }
-    // Unknown child: we can't tell whether it belongs to this conversation from
-    // the event alone, so re-fetch the list for the current parent (cheap).
+    // Unknown child carrying lineage: attribute it directly from the event —
+    // no list fetch. The fetch fallback used to compete with the page's
+    // long-lived SSE streams for the browser's small per-origin connection
+    // budget and could starve indefinitely, leaving the tab strip blind.
+    if (event.parent_session_id !== undefined) {
+      if (event.parent_session_id === syncedParentId) {
+        addChildFromStateEvent(event)
+      }
+      // Another conversation's child: not ours, nothing to fetch.
+      return
+    }
+    // No lineage on the event (older desktop): we can't tell whether the child
+    // belongs to this conversation, so re-fetch the list for the current
+    // parent.
     if (syncedParentId) {
       void fetchChildren(syncedParentId)
     }
@@ -673,9 +811,13 @@ export function createConversationStore(): ConversationStore {
     // desktop resolves the record's CURRENT leaf per request, so hydration
     // is always fresh — this replaces the deleted current_trace_id field
     // AND the pre-hydration item re-fetch that kept it fresh. Best effort:
-    // a failure (including 404 for a child with nothing persisted yet)
-    // still attaches the live tail on an empty transcript.
+    // a failure still attaches the live tail below.
     let messages: ChatMessage[] = []
+    // Only an authoritative answer may overwrite a kept transcript: 2xx (the
+    // persisted history) or 404 (nothing persisted — empty IS the truth). A
+    // network throw or other error status on a RE-select must not blank the
+    // transcript select() deliberately kept for instant repaint.
+    let authoritative = false
     try {
       const response = await fetch(
         `${base_url}/api/chat/sessions/${encodeURIComponent(sessionId)}`,
@@ -685,15 +827,20 @@ export function createConversationStore(): ConversationStore {
         const snapshot = (await response.json()) as ChatSessionSnapshot
         const hydrated = hydrateSessionFromSnapshot(snapshot)
         messages = hydrated.messages
+        authoritative = true
         if (hydrated.contextUsage) {
           updateRuntime(sessionId, { contextUsage: hydrated.contextUsage })
         }
+      } else if (response.status === 404) {
+        authoritative = true
       }
     } catch {
       /* aborted or unreachable — live tail below still attaches */
     }
     if (abort.signal.aborted) return
-    setTranscript(sessionId, messages)
+    if (authoritative || transcriptFor(sessionId).length === 0) {
+      setTranscript(sessionId, messages)
+    }
 
     // 2. Attach the live tail: buffer replay (current turn) + state marker +
     // live events. For terminal runs the stream ends after the marker.
@@ -731,8 +878,23 @@ export function createConversationStore(): ConversationStore {
 
   // --- Actions ----------------------------------------------------------------
 
+  function stopObservation(id: string): void {
+    const obs = observations.get(id)
+    if (!obs) return
+    obs.abort.abort()
+    observations.delete(id)
+    clearRuntime(id)
+  }
+
   function select(sessionId: string | null): void {
+    const previous = get(selectedId)
     selectedId.set(sessionId)
+    // Only the SELECTED child keeps a live observer stream: each stream holds
+    // one of the browser's few per-origin connections, and the firehose
+    // already carries status for unselected tabs. The transcript is kept for
+    // an instant repaint on re-select; re-selecting re-hydrates and
+    // re-attaches the live tail.
+    if (previous && previous !== sessionId) stopObservation(previous)
     if (sessionId) void observe(sessionId)
   }
 
@@ -798,6 +960,9 @@ export function createConversationStore(): ConversationStore {
       obs.abort.abort()
     }
     observations.clear()
+    // Invariant: eventAddedAt only holds entries for current children —
+    // children.set([]) below bypasses pruneToChildren, so clear it here.
+    eventAddedAt.clear()
     syncGeneration++
     syncedParentId = undefined
     renderedParentId = null
@@ -867,7 +1032,14 @@ export interface PendingApprovalsView {
 }
 
 export interface DeclineAutoModeContext {
-  enable_tool_call_id: string
+  /**
+   * The consent-gating call to resolve as ``{"status": "declined"}`` — the
+   * ``enable_auto_mode`` call, or since FR2 the gating ``spawn_subagent``
+   * call of a spawn-triggered consent. The desktop route still accepts the
+   * legacy ``enable_tool_call_id`` spelling from stale tabs, but this bundle
+   * always sends the new name.
+   */
+  gating_tool_call_id: string
   siblings: ToolCallsPendingItem[]
 }
 
@@ -1111,6 +1283,56 @@ export function createMainConversationStore(): MainConversationStore {
     sessionId?: string
     error?: string
   }> | null = null
+  // FR5: bounded re-attach after an observer drop while the conversation
+  // still matters (auto mode on, or a turn was in flight). One backoff entry
+  // per attempt; the timer is cancelled by closeSource (detach / a manual
+  // re-attach) and the budget resets once a stream DELIVERS an event again
+  // (not merely opens — a flapping stream that opens then drops before any
+  // byte still burns the budget). The budget is strictly per-stream: a
+  // direct attach() starts fresh; only the scheduled re-attach below carries
+  // spent attempts forward (reattachInProgress).
+  const REATTACH_BACKOFF_MS: readonly number[] = [2000, 5000, 10000]
+  let reattachTimer: ReturnType<typeof setTimeout> | null = null
+  let reattachAttempt = 0
+  let reattachInProgress = false
+
+  function clearReattachTimer(): void {
+    if (reattachTimer !== null) {
+      clearTimeout(reattachTimer)
+      reattachTimer = null
+    }
+  }
+
+  // Schedule the next bounded re-attach, or — attempts exhausted — degrade
+  // to the manual-recovery paths (the next send/ensure re-attaches; a
+  // refresh resyncs). Auto state is deliberately NOT touched anywhere on
+  // this path: the desktop-owned run is unaffected by observer connection
+  // loss, so faking an off-transition would lie (FR5) — the real off, if
+  // one happened while disconnected, arrives via the re-attach marker.
+  function scheduleReattach(sid: string): void {
+    if (reattachAttempt >= REATTACH_BACKOFF_MS.length) {
+      reattachAttempt = 0
+      reconnecting.set(false)
+      sink?.onInlineError(
+        "Lost the connection to the assistant. Please try again.",
+      )
+      return
+    }
+    reconnecting.set(true)
+    const delay = REATTACH_BACKOFF_MS[reattachAttempt]
+    reattachAttempt += 1
+    reattachTimer = setTimeout(() => {
+      reattachTimer = null
+      // Carry the spent-attempt count through this attach — the budget only
+      // resets on a direct attach or once the stream delivers an event.
+      reattachInProgress = true
+      try {
+        attach(sid, undefined, false, get(autoModeOn))
+      } finally {
+        reattachInProgress = false
+      }
+    }, delay)
+  }
 
   function consumeInflightTurn(): void {
     if (pendingInflightTurn) {
@@ -1162,12 +1384,15 @@ export function createMainConversationStore(): MainConversationStore {
     }
     processor = null
     // A pending fresh-turn / attach marker belongs to the stream being torn
-    // down.
+    // down — and so does any scheduled FR5 re-attach (a manual attach or a
+    // detach supersedes it; the timer's own attach re-enters here with the
+    // timer already null).
+    clearReattachTimer()
     pendingInflightTurn = false
     attachMarkerPending = false
   }
 
-  // The on→off TRANSITION (stop / disable / model-called disable): clear the
+  // The on→off TRANSITION (user stop / user disable): clear the
   // auto affordances and signal the sink ONCE. Unlike the old auto store's
   // clearToOff this NEVER closes the stream or clears the session id — an
   // off-auto conversation IS the same live interactive conversation
@@ -1198,6 +1423,7 @@ export function createMainConversationStore(): MainConversationStore {
   // navigated away — New Chat / load another conversation).
   function detach(): void {
     closeSource()
+    reattachAttempt = 0
     flagSeenOn = false
     autoModeOn.set(false)
     armed.set(false)
@@ -1285,18 +1511,23 @@ export function createMainConversationStore(): MainConversationStore {
             // idle_reason deliberately not forwarded (rendering rule).
             sink?.onInteractiveIdle()
           }
-        } else if (isAttachMarker && !offTransition && !flagOn) {
-          // BUG 2 fix: a genuinely-idle, flag-off conversation whose LIVE
-          // idle event was missed (the observer was detached/reconnecting at
-          // the settle instant) now arrives only as this on-subscribe marker.
-          // The refresh-brick fix keeps the marker settle-silent above, so a
-          // CLIENT-HELD queued message would strand. Fire the flush-only hook
-          // to unstick it — WITHOUT the full settle semantics the brick fix
-          // suppresses. Safe: onIdleMarker → maybeFlush no-ops without a queue
-          // (e.g. the brick's echo-then-idle-marker sequence carries none) and
-          // dispatchQueued clears before sending, so a real live idle racing
-          // this marker can never double-send. Excludes flag-on (auto idle
-          // markers) and off transitions (onAutoModeOff already cleared the
+        } else if (isAttachMarker && !offTransition) {
+          // BUG 2 fix: a genuinely-idle conversation whose LIVE idle event
+          // was missed (the observer was detached/reconnecting at the settle
+          // instant) now arrives only as this on-subscribe marker. The
+          // refresh-brick fix keeps the marker settle-silent above, so a
+          // CLIENT-HELD queued message would strand — flag-off (interactive
+          // settle missed) and flag-on alike (a message queued mid-burst,
+          // the observer dropped, and the burst settled during the outage:
+          // the re-attach marker is idle+flag-on and no onAutoModeIdle ever
+          // fires). Fire the flush-only hook to unstick it — WITHOUT the
+          // full settle semantics the brick fix suppresses. Safe:
+          // onIdleMarker → maybeFlush no-ops without a queue (e.g. the
+          // brick's echo-then-idle-marker sequence carries none), flushing
+          // on auto idle is already the designed live behavior
+          // (onAutoModeIdle), and dispatchQueued clears before sending, so
+          // a real live idle racing this marker can never double-send.
+          // Excludes off transitions (onAutoModeOff already cleared the
           // queue there).
           sink?.onIdleMarker?.()
         }
@@ -1353,6 +1584,11 @@ export function createMainConversationStore(): MainConversationStore {
       return
     }
     closeSource()
+    // The FR5 re-attach budget is strictly per-stream: a direct attach (new
+    // conversation, manual re-attach, resync) starts a fresh budget. The
+    // scheduled FR5 re-attach is the one exception — it carries its spent
+    // attempts through (reattachInProgress).
+    if (!reattachInProgress) reattachAttempt = 0
 
     pendingInflightTurn = openInflightTurn
     attachMarkerPending = true
@@ -1383,12 +1619,17 @@ export function createMainConversationStore(): MainConversationStore {
       if (eventSource !== source) return
       connection.set("open")
       reconnecting.set(false)
+      // Deliberately NOT resetting the FR5 budget here: a flapping stream
+      // that opens then drops before delivering anything must still burn
+      // attempts. The first delivered event (onmessage) resets it.
     }
 
     source.onmessage = (e: MessageEvent) => {
       if (eventSource !== source) return
-      // First byte over the stream also means we're established.
+      // First byte over the stream means we're truly established: clear the
+      // affordance and start a fresh FR5 re-attach budget.
       reconnecting.set(false)
+      reattachAttempt = 0
       const data = typeof e.data === "string" ? e.data.trim() : ""
       if (!data || data === "[DONE]") return
       let event: StreamEvent
@@ -1411,33 +1652,37 @@ export function createMainConversationStore(): MainConversationStore {
 
     source.onerror = () => {
       if (eventSource !== source) return
-      // No reconnect loop. The conversation is persisted server-side, so
-      // degrade cleanly: an auto conversation falls to the hydrated-history
-      // "off" look (the old behavior); an interactive one just marks the
-      // connection closed — the session id survives, and the next
-      // send/ensure re-attaches.
+      // FR5: an observer drop is a CONNECTION fact, never a run fact — the
+      // desktop-owned run keeps going, so autoModeOn/armed/offReason stay
+      // exactly as they are (no fake off-transition; a real off that
+      // happened while disconnected arrives via the re-attach marker).
       const droppedMidTurn = get(working)
       closeSource()
-      if (get(autoModeOn)) {
-        applyOffTransition(null)
-      } else {
-        // setWorking(false) doubles as the session store's status reset (it
-        // clears a stuck "submitted"/"streaming" without flushing the
-        // queue), mirroring the old streamChat fetch-error path's return to
-        // ready.
-        setWorking(false)
-        reconnecting.set(false)
-        if (droppedMidTurn) {
-          // A turn was visibly in flight when the observer died — surface
-          // it like the old streamChat onError surfaced a dropped fetch
-          // (an idle-observer drop stays silent, as no request was in
-          // flight in the old world either).
-          sink?.onInlineError(
-            "Lost the connection to the assistant. Please try again.",
-          )
-        }
-      }
+      // setWorking(false) doubles as the session store's status reset (it
+      // clears a stuck "submitted"/"streaming" without flushing the queue),
+      // mirroring the old streamChat fetch-error path's return to ready.
+      // The client-held queued message survives by construction: no
+      // onAutoModeOff fires here.
+      setWorking(false)
       connection.set("closed")
+      const sid = get(sessionId)
+      // reattachAttempt > 0 means a scheduled FR5 chain is mid-flight (an
+      // earlier drop mattered and no onmessage/direct attach has settled it
+      // since — a scheduled re-attach resets `working`, so droppedMidTurn
+      // alone would end an interactive chain after ONE attempt, silently).
+      if (sid && (get(autoModeOn) || droppedMidTurn || reattachAttempt > 0)) {
+        // The connection still matters (auto run, a turn was visibly in
+        // flight, or an unsettled re-attach chain): bounded re-attach with
+        // the reconnecting affordance; on exhaustion scheduleReattach
+        // surfaces the inline error and the manual paths (next send/ensure)
+        // remain the recovery.
+        scheduleReattach(sid)
+      } else {
+        // Idle interactive drop: no request was in flight (the old world
+        // showed nothing either) — stay silent; the next send/ensure
+        // re-attaches.
+        reconnecting.set(false)
+      }
     }
   }
 
@@ -1740,8 +1985,9 @@ export function createMainConversationStore(): MainConversationStore {
     // Optimistic only: the authoritative state change arrives as a
     // conversation-state event (idle for interactive, flag-off for auto).
     const suffix = opts?.cascade ? "?cascade=true" : ""
+    let response: Response
     try {
-      await fetch(
+      response = await fetch(
         `${CONVERSATIONS_BASE_URL}/${encodeURIComponent(id)}/stop${suffix}`,
         {
           method: "POST",
@@ -1749,6 +1995,20 @@ export function createMainConversationStore(): MainConversationStore {
       )
     } catch {
       /* idempotent; the run keeps going and the user can retry */
+      return
+    }
+    // Stop while "connection lost" (stream closed, no FR5 re-attach
+    // pending): nothing would ever deliver the resulting off/idle event, so
+    // the transition wouldn't render. One-shot re-attach — the on-subscribe
+    // marker carries the authoritative state (flag-off arrives as a marker
+    // off-transition via flagSeenOn = assumeAutoOn).
+    if (
+      response.ok &&
+      get(connection) === "closed" &&
+      reattachTimer === null &&
+      get(sessionId) === id
+    ) {
+      attach(id, false, false, get(autoModeOn))
     }
   }
 

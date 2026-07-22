@@ -1,13 +1,13 @@
 {
-  "scenario": "auto_disable_resolve",
+  "scenario": "auto_spawn_consent_accept_seed",
   "bodies": [
     {
       "trace_id": "tr-0",
       "messages": [
         {
           "role": "tool",
-          "tool_call_id": "enable-1",
-          "content": "{\"status\": \"enabled\"}"
+          "tool_call_id": "tc_spawn",
+          "content": "{\"status\": \"spawned\", \"subagent_id\": \"cv_fixed\", \"name\": \"helper\"}"
         }
       ],
       "auto_mode": true
@@ -17,8 +17,8 @@
       "messages": [
         {
           "role": "tool",
-          "tool_call_id": "tc_disable",
-          "content": "{\"status\": \"disabled\"}"
+          "tool_call_id": "tc1",
+          "content": "2"
         }
       ],
       "auto_mode": true

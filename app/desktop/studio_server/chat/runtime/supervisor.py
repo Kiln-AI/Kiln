@@ -10,8 +10,6 @@ with a single registry keyed by session id. It owns, for every conversation:
 - one ``ByteEventBus`` + replay buffer,
 - the inbox queue (send-while-running / steer / report injection),
 - the pending approval batch,
-- consent memory (on the record, keyed by session id — the old
-  parent-alias maps die with the registries),
 - the children index (``parent_session_id``) and the report queue/delivery,
 - concurrency caps (auto concurrent; sub-agent per-parent/global — same
   numbers, env vars, and message texts as today),
@@ -73,6 +71,7 @@ from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
 
 from .bus import BroadcastBus, ByteEventBus
 from .engine import ConversationEngine, EngineIO
+from .interceptors import DISABLE_AUTO_MODE_STALE_RESULT, SPAWN_SUBAGENT_TOOL_NAME
 from .models import (
     ConversationKind,
     ConversationPolicy,
@@ -189,8 +188,13 @@ def _pending_events_from_trace_tail(
       list: they are never executed as tools (interceptors answer them) and
       never enter the approval batch's items, but a signal riding NEXT TO a
       real client call must still be answered on the resume continuation
-      (as declined — its consent dialog died with the restart) or the trace
-      keeps a dangling tool call the provider rejects on the next turn.
+      (``enable_auto_mode`` as declined — its consent dialog died with the
+      restart; a stale ``disable_auto_mode`` with the FR1 refusal shape) or
+      the trace keeps a dangling tool call the provider rejects on the next
+      turn. ``spawn_subagent`` is policy-dependent (gating consent call when
+      the auto flag is off, plain client call when on), so it stays in
+      ``client_events`` here and ``rehydrate_pending_approvals`` — which
+      knows the record's flag — reclassifies it (FR2).
     - Server-executed tool calls are answered inside the same persisted
       snapshot by the upstream orchestrator, so an unanswered call in the
       tail is a client call by construction.
@@ -679,11 +683,34 @@ class ConversationSupervisor:
         if not trace:
             return None
         events, signal_events, assistant_text = _pending_events_from_trace_tail(trace)
+        # FR2 (spawning requires auto mode): with the flag OFF, a pending
+        # spawn_subagent in the tail is a gating CONSENT call whose dialog
+        # died with the restart/eviction — not an approvable client call.
+        # Rehydrating it as an approval would resurrect the spawn-as-approval
+        # surface FR3 deletes and let an approve execute a real spawn with
+        # auto mode off. Reclassify it with the signals: out of the items,
+        # pre-resolved as declined (the lost-enable-consent decline shape).
+        # A spawn-only tail then hits the nothing-approvable return below and
+        # stays unanswered exactly like a lost enable consent. With the flag
+        # ON the spawn stays a normal (conservatively gated) approvable call
+        # — the flag IS the consent, same as the live interceptor chain.
+        if not conv.record.auto_flag:
+            spawn_events = [e for e in events if e.toolName == SPAWN_SUBAGENT_TOOL_NAME]
+            if spawn_events:
+                events = [e for e in events if e.toolName != SPAWN_SUBAGENT_TOOL_NAME]
+                signal_events = [*signal_events, *spawn_events]
         if not events:
-            # Nothing approvable. A SIGNAL-ONLY tail (an unanswered
-            # enable_auto_mode with no siblings) is a lost consent dialog —
-            # which the old world also lost across restarts — not an
-            # approval batch; it stays unanswered exactly like before.
+            # Nothing approvable. A SIGNAL-ONLY tail is not an approval
+            # batch and stays unanswered exactly like before — starting a
+            # resume run for a batch with nothing to approve would invent a
+            # turn the user never asked for. Three shapes land here: an
+            # unanswered enable_auto_mode with no siblings (a lost consent
+            # dialog — which the old world also lost across restarts); since
+            # FR1, a stale disable_auto_mode-only tail (a pre-upgrade
+            # conversation that resumed with the now-removed tool as its
+            # turn's only pending call); and, since FR2, a flag-off tail
+            # whose only pending call is a gating spawn_subagent (a lost
+            # spawn-consent dialog, reclassified above).
             return None
 
         batch = PendingApprovalBatch(
@@ -701,11 +728,19 @@ class ConversationSupervisor:
             # Signal calls ride the event list so their resolutions land on
             # the continuation, but never the ITEMS (nothing to approve)…
             tool_input_events=[*events, *signal_events],
-            # …resolved as declined, mirroring the decline flow: the consent
-            # dialog died with the restart, and an unanswered call would
-            # leave the trace dangling (see _pending_events_from_trace_tail).
+            # …pre-resolved so no call dangles on the persisted trace (see
+            # _pending_events_from_trace_tail): a pending enable_auto_mode —
+            # or a flag-off gating spawn_subagent (FR2, reclassified above) —
+            # is declined (its consent dialog died with the restart,
+            # mirroring the decline flow); a stale pending disable_auto_mode
+            # gets the FR1 refusal — the model has no off-switch, so it must
+            # never resolve as if the disable succeeded.
             preresolved_results={
-                e.toolCallId: json.dumps({"status": "declined"}, ensure_ascii=False)
+                e.toolCallId: (
+                    DISABLE_AUTO_MODE_STALE_RESULT
+                    if e.toolName == DISABLE_AUTO_MODE_TOOL_NAME
+                    else json.dumps({"status": "declined"}, ensure_ascii=False)
+                )
                 for e in signal_events
             },
         )
@@ -788,7 +823,12 @@ class ConversationSupervisor:
         record, so a live session id is always in hand):
 
         - consent accept: ``session_id`` + ``enable_tool_call_id`` (+ rare
-          pending siblings) → burst resolving the enable call as enabled;
+          pending siblings) → burst resolving the enable call as enabled.
+          The FR2 spawn-consent accept is the same entry with NO enable id:
+          the gating ``spawn_subagent`` call rides FIRST in
+          ``pending_tool_calls``, so it executes below (actually spawning
+          the child) and its result seeds the burst — the armed-only branch
+          is unreachable because pending is non-empty;
         - manual enable on an existing conversation: ``session_id`` only →
           the record is merely ARMED (flag on, IDLE("armed"), NO run task).
           Starting a burst here would POST an empty turn upstream, which the
@@ -816,9 +856,11 @@ class ConversationSupervisor:
         unreachable now that the browser can only name live conversations),
         ``ValueError`` for a sub-agent/terminal record (409 — a child's
         autonomy is not a user-facing toggle, mirroring ``set_auto_flag``),
-        ``ConversationCapError`` (429), and lets ``start_run``'s "already has
-        a run in flight" RuntimeError propagate (409 — the old world silently
-        spawned a second concurrent run here, a latent bug, not a contract).
+        ``ConversationCapError`` (429), and ``RuntimeError`` (409) when a
+        non-armed-only enable races a run already in flight — checked before
+        the flag flips, so a busy accept leaves the record untouched (the old
+        world silently spawned a second concurrent run here, a latent bug,
+        not a contract; armed-only flips stay legal while a burst runs).
         """
         conv: _Conversation | None = None
         if session_id is not None:
@@ -832,6 +874,10 @@ class ConversationSupervisor:
             if conv.record.kind == "subagent" or conv.record.state.is_terminal:
                 raise ValueError(f"Conversation cannot enable auto mode: {session_id}")
 
+        armed_only = (
+            not enable_tool_call_id and not pending_tool_calls and not extra_messages
+        )
+
         if conv is None:
             record = self.create_conversation(
                 "auto", upstream_url=upstream_url, headers=headers
@@ -839,6 +885,22 @@ class ConversationSupervisor:
             conv = self._conversations[record.session_id]
         else:
             record = conv.record
+            # Busy guard BEFORE any side effects (same shape as decline_auto's
+            # "busy"): a consent accept racing an in-flight run must 409 with
+            # nothing changed — no cap slot taken, no record left flipped to
+            # auto with no seeded burst (the racing run started under the
+            # interactive policy, so _finish_run's swap-back-to-interactive
+            # check would never fire and the record would stay stuck as auto).
+            # Armed-only enables skip the guard: flipping the flag while a
+            # burst is RUNNING is legal (the run holds its policy; the flag
+            # applies at the next boundary). start_run repeats the check, but
+            # only AFTER the pending batch below executes — for the FR2
+            # spawn-consent accept that would spawn a real child whose result
+            # is then discarded.
+            if not armed_only and conv.task is not None and not conv.task.done():
+                raise RuntimeError(
+                    f"conversation {record.session_id} already has a run in flight"
+                )
             if not record.auto_flag:
                 # Flipping the flag on takes an auto slot again (a flag-off
                 # record does not hold one).
@@ -850,7 +912,7 @@ class ConversationSupervisor:
 
         # ARMED-only manual enable (Revision R1, functional spec §4.1(2)): the
         # seed has nothing to send upstream — see the docstring.
-        if not enable_tool_call_id and not pending_tool_calls and not extra_messages:
+        if armed_only:
             if conv.task is None or conv.task.done():
                 # Only stamp the idle/armed shape when no burst is in flight —
                 # arming a record whose burst is RUNNING (flip of a live
@@ -863,12 +925,15 @@ class ConversationSupervisor:
             logger.info("Armed auto conversation %s", record.session_id)
             return record
 
-        # Auto-approve sibling pending calls now (rare — the model is
-        # instructed to call enable_auto_mode alone); their role:tool results
-        # ride the seed body. Old AutoChatRunner._build_seed_body executed
-        # these inside the runner with the run's orchestration ctx; the ctx
-        # here is the same conversation identity, so spawn lineage/ownership
-        # is unchanged.
+        # Auto-approve pending calls now; their role:tool results ride the
+        # seed body. Rare for the enable trigger (the model is instructed to
+        # call enable_auto_mode alone); for the FR2 spawn-consent accept this
+        # is the main path — the gating spawn leads the list, executes here
+        # (the child actually spawns), and its {"status": "spawned", ...}
+        # result seeds the burst. Old AutoChatRunner._build_seed_body
+        # executed these inside the runner with the run's orchestration ctx;
+        # the ctx here is the same conversation identity, so spawn
+        # lineage/ownership is unchanged.
         sibling_results: dict[str, str] = {}
         if pending_tool_calls:
             sibling_results = await execute_tool_batch(
@@ -1014,24 +1079,28 @@ class ConversationSupervisor:
         self,
         session_id: str,
         *,
-        enable_tool_call_id: str,
+        gating_tool_call_id: str,
         siblings: list[ToolCallInfo],
     ) -> Literal["ok", "not_found", "invalid", "busy"]:
-        """Decline a pending ``enable_auto_mode`` consent request
+        """Decline a pending auto-mode consent request
         (POST /api/conversations/{sid}/auto with a decline context — the
         phase-3 ``/api/conversations/auto/decline`` bridge, folded in now
         that interactive conversations own supervisor records).
 
-        The engine's consent interception ended the turn WITHOUT answering
-        the enable call, so the persisted trace has a dangling tool call the
-        provider requires answered. Declining starts a normal interactive
-        TURN whose seed resolves it as ``{"status": "declined"}`` and every
-        sibling as denied — byte-identical to the old
-        ``/api/chat/auto/decline`` continuation body (which streamed the same
-        messages through a fresh ChatStreamSession); the reply now streams on
-        the observer channel like any other turn. Declining never flips any
-        policy: the record already runs (or swaps back to) the interactive
-        policy.
+        ``gating_tool_call_id`` is whichever call surfaced the consent flow:
+        the ``enable_auto_mode`` call, or — FR2 — the ``spawn_subagent`` call
+        that required auto mode. The engine's consent interception ended the
+        turn WITHOUT answering it, so the persisted trace has a dangling tool
+        call the provider requires answered. Declining starts a normal
+        interactive TURN whose seed resolves it as ``{"status": "declined"}``
+        — for a spawn, exactly the tool's documented decline shape — and
+        every sibling as denied (including sibling spawns: the standard
+        denied shape, behaviorally equivalent to the model) — byte-identical
+        to the old ``/api/chat/auto/decline`` continuation body (which
+        streamed the same messages through a fresh ChatStreamSession); the
+        reply now streams on the observer channel like any other turn.
+        Declining never flips any policy: the record already runs (or swaps
+        back to) the interactive policy.
 
         "busy" → a run is already in flight (a consent decline races a fresh
         send); the route maps it to 409 rather than corrupting the turn.
@@ -1048,7 +1117,7 @@ class ConversationSupervisor:
         messages: list[dict[str, Any]] = [
             {
                 "role": "tool",
-                "tool_call_id": enable_tool_call_id,
+                "tool_call_id": gating_tool_call_id,
                 # Exact old decline payload (routes-level json.dumps shape) —
                 # persisted in the trace, so the bytes are part of the
                 # protocol contract.
@@ -1063,7 +1132,7 @@ class ConversationSupervisor:
                     "content": DENIED_TOOL_OUTPUT,
                 }
             )
-        # The dangling enable call lives in the conversation's tail snapshot —
+        # The dangling gating call lives in the conversation's tail snapshot —
         # the record's own leaf is authoritative (the old endpoint took the
         # browser's copy of the same id). continuation_key_fields also covers
         # the defensive corner of a key-adopted record with no leaf yet
@@ -1479,24 +1548,6 @@ class ConversationSupervisor:
             # two tabs — first decision set wins, the second gets 409).
             return dict(batch.decisions or {})
 
-        async def on_auto_flag_cleared() -> None:
-            # The engine's INTERACTIVE disable_auto_mode interception just
-            # cleared a set flag mid-turn. Reproduce the full old cascade
-            # (ChatStreamSession._clear_auto_mode_flag →
-            # disable_auto_for_trace): publish the off state NOW with the
-            # preserved reason — the old cascade published out-of-band,
-            # before the turn settled — and cascade-stop the sub-agent
-            # children (their reports have nothing left to consume them).
-            # If the record had been flipped to the auto policy while this
-            # interactive turn was still in flight (a manual-enable race),
-            # swap it back — the model just disabled auto mode.
-            record.idle_reason = "user_disabled"
-            self._touch(conv)
-            self._publish_state(conv)
-            if conv.policy.approvals == "auto" and not conv.policy.one_shot:
-                self._swap_to_interactive(conv)
-            await self.stop_children(record.session_id)
-
         return EngineIO(
             emit=conv.bus.emit,
             on_trace=on_trace,
@@ -1512,7 +1563,6 @@ class ConversationSupervisor:
             # somehow slipped past the guard resolves to a structured
             # "unavailable" error instead of executing.
             orchestration_ctx=orchestration_ctx,
-            on_auto_flag_cleared=on_auto_flag_cleared,
         )
 
     # ── Messages. ─────────────────────────────────────────────────────────────

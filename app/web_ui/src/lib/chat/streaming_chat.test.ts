@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  autoModeConsentPayloadFromEvent,
   normalizeContextUsage,
   StreamEventProcessor,
   type ContextUsage,
@@ -104,6 +105,111 @@ describe("StreamEventProcessor context_usage", () => {
         compacted: false,
       },
     ])
+  })
+})
+
+describe("autoModeConsentPayloadFromEvent", () => {
+  it("maps the legacy enable-only shape (no trigger) to the enable variant", () => {
+    // Pre-FR2 desktops emit only enable_tool_call_id/reason/siblings; the
+    // parsed payload must read as the enable trigger with the gating id
+    // falling back to the enable id.
+    const payload = autoModeConsentPayloadFromEvent({
+      type: "auto-mode-consent-required",
+      enable_tool_call_id: "call_enable",
+      reason: "let me work",
+      sibling_tool_calls: [],
+    })
+    expect(payload).toEqual({
+      trigger: "enable_auto_mode",
+      gatingToolCallId: "call_enable",
+      reason: "let me work",
+      spawn: null,
+      siblingToolCalls: [],
+    })
+  })
+
+  it("prefers gating_tool_call_id when both spellings are present", () => {
+    const payload = autoModeConsentPayloadFromEvent({
+      type: "auto-mode-consent-required",
+      trigger: "enable_auto_mode",
+      gating_tool_call_id: "call_gating",
+      enable_tool_call_id: "call_gating",
+      reason: null,
+    })
+    expect(payload.gatingToolCallId).toBe("call_gating")
+    expect(payload.reason).toBeNull()
+  })
+
+  it("maps the spawn trigger with its spawn info and no reason", () => {
+    const sibling = {
+      toolCallId: "tc_sib",
+      toolName: "add",
+      input: {},
+      requiresApproval: false,
+    }
+    const payload = autoModeConsentPayloadFromEvent({
+      type: "auto-mode-consent-required",
+      trigger: "spawn_subagent",
+      gating_tool_call_id: "call_spawn",
+      spawn: { agent_type: "general", name: "Helper", prompt: "do things" },
+      sibling_tool_calls: [sibling],
+    })
+    expect(payload).toEqual({
+      trigger: "spawn_subagent",
+      gatingToolCallId: "call_spawn",
+      reason: null,
+      spawn: {
+        agentType: "general",
+        name: "Helper",
+        prompt: "do things",
+        rawInput: {
+          agent_type: "general",
+          name: "Helper",
+          prompt: "do things",
+        },
+      },
+      siblingToolCalls: [sibling],
+    })
+  })
+
+  it("preserves unknown spawn fields verbatim in rawInput (schema growth)", () => {
+    const wireSpawn = {
+      agent_type: "general",
+      name: "Helper",
+      prompt: "do things",
+      max_rounds: 7,
+      model: "future-field",
+    }
+    const payload = autoModeConsentPayloadFromEvent({
+      type: "auto-mode-consent-required",
+      trigger: "spawn_subagent",
+      gating_tool_call_id: "call_spawn",
+      spawn: wireSpawn as unknown as { name?: string },
+    })
+    expect(payload.spawn?.rawInput).toEqual(wireSpawn)
+  })
+
+  it("tolerates a malformed spawn value without throwing", () => {
+    const payload = autoModeConsentPayloadFromEvent({
+      type: "auto-mode-consent-required",
+      trigger: "spawn_subagent",
+      gating_tool_call_id: "call_spawn",
+      spawn: "not-an-object" as unknown as { name?: string },
+    })
+    expect(payload.trigger).toBe("spawn_subagent")
+    expect(payload.spawn).toBeNull()
+  })
+
+  it("treats an unknown trigger as the enable variant (forward compat)", () => {
+    const payload = autoModeConsentPayloadFromEvent({
+      type: "auto-mode-consent-required",
+      trigger: "something_new",
+      gating_tool_call_id: "call_x",
+      spawn: { name: "ignored" },
+    })
+    expect(payload.trigger).toBe("enable_auto_mode")
+    expect(payload.spawn).toBeNull()
+    expect(payload.gatingToolCallId).toBe("call_x")
   })
 })
 

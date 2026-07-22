@@ -36,11 +36,21 @@ function payload(
   overrides: Partial<AutoModeConsentRequiredPayload> = {},
 ): AutoModeConsentRequiredPayload {
   return {
-    enableToolCallId: "call_1",
+    trigger: "enable_auto_mode",
+    gatingToolCallId: "call_1",
     reason: null,
+    spawn: null,
     siblingToolCalls: [],
     ...overrides,
   }
+}
+
+function spawnPayload(): AutoModeConsentRequiredPayload {
+  return payload({
+    trigger: "spawn_subagent",
+    gatingToolCallId: "call_spawn",
+    spawn: { agentType: "general", name: "Helper", prompt: "dig into logs" },
+  })
 }
 
 describe("AutoModeConsentDialog", () => {
@@ -87,5 +97,42 @@ describe("AutoModeConsentDialog", () => {
     expect(container.textContent).not.toContain(
       "The assistant suggests auto mode to:",
     )
+  })
+
+  it("renders the spawn callout naming the sub-agent for the spawn variant", async () => {
+    const { component, container } = render(AutoModeConsentDialog)
+    component.prompt(spawnPayload())
+    await tick()
+    expect(container.textContent).toContain(
+      "The assistant wants to spawn a sub-agent",
+    )
+    expect(container.textContent).toContain("Helper")
+    expect(container.textContent).toContain("general")
+    // The decision framing is unchanged: turning on auto mode IS the consent.
+    const buttons = Array.from(container.querySelectorAll("button"))
+    expect(
+      buttons.some((b) => b.textContent?.includes("Turn on auto mode")),
+    ).toBe(true)
+  })
+
+  it("omits the spawn callout for the enable variant and the manual prompt", async () => {
+    const { component, container } = render(AutoModeConsentDialog)
+    component.prompt(payload())
+    await tick()
+    expect(container.textContent).not.toContain(
+      "The assistant wants to spawn a sub-agent",
+    )
+  })
+
+  it("spawn variant accept resolves true (same decision flow)", async () => {
+    const { component, container } = render(AutoModeConsentDialog)
+    const promise = component.prompt(spawnPayload())
+    await tick()
+    const buttons = Array.from(container.querySelectorAll("button"))
+    const turnOn = buttons.find((b) =>
+      b.textContent?.includes("Turn on auto mode"),
+    )
+    turnOn!.click()
+    await expect(promise).resolves.toBe(true)
   })
 })

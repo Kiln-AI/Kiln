@@ -3401,8 +3401,9 @@ export interface paths {
          *     phase 4: the record then swaps back to its interactive life instead
          *     of TTL GC). ``enabled=false`` + ``decline`` → the consent-decline
          *     flow (old ``/api/chat/auto/decline``, folded in): resolve the pending
-         *     ``enable_auto_mode`` call as declined + denied siblings via an
-         *     interactive continuation turn that streams on the observer channel.
+         *     gating call — ``enable_auto_mode``, or the FR2 spawn-consent
+         *     ``spawn_subagent`` — as declined + denied siblings via an interactive
+         *     continuation turn that streams on the observer channel.
          *     ``enabled=true`` → enable/re-arm: the record flips to the auto policy
          *     (ARMED-only: flag on, no upstream POST — the next message starts the
          *     burst). 404 unknown, 409 for sub-agent records / a decline racing an
@@ -5827,8 +5828,8 @@ export interface components {
          *     that the conversation is addressed by session id).
          */
         DeclineAutoModeContext: {
-            /** Enable Tool Call Id */
-            enable_tool_call_id: string;
+            /** Gating Tool Call Id */
+            gating_tool_call_id: string;
             /** Siblings */
             siblings?: components["schemas"]["ToolCallInfo"][];
         };

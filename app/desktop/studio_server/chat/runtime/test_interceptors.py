@@ -21,6 +21,7 @@ from .interceptors import (
     AUTO_INTERCEPTORS,
     AUTO_MODE_NOOP_RESULT,
     DEPTH_LIMIT_RESULT,
+    DISABLE_AUTO_MODE_STALE_RESULT,
     ENABLE_AUTO_MODE_RESULT,
     INTERACTIVE_INTERCEPTORS,
     ORCHESTRATION_TOOL_NAMES,
@@ -28,11 +29,11 @@ from .interceptors import (
     SUBAGENT_INTERCEPTORS,
     InterceptContext,
     intercept_auto_mode_signals_noop,
-    intercept_disable_auto_mode_interactive,
-    intercept_disable_auto_mode_terminal,
+    intercept_disable_auto_mode_stale,
     intercept_enable_auto_mode_consent,
     intercept_enable_auto_mode_noop,
     intercept_orchestration_depth_guard,
+    intercept_spawn_requires_auto,
 )
 from .models import (
     ConversationRecord,
@@ -47,9 +48,9 @@ def _event(name: str, tc_id: str = "tc1", input: dict | None = None):
     return ToolInputAvailableEvent(toolCallId=tc_id, toolName=name, input=input or {})
 
 
-def _ctx(policy, kind="interactive", events=None):
+def _ctx(policy, kind="interactive", events=None, record=None):
     return InterceptContext(
-        record=ConversationRecord(kind=kind),
+        record=record or ConversationRecord(kind=kind),
         policy=policy,
         client_events=events or [],
     )
@@ -97,6 +98,12 @@ class TestDriftGuards:
         assert AUTO_MODE_NOOP_RESULT == (
             '{"status": "noop", "detail": "This session already runs '
             'autonomously; auto mode does not apply."}'
+        )
+        # FR1 stale-disable refusal — persisted in traces (and doubling as
+        # the model's pointer to the Stop button), so pinned byte-for-byte.
+        assert DISABLE_AUTO_MODE_STALE_RESULT == (
+            '{"status": "not_available", "message": "Auto mode can only be '
+            'turned off by the user (Stop button)."}'
         )
 
     def test_framing_reminders_pinned(self):
@@ -172,14 +179,19 @@ class TestDriftGuards:
 # ── Chain composition (priority order preserved from the old scans) ───────────
 
 
-def test_chain_order_matches_old_scan_priority():
+def test_chain_order_is_priority():
+    # Consent leads the interactive chain (it must outrank the approval gate
+    # AND the spawn gate — an enable+spawn batch surfaces the ENABLE consent
+    # with the spawn as a sibling); the FR2 spawn gate sits second; both
+    # parent chains end in the FR1 stale-disable backstop.
     assert INTERACTIVE_INTERCEPTORS == (
         intercept_enable_auto_mode_consent,
-        intercept_disable_auto_mode_interactive,
+        intercept_spawn_requires_auto,
+        intercept_disable_auto_mode_stale,
     )
     assert AUTO_INTERCEPTORS == (
-        intercept_disable_auto_mode_terminal,
         intercept_enable_auto_mode_noop,
+        intercept_disable_auto_mode_stale,
     )
     assert SUBAGENT_INTERCEPTORS == (
         intercept_orchestration_depth_guard,
@@ -200,8 +212,14 @@ class TestEnableConsent:
         assert res.control_bytes is not None
         payload = json.loads(res.control_bytes.decode()[6:])
         assert payload["type"] == "auto-mode-consent-required"
+        # Generalized shape (FR2): trigger + gating id always ride; the
+        # legacy enable_tool_call_id duplicates the gating id for the enable
+        # trigger (wire compat with pre-FR2 browser bundles).
+        assert payload["trigger"] == "enable_auto_mode"
+        assert payload["gating_tool_call_id"] == "tc_e"
         assert payload["enable_tool_call_id"] == "tc_e"
         assert payload["reason"] == "lots to do"
+        assert "spawn" not in payload
         # Phase 5: the consent event carries NO trace_id — accept/decline is
         # keyed by session id (functional spec §4).
         assert "trace_id" not in payload
@@ -212,27 +230,84 @@ class TestEnableConsent:
         assert intercept_enable_auto_mode_consent(_event("add"), ctx) is None
 
 
-class TestDisable:
-    def test_interactive_is_immediate_resolve_with_flag_clear(self):
-        res = intercept_disable_auto_mode_interactive(
+class TestSpawnRequiresAuto:
+    # FR2: interactive spawn_subagent requires auto mode. Flag off → the
+    # SAME consent flow as enable_auto_mode, with the spawn in the gating
+    # role; flag on (armed / racing user enable) → the spawn may proceed.
+
+    _SPAWN_INPUT = {"agent_type": "general", "name": "helper", "prompt": "Dig in."}
+
+    def test_flag_off_builds_spawn_consent_control_event(self):
+        spawn = _event("spawn_subagent", "tc_spawn", dict(self._SPAWN_INPUT))
+        sibling = _event("add", "tc_s", {"a": 1, "b": 2})
+        ctx = _ctx(interactive_policy(), events=[spawn, sibling])
+        res = intercept_spawn_requires_auto(spawn, ctx)
+        assert res is not None and res.kind == "control"
+        assert res.control_bytes is not None
+        payload = json.loads(res.control_bytes.decode()[6:])
+        assert payload["type"] == "auto-mode-consent-required"
+        assert payload["trigger"] == "spawn_subagent"
+        assert payload["gating_tool_call_id"] == "tc_spawn"
+        # The dialog names what is about to be spawned.
+        assert payload["spawn"] == self._SPAWN_INPUT
+        # The enable-only fields never ride the spawn trigger.
+        assert "enable_tool_call_id" not in payload
+        assert "reason" not in payload
+        assert [s["toolCallId"] for s in payload["sibling_tool_calls"]] == ["tc_s"]
+
+    def test_second_spawn_rides_as_sibling_of_the_gating_first(self):
+        first = _event("spawn_subagent", "tc_one", dict(self._SPAWN_INPUT))
+        second = _event("spawn_subagent", "tc_two", dict(self._SPAWN_INPUT))
+        ctx = _ctx(interactive_policy(), events=[first, second])
+        res = intercept_spawn_requires_auto(first, ctx)
+        assert res is not None
+        payload = json.loads(res.control_bytes.decode()[6:])
+        assert payload["gating_tool_call_id"] == "tc_one"
+        assert [s["toolCallId"] for s in payload["sibling_tool_calls"]] == ["tc_two"]
+
+    def test_flag_on_passes(self):
+        record = ConversationRecord(kind="interactive", auto_flag=True)
+        spawn = _event("spawn_subagent", "tc_spawn", dict(self._SPAWN_INPUT))
+        ctx = _ctx(interactive_policy(), events=[spawn], record=record)
+        assert intercept_spawn_requires_auto(spawn, ctx) is None
+
+    def test_passes_other_tools(self):
+        # Non-spawn orchestration tools are NOT gated (they only observe or
+        # stop already-running children — functional spec FR2).
+        ctx = _ctx(interactive_policy())
+        for name in (
+            "add",
+            "get_subagent_status",
+            "wait_for_subagents",
+            "stop_subagent",
+            "enable_auto_mode",
+        ):
+            assert intercept_spawn_requires_auto(_event(name), ctx) is None
+
+
+class TestDisableStale:
+    # FR1: disable_auto_mode is no longer offered upstream; a stale call
+    # (old server during rollout, pre-upgrade resume) is a PLAIN refusal
+    # resolve — never a takeover, never a flag mutation (InterceptResult
+    # carries no side-effect fields anymore) — so the burst/turn continues.
+
+    def test_interactive_chain_refuses_without_side_effects(self):
+        res = intercept_disable_auto_mode_stale(
             _event("disable_auto_mode"), _ctx(interactive_policy())
         )
-        assert res is not None and res.kind == "resolve_immediate"
-        assert res.clear_auto_flag is True
-        assert json.loads(res.result_json or "") == {"status": "disabled"}
+        assert res is not None and res.kind == "resolve"
+        assert res.result_json == DISABLE_AUTO_MODE_STALE_RESULT
 
-    def test_auto_is_terminal_resolve_with_flag_clear(self):
-        res = intercept_disable_auto_mode_terminal(
+    def test_auto_chain_refuses_without_side_effects(self):
+        res = intercept_disable_auto_mode_stale(
             _event("disable_auto_mode"), _ctx(auto_policy(), kind="auto")
         )
-        assert res is not None and res.kind == "resolve_terminal"
-        assert res.clear_auto_flag is True
+        assert res is not None and res.kind == "resolve"
+        assert res.result_json == DISABLE_AUTO_MODE_STALE_RESULT
 
     def test_passes_other_tools(self):
         assert (
-            intercept_disable_auto_mode_interactive(
-                _event("add"), _ctx(interactive_policy())
-            )
+            intercept_disable_auto_mode_stale(_event("add"), _ctx(interactive_policy()))
             is None
         )
 
