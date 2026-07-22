@@ -922,15 +922,18 @@ async def test_enable_auto_accepts_spawn_consent_pending_executes_spawn():
 
 async def test_enable_auto_busy_accept_raises_before_spawning(hang_engine):
     # A spawn-consent accept racing an in-flight run must 409 (RuntimeError)
-    # WITHOUT executing the pending spawn — the busy guard sits before
-    # execute_tool_batch, so no orphan child is left running behind the 409
-    # (start_run's own check would fire only after the spawn).
+    # with NO side effects — the busy guard sits before the flag flip and
+    # before execute_tool_batch, so no orphan child is left running behind
+    # the 409 (start_run's own check would fire only after the spawn) and
+    # the interactive record is left untouched: not flipped to auto with no
+    # seeded burst (the racing run started under the interactive policy, so
+    # _finish_run would never swap it back) and holding no auto-cap slot.
     from unittest.mock import AsyncMock
 
     from . import supervisor as supervisor_module
     from app.desktop.studio_server.chat.stream_session import ToolCallInfo
 
-    sup = _sup()
+    sup = _sup(auto_max_concurrent=1)
     seeded = _seeded_conversation(sup, "t1")
     sup.start_run(seeded.session_id, {"messages": [{"role": "user", "content": "x"}]})
 
@@ -953,7 +956,41 @@ async def test_enable_auto_busy_accept_raises_before_spawning(hang_engine):
                 headers={},
             )
     execute_mock.assert_not_awaited()
+    assert seeded.kind == "interactive"
+    assert seeded.auto_flag is False
+    assert sup._conversations[seeded.session_id].policy.approvals == "gated"
+    # The only auto slot is still free (the cap counts flag-on records).
+    sup._check_auto_cap()
     await sup.stop(seeded.session_id)
+
+
+async def test_enable_auto_armed_only_during_running_burst_flips_flag(hang_engine):
+    # An armed-only enable (no seed to run) while a burst is RUNNING stays
+    # legal — the busy guard applies only to seed-carrying enables. The flag
+    # and policy flip on the live record; the idle/armed stamp is skipped (the
+    # run is not idle) and the in-flight task is untouched.
+    sup = _sup()
+    seeded = _seeded_conversation(sup, "t1")
+    sup.start_run(seeded.session_id, {"messages": [{"role": "user", "content": "x"}]})
+    task = sup._conversations[seeded.session_id].task
+    assert task is not None and not task.done()
+
+    record = await sup.enable_auto(
+        session_id=seeded.session_id,
+        enable_tool_call_id=None,
+        pending_tool_calls=[],
+        extra_messages=[],
+        upstream_url=URL,
+        headers={},
+    )
+    assert record is seeded
+    assert record.kind == "auto"
+    assert record.auto_flag is True
+    assert sup._conversations[record.session_id].policy.approvals == "auto"
+    assert record.state == RunState.RUNNING
+    assert record.idle_reason != "armed"
+    assert sup._conversations[record.session_id].task is task
+    await sup.stop(record.session_id)
 
 
 async def test_enable_auto_no_session_r2_seed_carries_first_message():

@@ -154,7 +154,7 @@ Notes:
   "gating_tool_call_id": "...",   // always set (== enable_tool_call_id for enable)
   "reason": "...",                // enable trigger only
   "spawn": {"agent_type": "...", "name": "...", "prompt": "..."},  // spawn trigger only
-  "pending_tool_calls": [...]     // siblings, unchanged shape
+  "sibling_tool_calls": [...]     // siblings, unchanged shape (`pending_tool_calls` is the accept-route request field name)
 }
 ```
 

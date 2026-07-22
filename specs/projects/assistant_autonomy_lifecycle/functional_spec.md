@@ -30,7 +30,7 @@ status: complete
 **Interactive spawn → soft-upgrade.** When `spawn_subagent` arrives and `auto_flag` is off, the desktop intercepts it and surfaces the existing auto-mode consent flow (same machinery as a model-requested `enable_auto_mode`), with the spawn call in the gating role:
 
 - **Accept** → auto mode turns on for the conversation (normal enable path: policy/kind swap, state event with `auto_flag: true`), the spawn executes, and the burst continues autonomously. Sibling tool calls in the same batch resolve as they would under the enable-consent flow today.
-- **Decline** → the spawn call (and any sibling spawn calls in the batch) resolves as `{"status": "declined"}`; auto mode stays off; the turn continues interactively. The model is expected to proceed without sub-agents (its tool description says declines are possible).
+- **Decline** → the gating spawn call resolves as `{"status": "declined"}`; every sibling call in the batch (including sibling spawns) resolves with the standard `DENIED_TOOL_OUTPUT`; auto mode stays off; the turn continues interactively. The model is expected to proceed without sub-agents (its tool description says declines are possible).
 
 The auto-mode consent dialog is reused as-is (its copy already covers sub-agents); the only addition is the spawn-triggered variant showing which spawn prompted it.
 

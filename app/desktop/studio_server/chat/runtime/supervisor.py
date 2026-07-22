@@ -856,9 +856,11 @@ class ConversationSupervisor:
         unreachable now that the browser can only name live conversations),
         ``ValueError`` for a sub-agent/terminal record (409 — a child's
         autonomy is not a user-facing toggle, mirroring ``set_auto_flag``),
-        ``ConversationCapError`` (429), and lets ``start_run``'s "already has
-        a run in flight" RuntimeError propagate (409 — the old world silently
-        spawned a second concurrent run here, a latent bug, not a contract).
+        ``ConversationCapError`` (429), and ``RuntimeError`` (409) when a
+        non-armed-only enable races a run already in flight — checked before
+        the flag flips, so a busy accept leaves the record untouched (the old
+        world silently spawned a second concurrent run here, a latent bug,
+        not a contract; armed-only flips stay legal while a burst runs).
         """
         conv: _Conversation | None = None
         if session_id is not None:
@@ -872,6 +874,10 @@ class ConversationSupervisor:
             if conv.record.kind == "subagent" or conv.record.state.is_terminal:
                 raise ValueError(f"Conversation cannot enable auto mode: {session_id}")
 
+        armed_only = (
+            not enable_tool_call_id and not pending_tool_calls and not extra_messages
+        )
+
         if conv is None:
             record = self.create_conversation(
                 "auto", upstream_url=upstream_url, headers=headers
@@ -879,6 +885,22 @@ class ConversationSupervisor:
             conv = self._conversations[record.session_id]
         else:
             record = conv.record
+            # Busy guard BEFORE any side effects (same shape as decline_auto's
+            # "busy"): a consent accept racing an in-flight run must 409 with
+            # nothing changed — no cap slot taken, no record left flipped to
+            # auto with no seeded burst (the racing run started under the
+            # interactive policy, so _finish_run's swap-back-to-interactive
+            # check would never fire and the record would stay stuck as auto).
+            # Armed-only enables skip the guard: flipping the flag while a
+            # burst is RUNNING is legal (the run holds its policy; the flag
+            # applies at the next boundary). start_run repeats the check, but
+            # only AFTER the pending batch below executes — for the FR2
+            # spawn-consent accept that would spawn a real child whose result
+            # is then discarded.
+            if not armed_only and conv.task is not None and not conv.task.done():
+                raise RuntimeError(
+                    f"conversation {record.session_id} already has a run in flight"
+                )
             if not record.auto_flag:
                 # Flipping the flag on takes an auto slot again (a flag-off
                 # record does not hold one).
@@ -890,7 +912,7 @@ class ConversationSupervisor:
 
         # ARMED-only manual enable (Revision R1, functional spec §4.1(2)): the
         # seed has nothing to send upstream — see the docstring.
-        if not enable_tool_call_id and not pending_tool_calls and not extra_messages:
+        if armed_only:
             if conv.task is None or conv.task.done():
                 # Only stamp the idle/armed shape when no burst is in flight —
                 # arming a record whose burst is RUNNING (flip of a live
@@ -902,16 +924,6 @@ class ConversationSupervisor:
             self._publish_state(conv)
             logger.info("Armed auto conversation %s", record.session_id)
             return record
-
-        # Busy guard BEFORE any side effects (same shape as decline_auto's
-        # "busy"): a consent accept racing an in-flight run must 409 with no
-        # child spawned. start_run repeats this check, but only AFTER the
-        # pending batch below has executed — for the FR2 spawn-consent accept
-        # that would spawn a real child whose result is then discarded.
-        if conv.task is not None and not conv.task.done():
-            raise RuntimeError(
-                f"conversation {record.session_id} already has a run in flight"
-            )
 
         # Auto-approve pending calls now; their role:tool results ride the
         # seed body. Rare for the enable trigger (the model is instructed to
