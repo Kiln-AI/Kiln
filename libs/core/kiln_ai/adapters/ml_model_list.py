@@ -4567,13 +4567,11 @@ built_in_models: List[KilnModel] = [
                 model_id="ai/llama3.3:70B-Q4_K_M",
                 supports_function_calling=False,
             ),
-            KilnModelProvider(
-                name=ModelProviderName.featherless_ai,
-                model_id="meta-llama/Llama-3.3-70B-Instruct",
-                # Mirrors Together AI: this model is weak at structured output,
-                # and Featherless advertises tool_use for it.
-                structured_output_mode=StructuredOutputMode.function_calling_weak,
-            ),
+            # Featherless provider omitted: meta-llama/Llama-3.3-70B-Instruct is
+            # gated (HTTP 403 model_gated_needs_oauth), requiring each user to link
+            # a HuggingFace org to their Featherless account. All 20 official
+            # meta-llama repos on Featherless are gated, so no Llama variant works
+            # here out of the box.
         ],
     ),
     # Phi 3.5
@@ -4627,14 +4625,11 @@ built_in_models: List[KilnModel] = [
                 model_id="ai/phi4:14B-Q4_K_M",
                 supports_function_calling=False,
             ),
-            KilnModelProvider(
-                name=ModelProviderName.featherless_ai,
-                model_id="microsoft/phi-4",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                # JSON mode not consistent enough to enable in UI (see OpenRouter above)
-                supports_data_gen=False,
-                supports_function_calling=False,
-            ),
+            # Featherless provider omitted: phi-4 wraps its JSON in prose and
+            # markdown fences, and Featherless can't constrain it -- LiteLLM's
+            # featherless_ai provider rejects response_format entirely, so the
+            # json_instruction_and_object / json_schema modes aren't available.
+            # llm_as_judge and structured-output COT fail persistently as a result.
         ],
     ),
     # Phi 4 5.6B
@@ -6536,22 +6531,10 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
-            KilnModelProvider(
-                name=ModelProviderName.featherless_ai,
-                model_id="Qwen/Qwen3.5-397B-A17B",
-                structured_output_mode=StructuredOutputMode.json_instructions,
-                parser=ModelParserID.optional_r1_thinking,  # thinking is not always present
-                supports_data_gen=True,
-                supports_function_calling=False,  # see OpenRouter note above
-                supports_vision=True,
-                multimodal_capable=True,
-                multimodal_mime_types=[
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                    KilnMimeType.TXT,
-                    KilnMimeType.MD,
-                ],
-            ),
+            # Featherless provider omitted: this model's Featherless deployment
+            # returns degenerate output -- it rambles to the 4096 token cap with
+            # unrelated word lists, failing even the plaintext test. Not a config
+            # issue; the served weights appear broken.
         ],
     ),
     # Qwen 3 Max
