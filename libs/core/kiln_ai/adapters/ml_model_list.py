@@ -3571,6 +3571,22 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Nemotron 70B
+    KilnModel(
+        family=ModelFamily.llama,
+        name=ModelName.nemotron_70b,
+        friendly_name="Nemotron 70B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                supports_structured_output=False,
+                supports_data_gen=False,
+                model_id="nvidia/llama-3.1-nemotron-70b-instruct",
+                deprecated=True,
+                supports_function_calling=False,
+            ),
+        ],
+    ),
     # Muse Spark 1.1
     KilnModel(
         family=ModelFamily.muse,
@@ -3597,22 +3613,6 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
                 multimodal_requires_pdf_as_image=True,
-            ),
-        ],
-    ),
-    # Nemotron 70B
-    KilnModel(
-        family=ModelFamily.llama,
-        name=ModelName.nemotron_70b,
-        friendly_name="Nemotron 70B",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                supports_structured_output=False,
-                supports_data_gen=False,
-                model_id="nvidia/llama-3.1-nemotron-70b-instruct",
-                deprecated=True,
-                supports_function_calling=False,
             ),
         ],
     ),
