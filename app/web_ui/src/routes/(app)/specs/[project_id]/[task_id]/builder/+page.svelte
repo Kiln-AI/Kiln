@@ -1558,8 +1558,8 @@
   // pipeline streams, the plan table itself is the live status view).
   $: generate_animation_description = is_multi_turn
     ? multi_turn_phase === "planning"
-      ? `Planning a balanced batch of ${NUM_CASES} conversation scenarios…`
-      : `Generating ${multi_turn_total} synthetic-user cases from the approved plan…`
+      ? `Planning a balanced batch of ${NUM_CASES} synthetic-user scenarios…`
+      : `Creating ${multi_turn_total} synthetic users from the approved plan…`
     : "Kiln is generating example data to review and creating a judge. Hold tight!"
 
   // Header line above the live status table while the pipeline runs.
@@ -1768,8 +1768,8 @@
             <AnalyzingAnimation
               title={is_multi_turn
                 ? multi_turn_phase === "planning"
-                  ? "Planning Conversations"
-                  : "Generating Conversations"
+                  ? "Planning Batch"
+                  : "Creating Synthetic Users"
                 : "Analyzing Eval"}
               description={generate_animation_description}
               warning={is_multi_turn ? null : "This may take a while"}
@@ -1837,6 +1837,9 @@
                 on_generate_inputs={on_drive_multi_turn}
                 on_regenerate={on_plan_multi_turn}
                 on_delete_prompt={on_delete_plan_prompt}
+                generate_button_label={`Drive ${batch_plan.prompts.length} Conversation${
+                  batch_plan.prompts.length === 1 ? "" : "s"
+                }`}
               />
               <!-- Wizard chrome stays outside the shared component: it has
                    no slots, and /generate has no back/continue concept. -->
@@ -1861,7 +1864,7 @@
               </div>
             {:else}
               <div class="mt-12">
-                <div class="text-2xl font-bold">Generating Batch</div>
+                <div class="text-2xl font-bold">Driving Conversations</div>
                 <div class="text-sm font-light text-gray-500 mb-4">
                   Each conversation is driven, judged, and distilled as it
                   completes.
