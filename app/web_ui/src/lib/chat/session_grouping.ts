@@ -24,6 +24,19 @@ export function splitSessionRows(rows: SessionListItem[]): {
   return { active, recent }
 }
 
+/**
+ * Rows the Chat History dialog should render. Sub-agent sessions are a
+ * developer affordance: without dev tools enabled they are dropped entirely
+ * (never shown nested nor as top-level fallback rows).
+ */
+export function visibleSessionRows(
+  rows: SessionListItem[],
+  devToolsEnabled: boolean,
+): SessionListItem[] {
+  if (devToolsEnabled) return rows
+  return rows.filter((row) => !row.is_subagent)
+}
+
 /** A top-level session row plus any sub-agent sessions nested under it. */
 export interface SessionRowNode {
   row: SessionListItem

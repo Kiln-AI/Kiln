@@ -29,6 +29,7 @@
   import BrailleSpinner from "./braille_spinner.svelte"
   import ContextUsageGauge from "$lib/ui/context_usage_gauge.svelte"
   import { base_url } from "$lib/api_client"
+  import { dev_tools_enabled } from "$lib/utils/dev_tools"
 
   export let store: ChatSessionStore = chatSessionStore
 
@@ -336,7 +337,11 @@
     void store.checkVersionPolicy()
 
     // Debug-log affordance: show the conversation id when the flag is on.
-    void fetchDebugStatus()
+    // Dev-tools-only — without the flag the widget never renders, so skip
+    // the status fetch entirely.
+    if (dev_tools_enabled) {
+      void fetchDebugStatus()
+    }
 
     // Watch the conversation-state firehose while the assistant page is active
     // so tabs reflect spawns/finishes even with no chat stream in flight.
@@ -774,7 +779,7 @@
         </button>
       {/if}
       <div class="ml-auto flex items-center gap-2">
-        {#if debugLogEnabled && debugConversationId}
+        {#if dev_tools_enabled && debugLogEnabled && debugConversationId}
           <button
             type="button"
             class="btn btn-ghost btn-xs font-mono text-[10px] text-base-content/40 hover:text-base-content/70"
@@ -785,7 +790,7 @@
             {debugIdCopied ? "copied" : debugConversationId}
           </button>
         {/if}
-        {#if contextUsage}
+        {#if dev_tools_enabled && contextUsage}
           <ContextUsageGauge usage={contextUsage} />
         {/if}
       </div>
