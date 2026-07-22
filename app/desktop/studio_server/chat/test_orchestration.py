@@ -277,20 +277,21 @@ async def test_auto_parent_report_injected_natively_via_supervisor_inbox(supervi
 
 
 async def test_in_burst_disable_reports_queue_for_the_swapped_parent(supervisor):
-    # An auto burst spawns a child → the model calls disable_auto_mode
-    # IN-BURST (resolve_terminal: flag off + user_disabled, deliberately NO
-    # child cascade — the old _supervise never cascaded on the tool path) →
-    # the child settles AFTER the flag cleared → its report queues under the
-    # parent's SESSION id, where the conversation's next interactive turn
-    # (supervisor.send_message idle-start drain) picks it up.
+    # An auto burst spawns a child → the parent's flag clears mid-flight
+    # WITHOUT the child being stopped first (FR1 removed the model-initiated
+    # disable; this window is now a user-disable race — e.g. the child
+    # settles after the flag cleared but before/without a cascade reaching
+    # it) → the report queues under the parent's SESSION id, where the
+    # conversation's next interactive turn (supervisor.send_message
+    # idle-start drain) picks it up.
     parent = supervisor.create_conversation(
         "auto", upstream_url="https://example.test", headers={}
     )
     ctx = OrchestrationContext(parent_session_id=parent.session_id)
     sid = (await _call("spawn_subagent", _spawn_args(), ctx))["subagent_id"]
 
-    # In-burst disable: the engine clears the flag and ends the burst; the
-    # child survives and keeps running.
+    # Simulate the user-disable race: the flag clears while the child is
+    # still running.
     parent.auto_flag = False
     parent.idle_reason = "user_disabled"
 

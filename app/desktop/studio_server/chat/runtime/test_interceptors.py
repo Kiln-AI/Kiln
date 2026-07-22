@@ -21,6 +21,7 @@ from .interceptors import (
     AUTO_INTERCEPTORS,
     AUTO_MODE_NOOP_RESULT,
     DEPTH_LIMIT_RESULT,
+    DISABLE_AUTO_MODE_STALE_RESULT,
     ENABLE_AUTO_MODE_RESULT,
     INTERACTIVE_INTERCEPTORS,
     ORCHESTRATION_TOOL_NAMES,
@@ -28,8 +29,7 @@ from .interceptors import (
     SUBAGENT_INTERCEPTORS,
     InterceptContext,
     intercept_auto_mode_signals_noop,
-    intercept_disable_auto_mode_interactive,
-    intercept_disable_auto_mode_terminal,
+    intercept_disable_auto_mode_stale,
     intercept_enable_auto_mode_consent,
     intercept_enable_auto_mode_noop,
     intercept_orchestration_depth_guard,
@@ -97,6 +97,12 @@ class TestDriftGuards:
         assert AUTO_MODE_NOOP_RESULT == (
             '{"status": "noop", "detail": "This session already runs '
             'autonomously; auto mode does not apply."}'
+        )
+        # FR1 stale-disable refusal — persisted in traces (and doubling as
+        # the model's pointer to the Stop button), so pinned byte-for-byte.
+        assert DISABLE_AUTO_MODE_STALE_RESULT == (
+            '{"status": "not_available", "message": "Auto mode can only be '
+            'turned off by the user (Stop button)."}'
         )
 
     def test_framing_reminders_pinned(self):
@@ -172,14 +178,16 @@ class TestDriftGuards:
 # ── Chain composition (priority order preserved from the old scans) ───────────
 
 
-def test_chain_order_matches_old_scan_priority():
+def test_chain_order_is_priority():
+    # Consent leads the interactive chain (it must outrank the approval
+    # gate); both parent chains end in the FR1 stale-disable backstop.
     assert INTERACTIVE_INTERCEPTORS == (
         intercept_enable_auto_mode_consent,
-        intercept_disable_auto_mode_interactive,
+        intercept_disable_auto_mode_stale,
     )
     assert AUTO_INTERCEPTORS == (
-        intercept_disable_auto_mode_terminal,
         intercept_enable_auto_mode_noop,
+        intercept_disable_auto_mode_stale,
     )
     assert SUBAGENT_INTERCEPTORS == (
         intercept_orchestration_depth_guard,
@@ -212,27 +220,29 @@ class TestEnableConsent:
         assert intercept_enable_auto_mode_consent(_event("add"), ctx) is None
 
 
-class TestDisable:
-    def test_interactive_is_immediate_resolve_with_flag_clear(self):
-        res = intercept_disable_auto_mode_interactive(
+class TestDisableStale:
+    # FR1: disable_auto_mode is no longer offered upstream; a stale call
+    # (old server during rollout, pre-upgrade resume) is a PLAIN refusal
+    # resolve — never a takeover, never a flag mutation (InterceptResult
+    # carries no side-effect fields anymore) — so the burst/turn continues.
+
+    def test_interactive_chain_refuses_without_side_effects(self):
+        res = intercept_disable_auto_mode_stale(
             _event("disable_auto_mode"), _ctx(interactive_policy())
         )
-        assert res is not None and res.kind == "resolve_immediate"
-        assert res.clear_auto_flag is True
-        assert json.loads(res.result_json or "") == {"status": "disabled"}
+        assert res is not None and res.kind == "resolve"
+        assert res.result_json == DISABLE_AUTO_MODE_STALE_RESULT
 
-    def test_auto_is_terminal_resolve_with_flag_clear(self):
-        res = intercept_disable_auto_mode_terminal(
+    def test_auto_chain_refuses_without_side_effects(self):
+        res = intercept_disable_auto_mode_stale(
             _event("disable_auto_mode"), _ctx(auto_policy(), kind="auto")
         )
-        assert res is not None and res.kind == "resolve_terminal"
-        assert res.clear_auto_flag is True
+        assert res is not None and res.kind == "resolve"
+        assert res.result_json == DISABLE_AUTO_MODE_STALE_RESULT
 
     def test_passes_other_tools(self):
         assert (
-            intercept_disable_auto_mode_interactive(
-                _event("add"), _ctx(interactive_policy())
-            )
+            intercept_disable_auto_mode_stale(_event("add"), _ctx(interactive_policy()))
             is None
         )
 

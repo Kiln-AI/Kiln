@@ -24,6 +24,7 @@ from app.desktop.studio_server.chat.test_fakes import (
 )
 
 from .engine import ConversationEngine
+from .interceptors import DISABLE_AUTO_MODE_STALE_RESULT
 from .models import InboundMessage, RunState, SubAgentSeed
 from .supervisor import ConversationCapError, ConversationSupervisor
 
@@ -1448,8 +1449,9 @@ async def test_adopt_interactive_does_not_steal_terminal_records_index_entry():
 
 
 def _tail_trace_with_pending_calls() -> list[dict]:
-    """A persisted trace tail: last assistant turn carries three tool calls —
-    one answered, one a signal (skipped), one genuinely unanswered."""
+    """A persisted trace tail: last assistant turn carries four tool calls —
+    one answered, two signals (skipped: a pending enable and a stale
+    pre-upgrade disable), one genuinely unanswered."""
     return [
         {"role": "user", "content": "please add"},
         {
@@ -1465,6 +1467,11 @@ def _tail_trace_with_pending_calls() -> list[dict]:
                     "id": "tc_enable",
                     "type": "function",
                     "function": {"name": "enable_auto_mode", "arguments": "{}"},
+                },
+                {
+                    "id": "tc_disable",
+                    "type": "function",
+                    "function": {"name": "disable_auto_mode", "arguments": "{}"},
                 },
                 {
                     "id": "tc_open",
@@ -1500,13 +1507,17 @@ async def test_rehydrate_pending_approvals_from_trace_tail():
     # (whose tail is exactly what the batch was rebuilt from).
     assert batch.body == {"session_id": "leaf-1", "messages": []}
     assert batch.assistant_text == "on it"
-    # The unanswered SIGNAL sibling never enters the items (nothing to
-    # approve) but rides the batch pre-resolved as declined so the resume
-    # continuation answers it (no dangling tool call upstream).
+    # The unanswered SIGNAL siblings never enter the items (nothing to
+    # approve) but ride the batch pre-resolved so the resume continuation
+    # answers them (no dangling tool call upstream): the enable as declined
+    # (its consent dialog died with the restart), the stale disable with the
+    # FR1 refusal — never as if the disable succeeded.
     assert json.loads(batch.preresolved_results["tc_enable"]) == {"status": "declined"}
+    assert batch.preresolved_results["tc_disable"] == DISABLE_AUTO_MODE_STALE_RESULT
     assert {e.toolCallId for e in batch.tool_input_events} == {
         "tc_open",
         "tc_enable",
+        "tc_disable",
     }
     # The pending event was re-emitted onto the bus BUFFER so observers
     # (attaching or live) re-surface the approval box.
@@ -1632,9 +1643,10 @@ async def test_decide_runless_batch_starts_resume_run():
     # Old execute-tools continuation shape: trace-only base → role:tool rows
     # (phase 6: keyed by session_id for a key-adopted record — the builder
     # treats a session_id base as trace-only, so the wire stays results-only).
-    # The signal sibling (tc_enable) is answered as declined right alongside
-    # the executed call — the decline-flow payload, so the persisted trace
-    # has no dangling tool call (LOW-2 recovery contract).
+    # The signal siblings are answered right alongside the executed call so
+    # the persisted trace has no dangling tool call (LOW-2 recovery
+    # contract): the enable as declined, the stale disable with the FR1
+    # refusal.
     (body,) = client.bodies
     assert body["session_id"] == "leaf-1"
     assert "trace_id" not in body
@@ -1642,6 +1654,7 @@ async def test_decide_runless_batch_starts_resume_run():
     assert all(m["role"] == "tool" for m in body["messages"])
     assert rows["tc_open"]["content"] == "5"
     assert json.loads(rows["tc_enable"]["content"]) == {"status": "declined"}
+    assert rows["tc_disable"]["content"] == DISABLE_AUTO_MODE_STALE_RESULT
     assert record.current_leaf_trace_id == "tr-2"
 
 

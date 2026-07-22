@@ -1,5 +1,5 @@
 {
-  "scenario": "auto_disable_resolve",
+  "scenario": "auto_disable_stale_refusal",
   "bodies": [
     {
       "trace_id": "tr-0",
@@ -18,7 +18,12 @@
         {
           "role": "tool",
           "tool_call_id": "tc_disable",
-          "content": "{\"status\": \"disabled\"}"
+          "content": "{\"status\": \"not_available\", \"message\": \"Auto mode can only be turned off by the user (Stop button).\"}"
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "tc_add",
+          "content": "2"
         }
       ],
       "auto_mode": true

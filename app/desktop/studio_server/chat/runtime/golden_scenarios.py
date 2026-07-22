@@ -307,30 +307,39 @@ async def _engine_auto_seed_and_tool_round() -> list[dict[str, Any]]:
     )
 
 
-# ── Scenario 5: auto disable_auto_mode resolve (terminal continuation) ───────
+# ── Scenario 5: stale disable_auto_mode refusal mid-burst (FR1) ──────────────
+#
+# Auto mode turns off only by user action: a disable_auto_mode call (an old
+# server during rollout, or a pre-upgrade resume) is refused without side
+# effects — the refusal rides the continuation next to the executed sibling's
+# result and the burst CONTINUES. This scenario replaced the pre-FR1
+# ``auto_disable_resolve`` (terminal resolve + flag off); its fixture was
+# recaptured from the engine, the reference implementation since the old
+# loops were deleted.
 
 
-def _auto_disable_responses() -> list[FakeUpstreamResponse]:
+def _auto_disable_stale_responses() -> list[FakeUpstreamResponse]:
     return [
         FakeUpstreamResponse(
             chunks=[
                 text_delta("turning off auto mode"),
                 tool_input_available("tc_disable", "disable_auto_mode", {}),
+                tool_input_available("tc_add", "add", {"a": 1, "b": 1}),
                 trace("tr-1"),
                 finish_tool_calls(),
             ]
         ),
         FakeUpstreamResponse(
-            chunks=[text_delta("okay, auto mode off"), trace("tr-2"), finish("stop")]
+            chunks=[text_delta("understood, continuing"), trace("tr-2"), finish("stop")]
         ),
     ]
 
 
-async def _engine_auto_disable_resolve() -> list[dict[str, Any]]:
+async def _engine_auto_disable_stale_refusal() -> list[dict[str, Any]]:
     return await _run_engine(
         policy=auto_policy(),
         record=ConversationRecord(kind="auto", auto_flag=True),
-        client=FakeUpstreamClient(_auto_disable_responses()),
+        client=FakeUpstreamClient(_auto_disable_stale_responses()),
         initial_body=dict(_AUTO_SEED_BODY),
     )
 
@@ -449,9 +458,9 @@ SCENARIOS: tuple[GoldenScenario, ...] = (
         _engine_auto_seed_and_tool_round,
     ),
     GoldenScenario(
-        "auto_disable_resolve",
-        None,  # AutoChatRunner deleted in phase 3; the fixture is the contract.
-        _engine_auto_disable_resolve,
+        "auto_disable_stale_refusal",
+        None,  # FR1 scenario; captured from the engine (the reference impl).
+        _engine_auto_disable_stale_refusal,
     ),
     GoldenScenario(
         "subagent_seed_and_steer",

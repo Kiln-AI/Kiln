@@ -52,10 +52,6 @@ from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEven
 from kiln_ai.tools.tool_registry import tool_from_id
 from pydantic import BaseModel, ConfigDict, Field
 
-# The tool result the app server resolves an intercepted disable_auto_mode call
-# to, fed back to the backend so it continues interactively.
-DISABLE_AUTO_MODE_RESULT = json.dumps({"status": "disabled"}, ensure_ascii=False)
-
 logger = logging.getLogger(__name__)
 
 

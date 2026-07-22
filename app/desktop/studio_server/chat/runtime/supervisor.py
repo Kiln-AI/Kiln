@@ -73,6 +73,7 @@ from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
 
 from .bus import BroadcastBus, ByteEventBus
 from .engine import ConversationEngine, EngineIO
+from .interceptors import DISABLE_AUTO_MODE_STALE_RESULT
 from .models import (
     ConversationKind,
     ConversationPolicy,
@@ -189,8 +190,10 @@ def _pending_events_from_trace_tail(
       list: they are never executed as tools (interceptors answer them) and
       never enter the approval batch's items, but a signal riding NEXT TO a
       real client call must still be answered on the resume continuation
-      (as declined — its consent dialog died with the restart) or the trace
-      keeps a dangling tool call the provider rejects on the next turn.
+      (``enable_auto_mode`` as declined — its consent dialog died with the
+      restart; a stale ``disable_auto_mode`` with the FR1 refusal shape) or
+      the trace keeps a dangling tool call the provider rejects on the next
+      turn.
     - Server-executed tool calls are answered inside the same persisted
       snapshot by the upstream orchestrator, so an unanswered call in the
       tail is a client call by construction.
@@ -701,11 +704,18 @@ class ConversationSupervisor:
             # Signal calls ride the event list so their resolutions land on
             # the continuation, but never the ITEMS (nothing to approve)…
             tool_input_events=[*events, *signal_events],
-            # …resolved as declined, mirroring the decline flow: the consent
-            # dialog died with the restart, and an unanswered call would
-            # leave the trace dangling (see _pending_events_from_trace_tail).
+            # …pre-resolved so no call dangles on the persisted trace (see
+            # _pending_events_from_trace_tail): a pending enable_auto_mode is
+            # declined (its consent dialog died with the restart, mirroring
+            # the decline flow); a stale pending disable_auto_mode gets the
+            # FR1 refusal — the model has no off-switch, so it must never
+            # resolve as if the disable succeeded.
             preresolved_results={
-                e.toolCallId: json.dumps({"status": "declined"}, ensure_ascii=False)
+                e.toolCallId: (
+                    DISABLE_AUTO_MODE_STALE_RESULT
+                    if e.toolName == DISABLE_AUTO_MODE_TOOL_NAME
+                    else json.dumps({"status": "declined"}, ensure_ascii=False)
+                )
                 for e in signal_events
             },
         )
@@ -1479,24 +1489,6 @@ class ConversationSupervisor:
             # two tabs — first decision set wins, the second gets 409).
             return dict(batch.decisions or {})
 
-        async def on_auto_flag_cleared() -> None:
-            # The engine's INTERACTIVE disable_auto_mode interception just
-            # cleared a set flag mid-turn. Reproduce the full old cascade
-            # (ChatStreamSession._clear_auto_mode_flag →
-            # disable_auto_for_trace): publish the off state NOW with the
-            # preserved reason — the old cascade published out-of-band,
-            # before the turn settled — and cascade-stop the sub-agent
-            # children (their reports have nothing left to consume them).
-            # If the record had been flipped to the auto policy while this
-            # interactive turn was still in flight (a manual-enable race),
-            # swap it back — the model just disabled auto mode.
-            record.idle_reason = "user_disabled"
-            self._touch(conv)
-            self._publish_state(conv)
-            if conv.policy.approvals == "auto" and not conv.policy.one_shot:
-                self._swap_to_interactive(conv)
-            await self.stop_children(record.session_id)
-
         return EngineIO(
             emit=conv.bus.emit,
             on_trace=on_trace,
@@ -1512,7 +1504,6 @@ class ConversationSupervisor:
             # somehow slipped past the guard resolves to a structured
             # "unavailable" error instead of executing.
             orchestration_ctx=orchestration_ctx,
-            on_auto_flag_cleared=on_auto_flag_cleared,
         )
 
     # ── Messages. ─────────────────────────────────────────────────────────────

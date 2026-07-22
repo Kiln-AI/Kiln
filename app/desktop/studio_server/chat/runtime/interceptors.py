@@ -1,30 +1,27 @@
 """Signal-tool interception for the unified engine (architecture §4).
 
 Some "tool calls" are signals to the desktop, never tools to execute:
-``enable_auto_mode`` / ``disable_auto_mode`` flip conversation policy, and
-the sub-agent orchestration tools must be rejected at depth ≥ 1. Today this
-logic is scattered across the three loops with subtly different shapes; here
-it becomes ONE ordered chain of small functions carried on the policy, so a
-future signal tool registers once for every kind.
+``enable_auto_mode`` asks for consent, and the sub-agent orchestration tools
+must be rejected at depth ≥ 1. The logic lives in ONE ordered chain of small
+functions carried on the policy, so a signal tool registers once for every
+kind.
 
 Every intercepted call still gets ANSWERED (a result JSON fed back on the
 continuation, or a control event that ends the turn) — the provider requires
 every tool call be resolved before the next user message, so leaving one
-dangling corrupts the persisted trace. That invariant is why the auto-mode
-disable interception sends one final "resolving continuation" upstream (old
-``AutoChatRunner._resolve_disable``, CR Moderate 3).
+dangling corrupts the persisted trace.
 
-Chain order is PRIORITY, matching the old code's scan order exactly:
+``disable_auto_mode`` is deliberately NOT a real signal anymore (assistant
+autonomy lifecycle FR1): auto mode turns off only by user action, and the
+upstream toolset no longer offers the tool. A call can still arrive from an
+old server during rollout or a pre-upgrade conversation resuming with the
+call pending, so both parent chains end in a stale-call backstop that
+refuses it without side effects.
 
-- interactive scanned ``enable_auto_mode`` (consent) BEFORE
-  ``disable_auto_mode`` (``ChatStreamSession.stream()``);
-- auto scanned ``disable_auto_mode`` (terminal) first — its redundant
-  ``enable_auto_mode`` no-op was resolved with the ordinary batch.
-
-The engine applies the first non-pass result whose kind takes over the round
-(``control`` / ``resolve_terminal`` / ``resolve_immediate``); plain
-``resolve`` results just pre-answer individual calls and the round proceeds
-normally. See ``engine.py`` for the exact application semantics.
+Chain order is PRIORITY: the engine applies the first non-pass result whose
+kind takes over the round (``control``); plain ``resolve`` results just
+pre-answer individual calls and the round proceeds normally. See
+``engine.py`` for the exact application semantics.
 """
 
 from __future__ import annotations
@@ -34,7 +31,6 @@ from dataclasses import dataclass
 from typing import Callable, Literal
 
 from app.desktop.studio_server.chat.stream_session import (
-    DISABLE_AUTO_MODE_RESULT,
     _format_consent_required_sse,
 )
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
@@ -59,6 +55,22 @@ from .models import ConversationPolicy, ConversationRecord
 # persisted in traces.
 ENABLE_AUTO_MODE_RESULT = json.dumps(
     {"status": "enabled", "detail": "Auto mode is already enabled."},
+    ensure_ascii=False,
+)
+
+# The refusal result for a STALE disable_auto_mode call (FR1). The tool is no
+# longer offered upstream — auto mode turns off only by user action — but a
+# call can still arrive from an old server during rollout or a pre-upgrade
+# conversation resuming with the call pending. Refused without side effects:
+# no flag clear, no child stops, the burst/turn continues. The message doubles
+# as the model's instruction when a user asks it to stop auto mode: direct
+# them to the Stop button. Byte-pinned in test_interceptors.py because it is
+# persisted in traces.
+DISABLE_AUTO_MODE_STALE_RESULT = json.dumps(
+    {
+        "status": "not_available",
+        "message": "Auto mode can only be turned off by the user (Stop button).",
+    },
     ensure_ascii=False,
 )
 
@@ -107,11 +119,10 @@ ORCHESTRATION_TOOL_NAMES: frozenset[str] = frozenset(
 class InterceptContext:
     """Round context an interceptor may need beyond the single event.
 
-    ``client_events`` carries the round's full client-tool batch because two
-    interceptions are batch-aware: the consent control event lists sibling
-    calls (so accept/decline can resolve every tool_call_id the backend waits
-    on), and the terminal/immediate disable paths execute siblings alongside
-    the resolved signal. (The round's ``trace_id`` used to ride here purely
+    ``client_events`` carries the round's full client-tool batch because the
+    consent interception is batch-aware: its control event lists sibling
+    calls, so accept/decline can resolve every tool_call_id the backend waits
+    on. (The round's ``trace_id`` used to ride here purely
     so the consent event could carry it to the browser; phase 5 removed it —
     consent accept/decline is keyed by session id and the record's own leaf
     is authoritative, functional spec §4.)
@@ -124,21 +135,13 @@ class InterceptContext:
 
 # How the engine must apply an interception:
 # - "resolve": answer this one call with result_json; the round otherwise
-#   proceeds normally (approval gate, execution of the rest). Old examples:
-#   auto's enable no-op, the child depth guard / auto-signal noops.
-# - "resolve_immediate": answer this call AND resolve the whole batch NOW,
-#   bypassing the approval park — siblings run through the per-tool gate with
-#   no decisions, so approval-requiring siblings are DENIED rather than run
-#   without consent; the loop then continues. This is exactly the old
-#   interactive disable_auto_mode branch (ChatStreamSession.stream()).
-# - "resolve_terminal": answer this call, auto-execute siblings, send ONE
-#   final resolving continuation upstream (so the persisted trace has no
-#   dangling tool call), forward its reply, then end the run. This is the old
-#   AutoChatRunner._resolve_disable terminal round.
+#   proceeds normally (approval gate, execution of the rest). Examples:
+#   auto's enable no-op, the stale disable backstop, the child depth guard /
+#   auto-signal noops.
 # - "control": emit control_bytes and end the turn WITHOUT answering the call
 #   here — resolution happens out-of-band (the consent accept/decline
 #   endpoints answer the enable call). Old interactive enable_auto_mode.
-InterceptKind = Literal["resolve", "resolve_immediate", "resolve_terminal", "control"]
+InterceptKind = Literal["resolve", "control"]
 
 
 @dataclass(frozen=True)
@@ -146,11 +149,6 @@ class InterceptResult:
     kind: InterceptKind
     result_json: str | None = None
     control_bytes: bytes | None = None
-    # Clear the conversation's auto-mode flag as part of applying this result
-    # (both disable interceptions). The engine mutates the record; the
-    # supervisor publishes the flag-off conversation-state at settle — the
-    # same split as the old runner-status → registry-publish flow.
-    clear_auto_flag: bool = False
 
 
 # An interceptor inspects one event (with round context) and either passes
@@ -189,48 +187,15 @@ def intercept_enable_auto_mode_consent(
     )
 
 
-def intercept_disable_auto_mode_interactive(
+def intercept_disable_auto_mode_stale(
     event: ToolInputAvailableEvent, ctx: InterceptContext
 ) -> InterceptResult | None:
-    """Interactive ``disable_auto_mode``: never execute it. Clear the
-    conversation's auto-mode flag, resolve the call as ``{"status":"disabled"}``,
-    and CONTINUE streaming interactively so the backend proceeds without auto
-    mode. Siblings in the same turn go through the normal per-tool approval
-    verdict with no decisions — an approval-requiring sibling is denied here
-    rather than run without consent (auto-approval is the auto policy's job,
-    not this path's). Old ChatStreamSession.stream() disable branch."""
+    """``disable_auto_mode`` is no longer offered upstream (FR1); a call can
+    still arrive from an old server or a pre-upgrade resume. Refuse without
+    side effects: no flag clear, no child stops, the burst/turn continues."""
     if event.toolName != DISABLE_AUTO_MODE_TOOL_NAME:
         return None
-    # Cascade status (phase 4, resolving the phase-1/3 TODOs that lived
-    # here): the interceptor itself stays a pure decision — the ENGINE clears
-    # the record's flag and, iff the flag was actually on, awaits
-    # ``io.on_auto_flag_cleared``, which the supervisor wires to the full old
-    # disable cascade (publish the flag-off state immediately, swap the
-    # record back to its interactive life, stop_children) — the same
-    # semantics the old world reached via
-    # ChatStreamSession._clear_auto_mode_flag → disable_auto_for_trace.
-    return InterceptResult(
-        kind="resolve_immediate",
-        result_json=DISABLE_AUTO_MODE_RESULT,
-        clear_auto_flag=True,
-    )
-
-
-def intercept_disable_auto_mode_terminal(
-    event: ToolInputAvailableEvent, ctx: InterceptContext
-) -> InterceptResult | None:
-    """Auto-mode ``disable_auto_mode``: never execute it. Resolve as disabled,
-    clear the flag, and make this the TERMINAL round — the engine sends one
-    final resolving continuation so the backend persists a clean snapshot (no
-    dangling tool call), forwards its reply, and ends the burst. Old
-    ``AutoChatRunner`` disable interception + ``_resolve_disable``."""
-    if event.toolName != DISABLE_AUTO_MODE_TOOL_NAME:
-        return None
-    return InterceptResult(
-        kind="resolve_terminal",
-        result_json=DISABLE_AUTO_MODE_RESULT,
-        clear_auto_flag=True,
-    )
+    return InterceptResult(kind="resolve", result_json=DISABLE_AUTO_MODE_STALE_RESULT)
 
 
 def intercept_enable_auto_mode_noop(
@@ -265,14 +230,16 @@ def intercept_auto_mode_signals_noop(
     return InterceptResult(kind="resolve", result_json=AUTO_MODE_NOOP_RESULT)
 
 
-# Per-kind chains, in the old scan-priority order (see module docstring).
+# Per-kind chains, in priority order (see module docstring). The consent
+# interception leads the interactive chain so the consent UI outranks the
+# approval gate; both parent chains end in the stale-disable backstop.
 INTERACTIVE_INTERCEPTORS: tuple[Interceptor, ...] = (
     intercept_enable_auto_mode_consent,
-    intercept_disable_auto_mode_interactive,
+    intercept_disable_auto_mode_stale,
 )
 AUTO_INTERCEPTORS: tuple[Interceptor, ...] = (
-    intercept_disable_auto_mode_terminal,
     intercept_enable_auto_mode_noop,
+    intercept_disable_auto_mode_stale,
 )
 SUBAGENT_INTERCEPTORS: tuple[Interceptor, ...] = (
     intercept_orchestration_depth_guard,
