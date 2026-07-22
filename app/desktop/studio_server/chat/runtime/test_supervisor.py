@@ -26,6 +26,7 @@ from app.desktop.studio_server.chat.test_fakes import (
 from .engine import ConversationEngine
 from .interceptors import DISABLE_AUTO_MODE_STALE_RESULT
 from .models import InboundMessage, RunState, SubAgentSeed
+from .sse import format_conversation_state
 from .supervisor import ConversationCapError, ConversationSupervisor
 
 URL = "https://example.test/v1/chat"
@@ -140,6 +141,35 @@ async def test_spawn_subagent_runs_to_completed_and_settles():
     assert states[-1]["state"] == "completed"
     assert states[-1]["kind"] == "subagent"
     assert states[-1]["report_available"] is True
+    # Lineage and identity ride the on-subscribe marker so a late observer can
+    # attribute and render the child without a list fetch.
+    assert states[-1]["parent_session_id"] == "cv_parent"
+    assert states[-1]["agent_type"] == "general"
+
+
+async def test_conversation_state_payload_carries_parent_lineage(hang_engine):
+    sup = _sup()
+    parent = sup.create_conversation("interactive", upstream_url=URL, headers={})
+    child = sup.spawn_subagent(
+        _seed(), parent_session_id=parent.session_id, upstream_url=URL, headers={}
+    )
+
+    child_payload = json.loads(
+        format_conversation_state(child).decode().removeprefix("data: ")
+    )
+    assert child_payload["parent_session_id"] == parent.session_id
+    assert child_payload["agent_type"] == "general"
+
+    # Parents (no lineage, no sub-agent identity) omit the fields entirely —
+    # optional fields ride only when meaningful, matching the rest of the
+    # payload.
+    parent_payload = json.loads(
+        format_conversation_state(parent).decode().removeprefix("data: ")
+    )
+    assert "parent_session_id" not in parent_payload
+    assert "agent_type" not in parent_payload
+
+    await sup.stop(child.session_id)
 
 
 async def test_settle_publishes_state_transitions_to_live_observer():

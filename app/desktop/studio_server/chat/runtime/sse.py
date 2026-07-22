@@ -88,8 +88,16 @@ def format_conversation_state(record: ConversationRecord) -> bytes:
         payload["idle_reason"] = record.idle_reason
     if record.name is not None:
         payload["name"] = record.name
+    # Lineage rides the event so a firehose observer can attribute an unknown
+    # child to its parent directly, without a racy list-fetch round trip.
+    if record.parent_session_id is not None:
+        payload["parent_session_id"] = record.parent_session_id
     if record.kind == "subagent":
         payload["report_available"] = record.final_report is not None
+        # Identity rides along too, so a directly-attributed child renders its
+        # type badge/tooltip immediately instead of waiting for a list fetch.
+        if record.agent_type is not None:
+            payload["agent_type"] = record.agent_type
     return _encode(payload)
 
 
