@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -20,6 +22,7 @@ from kiln_ai.datamodel.eval import (
     MultiTurnDriveConfig,
     MultiTurnSyntheticEvalInputData,
     PatternMatchProperties,
+    ScoreDirection,
     SetCheckProperties,
     SingleTurnEvalInputData,
     SkippedReason,
@@ -846,6 +849,134 @@ def test_eval_output_score_name_validation():
         type=TaskOutputRatingType.five_star,
     )
     assert max_length_score.name == "a" * 32
+
+
+def test_eval_output_score_direction_default():
+    score = EvalOutputScore(
+        name="accuracy",
+        type=TaskOutputRatingType.five_star,
+    )
+    assert score.direction == ScoreDirection.higher_is_better
+
+
+def test_eval_output_score_direction_legacy_dict():
+    """Serialized scores that predate the direction field must still parse."""
+    score = EvalOutputScore.model_validate(
+        {
+            "name": "accuracy",
+            "type": "five_star",
+        }
+    )
+    assert score.direction == ScoreDirection.higher_is_better
+
+    custom_score = EvalOutputScore.model_validate(
+        {
+            "name": "total tokens",
+            "type": "custom",
+        }
+    )
+    assert custom_score.direction == ScoreDirection.higher_is_better
+
+
+@pytest.mark.parametrize(
+    "score_type",
+    [
+        TaskOutputRatingType.five_star,
+        TaskOutputRatingType.pass_fail,
+        TaskOutputRatingType.pass_fail_critical,
+    ],
+)
+@pytest.mark.parametrize(
+    "direction",
+    [ScoreDirection.higher_is_better, ScoreDirection.informational],
+)
+def test_eval_output_score_direction_valid(score_type, direction):
+    score = EvalOutputScore(
+        name="my score",
+        type=score_type,
+        direction=direction,
+    )
+    assert score.direction == direction
+
+    round_tripped = EvalOutputScore.model_validate(score.model_dump())
+    assert round_tripped.direction == direction
+
+
+@pytest.mark.parametrize(
+    "score_type",
+    [
+        TaskOutputRatingType.five_star,
+        TaskOutputRatingType.pass_fail,
+        TaskOutputRatingType.pass_fail_critical,
+    ],
+)
+def test_eval_output_score_direction_lower_rejected(score_type):
+    with pytest.raises(
+        ValidationError,
+        match=r"'my score'.*higher-is-better by definition",
+    ):
+        EvalOutputScore(
+            name="my score",
+            type=score_type,
+            direction=ScoreDirection.lower_is_better,
+        )
+
+
+@pytest.mark.parametrize(
+    "direction",
+    [
+        ScoreDirection.higher_is_better,
+        ScoreDirection.lower_is_better,
+        ScoreDirection.informational,
+    ],
+)
+def test_eval_output_score_direction_custom_allows_all(direction):
+    """Custom scores are unbounded metrics: the direction is the author's to declare."""
+    score = EvalOutputScore(
+        name="latency seconds",
+        type=TaskOutputRatingType.custom,
+        direction=direction,
+    )
+    assert score.direction == direction
+
+    round_tripped = EvalOutputScore.model_validate(score.model_dump())
+    assert round_tripped.direction == direction
+
+
+def test_eval_direction_legacy_file_load(mock_task, tmp_path):
+    """Eval files saved before the direction field existed must load with the default."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="Legacy Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    # Rewrite the file without the direction key, simulating a pre-direction file
+    eval_path = eval.path
+    file_data = json.loads(eval_path.read_text())
+    for score in file_data["output_scores"]:
+        del score["direction"]
+    eval_path.write_text(json.dumps(file_data, ensure_ascii=False))
+
+    loaded_eval = Eval.load_from_file(str(eval_path))
+    assert loaded_eval.output_scores[0].direction == ScoreDirection.higher_is_better
+
+    # Re-saving persists the field explicitly
+    loaded_eval.save_to_file()
+    saved_data = json.loads(eval_path.read_text())
+    assert saved_data["output_scores"][0]["direction"] == "higher_is_better"
 
 
 @pytest.fixture
