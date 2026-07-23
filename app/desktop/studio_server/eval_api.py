@@ -22,6 +22,7 @@ from kiln_ai.datamodel.eval import (
     EvalDataType,
     EvalOutputScore,
     EvalRun,
+    EvalSplitName,
     EvalTemplateId,
 )
 from kiln_ai.datamodel.json_schema import string_to_json_key
@@ -87,6 +88,23 @@ def eval_from_id(project_id: str, task_id: str, eval_id: str) -> Eval:
         status_code=404,
         detail=f"Eval not found. ID: {eval_id}",
     )
+
+
+def split_filter_id_from_eval(eval: Eval, split: EvalSplitName) -> DatasetFilterId:
+    """Resolve a split name to the eval's stored dataset filter id.
+
+    422 when the eval has no filter configured for that split. Only "train" and
+    "val" can be unset — "test" always resolves to the required
+    eval_set_filter_id (its legacy name), so it never reaches the 422 branch.
+    """
+    filter_id = eval.filter_id_for_split(split)
+    if filter_id is None:
+        # Reachable for "train"/"val" only; the field names below match those splits.
+        raise HTTPException(
+            status_code=422,
+            detail=f"Eval '{eval.id}' has no {split} split configured (no {split}_set_filter_id).",
+        )
+    return filter_id
 
 
 def eval_config_from_id(
@@ -1098,6 +1116,15 @@ def connect_evals_api(app: FastAPI):
         run_config_id: Annotated[
             str, Path(description="The unique identifier of the run configuration.")
         ],
+        split: Annotated[
+            EvalSplitName | None,
+            Query(
+                description="Only return results for dataset items in this split of "
+                "the eval (train, val, or test). 422 if the eval has no filter "
+                "configured for the split. Omit to return all results (no split "
+                "filtering)."
+            ),
+        ] = None,
     ) -> EvalRunResult:
         eval = eval_from_id(project_id, task_id, eval_id)
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
@@ -1107,6 +1134,15 @@ def connect_evals_api(app: FastAPI):
             for run_result in eval_config.runs(readonly=True)
             if run_result.task_run_config_id == run_config_id
         ]
+        if split is not None:
+            filter_id = split_filter_id_from_eval(eval, split)
+            task = task_from_id(project_id, task_id)
+            split_dataset_ids = dataset_ids_in_filter(task, filter_id, readonly=True)
+            results = [
+                run_result
+                for run_result in results
+                if run_result.dataset_id in split_dataset_ids
+            ]
         return EvalRunResult(
             results=results,
             eval=eval,

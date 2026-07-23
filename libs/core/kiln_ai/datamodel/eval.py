@@ -1,7 +1,7 @@
 import json
 from enum import Enum
 from threading import Lock
-from typing import TYPE_CHECKING, Any, Dict, List, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Union
 
 from pydantic import BaseModel, Field, model_validator
 from typing_extensions import Self
@@ -24,6 +24,11 @@ if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
 
 EvalScores = Dict[str, float]
+
+# The named dataset splits an eval carries. "test" is stored in eval_set_filter_id
+# (the "eval set" — the name is legacy), "train" in train_set_filter_id and "val"
+# in val_set_filter_id.
+EvalSplitName = Literal["train", "val", "test"]
 
 # Module-level set to track evals currently being migrated (to prevent recursion)
 # Protected by _migration_lock to ensure thread-safe access
@@ -381,6 +386,23 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
 
     def configs(self, readonly: bool = False) -> list[EvalConfig]:
         return super().configs(readonly=readonly)  # type: ignore
+
+    def filter_id_for_split(self, split: EvalSplitName) -> DatasetFilterId | None:
+        """The dataset filter id backing one of this eval's named splits.
+
+        "test" maps to eval_set_filter_id (the eval set — the name is legacy),
+        which is always set. "train" and "val" may be None on evals constructed
+        without them; evals loaded from file always have both via lazy migration.
+        """
+        match split:
+            case "train":
+                return self.train_set_filter_id
+            case "val":
+                return self.val_set_filter_id
+            case "test":
+                return self.eval_set_filter_id
+            case _:
+                raise_exhaustive_enum_error(split)
 
     # Workaround to return typed parent without importing Spec
     def associated_spec(self, readonly: bool = False) -> Union["Spec", None]:

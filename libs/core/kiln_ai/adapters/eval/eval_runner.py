@@ -45,6 +45,10 @@ class EvalRunner:
     Can run an eval in 2 modes:
     1) eval_config_eval: evaluate an eval config using existing dataset items.
     2) task_run_eval: evaluate a range of task run configs, generating new run output using existing dataset item input.
+
+    `eval_set_filter_id_override` replaces the eval's eval_set_filter_id as the dataset
+    filter in task_run_eval mode (e.g. to run one of the eval's other dataset splits).
+    Passing it in eval_config_eval mode raises ValueError.
     """
 
     def __init__(
@@ -53,6 +57,7 @@ class EvalRunner:
         run_configs: List[TaskRunConfig] | None,
         eval_run_type: Literal["eval_config_eval", "task_run_eval"],
         save_context: SaveContext | None = None,
+        eval_set_filter_id_override: DatasetFilterId | None = None,
     ):
         if len(eval_configs) == 0:
             raise ValueError("Eval runner requires at least one eval config")
@@ -85,8 +90,14 @@ class EvalRunner:
         else:
             if run_configs is not None:
                 raise ValueError("Mode 'eval_config_eval' does not support run configs")
+            if eval_set_filter_id_override is not None:
+                raise ValueError(
+                    "Mode 'eval_config_eval' does not support an eval set filter override. "
+                    "It scopes items by the eval's eval_configs_filter_id."
+                )
 
         self.eval_run_type = eval_run_type
+        self.eval_set_filter_id_override = eval_set_filter_id_override
         self.eval_configs = eval_configs
         self.run_configs = run_configs
         self.task = target_task
@@ -148,10 +159,13 @@ class EvalRunner:
         This variant is used for mode "task_run_eval", generating new run output using existing dataset item input.
 
         The tasks:
-        - should be in the eval set filter
+        - should be in the eval set filter (or the override filter, when one was
+          provided — e.g. to run one of the eval's other dataset splits)
         - should not have already been run for this eval config + run config + dataset item
         """
-        filter = dataset_filter_from_id(self.eval.eval_set_filter_id)
+        filter = dataset_filter_from_id(
+            self.eval_set_filter_id_override or self.eval.eval_set_filter_id
+        )
 
         # already_run[eval_config_id][run_config_id][dataset_id]
         already_run: Dict[ID_TYPE, Dict[ID_TYPE, Set[ID_TYPE]]] = {}
