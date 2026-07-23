@@ -738,10 +738,13 @@ def connect_copilot_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
 
         # Generate tags and filter IDs
-        eval_tag, train_tag, golden_tag = generate_spec_eval_tags(request.name)
-        eval_set_filter_id, train_set_filter_id, eval_configs_filter_id = (
-            generate_spec_eval_filter_ids(eval_tag, train_tag, golden_tag)
-        )
+        eval_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags(request.name)
+        (
+            eval_set_filter_id,
+            train_set_filter_id,
+            val_set_filter_id,
+            eval_configs_filter_id,
+        ) = generate_spec_eval_filter_ids(eval_tag, train_tag, val_tag, golden_tag)
 
         # Extract spec_type from properties (discriminated union)
         spec_type = request.properties["spec_type"]
@@ -765,6 +768,7 @@ def connect_copilot_api(app: FastAPI):
             output_scores=output_scores,
             eval_set_filter_id=eval_set_filter_id,
             train_set_filter_id=train_set_filter_id,
+            val_set_filter_id=val_set_filter_id,
             eval_configs_filter_id=eval_configs_filter_id,
             template_properties=None,
             evaluation_data_type=evaluation_data_type,
@@ -807,12 +811,13 @@ def connect_copilot_api(app: FastAPI):
             spec_definition=request.definition,
         )
 
-        # 4. Create TaskRuns for eval, train, and golden datasets
+        # 4. Create TaskRuns for eval, train, val, and golden datasets
         dataset_runs = create_dataset_task_runs(
             all_examples=all_examples,
             reviewed_examples=request.reviewed_examples,
             eval_tag=eval_tag,
             train_tag=train_tag,
+            val_tag=val_tag,
             golden_tag=golden_tag,
             spec_name=request.name,
         )

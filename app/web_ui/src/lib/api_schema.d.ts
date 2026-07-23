@@ -5844,7 +5844,7 @@ export interface components {
             current_config_id?: string | null;
             /**
              * Eval Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id and train_set_filter_id.
+             * @description The id of the dataset filter which defines which dataset items are included when running this eval. This is the eval's test set; the 'eval set' name is legacy. Should be mutually exclusive with eval_configs_filter_id, train_set_filter_id and val_set_filter_id.
              */
             eval_set_filter_id: string;
             /**
@@ -5854,9 +5854,14 @@ export interface components {
             eval_configs_filter_id?: string | null;
             /**
              * Train Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning. Should be mutually exclusive with eval_set_filter_id.
+             * @description The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning. Should be mutually exclusive with eval_set_filter_id and val_set_filter_id.
              */
             train_set_filter_id?: string | null;
+            /**
+             * Val Set Filter Id
+             * @description The id of the dataset filter which defines which dataset items are included in the validation set. Should be mutually exclusive with eval_set_filter_id and train_set_filter_id.
+             */
+            val_set_filter_id?: string | null;
             /**
              * Output Scores
              * @description The scores this evaluator should produce.
