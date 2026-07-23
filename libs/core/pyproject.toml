@@ -35,7 +35,7 @@ dependencies = [
     "pytest-benchmark>=5.1.0",
     "pytest-cov>=6.0.0",
     "pyyaml>=6.0.2",
-    "together",
+    "together>=1.5.35,<2",
     "typing-extensions>=4.12.2",
     "vertexai>=1.43.0",
     "llama-index>=0.13.3",
@@ -71,10 +71,6 @@ requires-python = ">=3.10"
 
 [tool.uv]
 exclude-newer = "7 days"
-
-[tool.uv.sources]
-together = { git = "https://github.com/scosman/together-python" }
-
 
 [project.urls]
 Homepage = "https://kiln.tech"
