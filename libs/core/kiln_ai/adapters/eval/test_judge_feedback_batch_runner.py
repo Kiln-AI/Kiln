@@ -1,3 +1,7 @@
+# TODO (merge blocker — do not merge toward main until resolved): tests for a runner under design
+# review — see the header of kiln_ai/datamodel/judge_feedback_batch.py. Resolve before merging
+# toward main.
+
 import random
 from typing import Callable, Dict
 

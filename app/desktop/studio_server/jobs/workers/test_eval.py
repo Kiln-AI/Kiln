@@ -18,6 +18,7 @@ from app.desktop.studio_server.jobs.workers.eval import (
     EvalJobWorker,
     _error_detail,
 )
+from fastapi import HTTPException
 from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
@@ -1010,6 +1011,115 @@ def test_build_eval_runner_defaults_to_noop_when_not_git_sync(
     assert runner._save_context is default_save_context
 
 
+# -- split -------------------------------------------------------------------
+
+
+def _params_with_split(split: str) -> EvalJobParams:
+    return EvalJobParams(
+        project_id="project1",
+        task_id="task1",
+        eval_id="eval1",
+        eval_config_id="eval_config1",
+        run_config_id="run_config1",
+        split=split,  # type: ignore[arg-type] -- str exercises validation in tests
+    )
+
+
+def test_build_eval_runner_no_split_no_override(
+    resolve_project, task, eval_config, run_config, params
+):
+    runner = EvalJobWorker()._build_eval_runner(params)
+
+    assert runner.eval_set_filter_id_override is None
+
+
+def test_build_eval_runner_resolves_split_to_override(
+    resolve_project, task, eval, eval_config, run_config
+):
+    eval.train_set_filter_id = "tag::train_set"
+    eval.save_to_file()
+
+    runner = EvalJobWorker()._build_eval_runner(_params_with_split("train"))
+
+    assert runner.eval_set_filter_id_override == "tag::train_set"
+
+
+def test_build_eval_runner_split_test_resolves_to_eval_set(
+    resolve_project, task, eval_config, run_config
+):
+    # "test" is stored in eval_set_filter_id (the legacy "eval set" name), so
+    # requesting it explicitly matches the no-split default's universe.
+    runner = EvalJobWorker()._build_eval_runner(_params_with_split("test"))
+
+    assert runner.eval_set_filter_id_override == "tag::eval_set"
+
+
+def test_build_eval_runner_split_unset_raises(
+    resolve_project, task, run_config, params
+):
+    # Loading an eval from file lazily mints train/val filter ids, so an unset
+    # split only occurs for evals constructed in memory without one. The worker
+    # re-resolves at run time as defense in depth — it must fail, not fall back
+    # to the eval set.
+    unsplit_eval = Eval(
+        id="eval1",
+        name="Test Eval",
+        description="test",
+        eval_set_filter_id="tag::eval_set",
+        eval_configs_filter_id="tag::golden",
+        output_scores=[
+            EvalOutputScore(
+                name="Accuracy",
+                instruction="Check accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        parent=task,
+    )
+    unsplit_config = EvalConfig(
+        id="eval_config1",
+        name="Test Eval Config",
+        model_name="gpt-4",
+        model_provider="openai",
+        properties={"eval_steps": ["step1", "step2"]},
+        parent=unsplit_eval,
+    )
+
+    with patch(
+        "app.desktop.studio_server.jobs.workers.eval.eval_config_from_id",
+        return_value=unsplit_config,
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            EvalJobWorker()._build_eval_runner(_params_with_split("train"))
+
+    assert exc_info.value.status_code == 422
+    assert "no train split configured" in exc_info.value.detail
+
+
+async def test_compute_state_follows_split_filter(
+    resolve_project, task, eval, eval_config, run_config, data_source
+):
+    eval.train_set_filter_id = "tag::train_set"
+    eval.save_to_file()
+
+    train_runs = [_make_task_run(task, data_source, "train_set") for _ in range(3)]
+    # In the eval set but not the train split — must not count toward the
+    # split job's universe.
+    _make_task_run(task, data_source, "eval_set")
+    _make_eval_run(eval_config, train_runs[0].id, run_config.id)
+
+    state = await EvalJobWorker().compute_state(_params_with_split("train"))
+
+    assert state.total == 3
+    assert state.success == 1
+    assert state.is_complete is False
+
+
+def test_split_rejects_unknown_value():
+    with pytest.raises(ValidationError):
+        _params_with_split("golden")
+
+
 # -- end-to-end via registry -------------------------------------------------
 
 
@@ -1039,6 +1149,40 @@ async def test_eval_job_through_registry(
     assert final.progress.success == 2
     assert final.progress.total == 2
     assert final.project_id == "project1"
+
+
+async def test_eval_job_through_registry_with_split(
+    resolve_project, task, eval, eval_config, run_config, data_source
+):
+    eval.train_set_filter_id = "tag::train_set"
+    eval.save_to_file()
+
+    for _ in range(2):
+        _make_task_run(task, data_source, "train_set")
+    # An eval-set item outside the train split: the job's totals must be
+    # measured against the split's universe, not the eval set's.
+    _make_task_run(task, data_source, "eval_set")
+
+    progresses = [
+        Progress(complete=0, total=2, errors=0),
+        Progress(complete=1, total=2, errors=0),
+        Progress(complete=2, total=2, errors=0),
+    ]
+
+    registry = JobRegistry()
+    registry.register_type(EvalJobWorker)
+
+    with _stub_eval_runner_run(progresses):
+        job = await registry.create(
+            "eval", _params_with_split("train"), project_id="project1"
+        )
+        task_handle = registry._tasks[job.id]
+        await task_handle
+
+    final = registry._jobs[job.id]
+    assert final.status == BackgroundJobStatus.SUCCEEDED
+    assert final.result == {"total": 2, "success": 2, "error": 0}
+    assert final.params["split"] == "train"
 
 
 async def test_eval_job_missing_entity_marks_failed(

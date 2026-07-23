@@ -405,6 +405,64 @@ def test_migrate_val_set_filter_id_slugification(
     assert loaded_eval.val_set_filter_id == expected_tag
 
 
+def test_filter_id_for_split_returns_stored_filter_ids():
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::eval_test",
+        train_set_filter_id="tag::train_test",
+        val_set_filter_id="tag::val_test",
+        eval_configs_filter_id="tag::eval_golden_test",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+
+    assert eval.filter_id_for_split("train") == "tag::train_test"
+    assert eval.filter_id_for_split("val") == "tag::val_test"
+    # "test" is stored in eval_set_filter_id — the "eval set" name is legacy.
+    assert eval.filter_id_for_split("test") == "tag::eval_test"
+
+
+def test_filter_id_for_split_none_for_unset_splits():
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::eval_test",
+        eval_configs_filter_id="tag::eval_golden_test",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+
+    assert eval.filter_id_for_split("train") is None
+    assert eval.filter_id_for_split("val") is None
+    # The test split resolves to the V1 eval_set_filter_id when it is set.
+    assert eval.filter_id_for_split("test") == "tag::eval_test"
+
+
+def test_filter_id_for_split_test_none_for_v2_eval():
+    # V2 (EvalInput-backed) evals carry eval_input_filter_id instead of
+    # eval_set_filter_id, so even the test split can be unset.
+    eval = Eval(
+        name="Test Eval",
+        eval_input_filter_id="all",
+        eval_configs_filter_id="tag::eval_golden_test",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+
+    assert eval.filter_id_for_split("test") is None
+
+
 def test_eval_default_values():
     eval = Eval(
         name="Test Eval",

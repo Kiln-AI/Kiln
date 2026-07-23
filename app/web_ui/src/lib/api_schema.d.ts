@@ -7338,6 +7338,11 @@ export interface components {
              * @description Max dataset items evaluated in parallel by the runner. Leave null to use the runner's default (25).
              */
             concurrency?: number | null;
+            /**
+             * Split
+             * @description Which of the eval's dataset splits to run: train, val, or test. Fails with 422 if the eval has no filter configured for the split. Leave null to run the eval set (the test set — today's default behavior).
+             */
+            split?: ("train" | "val" | "test") | null;
         };
         /**
          * EvalOutputScore
@@ -19479,7 +19484,10 @@ export interface operations {
     };
     get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only return results for dataset items in this split of the eval (train, val, or test). 422 if the eval has no filter configured for the split. Omit to return all results (no split filtering). */
+                split?: ("train" | "val" | "test") | null;
+            };
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */

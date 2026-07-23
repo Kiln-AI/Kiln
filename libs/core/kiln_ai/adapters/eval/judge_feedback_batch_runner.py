@@ -1,3 +1,9 @@
+# TODO (merge blocker — do not merge toward main until resolved): this runner is under design
+# review. Concerns 3–5 are implemented here — the parallel eval-result store (JudgeFeedbackBatchRun
+# vs EvalRun), the cache bypass on identical re-runs, and the paired-gate logic retrofitted onto
+# tag-based sampling. Full write-up and rationale in the header of
+# kiln_ai/datamodel/judge_feedback_batch.py. Resolve there before merging toward main.
+
 """Execute a JudgeFeedbackBatch: sample dataset items by tag, judge them, persist per-item results.
 
 A JudgeFeedbackBatch samples dataset items carrying its target tags, runs the configured judge (eval config)
