@@ -103,10 +103,15 @@ def connect_spec_api(app: FastAPI):
 
         spec_type = spec_data.properties["spec_type"]
 
-        eval_tag, train_tag, golden_tag = generate_spec_eval_tags(spec_data.name)
-        eval_set_filter_id, train_set_filter_id, eval_configs_filter_id = (
-            generate_spec_eval_filter_ids(eval_tag, train_tag, golden_tag)
+        eval_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags(
+            spec_data.name
         )
+        (
+            eval_set_filter_id,
+            train_set_filter_id,
+            val_set_filter_id,
+            eval_configs_filter_id,
+        ) = generate_spec_eval_filter_ids(eval_tag, train_tag, val_tag, golden_tag)
 
         template = spec_eval_template(spec_type)
         output_scores = [spec_eval_output_score(spec_data.name)]
@@ -122,6 +127,7 @@ def connect_spec_api(app: FastAPI):
             output_scores=output_scores,
             eval_set_filter_id=eval_set_filter_id,
             train_set_filter_id=train_set_filter_id,
+            val_set_filter_id=val_set_filter_id,
             eval_configs_filter_id=eval_configs_filter_id,
             template_properties=None,
             evaluation_data_type=evaluation_data_type,

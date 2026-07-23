@@ -989,10 +989,13 @@ def connect_copilot_api(app: FastAPI):
             )
 
         # Generate tags and filter IDs
-        eval_tag, train_tag, golden_tag = generate_spec_eval_tags(request.name)
-        eval_set_filter_id, train_set_filter_id, eval_configs_filter_id = (
-            generate_spec_eval_filter_ids(eval_tag, train_tag, golden_tag)
-        )
+        eval_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags(request.name)
+        (
+            eval_set_filter_id,
+            train_set_filter_id,
+            val_set_filter_id,
+            eval_configs_filter_id,
+        ) = generate_spec_eval_filter_ids(eval_tag, train_tag, val_tag, golden_tag)
 
         # Extract spec_type from properties (discriminated union)
         spec_type = request.properties["spec_type"]
@@ -1082,6 +1085,7 @@ def connect_copilot_api(app: FastAPI):
             if request.multi_turn is not None
             else None,
             train_set_filter_id=train_set_filter_id,
+            val_set_filter_id=val_set_filter_id,
             eval_configs_filter_id=eval_configs_filter_id,
             template_properties=None,
             evaluation_data_type=evaluation_data_type,
@@ -1145,6 +1149,7 @@ def connect_copilot_api(app: FastAPI):
                 reviewed_examples=request.reviewed_examples,
                 eval_tag=eval_tag,
                 train_tag=train_tag,
+                val_tag=val_tag,
                 golden_tag=golden_tag,
                 spec_name=request.name,
                 rng=rng,

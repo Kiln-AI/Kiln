@@ -65,33 +65,40 @@ def spec_eval_template(spec_type: SpecType) -> EvalTemplateId | None:
             return None
 
 
-def generate_spec_eval_tags(spec_name: str) -> tuple[str, str, str]:
-    """Generate eval, train, and golden tags for a spec.
+def generate_spec_eval_tags(spec_name: str) -> tuple[str, str, str, str]:
+    """Generate eval, train, val, and golden tags for a spec.
 
     Args:
         spec_name: The name of the spec
 
     Returns:
-        Tuple of (eval_tag, train_tag, golden_tag)
+        Tuple of (eval_tag, train_tag, val_tag, golden_tag)
     """
     tag_suffix = spec_name.lower().replace(" ", "_")
     eval_tag = f"eval_{tag_suffix}"
     train_tag = f"train_{tag_suffix}"
+    val_tag = f"val_{tag_suffix}"
     golden_tag = f"eval_golden_{tag_suffix}"
-    return eval_tag, train_tag, golden_tag
+    return eval_tag, train_tag, val_tag, golden_tag
 
 
 def generate_spec_eval_filter_ids(
-    eval_tag: str, train_tag: str, golden_tag: str
-) -> tuple[str, str, str]:
-    """Generate filter IDs for eval set, train set, and eval configs.
+    eval_tag: str, train_tag: str, val_tag: str, golden_tag: str
+) -> tuple[str, str, str, str]:
+    """Generate filter IDs for eval set, train set, val set, and eval configs.
 
     Args:
         eval_tag: The eval dataset tag
         train_tag: The train dataset tag
+        val_tag: The val dataset tag
         golden_tag: The golden dataset tag
 
     Returns:
-        Tuple of (eval_set_filter_id, train_set_filter_id, eval_configs_filter_id)
+        Tuple of (eval_set_filter_id, train_set_filter_id, val_set_filter_id, eval_configs_filter_id)
     """
-    return f"tag::{eval_tag}", f"tag::{train_tag}", f"tag::{golden_tag}"
+    return (
+        f"tag::{eval_tag}",
+        f"tag::{train_tag}",
+        f"tag::{val_tag}",
+        f"tag::{golden_tag}",
+    )

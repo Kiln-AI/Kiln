@@ -983,9 +983,11 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         default=None,
         description="The id of the current config to use for this eval. This can be changed over time to run the same eval with different configs.",
     )
+    # Despite its name, eval_set_filter_id defines the eval's TEST set. The "eval set"
+    # name is legacy, kept for file-format compatibility.
     eval_set_filter_id: DatasetFilterId | None = Field(
         default=None,
-        description="The id of the dataset filter which defines which dataset items are included when running this eval (V1 TaskRun-typed).",
+        description="The id of the dataset filter which defines which dataset items are included when running this eval (V1 TaskRun-typed). This is the eval's test set; the 'eval set' name is legacy.",
     )
     eval_configs_filter_id: DatasetFilterId | None = Field(
         default=None,
@@ -994,6 +996,10 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     train_set_filter_id: DatasetFilterId | None = Field(
         default=None,
         description="The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning.",
+    )
+    val_set_filter_id: DatasetFilterId | None = Field(
+        default=None,
+        description="The id of the dataset filter which defines which dataset items are included in the validation set.",
     )
     eval_input_filter_id: EvalInputFilterId | None = Field(
         default=None,
@@ -1109,6 +1115,10 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
 
         return self
 
+    def _split_tag_suffix(self) -> str:
+        """The eval-name slug used to build split tag filter IDs (e.g., "My Eval" -> "my_eval")."""
+        return self.name.lower().replace(" ", "_")
+
     @model_validator(mode="after")
     def migrate_train_set_filter_id(self) -> Self:
         """
@@ -1126,8 +1136,27 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         if self.train_set_filter_id is not None:
             return self
 
-        tag_suffix = self.name.lower().replace(" ", "_")
-        self.train_set_filter_id = f"tag::train_{tag_suffix}"
+        self.train_set_filter_id = f"tag::train_{self._split_tag_suffix()}"
+        return self
+
+    @model_validator(mode="after")
+    def migrate_val_set_filter_id(self) -> Self:
+        """
+        Migration: Auto-create a val_set_filter_id for evals that don't have one.
+
+        Generates a tag-based filter ID from the eval name following the convention
+        used by spec-based evals (e.g., "val_{name_slug}").
+        """
+        if self.id is None:
+            return self
+
+        if not self._loaded_from_file:
+            return self
+
+        if self.val_set_filter_id is not None:
+            return self
+
+        self.val_set_filter_id = f"tag::val_{self._split_tag_suffix()}"
         return self
 
     @model_validator(mode="after")
