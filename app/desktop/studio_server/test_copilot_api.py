@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -419,7 +420,7 @@ class TestCreateSpecWithCopilot:
             patch(
                 "app.desktop.studio_server.copilot_api.create_dataset_task_runs",
                 return_value=DatasetTaskRuns(),
-            ),
+            ) as mock_create_dataset_task_runs,
             patch(
                 "app.desktop.studio_server.copilot_api.generate_memorable_name",
                 return_value="test-config-name",
@@ -436,11 +437,24 @@ class TestCreateSpecWithCopilot:
         assert res["definition"] == "The system should respond politely"
         assert res["eval_id"] is not None
 
+        # Verify the dataset runs were dealt with the spec's split tags
+        dataset_run_kwargs = mock_create_dataset_task_runs.call_args.kwargs
+        assert dataset_run_kwargs["eval_tag"] == "eval_test_spec"
+        assert dataset_run_kwargs["train_tag"] == "train_test_spec"
+        assert dataset_run_kwargs["val_tag"] == "val_test_spec"
+        assert dataset_run_kwargs["golden_tag"] == "eval_golden_test_spec"
+
         # Verify models were saved
         evals = task.evals()
         assert len(evals) == 1
         assert evals[0].name == "Test Spec"
         assert evals[0].current_config_id is not None
+
+        # Check the raw saved eval file: the lazy train/val migrations run on load and
+        # would synthesize these same values, masking missing wiring in the create path
+        saved_eval = json.loads(evals[0].path.read_text())
+        assert saved_eval["train_set_filter_id"] == "tag::train_test_spec"
+        assert saved_eval["val_set_filter_id"] == "tag::val_test_spec"
 
         specs = task.specs()
         assert len(specs) == 1
