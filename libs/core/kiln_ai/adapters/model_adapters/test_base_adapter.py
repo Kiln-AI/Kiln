@@ -1737,6 +1737,16 @@ class TestResolveSkills:
         assert len(result) == 1
         assert result[0].name == "my-skill"
 
+    def test_raises_when_skill_archived(self, base_task, _run_config_with_tools):
+        skill = Skill(name="my-skill", description="A skill", is_archived=True)
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools([f"kiln_tool::skill::{skill.id}"]),
+            config=AdapterConfig(skills={skill.id: skill}),
+        )
+        with pytest.raises(ValueError, match="Skill 'my-skill' is archived"):
+            adapter._resolve_skills()
+
     def test_deduplicates_skill_ids(self, base_task, _run_config_with_tools):
         skill = Skill(name="my-skill", description="A skill", body="do things")
         adapter = MockAdapter(

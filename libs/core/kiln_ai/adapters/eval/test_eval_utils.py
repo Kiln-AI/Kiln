@@ -628,7 +628,7 @@ Add two numbers together and return the result</tool_description>
             return_value=tool_definition_side_effect("subtract_numbers")
         )
 
-        def tool_from_id_side_effect(tool_id, parent_task):
+        def tool_from_id_side_effect(tool_id, parent_task, allow_archived=False):
             if tool_id == "add_numbers":
                 return mock_tool1
             elif tool_id == "subtract_numbers":
@@ -687,7 +687,7 @@ Add two numbers together and return the result</tool_description>
             side_effect=ValueError("Tool broken")
         )
 
-        def tool_from_id_side_effect(tool_id, parent_task):
+        def tool_from_id_side_effect(tool_id, parent_task, allow_archived=False):
             if tool_id == "add_numbers":
                 return mock_tool1
             elif tool_id == "broken_tool":
