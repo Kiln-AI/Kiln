@@ -6044,6 +6044,11 @@ export interface components {
             instruction?: string | null;
             /** @description The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical'). */
             type: components["schemas"]["TaskOutputRatingType"];
+            /**
+             * @description The direction of improvement for this score: 'higher_is_better', 'lower_is_better', or 'informational' (context only, no preferred direction). Rating scales ('five_star', 'pass_fail', 'pass_fail_critical') are higher-is-better by definition, so they allow 'higher_is_better' and 'informational' but not 'lower_is_better'.
+             * @default higher_is_better
+             */
+            direction: components["schemas"]["ScoreDirection"];
         };
         /**
          * EvalProgress
@@ -9673,6 +9678,17 @@ export interface components {
              */
             projects: components["schemas"]["ProjectInfo"][];
         };
+        /**
+         * ScoreDirection
+         * @description The direction of improvement for an eval output score.
+         *
+         *     Tells consumers how to interpret a change in the score's value: 'higher_is_better'
+         *     means an increase is an improvement, 'lower_is_better' means a decrease is an
+         *     improvement, and 'informational' scores carry context only and should never drive
+         *     decisions in either direction.
+         * @enum {string}
+         */
+        ScoreDirection: "higher_is_better" | "lower_is_better" | "informational";
         /**
          * ScoreSummary
          * @description Summary of scores for an eval run.
