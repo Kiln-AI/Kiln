@@ -1,86 +1,82 @@
 {
-  "_comment": "Per-provider serving assumptions from research/batch1/03 + batch2/02. region_mix weights sum to 1. pue is [P5,P50,P95]. hardware_mix weights sum to 1 over hardware_classes ids; 'sram' providers instead use speed_premium [P5,P50,P95] applied to gpu_blackwell-modeled energy. tier_multipliers scale total energy. region_variants are customer-selectable alternatives (hyperscalers only).",
-  "as_of": "2026-07-24",
+  "_comment": "Per-provider INFERENCE-serving assumptions, verified batch 4 (experiments/co2e/research/batch4/01+02). region_mix weights sum to 1 and are sampled CATEGORICALLY (one region per request). pue is [P5,P50,P95]. hardware_mix over hardware_classes ids; 'sram' providers use sram_speed_premium applied to gpu_blackwell-modeled energy. Optional u_fleet overrides the constants default (independents run less saturated than hyperscalers). tier_multipliers scale total energy. region_variants are customer-selectable (hyperscalers only).",
+  "as_of": "2026-07-25",
   "providers": {
     "fireworks_ai": {
-      "region_mix": {"us_average": 1.0},
-      "pue": [1.15, 1.3, 1.45],
-      "hardware_mix": {"gpu_blackwell": 0.5, "gpu_hopper": 0.3, "gpu_cdna3": 0.2},
+      "region_mix": {"us_average": 0.90, "iceland": 0.03, "europe_mixed": 0.03, "japan": 0.04},
+      "pue": [1.12, 1.22, 1.4],
+      "hardware_mix": {"gpu_hopper": 0.5, "gpu_blackwell": 0.38, "gpu_cdna3": 0.12},
+      "u_fleet": [1.2, 1.8, 3.2],
       "tier_multipliers": {"standard": [1.0, 1.0, 1.0], "fast": [1.2, 1.5, 3.0]},
-      "confidence": "low", "label": "inference",
-      "source": "US serverless, multi-cloud substrate undisclosed, B200+MI300X fleets; research/batch1/03 §11"
+      "confidence": "medium", "label": "inference",
+      "source": "Substrate DISCLOSED via DPA Schedule 4 (AWS/GCP/OCI/Lambda/Crusoe-US+Iceland/VoltagePark/Vultr/CoreWeave); 18 regions = 14 US + Frankfurt + Iceland x2 + Tokyo x2; region fleet H100(10)/H200(8)/B200(7), no AMD region listed; >2T tokens/day on OCI (Oracle PR). Serverless share per region undisclosed; batch4/02"
     },
     "anthropic": {
-      "region_mix": {"indiana_miso": 0.35, "aws_us_mix": 0.4, "google_fleet": 0.25},
-      "pue": [1.1, 1.13, 1.2],
-      "hardware_mix": {"trainium2": 0.5, "tpu_v7": 0.3, "gpu_hopper": 0.2},
-      "confidence": "low", "label": "inference",
-      "source": "Project Rainier (Trainium2, Indiana/Mississippi) + GCP TPU deal + NVIDIA; zero first-party disclosure; research/batch1/03 §2"
+      "region_mix": {"indiana_im_pjm": 0.30, "mississippi_srmv": 0.12, "pennsylvania_nuclear_ppa": 0.08, "aws_us_mix": 0.10, "google_fleet": 0.30, "azure_us_ai_mix": 0.05, "us_average": 0.05},
+      "pue": [1.09, 1.13, 1.2],
+      "hardware_mix": {"trainium2": 0.5, "tpu_v7": 0.15, "tpu_v6e": 0.15, "gpu_blackwell": 0.1, "gpu_hopper": 0.1},
+      "confidence": "medium", "label": "inference",
+      "source": "Project Rainier = IN+MS+PA, majority-INFERENCE daytime (Semafor Oct 2025; 1M Trainium2); New Carlisle 910MW IT live (Epoch); Talen/Susquehanna nuclear PPA delivering Apr 2026 (10-Q); GCP TPU >1GW ramping 2026; Azure GB300 leg Nov 2025; Fluidstack TX/NY through 2026. Weights INFERRED from disclosed capacity; batch4/01"
     },
     "openai": {
-      "region_mix": {"stargate_blend": 0.4, "us_average": 0.6},
-      "pue": [1.1, 1.12, 1.2],
-      "hardware_mix": {"gpu_blackwell": 0.6, "gpu_hopper": 0.4},
-      "confidence": "low", "label": "inference",
-      "source": "Azure + Abilene OCI + CoreWeave/AWS; research/batch1/03 §1"
+      "region_mix": {"azure_us_ai_mix": 0.90, "stargate_blend": 0.05, "us_average": 0.05},
+      "pue": [1.1, 1.17, 1.28],
+      "hardware_mix": {"gpu_blackwell": 0.55, "gpu_hopper": 0.45},
+      "confidence": "medium", "label": "disclosed",
+      "source": "First-party API contractually AZURE-EXCLUSIVE until verified AGI (Microsoft Oct 2025); Abilene carries ChatGPT/non-API + training (421MW IT live, grid-primary since ~Q1 2026); other Stargate sites 0 MW live (Epoch Jul 2026). Watch: OpenAI-Cerebras 750MW + GPT-5.6-Sol-on-Cerebras adds a wafer-scale US slice; batch4/01+02"
     },
     "azure_openai": {
-      "region_mix": {"us_average": 0.7, "virginia_pjm": 0.3},
-      "pue": [1.12, 1.18, 1.25],
-      "hardware_mix": {"gpu_blackwell": 0.6, "gpu_hopper": 0.4},
+      "region_mix": {"azure_us_ai_mix": 1.0},
+      "pue": [1.1, 1.17, 1.28],
+      "hardware_mix": {"gpu_blackwell": 0.55, "gpu_hopper": 0.45},
       "region_variants": {"swedencentral": {"sweden": 1.0}},
       "confidence": "medium", "label": "disclosed",
-      "source": "Azure PUE 1.18 disclosed; Data Zone region control; research/batch1/03 §4"
+      "source": "MSFT FY2025: first disclosed fleet operational PUE 1.17; implied location 324.9 / market 73.1 g/kWh (spot EACs discontinued Feb 2025); AI build-out skews MROE-WI/RMPA/MROW; batch4/01"
     },
     "gemini_api": {
       "region_mix": {"google_fleet": 1.0},
       "pue": [1.06, 1.09, 1.12],
       "hardware_mix": {"tpu_v6e": 0.4, "tpu_v7": 0.6},
       "confidence": "medium-high", "label": "disclosed",
-      "source": "Google PUE 1.09 + fleet CI factors disclosed (arXiv:2508.15734); TPU generations per batch2/02"
+      "source": "Google 2026 Env Report (CY2025): PUE 1.09, implied location 347.6 / market 64.6 g/kWh, CFE ~65%; per-prompt paper arXiv:2508.15734; batch4/01"
     },
     "amazon_bedrock": {
-      "region_mix": {"aws_us_mix": 1.0},
-      "pue": [1.1, 1.15, 1.25],
+      "region_mix": {"virginia_pjm": 0.45, "ohio_rfcw": 0.25, "oregon_nwpp": 0.25, "us_average": 0.05},
+      "pue": [1.1, 1.14, 1.2],
       "hardware_mix": {"trainium2": 0.4, "gpu_hopper": 0.4, "gpu_blackwell": 0.2},
       "region_variants": {"ca_central_1": {"montreal": 1.0}},
       "confidence": "medium", "label": "disclosed",
-      "source": "AWS PUE 1.15 disclosed; explicit region choice; research/batch1/03 §5"
+      "source": "AWS CY2025 PUE 1.14 (us-east-1 1.15, us-east-2/us-west-2 1.12); Claude in-region us-east-1, US geo profile = VA/OH/OR; CloudTrail inferenceRegion enables future traffic sampling; batch4/01"
     },
     "together_ai": {
-      "region_mix": {"us_average": 1.0},
-      "pue": [1.2, 1.35, 1.5],
-      "hardware_mix": {"gpu_hopper": 0.5, "gpu_blackwell": 0.5},
+      "region_mix": {"us_average": 0.85, "montreal": 0.10, "europe_mixed": 0.05},
+      "pue": [1.15, 1.25, 1.45],
+      "hardware_mix": {"gpu_hopper": 0.65, "gpu_blackwell": 0.35},
+      "u_fleet": [1.2, 1.8, 3.2],
       "confidence": "low", "label": "inference",
-      "source": "leased neocloud capacity, colo-average PUE; research/batch1/03 §11"
+      "source": "LOWEST-confidence US provider (no sub-processor list); Applied Digital ND + Hypertec 36K GB200 NA + 5C Montreal; no Iceland-serverless evidence; batch4/02"
     },
     "groq": {
-      "region_mix": {"us_average": 0.6, "saudi": 0.25, "finland": 0.15},
-      "pue": [1.15, 1.3, 1.45],
+      "region_mix": {"us_average": 0.52, "saudi": 0.28, "finland": 0.09, "montreal": 0.06, "australia": 0.05},
+      "pue": [1.2, 1.35, 1.55],
       "sram_speed_premium": [1.0, 2.0, 8.0],
       "confidence": "low", "label": "inference",
-      "source": "LPU; US colos + Dammam + Helsinki; premium per batch2/02 speed-vs-energy verdict"
+      "source": "12+ DCs (Equinix/DataBank/Bell); Dammam 19k LPUs since Feb 2025 + 5x Saudi-anchored expansion Apr 2026 (Saudi CI=692, Ember 2024); Helsinki Jul 2025; Kamloops BC hydro Jun 2025; Sydney Nov 2025. No geo-routing disclosure - weights inferred. LPU energy: no new independent study (Argonne arXiv:2606.17104 uncited); batch4/02"
     },
     "cerebras": {
-      "region_mix": {"us_average": 0.85, "montreal": 0.1, "france": 0.05},
-      "pue": [1.15, 1.25, 1.4],
+      "region_mix": {"us_average": 0.90, "montreal": 0.10},
+      "pue": [1.1, 1.2, 1.35],
       "sram_speed_premium": [0.8, 1.5, 6.0],
-      "confidence": "low", "label": "inference",
-      "source": "WSE-3; Dallas/CA/OKC/Montreal/France sites; batch2/02"
+      "confidence": "medium", "label": "disclosed",
+      "source": "85% of capacity in US (disclosed); OKC live Sept 2025 (300+ CS-3); Montreal = Enovum MTL-3 5MW hydro; EUROPE NOT LIVE until end-2026 (Jul 2026 announcement) - France weight corrected to 0; OpenAI 750MW deal Jan 2026; batch4/02"
     },
     "siliconflow_cn": {
-      "region_mix": {"china_grid": 1.0},
-      "pue": [1.2, 1.3, 1.5],
-      "hardware_mix": {"ascend_910": 0.6, "cn_domestic_other": 0.2, "gpu_hopper": 0.2},
+      "region_mix": {"china_ascend_hubs": 0.60, "china_grid": 0.40},
+      "pue": [1.2, 1.3, 1.48],
+      "hardware_mix": {"ascend_910": 0.55, "gpu_hopper": 0.30, "cn_domestic_other": 0.15},
+      "u_fleet": [1.2, 1.8, 3.2],
       "confidence": "low", "label": "inference",
-      "source": "China-domestic serving trending to Ascend; batch2/02 §6"
-    },
-    "validation_france_h100": {
-      "region_mix": {"france": 1.0},
-      "pue": [1.15, 1.2, 1.3],
-      "hardware_mix": {"gpu_hopper": 1.0},
-      "confidence": "n/a", "label": "anchor",
-      "source": "synthetic profile for Mistral LCA validation only"
+      "source": "Deep Huawei Ascend/CloudMatrix partnership (Wuhu/Anhui at scale; hubs Guizhou/Ulanqab/Wuhu); intl API ingress = Alibaba HK/US edge but compute mainland (DNS-verified); China mandates PUE<=1.25 for new hub DCs; batch4/02"
     }
   }
 }

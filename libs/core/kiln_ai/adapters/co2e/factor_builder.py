@@ -97,7 +97,8 @@ def build_factor_row(
     s_fhost = make_sampler(consts["f_host"], rng)
     s_fidle = make_sampler(consts["f_idle"], rng)
     s_efemb = make_sampler(consts["ef_embodied_g_per_kwh"], rng)
-    s_ufleet = make_sampler(consts["u_fleet"], rng)
+    # Independents run less saturated than hyperscalers; profiles may override.
+    s_ufleet = make_sampler(provider.get("u_fleet", consts["u_fleet"]), rng)
 
     sram = "sram_speed_premium" in provider
     if sram:

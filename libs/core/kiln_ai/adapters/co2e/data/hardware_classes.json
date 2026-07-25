@@ -1,14 +1,78 @@
 {
-  "_comment": "Effective serving energy per FLOP (pJ/FLOP), accelerator-only, throughput-batched regime. From research/batch2/02_accelerators.md. Triples are [P5, P50, P95]. sram_dataflow is modeled as gpu_blackwell energy x speed_premium (see provider_profiles).",
-  "as_of": "2026-07-24",
+  "_comment": "Effective serving energy per FLOP (pJ/FLOP), accelerator-only, throughput-batched regime. Batch-4 paper-sweep adjustments (experiments/co2e/research/batch4/04): Blackwell raised to 1.3 central (MLPerf/TRT 1.05-1.25 vs vLLM matched-latency 1.6-1.7; ML.ENERGY median -35% vs H100); tpu_v7 not granted below-Blackwell on vendor claims alone; Ascend tightened via CloudMatrix serving back-out. Triples are [P5,P50,P95]. sram_dataflow modeled as gpu_blackwell energy x speed_premium (see provider_profiles).",
+  "as_of": "2026-07-25",
   "classes": {
-    "gpu_hopper":        {"eta_pj_per_flop": [2.0, 2.5, 4.0],  "label": "measured",     "source": "ML.ENERGY v3 calibration; research/batch2/02"},
-    "gpu_blackwell":     {"eta_pj_per_flop": [0.8, 1.0, 1.6],  "label": "measured",     "source": "ML.ENERGY v3 + SemiAnalysis InferenceMAX"},
-    "gpu_cdna3":         {"eta_pj_per_flop": [2.5, 3.0, 4.5],  "label": "measured",     "source": "InferenceMAX MI300X x1.2 vs H100"},
-    "tpu_v6e":           {"eta_pj_per_flop": [1.5, 2.0, 4.0],  "label": "estimate",     "source": "Google 2508.15734 back-out + 2x-vs-v5e claim"},
-    "tpu_v7":            {"eta_pj_per_flop": [0.8, 1.0, 2.0],  "label": "estimate",     "source": "2x Trillium vendor claim; FP8/W ~ B200"},
-    "trainium2":         {"eta_pj_per_flop": [2.5, 3.0, 5.0],  "label": "estimate",     "source": "paper perf/W ~0.9x H100 + stack penalty"},
-    "ascend_910":        {"eta_pj_per_flop": [5.0, 7.0, 12.0], "label": "estimate",     "source": "CloudMatrix-Infer paper + SemiAnalysis power"},
-    "cn_domestic_other": {"eta_pj_per_flop": [6.0, 10.0, 20.0],"label": "speculation",  "source": ">= Ascend penalty; no public data"}
+    "gpu_hopper": {
+      "eta_pj_per_flop": [
+        2.0,
+        2.5,
+        4.0
+      ],
+      "label": "measured",
+      "source": "ML.ENERGY v3 calibration; research/batch2/02"
+    },
+    "gpu_blackwell": {
+      "eta_pj_per_flop": [
+        0.9,
+        1.3,
+        1.7
+      ],
+      "label": "measured",
+      "source": "ML.ENERGY v3 (arXiv:2601.22076) B200 median -35% vs H100; MLPerf v5.0 TRT-LLM 1.05-1.25; SemiAnalysis +47-82% TFLOPS/W"
+    },
+    "gpu_cdna3": {
+      "eta_pj_per_flop": [
+        2.5,
+        3.0,
+        4.5
+      ],
+      "label": "measured",
+      "source": "InferenceMAX MI300X x1.2 vs H100"
+    },
+    "tpu_v6e": {
+      "eta_pj_per_flop": [
+        1.5,
+        2.0,
+        4.0
+      ],
+      "label": "estimate",
+      "source": "Google 2508.15734 back-out + 2x-vs-v5e claim"
+    },
+    "tpu_v7": {
+      "eta_pj_per_flop": [
+        0.9,
+        1.3,
+        2.2
+      ],
+      "label": "estimate",
+      "source": "2x-Trillium is vendor-claim-only; no third-party measurement -> Blackwell-parity central, not below (batch4/04)"
+    },
+    "trainium2": {
+      "eta_pj_per_flop": [
+        2.5,
+        3.0,
+        5.0
+      ],
+      "label": "estimate",
+      "source": "paper perf/W ~0.9x H100 + stack penalty"
+    },
+    "ascend_910": {
+      "eta_pj_per_flop": [
+        4.5,
+        6.0,
+        10.0
+      ],
+      "label": "estimate",
+      "source": "CloudMatrix-Infer serving back-out (arXiv:2506.12708: 1,943 tok/s/NPU decode) + SemiAnalysis 2.5x worse power-per-FLOP vs GB200"
+    },
+    "cn_domestic_other": {
+      "eta_pj_per_flop": [
+        6.0,
+        10.0,
+        20.0
+      ],
+      "label": "speculation",
+      "source": ">= Ascend penalty; no public data"
+    }
   }
 }

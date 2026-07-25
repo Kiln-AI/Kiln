@@ -82,10 +82,10 @@ def test_optional_columns_behave():
                 f["g_co2e_per_1k_output_tokens_incl_training"]["p50"]
                 > f["g_co2e_per_1k_output_tokens"]["p50"]
             )
-        # Market-based (currently Google contractual factors) sits below
-        # location-based; only providers with disclosed factors carry it.
+        # Market-based sits below location-based; only providers with
+        # disclosed contractual factors carry it (Google 65, Microsoft 73).
         if "g_co2e_per_1k_output_tokens_market" in f:
-            assert f["provider"] == "gemini_api"
+            assert f["provider"] in ("gemini_api", "azure_openai", "openai")
             assert (
                 f["g_co2e_per_1k_output_tokens_market"]["p50"]
                 < f["g_co2e_per_1k_output_tokens"]["p50"]
