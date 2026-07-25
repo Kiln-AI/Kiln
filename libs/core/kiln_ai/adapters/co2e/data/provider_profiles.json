@@ -1,0 +1,86 @@
+{
+  "_comment": "Per-provider serving assumptions from research/batch1/03 + batch2/02. region_mix weights sum to 1. pue is [P5,P50,P95]. hardware_mix weights sum to 1 over hardware_classes ids; 'sram' providers instead use speed_premium [P5,P50,P95] applied to gpu_blackwell-modeled energy. tier_multipliers scale total energy. region_variants are customer-selectable alternatives (hyperscalers only).",
+  "as_of": "2026-07-24",
+  "providers": {
+    "fireworks_ai": {
+      "region_mix": {"us_average": 1.0},
+      "pue": [1.15, 1.3, 1.45],
+      "hardware_mix": {"gpu_blackwell": 0.5, "gpu_hopper": 0.3, "gpu_cdna3": 0.2},
+      "tier_multipliers": {"standard": [1.0, 1.0, 1.0], "fast": [1.2, 1.5, 3.0]},
+      "confidence": "low", "label": "inference",
+      "source": "US serverless, multi-cloud substrate undisclosed, B200+MI300X fleets; research/batch1/03 §11"
+    },
+    "anthropic": {
+      "region_mix": {"indiana_miso": 0.35, "aws_us_mix": 0.4, "google_fleet": 0.25},
+      "pue": [1.1, 1.13, 1.2],
+      "hardware_mix": {"trainium2": 0.5, "tpu_v7": 0.3, "gpu_hopper": 0.2},
+      "confidence": "low", "label": "inference",
+      "source": "Project Rainier (Trainium2, Indiana/Mississippi) + GCP TPU deal + NVIDIA; zero first-party disclosure; research/batch1/03 §2"
+    },
+    "openai": {
+      "region_mix": {"stargate_blend": 0.4, "us_average": 0.6},
+      "pue": [1.1, 1.12, 1.2],
+      "hardware_mix": {"gpu_blackwell": 0.6, "gpu_hopper": 0.4},
+      "confidence": "low", "label": "inference",
+      "source": "Azure + Abilene OCI + CoreWeave/AWS; research/batch1/03 §1"
+    },
+    "azure_openai": {
+      "region_mix": {"us_average": 0.7, "virginia_pjm": 0.3},
+      "pue": [1.12, 1.18, 1.25],
+      "hardware_mix": {"gpu_blackwell": 0.6, "gpu_hopper": 0.4},
+      "region_variants": {"swedencentral": {"sweden": 1.0}},
+      "confidence": "medium", "label": "disclosed",
+      "source": "Azure PUE 1.18 disclosed; Data Zone region control; research/batch1/03 §4"
+    },
+    "gemini_api": {
+      "region_mix": {"google_fleet": 1.0},
+      "pue": [1.06, 1.09, 1.12],
+      "hardware_mix": {"tpu_v6e": 0.4, "tpu_v7": 0.6},
+      "confidence": "medium-high", "label": "disclosed",
+      "source": "Google PUE 1.09 + fleet CI factors disclosed (arXiv:2508.15734); TPU generations per batch2/02"
+    },
+    "amazon_bedrock": {
+      "region_mix": {"aws_us_mix": 1.0},
+      "pue": [1.1, 1.15, 1.25],
+      "hardware_mix": {"trainium2": 0.4, "gpu_hopper": 0.4, "gpu_blackwell": 0.2},
+      "region_variants": {"ca_central_1": {"montreal": 1.0}},
+      "confidence": "medium", "label": "disclosed",
+      "source": "AWS PUE 1.15 disclosed; explicit region choice; research/batch1/03 §5"
+    },
+    "together_ai": {
+      "region_mix": {"us_average": 1.0},
+      "pue": [1.2, 1.35, 1.5],
+      "hardware_mix": {"gpu_hopper": 0.5, "gpu_blackwell": 0.5},
+      "confidence": "low", "label": "inference",
+      "source": "leased neocloud capacity, colo-average PUE; research/batch1/03 §11"
+    },
+    "groq": {
+      "region_mix": {"us_average": 0.6, "saudi": 0.25, "finland": 0.15},
+      "pue": [1.15, 1.3, 1.45],
+      "sram_speed_premium": [1.0, 2.0, 8.0],
+      "confidence": "low", "label": "inference",
+      "source": "LPU; US colos + Dammam + Helsinki; premium per batch2/02 speed-vs-energy verdict"
+    },
+    "cerebras": {
+      "region_mix": {"us_average": 0.85, "montreal": 0.1, "france": 0.05},
+      "pue": [1.15, 1.25, 1.4],
+      "sram_speed_premium": [0.8, 1.5, 6.0],
+      "confidence": "low", "label": "inference",
+      "source": "WSE-3; Dallas/CA/OKC/Montreal/France sites; batch2/02"
+    },
+    "siliconflow_cn": {
+      "region_mix": {"china_grid": 1.0},
+      "pue": [1.2, 1.3, 1.5],
+      "hardware_mix": {"ascend_910": 0.6, "cn_domestic_other": 0.2, "gpu_hopper": 0.2},
+      "confidence": "low", "label": "inference",
+      "source": "China-domestic serving trending to Ascend; batch2/02 §6"
+    },
+    "validation_france_h100": {
+      "region_mix": {"france": 1.0},
+      "pue": [1.15, 1.2, 1.3],
+      "hardware_mix": {"gpu_hopper": 1.0},
+      "confidence": "n/a", "label": "anchor",
+      "source": "synthetic profile for Mistral LCA validation only"
+    }
+  }
+}

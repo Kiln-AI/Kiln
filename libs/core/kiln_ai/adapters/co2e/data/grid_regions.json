@@ -1,0 +1,19 @@
+{
+  "_comment": "Location-based carbon intensity, gCO2e/kWh, [P5, P50, P95]. GREEN-licensed sources only (Ember CC-BY-4.0, EPA eGRID public domain, Google region-carbon Apache-2.0) plus labeled inferences from research/batch1/03. ci_market only where disclosed.",
+  "as_of": "2026-07-24",
+  "regions": {
+    "us_average":     {"ci": [340, 384, 430], "label": "disclosed", "source": "Ember US 2024 (384), CC-BY-4.0"},
+    "ercot":          {"ci": [300, 335, 380], "label": "disclosed", "source": "EPA eGRID2023 ERCT ~335, public domain"},
+    "virginia_pjm":   {"ci": [290, 323, 360], "label": "disclosed", "source": "Google region-carbon us-east4 (323), Apache-2.0"},
+    "stargate_blend": {"ci": [380, 450, 550], "label": "inference", "source": "ERCOT + ~360MW on-site gas at Abilene; research/batch1/03 §1"},
+    "indiana_miso":   {"ci": [600, 700, 760], "label": "inference", "source": "AEP Indiana coal/gas-heavy; research/batch1/03 §2"},
+    "aws_us_mix":     {"ci": [300, 350, 400], "label": "inference", "source": "VA/OR/OH region blend; research/batch1/03 §5"},
+    "google_fleet":   {"ci": [310, 345, 385], "ci_market": 94, "label": "disclosed", "source": "Google arXiv:2508.15734 fleet factors 2024 (345 loc / 94 mkt)"},
+    "france":         {"ci": [30, 40, 60],    "label": "disclosed", "source": "Ember 2024 (40)"},
+    "finland":        {"ci": [40, 67, 100],   "label": "disclosed", "source": "Ember 2024 (67)"},
+    "sweden":         {"ci": [10, 30, 50],    "label": "disclosed", "source": "Ember 2024 (35); Google europe-north2 lower"},
+    "montreal":       {"ci": [15, 30, 45],    "label": "disclosed", "source": "Hydro-Québec; Google northamerica-northeast1"},
+    "china_grid":     {"ci": [500, 555, 620], "label": "disclosed", "source": "Ember 2024 China (555)"},
+    "saudi":          {"ci": [550, 650, 720], "label": "inference", "source": "gas-dominated grid; research/batch1/03 Groq §"}
+  }
+}

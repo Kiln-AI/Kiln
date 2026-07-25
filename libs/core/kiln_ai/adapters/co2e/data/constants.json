@@ -1,0 +1,15 @@
+{
+  "_comment": "Methodology constants from research/batch1/02_methodology.md §7. Each triple is [P5, P50, P95] treated as lognormal. methodology_version bumps on any formula change.",
+  "methodology_version": "0.1.0",
+  "as_of": "2026-07-24",
+  "rho_in": [4, 10, 25],
+  "k_moe": [1.0, 1.2, 1.5],
+  "k_quant": [0.8, 0.85, 1.0],
+  "f_host": [1.2, 1.4, 1.8],
+  "f_idle": [1.05, 1.15, 1.35],
+  "u_fleet": [1.0, 1.8, 3.5],
+  "_u_fleet_note": "Fleet-median utilization factor: converts benchmark throughput-batched eta to fleet-median serving reality. Evidence: Google fleet back-out eta ~4-6 pJ/FLOP vs batched 2.5 (research/batch2/02 §1); ML.ENERGY batch sensitivity 3-5x; Oviedo node power P5-P95 = 40-90% of max. NOT applied to sram_dataflow rows (their speed_premium already embodies utilization).",
+  "ef_embodied_g_per_kwh": [15, 30, 50],
+  "lambda_think": [3, 5, 30],
+  "_lambda_think_note": "NOT applied in factors; factors are per billed/visible token. Apply lambda_think at estimate time only when a provider hides thinking tokens AND the request used reasoning."
+}

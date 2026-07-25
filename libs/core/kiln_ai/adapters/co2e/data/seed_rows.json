@@ -1,0 +1,26 @@
+{
+  "_comment": "Factor rows to materialize: (model, provider, tier, region_mode). kiln_model_name_override maps serving tiers that Kiln models as distinct ModelName entries (e.g. Fireworks fast routers).",
+  "rows": [
+    {"model": "glm_5_2", "provider": "fireworks_ai", "tier": "standard"},
+    {"model": "glm_5_2", "provider": "fireworks_ai", "tier": "fast", "kiln_model_name_override": "glm_5_2_fast"},
+    {"model": "deepseek_4_pro", "provider": "fireworks_ai", "tier": "standard"},
+    {"model": "kimi_k2_6", "provider": "fireworks_ai", "tier": "standard"},
+    {"model": "llama_4_maverick", "provider": "together_ai", "tier": "standard"},
+    {"model": "llama_3_3_70b", "provider": "together_ai", "tier": "standard"},
+    {"model": "gpt_oss_120b", "provider": "groq", "tier": "standard"},
+    {"model": "llama_3_3_70b", "provider": "cerebras", "tier": "standard"},
+    {"model": "glm_5_2", "provider": "siliconflow_cn", "tier": "standard"},
+    {"model": "claude_opus_4_8", "provider": "anthropic", "tier": "standard"},
+    {"model": "claude_sonnet_5", "provider": "anthropic", "tier": "standard"},
+    {"model": "claude_4_5_haiku", "provider": "anthropic", "tier": "standard"},
+    {"model": "claude_fable_5", "provider": "anthropic", "tier": "standard"},
+    {"model": "claude_sonnet_5", "provider": "amazon_bedrock", "tier": "standard"},
+    {"model": "claude_sonnet_5", "provider": "amazon_bedrock", "tier": "standard", "region_mode": "ca_central_1"},
+    {"model": "gpt_5_6_sol", "provider": "openai", "tier": "standard"},
+    {"model": "gpt_5_6_luna", "provider": "openai", "tier": "standard"},
+    {"model": "gpt_5_6_sol", "provider": "azure_openai", "tier": "standard"},
+    {"model": "gpt_5_6_sol", "provider": "azure_openai", "tier": "standard", "region_mode": "swedencentral"},
+    {"model": "gemini_3_1_pro", "provider": "gemini_api", "tier": "standard"},
+    {"model": "gemini_3_5_flash", "provider": "gemini_api", "tier": "standard"}
+  ]
+}

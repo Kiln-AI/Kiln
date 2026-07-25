@@ -1,0 +1,36 @@
+{
+  "_comment": "OPTIONAL provider-boundary training footprints, per research/batch3/01 §4. Core factors NEVER include these (SCI-for-AI: training is a separate provider metric); they feed only the supplementary incl_training column, amortized over lifetime_output_tokens_T (trillions, [P5,P50,P95], label speculation for everyone — nobody discloses volumes). Models absent here simply get no incl_training column (honest absence, no fabrication).",
+  "as_of": "2026-07-24",
+  "lifetime_output_tokens_T": {
+    "flagship_closed": [50, 300, 2000],
+    "major_open": [5, 30, 200],
+    "niche_open": [0.5, 5, 50]
+  },
+  "models": {
+    "llama_3_3_70b": {
+      "train_tco2e": [1500, 2200, 3500], "volume_tier": "major_open", "label": "estimate",
+      "source": "Llama 3.1 family: 11,390 t location-based / 39.3M H100-hrs disclosed (HF card, arXiv:2204.05149 methodology); 70B-class share estimated"
+    },
+    "llama_4_maverick": {
+      "train_tco2e": [2000, 4000, 9000], "volume_tier": "major_open", "label": "speculation",
+      "source": "no per-model disclosure found for Llama 4; scaled from Llama 3.1 405B (8,930 t / 30.84M hrs) by MoE training economics"
+    },
+    "deepseek_4_pro": {
+      "train_tco2e": [800, 1500, 3500], "volume_tier": "major_open", "label": "speculation",
+      "source": "V3 anchor: 2.788M H800-hrs disclosed (arXiv:2412.19437) ~600-1000 t on CN grid; V4 assumed 1.5-3x"
+    },
+    "glm_5_2": {
+      "train_tco2e": [8000, 25000, 60000], "volume_tier": "major_open", "label": "speculation",
+      "source": "28.5T pretraining tokens disclosed; Ascend fleet efficiency ~2x worse than H100 (batch2/02); CN grid ~555 g/kWh"
+    },
+    "kimi_k2_6": {
+      "train_tco2e": [3000, 8000, 20000], "volume_tier": "major_open", "label": "speculation",
+      "source": "1T-total MoE, INT4 QAT; no disclosure; bracketed between DeepSeek-V3 and GLM-5 estimates"
+    },
+    "mistral_large_2": {
+      "train_tco2e": [14000, 17400, 20000], "volume_tier": null, "lifetime_output_tokens_T": [1, 5, 20], "label": "derived",
+      "source": "85.5% of disclosed 20.4 kt lifecycle = training+infra (Mistral LCA); lifetime volume speculation for an 18-month window"
+    }
+  },
+  "_excluded_note": "claude_*, gpt_*, gemini_*: no disclosed or credibly estimable training footprint as of 2026-07-24 -> no incl_training column. Revisit if EU AI Act Annex XI disclosures (training energy, due for legacy models Aug 2027) surface data."
+}

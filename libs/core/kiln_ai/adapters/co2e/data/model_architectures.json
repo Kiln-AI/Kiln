@@ -1,0 +1,21 @@
+{
+  "_comment": "Active params per token in billions, [P5, P50, P95]. From research/batch1/04 + batch2/01. kiln_model_name matches ModelName enum in ml_model_list.py where verified (null = not in Kiln or unverified). label applies to the ACTIVE estimate.",
+  "as_of": "2026-07-24",
+  "models": {
+    "glm_5_2":          {"kiln_model_name": "glm_5_2",          "arch": "moe",   "total_b": 753.3, "active_b": [30, 40, 55],    "label": "estimate",    "source": "HF zai-org/GLM-5.2 (total disclosed); active from GLM-5 family arch (744B/40B)"},
+    "deepseek_4_pro":   {"kiln_model_name": "deepseek_4_pro",   "arch": "moe",   "total_b": 1600,  "active_b": [45, 49, 55],    "label": "disclosed",   "source": "HF deepseek-ai/DeepSeek-V4-Pro (49B active); FP4 native"},
+    "kimi_k2_6":        {"kiln_model_name": "kimi_k2_6",        "arch": "moe",   "total_b": 1059,  "active_b": [30, 32, 36],    "label": "disclosed",   "source": "HF moonshotai K2 family (32B active); INT4 QAT native"},
+    "llama_4_maverick": {"kiln_model_name": "llama_4_maverick", "arch": "moe",   "total_b": 400,   "active_b": [16, 17, 19],    "label": "disclosed",   "source": "Meta model card"},
+    "gpt_oss_120b":     {"kiln_model_name": "gpt_oss_120b",     "arch": "moe",   "total_b": 117,   "active_b": [4.8, 5.1, 5.6], "label": "disclosed",   "source": "HF openai/gpt-oss-120b; MXFP4 native"},
+    "llama_3_3_70b":    {"kiln_model_name": "llama_3_3_70b",    "arch": "dense", "total_b": 70,    "active_b": [70, 70, 70],    "label": "disclosed",   "source": "Meta model card"},
+    "claude_opus_4_8":  {"kiln_model_name": "claude_opus_4_8",  "arch": "moe",   "total_b": null,  "active_b": [70, 110, 200],  "label": "estimate",    "source": "throughput inversion (unexcitedneurons: 93-105B @FP8 for Opus 4.5/4.6); research/batch2/01"},
+    "claude_sonnet_5":  {"kiln_model_name": "claude_sonnet_5",  "arch": "moe",   "total_b": null,  "active_b": [40, 70, 130],   "label": "estimate",    "source": "Opus/1.5 throughput ratio; research/batch2/01. NOTE: tokenizer emits ~30% more tokens than Sonnet 4.x"},
+    "claude_4_5_haiku": {"kiln_model_name": "claude_4_5_haiku", "arch": "moe",   "total_b": null,  "active_b": [8, 20, 40],     "label": "speculation", "source": "circulating 8.8-30B figures, weak; research/batch2/01"},
+    "claude_fable_5":   {"kiln_model_name": "claude_fable_5",   "arch": "moe",   "total_b": null,  "active_b": [100, 175, 350], "label": "speculation", "source": "tier+price positioning only; serves FASTER than Opus 4.8 per AA — wide bands; research/batch2/01"},
+    "gpt_5_6_sol":      {"kiln_model_name": "gpt_5_6_sol",      "arch": "moe",   "total_b": null,  "active_b": [100, 150, 300], "label": "estimate",    "source": "analyst 2-4T total / ~150B active; research/batch2/01"},
+    "gpt_5_6_luna":     {"kiln_model_name": "gpt_5_6_luna",     "arch": "moe",   "total_b": null,  "active_b": [15, 30, 60],    "label": "speculation", "source": "price-scaling from Sol; research/batch2/01"},
+    "gemini_3_1_pro":   {"kiln_model_name": "gemini_3_1_pro_preview", "arch": "moe", "total_b": null, "active_b": [50, 100, 250], "label": "speculation", "source": "claims span 1.2-7.5T total; TPU serving breaks GPU inversion; research/batch2/01"},
+    "gemini_3_5_flash": {"kiln_model_name": "gemini_3_5_flash", "arch": "moe",   "total_b": null,  "active_b": [8, 20, 45],     "label": "speculation", "source": "Flash-line speculation (5-30B active); research/batch2/01"},
+    "mistral_large_2":  {"kiln_model_name": null,               "arch": "dense", "total_b": 123,   "active_b": [123, 123, 123], "label": "disclosed",   "source": "VALIDATION ANCHOR ONLY — Mistral LCA subject model"}
+  }
+}

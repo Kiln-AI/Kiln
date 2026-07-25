@@ -1,0 +1,841 @@
+{
+  "methodology_version": "0.1.0",
+  "as_of": "2026-07-24",
+  "generator": "kiln_ai.adapters.co2e.factor_builder (Monte Carlo, N=20000, seed=42)",
+  "accounting": {
+    "frame": "attributional LCA",
+    "functional_unit": "1000 tokens (SCI-for-AI consumer unit, scaled)",
+    "boundary": "serving operational (accelerator+host+idle+PUE, fleet-median) + embodied serving hardware; location-based CI",
+    "excluded": "training (separate optional incl_training band), networking, end-user devices, end-of-life, water"
+  },
+  "units": {
+    "wh_per_1k_*": "watt-hours per 1000 tokens, full datacenter boundary",
+    "g_co2e_per_1k_*": "grams CO2e per 1000 tokens, location-based grid CI + embodied hardware"
+  },
+  "notes": [
+    "Factors are per billed/visible token; hidden unbilled reasoning tokens need a separate multiplier at estimate time.",
+    "Never display p50 without the p5-p95 band.",
+    "incl_training amortizes provider-boundary training emissions over speculative lifetime volumes - wide bands by construction."
+  ],
+  "factors": [
+    {
+      "model": "glm_5_2",
+      "kiln_model_name": "glm_5_2",
+      "provider": "fireworks_ai",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.0512,
+        "p50": 0.163,
+        "p95": 0.535
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.00364,
+        "p50": 0.0162,
+        "p95": 0.0727
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.021,
+        "p50": 0.0671,
+        "p95": 0.224
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.0015,
+        "p50": 0.00668,
+        "p95": 0.0302
+      },
+      "g_co2e_per_1k_output_tokens_incl_training": {
+        "p5": 0.164,
+        "p50": 0.873,
+        "p95": 6.12
+      },
+      "training_provenance": {
+        "label": "speculation",
+        "source": "28.5T pretraining tokens disclosed; Ascend fleet efficiency ~2x worse than H100 (batch2/02); CN grid ~555 g/kWh"
+      },
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "estimate",
+        "provider_profile": "inference",
+        "model_source": "HF zai-org/GLM-5.2 (total disclosed); active from GLM-5 family arch (744B/40B)",
+        "provider_source": "US serverless, multi-cloud substrate undisclosed, B200+MI300X fleets; research/batch1/03 \u00a711"
+      }
+    },
+    {
+      "model": "glm_5_2",
+      "kiln_model_name": "glm_5_2_fast",
+      "provider": "fireworks_ai",
+      "serving_tier": "fast",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.08,
+        "p50": 0.277,
+        "p95": 1.01
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.00578,
+        "p50": 0.0277,
+        "p95": 0.135
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.033,
+        "p50": 0.115,
+        "p95": 0.42
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.00241,
+        "p50": 0.0115,
+        "p95": 0.0558
+      },
+      "g_co2e_per_1k_output_tokens_incl_training": {
+        "p5": 0.199,
+        "p50": 0.961,
+        "p95": 6.43
+      },
+      "training_provenance": {
+        "label": "speculation",
+        "source": "28.5T pretraining tokens disclosed; Ascend fleet efficiency ~2x worse than H100 (batch2/02); CN grid ~555 g/kWh"
+      },
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "estimate",
+        "provider_profile": "inference",
+        "model_source": "HF zai-org/GLM-5.2 (total disclosed); active from GLM-5 family arch (744B/40B)",
+        "provider_source": "US serverless, multi-cloud substrate undisclosed, B200+MI300X fleets; research/batch1/03 \u00a711"
+      }
+    },
+    {
+      "model": "deepseek_4_pro",
+      "kiln_model_name": "deepseek_4_pro",
+      "provider": "fireworks_ai",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.0648,
+        "p50": 0.198,
+        "p95": 0.624
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.00464,
+        "p50": 0.0199,
+        "p95": 0.0869
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.0266,
+        "p50": 0.0821,
+        "p95": 0.259
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.0019,
+        "p50": 0.00821,
+        "p95": 0.036
+      },
+      "g_co2e_per_1k_output_tokens_incl_training": {
+        "p5": 0.0535,
+        "p50": 0.161,
+        "p95": 0.504
+      },
+      "training_provenance": {
+        "label": "speculation",
+        "source": "V3 anchor: 2.788M H800-hrs disclosed (arXiv:2412.19437) ~600-1000 t on CN grid; V4 assumed 1.5-3x"
+      },
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "disclosed",
+        "provider_profile": "inference",
+        "model_source": "HF deepseek-ai/DeepSeek-V4-Pro (49B active); FP4 native",
+        "provider_source": "US serverless, multi-cloud substrate undisclosed, B200+MI300X fleets; research/batch1/03 \u00a711"
+      }
+    },
+    {
+      "model": "kimi_k2_6",
+      "kiln_model_name": "kimi_k2_6",
+      "provider": "fireworks_ai",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.0431,
+        "p50": 0.133,
+        "p95": 0.414
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.00308,
+        "p50": 0.0132,
+        "p95": 0.0582
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.0177,
+        "p50": 0.0551,
+        "p95": 0.172
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.00126,
+        "p50": 0.00544,
+        "p95": 0.0241
+      },
+      "g_co2e_per_1k_output_tokens_incl_training": {
+        "p5": 0.0825,
+        "p50": 0.333,
+        "p95": 2.05
+      },
+      "training_provenance": {
+        "label": "speculation",
+        "source": "1T-total MoE, INT4 QAT; no disclosure; bracketed between DeepSeek-V3 and GLM-5 estimates"
+      },
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "disclosed",
+        "provider_profile": "inference",
+        "model_source": "HF moonshotai K2 family (32B active); INT4 QAT native",
+        "provider_source": "US serverless, multi-cloud substrate undisclosed, B200+MI300X fleets; research/batch1/03 \u00a711"
+      }
+    },
+    {
+      "model": "llama_4_maverick",
+      "kiln_model_name": "llama_4_maverick",
+      "provider": "together_ai",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.0237,
+        "p50": 0.0704,
+        "p95": 0.212
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.00165,
+        "p50": 0.00704,
+        "p95": 0.0297
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.00971,
+        "p50": 0.0291,
+        "p95": 0.0883
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.000684,
+        "p50": 0.00291,
+        "p95": 0.0123
+      },
+      "g_co2e_per_1k_output_tokens_incl_training": {
+        "p5": 0.0447,
+        "p50": 0.175,
+        "p95": 1.04
+      },
+      "training_provenance": {
+        "label": "speculation",
+        "source": "no per-model disclosure found for Llama 4; scaled from Llama 3.1 405B (8,930 t / 30.84M hrs) by MoE training economics"
+      },
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "disclosed",
+        "provider_profile": "inference",
+        "model_source": "Meta model card",
+        "provider_source": "leased neocloud capacity, colo-average PUE; research/batch1/03 \u00a711"
+      }
+    },
+    {
+      "model": "llama_3_3_70b",
+      "kiln_model_name": "llama_3_3_70b",
+      "provider": "together_ai",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.0822,
+        "p50": 0.238,
+        "p95": 0.679
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.00587,
+        "p50": 0.0234,
+        "p95": 0.0957
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.0339,
+        "p50": 0.0977,
+        "p95": 0.282
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.00242,
+        "p50": 0.00968,
+        "p95": 0.04
+      },
+      "g_co2e_per_1k_output_tokens_incl_training": {
+        "p5": 0.0709,
+        "p50": 0.202,
+        "p95": 0.625
+      },
+      "training_provenance": {
+        "label": "estimate",
+        "source": "Llama 3.1 family: 11,390 t location-based / 39.3M H100-hrs disclosed (HF card, arXiv:2204.05149 methodology); 70B-class share estimated"
+      },
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "disclosed",
+        "provider_profile": "inference",
+        "model_source": "Meta model card",
+        "provider_source": "leased neocloud capacity, colo-average PUE; research/batch1/03 \u00a711"
+      }
+    },
+    {
+      "model": "gpt_oss_120b",
+      "kiln_model_name": "gpt_oss_120b",
+      "provider": "groq",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.00592,
+        "p50": 0.015,
+        "p95": 0.0604
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.000398,
+        "p50": 0.00157,
+        "p95": 0.00775
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.00108,
+        "p50": 0.00627,
+        "p95": 0.0281
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 9.28e-05,
+        "p50": 0.000633,
+        "p95": 0.00347
+      },
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "disclosed",
+        "provider_profile": "inference",
+        "model_source": "HF openai/gpt-oss-120b; MXFP4 native",
+        "provider_source": "LPU; US colos + Dammam + Helsinki; premium per batch2/02 speed-vs-energy verdict"
+      }
+    },
+    {
+      "model": "llama_3_3_70b",
+      "kiln_model_name": "llama_3_3_70b",
+      "provider": "cerebras",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.0537,
+        "p50": 0.122,
+        "p95": 0.485
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.00357,
+        "p50": 0.0131,
+        "p95": 0.0628
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.00598,
+        "p50": 0.044,
+        "p95": 0.189
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.000564,
+        "p50": 0.00449,
+        "p95": 0.0241
+      },
+      "g_co2e_per_1k_output_tokens_incl_training": {
+        "p5": 0.0402,
+        "p50": 0.139,
+        "p95": 0.562
+      },
+      "training_provenance": {
+        "label": "estimate",
+        "source": "Llama 3.1 family: 11,390 t location-based / 39.3M H100-hrs disclosed (HF card, arXiv:2204.05149 methodology); 70B-class share estimated"
+      },
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "disclosed",
+        "provider_profile": "inference",
+        "model_source": "Meta model card",
+        "provider_source": "WSE-3; Dallas/CA/OKC/Montreal/France sites; batch2/02"
+      }
+    },
+    {
+      "model": "glm_5_2",
+      "kiln_model_name": "glm_5_2",
+      "provider": "siliconflow_cn",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.175,
+        "p50": 0.639,
+        "p95": 1.9
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.0131,
+        "p50": 0.0627,
+        "p95": 0.262
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.102,
+        "p50": 0.374,
+        "p95": 1.13
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.00771,
+        "p50": 0.0369,
+        "p95": 0.154
+      },
+      "g_co2e_per_1k_output_tokens_incl_training": {
+        "p5": 0.375,
+        "p50": 1.28,
+        "p95": 6.67
+      },
+      "training_provenance": {
+        "label": "speculation",
+        "source": "28.5T pretraining tokens disclosed; Ascend fleet efficiency ~2x worse than H100 (batch2/02); CN grid ~555 g/kWh"
+      },
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "estimate",
+        "provider_profile": "inference",
+        "model_source": "HF zai-org/GLM-5.2 (total disclosed); active from GLM-5 family arch (744B/40B)",
+        "provider_source": "China-domestic serving trending to Ascend; batch2/02 \u00a76"
+      }
+    },
+    {
+      "model": "claude_opus_4_8",
+      "kiln_model_name": "claude_opus_4_8",
+      "provider": "anthropic",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.146,
+        "p50": 0.555,
+        "p95": 1.76
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.0112,
+        "p50": 0.0547,
+        "p95": 0.246
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.0625,
+        "p50": 0.259,
+        "p95": 0.946
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.00494,
+        "p50": 0.0256,
+        "p95": 0.127
+      },
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "estimate",
+        "provider_profile": "inference",
+        "model_source": "throughput inversion (unexcitedneurons: 93-105B @FP8 for Opus 4.5/4.6); research/batch2/01",
+        "provider_source": "Project Rainier (Trainium2, Indiana/Mississippi) + GCP TPU deal + NVIDIA; zero first-party disclosure; research/batch1/03 \u00a72"
+      }
+    },
+    {
+      "model": "claude_sonnet_5",
+      "kiln_model_name": "claude_sonnet_5",
+      "provider": "anthropic",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.0883,
+        "p50": 0.344,
+        "p95": 1.13
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.00679,
+        "p50": 0.0335,
+        "p95": 0.152
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.039,
+        "p50": 0.16,
+        "p95": 0.6
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.00303,
+        "p50": 0.0158,
+        "p95": 0.0777
+      },
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "estimate",
+        "provider_profile": "inference",
+        "model_source": "Opus/1.5 throughput ratio; research/batch2/01. NOTE: tokenizer emits ~30% more tokens than Sonnet 4.x",
+        "provider_source": "Project Rainier (Trainium2, Indiana/Mississippi) + GCP TPU deal + NVIDIA; zero first-party disclosure; research/batch1/03 \u00a72"
+      }
+    },
+    {
+      "model": "claude_4_5_haiku",
+      "kiln_model_name": "claude_4_5_haiku",
+      "provider": "anthropic",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.0206,
+        "p50": 0.0898,
+        "p95": 0.324
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.00157,
+        "p50": 0.0088,
+        "p95": 0.0442
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.00898,
+        "p50": 0.0422,
+        "p95": 0.174
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.000701,
+        "p50": 0.00418,
+        "p95": 0.0229
+      },
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "speculation",
+        "provider_profile": "inference",
+        "model_source": "circulating 8.8-30B figures, weak; research/batch2/01",
+        "provider_source": "Project Rainier (Trainium2, Indiana/Mississippi) + GCP TPU deal + NVIDIA; zero first-party disclosure; research/batch1/03 \u00a72"
+      }
+    },
+    {
+      "model": "claude_fable_5",
+      "kiln_model_name": "claude_fable_5",
+      "provider": "anthropic",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.218,
+        "p50": 0.866,
+        "p95": 2.9
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.0164,
+        "p50": 0.0852,
+        "p95": 0.391
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.0951,
+        "p50": 0.404,
+        "p95": 1.56
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.00735,
+        "p50": 0.04,
+        "p95": 0.206
+      },
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "speculation",
+        "provider_profile": "inference",
+        "model_source": "tier+price positioning only; serves FASTER than Opus 4.8 per AA \u2014 wide bands; research/batch2/01",
+        "provider_source": "Project Rainier (Trainium2, Indiana/Mississippi) + GCP TPU deal + NVIDIA; zero first-party disclosure; research/batch1/03 \u00a72"
+      }
+    },
+    {
+      "model": "claude_sonnet_5",
+      "kiln_model_name": "claude_sonnet_5",
+      "provider": "amazon_bedrock",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.1,
+        "p50": 0.366,
+        "p95": 1.14
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.00759,
+        "p50": 0.0362,
+        "p95": 0.157
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.0379,
+        "p50": 0.139,
+        "p95": 0.438
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.00287,
+        "p50": 0.0138,
+        "p95": 0.0595
+      },
+      "basis": "modeled",
+      "confidence": "medium",
+      "provenance": {
+        "model_params": "estimate",
+        "provider_profile": "disclosed",
+        "model_source": "Opus/1.5 throughput ratio; research/batch2/01. NOTE: tokenizer emits ~30% more tokens than Sonnet 4.x",
+        "provider_source": "AWS PUE 1.15 disclosed; explicit region choice; research/batch1/03 \u00a75"
+      }
+    },
+    {
+      "model": "claude_sonnet_5",
+      "kiln_model_name": "claude_sonnet_5",
+      "provider": "amazon_bedrock",
+      "serving_tier": "standard",
+      "region_mode": "ca_central_1",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.0999,
+        "p50": 0.366,
+        "p95": 1.15
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.00768,
+        "p50": 0.0363,
+        "p95": 0.157
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.00544,
+        "p50": 0.0213,
+        "p95": 0.0705
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.000419,
+        "p50": 0.00213,
+        "p95": 0.00966
+      },
+      "basis": "modeled",
+      "confidence": "medium",
+      "provenance": {
+        "model_params": "estimate",
+        "provider_profile": "disclosed",
+        "model_source": "Opus/1.5 throughput ratio; research/batch2/01. NOTE: tokenizer emits ~30% more tokens than Sonnet 4.x",
+        "provider_source": "AWS PUE 1.15 disclosed; explicit region choice; research/batch1/03 \u00a75"
+      }
+    },
+    {
+      "model": "gpt_5_6_sol",
+      "kiln_model_name": "gpt_5_6_sol",
+      "provider": "openai",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.157,
+        "p50": 0.493,
+        "p95": 1.78
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.0111,
+        "p50": 0.0501,
+        "p95": 0.244
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.0675,
+        "p50": 0.217,
+        "p95": 0.8
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.00483,
+        "p50": 0.022,
+        "p95": 0.111
+      },
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "estimate",
+        "provider_profile": "inference",
+        "model_source": "analyst 2-4T total / ~150B active; research/batch2/01",
+        "provider_source": "Azure + Abilene OCI + CoreWeave/AWS; research/batch1/03 \u00a71"
+      }
+    },
+    {
+      "model": "gpt_5_6_luna",
+      "kiln_model_name": "gpt_5_6_luna",
+      "provider": "openai",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.0266,
+        "p50": 0.0935,
+        "p95": 0.351
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.00197,
+        "p50": 0.00944,
+        "p95": 0.0477
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.0116,
+        "p50": 0.041,
+        "p95": 0.158
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.000861,
+        "p50": 0.00414,
+        "p95": 0.0212
+      },
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "speculation",
+        "provider_profile": "inference",
+        "model_source": "price-scaling from Sol; research/batch2/01",
+        "provider_source": "Azure + Abilene OCI + CoreWeave/AWS; research/batch1/03 \u00a71"
+      }
+    },
+    {
+      "model": "gpt_5_6_sol",
+      "kiln_model_name": "gpt_5_6_sol",
+      "provider": "azure_openai",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.164,
+        "p50": 0.513,
+        "p95": 1.85
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.0118,
+        "p50": 0.0516,
+        "p95": 0.25
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.0642,
+        "p50": 0.204,
+        "p95": 0.736
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.00466,
+        "p50": 0.0203,
+        "p95": 0.0999
+      },
+      "basis": "modeled",
+      "confidence": "medium",
+      "provenance": {
+        "model_params": "estimate",
+        "provider_profile": "disclosed",
+        "model_source": "analyst 2-4T total / ~150B active; research/batch2/01",
+        "provider_source": "Azure PUE 1.18 disclosed; Data Zone region control; research/batch1/03 \u00a74"
+      }
+    },
+    {
+      "model": "gpt_5_6_sol",
+      "kiln_model_name": "gpt_5_6_sol",
+      "provider": "azure_openai",
+      "serving_tier": "standard",
+      "region_mode": "swedencentral",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.162,
+        "p50": 0.511,
+        "p95": 1.86
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.0118,
+        "p50": 0.0517,
+        "p95": 0.249
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.00839,
+        "p50": 0.0295,
+        "p95": 0.116
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.000624,
+        "p50": 0.00297,
+        "p95": 0.0155
+      },
+      "basis": "modeled",
+      "confidence": "medium",
+      "provenance": {
+        "model_params": "estimate",
+        "provider_profile": "disclosed",
+        "model_source": "analyst 2-4T total / ~150B active; research/batch2/01",
+        "provider_source": "Azure PUE 1.18 disclosed; Data Zone region control; research/batch1/03 \u00a74"
+      }
+    },
+    {
+      "model": "gemini_3_1_pro",
+      "kiln_model_name": "gemini_3_1_pro_preview",
+      "provider": "gemini_api",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.0871,
+        "p50": 0.297,
+        "p95": 1.16
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.00647,
+        "p50": 0.0299,
+        "p95": 0.153
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.0327,
+        "p50": 0.112,
+        "p95": 0.44
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.00243,
+        "p50": 0.0113,
+        "p95": 0.0578
+      },
+      "g_co2e_per_1k_output_tokens_market": {
+        "p5": 0.0107,
+        "p50": 0.0369,
+        "p95": 0.147
+      },
+      "market_note": "provider-disclosed contractual factors; non-claimant market-based would use residual mix (higher)",
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "speculation",
+        "provider_profile": "disclosed",
+        "model_source": "claims span 1.2-7.5T total; TPU serving breaks GPU inversion; research/batch2/01",
+        "provider_source": "Google PUE 1.09 + fleet CI factors disclosed (arXiv:2508.15734); TPU generations per batch2/02"
+      }
+    },
+    {
+      "model": "gemini_3_5_flash",
+      "kiln_model_name": "gemini_3_5_flash",
+      "provider": "gemini_api",
+      "serving_tier": "standard",
+      "region_mode": "default",
+      "wh_per_1k_output_tokens": {
+        "p5": 0.0152,
+        "p50": 0.0553,
+        "p95": 0.219
+      },
+      "wh_per_1k_input_tokens": {
+        "p5": 0.00111,
+        "p50": 0.0056,
+        "p95": 0.0284
+      },
+      "g_co2e_per_1k_output_tokens": {
+        "p5": 0.00569,
+        "p50": 0.0208,
+        "p95": 0.0829
+      },
+      "g_co2e_per_1k_input_tokens": {
+        "p5": 0.000416,
+        "p50": 0.0021,
+        "p95": 0.0107
+      },
+      "g_co2e_per_1k_output_tokens_market": {
+        "p5": 0.00186,
+        "p50": 0.00687,
+        "p95": 0.0274
+      },
+      "market_note": "provider-disclosed contractual factors; non-claimant market-based would use residual mix (higher)",
+      "basis": "modeled",
+      "confidence": "low",
+      "provenance": {
+        "model_params": "speculation",
+        "provider_profile": "disclosed",
+        "model_source": "Flash-line speculation (5-30B active); research/batch2/01",
+        "provider_source": "Google PUE 1.09 + fleet CI factors disclosed (arXiv:2508.15734); TPU generations per batch2/02"
+      }
+    }
+  ]
+}
