@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Union
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Discriminator,
     Field,
     JsonValue,
@@ -343,6 +344,7 @@ class SkippedReason(str, Enum):
     missing_reference_key = "missing_reference_key"
     extraction_failed = "extraction_failed"
     missing_trace = "missing_trace"
+    missing_drive_config = "missing_drive_config"
     incompatible_input_shape = "incompatible_input_shape"
     code_eval_not_trusted = "code_eval_not_trusted"
     type_not_available = "type_not_available"
@@ -361,15 +363,41 @@ class UserMessage(BaseModel):
     text: str
 
 
+class SyntheticUserInfo(BaseModel):
+    """The synthetic user's character sheet: who they are and what they want.
+
+    This is both the persisted form on multi-turn synthetic eval inputs and
+    the runtime shape the synthetic-user driver renders its system prompt
+    from. The XML-tagged blob some wire formats carry is parsed into this at
+    the wire boundary (kiln_ai.synthetic_user.parser) — it is never stored.
+
+    extra="allow": unknown fields from newer generators survive load/save
+    round-trips instead of being dropped.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    persona: str
+    goal: str
+    behavior_guidance: str | None = None
+
+
 class SingleTurnEvalInputData(BaseModel):
     type: Literal["single_turn"] = "single_turn"
     user_message: UserMessage
 
 
 class MultiTurnSyntheticEvalInputData(BaseModel):
+    """A re-drivable multi-turn case: the opening user message plus the
+    synthetic user who continues the conversation at eval time.
+
+    first_message may be None; such items carry no seed to open a
+    conversation with, so the eval runner skips them instead of re-driving.
+    """
+
     type: Literal["multi_turn_synthetic"] = "multi_turn_synthetic"
     first_message: UserMessage | None = None
-    synthetic_user_info: dict[str, JsonValue] = {}
+    synthetic_user_info: SyntheticUserInfo
 
 
 EvalInputData = Annotated[
@@ -456,14 +484,27 @@ class EvalTaskInput(BaseModel):
         if run_output.trace is not None:
             trace_data = [dict(msg) for msg in run_output.trace]
 
-        if not isinstance(eval_input.data, SingleTurnEvalInputData):
-            raise ValueError("from_eval_input only supports single-turn EvalInput")
+        task_input: str | None
+        if isinstance(eval_input.data, SingleTurnEvalInputData):
+            task_input = eval_input.data.user_message.text
+        elif isinstance(eval_input.data, MultiTurnSyntheticEvalInputData):
+            # Multi-turn: the seed message opened the conversation; the rest
+            # of the exchange is in the trace.
+            task_input = (
+                eval_input.data.first_message.text
+                if eval_input.data.first_message
+                else None
+            )
+        else:
+            raise ValueError(
+                f"Unsupported EvalInput data type: {type(eval_input.data).__name__}"
+            )
 
         return cls(
             final_message=run_output.output.output,
             trace=trace_data,
             reference_data=eval_input.reference,
-            task_input=eval_input.data.user_message.text,
+            task_input=task_input,
         )
 
 
@@ -816,6 +857,32 @@ class EvalDataType(str, Enum):
     reference_answer = "reference_answer"
 
 
+class MultiTurnDriveConfig(BaseModel):
+    """Per-eval settings for re-driving multi-turn synthetic inputs at eval time.
+
+    A multi-turn eval run regenerates each conversation: the agent under test
+    comes from the run config being evaluated, while the synthetic user
+    (customer) defined here is held constant across run configs — so a
+    comparison varies only the agent. Stored per-eval so re-drives use the
+    same synthetic-user model and turn count the builder used when driving
+    the conversations the judge was calibrated on, keeping the judge scoring
+    the same conversation distribution.
+    """
+
+    model_name: str = Field(
+        description="The model that plays the synthetic user during re-drives."
+    )
+    # A plain string rather than the provider enum so persisted evals load on
+    # builds that don't know the provider yet (same choice as LlmJudgeProperties).
+    model_provider: str = Field(description="The provider of the synthetic-user model.")
+    turns: int = Field(
+        ge=1,
+        le=20,
+        description="Exact number of assistant turns per re-driven conversation "
+        "(the drive loop has no early termination).",
+    )
+
+
 class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}):
     """An evaluator definition that specifies what to evaluate and how scores should be produced."""
 
@@ -861,6 +928,12 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     evaluation_data_type: EvalDataType | None = Field(
         default=EvalDataType.final_answer,
         description="The output of the task run to evaluate. Can be final answer, full trace, or None for V2 evals.",
+    )
+    multi_turn_drive_config: MultiTurnDriveConfig | None = Field(
+        default=None,
+        description="How to re-drive multi-turn synthetic eval inputs at eval "
+        "time (synthetic-user model + turn count). Required to execute "
+        "multi-turn EvalInput items; None for single-turn and stored-trace evals.",
     )
 
     # Workaround to return typed parent without importing Task

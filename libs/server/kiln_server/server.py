@@ -74,6 +74,10 @@ tags_metadata = [
         "description": "Generate synthetic data for evals and fine-tuning.",
     },
     {
+        "name": "Multiturn SDG",
+        "description": "Generate multi-turn synthetic-user conversation datasets for eval.",
+    },
+    {
         "name": "Fine-tuning",
         "description": "Create and manage fine-tuning jobs.",
     },
