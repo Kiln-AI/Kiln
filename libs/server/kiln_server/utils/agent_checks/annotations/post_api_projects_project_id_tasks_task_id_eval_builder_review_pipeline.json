@@ -4,6 +4,6 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": true,
-    "approval_description": "Drive multi-turn synthetic-user conversations and run judge + claims on each? Invokes the target model, SU driver, and judge (cost)."
+    "approval_description": "Drive multi-turn synthetic-user conversations and judge each? Invokes the target model, SU driver, and judge (cost)."
   }
 }

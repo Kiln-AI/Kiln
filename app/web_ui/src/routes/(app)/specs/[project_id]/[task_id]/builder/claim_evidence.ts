@@ -60,11 +60,18 @@ export type BuildClaimEvidenceInput = {
 
 // ── Client-side per-trace bundle ─────────────────────────────────────────
 
+// Claims build lazily for multi-turn traces (the pipeline stream stops at
+// the judge): "unbuilt" until the trace is selected/opened, then a
+// build_claims round trip moves it through "building" to "built" or "error".
+// Single-turn traces arrive "built" (review_traces builds claims eagerly).
+export type ClaimsBuildState = "unbuilt" | "building" | "built" | "error"
+
 // One generated trace + the claims built for it. raw_input/raw_output are kept
 // client-side so the trace modal can render them and resolve citation spans.
 // leaf_run_id is the durable TaskRun identity for multi-turn chains (from
 // run_cases_batch) — the save path writes the golden rating onto it; null for
 // single-turn traces (their TaskRuns are created at save time).
+// claims/final_judgement are null until claims_state is "built".
 export type TraceClaims = {
   trace_id: string
   leaf_run_id: string | null
@@ -72,8 +79,10 @@ export type TraceClaims = {
   raw_output: string
   judge_score: ExpectedResult
   judge_reasoning: string
-  claims: Claim[]
-  final_judgement: FinalJudgement
+  claims: Claim[] | null
+  final_judgement: FinalJudgement | null
+  claims_state: ClaimsBuildState
+  claims_error: string | null
 }
 
 // ── Human review (UI output) ─────────────────────────────────────────────
@@ -117,11 +126,18 @@ export function resolve_citation_span(
 // ── Review-state helpers ─────────────────────────────────────────────────
 
 export function build_trace_reviews(traces: TraceClaims[]): TraceReview[] {
+  // Lazily-built traces start with no claim slots; the verdicts are sized
+  // when their claims arrive (empty_claim_verdicts).
   return traces.map((t) => ({
     trace_id: t.trace_id,
-    claim_verdicts: t.claims.map(() => ({ agrees: null, why: "" })),
+    claim_verdicts: (t.claims ?? []).map(() => ({ agrees: null, why: "" })),
     final_judgement_verdict: { agrees: null, why: "" },
   }))
+}
+
+// Fresh positional verdict slots for a trace whose claims just arrived.
+export function empty_claim_verdicts(claims: Claim[]): ClaimVerdict[] {
+  return claims.map(() => ({ agrees: null, why: "" }))
 }
 
 // A trace is reviewed once the final judgement has an agree/disagree and
@@ -146,6 +162,62 @@ export function all_traces_reviewed(
   return traces.every((t, i) => is_trace_reviewed(t, reviews[i]))
 }
 
+export function reviewed_trace_count(
+  traces: TraceClaims[],
+  reviews: TraceReview[],
+): number {
+  return traces.filter((t, i) => is_trace_reviewed(t, reviews[i])).length
+}
+
+// ── Subset review (multi-turn) ───────────────────────────────────────────
+
+// How many traces the reviewer must rate: the human-rated golden answer key
+// is capped at 25% of the chains server-side, so rating N//4 fills it
+// exactly. Floor of 1 — a batch with no rated trace has no answer key.
+export function review_target(total: number): number {
+  if (total <= 0) return 0
+  return Math.max(1, Math.floor(total / 4))
+}
+
+// Deterministic pick of which traces to put in front of the reviewer:
+// stratified ~50/50 judge-pass/judge-fail so the answer key calibrates both
+// classes (random or take-first selection degenerates on an imbalanced
+// batch), topped up from the other bucket on shortfall, spread evenly
+// across plan order within each bucket. Purely mechanical — no LLM in the
+// selection loop. A default, not a cap: unselected traces stay reviewable.
+// Returns ascending indices into `traces`.
+export function select_review_subset(
+  traces: Pick<TraceClaims, "judge_score">[],
+): number[] {
+  const target = review_target(traces.length)
+  if (target >= traces.length) return traces.map((_, i) => i)
+  const fails: number[] = []
+  const passes: number[] = []
+  traces.forEach((t, i) => (t.judge_score === "fail" ? fails : passes).push(i))
+  // Evenly-spaced picks across a bucket's plan order (k <= bucket.length
+  // gives k distinct positions).
+  const spread = (bucket: number[], k: number): number[] =>
+    Array.from(
+      { length: k },
+      (_, j) => bucket[Math.floor((j * bucket.length) / k)],
+    )
+  // Fails get the odd slot: failure examples are usually the scarcer and
+  // more informative half of an answer key.
+  const want_fail = Math.min(fails.length, Math.ceil(target / 2))
+  const want_pass = Math.min(passes.length, target - want_fail)
+  const picked = new Set([
+    ...spread(fails, want_fail),
+    ...spread(passes, want_pass),
+  ])
+  // Shortfall top-up (one bucket smaller than its quota): fill from the
+  // unpicked traces, keeping the even spread across plan order.
+  if (picked.size < target) {
+    const unpicked = traces.map((_, i) => i).filter((i) => !picked.has(i))
+    for (const i of spread(unpicked, target - picked.size)) picked.add(i)
+  }
+  return [...picked].sort((a, b) => a - b)
+}
+
 // ── Save payload (per-claim grades) ──────────────────────────────────────
 
 // The studio save contract IS in the generated schema — alias it (don't
@@ -166,15 +238,18 @@ function graded_claim(claim: Claim, verdict: ClaimVerdict): GradedClaim {
 // Build the persisted per-claim grades for one reviewed trace. Only claims
 // the reviewer actually graded are included (sub-claim verdicts are
 // optional); the final judgement is always graded by the time save is
-// reachable (is_trace_reviewed gates it).
+// reachable (is_trace_reviewed gates it, which requires built claims).
 export function build_claim_review_payload(
   trace: TraceClaims,
   review: TraceReview,
 ): ClaimReviewPayload {
+  if (!trace.final_judgement) {
+    throw new Error("Cannot build a claim review before claims are built.")
+  }
   return {
     judge_score: trace.judge_score,
     judge_reasoning: trace.judge_reasoning,
-    claims: trace.claims
+    claims: (trace.claims ?? [])
       .map((claim, i) => ({ claim, verdict: review.claim_verdicts[i] }))
       .filter(({ verdict }) => verdict && verdict.agrees !== null)
       .map(({ claim, verdict }) => graded_claim(claim, verdict)),
@@ -185,14 +260,14 @@ export function build_claim_review_payload(
   }
 }
 
-// The reviewer's overall verdict on a trace: the judge's verdict (pinned on
-// final_judgement.expected_result), flipped when the human disagrees with the
-// final judgement.
+// The reviewer's overall verdict on a trace: the judge's verdict (the final
+// judgement's expected_result is pinned to judge_score server-side), flipped
+// when the human disagrees with the final judgement.
 export function user_says_meets_spec(
   trace: TraceClaims,
   review: TraceReview,
 ): boolean {
-  const judge_passes = trace.final_judgement.expected_result === "pass"
+  const judge_passes = trace.judge_score === "pass"
   return review.final_judgement_verdict.agrees === false
     ? !judge_passes
     : judge_passes

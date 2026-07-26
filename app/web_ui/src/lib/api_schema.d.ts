@@ -3184,18 +3184,18 @@ export interface paths {
         put?: never;
         /**
          * Run Multi-Turn Review Pipeline
-         * @description The merged multi-turn stream: [drive → judge → claims] per case.
+         * @description The merged multi-turn stream: [drive → judge] per case.
          *
          *     Emits (all frames `type`-discriminated; errors carry {code, message}):
          *       - batch_started   { batch_tag, total_cases }
          *       - turn_completed  { case_index, turns_completed, total_turns }
          *       - case_driven     { case_index, leaf_run_id }
-         *       - case_reviewed   { case_index, leaf_run_id, raw_input, raw_output,
-         *                           judge_score, judge_reasoning, claims,
-         *                           final_judgement, total_cost }
+         *       - case_judged     { case_index, leaf_run_id, raw_input, raw_output,
+         *                           judge_score, judge_reasoning, total_cost }
          *       - case_failed     { case_index, stage, code, message }  (batch continues)
-         *       - batch_completed { reviewed, failed, batch_tag, total_cost }
-         *     Terminated by `data: complete`.
+         *       - batch_completed { judged, failed, batch_tag, total_cost }
+         *     Terminated by `data: complete`. Claims are built afterwards, per
+         *     opened trace, via build_claims.
          */
         post: operations["review_pipeline_api_projects__project_id__tasks__task_id__eval_builder_review_pipeline_post"];
         delete?: never;
@@ -3245,7 +3245,10 @@ export interface paths {
          * Build Claims
          * @description Claims-only primitive: build claims for one trace given a known verdict.
          *
-         *     Used by the refine loop (regenerate claims without re-running the judge).
+         *     The multi-turn review's claims path: the pipeline stream stops at the
+         *     judge, and the client calls this per trace the reviewer opens (under
+         *     subset review most traces are never opened). Also used by the refine
+         *     loop to regenerate claims without re-running the judge.
          */
         post: operations["build_claims_api_projects__project_id__tasks__task_id__eval_builder_build_claims_post"];
         delete?: never;
@@ -10507,8 +10510,9 @@ export interface components {
          *     (inherited — the two drive contracts can't drift) plus the judge that
          *     scores the results and the batch lifecycle field.
          *
-         *     `judge.prompt` doubles as the claim builder's eval_rubric — the builder
-         *     pressure-tests the rubric the verdict was really produced under.
+         *     `judge.prompt` is also what the client later passes to build_claims as
+         *     the eval_rubric — the claim builder pressure-tests the rubric the
+         *     verdict was really produced under.
          */
         ReviewPipelineRequest: {
             /**

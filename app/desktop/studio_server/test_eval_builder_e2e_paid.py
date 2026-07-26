@@ -21,18 +21,24 @@ calls, so the harness starts at Step 4 with the spec text already "written":
                        case i <- prompt i; each case carries scenario_index.)
   Steps 4c+5 PIPELINE  POST .../eval_builder/review_pipeline    [SSE]
                        (UI: on_drive_multi_turn part 2 — ONE stream runs
-                       [drive -> judge -> claims] per case: the SU driver
-                       plays the customer against the target model for N
-                       turns, chains persist to disk, then the judge runs
-                       LOCALLY on the user's keys and kiln_server's claim
-                       builder distills the REAL trace + verdict into
-                       claim/evidence pairs. Cases flow through
-                       independently; a failed case never discards the
-                       others. The human then agrees/disagrees per claim on
-                       each case_reviewed event — headless we agree with all
-                       but one final judgement, and that one disagreement
-                       drives the auto-refine below. (The UI blocks save until
-                       every chain is reviewed, so all chains are rated.)
+                       [drive -> judge] per case: the SU driver plays the
+                       customer against the target model for N turns, chains
+                       persist to disk, then the judge runs LOCALLY on the
+                       user's keys. Cases flow through independently; a
+                       failed case never discards the others.)
+  Step 5s  SELECT      (UI: select_review_subset — a deterministic
+                       judge-stratified pick of N//4 traces for human
+                       review; the golden answer key caps at 25%, so the
+                       subset fills it exactly. The rest stay reviewable
+                       but optional. Headless we review exactly the subset.)
+  Step 5c  CLAIMS      POST .../eval_builder/build_claims  (per selected trace)
+                       (UI: build_claims_for_index — kiln_server's claim
+                       builder distills the trace + verdict into
+                       claim/evidence pairs, built LAZILY only for the
+                       traces the reviewer opens. The human then
+                       agrees/disagrees per claim — headless we agree with
+                       all but one final judgement, and that one
+                       disagreement drives the auto-refine below.)
   Step 5r  REFINE      POST .../eval_builder/refine_judge
                        (UI: on_save → refined_judge_for_save, UNDER THE HOOD.
                        The reviewer DISAGREES with one case's final judgement
@@ -43,9 +49,10 @@ calls, so the harness starts at Step 4 with the spec text already "written":
                        syntax); on any failure the original judge ships.)
   Step 6   SAVE        POST .../spec_with_copilot
                        (UI: on_save — persists the Spec, the Eval, the V2
-                       judge config, and the answer key. Chains split into
-                       golden [capped at 25%, rated] and train; the EVAL
-                       slice is EvalInput items minted from the driven
+                       judge config, and the answer key. Only REVIEWED
+                       chains ride in reviewed_chains; golden = rated
+                       chains capped at 25%, everything else is train. The
+                       EVAL slice is EvalInput items minted from the driven
                        cases, with the drive settings persisted on the
                        Eval.)
   Step 7   RUN         GET .../evals/{id}/eval_config/{id}/run_comparison
@@ -87,11 +94,11 @@ Requirements (hard failures, never skips — a broken pipeline must be loud):
   - OPENROUTER_API_KEY in the environment (or .env) — target model, SU
     driver, and judge all run locally on your keys.
 
-Cost per run: one plan, one SU batch call, the 4x2 drive + judge + claim
-builder, one refine call at save, plus the runner's work over the saved
-eval: a fresh 4x2 re-drive per run config (two configs) with a judge call
-each, and the golden calibration judge calls — ~70 small model calls,
-still cents.
+Cost per run: one plan, one SU batch call, the 4x2 drive + judge, one
+claim-builder call per reviewed-subset trace (4 // 4 = 1), one refine call
+at save, plus the runner's work over the saved eval: a fresh 4x2 re-drive
+per run config (two configs) with a judge call each, and the golden
+calibration judge calls — ~70 small model calls, still cents.
 
 A second paid test (`test_eval_builder_pipeline_tools_e2e`) drives a
 tool-calling task via its SAVED run config (2x2, built-in calculator tools)
@@ -122,7 +129,7 @@ from kiln_ai.datamodel.datamodel_enums import TurnMode
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.utils.spec_utils import generate_spec_eval_tags
 
-# The UI runs 10 cases x 5 turns; both are request parameters, so the
+# The UI runs 40 cases x 5 turns; both are request parameters, so the
 # harness shrinks them without touching any code. Four cases keeps the run
 # cheap while giving the 25% golden cap a non-empty answer key (4 // 4 = 1).
 NUM_CASES = 4
@@ -220,7 +227,7 @@ def _collect_pipeline(events: list[dict | str]) -> dict:
     out: dict = {
         "batch_tag": None,
         "leaf_by_case": {},
-        "reviewed": {},
+        "judged": {},
         "failed": [],
         "turns_seen": {},
         "batch_completed": None,
@@ -235,8 +242,8 @@ def _collect_pipeline(events: list[dict | str]) -> dict:
             out["turns_seen"][event["case_index"]] = event["turns_completed"]
         elif kind == "case_driven":
             out["leaf_by_case"][event["case_index"]] = event["leaf_run_id"]
-        elif kind == "case_reviewed":
-            out["reviewed"][event["case_index"]] = event
+        elif kind == "case_judged":
+            out["judged"][event["case_index"]] = event
         elif kind == "batch_completed":
             out["batch_completed"] = event
         elif kind in ("case_failed", "batch_failed"):
@@ -244,32 +251,66 @@ def _collect_pipeline(events: list[dict | str]) -> dict:
     return out
 
 
-def _assert_pipeline_reviewed(
+def _assert_pipeline_judged(
     pipe: dict, num_driven: int, turns: int = TURNS_PER_CASE
 ) -> None:
     """The structural wire contract of one review_pipeline run: no failures,
-    every driven case reviewed for the full turn count, totals agree, and each
-    case_reviewed leaf id matches its case_driven leaf id."""
+    every driven case judged for the full turn count, totals agree, and each
+    case_judged leaf id matches its case_driven leaf id."""
     _require(not pipe["failed"], f"pipeline emitted failures: {pipe['failed']}")
     _require(pipe["batch_tag"] is not None, "review_pipeline emitted no batch_started")
     _require(
-        len(pipe["reviewed"]) == num_driven,
-        f"expected {num_driven} reviewed cases, got {len(pipe['reviewed'])}",
+        len(pipe["judged"]) == num_driven,
+        f"expected {num_driven} judged cases, got {len(pipe['judged'])}",
     )
     _require(
-        all(pipe["turns_seen"].get(i) == turns for i in pipe["reviewed"]),
+        all(pipe["turns_seen"].get(i) == turns for i in pipe["judged"]),
         f"turn progress incomplete: {pipe['turns_seen']}",
     )
     _require(
         pipe["batch_completed"] is not None
-        and pipe["batch_completed"]["reviewed"] == num_driven,
-        f"batch_completed totals disagree with reviewed events: {pipe['batch_completed']}",
+        and pipe["batch_completed"]["judged"] == num_driven,
+        f"batch_completed totals disagree with judged events: {pipe['batch_completed']}",
     )
-    for index, event in pipe["reviewed"].items():
+    for index, event in pipe["judged"].items():
         _require(
             event["leaf_run_id"] == pipe["leaf_by_case"].get(index),
-            f"case {index}: case_reviewed leaf id != case_driven leaf id",
+            f"case {index}: case_judged leaf id != case_driven leaf id",
         )
+        # No claims on the stream — they're built lazily via build_claims.
+        _require(
+            "claims" not in event and "final_judgement" not in event,
+            f"case {index}: case_judged unexpectedly carries claims",
+        )
+
+
+def _review_target(total: int) -> int:
+    """Mirror of the UI's review_target: N//4 with a floor of 1."""
+    if total <= 0:
+        return 0
+    return max(1, total // 4)
+
+
+def _select_review_subset(judge_scores: list[str]) -> list[int]:
+    """Mirror of the UI's select_review_subset: deterministic, judge-
+    stratified ~50/50, topped up on shortfall, spread across plan order."""
+    total = len(judge_scores)
+    target = _review_target(total)
+    if target >= total:
+        return list(range(total))
+    fails = [i for i, s in enumerate(judge_scores) if s == "fail"]
+    passes = [i for i, s in enumerate(judge_scores) if s != "fail"]
+
+    def spread(bucket: list[int], k: int) -> list[int]:
+        return [bucket[(j * len(bucket)) // k] for j in range(k)]
+
+    want_fail = min(len(fails), (target + 1) // 2)
+    want_pass = min(len(passes), target - want_fail)
+    picked = set(spread(fails, want_fail) + spread(passes, want_pass))
+    if len(picked) < target:
+        unpicked = [i for i in range(total) if i not in picked]
+        picked.update(spread(unpicked, target - len(picked)))
+    return sorted(picked)
 
 
 @pytest.fixture
@@ -414,13 +455,12 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         )
 
     # ── Steps 4c+5 — PIPELINE (UI: on_drive_multi_turn, part 2; SSE) ────
-    # ONE stream runs [drive → judge → claims] per case. The SU driver plays
-    # the customer for TURNS_PER_CASE turns; chains persist to disk (the
-    # leaf run id is the durable identity the save path rates); the judge
-    # runs locally under the SAME output-score identity the saved eval will
-    # use (spec_name); the claim builder receives the canonical transcript
-    # of the runner's REAL trace, echoed back on each case_reviewed event so
-    # citations resolve against exactly that text.
+    # ONE stream runs [drive → judge] per case. The SU driver plays the
+    # customer for TURNS_PER_CASE turns; chains persist to disk (the leaf
+    # run id is the durable identity the save path rates); the judge runs
+    # locally under the SAME output-score identity the saved eval will use
+    # (spec_name). Each case_judged event echoes the canonical transcript
+    # of the runner's REAL trace — claims built later cite into that text.
     num_driven = len(cases)
     resp = client.post(
         "/api/projects/p/tasks/t/eval_builder/review_pipeline",
@@ -435,29 +475,58 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     )
     _require(resp.status_code == 200, f"review_pipeline failed: {resp.text}")
     pipe = _collect_pipeline(_parse_sse(resp.text))
-    _assert_pipeline_reviewed(pipe, num_driven)
+    _assert_pipeline_judged(pipe, num_driven)
     batch_tag = pipe["batch_tag"]
     assert batch_tag is not None  # for the type checker; _assert failed above
-    reviewed = pipe["reviewed"]
+    judged = pipe["judged"]
 
-    citation_total = 0
-    citation_misses: list[str] = []
-    for position, event in reviewed.items():
-        # The verdict is the lowercase enum, and the final judgement is
-        # pinned to it server-side — the answer key anchors here.
+    for position, event in judged.items():
+        # The verdict is the lowercase enum — the answer key anchors here.
         _require(
             event["judge_score"] in ("pass", "fail"),
             f"trace {position}: judge_score is not the enum: {event['judge_score']!r}",
-        )
-        _require(
-            event["final_judgement"]["expected_result"] == event["judge_score"],
-            f"trace {position}: final judgement not pinned to the judge's verdict",
         )
         # The echoed raw_output is the canonical role-labelled transcript.
         _require(
             "<user_message>" in event["raw_output"]
             and "<assistant_message>" in event["raw_output"],
             f"trace {position}: raw_output is not the canonical transcript",
+        )
+
+    # ── Step 5s — SELECT the review subset (UI: select_review_subset) ───
+    # Deterministic, judge-stratified N//4 pick — the same mechanical rule
+    # the UI applies. The reviewer grades exactly these; the rest of the
+    # batch stays unreviewed (and must land in train, asserted below).
+    judged_order = sorted(judged)
+    subset_positions = _select_review_subset(
+        [judged[i]["judge_score"] for i in judged_order]
+    )
+    review_indices = [judged_order[p] for p in subset_positions]
+
+    # ── Step 5c — CLAIMS for the selected traces (UI: build_claims_for_
+    # index). One build_claims call per reviewed trace; the rubric is the
+    # judge's actual prompt; the final judgement comes back pinned to the
+    # judge's verdict.
+    claims_by_case: dict[int, dict] = {}
+    citation_total = 0
+    citation_misses: list[str] = []
+    for index in review_indices:
+        event = judged[index]
+        resp = client.post(
+            "/api/projects/p/tasks/t/eval_builder/build_claims",
+            json={
+                "raw_input": event["raw_input"],
+                "raw_output": event["raw_output"],
+                "eval_rubric": JUDGE["prompt"],
+                "judge_score": event["judge_score"],
+                "judge_reasoning": event["judge_reasoning"],
+            },
+        )
+        _require(resp.status_code == 200, f"build_claims failed: {resp.text}")
+        claims_output = resp.json()
+        _require(
+            claims_output["final_judgement"]["expected_result"] == event["judge_score"],
+            f"trace {index}: final judgement not pinned to the judge's verdict",
         )
         # Citations must anchor verbatim into the echoed text — the same
         # indexOf resolution the UI's highlighter performs. The builder LLM
@@ -466,12 +535,13 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         # individual misses WARN; a majority missing means the rendering or
         # anchoring contract itself broke, and that fails the gate.
         sources = {"input": event["raw_input"], "output": event["raw_output"]}
-        for claim in [*event["claims"], event["final_judgement"]]:
+        for claim in [*claims_output["claims"], claims_output["final_judgement"]]:
             for citation in claim["citations"]:
                 text = sources[citation["source"]]
                 citation_total += 1
                 if not (citation["from"] in text and citation["to"] in text):
-                    citation_misses.append(f"trace {position}: {citation!r}")
+                    citation_misses.append(f"trace {index}: {citation!r}")
+        claims_by_case[index] = claims_output
 
     for miss in citation_misses:
         warnings.warn(f"citation did not anchor verbatim: {miss}", stacklevel=1)
@@ -484,11 +554,11 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
 
     # ── Step 5r refine — AUTO-REFINE THE JUDGE (UI: on_save →
     # refined_judge_for_save). The reviewer disagrees with one case's final
-    # judgement (with a why) and agrees with the rest; at save the studio feeds
-    # those grades to the refine model UNDER THE HOOD and the REFINED judge is
-    # what ships. No user step — the reviewer only ever graded claims.
-    graded_indices = sorted(reviewed)
-    dissent_index = graded_indices[0]
+    # judgement (with a why) and agrees with the rest of the REVIEWED SUBSET;
+    # at save the studio feeds those grades to the refine model UNDER THE
+    # HOOD and the REFINED judge is what ships. No user step — the reviewer
+    # only ever graded claims.
+    dissent_index = review_indices[0]
     dissent_why = (
         "A polite, helpful reply that still states an unverified specific "
         "detail (a price, return window, or stock level) as fact must FAIL — "
@@ -496,11 +566,12 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     )
     # index -> human_grade for the reviewer's calls (disagree on one, agree rest).
     grade_of = {
-        i: ("disagree" if i == dissent_index else "agree") for i in graded_indices
+        i: ("disagree" if i == dissent_index else "agree") for i in review_indices
     }
 
     def _graded_trace(index: int) -> dict:
-        event = reviewed[index]
+        event = judged[index]
+        final_judgement = claims_by_case[index]["final_judgement"]
         grade = grade_of[index]
         return {
             "trace_label": event["leaf_run_id"],
@@ -508,15 +579,15 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             "judge_reasoning": event["judge_reasoning"],
             "claims": [],  # sub-claim grades optional; the final judgement carries it
             "final_judgement": {
-                "claim": event["final_judgement"]["claim"],
-                "evidence": event["final_judgement"]["evidence"],
-                "expected_result": event["final_judgement"]["expected_result"],
+                "claim": final_judgement["claim"],
+                "evidence": final_judgement["evidence"],
+                "expected_result": final_judgement["expected_result"],
                 "human_grade": grade,
                 "human_feedback": dissent_why if grade == "disagree" else None,
             },
         }
 
-    graded_traces = [_graded_trace(i) for i in graded_indices]
+    graded_traces = [_graded_trace(i) for i in review_indices]
     resp = client.post(
         "/api/projects/p/tasks/t/eval_builder/refine_judge",
         json={"judge_prompt": JUDGE["prompt"], "graded_traces": graded_traces},
@@ -556,13 +627,13 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     # user_says_meets_spec/build_claim_review_payload helpers do the same
     # mapping for real reviews).
     #
-    # Review EVERY driven case — the UI blocks save until all chains are
-    # reviewed, so all chains are rated at save time. Golden then caps at 25%
-    # of the chains and the rest are train; the eval slice is the EvalInputs.
-    review_indices = sorted(reviewed)
+    # SUBSET REVIEW: only the selected traces are reviewed (the UI's save
+    # gate requires N//4). Golden = rated chains capped at 25%; every other
+    # chain is train, unrated; the eval slice is the EvalInputs.
     reviewed_chains = []
     for index in review_indices:
-        event = reviewed[index]
+        event = judged[index]
+        final_judgement = claims_by_case[index]["final_judgement"]
         grade = grade_of[index]
         # Disagreeing with the final judgement flips the reviewer's verdict
         # (user_says_meets_spec) away from the judge's (the UI's
@@ -580,9 +651,9 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
                     "judge_reasoning": event["judge_reasoning"],
                     "claims": [],
                     "final_judgement": {
-                        "claim": event["final_judgement"]["claim"],
-                        "evidence": event["final_judgement"]["evidence"],
-                        "expected_result": event["final_judgement"]["expected_result"],
+                        "claim": final_judgement["claim"],
+                        "evidence": final_judgement["evidence"],
+                        "expected_result": final_judgement["expected_result"],
                         "human_grade": grade,
                         "human_feedback": dissent_why if grade == "disagree" else None,
                     },
@@ -615,10 +686,10 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
 
     # ── Persisted answer key — what the wizard leaves behind ────────────
     # One Spec + one Eval + one V2 judge config (rendering the canonical
-    # transcript). Every chain was reviewed, so every leaf is rated and
-    # carries its per-claim ClaimReview. Chains partition into DISJOINT
-    # golden (capped at 25%, the answer key) and train slices; the EVAL
-    # slice is EvalInput items minted from the driven cases, referenced via
+    # transcript). Only the reviewed subset's leaves are rated and carry a
+    # per-claim ClaimReview. Chains partition into DISJOINT golden (rated,
+    # capped at 25% — the answer key) and train slices; the EVAL slice is
+    # EvalInput items minted from the driven cases, referenced via
     # eval_input_filter_id, with the drive settings on the Eval.
     specs = temp_task.specs()
     _require(len(specs) == 1, f"expected 1 saved spec, found {len(specs)}")
@@ -643,7 +714,7 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     )
 
     eval_tag, train_tag, golden_tag = generate_spec_eval_tags(SPEC_NAME)
-    rated_leaf_ids = {reviewed[i]["leaf_run_id"] for i in review_indices}
+    rated_leaf_ids = {judged[i]["leaf_run_id"] for i in review_indices}
 
     saved_eval_obj = evals[0]
     _require(
@@ -698,35 +769,50 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             len(split) == 1 and eval_tag not in tags,
             f"leaf {leaf.id} is not in exactly one chain slice: {tags}",
         )
-        # Every reviewed chain is rated + carries its ClaimReview, regardless of
-        # which slice it landed in (all chains were reviewed).
+        # Rating + ClaimReview exist exactly on the reviewed subset's
+        # leaves; the unreviewed remainder is unrated by design.
         rating = leaf.output.rating
-        _require(
-            rating is not None and f"named::{SPEC_NAME}" in rating.requirement_ratings,
-            f"leaf {leaf.id} is missing its rating",
-        )
         reviews = leaf.claim_reviews()
-        _require(len(reviews) == 1, f"leaf {leaf.id} is missing its ClaimReview")
-        _require(
-            reviews[0].judge_score in ("pass", "fail"),
-            f"leaf {leaf.id}: persisted judge_score is not the enum",
-        )
+        if leaf.id in rated_leaf_ids:
+            _require(
+                rating is not None
+                and f"named::{SPEC_NAME}" in rating.requirement_ratings,
+                f"reviewed leaf {leaf.id} is missing its rating",
+            )
+            _require(
+                len(reviews) == 1, f"reviewed leaf {leaf.id} is missing its ClaimReview"
+            )
+            _require(
+                reviews[0].judge_score in ("pass", "fail"),
+                f"leaf {leaf.id}: persisted judge_score is not the enum",
+            )
+        else:
+            _require(
+                rating is None
+                or f"named::{SPEC_NAME}" not in rating.requirement_ratings,
+                f"unreviewed leaf {leaf.id} unexpectedly carries a rating",
+            )
+            _require(
+                len(reviews) == 0,
+                f"unreviewed leaf {leaf.id} unexpectedly carries a ClaimReview",
+            )
         if golden_tag in tags:
             golden_leaf_ids.add(leaf.id)
         train_count += 1 if train_tag in tags else 0
 
-    # Golden is drawn only from rated chains and capped at 25%; here every
-    # chain is rated, so golden is sized by the cap and the rest is train.
+    # Golden is drawn only from rated chains and capped at 25% of the batch;
+    # the reviewed subset is sized to fill that cap exactly (review_target),
+    # so golden == min(rated, cap) and everything else is train.
     _require(
         golden_leaf_ids <= rated_leaf_ids,
         f"golden slice {golden_leaf_ids} is not a subset of rated {rated_leaf_ids}",
     )
-    golden_target = num_driven // 4
+    golden_target = min(len(rated_leaf_ids), num_driven // 4)
     _require(
         len(golden_leaf_ids) == golden_target
         and train_count == num_driven - golden_target,
         f"chain split wrong (golden={len(golden_leaf_ids)}, "
-        f"train={train_count}, n={num_driven})",
+        f"train={train_count}, n={num_driven}, rated={len(rated_leaf_ids)})",
     )
 
     # ── Step 7 — RUN THE SAVED EVAL (the evals UI's own endpoints) ──────
@@ -955,8 +1041,8 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
 # the drive references the config by id, so the agent under test runs with
 # its tools exactly like a manual run. Kiln's built-in calculator demo tools
 # keep this dependency-free (no MCP server, no tool server, no keys beyond
-# the pipeline's own). 2 cases x 2 turns: drive → judge → claims only (the
-# main test above owns save/refine); ~half the main run's cost.
+# the pipeline's own). 2 cases x 2 turns: drive → judge only (the main test
+# above owns claims/save/refine); ~half the main run's cost.
 
 TOOL_NUM_CASES = 2
 TOOL_TURNS_PER_CASE = 2
@@ -1049,7 +1135,7 @@ def temp_tool_task(tmp_path, monkeypatch):
 def test_eval_builder_pipeline_tools_e2e(preflight, temp_tool_task, client):
     """The SU drive must exercise the target task WITH its tools: real tool
     invocations in the driven trace, flowing through the canonical transcript
-    to the judge and the claim builder."""
+    to the judge (and to any claims built from it later)."""
     task, run_config = temp_tool_task
 
     # ── SU CASES — one batch call from the hand-written scenarios. ──────
@@ -1086,7 +1172,7 @@ def test_eval_builder_pipeline_tools_e2e(preflight, temp_tool_task, client):
     )
     _require(resp.status_code == 200, f"review_pipeline failed: {resp.text}")
     pipe = _collect_pipeline(_parse_sse(resp.text))
-    _assert_pipeline_reviewed(pipe, num_driven, turns=TOOL_TURNS_PER_CASE)
+    _assert_pipeline_judged(pipe, num_driven, turns=TOOL_TURNS_PER_CASE)
 
     # ── Tool invocations in the DRIVEN trace, on disk. ──────────────────
     # The chain leaf's cumulative trace must carry real tool activity: an
@@ -1121,27 +1207,24 @@ def test_eval_builder_pipeline_tools_e2e(preflight, temp_tool_task, client):
             stacklevel=1,
         )
 
-    # ── Tool activity reached the judge + claim builder. ────────────────
-    # The echoed raw_output IS the canonical transcript both consumed; the
-    # tool-result turn renders as <tool_tool_message> (the request turn's
-    # <assistant_requested_tool_calls> only appears when the model sends no
-    # prose alongside the call, so the result tag is the reliable signal).
+    # ── Tool activity reached the judge. ────────────────────────────────
+    # The echoed raw_output IS the canonical transcript the judge consumed
+    # (and the text claims would cite into); the tool-result turn renders as
+    # <tool_tool_message> (the request turn's <assistant_requested_tool_calls>
+    # only appears when the model sends no prose alongside the call, so the
+    # result tag is the reliable signal).
     tool_visible = [
         index
-        for index, event in pipe["reviewed"].items()
+        for index, event in pipe["judged"].items()
         if "<tool_tool_message>" in event["raw_output"]
     ]
     _require(
         len(tool_visible) >= 1,
-        "no reviewed case's canonical transcript carries a tool-result turn "
-        "— tool activity did not reach the judge/claim-builder input",
+        "no judged case's canonical transcript carries a tool-result turn "
+        "— tool activity did not reach the judge's input",
     )
-    for index, event in pipe["reviewed"].items():
+    for index, event in pipe["judged"].items():
         _require(
             event["judge_score"] in ("pass", "fail"),
             f"case {index}: judge_score is not the enum: {event['judge_score']!r}",
-        )
-        _require(
-            event["final_judgement"]["expected_result"] == event["judge_score"],
-            f"case {index}: final judgement not pinned to the judge's verdict",
         )

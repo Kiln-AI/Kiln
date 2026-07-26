@@ -8,6 +8,9 @@ import {
   is_trace_reviewed,
   MAX_JUDGE_PROMPT_CHARS,
   resolve_citation_span,
+  review_target,
+  reviewed_trace_count,
+  select_review_subset,
   user_says_meets_spec,
   validate_refined_judge_prompt,
   type Claim,
@@ -40,6 +43,8 @@ function trace(overrides: Partial<TraceClaims> = {}): TraceClaims {
       claim: "Fails Eval: fabricated policy.",
       expected_result: "fail",
     }),
+    claims_state: "built",
+    claims_error: null,
     ...overrides,
   }
 }
@@ -101,9 +106,10 @@ describe("user_says_meets_spec", () => {
     }
   }
 
-  it("anchors to final_judgement.expected_result", () => {
+  it("anchors to judge_score (the pinned final-judgement verdict)", () => {
     expect(user_says_meets_spec(trace(), reviewed(true))).toBe(false)
     const passing = trace({
+      judge_score: "pass",
       final_judgement: claim({ expected_result: "pass" }),
     })
     expect(user_says_meets_spec(passing, reviewed(true))).toBe(true)
@@ -112,13 +118,108 @@ describe("user_says_meets_spec", () => {
   it("flips the verdict when the human disagrees with the final judgement", () => {
     expect(user_says_meets_spec(trace(), reviewed(false))).toBe(true)
     const passing = trace({
+      judge_score: "pass",
       final_judgement: claim({ expected_result: "pass" }),
     })
     expect(user_says_meets_spec(passing, reviewed(false))).toBe(false)
   })
 })
 
+describe("review_target", () => {
+  it("is N//4 with a floor of one", () => {
+    expect(review_target(40)).toBe(10)
+    expect(review_target(38)).toBe(9)
+    expect(review_target(4)).toBe(1)
+    expect(review_target(3)).toBe(1)
+    expect(review_target(1)).toBe(1)
+    expect(review_target(0)).toBe(0)
+  })
+})
+
+describe("select_review_subset", () => {
+  function batch(
+    scores: ("pass" | "fail")[],
+  ): Pick<TraceClaims, "judge_score">[] {
+    return scores.map((judge_score) => ({ judge_score }))
+  }
+
+  it("selects everything when the target covers the batch", () => {
+    expect(select_review_subset(batch(["pass"]))).toEqual([0])
+  })
+
+  it("prefers a judge-fail for a tiny batch's single slot", () => {
+    expect(select_review_subset(batch(["pass", "fail", "pass"]))).toEqual([1])
+  })
+
+  it("stratifies ~50/50 across judge verdicts at 40", () => {
+    // 20 passes then 20 fails: 10 selected, 5 from each bucket.
+    const traces = batch([
+      ...Array(20).fill("pass"),
+      ...Array(20).fill("fail"),
+    ] as ("pass" | "fail")[])
+    const picked = select_review_subset(traces)
+    expect(picked).toHaveLength(10)
+    const fails = picked.filter((i) => traces[i].judge_score === "fail")
+    expect(fails).toHaveLength(5)
+    // Spread across plan order, not clustered at the front.
+    expect(picked.some((i) => i >= 30)).toBe(true)
+    expect(picked.some((i) => i < 10)).toBe(true)
+  })
+
+  it("tops up from the other bucket when one is short", () => {
+    // 39 passes, 1 fail: the fail is always picked, passes fill to 10.
+    const traces = batch([...Array(39).fill("pass"), "fail"] as (
+      | "pass"
+      | "fail"
+    )[])
+    const picked = select_review_subset(traces)
+    expect(picked).toHaveLength(10)
+    expect(picked).toContain(39)
+  })
+
+  it("handles single-verdict batches (all pass)", () => {
+    const traces = batch(Array(12).fill("pass") as ("pass" | "fail")[])
+    const picked = select_review_subset(traces)
+    expect(picked).toHaveLength(3)
+    expect(new Set(picked).size).toBe(3)
+  })
+
+  it("is deterministic", () => {
+    const traces = batch([
+      "pass",
+      "fail",
+      "pass",
+      "fail",
+      "pass",
+      "fail",
+      "pass",
+      "fail",
+    ])
+    expect(select_review_subset(traces)).toEqual(select_review_subset(traces))
+  })
+})
+
+describe("reviewed_trace_count", () => {
+  it("counts reviewed traces only (the save-gate numerator)", () => {
+    const traces = [trace(), trace({ trace_id: "trace_1" })]
+    const reviews = build_trace_reviews(traces)
+    expect(reviewed_trace_count(traces, reviews)).toBe(0)
+    reviews[0].final_judgement_verdict.agrees = true
+    expect(reviewed_trace_count(traces, reviews)).toBe(1)
+  })
+})
+
 describe("build_claim_review_payload", () => {
+  it("throws before claims are built (unbuilt traces cannot be graded)", () => {
+    const t = trace({
+      claims: null,
+      final_judgement: null,
+      claims_state: "unbuilt",
+    })
+    const review = build_trace_reviews([t])[0]
+    expect(() => build_claim_review_payload(t, review)).toThrow(/built/)
+  })
+
   it("includes only graded claims and always the final judgement", () => {
     const t = trace({ claims: [claim(), claim({ expected_result: "pass" })] })
     const review: TraceReview = {

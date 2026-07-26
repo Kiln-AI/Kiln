@@ -2,14 +2,16 @@
 
 Two streams, one frame contract (see api_models/eval_builder_models.py):
 
-  review_pipeline (multi-turn) — runs [drive → judge → claims] as one unit
-  of work per case. The await order inside each case's coroutine IS the
-  stage dependency; per-stage semaphores bound the fan-out (DRIVE_CONCURRENCY
-  drive loops, REVIEW_CONCURRENCY judge+claims units). A case failing at any
+  review_pipeline (multi-turn) — runs [drive → judge] as one unit of work
+  per case. The await order inside each case's coroutine IS the stage
+  dependency; per-stage semaphores bound the fan-out (DRIVE_CONCURRENCY
+  drive loops, REVIEW_CONCURRENCY judge units). A case failing at any
   stage emits case_failed and the other cases keep flowing — completed
-  results are never discarded. The judge and claim builder receive the
-  runner's REAL trace (tool calls and system turns included), rendered once
-  into the canonical transcript.
+  results are never discarded. The judge receives the runner's REAL trace
+  (tool calls and system turns included), rendered once into the canonical
+  transcript, which is echoed on each case_judged frame. Claims are NOT
+  built here: the client builds them lazily via build_claims for the
+  traces a reviewer actually opens — under subset review most never are.
 
   review_traces (single-turn) — judge + claims over already-generated I/O
   pairs, fanned out per trace.
@@ -33,7 +35,7 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     PipelineBatchStartedEvent,
     PipelineCaseDrivenEvent,
     PipelineCaseFailedEvent,
-    PipelineCaseReviewedEvent,
+    PipelineCaseJudgedEvent,
     PipelineTurnCompletedEvent,
     RefineJudgeApiInput,
     RefineJudgeApiOutput,
@@ -83,9 +85,9 @@ logger = logging.getLogger(__name__)
 # The builder's two concurrency knobs, one per pipeline stage:
 #   DRIVE_CONCURRENCY  — concurrent SU drive loops (target model + SU driver
 #                        both burn tokens per turn; the most expensive stage).
-#   REVIEW_CONCURRENCY — concurrent [judge → claims] units (a local judge
-#                        call then a remote claim-builder call), shared by
-#                        the merged pipeline and the single-turn review.
+#   REVIEW_CONCURRENCY — concurrent review units: judge calls on the merged
+#                        pipeline; [judge → remote claim-builder] pairs on
+#                        the single-turn review.
 DRIVE_CONCURRENCY = 10
 REVIEW_CONCURRENCY = 8
 
@@ -105,8 +107,9 @@ class ReviewPipelineRequest(RunCasesBatchApiInput):
     (inherited — the two drive contracts can't drift) plus the judge that
     scores the results and the batch lifecycle field.
 
-    `judge.prompt` doubles as the claim builder's eval_rubric — the builder
-    pressure-tests the rubric the verdict was really produced under.
+    `judge.prompt` is also what the client later passes to build_claims as
+    the eval_rubric — the claim builder pressure-tests the rubric the
+    verdict was really produced under.
     """
 
     replace_batch_tags: list[str] = Field(
@@ -196,13 +199,13 @@ async def review_one_trace(
 
 
 class ReviewPipelineRun:
-    """One merged-pipeline execution: [drive → judge → claims] per case.
+    """One merged-pipeline execution: [drive → judge] per case.
 
     Frames from the concurrently-running stages funnel through one queue and
     come out of `events()`, the SSE stream body. Each stage is a method and
     shared state lives in instance attributes, so the pipeline reads top to
-    bottom: `events()` drains, `_run_drive()` produces, `_review_case()`
-    judges and distills, `_fail_case()` isolates.
+    bottom: `events()` drains, `_run_drive()` produces, `_judge_case()`
+    scores, `_fail_case()` isolates.
     """
 
     def __init__(
@@ -238,7 +241,7 @@ class ReviewPipelineRun:
         # not a wire projection. Popped when the case's review starts.
         self._latest_trace: dict[int, list[dict[str, Any]]] = {}
         self._turns_completed: dict[int, int] = {}
-        self._reviewed_count = 0
+        self._judged_count = 0
         self._failed_count = 0
         self._total_cost = 0.0
         self._batch_tag = input.batch_tag or ""
@@ -278,7 +281,7 @@ class ReviewPipelineRun:
                 raise drive_error
             yield _sse(
                 PipelineBatchCompletedEvent(
-                    reviewed=self._reviewed_count,
+                    judged=self._judged_count,
                     failed=self._failed_count,
                     batch_tag=self._batch_tag,
                     total_cost=self._total_cost,
@@ -309,7 +312,7 @@ class ReviewPipelineRun:
 
     async def _run_drive(self) -> None:
         """Consume the SU runner's events; each completed case pipelines
-        straight into its own judge+claims task — no stage barrier."""
+        straight into its own judge task — no stage barrier."""
         any_case_driven = False
         async for event in run_cases_batch(
             cases=self._cases,
@@ -372,13 +375,13 @@ class ReviewPipelineRun:
                 )
                 self._review_tasks.append(
                     asyncio.create_task(
-                        self._review_case(
+                        self._judge_case(
                             event.case_index,
                             event.leaf_run_id,
                             trace,
                             event.total_cost,
                         ),
-                        name=f"review_case_{event.case_index}",
+                        name=f"judge_case_{event.case_index}",
                     )
                 )
             elif isinstance(event, CaseFailedEvent):
@@ -392,14 +395,15 @@ class ReviewPipelineRun:
             # can go. A drive that produced nothing keeps them untouched.
             await self._delete_superseded_batches()
 
-    async def _review_case(
+    async def _judge_case(
         self,
         case_index: int,
         leaf_run_id: str,
         trace: list[dict[str, Any]],
         drive_cost: float,
     ) -> None:
-        """Judge one driven case (local), then build claims (remote)."""
+        """Judge one driven case (local). Claims are not built here — the
+        client requests them per opened trace via build_claims."""
         async with self._review_sem:
             try:
                 raw_input, raw_output = transcript_io_for_trace(trace)
@@ -412,47 +416,32 @@ class ReviewPipelineRun:
                     spec_name=self._input.spec_name,
                     trace=trace,
                 )
-            except Exception as e:  # noqa: BLE001 — isolate to this case
-                await self._fail_case(
-                    case_index, "judge", "judge_failed", f"{type(e).__name__}: {e}"
-                )
-                return
-            try:
-                claims_output = await build_claims_for_trace(
-                    raw_input=raw_input,
-                    raw_output=raw_output,
-                    eval_rubric=self._input.judge.prompt,
-                    judge_score=verdict.judge_score,
-                    judge_reasoning=verdict.judge_reasoning,
-                )
                 # Frame construction/serialization is inside the try: a
                 # failure here must surface as case_failed too, or the batch
-                # totals would claim a review the client never received.
+                # totals would claim a verdict the client never received.
                 frame = _sse(
-                    PipelineCaseReviewedEvent(
+                    PipelineCaseJudgedEvent(
                         case_index=case_index,
                         leaf_run_id=leaf_run_id,
                         raw_input=raw_input,
                         raw_output=raw_output,
                         judge_score=verdict.judge_score,
                         judge_reasoning=verdict.judge_reasoning,
-                        claims=claims_output.claims,
-                        final_judgement=claims_output.final_judgement,
                         total_cost=drive_cost,
                     )
                 )
             except Exception as e:  # noqa: BLE001 — isolate to this case
                 await self._fail_case(
-                    case_index, "claims", "claims_failed", f"{type(e).__name__}: {e}"
+                    case_index, "judge", "judge_failed", f"{type(e).__name__}: {e}"
                 )
                 return
-            self._reviewed_count += 1
+            self._judged_count += 1
             await self._queue.put(frame)
 
     async def _fail_case(
         self,
         case_index: int,
-        stage: Literal["drive", "judge", "claims"],
+        stage: Literal["drive", "judge"],
         code: str,
         message: str,
     ) -> None:
@@ -503,9 +492,8 @@ def connect_eval_builder_api(app: FastAPI):
         tags=["Eval Builder"],
         summary="Run Multi-Turn Review Pipeline",
         openapi_extra=agent_policy_require_approval(
-            "Drive multi-turn synthetic-user conversations and run judge + "
-            "claims on each? Invokes the target model, SU driver, and judge "
-            "(cost)."
+            "Drive multi-turn synthetic-user conversations and judge each? "
+            "Invokes the target model, SU driver, and judge (cost)."
         ),
     )
     @no_write_lock  # streaming route: lock would buffer the SSE and break cancel-on-disconnect
@@ -517,24 +505,25 @@ def connect_eval_builder_api(app: FastAPI):
         task_id: Annotated[str, Path(description="The unique identifier of the task.")],
         input: ReviewPipelineRequest,
     ) -> CancellableStreamingResponse:
-        """The merged multi-turn stream: [drive → judge → claims] per case.
+        """The merged multi-turn stream: [drive → judge] per case.
 
         Emits (all frames `type`-discriminated; errors carry {code, message}):
           - batch_started   { batch_tag, total_cases }
           - turn_completed  { case_index, turns_completed, total_turns }
           - case_driven     { case_index, leaf_run_id }
-          - case_reviewed   { case_index, leaf_run_id, raw_input, raw_output,
-                              judge_score, judge_reasoning, claims,
-                              final_judgement, total_cost }
+          - case_judged     { case_index, leaf_run_id, raw_input, raw_output,
+                              judge_score, judge_reasoning, total_cost }
           - case_failed     { case_index, stage, code, message }  (batch continues)
-          - batch_completed { reviewed, failed, batch_tag, total_cost }
-        Terminated by `data: complete`.
+          - batch_completed { judged, failed, batch_tag, total_cost }
+        Terminated by `data: complete`. Claims are built afterwards, per
+        opened trace, via build_claims.
         """
         # Guard + decode before the stream opens so the client sees a clean
         # 4xx rather than a half-open text/event-stream. The copilot key
-        # check comes first: the claims stage is the only remote call, but
-        # discovering a missing key there would be AFTER the user burned
-        # their own model spend driving and judging every case.
+        # check comes first: this stream runs entirely on the user's keys,
+        # but the review that follows it builds claims through the remote
+        # claim builder — discovering a missing key there would be AFTER the
+        # user burned their own model spend driving and judging every case.
         get_copilot_api_key()
         task = task_from_id(project_id, task_id)
         guard_multiturn(task)
@@ -644,7 +633,10 @@ def connect_eval_builder_api(app: FastAPI):
     ) -> BuildClaimsApiOutput:
         """Claims-only primitive: build claims for one trace given a known verdict.
 
-        Used by the refine loop (regenerate claims without re-running the judge).
+        The multi-turn review's claims path: the pipeline stream stops at the
+        judge, and the client calls this per trace the reviewer opens (under
+        subset review most traces are never opened). Also used by the refine
+        loop to regenerate claims without re-running the judge.
         """
         return await build_claims_for_trace(
             raw_input=input.raw_input,

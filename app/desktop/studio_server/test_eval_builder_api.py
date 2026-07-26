@@ -940,9 +940,9 @@ class TestReviewPipeline:
             (1, "leaf-1"),
         }
 
-        reviewed = _events_of(events, "case_reviewed")
-        assert len(reviewed) == 2
-        for e in reviewed:
+        judged = _events_of(events, "case_judged")
+        assert len(judged) == 2
+        for e in judged:
             assert e["judge_score"] == "fail"
             assert e["leaf_run_id"] == f"leaf-{e['case_index']}"
             assert e["total_cost"] == 0.05
@@ -953,15 +953,14 @@ class TestReviewPipeline:
             assert f"answer {e['case_index']}" in e["raw_output"]
             # raw_input = the conversation's opening user message.
             assert e["raw_input"] == f"question {e['case_index']}"
-            # Citations keep the literal `from` key.
-            citation = e["claims"][0]["citations"][0]
-            assert citation["from"] == "30 days" and "from_" not in citation
+            # No claims on the stream: they're built lazily via build_claims.
+            assert "claims" not in e and "final_judgement" not in e
 
         completed = _events_of(events, "batch_completed")
         assert completed == [
             {
                 "type": "batch_completed",
-                "reviewed": 2,
+                "judged": 2,
                 "failed": 0,
                 "batch_tag": "tag123",
                 "total_cost": 0.1,
@@ -974,11 +973,9 @@ class TestReviewPipeline:
             trace = call.kwargs["trace"]
             assert any(m.get("role") == "system" for m in trace)
             assert any(m.get("role") == "tool" for m in trace)
-        # The claim builder's rubric is the judge's actual prompt.
-        for call in pipeline_seams["claims"].call_args_list:
-            assert call.kwargs["eval_rubric"] == (
-                "Judge whether the output fabricates policy."
-            )
+        # The pipeline never spends on the claim builder — claims are built
+        # per opened trace via the build_claims primitive.
+        pipeline_seams["claims"].assert_not_called()
         # No replace_batch_tag → no delete.
         pipeline_seams["delete"].assert_not_called()
 
@@ -1002,10 +999,10 @@ class TestReviewPipeline:
                 "message": "drive blew up",
             }
         ]
-        reviewed = _events_of(events, "case_reviewed")
-        assert [e["case_index"] for e in reviewed] == [1]
+        judged = _events_of(events, "case_judged")
+        assert [e["case_index"] for e in judged] == [1]
         completed = _events_of(events, "batch_completed")[0]
-        assert completed["reviewed"] == 1
+        assert completed["judged"] == 1
         assert completed["failed"] == 1
         assert events[-1] == "complete"
 
@@ -1030,30 +1027,8 @@ class TestReviewPipeline:
         assert failed[0]["stage"] == "judge"
         assert failed[0]["code"] == "judge_failed"
         assert "judge exploded" in failed[0]["message"]
-        reviewed = _events_of(events, "case_reviewed")
-        assert [e["case_index"] for e in reviewed] == [1]
-        assert events[-1] == "complete"
-
-    def test_claims_failure_is_isolated(self, client, pipeline_request, pipeline_seams):
-        async def claims(*, raw_input, **_kwargs):
-            if raw_input == "question 1":
-                raise RuntimeError("claims exploded")
-            return _claims_output()
-
-        with patch(
-            "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
-            new=AsyncMock(side_effect=claims),
-        ):
-            resp = client.post(PIPELINE_URL, json=pipeline_request)
-
-        events = _parse_sse(resp.text)
-        failed = _events_of(events, "case_failed")
-        assert len(failed) == 1
-        assert failed[0]["case_index"] == 1
-        assert failed[0]["stage"] == "claims"
-        assert failed[0]["code"] == "claims_failed"
-        reviewed = _events_of(events, "case_reviewed")
-        assert [e["case_index"] for e in reviewed] == [0]
+        judged = _events_of(events, "case_judged")
+        assert [e["case_index"] for e in judged] == [1]
         assert events[-1] == "complete"
 
     def test_replace_batch_tags_deleted_after_successful_drive(
@@ -1066,7 +1041,7 @@ class TestReviewPipeline:
 
         assert resp.status_code == 200
         events = _parse_sse(resp.text)
-        assert len(_events_of(events, "case_reviewed")) == 2
+        assert len(_events_of(events, "case_judged")) == 2
         delete_mock = pipeline_seams["delete"]
         assert [c.args[1] for c in delete_mock.call_args_list] == [
             "oldbatch123",

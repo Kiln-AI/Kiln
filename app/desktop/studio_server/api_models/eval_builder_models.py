@@ -237,11 +237,13 @@ class TraceErrorEvent(BaseModel):
 
 # ── Review-pipeline SSE events (the merged multi-turn stream) ─────────────
 #
-# One stream runs [drive → judge → claims] per case; each case flows through
+# One stream runs [drive → judge] per case; each case flows through
 # independently, so events from different cases interleave. Ordering WITHIN
-# a case: turn_completed* → case_driven → (case_reviewed | case_failed), or
+# a case: turn_completed* → case_driven → (case_judged | case_failed), or
 # case_failed at any earlier point. A failed case never discards other
-# cases' results.
+# cases' results. Claims are NOT built on this stream: the client builds
+# them lazily via the build_claims primitive for the traces a reviewer
+# actually opens — under subset review most traces are never opened.
 
 
 class PipelineBatchStartedEvent(BaseModel):
@@ -253,7 +255,7 @@ class PipelineBatchStartedEvent(BaseModel):
 
 
 class PipelineTurnCompletedEvent(BaseModel):
-    """One assistant turn finished for a case (drives per-row progress)."""
+    """One assistant turn finished for a case (drives batch progress)."""
 
     type: Literal["turn_completed"] = "turn_completed"
     case_index: int
@@ -262,30 +264,29 @@ class PipelineTurnCompletedEvent(BaseModel):
 
 
 class PipelineCaseDrivenEvent(BaseModel):
-    """A case's conversation finished driving; its judge+claims stage begins."""
+    """A case's conversation finished driving; its judge stage begins."""
 
     type: Literal["case_driven"] = "case_driven"
     case_index: int
     leaf_run_id: str
 
 
-class PipelineCaseReviewedEvent(BaseModel):
-    """A case completed the full [drive → judge → claims] pipeline.
+class PipelineCaseJudgedEvent(BaseModel):
+    """A case completed the [drive → judge] pipeline.
 
     raw_input/raw_output are the canonical transcript rendering of the
     runner's REAL trace (tool calls and system turns included) — the same
-    text the judge and claim builder saw, so citations resolve against it.
+    text the judge saw and the claim builder will see, so citations built
+    later resolve against it.
     """
 
-    type: Literal["case_reviewed"] = "case_reviewed"
+    type: Literal["case_judged"] = "case_judged"
     case_index: int
     leaf_run_id: str
     raw_input: str
     raw_output: str
     judge_score: JudgeScoreLiteral
     judge_reasoning: str
-    claims: list[ClaimApi]
-    final_judgement: FinalJudgementApi
     total_cost: float
 
 
@@ -294,7 +295,7 @@ class PipelineCaseFailedEvent(BaseModel):
 
     type: Literal["case_failed"] = "case_failed"
     case_index: int
-    stage: Literal["drive", "judge", "claims"]
+    stage: Literal["drive", "judge"]
     code: str
     message: str
 
@@ -303,7 +304,7 @@ class PipelineBatchCompletedEvent(BaseModel):
     """Last frame before the terminator: per-batch outcome counts."""
 
     type: Literal["batch_completed"] = "batch_completed"
-    reviewed: int
+    judged: int
     failed: int
     batch_tag: str
     total_cost: float

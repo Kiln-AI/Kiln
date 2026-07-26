@@ -32,8 +32,15 @@
     build_graded_traces,
     build_trace_reviews,
     disagreement_feedback,
+    empty_claim_verdicts,
+    is_trace_reviewed,
+    review_target,
+    reviewed_trace_count,
+    select_review_subset,
     user_says_meets_spec,
     validate_refined_judge_prompt,
+    type Claim,
+    type FinalJudgement,
     type RefineJudgeProposal,
     type TraceClaims,
     type TraceReview,
@@ -470,7 +477,7 @@
   // steady progress visible where a case-only count would sit still then
   // jump — cases complete in concurrency-limited waves.
   let turns_by_case: Record<number, number> = {}
-  let reviewed_case_count = 0
+  let judged_case_count = 0
   let pipeline_failed_count = 0
   $: multi_turn_turns_done = Object.values(turns_by_case).reduce(
     (n, t) => n + t,
@@ -478,7 +485,7 @@
   )
   function reset_pipeline_counters() {
     turns_by_case = {}
-    reviewed_case_count = 0
+    judged_case_count = 0
     pipeline_failed_count = 0
   }
 
@@ -626,27 +633,25 @@
       }
     | { type: "case_driven"; case_index: number; leaf_run_id: string }
     | {
-        type: "case_reviewed"
+        type: "case_judged"
         case_index: number
         leaf_run_id: string
         raw_input: string
         raw_output: string
         judge_score: TraceClaims["judge_score"]
         judge_reasoning: string
-        claims: TraceClaims["claims"]
-        final_judgement: TraceClaims["final_judgement"]
         total_cost: number
       }
     | {
         type: "case_failed"
         case_index: number
-        stage: "drive" | "judge" | "claims"
+        stage: "drive" | "judge"
         code: string
         message: string
       }
     | {
         type: "batch_completed"
-        reviewed: number
+        judged: number
         failed: number
         batch_tag: string
         total_cost: number
@@ -684,6 +689,7 @@
     // browser Forward can't re-enter review over stale results.
     trace_claims = []
     trace_reviews = []
+    selected_trace_indices = []
     driven_prompts_json = null
     multi_turn_phase = "planning"
     try {
@@ -754,6 +760,7 @@
     pipeline_warning = null
     trace_claims = []
     trace_reviews = []
+    selected_trace_indices = []
     driven_cases = []
     driven_prompts_json = JSON.stringify(approved_prompts)
     pipeline_total_cases = approved_prompts.length
@@ -911,7 +918,9 @@
               multi_turn_batch_tag,
             ]
           }
-        } else if (event.type === "case_reviewed") {
+        } else if (event.type === "case_judged") {
+          // Claims stay unbuilt here — they're built lazily (build_claims)
+          // for the traces the review selection surfaces or the user opens.
           built[event.case_index] = {
             trace_id: `case_${event.case_index}`,
             leaf_run_id: event.leaf_run_id || null,
@@ -919,10 +928,12 @@
             raw_output: event.raw_output,
             judge_score: event.judge_score,
             judge_reasoning: event.judge_reasoning,
-            claims: event.claims ?? [],
-            final_judgement: event.final_judgement,
+            claims: null,
+            final_judgement: null,
+            claims_state: "unbuilt",
+            claims_error: null,
           }
-          reviewed_case_count += 1
+          judged_case_count += 1
         } else if (event.type === "case_failed") {
           pipeline_failed_count += 1
           posthog.capture("eval_v2_pipeline_case_failed", {
@@ -953,12 +964,15 @@
         driven_cases = previous_driven_cases
       }
 
-      // Compact survivors BEFORE any error/warning path: completed reviews
+      // Compact survivors BEFORE any error/warning path: completed verdicts
       // are paid results and must never be discarded by a late failure.
       const complete = built.filter((t): t is TraceClaims => t !== null)
       if (complete.length > 0) {
         trace_claims = complete
         trace_reviews = build_trace_reviews(complete)
+        // The review subset is decided the moment all verdicts are in —
+        // deterministic and judge-stratified, so both classes calibrate.
+        selected_trace_indices = select_review_subset(complete)
       }
       if (generation_error) return
       if (complete.length === 0) {
@@ -975,6 +989,7 @@
         return
       }
       // PUSH review (single-turn replaces): Back must return to the plan.
+      prefetch_selected_claims()
       goto_step("review")
     } catch (e) {
       if (is_abort_error(e)) return
@@ -1022,9 +1037,124 @@
   // that the reviewer agrees/disagrees with; the trace stays hidden in a modal.
   let trace_claims: TraceClaims[] = []
   let trace_reviews: TraceReview[] = []
+  // Which traces the reviewer is asked to review (indices into trace_claims):
+  // a judge-stratified subset for multi-turn batches, everything for
+  // single-turn. A default, not a cap — unselected traces stay reviewable.
+  let selected_trace_indices: number[] = []
   let claims_loading = false
   let claims_error: string | null = null
   $: all_reviewed = all_traces_reviewed(trace_claims, trace_reviews)
+  // Multi-turn save gate: the human-rated golden answer key caps at 25% of
+  // chains server-side, so the reviewer must rate at least N//4 traces —
+  // reviewing more is welcome, fewer starves the answer key.
+  $: multi_turn_review_target = review_target(trace_claims.length)
+  $: reviewed_count = reviewed_trace_count(trace_claims, trace_reviews)
+  $: save_gate_met = is_multi_turn
+    ? trace_claims.length > 0 && reviewed_count >= multi_turn_review_target
+    : all_reviewed
+
+  // ── Lazy claims (multi-turn). The pipeline stream stops at the judge;
+  // only traces the review surfaces (the selected subset) or the user opens
+  // pay the remote claim-builder round trip.
+  const CLAIMS_BUILD_CONCURRENCY = 5
+
+  // Guarded patch: a re-drive replaces trace_claims while builds are in
+  // flight — the trace_id check stops a stale response landing on the new
+  // batch's trace at the same index.
+  function patch_trace_claims(
+    index: number,
+    trace_id: string,
+    patch: Partial<TraceClaims>,
+  ) {
+    const current = trace_claims[index]
+    if (!current || current.trace_id !== trace_id) return
+    trace_claims = trace_claims.map((t, i) =>
+      i === index ? { ...t, ...patch } : t,
+    )
+  }
+
+  async function build_claims_for_index(index: number): Promise<void> {
+    const tc = trace_claims[index]
+    const judge = review_judge
+    if (!tc || !judge) return
+    // "error" and "unbuilt" both proceed — re-opening an errored trace is
+    // the retry affordance.
+    if (tc.claims_state === "built" || tc.claims_state === "building") return
+    const trace_id = tc.trace_id
+    patch_trace_claims(index, trace_id, {
+      claims_state: "building",
+      claims_error: null,
+    })
+    try {
+      const { data, error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/build_claims",
+        {
+          params: { path: { project_id, task_id } },
+          // The rubric under test is the judge's actual prompt — the claim
+          // builder pressure-tests the rubric the verdict was produced under.
+          // No abort signal: builds belong to the trace (identity-checked in
+          // patch_trace_claims), not to whichever screen is showing.
+          body: {
+            raw_input: tc.raw_input,
+            raw_output: tc.raw_output,
+            eval_rubric: judge.prompt,
+            judge_score: tc.judge_score,
+            judge_reasoning: tc.judge_reasoning,
+          },
+        },
+      )
+      if (error || !data) {
+        patch_trace_claims(index, trace_id, {
+          claims_state: "error",
+          claims_error: createKilnError(error).getMessage(),
+        })
+        return
+      }
+      const claims = (data.claims ?? []) as Claim[]
+      patch_trace_claims(index, trace_id, {
+        claims,
+        final_judgement: data.final_judgement as FinalJudgement,
+        claims_state: "built",
+        claims_error: null,
+      })
+      // Size the positional verdict slots now that the claim list exists.
+      trace_reviews = trace_reviews.map((r, i) =>
+        i === index && r.claim_verdicts.length !== claims.length
+          ? { ...r, claim_verdicts: empty_claim_verdicts(claims) }
+          : r,
+      )
+    } catch (e) {
+      patch_trace_claims(index, trace_id, {
+        claims_state: "error",
+        claims_error:
+          e instanceof Error ? e.message : "Failed to build claims.",
+      })
+    }
+  }
+
+  // Prefetch claims for the selected subset with a small worker pool, so
+  // the first traces are ready by the time the reviewer reaches them.
+  function prefetch_selected_claims() {
+    const queue = selected_trace_indices.filter(
+      (i) => trace_claims[i]?.claims_state === "unbuilt",
+    )
+    const workers = Math.min(CLAIMS_BUILD_CONCURRENCY, queue.length)
+    for (let w = 0; w < workers; w++) {
+      void (async () => {
+        while (queue.length > 0) {
+          const next = queue.shift()
+          if (next === undefined) break
+          await build_claims_for_index(next)
+        }
+      })()
+    }
+  }
+
+  // The review component reports the trace it's showing (also its retry
+  // affordance) — build that trace's claims if they aren't underway.
+  function on_open_trace(index: number) {
+    void build_claims_for_index(index)
+  }
 
   // ── Under-the-hood judge refinement (Step 6, at save). The reviewer aligns
   // on CLAIMS, never on prompt text — so refinement is invisible: if their
@@ -1166,6 +1296,8 @@
             judge_reasoning: event.judge_reasoning,
             claims: event.claims ?? [],
             final_judgement: event.final_judgement,
+            claims_state: "built",
+            claims_error: null,
           }
         } else if (event.type === "trace_error") {
           posthog.capture("eval_v2_review_trace_error", { code: event.code })
@@ -1177,6 +1309,9 @@
       const complete = built.filter((t): t is TraceClaims => t !== null)
       trace_claims = complete
       trace_reviews = build_trace_reviews(complete)
+      // Single-turn reviews everything: clarify_spec already subsampled the
+      // most informative examples upstream.
+      selected_trace_indices = complete.map((_, i) => i)
     } catch (e) {
       if (is_abort_error(e)) return
       claims_error = e instanceof Error ? e.message : "Failed to build claims."
@@ -1197,6 +1332,7 @@
     if (stale) {
       trace_claims = []
       trace_reviews = []
+      selected_trace_indices = []
       if (is_multi_turn) {
         // Multi-turn results come from the merged pipeline (judge rides the
         // drive), so a stale review means re-driving the plan.
@@ -1216,6 +1352,7 @@
       // Still empty with no error = aborted mid-build — stay put.
       if (trace_claims.length === 0) return
     }
+    prefetch_selected_claims()
     goto_step("review")
   }
 
@@ -1275,11 +1412,16 @@
         // Carry the human's review through save: each reviewed trace maps to
         // its chain-leaf TaskRun (leaf_run_id from run_cases_batch); the
         // studio writes the golden rating + per-claim grades onto that leaf.
+        // Only traces the human actually reviewed ride along (subset review:
+        // unreviewed chains land in the train split, unrated).
         const reviewed_chains = trace_claims
           .map((tc, i) => ({ tc, review: trace_reviews[i] }))
           // Truthy check: the batch runner emits "" (not null) when a leaf
           // has no id — such a chain can't be rated, so skip it.
-          .filter(({ tc, review }) => tc.leaf_run_id && review)
+          .filter(
+            ({ tc, review }) =>
+              tc.leaf_run_id && review && is_trace_reviewed(tc, review),
+          )
           .map(({ tc, review }) => ({
             leaf_run_id: tc.leaf_run_id as string,
             user_says_meets_spec: user_says_meets_spec(tc, review),
@@ -1338,15 +1480,15 @@
 
       // Single-turn save path.
       // Derive reviewed examples from the claim verdicts. The judge's verdict
-      // anchors to final_judgement.expected_result (the server pins it to
-      // judge_score deterministically); disagreeing with the final judgement
-      // flips it, and disagreements' reasons become the feedback.
+      // anchors to judge_score (the server pins final_judgement.
+      // expected_result to it deterministically); disagreeing with the final
+      // judgement flips it, and disagreements' reasons become the feedback.
       const reviewed_examples: ReviewedExample[] = trace_claims.map((tc, i) => {
         const review = trace_reviews[i]
         return {
           input: tc.raw_input,
           output: tc.raw_output,
-          model_says_meets_spec: tc.final_judgement.expected_result === "pass",
+          model_says_meets_spec: tc.judge_score === "pass",
           user_says_meets_spec: user_says_meets_spec(tc, review),
           feedback: disagreement_feedback(review),
           claim_review: build_claim_review_payload(tc, review),
@@ -1439,7 +1581,7 @@
         on_refine_submit()
       }
     } else if (current_step === "review") {
-      if (all_reviewed) {
+      if (save_gate_met) {
         event.preventDefault()
         on_advance_to_save()
       }
@@ -1525,9 +1667,9 @@
 
   // The progress screen's counters line while the pipeline runs.
   $: pipeline_status_description =
-    `Driving, judging, and distilling ${pipeline_total_cases} conversations — ` +
+    `Driving and judging ${pipeline_total_cases} conversations — ` +
     `${multi_turn_turns_done} of ${multi_turn_total_turns} turns driven, ` +
-    `${reviewed_case_count} reviewed` +
+    `${judged_case_count} judged` +
     (pipeline_failed_count > 0 ? `, ${pipeline_failed_count} failed.` : ".")
 
   // Multi-turn save tags existing chains rather than generating a dataset, so
@@ -1761,8 +1903,7 @@
             <div class="mt-12">
               <div class="text-2xl font-bold">Driving Conversations</div>
               <div class="text-sm font-light text-gray-500 mb-4">
-                Each conversation is driven, judged, and distilled as it
-                completes.
+                Each conversation is driven and judged as it completes.
               </div>
               <div class="text-sm text-gray-500 mb-2">
                 {pipeline_status_description}
@@ -1895,12 +2036,21 @@
             <ClaimEvidenceReview
               traces={trace_claims}
               bind:verdicts={trace_reviews}
+              selected_indices={selected_trace_indices}
+              review_target_count={is_multi_turn
+                ? multi_turn_review_target
+                : trace_claims.length}
+              {on_open_trace}
               on_back={() => history.back()}
               on_save={on_advance_to_save}
-              save_disabled={!all_reviewed}
-              save_disabled_tooltip={all_reviewed
+              save_disabled={!save_gate_met}
+              save_disabled_tooltip={save_gate_met
                 ? null
-                : "Give every trace an overall agree/disagree; disagreements need a reason."}
+                : is_multi_turn
+                  ? `Review at least ${multi_turn_review_target} conversation${
+                      multi_turn_review_target === 1 ? "" : "s"
+                    } — your ratings become the eval's answer key. Disagreements need a reason.`
+                  : "Give every trace an overall agree/disagree; disagreements need a reason."}
             />
           {/if}
         {:else if current_step === "save"}
