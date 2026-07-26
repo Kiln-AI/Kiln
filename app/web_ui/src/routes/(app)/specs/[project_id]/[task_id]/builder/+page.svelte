@@ -25,7 +25,6 @@
   // Step 4 plan approval reuses the /generate batch-plan components — one
   // plan-review surface across the app rather than a builder-local fork.
   import KilnProBatchPlan from "../../../../generate/[project_id]/[task_id]/kiln_pro_batch_plan.svelte"
-  import KilnProPlansTable from "../../../../generate/[project_id]/[task_id]/kiln_pro_plans_table.svelte"
   import { multiturn_plan_guidance } from "./batch_plan_guidance"
   import {
     all_traces_reviewed,
@@ -208,6 +207,7 @@
 
   onDestroy(() => {
     abort_copilot_request()
+    stop_stage_timer()
   })
 
   // ── Step 1 state
@@ -448,13 +448,7 @@
   // Approved plan length drives the batch size; NUM_CASES is the requested
   // plan size before any deletions.
   $: multi_turn_total = batch_plan?.prompts.length ?? NUM_CASES
-  // Total assistant turns streamed so far, across all cases — derived from
-  // the per-row counters so it can never drift from what the pills show.
-  // Drives a smooth progress indicator: cases complete in concurrency-limited
-  // waves, so a case-only count sits still then jumps; counting turns makes
-  // steady progress visible while the backend works in parallel.
-  $: multi_turn_turns_done = case_rows.reduce((n, r) => n + r.turns_done, 0)
-  // Which loading stage Step 4 is in — drives the spinner title/caption only.
+  // Which loading stage Step 4 is in — drives the progress screen only.
   // The interactive plan-approval view is DERIVED (show_plan_approval below),
   // not a phase, so no code path can strand it behind a stale flag.
   type MultiTurnPhase =
@@ -463,61 +457,66 @@
     | "generating_cases"
     | "running_pipeline"
   let multi_turn_phase: MultiTurnPhase = "idle"
-  // While the pipeline runs, the plan table stays on screen as a live status
-  // board (per-row pills) instead of being replaced by a blob spinner.
   $: pipeline_running =
     generation_loading && multi_turn_phase === "running_pipeline"
   $: show_plan_approval =
     is_multi_turn &&
     batch_plan !== null &&
-    (!generation_loading || pipeline_running) &&
+    !generation_loading &&
     !generation_error
-  // Live per-row pipeline status, indexed by PLAN ROW (scenario index) — the
-  // pipeline's case_index maps back through the generated case's
-  // scenario_index, so a salvaged (shorter) batch still lights the right rows.
-  type CaseRowStatus = {
-    state:
-      | "planned"
-      | "generating"
-      | "failed_generation"
-      | "queued"
-      | "driving"
-      | "judging"
-      | "reviewed"
-      | "failed"
-    turns_done: number
-    message: string | null
+  // Live pipeline counters, reset at each drive. Latest completed-turn count
+  // per case (the stream's turns_completed is per-case cumulative, so a
+  // re-delivered event can't double-count a turn); counting turns makes
+  // steady progress visible where a case-only count would sit still then
+  // jump — cases complete in concurrency-limited waves.
+  let turns_by_case: Record<number, number> = {}
+  let reviewed_case_count = 0
+  let pipeline_failed_count = 0
+  $: multi_turn_turns_done = Object.values(turns_by_case).reduce(
+    (n, t) => n + t,
+    0,
+  )
+  function reset_pipeline_counters() {
+    turns_by_case = {}
+    reviewed_case_count = 0
+    pipeline_failed_count = 0
   }
-  let case_rows: CaseRowStatus[] = []
-  function set_case_row(row: number, patch: Partial<CaseRowStatus>) {
-    if (row < 0 || row >= case_rows.length) return
-    case_rows = case_rows.map((r, i) => (i === row ? { ...r, ...patch } : r))
-  }
-  $: reviewed_case_count = case_rows.filter(
-    (r) => r.state === "reviewed",
-  ).length
-  // Presentation of case_rows for the plan table's Status column (the
-  // kiln_pro plans table renders plain-text statuses).
-  $: row_status_texts = case_rows.map((row): string => {
-    switch (row.state) {
-      case "planned":
-        return "Planned"
-      case "generating":
-        return "Generating"
-      case "failed_generation":
-        return "No case"
-      case "queued":
-        return "Queued"
-      case "driving":
-        return `Driving ${row.turns_done}/${TURNS_PER_CASE}`
-      case "judging":
-        return "Judging"
-      case "reviewed":
-        return "Reviewed"
-      case "failed":
-        return "Failed"
+
+  // Elapsed-time ticker for the long single-request stages (plan and SU
+  // generation each run minutes at a 40-case batch) — a bare spinner at that
+  // duration reads as hung.
+  let stage_started_at: number | null = null
+  let stage_elapsed_seconds = 0
+  let stage_timer: ReturnType<typeof setInterval> | null = null
+  let stage_ticking_for: MultiTurnPhase | null = null
+  $: track_stage_elapsed(multi_turn_phase, generation_loading)
+  function track_stage_elapsed(phase: MultiTurnPhase, loading: boolean) {
+    const ticking =
+      loading && (phase === "planning" || phase === "generating_cases")
+    if (ticking && stage_ticking_for !== phase) {
+      stop_stage_timer()
+      stage_ticking_for = phase
+      stage_started_at = Date.now()
+      stage_elapsed_seconds = 0
+      stage_timer = setInterval(() => {
+        stage_elapsed_seconds = Math.floor(
+          (Date.now() - (stage_started_at ?? Date.now())) / 1000,
+        )
+      }, 1000)
+    } else if (!ticking) {
+      stop_stage_timer()
     }
-  })
+  }
+  function stop_stage_timer() {
+    if (stage_timer !== null) clearInterval(stage_timer)
+    stage_timer = null
+    stage_ticking_for = null
+  }
+  function format_elapsed(seconds: number): string {
+    const m = Math.floor(seconds / 60)
+    const s = seconds % 60
+    return `${m}:${String(s).padStart(2, "0")}`
+  }
   // A generated synthetic-user case as the wire carries it: the seed
   // message, the persona blob, and the plan scenario it came from.
   type SyntheticUserCaseWire = {
@@ -675,7 +674,7 @@
     generation_error = null
     batch_plan = null
     batch_plan_edited = false
-    case_rows = []
+    reset_pipeline_counters()
     pipeline_warning = null
     // Deliberately NOT clearing multi_turn_batch_tag (save still needs it)
     // or undeleted_batch_tags: the next drive passes the cleanup list as
@@ -758,11 +757,7 @@
     driven_cases = []
     driven_prompts_json = JSON.stringify(approved_prompts)
     pipeline_total_cases = approved_prompts.length
-    case_rows = approved_prompts.map(() => ({
-      state: "generating" as const,
-      turns_done: 0,
-      message: null,
-    }))
+    reset_pipeline_counters()
     multi_turn_phase = "generating_cases"
 
     try {
@@ -827,18 +822,9 @@
         return
       }
       const cases = cases_resp.data.cases as SyntheticUserCaseWire[]
-      // Pipeline case_index (position in `cases`) → plan row.
-      const row_of_case = cases.map((c, i) => c.scenario_index ?? i)
+      // Salvage can drop cases upstream: the driven count (the progress
+      // denominator) is what actually came back, not the plan size.
       pipeline_total_cases = cases.length
-      case_rows = approved_prompts.map((_, row) => ({
-        state: row_of_case.includes(row)
-          ? ("queued" as const)
-          : ("failed_generation" as const),
-        turns_done: 0,
-        message: row_of_case.includes(row)
-          ? null
-          : "The synthetic-user generator produced no usable case for this scenario.",
-      }))
 
       // 3. The review, in the ONE JudgeConfig shape used by review and save
       // alike — remember the judge and identity BEFORE the pipeline runs so
@@ -892,7 +878,6 @@
       // out of order); compacted into trace_claims at batch end.
       const built: (TraceClaims | null)[] = new Array(cases.length).fill(null)
       let any_case_driven = false
-      let failed_case_count = 0
       const reader = response.body.getReader()
       stream_loop: for await (const payload of sse_data_payloads(reader)) {
         if (payload === "complete") break
@@ -906,10 +891,10 @@
         if (event.type === "batch_started") {
           multi_turn_batch_tag = event.batch_tag
         } else if (event.type === "turn_completed") {
-          set_case_row(row_of_case[event.case_index], {
-            state: "driving",
-            turns_done: event.turns_completed,
-          })
+          turns_by_case = {
+            ...turns_by_case,
+            [event.case_index]: event.turns_completed,
+          }
         } else if (event.type === "case_driven") {
           any_case_driven = true
           // This case's conversation exists on disk — it belongs in the
@@ -926,7 +911,6 @@
               multi_turn_batch_tag,
             ]
           }
-          set_case_row(row_of_case[event.case_index], { state: "judging" })
         } else if (event.type === "case_reviewed") {
           built[event.case_index] = {
             trace_id: `case_${event.case_index}`,
@@ -938,13 +922,9 @@
             claims: event.claims ?? [],
             final_judgement: event.final_judgement,
           }
-          set_case_row(row_of_case[event.case_index], { state: "reviewed" })
+          reviewed_case_count += 1
         } else if (event.type === "case_failed") {
-          failed_case_count += 1
-          set_case_row(row_of_case[event.case_index], {
-            state: "failed",
-            message: `${event.stage}: ${event.message}`,
-          })
+          pipeline_failed_count += 1
           posthog.capture("eval_v2_pipeline_case_failed", {
             stage: event.stage,
             code: event.code,
@@ -987,9 +967,9 @@
         return
       }
       const dropped = approved_prompts.length - complete.length
-      if (failed_case_count > 0 || dropped > 0) {
+      if (pipeline_failed_count > 0 || dropped > 0) {
         // Don't yank the user into a review of a silently smaller sample —
-        // stay on the status board and let them choose: review the
+        // stay on the plan screen and let them choose: review the
         // survivors (Continue button) or re-drive.
         pipeline_warning = `${dropped} of ${approved_prompts.length} conversations failed — review the survivors or drive again.`
         return
@@ -997,30 +977,11 @@
       // PUSH review (single-turn replaces): Back must return to the plan.
       goto_step("review")
     } catch (e) {
-      if (is_abort_error(e)) {
-        // The run is gone; its live pills would otherwise animate forever.
-        case_rows = []
-        return
-      }
+      if (is_abort_error(e)) return
       generation_error =
         e instanceof Error ? e.message : "Multi-turn generation failed."
     } finally {
       generation_loading = false
-      // Any row still showing an in-flight state after the stream ended
-      // never finished — freeze it as failed so the board can't imply a
-      // run that isn't happening.
-      case_rows = case_rows.map((r) =>
-        r.state === "generating" ||
-        r.state === "queued" ||
-        r.state === "driving" ||
-        r.state === "judging"
-          ? {
-              ...r,
-              state: "failed" as const,
-              message: "The run ended before this conversation completed.",
-            }
-          : r,
-      )
     }
   }
 
@@ -1554,16 +1515,20 @@
   // the DRIVEN case count: salvage can drive fewer cases than the plan has.
   $: multi_turn_total_turns = pipeline_total_cases * TURNS_PER_CASE
 
-  // Step 4 animation caption for the pre-pipeline loading phases (once the
-  // pipeline streams, the plan table itself is the live status view).
+  // Step 4 animation caption for the pre-pipeline loading stages (plan and
+  // SU generation); the pipeline stage has its own progress screen below.
   $: generate_animation_description = is_multi_turn
     ? multi_turn_phase === "planning"
       ? `Planning a balanced batch of ${NUM_CASES} synthetic-user scenarios…`
       : `Creating ${multi_turn_total} synthetic users from the approved plan…`
     : "Kiln is generating example data to review and creating a judge. Hold tight!"
 
-  // Header line above the live status table while the pipeline runs.
-  $: pipeline_status_description = `Driving, judging, and distilling ${pipeline_total_cases} conversations — ${multi_turn_turns_done} of ${multi_turn_total_turns} turns driven, ${reviewed_case_count} reviewed.`
+  // The progress screen's counters line while the pipeline runs.
+  $: pipeline_status_description =
+    `Driving, judging, and distilling ${pipeline_total_cases} conversations — ` +
+    `${multi_turn_turns_done} of ${multi_turn_total_turns} turns driven, ` +
+    `${reviewed_case_count} reviewed` +
+    (pipeline_failed_count > 0 ? `, ${pipeline_failed_count} failed.` : ".")
 
   // Multi-turn save tags existing chains rather than generating a dataset, so
   // the save copy differs from single-turn's generate-then-save.
@@ -1774,12 +1739,31 @@
               description={generate_animation_description}
               warning={is_multi_turn ? null : "This may take a while"}
             />
+            {#if is_multi_turn}
+              <!-- Plan and SU generation are each ONE long request (minutes
+                   at a 40-case batch) — an elapsed clock keeps the wait from
+                   reading as hung. -->
+              <div
+                class="flex flex-col items-center gap-2 mt-2 text-sm text-gray-500"
+              >
+                <progress class="progress w-56"></progress>
+                <div>
+                  {format_elapsed(stage_elapsed_seconds)} elapsed — batches this
+                  size take a few minutes.
+                </div>
+              </div>
+            {/if}
           {/if}
           {#if pipeline_running}
-            <!-- The plan table below is the live status board; a turn-level
-                 bar on top fills steadily as turns stream in, so the
+            <!-- The whole drive stage is this progress screen. A turn-level
+                 bar fills steadily as turns stream in, so the
                  parallel-but-wavy case completions don't read as stalled. -->
-            <div class="mb-4">
+            <div class="mt-12">
+              <div class="text-2xl font-bold">Driving Conversations</div>
+              <div class="text-sm font-light text-gray-500 mb-4">
+                Each conversation is driven, judged, and distilled as it
+                completes.
+              </div>
               <div class="text-sm text-gray-500 mb-2">
                 {pipeline_status_description}
               </div>
@@ -1816,7 +1800,7 @@
           {/if}
 
           {#if show_plan_approval && batch_plan}
-            {#if pipeline_warning && !pipeline_running}
+            {#if pipeline_warning}
               <div class="mb-4">
                 <Warning
                   warning_color="warning"
@@ -1827,56 +1811,38 @@
             <!-- Plan approval: the batch runs only after the user approves
                  the scenario prompts — the shared /generate batch-plan
                  surface (delete rows or regenerate; per-row editing rides
-                 the shared component's affordances). While the pipeline
-                 runs, the shared plans table doubles as the status board
-                 (Planned → Driving n/T → Judging → Reviewed). -->
-            {#if !pipeline_running}
-              <KilnProBatchPlan
-                plan={batch_plan}
-                summary_out_of_sync={batch_plan_edited}
-                on_generate_inputs={on_drive_multi_turn}
-                on_regenerate={on_plan_multi_turn}
-                on_delete_prompt={on_delete_plan_prompt}
-                generate_button_label={`Drive ${batch_plan.prompts.length} Conversation${
-                  batch_plan.prompts.length === 1 ? "" : "s"
-                }`}
-              />
-              <!-- Wizard chrome stays outside the shared component: it has
-                   no slots, and /generate has no back/continue concept. -->
-              <div class="flex flex-row justify-between mt-4">
+                 the shared component's affordances). -->
+            <KilnProBatchPlan
+              plan={batch_plan}
+              summary_out_of_sync={batch_plan_edited}
+              on_generate_inputs={on_drive_multi_turn}
+              on_regenerate={on_plan_multi_turn}
+              on_delete_prompt={on_delete_plan_prompt}
+              generate_button_label={`Drive ${batch_plan.prompts.length} Conversation${
+                batch_plan.prompts.length === 1 ? "" : "s"
+              }`}
+            />
+            <!-- Wizard chrome stays outside the shared component: it has
+                 no slots, and /generate has no back/continue concept. -->
+            <div class="flex flex-row justify-between mt-4">
+              <button
+                class="btn btn-ghost btn-sm"
+                on:click={() => history.back()}
+              >
+                ← Back
+              </button>
+              {#if trace_claims.length > 0 && driven_prompts_json === JSON.stringify(batch_plan.prompts)}
+                <!-- Conversations were already driven from this exact plan
+                     (user navigated Back from review) — returning to the
+                     results doesn't re-spend model calls. -->
                 <button
-                  class="btn btn-ghost btn-sm"
-                  on:click={() => history.back()}
+                  class="btn btn-sm btn-primary"
+                  on:click={continue_to_review}
                 >
-                  ← Back
+                  Continue to Review →
                 </button>
-                {#if trace_claims.length > 0 && driven_prompts_json === JSON.stringify(batch_plan.prompts)}
-                  <!-- Conversations were already driven from this exact plan
-                       (user navigated Back from review) — returning to the
-                       results doesn't re-spend model calls. -->
-                  <button
-                    class="btn btn-sm btn-primary"
-                    on:click={continue_to_review}
-                  >
-                    Continue to Review →
-                  </button>
-                {/if}
-              </div>
-            {:else}
-              <div class="mt-12">
-                <div class="text-2xl font-bold">Driving Conversations</div>
-                <div class="text-sm font-light text-gray-500 mb-4">
-                  Each conversation is driven, judged, and distilled as it
-                  completes.
-                </div>
-                <div class="rounded-lg border">
-                  <KilnProPlansTable
-                    prompts={batch_plan.prompts}
-                    statuses={row_status_texts}
-                  />
-                </div>
-              </div>
-            {/if}
+              {/if}
+            </div>
           {:else if !generation_loading && !generation_error}
             <div class="flex justify-end mt-8">
               {#if single_turn_examples.length > 0 || trace_claims.length > 0}
