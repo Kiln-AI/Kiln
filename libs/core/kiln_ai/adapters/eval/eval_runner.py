@@ -811,18 +811,6 @@ class EvalRunner:
                 f"multi_turn_drive_config: {drive_config.model_provider}"
             ) from e
 
-        leaf = await drive_case_for_eval(
-            seed_prompt=seed,
-            synthetic_user_info=data.synthetic_user_info,
-            target_task=self.task,
-            target_run_config=agent_run_config,
-            su_driver_config=SyntheticUserDriverConfig(
-                model_name=drive_config.model_name,
-                model_provider_name=su_provider,
-            ),
-            turns=drive_config.turns,
-            skills=self._skills,
-        )
         drive_result = await drive_case_for_eval(
             seed_prompt=seed,
             synthetic_user_info=data.synthetic_user_info,

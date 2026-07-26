@@ -3385,10 +3385,12 @@ class TestEvalRunUsageRecording:
             patch(
                 "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
                 new=AsyncMock(return_value=drive_result),
-            ),
+            ) as mock_drive,
         ):
             await runner.run_job(job)
 
+        # One job pays for exactly one drive.
+        assert mock_drive.await_count == 1
         saved = mock_v2_redrive_config.runs(readonly=True)[0]
         assert saved.task_run_usage is not None
         # Cost totals both sides; token counts are agent-side only.
