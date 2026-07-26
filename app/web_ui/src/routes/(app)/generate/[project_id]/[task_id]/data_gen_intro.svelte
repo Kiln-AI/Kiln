@@ -116,9 +116,17 @@
     }
     const eval_set_filter_id = evaluator.eval_set_filter_id
     if (!eval_set_filter_id) {
-      alert(
-        "We can't generate synthetic data for this eval as its eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
-      )
+      // EvalInput-typed slices ARE tag-defined, but this flow generates tagged
+      // TaskRuns, which such evals don't read — don't blame the tags.
+      if (evaluator.eval_input_filter_id) {
+        alert(
+          "This eval's data was created by the eval builder and can't be extended with this synthetic data flow. Select a different eval.",
+        )
+      } else {
+        alert(
+          "We can't generate synthetic data for this eval as its eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
+        )
+      }
       return
     }
     const eval_configs_filter_id = evaluator.eval_configs_filter_id ?? null

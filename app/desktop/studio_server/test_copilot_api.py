@@ -38,8 +38,11 @@ from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.utils.copilot_utils import DatasetTaskRuns
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel import Project, Task, TaskRun
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.eval import EvalConfigType, EvalDataType, LlmJudgeProperties
 from kiln_ai.datamodel.spec_properties import SpecType
+from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_server.custom_errors import connect_custom_errors
 
 
@@ -411,13 +414,16 @@ class TestCreateSpecWithCopilot:
                 "core_requirement": "Be polite",
                 "tone_description": "Professional and friendly",
             },
-            "judge_info": step_config,
+            "judge_info": {
+                "prompt": "Test prompt",
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+            },
             "sdg_session_config": {
                 "topic_generation_config": step_config,
                 "input_generation_config": step_config,
                 "output_generation_config": step_config,
             },
-            "task_description": "Test task",
             "task_prompt_with_example": "Test prompt",
         }
 
@@ -466,9 +472,652 @@ class TestCreateSpecWithCopilot:
         assert evals[0].name == "Test Spec"
         assert evals[0].current_config_id is not None
 
+        # The saved judge is a V2 config: typed LlmJudgeProperties with the
+        # judge prompt wrapped into a template (single-turn → I/O data blocks),
+        # not the legacy llm_as_judge dict.
+        configs = evals[0].configs()
+        assert len(configs) == 1
+        config = configs[0]
+        assert config.config_type == EvalConfigType.v2
+        assert isinstance(config.properties, LlmJudgeProperties)
+        assert config.properties.model_name == "gpt-4"
+        assert config.properties.model_provider == "openai"
+        assert "Test prompt" in config.properties.prompt_template
+        assert "{{ task_input }}" in config.properties.prompt_template
+        assert config.model_name is None and config.model_provider is None
+
         specs = task.specs()
         assert len(specs) == 1
         assert specs[0].eval_id == evals[0].id
+
+
+class TestClassifySpecDescription:
+    """Stub endpoint. Returns 501 until kiln_server ships the real classifier."""
+
+    def test_returns_501(self, client):
+        response = client.post(
+            "/api/copilot/classify_spec_description",
+            json={"description": "A classification request"},
+        )
+
+        assert response.status_code == 501
+
+
+class TestCreateSpecWithCopilotMultiTurn:
+    """Multi-turn save path: tag existing chain leaves (golden/train) and mint
+    EvalInputs from the driven cases instead of synthesising new examples.
+    """
+
+    BATCH_TAG = "abc123def456"
+
+    @pytest.fixture
+    def project_and_task(self, tmp_path):
+        project_path = tmp_path / "test_project" / "project.kiln"
+        project_path.parent.mkdir()
+        project = Project(name="Test Project", path=project_path)
+        project.save_to_file()
+        task = Task(
+            name="Test Task",
+            instruction="Test instruction",
+            description="Test task",
+            parent=project,
+        )
+        task.save_to_file()
+        return project, task
+
+    @pytest.fixture
+    def synthetic_chain_leaves(self, project_and_task):
+        """Persist eight single-run "chains" tagged like the multi-turn runner
+        leaves them. Single TaskRuns (no actual multi-turn parents) are
+        sufficient: the endpoint only cares about the leaf tag. Eight leaves
+        give the split room for a non-empty golden slice (caps at 25% = 2);
+        the rest are train.
+        """
+        _, task = project_and_task
+        source = DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "haiku",
+                "model_provider": "openrouter",
+                "adapter_name": "kiln_synthetic_user_runner",
+            },
+        )
+        leaves = []
+        for i in range(8):
+            run = TaskRun(
+                parent=task,
+                input=f"input {i}",
+                input_source=source,
+                output=TaskOutput(output=f"output {i}", source=source),
+                tags=[
+                    "synthetic_user_case",
+                    f"synthetic_user_batch:{TestCreateSpecWithCopilotMultiTurn.BATCH_TAG}",
+                ],
+            )
+            run.save_to_file()
+            leaves.append(run)
+        return leaves
+
+    @staticmethod
+    def _driven_case(idx: int) -> dict:
+        return {
+            "seed_prompt": f"seed prompt {idx}",
+            "synthetic_user_info": (
+                f"<persona>persona {idx}</persona>"
+                f"<goal>goal {idx}</goal>"
+                f"<behavior_guidance>guidance {idx}</behavior_guidance>"
+            ),
+            "scenario_index": idx,
+        }
+
+    @pytest.fixture
+    def multi_turn_request_data(self):
+        return {
+            "name": "Multi Turn Spec",
+            "definition": "The agent should not fabricate policies",
+            "properties": {
+                "spec_type": SpecType.issue.value,
+                "issue_description": "Don't make stuff up",
+            },
+            "evaluate_full_trace": True,
+            "judge_info": {
+                "prompt": "Test prompt",
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+            },
+            "multi_turn": {
+                "batch_tag": TestCreateSpecWithCopilotMultiTurn.BATCH_TAG,
+                "cases": [self._driven_case(i) for i in range(8)],
+                "drive_config": {
+                    "model_name": "claude_4_5_haiku",
+                    "model_provider": "openrouter",
+                    "turns": 5,
+                },
+            },
+            "task_prompt_with_example": "Test prompt",
+        }
+
+    @staticmethod
+    def _reviewed_chain(leaf_run_id: str, meets_spec: bool) -> dict:
+        return {
+            "leaf_run_id": leaf_run_id,
+            "user_says_meets_spec": meets_spec,
+            "feedback": "" if meets_spec else "Fabricated a return window.",
+            "claim_review": {
+                "judge_score": "pass" if meets_spec else "fail",
+                "judge_reasoning": "Judge reasoning here.",
+                "claims": [
+                    {
+                        "claim": "The agent stated a return window.",
+                        "evidence": "Gives 30 days [1].",
+                        "expected_result": "fail",
+                        "human_grade": "agree",
+                        "human_feedback": None,
+                    }
+                ],
+                "final_judgement": {
+                    "claim": "Overall verdict.",
+                    "evidence": "Decisive fact [1].",
+                    "expected_result": "pass" if meets_spec else "fail",
+                    "human_grade": "agree",
+                    "human_feedback": None,
+                },
+            },
+        }
+
+    def test_multi_turn_save_success_tags_chains_and_creates_eval(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        project, task = project_and_task
+        # Two of the three chains were reviewed: one pass, one fail.
+        multi_turn_request_data["multi_turn"]["reviewed_chains"] = [
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=False),
+            self._reviewed_chain(synthetic_chain_leaves[1].id, meets_spec=True),
+        ]
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_memorable_name",
+                return_value="multi-turn-judge",
+            ),
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 200, response.text
+        res = response.json()
+        assert res["name"] == "Multi Turn Spec"
+        assert res["eval_id"] is not None
+        # Multi-turn doesn't snapshot a generation config on the spec —
+        # the operational state lives on the Eval.
+        assert res["synthetic_data_generation_session_config"] is None
+
+        # Eval: full_trace data type + judge config attached. The eval slice
+        # is EvalInput-typed (re-driven per run config at eval time) with the
+        # drive settings persisted on the Eval; golden and train stay TaskRun.
+        evals = task.evals()
+        assert len(evals) == 1
+        eval_obj = evals[0]
+        assert eval_obj.evaluation_data_type == EvalDataType.full_trace
+        assert eval_obj.eval_set_filter_id is None
+        assert eval_obj.eval_input_filter_id == "tag::eval_multi_turn_spec"
+        assert eval_obj.train_set_filter_id == "tag::train_multi_turn_spec"
+        assert eval_obj.current_config_id is not None
+        assert eval_obj.multi_turn_drive_config is not None
+        assert eval_obj.multi_turn_drive_config.model_name == "claude_4_5_haiku"
+        assert eval_obj.multi_turn_drive_config.model_provider == "openrouter"
+        assert eval_obj.multi_turn_drive_config.turns == 5
+
+        # The saved judge is a V2 config with a multi-turn (trace) template.
+        configs = eval_obj.configs()
+        assert len(configs) == 1
+        assert configs[0].config_type == EvalConfigType.v2
+        assert isinstance(configs[0].properties, LlmJudgeProperties)
+        assert "{{ trace | format_trace }}" in configs[0].properties.prompt_template
+
+        # The eval slice: one EvalInput per driven case, carrying the seed,
+        # the typed persona, and provenance tags (batch + scenario).
+        eval_inputs = task.eval_inputs()
+        assert len(eval_inputs) == 8
+        inputs_by_seed = {ei.data.first_message.text: ei for ei in eval_inputs}
+        first = inputs_by_seed["seed prompt 0"]
+        assert first.data.synthetic_user_info.persona == "persona 0"
+        assert first.data.synthetic_user_info.goal == "goal 0"
+        assert first.data.synthetic_user_info.behavior_guidance == "guidance 0"
+        assert set(first.tags) == {
+            "eval_multi_turn_spec",
+            f"synthetic_user_batch:{self.BATCH_TAG}",
+            "scenario:0",
+        }
+
+        # Chains split into DISJOINT slices: each leaf carries exactly one of
+        # golden/train (on top of its synthetic_user_* tags) — the eval slice
+        # lives on the EvalInputs above, not on chains. Golden caps at 25% of
+        # 8 = 2, which here equals the two rated leaves — so both become
+        # golden (the answer key). The six unreviewed leaves are all train.
+        split_tags = {
+            "train_multi_turn_spec",
+            "eval_golden_multi_turn_spec",
+        }
+        runs_by_id = {run.id: run for run in task.runs()}
+        for leaf in task.runs():
+            assert len(split_tags & set(leaf.tags)) == 1
+            assert "eval_multi_turn_spec" not in leaf.tags
+            assert "synthetic_user_case" in leaf.tags
+        # Golden == exactly the two reviewed leaves (rated count == the 25% cap).
+        for reviewed_leaf in (synthetic_chain_leaves[0], synthetic_chain_leaves[1]):
+            assert "eval_golden_multi_turn_spec" in runs_by_id[reviewed_leaf.id].tags
+        # An unreviewed leaf is held out in train, never golden.
+        unreviewed_tags = set(runs_by_id[synthetic_chain_leaves[2].id].tags)
+        assert "eval_golden_multi_turn_spec" not in unreviewed_tags
+        assert "train_multi_turn_spec" in unreviewed_tags
+
+        # Reviewed leaves carry golden ratings matching the review clicks,
+        # plus feedback + per-claim grades; the unreviewed leaf stays unrated.
+        rating_key = "named::Multi Turn Spec"
+        failed = runs_by_id[synthetic_chain_leaves[0].id]
+        assert failed.output.rating.requirement_ratings[rating_key].value == 0.0
+        assert (
+            failed.output.rating.requirement_ratings[rating_key].type
+            == TaskOutputRatingType.pass_fail
+        )
+        assert len(failed.feedback()) == 1
+        assert failed.feedback()[0].feedback == "Fabricated a return window."
+        assert len(failed.claim_reviews()) == 1
+        assert failed.claim_reviews()[0].judge_score == "fail"
+        assert failed.claim_reviews()[0].final_judgement.expected_result == "fail"
+
+        passed = runs_by_id[synthetic_chain_leaves[1].id]
+        assert passed.output.rating.requirement_ratings[rating_key].value == 1.0
+        assert passed.feedback() == []
+        assert len(passed.claim_reviews()) == 1
+
+        unreviewed = runs_by_id[synthetic_chain_leaves[2].id]
+        assert unreviewed.output.rating is None
+        assert unreviewed.claim_reviews() == []
+
+    def test_multi_turn_save_unknown_leaf_fails_before_any_save(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        # A reviewed chain referencing a leaf outside the batch is rejected up
+        # front — nothing is created and no leaf is mutated.
+        project, task = project_and_task
+        multi_turn_request_data["multi_turn"]["reviewed_chains"] = [
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=False),
+            self._reviewed_chain("not_a_real_leaf", meets_spec=True),
+        ]
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 404
+        assert "not_a_real_leaf" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+        assert len(task.eval_inputs()) == 0
+        for leaf in task.runs():
+            assert leaf.output.rating is None
+            assert leaf.feedback() == []
+            assert leaf.claim_reviews() == []
+            assert "train_multi_turn_spec" not in leaf.tags
+            assert "eval_golden_multi_turn_spec" not in leaf.tags
+
+    def test_multi_turn_save_rejects_duplicate_reviewed_leaves(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        # The same leaf reviewed twice is a malformed request — rejected up
+        # front (422) with nothing created or mutated.
+        project, task = project_and_task
+        multi_turn_request_data["multi_turn"]["reviewed_chains"] = [
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=False),
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=True),
+        ]
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert "at most once" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+        for leaf in task.runs():
+            assert leaf.output.rating is None
+
+    def test_multi_turn_save_failure_mid_rating_rolls_back(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        # A failure AFTER tagging/rating started reverses everything: leaf
+        # tags and ratings revert, created models are deleted.
+        project, task = project_and_task
+        multi_turn_request_data["multi_turn"]["reviewed_chains"] = [
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=False),
+        ]
+
+        from app.desktop.studio_server.utils import copilot_utils
+
+        def rate_then_boom(*args, **kwargs):
+            copilot_utils.rate_multi_turn_chain_leaves(*args, **kwargs)
+            raise RuntimeError("disk full")
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.rate_multi_turn_chain_leaves",
+                side_effect=rate_then_boom,
+            ),
+            # The endpoint re-raises after rollback; TestClient propagates it.
+            pytest.raises(RuntimeError, match="disk full"),
+        ):
+            client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+        # The eval slice rolled back too: no orphan EvalInputs.
+        assert len(task.eval_inputs()) == 0
+        for leaf in task.runs():
+            assert leaf.output.rating is None
+            assert leaf.feedback() == []
+            assert leaf.claim_reviews() == []
+            assert "train_multi_turn_spec" not in leaf.tags
+            assert "eval_golden_multi_turn_spec" not in leaf.tags
+
+    def test_multi_turn_save_malformed_case_blob_is_422(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        # A case whose persona blob doesn't parse fails before anything is
+        # created — the EvalInputs are built (and validated) up front.
+        project, task = project_and_task
+        multi_turn_request_data["multi_turn"]["cases"][3]["synthetic_user_info"] = (
+            "no tags here at all"
+        )
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert "Case 3" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+        assert len(task.eval_inputs()) == 0
+
+    def test_duplicate_spec_name_is_409(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        """A re-submitted save under an existing spec name (any casing) is
+        rejected before any generation or model creation."""
+        from kiln_ai.datamodel.spec import Spec, SpecStatus
+
+        project, task = project_and_task
+        existing = Spec(
+            parent=task,
+            name="MULTI TURN SPEC",
+            definition="already here",
+            properties={
+                "spec_type": SpecType.issue.value,
+                "issue_description": "existing",
+            },
+            status=SpecStatus.active,
+            tags=[],
+            eval_id="unused_eval_id",
+        )
+        existing.save_to_file()
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 409
+        assert "already exists" in response.json()["message"]
+        assert len(task.evals()) == 0
+
+    def test_tag_normalized_spec_name_collision_is_409(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        """ "Multi_Turn_Spec" and "Multi Turn Spec" differ as names but produce
+        identical eval tags (lowercase, spaces→underscores) — saving the
+        second would silently share the first's datasets."""
+        from kiln_ai.datamodel.spec import Spec, SpecStatus
+
+        project, task = project_and_task
+        existing = Spec(
+            parent=task,
+            name="Multi_Turn_Spec",
+            definition="already here",
+            properties={
+                "spec_type": SpecType.issue.value,
+                "issue_description": "existing",
+            },
+            status=SpecStatus.active,
+            tags=[],
+            eval_id="unused_eval_id",
+        )
+        existing.save_to_file()
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 409
+        assert len(task.evals()) == 0
+
+    def test_spec_name_without_json_key_chars_is_422(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        """A name with no [a-z0-9_] characters (e.g. fully non-ASCII) yields
+        an empty judge score key — the save would persist an eval that can
+        never run."""
+        project, task = project_and_task
+        multi_turn_request_data["name"] = "中文规格"
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert "score key" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+
+    def test_reference_answer_spec_type_is_400(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        """The builder's judge template never renders a reference answer;
+        saving one would mis-score every run. Guarded until supported."""
+        project, task = project_and_task
+        multi_turn_request_data["properties"] = {
+            "spec_type": SpecType.reference_answer_accuracy.value,
+            "core_requirement": "Answers must match the reference.",
+            "reference_answer_accuracy_description": "Compare to reference.",
+            "accurate_examples": "example a",
+            "inaccurate_examples": "example b",
+        }
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 400
+        assert "Reference-answer" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+
+    def test_spec_name_over_short_limit_is_422(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        """The spec name becomes the eval's EvalOutputScore.name (max 32) —
+        longer names must fail request validation, not 500 mid-save."""
+        project, task = project_and_task
+        multi_turn_request_data["name"] = "A Spec Name That Is Way Too Long For Scores"
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+
+    def test_multi_turn_save_404_when_batch_tag_matches_nothing(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        project, task = project_and_task
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 404
+        assert "batch_tag" in response.json()["message"]
+        # No models created when the lookup fails up front.
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+
+    def test_validator_rejects_both_multi_turn_and_sdg_config(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        project, task = project_and_task
+        step_config = {
+            "task_metadata": {
+                "model_name": "gpt-4",
+                "model_provider_name": "openai",
+            },
+            "prompt": "Test prompt",
+        }
+        multi_turn_request_data["sdg_session_config"] = {
+            "topic_generation_config": step_config,
+            "input_generation_config": step_config,
+            "output_generation_config": step_config,
+        }
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        body = response.json()
+        # Pydantic surfaces the validator message somewhere in the response.
+        assert "multi_turn" in str(body) and "sdg_session_config" in str(body)
+
+    def test_validator_rejects_neither_multi_turn_nor_sdg_config(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        project, task = project_and_task
+        del multi_turn_request_data["multi_turn"]
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert "multi_turn" in str(response.json())
+
+    def test_validator_rejects_multi_turn_without_evaluate_full_trace(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        project, task = project_and_task
+        multi_turn_request_data["evaluate_full_trace"] = False
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert "evaluate_full_trace" in str(response.json())
 
 
 _JOBS_API = "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs"
@@ -1073,3 +1722,26 @@ class TestParseImportFile:
             response = self._post(client, b"\xff\xfe invalid bytes")
         assert response.status_code == 422
         assert "UTF-8" in response.json()["message"]
+
+
+def test_claim_review_api_rejects_unpinned_final_judgement():
+    """The request-model mirror of the persisted ClaimReview invariant: a
+    payload whose final judgement contradicts the judge's verdict 422s
+    before any model is written."""
+    import pydantic
+
+    from app.desktop.studio_server.api_models.copilot_models import ClaimReviewApi
+
+    with pytest.raises(pydantic.ValidationError, match="must equal judge_score"):
+        ClaimReviewApi(
+            judge_score="pass",
+            judge_reasoning="Fine.",
+            claims=[],
+            final_judgement={
+                "claim": "Overall verdict.",
+                "evidence": "Decisive fact [1].",
+                "expected_result": "fail",
+                "human_grade": "agree",
+                "human_feedback": None,
+            },
+        )

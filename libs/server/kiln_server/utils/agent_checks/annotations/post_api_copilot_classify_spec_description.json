@@ -1,0 +1,9 @@
+{
+  "method": "post",
+  "path": "/api/copilot/classify_spec_description",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": true,
+    "approval_description": "Classify a free-text spec description?"
+  }
+}

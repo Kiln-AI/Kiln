@@ -7,6 +7,10 @@
   export let on_regenerate: () => void
   export let on_delete_prompt: (index: number) => void
   export let summary_out_of_sync = false
+  // Optional override for the generate button's label. The eval builder's
+  // click starts a full conversation drive (long, paid), not quick sample
+  // generation — its label must say so. Default keeps /generate unchanged.
+  export let generate_button_label: string | null = null
 
   $: count = plan.prompts.length
 
@@ -30,7 +34,7 @@
         disabled={count === 0}
         on:click={on_generate_inputs}
       >
-        Generate Batch ({count})
+        {generate_button_label ?? `Generate Batch (${count})`}
       </button>
     </div>
   </div>

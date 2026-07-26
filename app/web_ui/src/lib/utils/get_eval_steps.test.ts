@@ -10,6 +10,7 @@ function createMockTask(requirements: Task["requirements"] = []): Task {
     name: "Test Task",
     description: "A test task",
     instruction: "Complete the test task",
+    turn_mode: "single_turn",
     requirements,
     turn_mode: "single_turn",
     output_json_schema: null,

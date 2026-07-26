@@ -10,6 +10,9 @@ from .body_start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_p
     BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost,
 )
 from .body_start_sample_job_v1_jobs_sample_job_start_post import BodyStartSampleJobV1JobsSampleJobStartPost
+from .build_claim_evidence_input import BuildClaimEvidenceInput
+from .build_claim_evidence_output import BuildClaimEvidenceOutput
+from .change import Change
 from .chat_completion_assistant_message_param_wrapper import ChatCompletionAssistantMessageParamWrapper
 from .chat_completion_content_part_image_param import ChatCompletionContentPartImageParam
 from .chat_completion_content_part_input_audio_param import ChatCompletionContentPartInputAudioParam
@@ -28,6 +31,8 @@ from .check_entitlements_v1_check_entitlements_get_response_check_entitlements_v
     CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet,
 )
 from .check_model_supported_response import CheckModelSupportedResponse
+from .citation import Citation
+from .claim import Claim
 from .clarify_spec_input import ClarifySpecInput
 from .clarify_spec_output import ClarifySpecOutput
 from .client_chat_message import ClientChatMessage
@@ -55,7 +60,9 @@ from .draft_input_data_guide_input import DraftInputDataGuideInput
 from .draft_input_data_guide_output import DraftInputDataGuideOutput
 from .examples_for_feedback_item import ExamplesForFeedbackItem
 from .examples_with_feedback_item import ExamplesWithFeedbackItem
+from .expected_result import ExpectedResult
 from .file import File
+from .final_judgement import FinalJudgement
 from .file_file import FileFile
 from .function import Function
 from .function_call import FunctionCall
@@ -74,12 +81,16 @@ from .get_session_v1_chat_sessions_session_id_get_response_400 import GetSession
 from .get_session_v1_chat_sessions_session_id_get_response_404 import GetSessionV1ChatSessionsSessionIdGetResponse404
 from .get_session_v1_chat_sessions_session_id_get_response_426 import GetSessionV1ChatSessionsSessionIdGetResponse426
 from .get_session_v1_chat_sessions_session_id_get_response_500 import GetSessionV1ChatSessionsSessionIdGetResponse500
+from .graded_claim import GradedClaim
+from .graded_final_judgement import GradedFinalJudgement
+from .graded_trace import GradedTrace
 from .handle_chat_v1_chat_post_response_400 import HandleChatV1ChatPostResponse400
 from .handle_chat_v1_chat_post_response_404 import HandleChatV1ChatPostResponse404
 from .handle_chat_v1_chat_post_response_426 import HandleChatV1ChatPostResponse426
 from .handle_chat_v1_chat_post_response_500 import HandleChatV1ChatPostResponse500
 from .health_health_get_response_health_health_get import HealthHealthGetResponseHealthHealthGet
 from .http_validation_error import HTTPValidationError
+from .human_grade import HumanGrade
 from .image_url import ImageURL
 from .image_url_detail import ImageURLDetail
 from .input_audio import InputAudio
@@ -87,6 +98,7 @@ from .input_audio_format import InputAudioFormat
 from .jinja_input_transform import JinjaInputTransform
 from .job_start_response import JobStartResponse
 from .job_status import JobStatus
+from .judge_score import JudgeScore
 from .job_status_response import JobStatusResponse
 from .job_type import JobType
 from .kiln_agent_run_config_properties import KilnAgentRunConfigProperties
@@ -108,12 +120,15 @@ from .prompt_optimization_job_result_response import PromptOptimizationJobResult
 from .question import Question
 from .question_set import QuestionSet
 from .question_with_answer import QuestionWithAnswer
+from .refine_judge_prompt_input import RefineJudgePromptInput
+from .refine_judge_prompt_output import RefineJudgePromptOutput
 from .refine_spec_api_output import RefineSpecApiOutput
 from .refine_spec_input import RefineSpecInput
 from .requirement_rating import RequirementRating
 from .sample import Sample
 from .sample_job_output import SampleJobOutput
 from .sample_job_result_response import SampleJobResultResponse
+from .source import Source
 from .spec import Spec
 from .spec_questioner_api_input import SpecQuestionerApiInput
 from .spec_spec_field_current_values import SpecSpecFieldCurrentValues
@@ -150,6 +165,9 @@ __all__ = (
     "BatchPlanOutput",
     "BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost",
     "BodyStartSampleJobV1JobsSampleJobStartPost",
+    "BuildClaimEvidenceInput",
+    "BuildClaimEvidenceOutput",
+    "Change",
     "ChatCompletionAssistantMessageParamWrapper",
     "ChatCompletionContentPartImageParam",
     "ChatCompletionContentPartInputAudioParam",
@@ -166,6 +184,8 @@ __all__ = (
     "ChatSnapshot",
     "CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet",
     "CheckModelSupportedResponse",
+    "Citation",
+    "Claim",
     "ClarifySpecInput",
     "ClarifySpecOutput",
     "ClientChatMessage",
@@ -185,7 +205,9 @@ __all__ = (
     "DraftInputDataGuideOutput",
     "ExamplesForFeedbackItem",
     "ExamplesWithFeedbackItem",
+    "ExpectedResult",
     "File",
+    "FinalJudgement",
     "FileFile",
     "Function",
     "FunctionCall",
@@ -202,12 +224,16 @@ __all__ = (
     "GetSessionV1ChatSessionsSessionIdGetResponse404",
     "GetSessionV1ChatSessionsSessionIdGetResponse426",
     "GetSessionV1ChatSessionsSessionIdGetResponse500",
+    "GradedClaim",
+    "GradedFinalJudgement",
+    "GradedTrace",
     "HandleChatV1ChatPostResponse400",
     "HandleChatV1ChatPostResponse404",
     "HandleChatV1ChatPostResponse426",
     "HandleChatV1ChatPostResponse500",
     "HealthHealthGetResponseHealthHealthGet",
     "HTTPValidationError",
+    "HumanGrade",
     "ImageURL",
     "ImageURLDetail",
     "InputAudio",
@@ -215,6 +241,7 @@ __all__ = (
     "JinjaInputTransform",
     "JobStartResponse",
     "JobStatus",
+    "JudgeScore",
     "JobStatusResponse",
     "JobType",
     "KilnAgentRunConfigProperties",
@@ -236,12 +263,15 @@ __all__ = (
     "Question",
     "QuestionSet",
     "QuestionWithAnswer",
+    "RefineJudgePromptInput",
+    "RefineJudgePromptOutput",
     "RefineSpecApiOutput",
     "RefineSpecInput",
     "RequirementRating",
     "Sample",
     "SampleJobOutput",
     "SampleJobResultResponse",
+    "Source",
     "Spec",
     "SpecificationInput",
     "SpecificationInputSpecFieldCurrentValues",

@@ -271,9 +271,15 @@
     if (eval_progress) {
       eval_set_size = " (" + eval_progress.dataset_size + " items)"
     }
+    // The eval slice is TaskRun-typed (eval_set_filter_id) or EvalInput-typed
+    // (eval_input_filter_id). Only the TaskRun kind links to the dataset view
+    // — EvalInput items don't appear there.
     properties.push({
       name: "Eval Dataset",
-      value: evaluator.eval_set_filter_id + eval_set_size,
+      value:
+        (evaluator.eval_set_filter_id ??
+          evaluator.eval_input_filter_id ??
+          "unknown") + eval_set_size,
       link: linkFromFilterId(project_id, task_id, evaluator.eval_set_filter_id),
     })
     let golden_dataset_size = ""
@@ -730,14 +736,22 @@
                             {/if}
                           {/if}
                         </div>
-                        <button
-                          class="btn btn-sm {current_step_id == 'eval_data'
-                            ? 'btn-primary'
-                            : ''}"
-                          on:click={add_eval_data}
-                        >
-                          Add Eval Data
-                        </button>
+                        {#if evaluator.eval_input_filter_id}
+                          <!-- EvalInput-typed slice: items are minted by the eval
+                            builder at save; the add-data flow tags TaskRuns, which
+                            doesn't apply, so offer no dead-end button. -->
+                          This eval's data was created by the eval builder and can't
+                          be extended here.
+                        {:else}
+                          <button
+                            class="btn btn-sm {current_step_id == 'eval_data'
+                              ? 'btn-primary'
+                              : ''}"
+                            on:click={add_eval_data}
+                          >
+                            Add Eval Data
+                          </button>
+                        {/if}
                       </div>
                     {:else if step_id == "human_ratings"}
                       <div class="mb-1">

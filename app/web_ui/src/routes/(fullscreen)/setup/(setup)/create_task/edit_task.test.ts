@@ -45,6 +45,8 @@ vi.mock("$lib/stores", () => ({
   ui_state,
   load_current_task: vi.fn(),
   load_rating_options: vi.fn(),
+  get_task_composite_id: (project_id: string, task_id: string) =>
+    `${project_id}__${task_id}`,
 }))
 
 const EditTask = (await import("./edit_task.svelte")).default
