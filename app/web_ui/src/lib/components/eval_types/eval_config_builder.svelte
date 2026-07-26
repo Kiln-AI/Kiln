@@ -26,8 +26,8 @@
     testV2Eval,
     testV2EvalLlmJudge,
     fetchTaskRuns,
-    checkCodeEvalTrust,
-    grantCodeEvalTrust,
+    checkAddCodeTrust,
+    addCodeTrust,
     type EvalTaskInput,
     type TestV2EvalResponse,
   } from "$lib/api/v2_eval_api"
@@ -431,7 +431,7 @@
 
   async function grant_trust_and_retry(): Promise<boolean> {
     try {
-      await grantCodeEvalTrust(project_id)
+      await addCodeTrust(project_id)
     } catch (e) {
       test_error = createKilnError(e)
       return false
@@ -452,7 +452,7 @@
 
     if (metadata?.requiresTrust) {
       try {
-        const trust_response = await checkCodeEvalTrust(project_id)
+        const trust_response = await checkAddCodeTrust(project_id)
         if (!trust_response.trusted) {
           pending_trust_action = "save"
           create_evaluator_loading = false

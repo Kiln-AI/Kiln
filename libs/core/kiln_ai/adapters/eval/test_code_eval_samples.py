@@ -16,11 +16,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from kiln_ai.adapters.eval.v2_eval_code_eval import (
-    CodeEvalAdapter,
-    _trusted_projects,
-    grant_code_eval_trust,
-)
+from kiln_ai.adapters.eval.v2_eval_code_eval import CodeEvalAdapter
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
     CodeEvalProperties,
@@ -29,18 +25,6 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalTaskInput,
 )
-
-# ---------------------------------------------------------------------------
-# Trust cleanup (prevent leakage between tests)
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def _clear_trust():
-    _trusted_projects.clear()
-    yield
-    _trusted_projects.clear()
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -328,8 +312,6 @@ class TestParseJsonExample:
     async def test_valid_json_with_required_fields(self):
         cfg = _make_config(PARSE_JSON_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         inp = _inp(final_message='{"name": "Alice", "description": "A person"}')
         result = await adapter.evaluate(inp)
         scores = result.scores
@@ -343,8 +325,6 @@ class TestParseJsonExample:
     async def test_valid_json_missing_fields(self):
         cfg = _make_config(PARSE_JSON_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         inp = _inp(final_message='{"name": "Alice"}')
         result = await adapter.evaluate(inp)
         scores = result.scores
@@ -358,8 +338,6 @@ class TestParseJsonExample:
     async def test_invalid_json(self):
         cfg = _make_config(PARSE_JSON_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         inp = _inp(final_message="not json at all")
         result = await adapter.evaluate(inp)
         scores = result.scores
@@ -374,8 +352,6 @@ class TestParseJsonExample:
         """A valid JSON array is not a dict -- passed should be False."""
         cfg = _make_config(PARSE_JSON_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         inp = _inp(final_message="[1, 2, 3]")
         result = await adapter.evaluate(inp)
         scores = result.scores
@@ -396,8 +372,6 @@ class TestCheckToolUsageExample:
     async def test_trace_with_search_calls(self):
         cfg = _make_config(CHECK_TOOL_USAGE_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         trace = [
             {
                 "role": "assistant",
@@ -435,8 +409,6 @@ class TestCheckToolUsageExample:
         """Regression: zero search calls must not raise -- five_star clamped to 1."""
         cfg = _make_config(CHECK_TOOL_USAGE_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         trace = [
             {
                 "role": "assistant",
@@ -464,8 +436,6 @@ class TestCheckToolUsageExample:
         """None trace should not raise -- get_tool_calls returns []."""
         cfg = _make_config(CHECK_TOOL_USAGE_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         inp = _inp(final_message="result", trace=None)
         result = await adapter.evaluate(inp)
         scores = result.scores
@@ -479,8 +449,6 @@ class TestCheckToolUsageExample:
     async def test_many_search_calls_capped_at_five(self):
         cfg = _make_config(CHECK_TOOL_USAGE_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         trace = [
             {
                 "role": "assistant",
@@ -515,8 +483,6 @@ class TestDomainGradingExample:
     async def test_output_contains_expected_answer(self):
         cfg = _make_config(DOMAIN_GRADING_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         output = "The answer is 42 and here is some additional context to pad it out a bit more words"
         inp = _inp(
             final_message=output,
@@ -535,8 +501,6 @@ class TestDomainGradingExample:
     async def test_output_missing_expected_answer(self):
         cfg = _make_config(DOMAIN_GRADING_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         output = " ".join(["word"] * 20)
         inp = _inp(
             final_message=output,
@@ -555,8 +519,6 @@ class TestDomainGradingExample:
         """Empty/missing reference_data should not raise -- expected defaults to ''."""
         cfg = _make_config(DOMAIN_GRADING_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         output = " ".join(["word"] * 30)
         inp = _inp(final_message=output, reference_data=None)
         result = await adapter.evaluate(inp)
@@ -572,8 +534,6 @@ class TestDomainGradingExample:
         """reference_data={} (no expected_answer key) should not raise."""
         cfg = _make_config(DOMAIN_GRADING_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         output = " ".join(["word"] * 30)
         inp = _inp(final_message=output, reference_data={})
         result = await adapter.evaluate(inp)
@@ -589,8 +549,6 @@ class TestDomainGradingExample:
         """Output with fewer than 50 words gets rating of 5."""
         cfg = _make_config(DOMAIN_GRADING_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         output = "short"
         inp = _inp(final_message=output, reference_data=None)
         result = await adapter.evaluate(inp)
@@ -605,8 +563,6 @@ class TestDomainGradingExample:
         """Output with 150+ words gets rating of 1."""
         cfg = _make_config(DOMAIN_GRADING_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         output = " ".join(["word"] * 160)
         inp = _inp(final_message=output, reference_data=None)
         result = await adapter.evaluate(inp)
@@ -621,8 +577,6 @@ class TestDomainGradingExample:
         """Output with 50-149 words gets rating of 3."""
         cfg = _make_config(DOMAIN_GRADING_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         output = " ".join(["word"] * 80)
         inp = _inp(final_message=output, reference_data=None)
         result = await adapter.evaluate(inp)
@@ -648,8 +602,6 @@ class TestParseJsonExampleSingleScore:
     async def test_valid_json_with_required_fields(self):
         cfg = _make_config(PARSE_JSON_CODE_SINGLE, SINGLE_SCORE)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         inp = _inp(final_message='{"name": "Alice", "description": "A person"}')
         result = await adapter.evaluate(inp)
         scores = result.scores
@@ -662,8 +614,6 @@ class TestParseJsonExampleSingleScore:
     async def test_invalid_json(self):
         cfg = _make_config(PARSE_JSON_CODE_SINGLE, SINGLE_SCORE)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         inp = _inp(final_message="not json at all")
         result = await adapter.evaluate(inp)
         scores = result.scores
@@ -680,8 +630,6 @@ class TestCheckToolUsageExampleSingleScore:
     async def test_search_tool_used(self):
         cfg = _make_config(CHECK_TOOL_USAGE_CODE_SINGLE, SINGLE_SCORE)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         trace = [
             {
                 "role": "assistant",
@@ -706,8 +654,6 @@ class TestCheckToolUsageExampleSingleScore:
     async def test_no_tool_calls(self):
         cfg = _make_config(CHECK_TOOL_USAGE_CODE_SINGLE, SINGLE_SCORE)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         result = await adapter.evaluate(_inp(final_message="result", trace=None))
         scores = result.scores
 
@@ -723,8 +669,6 @@ class TestDomainGradingExampleSingleScore:
     async def test_output_contains_expected(self):
         cfg = _make_config(DOMAIN_GRADING_CODE_SINGLE, SINGLE_SCORE)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         inp = _inp(
             final_message="The answer is 42",
             reference_data={"expected_answer": "42"},
@@ -740,8 +684,6 @@ class TestDomainGradingExampleSingleScore:
     async def test_output_missing_expected(self):
         cfg = _make_config(DOMAIN_GRADING_CODE_SINGLE, SINGLE_SCORE)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         inp = _inp(
             final_message="nothing relevant here",
             reference_data={"expected_answer": "UNICORN_NOT_PRESENT"},
@@ -769,8 +711,6 @@ class TestDefaultCodePassFail:
     async def test_non_empty_output_passes(self):
         cfg = _make_config(DEFAULT_PASS_FAIL_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         result = await adapter.evaluate(_inp(final_message="some output"))
         scores = result.scores
         assert result.skipped_reason is None
@@ -781,8 +721,6 @@ class TestDefaultCodePassFail:
     async def test_empty_output_low(self):
         cfg = _make_config(DEFAULT_PASS_FAIL_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         result = await adapter.evaluate(_inp(final_message=""))
         scores = result.scores
         assert result.skipped_reason is None
@@ -800,8 +738,6 @@ class TestDefaultCodeFiveStar:
     async def test_non_empty_output_passes(self):
         cfg = _make_config(DEFAULT_FIVE_STAR_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         result = await adapter.evaluate(_inp(final_message="some output"))
         scores = result.scores
         assert result.skipped_reason is None
@@ -813,8 +749,6 @@ class TestDefaultCodeFiveStar:
         """Regression guard: five_star low value must be 1.0, not 0.0."""
         cfg = _make_config(DEFAULT_FIVE_STAR_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         result = await adapter.evaluate(_inp(final_message=""))
         scores = result.scores
         assert result.skipped_reason is None
@@ -832,8 +766,6 @@ class TestDefaultCodePassFailCritical:
     async def test_non_empty_output_passes(self):
         cfg = _make_config(DEFAULT_PASS_FAIL_CRITICAL_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         result = await adapter.evaluate(_inp(final_message="some output"))
         scores = result.scores
         assert result.skipped_reason is None
@@ -844,8 +776,6 @@ class TestDefaultCodePassFailCritical:
     async def test_empty_output_low(self):
         cfg = _make_config(DEFAULT_PASS_FAIL_CRITICAL_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         result = await adapter.evaluate(_inp(final_message=""))
         scores = result.scores
         assert result.skipped_reason is None
@@ -867,8 +797,6 @@ class TestDefaultCodeMultiOutput:
     async def test_non_empty_output_passes(self):
         cfg = _make_config(DEFAULT_MULTI_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         result = await adapter.evaluate(_inp(final_message="some output"))
         scores = result.scores
         assert result.skipped_reason is None
@@ -882,8 +810,6 @@ class TestDefaultCodeMultiOutput:
         """Regression guard: five_star low is 1.0, pass_fail/pfc low is 0.0."""
         cfg = _make_config(DEFAULT_MULTI_CODE, self.SCORES)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust(PROJECT_PATH)
-
         result = await adapter.evaluate(_inp(final_message=""))
         scores = result.scores
         assert result.skipped_reason is None
