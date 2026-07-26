@@ -553,6 +553,60 @@ async def test_failed_case_deletes_partial_chain(
     turn_one.delete.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_case_timeout_fails_case_and_deletes_partial_chain(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A drive that exceeds the per-case timeout fails with `case_timeout`,
+    its already-persisted turns are removed, and the batch still completes —
+    a hung provider call must not pin a concurrency slot forever."""
+    turn_one = _fake_run("turn-1")
+    calls = {"n": 0}
+
+    async def invoke(**_kwargs: Any) -> Mock:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return turn_one
+        # Second turn hangs until cancelled by the timeout.
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    _patch_adapter_for_task(monkeypatch, invoke)
+    _patch_su_driver(monkeypatch, replies_per_case=["x", "y"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+            case_timeout_seconds=0.05,
+        )
+    )
+
+    failed = next(e for e in events if isinstance(e, CaseFailedEvent))
+    assert failed.error_code == "case_timeout"
+    turn_one.delete.assert_called_once()
+    completed = next(e for e in events if isinstance(e, BatchCompletedEvent))
+    assert completed.failed == 1
+    assert completed.successful == 0
+
+
+@pytest.mark.asyncio
+async def test_invalid_case_timeout_raises(fake_task: Mock) -> None:
+    with pytest.raises(ValueError, match="case_timeout_seconds"):
+        await _collect(
+            run_cases_batch(
+                cases=[_case()],
+                target_task=fake_task,
+                target_run_config=_target_run_config(),
+                su_driver_config=_su_driver_config(),
+                case_timeout_seconds=0,
+            )
+        )
+
+
 # ───────────────────────── concurrency ─────────────────────────
 
 

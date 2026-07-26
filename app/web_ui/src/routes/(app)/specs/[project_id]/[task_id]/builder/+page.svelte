@@ -433,7 +433,7 @@
 
   // Number of synthetic-user cases to drive in one multi-turn batch —
   // matches NUM_CASES_MAX in libs/core/kiln_ai/synthetic_user/runner.py.
-  const NUM_CASES = 10
+  const NUM_CASES = 40
   // Batch plan for multi-turn Step 4 — one scenario prompt per conversation,
   // drafted by the copilot batch planner and approved (with edits/deletions)
   // by the user before any conversation is driven.

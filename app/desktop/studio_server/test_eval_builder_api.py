@@ -41,6 +41,7 @@ from kiln_ai.datamodel.eval import (
     SkippedReason,
     V2EvalResult,
 )
+from kiln_ai.synthetic_user.runner import NUM_CASES_MAX
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.utils.spec_utils import spec_eval_output_score
 
@@ -1180,7 +1181,9 @@ class TestReviewPipeline:
         assert resp.json()["message"]["code"] == "invalid_case_shape"
 
     def test_rejects_oversized_batch(self, client, pipeline_request, pipeline_seams):
-        pipeline_request["cases"] = [_pipeline_case(i) for i in range(11)]
+        pipeline_request["cases"] = [
+            _pipeline_case(i) for i in range(NUM_CASES_MAX + 1)
+        ]
         resp = client.post(PIPELINE_URL, json=pipeline_request)
         assert resp.status_code == 422
 

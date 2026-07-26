@@ -40,6 +40,7 @@ from app.desktop.studio_server.synthetic_user.client import (
     SyntheticUserServerError,
 )
 from kiln_ai.synthetic_user.runner import (
+    NUM_CASES_MAX,
     BatchCompletedEvent,
     BatchStartedEvent,
     CaseCompletedEvent,
@@ -279,11 +280,11 @@ def test_generate_cases_request_error_surfaces_as_400(
 def test_generate_cases_validates_num_cases_upper_bound(
     client: TestClient, patch_task_from_id, patch_api_key
 ) -> None:
-    """NUM_CASES_MAX=10 — Pydantic should reject 11 before reaching the body."""
+    """Pydantic should reject NUM_CASES_MAX + 1 before reaching the body."""
     patch_task_from_id.return_value = _multiturn_task()
     resp = client.post(
         "/api/projects/proj-1/tasks/task-1/multiturn_sdg/generate_cases",
-        json={"target_specification": "spec", "num_cases": 11},
+        json={"target_specification": "spec", "num_cases": NUM_CASES_MAX + 1},
     )
     assert resp.status_code == 422
 
@@ -696,7 +697,7 @@ def test_run_cases_batch_validates_too_many_cases(
     client: TestClient, patch_task_from_id, patch_api_key
 ) -> None:
     patch_task_from_id.return_value = _multiturn_task()
-    body = _run_cases_batch_body(num=11)
+    body = _run_cases_batch_body(num=NUM_CASES_MAX + 1)
     resp = client.post(
         "/api/projects/proj-1/tasks/task-1/multiturn_sdg/run_cases_batch",
         json=body,

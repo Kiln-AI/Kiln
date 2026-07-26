@@ -32,9 +32,13 @@ from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 logger = logging.getLogger(__name__)
 
 # Module constants.
-NUM_CASES_MAX = 10
+NUM_CASES_MAX = 40
 MAX_TURNS_DEFAULT = 5
 CONCURRENCY = 4
+# Default per-case drive timeout, scaled by turn count (each turn is two LLM
+# round trips: target model + SU driver). A hung provider call would otherwise
+# pin a concurrency slot for the batch's whole lifetime.
+DRIVE_TIMEOUT_PER_TURN_SECONDS = 120.0
 
 # Tag scheme. `_TAG_SU_CASE` lets the dataset view filter to all SU-generated
 # leaves; `_TAG_PREFIX_SU_BATCH` (+ batch_tag) groups one batch for review.
@@ -115,6 +119,7 @@ async def run_cases_batch(
     batch_tag: str | None = None,
     save_context: SaveContext | None = None,
     task_run_config_id: str | None = None,
+    case_timeout_seconds: float | None = None,
 ) -> AsyncIterator[BatchEvent]:
     """Drive `cases` concurrently against `target_task`, streaming progress.
 
@@ -122,6 +127,10 @@ async def run_cases_batch(
     target-task LLM and the SU LLM aren't both hammered at unbounded fan-out.
     Events from different cases interleave; ordering WITHIN a case is
     `turn_completed`* → `case_completed | case_failed`.
+
+    `case_timeout_seconds` bounds each case's drive (default: turns *
+    DRIVE_TIMEOUT_PER_TURN_SECONDS). A case that exceeds it fails with
+    `case_timeout` and frees its concurrency slot; the batch continues.
 
     Yields:
       BatchStartedEvent — once, before any case runs.
@@ -136,6 +145,13 @@ async def run_cases_batch(
         raise ValueError("turns must be >= 1")
     if concurrency < 1:
         raise ValueError("concurrency must be >= 1")
+    if case_timeout_seconds is not None and case_timeout_seconds <= 0:
+        raise ValueError("case_timeout_seconds must be > 0")
+    resolved_case_timeout = (
+        case_timeout_seconds
+        if case_timeout_seconds is not None
+        else turns * DRIVE_TIMEOUT_PER_TURN_SECONDS
+    )
 
     resolved_batch_tag = batch_tag or _new_batch_tag()
     # Skills referenced by the run config must be pre-loaded at the
@@ -162,6 +178,7 @@ async def run_cases_batch(
                 save_ctx=save_ctx,
                 skills=skills,
                 task_run_config_id=task_run_config_id,
+                case_timeout_seconds=resolved_case_timeout,
             )
 
     # Kick the cases off BEFORE the first yield so they start running
@@ -240,6 +257,7 @@ async def _drive_one_case_and_emit(
     save_ctx: SaveContext,
     skills: SkillsDict,
     task_run_config_id: str | None,
+    case_timeout_seconds: float,
 ) -> None:
     """Run drive_case for one case, emitting events on `queue`.
 
@@ -294,12 +312,18 @@ async def _drive_one_case_and_emit(
                 )
             )
 
-        result = await drive_case(
-            seed_prompt=case.seed_prompt,
-            target_invoker=target_invoker,
-            su_driver=su_driver,
-            turns=turns,
-            on_turn=_on_turn,
+        # The timeout bounds the whole drive (every target + SU round trip):
+        # one hung provider call would otherwise hold this case's concurrency
+        # slot until the consumer disconnects.
+        result = await asyncio.wait_for(
+            drive_case(
+                seed_prompt=case.seed_prompt,
+                target_invoker=target_invoker,
+                su_driver=su_driver,
+                turns=turns,
+                on_turn=_on_turn,
+            ),
+            timeout=case_timeout_seconds,
         )
 
         # Tag the leaf so eval-time loaders can find it. Inside the try
@@ -318,6 +342,25 @@ async def _drive_one_case_and_emit(
                 leaf_run_id=str(leaf.id) if leaf.id is not None else "",
                 total_turns=len(result.chain),
                 total_cost=_cumulative_cost(leaf) + result.su_total_cost,
+            )
+        )
+    except asyncio.TimeoutError:
+        # The drive exceeded its per-case budget; wait_for already cancelled
+        # it. The partial chain is removed like any other failed case.
+        logger.warning(
+            "synthetic_user runner: case %d timed out after %.0fs",
+            case_index,
+            case_timeout_seconds,
+        )
+        await _delete_partial_chain(persisted_runs, save_ctx)
+        await queue.put(
+            CaseFailedEvent(
+                case_index=case_index,
+                error_code="case_timeout",
+                message=(
+                    f"The conversation did not finish within "
+                    f"{case_timeout_seconds:.0f}s and was cancelled."
+                ),
             )
         )
     except Exception as e:

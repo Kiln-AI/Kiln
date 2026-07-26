@@ -86,8 +86,8 @@ logger = logging.getLogger(__name__)
 #   REVIEW_CONCURRENCY — concurrent [judge → claims] units (a local judge
 #                        call then a remote claim-builder call), shared by
 #                        the merged pipeline and the single-turn review.
-DRIVE_CONCURRENCY = 4
-REVIEW_CONCURRENCY = 5
+DRIVE_CONCURRENCY = 10
+REVIEW_CONCURRENCY = 8
 
 
 def _sse(payload: dict | BaseModel) -> str:
