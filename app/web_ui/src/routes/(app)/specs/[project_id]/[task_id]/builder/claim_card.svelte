@@ -2,9 +2,10 @@
   // One claim in the Claim/Evidence review — to the reviewer it's just a
   // question to answer: the atomic statement, its one-sentence evidence with
   // clickable [n] citations into the trace, and agree/disagree (+ a required
-  // reason on disagree, which feeds the refine loop). Uniform across claims
-  // and the final judgement — expected_result is server-side signal the
-  // reviewer doesn't need to see.
+  // reason on disagree, which feeds the refine loop). expected_result is
+  // server-side signal the reviewer doesn't need to see. `readonly` renders
+  // the statement + evidence without controls — used for the judge's
+  // conclusion card, whose grade is the reviewer's own blind verdict.
   import {
     type Citation,
     type Claim,
@@ -12,7 +13,8 @@
   } from "./claim_evidence"
 
   export let claim: Claim
-  export let verdict: ClaimVerdict
+  export let verdict: ClaimVerdict = { agrees: null, why: "" }
+  export let readonly = false
   export let on_cite: (citation: Citation) => void = () => {}
 
   let why_input: HTMLTextAreaElement | null = null
@@ -59,24 +61,26 @@
     <div class="font-medium text-sm min-w-0">
       {claim.claim}
     </div>
-    <div class="flex gap-2 flex-none">
-      <button
-        class="btn btn-xs {verdict.agrees === true
-          ? 'btn-success'
-          : 'btn-outline'}"
-        on:click={() => set_agrees(true)}
-      >
-        Agree
-      </button>
-      <button
-        class="btn btn-xs {verdict.agrees === false
-          ? 'btn-error'
-          : 'btn-outline'}"
-        on:click={() => set_agrees(false)}
-      >
-        Disagree
-      </button>
-    </div>
+    {#if !readonly}
+      <div class="flex gap-2 flex-none">
+        <button
+          class="btn btn-xs {verdict.agrees === true
+            ? 'btn-success'
+            : 'btn-outline'}"
+          on:click={() => set_agrees(true)}
+        >
+          Agree
+        </button>
+        <button
+          class="btn btn-xs {verdict.agrees === false
+            ? 'btn-error'
+            : 'btn-outline'}"
+          on:click={() => set_agrees(false)}
+        >
+          Disagree
+        </button>
+      </div>
+    {/if}
   </div>
 
   <!-- Evidence: one sentence with inline [n] chips that open the trace modal. -->
@@ -93,7 +97,7 @@
     {/each}
   </p>
 
-  {#if verdict.agrees === false}
+  {#if !readonly && verdict.agrees === false}
     <textarea
       class="textarea textarea-bordered textarea-sm w-full mt-3 {needs_reason
         ? 'textarea-error'

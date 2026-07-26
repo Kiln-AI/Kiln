@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   all_traces_reviewed,
+  apply_human_verdict,
   build_claim_review_payload,
   build_graded_traces,
   build_trace_reviews,
@@ -101,6 +102,7 @@ describe("user_says_meets_spec", () => {
   function reviewed(agrees: boolean): TraceReview {
     return {
       trace_id: "trace_0",
+      human_verdict: null,
       claim_verdicts: [{ agrees: null, why: "" }],
       final_judgement_verdict: { agrees, why: agrees ? "" : "disagree why" },
     }
@@ -122,6 +124,50 @@ describe("user_says_meets_spec", () => {
       final_judgement: claim({ expected_result: "pass" }),
     })
     expect(user_says_meets_spec(passing, reviewed(false))).toBe(false)
+  })
+})
+
+describe("apply_human_verdict (blind review)", () => {
+  it("maps human-vs-judge onto the agree/disagree wire shape", () => {
+    const t = trace() // judge says fail
+    const review = build_trace_reviews([t])[0]
+    const agreed = apply_human_verdict(t, review, "fail")
+    expect(agreed.human_verdict).toBe("fail")
+    expect(agreed.final_judgement_verdict.agrees).toBe(true)
+    const contradicted = apply_human_verdict(t, review, "pass")
+    expect(contradicted.final_judgement_verdict.agrees).toBe(false)
+  })
+
+  it("re-mapping keeps an explanation already typed", () => {
+    const t = trace()
+    let review = build_trace_reviews([t])[0]
+    review = apply_human_verdict(t, review, "pass")
+    review.final_judgement_verdict.why = "The policy is real."
+    review = apply_human_verdict(t, review, "fail")
+    expect(review.final_judgement_verdict.agrees).toBe(true)
+    expect(review.final_judgement_verdict.why).toBe("The policy is real.")
+  })
+
+  it("user_says_meets_spec reads the human verdict directly", () => {
+    const t = trace() // judge says fail
+    const review = apply_human_verdict(t, build_trace_reviews([t])[0], "pass")
+    expect(user_says_meets_spec(t, review)).toBe(true)
+    expect(is_trace_reviewed(t, review)).toBe(false) // mismatch needs a why
+    review.final_judgement_verdict.why = "The policy is real."
+    expect(is_trace_reviewed(t, review)).toBe(true)
+  })
+
+  it("a verdict-only review counts even when claims never built", () => {
+    const t = trace({
+      claims: null,
+      final_judgement: null,
+      claims_state: "error",
+      claims_error: "boom",
+    })
+    const review = apply_human_verdict(t, build_trace_reviews([t])[0], "fail")
+    expect(is_trace_reviewed(t, review)).toBe(true)
+    // ...but it can't feed refinement (grades cite claim text).
+    expect(build_graded_traces([t], [review])).toHaveLength(0)
   })
 })
 
@@ -224,6 +270,7 @@ describe("build_claim_review_payload", () => {
     const t = trace({ claims: [claim(), claim({ expected_result: "pass" })] })
     const review: TraceReview = {
       trace_id: "trace_0",
+      human_verdict: null,
       claim_verdicts: [
         { agrees: true, why: "" },
         { agrees: null, why: "" }, // ungraded — excluded
@@ -246,6 +293,7 @@ describe("disagreement_feedback", () => {
   it("concatenates disagree whys across claims and the final judgement", () => {
     const review: TraceReview = {
       trace_id: "trace_0",
+      human_verdict: null,
       claim_verdicts: [
         { agrees: false, why: "claim why" },
         { agrees: true, why: "ignored" },
@@ -261,6 +309,7 @@ describe("build_graded_traces", () => {
     const reviewed_t = trace({ leaf_run_id: "leaf-abc" })
     const reviewed_review: TraceReview = {
       trace_id: "trace_0",
+      human_verdict: null,
       claim_verdicts: [{ agrees: true, why: "" }],
       final_judgement_verdict: { agrees: false, why: "policy is real" },
     }
@@ -280,6 +329,7 @@ describe("build_graded_traces", () => {
       [
         {
           trace_id: "trace_1",
+          human_verdict: null,
           claim_verdicts: [{ agrees: true, why: "" }],
           final_judgement_verdict: { agrees: true, why: "" },
         },

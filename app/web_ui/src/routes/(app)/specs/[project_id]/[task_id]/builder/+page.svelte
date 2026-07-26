@@ -1426,7 +1426,12 @@
             leaf_run_id: tc.leaf_run_id as string,
             user_says_meets_spec: user_says_meets_spec(tc, review),
             feedback: disagreement_feedback(review),
-            claim_review: build_claim_review_payload(tc, review),
+            // A trace can be reviewed on the blind verdict alone when its
+            // claims build failed — the rating stands, the grades don't.
+            claim_review:
+              tc.claims_state === "built"
+                ? build_claim_review_payload(tc, review)
+                : null,
           }))
         const { data, error } = await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
@@ -1627,7 +1632,7 @@
           ? `Planning, then driving ${multi_turn_total} multi-turn conversations against your agent.`
           : "Generating sample inputs and outputs based on your spec."
       case "review":
-        return "Agree or disagree with each claim. Open a [n] citation to see the trace."
+        return "Read each conversation and give your own pass/fail verdict — the judge's verdict and claims appear after yours, as a cross-check."
       case "save":
         return "Persisting the spec, eval, and dataset."
       case "done":
@@ -2036,6 +2041,7 @@
             <ClaimEvidenceReview
               traces={trace_claims}
               bind:verdicts={trace_reviews}
+              multi_turn={is_multi_turn}
               selected_indices={selected_trace_indices}
               review_target_count={is_multi_turn
                 ? multi_turn_review_target
