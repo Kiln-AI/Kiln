@@ -591,6 +591,118 @@ async def test_case_timeout_fails_case_and_deletes_partial_chain(
     completed = next(e for e in events if isinstance(e, BatchCompletedEvent))
     assert completed.failed == 1
     assert completed.successful == 0
+    # Timeouts are never retried — a retry would pin a worker for another
+    # full drive budget. Two invokes = one attempt (turn 1 + the hang).
+    assert calls["n"] == 2
+
+
+# ───────────────────────── retry behavior ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_transient_error_retries_and_succeeds(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A drive failing with a transient (classifier-approved) error is
+    re-attempted by the job runner and can still complete — no case_failed."""
+    monkeypatch.setattr(runner_mod, "DRIVE_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(
+        runner_mod, "is_retryable_error", lambda e: isinstance(e, RuntimeError)
+    )
+    run = _fake_run("r-retry")
+    invoke = _patch_adapter_for_task(monkeypatch, [RuntimeError("flaky 502"), run])
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=1,
+        )
+    )
+
+    assert not [e for e in events if isinstance(e, CaseFailedEvent)]
+    completed = next(e for e in events if isinstance(e, CaseCompletedEvent))
+    assert completed.case_index == 0
+    assert invoke.call_count == 2
+    batch = next(e for e in events if isinstance(e, BatchCompletedEvent))
+    assert batch.successful == 1
+    assert batch.failed == 0
+
+
+@pytest.mark.asyncio
+async def test_transient_error_exhausts_retries_then_fails_once(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Retries exhausted → exactly ONE case_failed (never one per attempt),
+    with the underlying error in the message."""
+    monkeypatch.setattr(runner_mod, "DRIVE_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(
+        runner_mod, "is_retryable_error", lambda e: isinstance(e, RuntimeError)
+    )
+    invoke = _patch_adapter_for_task(monkeypatch, RuntimeError("flaky 502"))
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=1,
+        )
+    )
+
+    failed = [e for e in events if isinstance(e, CaseFailedEvent)]
+    assert len(failed) == 1
+    assert failed[0].error_code == "unexpected_error"
+    assert "flaky 502" in failed[0].message
+    # One invoke per attempt at turns=1: the first try plus the retries.
+    assert invoke.call_count == 1 + runner_mod.DRIVE_MAX_RETRIES
+
+
+@pytest.mark.asyncio
+async def test_each_failed_attempt_cleans_its_partial_chain(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """turns=2: every attempt persists turn 1 then dies on turn 2 — each
+    attempt's orphan chain must be deleted, and turn events restart at 1
+    per attempt (turn_index is per-attempt, not cumulative)."""
+    monkeypatch.setattr(runner_mod, "DRIVE_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(
+        runner_mod, "is_retryable_error", lambda e: isinstance(e, RuntimeError)
+    )
+    runs = [_fake_run(f"turn1-attempt{i}") for i in range(3)]
+    _patch_adapter_for_task(
+        monkeypatch,
+        [
+            runs[0],
+            RuntimeError("flaky"),
+            runs[1],
+            RuntimeError("flaky"),
+            runs[2],
+            RuntimeError("flaky"),
+        ],
+    )
+    _patch_su_driver(monkeypatch, replies_per_case=["x", "y"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+        )
+    )
+
+    assert len([e for e in events if isinstance(e, CaseFailedEvent)]) == 1
+    for run in runs:
+        run.delete.assert_called_once()
+    turn_indexes = [e.turn_index for e in events if isinstance(e, TurnCompletedEvent)]
+    assert turn_indexes == [1, 1, 1]
 
 
 @pytest.mark.asyncio

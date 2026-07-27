@@ -834,6 +834,7 @@ def _fake_run_cases_batch(*, fail_case: int | None = None, events_per_case: int 
             for _turn in range(turns):
                 yield TurnCompletedEvent(
                     case_index=i,
+                    turn_index=_turn + 1,
                     assistant_run_id=f"run-{i}",
                     su_next_message="next",
                     cumulative_cost=0.01,

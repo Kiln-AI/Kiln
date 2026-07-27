@@ -1,8 +1,10 @@
 """Batch runner — fans drive_case out across N cases, streams BatchEvents.
 
 `run_cases_batch` is an async generator yielding typed events. Cases run
-concurrently under an asyncio.Semaphore. Per-case failures surface as
-`CaseFailedEvent` without affecting other in-flight cases.
+through a shared AsyncJobRunner worker pool (the same fan-out engine the
+eval runner uses): transient provider failures retry up to DRIVE_MAX_RETRIES,
+and a per-case failure surfaces as ONE `CaseFailedEvent` — after the last
+attempt — without affecting other in-flight cases.
 """
 
 import asyncio
@@ -14,6 +16,10 @@ from typing import AsyncIterator
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, SkillsDict
+from kiln_ai.adapters.retry_classification import (
+    is_retryable_error,
+    unwrap_kiln_run_error,
+)
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
@@ -25,6 +31,11 @@ from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
 from kiln_ai.synthetic_user.parser import (
     SyntheticUserInfoParseError,
     parse_synthetic_user_info,
+)
+from kiln_ai.utils.async_job_runner import (
+    AsyncJobRunner,
+    AsyncJobRunnerObserver,
+    RetryableError,
 )
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
@@ -39,6 +50,12 @@ CONCURRENCY = 4
 # round trips: target model + SU driver). A hung provider call would otherwise
 # pin a concurrency slot for the batch's whole lifetime.
 DRIVE_TIMEOUT_PER_TURN_SECONDS = 120.0
+# Transient drive failures (see kiln_ai.adapters.retry_classification) retry
+# up to this many times before the case is declared failed — the same retry
+# posture as the eval runner. Timeouts and deterministic input problems are
+# never retried.
+DRIVE_MAX_RETRIES = 2
+DRIVE_RETRY_DELAY_SECONDS = 1.0
 
 # Tag scheme. `_TAG_SU_CASE` lets the dataset view filter to all SU-generated
 # leaves; `_TAG_PREFIX_SU_BATCH` (+ batch_tag) groups one batch for review.
@@ -62,6 +79,9 @@ class BatchStartedEvent:
 @dataclass(frozen=True)
 class TurnCompletedEvent:
     case_index: int
+    # 1-based turn number within the CURRENT drive attempt. Consumers must
+    # read this rather than count events — a retried case restarts at 1.
+    turn_index: int
     assistant_run_id: str
     su_next_message: str
     cumulative_cost: float
@@ -123,20 +143,24 @@ async def run_cases_batch(
 ) -> AsyncIterator[BatchEvent]:
     """Drive `cases` concurrently against `target_task`, streaming progress.
 
-    Each case runs in its own coroutine under an `asyncio.Semaphore` so the
-    target-task LLM and the SU LLM aren't both hammered at unbounded fan-out.
-    Events from different cases interleave; ordering WITHIN a case is
-    `turn_completed`* → `case_completed | case_failed`.
+    Cases run through an AsyncJobRunner worker pool bounded by `concurrency`,
+    so the target-task LLM and the SU LLM aren't both hammered at unbounded
+    fan-out. Events from different cases interleave; ordering WITHIN a case
+    is `turn_completed`* → `case_completed | case_failed`.
 
     `case_timeout_seconds` bounds each case's drive (default: turns *
     DRIVE_TIMEOUT_PER_TURN_SECONDS). A case that exceeds it fails with
     `case_timeout` and frees its concurrency slot; the batch continues.
 
+    Transient provider failures retry the whole case (up to
+    DRIVE_MAX_RETRIES) — its turn events restart at 1; deterministic
+    failures and timeouts fail immediately.
+
     Yields:
       BatchStartedEvent — once, before any case runs.
-      TurnCompletedEvent — one per assistant turn within a case.
+      TurnCompletedEvent — one per assistant turn within a case (attempt).
       CaseCompletedEvent — one per case that ran to completion.
-      CaseFailedEvent — one per case that hit a typed error.
+      CaseFailedEvent — one per case whose last attempt failed.
       BatchCompletedEvent — once, after all cases finish.
     """
     if not cases:
@@ -160,50 +184,71 @@ async def run_cases_batch(
     # directory scan covers the whole batch.
     skills = load_skills_for_task(target_task, target_run_config)
     save_ctx: SaveContext = save_context or default_save_context
-    semaphore = asyncio.Semaphore(concurrency)
     # `None` is the end-of-stream sentinel pushed when all cases finish.
     queue: asyncio.Queue[BatchEvent | None] = asyncio.Queue()
 
-    async def _drive_one(case_index: int, case: SyntheticUserCase) -> None:
-        async with semaphore:
-            await _drive_one_case_and_emit(
-                case_index=case_index,
-                case=case,
-                target_task=target_task,
-                target_run_config=target_run_config,
-                su_driver_config=su_driver_config,
-                turns=turns,
-                batch_tag=resolved_batch_tag,
-                queue=queue,
-                save_ctx=save_ctx,
-                skills=skills,
-                task_run_config_id=task_run_config_id,
-                case_timeout_seconds=resolved_case_timeout,
+    async def _drive_job(job: tuple[int, SyntheticUserCase]) -> bool:
+        case_index, case = job
+        await _drive_one_case_and_emit(
+            case_index=case_index,
+            case=case,
+            target_task=target_task,
+            target_run_config=target_run_config,
+            su_driver_config=su_driver_config,
+            turns=turns,
+            batch_tag=resolved_batch_tag,
+            queue=queue,
+            save_ctx=save_ctx,
+            skills=skills,
+            task_run_config_id=task_run_config_id,
+            case_timeout_seconds=resolved_case_timeout,
+        )
+        return True
+
+    class _EmitCaseFailed(AsyncJobRunnerObserver[tuple[int, SyntheticUserCase]]):
+        """Emits case_failed exactly once per dead case — the job runner
+        calls on_error only after retries are exhausted (or immediately
+        for non-retryable failures)."""
+
+        async def on_error(
+            self, job: tuple[int, SyntheticUserCase], error: Exception
+        ) -> None:
+            case_index, _case = job
+            code, message = _failure_details(error)
+            await queue.put(
+                CaseFailedEvent(case_index=case_index, error_code=code, message=message)
             )
 
-    # Kick the cases off BEFORE the first yield so they start running
-    # concurrently with consumer setup. If the consumer disconnects between
-    # BatchStartedEvent and the drain loop, the `finally` below still
-    # cancels them. Tasks are named so asyncio debug dumps and pending-
-    # task warnings point at this code path.
-    case_tasks = [
-        asyncio.create_task(
-            _drive_one(i, c), name=f"su_case_{i}_{resolved_batch_tag[:6]}"
-        )
-        for i, c in enumerate(cases)
-    ]
+    # AsyncJobRunner is the shared fan-out engine (same as the eval runner):
+    # a worker pool bounded by `concurrency`, retrying cases whose drive
+    # raised RetryableError (transient provider failures, classified inside
+    # _drive_one_case_and_emit) before declaring them dead.
+    runner = AsyncJobRunner(
+        jobs=list(enumerate(cases)),
+        run_job_fn=_drive_job,
+        concurrency=concurrency,
+        max_retries=DRIVE_MAX_RETRIES,
+        retry_delay=DRIVE_RETRY_DELAY_SECONDS,
+        observers=[_EmitCaseFailed()],
+    )
 
-    async def _close_when_done() -> None:
-        # `return_exceptions=True` so a stray bug doesn't leave the queue
-        # draining forever; we surface failures via per-case CaseFailedEvent.
-        # On the cancel path (consumer disconnect), the drain loop has
-        # already exited, so the final `put(None)` is into-the-void —
-        # harmless because the queue is unbounded and never re-read.
-        await asyncio.gather(*case_tasks, return_exceptions=True)
-        await queue.put(None)
+    async def _run_jobs() -> None:
+        # The runner's coarse Progress stream goes unused — this generator's
+        # protocol is the typed BatchEvents the jobs put on `queue`; draining
+        # it is what drives the workers. The sentinel closes the stream once
+        # every case has completed or exhausted its attempts.
+        try:
+            async for _progress in runner.run():
+                pass
+        finally:
+            queue.put_nowait(None)
 
-    closer = asyncio.create_task(
-        _close_when_done(), name=f"su_closer_{resolved_batch_tag[:6]}"
+    # Kick the batch off BEFORE the first yield so cases start running
+    # concurrently with consumer setup; the `finally` below still tears it
+    # down if the consumer disconnects immediately. Named so asyncio debug
+    # dumps point at this code path.
+    jobs_task = asyncio.create_task(
+        _run_jobs(), name=f"su_batch_{resolved_batch_tag[:6]}"
     )
 
     successful = 0
@@ -230,18 +275,37 @@ async def run_cases_batch(
             total_cost=total_cost,
         )
     finally:
-        # Cancel any in-flight case tasks before awaiting the closer. Without
-        # this, a consumer disconnect (e.g. browser closes the SSE) leaves
-        # workers running to completion writing to a dead queue — the request
-        # stays "alive" for the full duration of every case.
-        for task in case_tasks:
-            if not task.done():
-                task.cancel()
+        # Consumer disconnect (e.g. browser closes the SSE): cancel the job
+        # runner — its own teardown cancels in-flight case workers, so
+        # abandoned drives stop spending.
+        jobs_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
-            await closer
+            await jobs_task
 
 
 # ───────────────────────── per-case orchestration ─────────────────────────
+
+
+class _CaseFailure(Exception):
+    """A terminal per-case failure — never retried.
+
+    Deterministic input problems, per-case timeouts (a retry would pin a
+    worker for another full drive budget), and provider errors the shared
+    classifier calls permanent. `code` rides the case_failed wire event.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def _failure_details(error: Exception) -> tuple[str, str]:
+    """Map a case's terminal exception to the case_failed wire fields."""
+    if isinstance(error, _CaseFailure):
+        return error.code, str(error)
+    # A RetryableError whose attempts ran out (or an unexpected
+    # orchestration error surfaced by the job runner).
+    return "unexpected_error", str(error)
 
 
 async def _drive_one_case_and_emit(
@@ -259,16 +323,20 @@ async def _drive_one_case_and_emit(
     task_run_config_id: str | None,
     case_timeout_seconds: float,
 ) -> None:
-    """Run drive_case for one case, emitting events on `queue`.
+    """Run drive_case for one case (one ATTEMPT), emitting turn/completion
+    events on `queue`.
 
-    Everything runs inside a single try/except so any failure surfaces as
-    a CaseFailedEvent rather than silently dropping the case.
+    Failures RAISE instead of emitting: transient provider errors become
+    RetryableError (the job runner re-runs the case), everything else
+    becomes _CaseFailure, and case_failed is emitted once — by the runner's
+    on_error observer, after the last attempt. Any turns a failed attempt
+    persisted are removed before raising, so a retry starts clean.
     """
     # Runs persist per turn (adapter autosave) but the batch tag only lands
     # on the leaf after a successful drive, so a mid-drive failure would
     # strand an untagged chain that no eval loader or delete-on-redrive
-    # sweep can ever find. Track what this case persisted so the failure
-    # arm can remove it.
+    # sweep can ever find. Track what this attempt persisted so the failure
+    # arms can remove it.
     persisted_runs: dict[str, TaskRun] = {}
     try:
         # Malformed blob fails this case without affecting others. Parsing
@@ -277,14 +345,8 @@ async def _drive_one_case_and_emit(
         try:
             su_info = parse_synthetic_user_info(case.synthetic_user_info)
         except SyntheticUserInfoParseError as e:
-            await queue.put(
-                CaseFailedEvent(
-                    case_index=case_index,
-                    error_code="bad_synthetic_user_info",
-                    message=str(e),
-                )
-            )
-            return
+            # Deterministic: retrying replays the same parse on the same bytes.
+            raise _CaseFailure("bad_synthetic_user_info", str(e)) from e
         su_driver = SyntheticUserDriver(su_info, su_driver_config)
 
         target_invoker = _make_target_invoker(
@@ -297,12 +359,17 @@ async def _drive_one_case_and_emit(
             task_run_config_id=task_run_config_id,
         )
 
+        turns_completed = 0
+
         async def _on_turn(*, run: TaskRun, su_message: str) -> None:
+            nonlocal turns_completed
+            turns_completed += 1
             if run.id is not None:
                 persisted_runs[str(run.id)] = run
             await queue.put(
                 TurnCompletedEvent(
                     case_index=case_index,
+                    turn_index=turns_completed,
                     assistant_run_id=str(run.id) if run.id is not None else "",
                     su_next_message=su_message,
                     cumulative_cost=_cumulative_cost(run),
@@ -344,51 +411,51 @@ async def _drive_one_case_and_emit(
                 total_cost=_cumulative_cost(leaf) + result.su_total_cost,
             )
         )
-    except asyncio.TimeoutError:
+    except _CaseFailure:
+        # Raised above before anything persisted (parse) — pass through.
+        raise
+    except asyncio.TimeoutError as e:
         # The drive exceeded its per-case budget; wait_for already cancelled
-        # it. The partial chain is removed like any other failed case.
+        # it. The partial chain is removed like any other failed attempt.
         logger.warning(
             "synthetic_user runner: case %d timed out after %.0fs",
             case_index,
             case_timeout_seconds,
         )
         await _delete_partial_chain(persisted_runs, save_ctx)
-        await queue.put(
-            CaseFailedEvent(
-                case_index=case_index,
-                error_code="case_timeout",
-                message=(
-                    f"The conversation did not finish within "
-                    f"{case_timeout_seconds:.0f}s and was cancelled."
-                ),
-            )
-        )
+        raise _CaseFailure(
+            "case_timeout",
+            f"The conversation did not finish within "
+            f"{case_timeout_seconds:.0f}s and was cancelled.",
+        ) from e
     except Exception as e:
         # Adapter network errors, model misconfig, save_to_file blow-up,
-        # anything unexpected. Log with full traceback; emit a structured
-        # failure so the batch invariant holds (every case gets one event).
+        # anything unexpected. Log with full traceback; clean this attempt's
+        # partial chain, then classify: transient errors retry, the rest
+        # fail the case.
         logger.exception(
             "synthetic_user runner: unexpected error in case %d", case_index
         )
         await _delete_partial_chain(persisted_runs, save_ctx)
-        await queue.put(
-            CaseFailedEvent(
-                case_index=case_index,
-                error_code="unexpected_error",
-                message=f"{type(e).__name__}: {e}",
-            )
-        )
+        if is_retryable_error(e):
+            # The adapter's KilnRunError message is genericized user-facing
+            # text — unwrap so the exhausted-retries event names the real
+            # provider failure.
+            cause = unwrap_kiln_run_error(e)
+            raise RetryableError(f"{type(cause).__name__}: {cause}") from e
+        raise _CaseFailure("unexpected_error", f"{type(e).__name__}: {e}") from e
 
 
 async def _delete_partial_chain(
     persisted_runs: dict[str, TaskRun], save_ctx: SaveContext
 ) -> None:
-    """Best-effort removal of a failed case's partially-driven chain.
+    """Best-effort removal of a failed attempt's partially-driven chain.
 
     A chain only becomes discoverable through the leaf's batch tag, applied
-    after a successful drive — runs a failed case persisted would otherwise
-    be permanent on-disk orphans. Never raises: the case failure already on
-    the queue is the event that matters.
+    after a successful drive — runs a failed attempt persisted would
+    otherwise be permanent on-disk orphans (and a retry would drive on top
+    of them). Never raises: the terminal failure the caller is about to
+    raise is the event that matters.
     """
     if not persisted_runs:
         return

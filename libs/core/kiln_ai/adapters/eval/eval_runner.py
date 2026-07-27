@@ -3,16 +3,17 @@ import logging
 from dataclasses import dataclass, field
 from typing import AsyncGenerator, Dict, List, Literal, Set, Tuple
 
-import litellm
-
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
-from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 from kiln_ai.adapters.eval.registry import (
     legacy_eval_adapter_from_type,
     v2_eval_type_available,
 )
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
+from kiln_ai.adapters.retry_classification import (
+    is_retryable_error,
+    unwrap_kiln_run_error,
+)
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.dataset_filters import (
@@ -389,14 +390,14 @@ class EvalRunner:
                 await self._delete_superseded_tombstones(job)
             return done
         except Exception as e:
-            if _is_retryable_error(e):
+            if is_retryable_error(e):
                 logger.error(
                     f"Transient error running eval job for dataset item {job.item.id}: {e}",
                     exc_info=True,
                 )
                 # KilnRunError's own message is genericized user-facing text; keep
                 # the underlying provider detail for the developer-facing error log.
-                raise RetryableError(str(_unwrap_kiln_run_error(e))) from e
+                raise RetryableError(str(unwrap_kiln_run_error(e))) from e
             logger.error(
                 f"Error running eval job for dataset item {job.item.id}: {e}",
                 exc_info=True,
@@ -889,41 +890,3 @@ def _trace_json_default(obj: object) -> object:
     if isinstance(obj, MessageUsage):
         return obj.model_dump(mode="json")
     raise TypeError(f"{type(obj).__name__} is not JSON serializable")
-
-
-def _unwrap_kiln_run_error(e: BaseException) -> BaseException:
-    """The innermost non-wrapper error.
-
-    The model adapter wraps provider exceptions in KilnRunError (to carry the
-    partial trace), whose own message is genericized user-facing text — so both
-    retry classification and error detail must use the underlying error. The
-    isinstance guard on `original` keeps a (contract-violating) None from
-    escaping as the result."""
-    while isinstance(e, KilnRunError) and isinstance(e.original, BaseException):
-        e = e.original
-    return e
-
-
-def _is_retryable_error(e: BaseException) -> bool:
-    e = _unwrap_kiln_run_error(e)
-
-    if isinstance(
-        e,
-        (
-            litellm.RateLimitError,
-            litellm.APIConnectionError,
-            litellm.InternalServerError,
-            litellm.ServiceUnavailableError,
-            litellm.BadGatewayError,
-            litellm.JSONSchemaValidationError,
-        ),
-    ):
-        return True
-
-    # ValueError thrown by Kiln's adapter when structured output doesn't match schema
-    if isinstance(
-        e, ValueError
-    ) and "This task requires a specific output schema" in str(e):
-        return True
-
-    return False

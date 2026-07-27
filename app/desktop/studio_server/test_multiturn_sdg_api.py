@@ -457,6 +457,7 @@ def test_run_cases_batch_emits_full_sse_event_stream(
         BatchStartedEvent(batch_tag="testbatch", num_cases=2),
         TurnCompletedEvent(
             case_index=0,
+            turn_index=1,
             assistant_run_id="r0a",
             su_next_message="next user msg",
             cumulative_cost=0.01,
@@ -545,6 +546,7 @@ def test_run_cases_batch_jsonable_handles_message_usage_in_trace(
         BatchStartedEvent(batch_tag="tb", num_cases=1),
         TurnCompletedEvent(
             case_index=0,
+            turn_index=1,
             assistant_run_id="r0",
             su_next_message="hello",
             cumulative_cost=0.001,
@@ -647,6 +649,7 @@ def test_run_cases_batch_jsonable_typeerror_surfaces_as_batch_failed(
         BatchStartedEvent(batch_tag="tb", num_cases=1),
         TurnCompletedEvent(
             case_index=0,
+            turn_index=1,
             assistant_run_id="r0",
             su_next_message="x",
             cumulative_cost=0.0,

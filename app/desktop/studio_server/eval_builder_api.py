@@ -240,7 +240,6 @@ class ReviewPipelineRun:
         # in-process turn events — the REAL trace (tool calls, system turns),
         # not a wire projection. Popped when the case's review starts.
         self._latest_trace: dict[int, list[dict[str, Any]]] = {}
-        self._turns_completed: dict[int, int] = {}
         self._judged_count = 0
         self._failed_count = 0
         self._total_cost = 0.0
@@ -340,13 +339,13 @@ class ReviewPipelineRun:
                 self._latest_trace[event.case_index] = cast(
                     list[dict[str, Any]], event.trace
                 )
-                self._turns_completed[event.case_index] = (
-                    self._turns_completed.get(event.case_index, 0) + 1
-                )
                 await self._emit(
                     PipelineTurnCompletedEvent(
                         case_index=event.case_index,
-                        turns_completed=self._turns_completed[event.case_index],
+                        # The runner's per-attempt turn number, not an event
+                        # count — a retried case restarts at 1, and counting
+                        # events would overshoot the denominator.
+                        turns_completed=event.turn_index,
                         total_turns=self._input.turns,
                     )
                 )

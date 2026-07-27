@@ -14,9 +14,9 @@ from kiln_ai.adapters.eval.eval_runner import (
     EvalJob,
     EvalRunner,
     _drive_usage,
-    _is_retryable_error,
 )
 from kiln_ai.adapters.ml_model_list import ModelProviderName
+from kiln_ai.adapters.retry_classification import is_retryable_error
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -880,7 +880,7 @@ async def test_run_job_with_none_trace(
     ],
 )
 def test_is_retryable_error_returns_true(error):
-    assert _is_retryable_error(error) is True
+    assert is_retryable_error(error) is True
 
 
 @pytest.mark.parametrize(
@@ -893,7 +893,7 @@ def test_is_retryable_error_returns_true(error):
     ],
 )
 def test_is_retryable_error_returns_false(error):
-    assert _is_retryable_error(error) is False
+    assert is_retryable_error(error) is False
 
 
 def wrapped_rate_limit_error(detail: str) -> KilnRunError:
@@ -911,7 +911,7 @@ def test_is_retryable_error_unwraps_kiln_run_error():
     # The model adapter wraps provider exceptions in KilnRunError (to carry the
     # partial trace), so the classifier must look through the wrapper — otherwise
     # rate limits from a real adapter run would never be retried.
-    assert _is_retryable_error(wrapped_rate_limit_error("rate limited")) is True
+    assert is_retryable_error(wrapped_rate_limit_error("rate limited")) is True
 
 
 def test_is_retryable_error_wrapped_non_transient_returns_false():
@@ -920,7 +920,7 @@ def test_is_retryable_error_wrapped_non_transient_returns_false():
         partial_trace=None,
         original=RuntimeError("boom"),
     )
-    assert _is_retryable_error(wrapped) is False
+    assert is_retryable_error(wrapped) is False
 
 
 @pytest.mark.asyncio
@@ -972,7 +972,7 @@ def test_is_retryable_error_unwraps_nested_kiln_run_error():
         partial_trace=None,
         original=wrapped_rate_limit_error("rate limited"),
     )
-    assert _is_retryable_error(nested) is True
+    assert is_retryable_error(nested) is True
 
 
 # --- save_context tests ---
