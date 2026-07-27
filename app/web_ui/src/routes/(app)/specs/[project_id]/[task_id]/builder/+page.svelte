@@ -945,12 +945,18 @@
         return
       }
       const dropped = approved_prompts.length - complete.length
-      if (pipeline_failed_count > 0 || dropped > 0) {
-        // Don't yank the user into a review of a silently smaller sample —
-        // stay on the plan screen and let them choose: review the
-        // survivors (Continue button) or re-drive.
-        pipeline_warning = `${dropped} of ${approved_prompts.length} conversations failed — review the survivors or drive again.`
-        return
+      if (dropped > 0) {
+        // Failures reaching here are TERMINAL — transient errors were
+        // already retried by the drive runner. At subset-review sizes a
+        // few losses don't change the task at hand (the review needs only
+        // N//4), so keep the flow moving with a non-blocking notice; only
+        // a badly degraded batch (>10% lost) stops at the plan screen for
+        // an explicit review-the-survivors / re-drive choice.
+        if (dropped * 10 > approved_prompts.length) {
+          pipeline_warning = `${dropped} of ${approved_prompts.length} conversations failed — review the survivors or drive again.`
+          return
+        }
+        pipeline_warning = `${dropped} of ${approved_prompts.length} conversations failed (after retries) — continuing with the ${complete.length} that succeeded.`
       }
       // PUSH review (single-turn replaces): Back must return to the plan.
       prefetch_selected_claims()
@@ -1984,6 +1990,16 @@
               </button>
             </div>
           {:else}
+            {#if pipeline_warning}
+              <!-- A few cases died (post-retry) and the flow continued —
+                   the loss is noted here rather than blocking the review. -->
+              <div class="mb-4">
+                <Warning
+                  warning_color="warning"
+                  warning_message={pipeline_warning}
+                />
+              </div>
+            {/if}
             <ClaimEvidenceReview
               traces={trace_claims}
               bind:verdicts={trace_reviews}
