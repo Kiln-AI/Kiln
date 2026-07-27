@@ -1602,7 +1602,9 @@
           ? `Planning, then driving ${multi_turn_total} multi-turn conversations against your agent.`
           : "Generating sample inputs and outputs based on your spec."
       case "review":
-        return "Read each conversation and give your own pass/fail verdict — the judge's verdict and claims appear after yours, as a cross-check."
+        return is_multi_turn
+          ? `Reviewing ${multi_turn_review_target} of ${trace_claims.length} conversations — a judge-balanced sample. Agree or disagree with each claim; open a [n] citation to see the trace.`
+          : "Agree or disagree with each claim. Open a [n] citation to see the trace."
       case "save":
         return "Persisting the spec, eval, and dataset."
       case "done":
@@ -2003,11 +2005,7 @@
             <ClaimEvidenceReview
               traces={trace_claims}
               bind:verdicts={trace_reviews}
-              multi_turn={is_multi_turn}
               selected_indices={selected_trace_indices}
-              review_target_count={is_multi_turn
-                ? multi_turn_review_target
-                : trace_claims.length}
               {on_open_trace}
               on_back={() => history.back()}
               on_save={on_advance_to_save}

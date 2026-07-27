@@ -94,15 +94,8 @@ export type ClaimVerdict = {
   why: string // required when the human disagrees — feeds the refine loop
 }
 
-// Review is BLIND and two-phase: the reviewer reads the transcript and gives
-// their own pass/fail (human_verdict) WITHOUT seeing the judge — only then
-// do the judge's verdict and claims appear as a cross-check. The wire
-// contract stays agree/disagree: apply_human_verdict maps human-vs-judge
-// into final_judgement_verdict.agrees, so every downstream consumer
-// (save, refine) reads the same shape as before.
 export type TraceReview = {
   trace_id: string
-  human_verdict: ExpectedResult | null // the blind call; null = not yet given
   claim_verdicts: ClaimVerdict[]
   final_judgement_verdict: ClaimVerdict
 }
@@ -137,7 +130,6 @@ export function build_trace_reviews(traces: TraceClaims[]): TraceReview[] {
   // when their claims arrive (empty_claim_verdicts).
   return traces.map((t) => ({
     trace_id: t.trace_id,
-    human_verdict: null,
     claim_verdicts: (t.claims ?? []).map(() => ({ agrees: null, why: "" })),
     final_judgement_verdict: { agrees: null, why: "" },
   }))
@@ -146,24 +138,6 @@ export function build_trace_reviews(traces: TraceClaims[]): TraceReview[] {
 // Fresh positional verdict slots for a trace whose claims just arrived.
 export function empty_claim_verdicts(claims: Claim[]): ClaimVerdict[] {
   return claims.map(() => ({ agrees: null, why: "" }))
-}
-
-// Record the reviewer's blind verdict and map it onto the wire shape:
-// agreeing with the judge is human_verdict == judge_score. Re-applying with
-// a changed verdict re-maps but keeps any explanation already typed.
-export function apply_human_verdict(
-  trace: TraceClaims,
-  review: TraceReview,
-  verdict: ExpectedResult,
-): TraceReview {
-  return {
-    ...review,
-    human_verdict: verdict,
-    final_judgement_verdict: {
-      ...review.final_judgement_verdict,
-      agrees: verdict === trace.judge_score,
-    },
-  }
 }
 
 // A trace is reviewed once the final judgement has an agree/disagree and
@@ -286,15 +260,13 @@ export function build_claim_review_payload(
   }
 }
 
-// The reviewer's overall verdict on a trace: their own blind call when
-// given; otherwise the judge's verdict, flipped when the human disagreed
-// with the final judgement (the two paths agree whenever apply_human_verdict
-// did the mapping — the fallback covers reviews recorded before a verdict).
+// The reviewer's overall verdict on a trace: the judge's verdict (the final
+// judgement's expected_result is pinned to judge_score server-side), flipped
+// when the human disagrees with the final judgement.
 export function user_says_meets_spec(
   trace: TraceClaims,
   review: TraceReview,
 ): boolean {
-  if (review.human_verdict !== null) return review.human_verdict === "pass"
   const judge_passes = trace.judge_score === "pass"
   return review.final_judgement_verdict.agrees === false
     ? !judge_passes
