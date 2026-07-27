@@ -8170,9 +8170,24 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
             ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/kimi-k3",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
             # SiliconFlow provider omitted: moonshotai/Kimi-K3 returns HTTP 400
             # "Model does not exist" on the .cn endpoint Kiln uses (it appears live
-            # on the .com site only). Not yet on Fireworks AI or Together AI (K2.6 / K2.7).
+            # on the .com site only). Not yet on Together AI (K2.6 / K2.7).
         ],
     ),
     # Kimi K2.6
