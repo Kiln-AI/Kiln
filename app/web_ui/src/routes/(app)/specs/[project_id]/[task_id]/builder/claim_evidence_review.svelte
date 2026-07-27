@@ -88,8 +88,9 @@
 </script>
 
 <div>
-  <!-- Jump-to dots: one per selected trace, colored by review state and
-       labelled with the trace's original number in the driven batch. -->
+  <!-- Jump-to dots: one per selected trace, colored by review state.
+       Numbered 1..N in review order — the trace's position in the driven
+       batch is sampling mechanics the reviewer doesn't need. -->
   <div class="flex items-center mb-10 px-12">
     {#each selected as trace_index, position}
       {@const done = is_trace_reviewed(
@@ -109,8 +110,8 @@
             ? 'bg-success'
             : 'bg-base-300 hover:bg-base-content/40'}"
           on:click={() => (current_index = trace_index)}
-          aria-label={`Jump to trace ${trace_index + 1}`}
-          title={`Trace ${trace_index + 1}`}
+          aria-label={`Jump to trace ${position + 1}`}
+          title={`Trace ${position + 1}`}
         ></button>
         <span
           class="absolute top-full left-1/2 -translate-x-1/2 mt-2 text-xs {trace_index ===
@@ -118,7 +119,7 @@
             ? 'text-base-content font-medium'
             : 'text-gray-400'}"
         >
-          {trace_index + 1}
+          {position + 1}
         </span>
       </div>
     {/each}
