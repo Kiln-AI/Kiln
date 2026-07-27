@@ -945,18 +945,15 @@
         return
       }
       const dropped = approved_prompts.length - complete.length
-      if (dropped > 0) {
-        // Failures reaching here are TERMINAL — transient errors were
-        // already retried by the drive runner. At subset-review sizes a
-        // few losses don't change the task at hand (the review needs only
-        // N//4), so keep the flow moving with a non-blocking notice; only
-        // a badly degraded batch (>10% lost) stops at the plan screen for
-        // an explicit review-the-survivors / re-drive choice.
-        if (dropped * 10 > approved_prompts.length) {
-          pipeline_warning = `${dropped} of ${approved_prompts.length} conversations failed — review the survivors or drive again.`
-          return
-        }
-        pipeline_warning = `${dropped} of ${approved_prompts.length} conversations failed (after retries) — continuing with the ${complete.length} that succeeded.`
+      // Failures reaching here are TERMINAL — transient errors were already
+      // retried by the drive runner. A badly degraded batch (>10% lost)
+      // stops at the plan screen for an explicit review-the-survivors /
+      // re-drive choice; a rare straggler loss degrades silently, like SU
+      // generation salvage — nothing for the user to act on, and the review
+      // subtitle's denominator reflects the survivors.
+      if (dropped * 10 > approved_prompts.length) {
+        pipeline_warning = `${dropped} of ${approved_prompts.length} conversations failed — review the survivors or drive again.`
+        return
       }
       // PUSH review (single-turn replaces): Back must return to the plan.
       prefetch_selected_claims()
@@ -1992,16 +1989,6 @@
               </button>
             </div>
           {:else}
-            {#if pipeline_warning}
-              <!-- A few cases died (post-retry) and the flow continued —
-                   the loss is noted here rather than blocking the review. -->
-              <div class="mb-4">
-                <Warning
-                  warning_color="warning"
-                  warning_message={pipeline_warning}
-                />
-              </div>
-            {/if}
             <ClaimEvidenceReview
               traces={trace_claims}
               bind:verdicts={trace_reviews}
