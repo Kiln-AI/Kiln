@@ -34,6 +34,7 @@ from kiln_ai.datamodel.run_config import as_kiln_agent_run_config
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
 from kiln_ai.datamodel.usage import MessageUsage
+from kiln_ai.run_context import clear_eval_input_id, set_eval_input_id
 from kiln_ai.synthetic_user import drive_case_for_eval
 from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
 from kiln_ai.utils.async_job_runner import (
@@ -754,18 +755,25 @@ class EvalRunner:
                 eval_input, reused_trace
             )
         else:
-            leaf = await drive_case_for_eval(
-                seed_prompt=seed,
-                synthetic_user_info=data.synthetic_user_info,
-                target_task=self.task,
-                target_run_config=agent_run_config,
-                su_driver_config=SyntheticUserDriverConfig(
-                    model_name=drive_config.model_name,
-                    model_provider_name=su_provider,
-                ),
-                turns=drive_config.turns,
-                skills=self._skills,
-            )
+            # Scope the eval-input id to the drive: every turn's tool calls see
+            # which EvalInput produced them (run_context contextvar).
+            if eval_input.id:
+                set_eval_input_id(eval_input.id)
+            try:
+                leaf = await drive_case_for_eval(
+                    seed_prompt=seed,
+                    synthetic_user_info=data.synthetic_user_info,
+                    target_task=self.task,
+                    target_run_config=agent_run_config,
+                    su_driver_config=SyntheticUserDriverConfig(
+                        model_name=drive_config.model_name,
+                        model_provider_name=su_provider,
+                    ),
+                    turns=drive_config.turns,
+                    skills=self._skills,
+                )
+            finally:
+                clear_eval_input_id()
             eval_task_input = EvalTaskInput.from_eval_input(eval_input, leaf)
             # Publish the fresh trace so same-invocation sibling jobs reuse
             # it without waiting for this record to hit disk.

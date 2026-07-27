@@ -177,6 +177,7 @@ class PythonCodeTool(KilnToolInterface):
                 requests,
                 responses,
                 context.episode_id if context else None,
+                context.eval_input_id if context else None,
             ),
             daemon=True,
         )

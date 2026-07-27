@@ -29,16 +29,20 @@ def child_main(
     requests: Queue,  # type: ignore[type-arg]
     responses: Queue,  # type: ignore[type-arg]
     episode_id: str | None = None,
+    eval_input_id: str | None = None,
 ) -> None:
     """Entry point for the code-tool child process.
 
     Puts exactly one ``result`` message on *requests* and then returns.
-    When the invoking conversation has an episode ID (multi-turn drivers), it
-    is exposed to the sandboxed code as the KILN_EPISODE_ID env var so tools
-    can key state to the conversation.
+    When the invoking conversation has an episode ID (multi-turn drivers) or
+    an eval input ID (eval runs), they are exposed to the sandboxed code as
+    KILN_EPISODE_ID / KILN_EVAL_INPUT_ID env vars so tools can key state to
+    the conversation / eval case.
     """
     if episode_id:
         os.environ["KILN_EPISODE_ID"] = episode_id
+    if eval_input_id:
+        os.environ["KILN_EVAL_INPUT_ID"] = eval_input_id
     captured_stdout = io.StringIO()
     captured_stderr = io.StringIO()
     old_stdout = sys.stdout

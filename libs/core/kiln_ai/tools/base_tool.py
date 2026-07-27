@@ -36,6 +36,11 @@ class ToolCallContext:
     rather than the turn."""
     episode_id: str | None = None
 
+    """ID of the EvalInput being driven, when the caller is the eval runner.
+    None outside eval runs. Lets tools key behavior to the specific eval case
+    (e.g. per-input datasets)."""
+    eval_input_id: str | None = None
+
 
 class ToolCallResult(BaseModel):
     output: str

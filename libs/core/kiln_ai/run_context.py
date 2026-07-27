@@ -39,6 +39,24 @@ def generate_episode_id() -> str:
     return f"ep_{uuid.uuid4().hex[:16]}"
 
 
+# The eval input ID spans one eval case (all turns driven for one EvalInput).
+# Set by the eval runner around the drive; lets run-scoped consumers key
+# behavior/state to the specific eval input being driven.
+_eval_input_id: ContextVar[str | None] = ContextVar("eval_input_id", default=None)
+
+
+def get_eval_input_id() -> str | None:
+    return _eval_input_id.get()
+
+
+def set_eval_input_id(input_id: str) -> None:
+    _eval_input_id.set(input_id)
+
+
+def clear_eval_input_id() -> None:
+    _eval_input_id.set(None)
+
+
 def set_agent_run_id(run_id: str) -> None:
     _agent_run_id.set(run_id)
 
