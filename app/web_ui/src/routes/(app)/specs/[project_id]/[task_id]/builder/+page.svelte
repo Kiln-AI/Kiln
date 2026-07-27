@@ -1639,13 +1639,6 @@
       : `Creating ${multi_turn_total} synthetic users from the approved plan…`
     : "Kiln is generating example data to review and creating a judge. Hold tight!"
 
-  // The progress screen's counters line while the pipeline runs.
-  $: pipeline_status_description =
-    `Driving and judging ${pipeline_total_cases} conversations — ` +
-    `${multi_turn_turns_done} of ${multi_turn_total_turns} turns driven, ` +
-    `${judged_case_count} judged` +
-    (pipeline_failed_count > 0 ? `, ${pipeline_failed_count} failed.` : ".")
-
   // Multi-turn save tags existing chains rather than generating a dataset, so
   // the save copy differs from single-turn's generate-then-save.
   $: save_animation_description = is_multi_turn
@@ -1862,14 +1855,29 @@
             />
           {/if}
           {#if pipeline_running}
-            <!-- The drive stage reuses the app's standard loading animation;
-                 the live turn/judged counters ride its description line, so
-                 progress stays visible without a bespoke progress bar. -->
+            <!-- The drive stage: the standard loading animation plus the
+                 house batch-progress readout (slim bar + tiny count line,
+                 mirroring /generate's batch generation). The bar tracks
+                 TURNS for smooth motion (cases complete in concurrency
+                 waves); the count line speaks in conversations. -->
             <AnalyzingAnimation
               title="Driving Conversations"
-              description={pipeline_status_description}
+              description="Kiln is driving and judging each conversation against your agent. Hold tight!"
               warning={null}
             />
+            <div class="flex flex-col items-center mt-2">
+              <progress
+                class="progress w-56 progress-success"
+                value={multi_turn_turns_done}
+                max={multi_turn_total_turns}
+              ></progress>
+              <div class="font-light text-xs text-center mt-1">
+                {judged_case_count} of {pipeline_total_cases}
+                {#if pipeline_failed_count > 0}
+                  complete — {pipeline_failed_count} failed
+                {/if}
+              </div>
+            </div>
           {/if}
 
           {#if generation_error}
