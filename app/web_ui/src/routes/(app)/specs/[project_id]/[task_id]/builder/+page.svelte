@@ -1857,23 +1857,14 @@
             />
           {/if}
           {#if pipeline_running}
-            <!-- The whole drive stage is this progress screen. A turn-level
-                 bar fills steadily as turns stream in, so the
-                 parallel-but-wavy case completions don't read as stalled. -->
-            <div class="mt-12">
-              <div class="text-2xl font-bold">Driving Conversations</div>
-              <div class="text-sm font-light text-gray-500 mb-4">
-                Each conversation is driven and judged as it completes.
-              </div>
-              <div class="text-sm text-gray-500 mb-2">
-                {pipeline_status_description}
-              </div>
-              <progress
-                class="progress progress-primary w-full max-w-md"
-                value={multi_turn_turns_done}
-                max={multi_turn_total_turns}
-              ></progress>
-            </div>
+            <!-- The drive stage reuses the app's standard loading animation;
+                 the live turn/judged counters ride its description line, so
+                 progress stays visible without a bespoke progress bar. -->
+            <AnalyzingAnimation
+              title="Driving Conversations"
+              description={pipeline_status_description}
+              warning={null}
+            />
           {/if}
 
           {#if generation_error}
