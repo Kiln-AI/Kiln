@@ -1852,7 +1852,7 @@
                 : "Analyzing Eval"}
               description={generate_animation_description}
               warning={is_multi_turn
-                ? "This takes a few minutes for a large batch"
+                ? "This may take a while, depending on the number of scenarios"
                 : "This may take a while"}
             />
           {/if}
