@@ -214,7 +214,6 @@
 
   onDestroy(() => {
     abort_copilot_request()
-    stop_stage_timer()
   })
 
   // ── Step 1 state
@@ -489,41 +488,6 @@
     pipeline_failed_count = 0
   }
 
-  // Elapsed-time ticker for the long single-request stages (plan and SU
-  // generation each run minutes at a 40-case batch) — a bare spinner at that
-  // duration reads as hung.
-  let stage_started_at: number | null = null
-  let stage_elapsed_seconds = 0
-  let stage_timer: ReturnType<typeof setInterval> | null = null
-  let stage_ticking_for: MultiTurnPhase | null = null
-  $: track_stage_elapsed(multi_turn_phase, generation_loading)
-  function track_stage_elapsed(phase: MultiTurnPhase, loading: boolean) {
-    const ticking =
-      loading && (phase === "planning" || phase === "generating_cases")
-    if (ticking && stage_ticking_for !== phase) {
-      stop_stage_timer()
-      stage_ticking_for = phase
-      stage_started_at = Date.now()
-      stage_elapsed_seconds = 0
-      stage_timer = setInterval(() => {
-        stage_elapsed_seconds = Math.floor(
-          (Date.now() - (stage_started_at ?? Date.now())) / 1000,
-        )
-      }, 1000)
-    } else if (!ticking) {
-      stop_stage_timer()
-    }
-  }
-  function stop_stage_timer() {
-    if (stage_timer !== null) clearInterval(stage_timer)
-    stage_timer = null
-    stage_ticking_for = null
-  }
-  function format_elapsed(seconds: number): string {
-    const m = Math.floor(seconds / 60)
-    const s = seconds % 60
-    return `${m}:${String(s).padStart(2, "0")}`
-  }
   // A generated synthetic-user case as the wire carries it: the seed
   // message, the persona blob, and the plan scenario it came from.
   type SyntheticUserCaseWire = {
@@ -1877,6 +1841,9 @@
             />
           {/if}
           {#if generation_loading && !pipeline_running}
+            <!-- Plan and SU generation are each one long request (minutes at
+                 a 40-case batch) — the standard animation warning line sets
+                 the expectation, matching every other long wait in the app. -->
             <AnalyzingAnimation
               title={is_multi_turn
                 ? multi_turn_phase === "planning"
@@ -1884,22 +1851,10 @@
                   : "Creating Synthetic Users"
                 : "Analyzing Eval"}
               description={generate_animation_description}
-              warning={is_multi_turn ? null : "This may take a while"}
+              warning={is_multi_turn
+                ? "This takes a few minutes for a large batch"
+                : "This may take a while"}
             />
-            {#if is_multi_turn}
-              <!-- Plan and SU generation are each ONE long request (minutes
-                   at a 40-case batch) — an elapsed clock keeps the wait from
-                   reading as hung. -->
-              <div
-                class="flex flex-col items-center gap-2 mt-2 text-sm text-gray-500"
-              >
-                <progress class="progress w-56"></progress>
-                <div>
-                  {format_elapsed(stage_elapsed_seconds)} elapsed — batches this
-                  size take a few minutes.
-                </div>
-              </div>
-            {/if}
           {/if}
           {#if pipeline_running}
             <!-- The whole drive stage is this progress screen. A turn-level
