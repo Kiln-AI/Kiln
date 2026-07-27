@@ -1874,7 +1874,7 @@
               <div class="font-light text-xs text-center mt-1">
                 {judged_case_count} of {pipeline_total_cases}
                 {#if pipeline_failed_count > 0}
-                  complete — {pipeline_failed_count} failed
+                  complete, {pipeline_failed_count} failed
                 {/if}
               </div>
             </div>
