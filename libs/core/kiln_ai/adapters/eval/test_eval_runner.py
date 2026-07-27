@@ -377,6 +377,111 @@ def test_collect_tasks_excludes_already_run_task_run_eval(
     assert len(jobs) == 0
 
 
+def test_collect_tasks_uses_eval_set_filter_id_override(
+    mock_eval, mock_task, data_source, mock_eval_config, mock_run_config
+):
+    """An override filter replaces the eval set filter when collecting task run eval jobs."""
+    for tag in ["eval_set_tag", "train_tag"]:
+        task_run = TaskRun(
+            parent=mock_task,
+            input="test",
+            input_source=data_source,
+            tags=[tag],
+            output=TaskOutput(output="test"),
+        )
+        task_run.save_to_file()
+
+    mock_eval.eval_set_filter_id = "tag::eval_set_tag"
+
+    runner = EvalRunner(
+        eval_configs=[mock_eval_config],
+        run_configs=[mock_run_config],
+        eval_run_type="task_run_eval",
+        eval_set_filter_id_override="tag::train_tag",
+    )
+    jobs = runner.collect_tasks()
+
+    # Only the override filter's item is collected; the eval set item is not.
+    assert len(jobs) == 1
+    assert jobs[0].item.tags == ["train_tag"]
+
+    # Without an override, the eval set filter still governs.
+    runner = EvalRunner(
+        eval_configs=[mock_eval_config],
+        run_configs=[mock_run_config],
+        eval_run_type="task_run_eval",
+    )
+    jobs = runner.collect_tasks()
+    assert len(jobs) == 1
+    assert jobs[0].item.tags == ["eval_set_tag"]
+
+
+def test_collect_tasks_override_still_excludes_already_run(
+    mock_eval, mock_task, data_source, mock_eval_config, mock_run_config
+):
+    """The incremental already-run exclusion is item-grained and unaffected by the override."""
+    task_runs = []
+    for _ in range(2):
+        task_run = TaskRun(
+            parent=mock_task,
+            input="test",
+            input_source=data_source,
+            tags=["train_tag"],
+            output=TaskOutput(output="test"),
+        )
+        task_run.save_to_file()
+        task_runs.append(task_run)
+
+    EvalRun(
+        parent=mock_eval_config,
+        dataset_id=task_runs[0].id,
+        task_run_config_id=mock_run_config.id,
+        input="test",
+        output="test",
+        scores={"accuracy": 1.0},
+    ).save_to_file()
+
+    runner = EvalRunner(
+        eval_configs=[mock_eval_config],
+        run_configs=[mock_run_config],
+        eval_run_type="task_run_eval",
+        eval_set_filter_id_override="tag::train_tag",
+    )
+    jobs = runner.collect_tasks()
+
+    assert len(jobs) == 1
+    assert jobs[0].item.id == task_runs[1].id
+
+
+def test_eval_config_eval_rejects_filter_override(mock_eval_config):
+    with pytest.raises(
+        ValueError,
+        match="Mode 'eval_config_eval' does not support an eval set filter override",
+    ):
+        EvalRunner(
+            eval_configs=[mock_eval_config],
+            run_configs=None,
+            eval_run_type="eval_config_eval",
+            eval_set_filter_id_override="tag::train_tag",
+        )
+
+
+def test_v2_eval_rejects_filter_override(mock_v2_eval_config, mock_run_config):
+    # The override is a TaskRun dataset filter; EvalInput-backed (V2) evals
+    # scope items by eval_input_filter_id, so the override must fail loudly
+    # rather than silently running a different item universe.
+    with pytest.raises(
+        ValueError,
+        match="not supported for EvalInput-backed",
+    ):
+        EvalRunner(
+            eval_configs=[mock_v2_eval_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+            eval_set_filter_id_override="tag::train_tag",
+        )
+
+
 def test_collect_tasks_excludes_already_run_eval_config_eval(
     mock_task, data_source, mock_eval_config, mock_eval, mock_run_config
 ):

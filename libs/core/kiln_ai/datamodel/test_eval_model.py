@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -20,6 +22,7 @@ from kiln_ai.datamodel.eval import (
     MultiTurnDriveConfig,
     MultiTurnSyntheticEvalInputData,
     PatternMatchProperties,
+    ScoreDirection,
     SetCheckProperties,
     SingleTurnEvalInputData,
     SkippedReason,
@@ -264,6 +267,203 @@ def test_migrate_train_set_filter_id_slugification(
 
     loaded_eval = Eval.load_from_file(str(eval.path))
     assert loaded_eval.train_set_filter_id == expected_tag
+
+
+def test_eval_with_val_set_filter_id():
+    """Test that Eval correctly stores val_set_filter_id."""
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::eval_test",
+        train_set_filter_id="tag::train_test",
+        val_set_filter_id="tag::val_test",
+        eval_configs_filter_id="tag::eval_golden_test",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+
+    assert eval.val_set_filter_id == "tag::val_test"
+
+
+def test_eval_val_set_filter_id_defaults_to_none():
+    """Test that val_set_filter_id defaults to None when not provided."""
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+
+    assert eval.val_set_filter_id is None
+
+
+def test_migrate_val_set_filter_id_on_load(mock_task, tmp_path):
+    """Test that loading an eval from file auto-creates val_set_filter_id when missing."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="My Eval Name",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        val_set_filter_id=None,
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert loaded_eval.val_set_filter_id == "tag::val_my_eval_name"
+
+
+def test_migrate_val_set_filter_id_preserves_existing(mock_task, tmp_path):
+    """Test that migration does not overwrite an existing val_set_filter_id."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="My Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        val_set_filter_id="tag::custom_val_tag",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert loaded_eval.val_set_filter_id == "tag::custom_val_tag"
+
+
+def test_migrate_val_set_filter_id_not_on_new_eval():
+    """Test that migration does not trigger on newly created evals (not loaded from file)."""
+    eval = Eval(
+        name="New Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        val_set_filter_id=None,
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    assert eval.val_set_filter_id is None
+
+
+@pytest.mark.parametrize(
+    "eval_name,expected_tag",
+    [
+        ("Simple", "tag::val_simple"),
+        ("Two Words", "tag::val_two_words"),
+        ("UPPER CASE", "tag::val_upper_case"),
+        ("mixed Case Name", "tag::val_mixed_case_name"),
+        ("already_underscored", "tag::val_already_underscored"),
+    ],
+)
+def test_migrate_val_set_filter_id_slugification(
+    mock_task, tmp_path, eval_name, expected_tag
+):
+    """Test that various eval names are correctly slugified into val_set_filter_id."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name=eval_name,
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert loaded_eval.val_set_filter_id == expected_tag
+
+
+def test_filter_id_for_split_returns_stored_filter_ids():
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::eval_test",
+        train_set_filter_id="tag::train_test",
+        val_set_filter_id="tag::val_test",
+        eval_configs_filter_id="tag::eval_golden_test",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+
+    assert eval.filter_id_for_split("train") == "tag::train_test"
+    assert eval.filter_id_for_split("val") == "tag::val_test"
+    # "test" is stored in eval_set_filter_id — the "eval set" name is legacy.
+    assert eval.filter_id_for_split("test") == "tag::eval_test"
+
+
+def test_filter_id_for_split_none_for_unset_splits():
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::eval_test",
+        eval_configs_filter_id="tag::eval_golden_test",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+
+    assert eval.filter_id_for_split("train") is None
+    assert eval.filter_id_for_split("val") is None
+    # The test split resolves to the V1 eval_set_filter_id when it is set.
+    assert eval.filter_id_for_split("test") == "tag::eval_test"
+
+
+def test_filter_id_for_split_test_none_for_v2_eval():
+    # V2 (EvalInput-backed) evals carry eval_input_filter_id instead of
+    # eval_set_filter_id, so even the test split can be unset.
+    eval = Eval(
+        name="Test Eval",
+        eval_input_filter_id="all",
+        eval_configs_filter_id="tag::eval_golden_test",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+
+    assert eval.filter_id_for_split("test") is None
 
 
 def test_eval_default_values():
@@ -649,6 +849,134 @@ def test_eval_output_score_name_validation():
         type=TaskOutputRatingType.five_star,
     )
     assert max_length_score.name == "a" * 32
+
+
+def test_eval_output_score_direction_default():
+    score = EvalOutputScore(
+        name="accuracy",
+        type=TaskOutputRatingType.five_star,
+    )
+    assert score.direction == ScoreDirection.higher_is_better
+
+
+def test_eval_output_score_direction_legacy_dict():
+    """Serialized scores that predate the direction field must still parse."""
+    score = EvalOutputScore.model_validate(
+        {
+            "name": "accuracy",
+            "type": "five_star",
+        }
+    )
+    assert score.direction == ScoreDirection.higher_is_better
+
+    custom_score = EvalOutputScore.model_validate(
+        {
+            "name": "total tokens",
+            "type": "custom",
+        }
+    )
+    assert custom_score.direction == ScoreDirection.higher_is_better
+
+
+@pytest.mark.parametrize(
+    "score_type",
+    [
+        TaskOutputRatingType.five_star,
+        TaskOutputRatingType.pass_fail,
+        TaskOutputRatingType.pass_fail_critical,
+    ],
+)
+@pytest.mark.parametrize(
+    "direction",
+    [ScoreDirection.higher_is_better, ScoreDirection.informational],
+)
+def test_eval_output_score_direction_valid(score_type, direction):
+    score = EvalOutputScore(
+        name="my score",
+        type=score_type,
+        direction=direction,
+    )
+    assert score.direction == direction
+
+    round_tripped = EvalOutputScore.model_validate(score.model_dump())
+    assert round_tripped.direction == direction
+
+
+@pytest.mark.parametrize(
+    "score_type",
+    [
+        TaskOutputRatingType.five_star,
+        TaskOutputRatingType.pass_fail,
+        TaskOutputRatingType.pass_fail_critical,
+    ],
+)
+def test_eval_output_score_direction_lower_rejected(score_type):
+    with pytest.raises(
+        ValidationError,
+        match=r"'my score'.*higher-is-better by definition",
+    ):
+        EvalOutputScore(
+            name="my score",
+            type=score_type,
+            direction=ScoreDirection.lower_is_better,
+        )
+
+
+@pytest.mark.parametrize(
+    "direction",
+    [
+        ScoreDirection.higher_is_better,
+        ScoreDirection.lower_is_better,
+        ScoreDirection.informational,
+    ],
+)
+def test_eval_output_score_direction_custom_allows_all(direction):
+    """Custom scores are unbounded metrics: the direction is the author's to declare."""
+    score = EvalOutputScore(
+        name="latency seconds",
+        type=TaskOutputRatingType.custom,
+        direction=direction,
+    )
+    assert score.direction == direction
+
+    round_tripped = EvalOutputScore.model_validate(score.model_dump())
+    assert round_tripped.direction == direction
+
+
+def test_eval_direction_legacy_file_load(mock_task, tmp_path):
+    """Eval files saved before the direction field existed must load with the default."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="Legacy Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    # Rewrite the file without the direction key, simulating a pre-direction file
+    eval_path = eval.path
+    file_data = json.loads(eval_path.read_text())
+    for score in file_data["output_scores"]:
+        del score["direction"]
+    eval_path.write_text(json.dumps(file_data, ensure_ascii=False))
+
+    loaded_eval = Eval.load_from_file(str(eval_path))
+    assert loaded_eval.output_scores[0].direction == ScoreDirection.higher_is_better
+
+    # Re-saving persists the field explicitly
+    loaded_eval.save_to_file()
+    saved_data = json.loads(eval_path.read_text())
+    assert saved_data["output_scores"][0]["direction"] == "higher_is_better"
 
 
 @pytest.fixture

@@ -101,49 +101,65 @@ class TestSpecEvalTemplate:
 
 class TestGenerateSpecEvalTags:
     def test_generates_correct_tags_for_simple_name(self):
-        eval_tag, train_tag, golden_tag = generate_spec_eval_tags("Test Spec")
+        eval_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags("Test Spec")
         assert eval_tag == "eval_test_spec"
         assert train_tag == "train_test_spec"
+        assert val_tag == "val_test_spec"
         assert golden_tag == "eval_golden_test_spec"
 
     def test_handles_already_lowercase_name(self):
-        eval_tag, train_tag, golden_tag = generate_spec_eval_tags("my spec")
+        eval_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags("my spec")
         assert eval_tag == "eval_my_spec"
         assert train_tag == "train_my_spec"
+        assert val_tag == "val_my_spec"
         assert golden_tag == "eval_golden_my_spec"
 
     def test_handles_uppercase_name(self):
-        eval_tag, train_tag, golden_tag = generate_spec_eval_tags("MY SPEC")
+        eval_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags("MY SPEC")
         assert eval_tag == "eval_my_spec"
         assert train_tag == "train_my_spec"
+        assert val_tag == "val_my_spec"
         assert golden_tag == "eval_golden_my_spec"
 
     def test_handles_single_word_name(self):
-        eval_tag, train_tag, golden_tag = generate_spec_eval_tags("Toxicity")
+        eval_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags("Toxicity")
         assert eval_tag == "eval_toxicity"
         assert train_tag == "train_toxicity"
+        assert val_tag == "val_toxicity"
         assert golden_tag == "eval_golden_toxicity"
 
     def test_train_tag_uses_train_prefix(self):
         """Train tag should use 'train_' prefix, not 'eval_train_'."""
-        _, train_tag, _ = generate_spec_eval_tags("Test")
+        _, train_tag, _, _ = generate_spec_eval_tags("Test")
         assert train_tag.startswith("train_")
         assert not train_tag.startswith("eval_train_")
+
+    def test_val_tag_uses_val_prefix(self):
+        """Val tag should use 'val_' prefix, not 'eval_val_'."""
+        _, _, val_tag, _ = generate_spec_eval_tags("Test")
+        assert val_tag.startswith("val_")
+        assert not val_tag.startswith("eval_val_")
 
 
 class TestGenerateSpecEvalFilterIds:
     def test_generates_correct_filter_ids(self):
-        eval_filter, train_filter, golden_filter = generate_spec_eval_filter_ids(
-            "eval_test", "train_test", "golden_test"
+        eval_filter, train_filter, val_filter, golden_filter = (
+            generate_spec_eval_filter_ids(
+                "eval_test", "train_test", "val_test", "golden_test"
+            )
         )
         assert eval_filter == "tag::eval_test"
         assert train_filter == "tag::train_test"
+        assert val_filter == "tag::val_test"
         assert golden_filter == "tag::golden_test"
 
     def test_generates_filter_ids_with_tag_prefix(self):
-        eval_filter, train_filter, golden_filter = generate_spec_eval_filter_ids(
-            "my_tag", "other_tag", "third_tag"
+        eval_filter, train_filter, val_filter, golden_filter = (
+            generate_spec_eval_filter_ids(
+                "my_tag", "other_tag", "third_tag", "fourth_tag"
+            )
         )
         assert eval_filter.startswith("tag::")
         assert train_filter.startswith("tag::")
+        assert val_filter.startswith("tag::")
         assert golden_filter.startswith("tag::")

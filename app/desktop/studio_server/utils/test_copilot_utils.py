@@ -26,6 +26,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     select_golden_leaves,
     split_and_tag_multi_turn_chains,
     split_pool_train_eval,
+    split_pool_train_val_eval,
     unrate_multi_turn_chain_leaves,
     warn_if_golden_below_target,
     write_eval_slice_multi_turn,
@@ -105,6 +106,44 @@ class TestSplitPoolTrainEval:
         pool = list(range(9))
         a = split_pool_train_eval(pool, random.Random(42))
         b = split_pool_train_eval(pool, random.Random(42))
+        assert a == b
+
+
+class TestSplitPoolTrainValEval:
+    @pytest.mark.parametrize(
+        "n,expected_train,expected_val,expected_eval",
+        [
+            (0, 0, 0, 0),  # empty pool
+            (2, 2, 0, 0),  # no eval share; 2//3 == 0 → no val either
+            (3, 2, 0, 1),  # eval 1; remainder 2 → 2//3 == 0 val
+            (6, 3, 1, 2),  # eval 2; remainder 4 → val 1
+            (9, 4, 2, 3),  # exact: eval 3; remainder 6 → val 2, train 4
+            (60, 27, 13, 20),
+        ],
+    )
+    def test_eval_share_unchanged_val_carved_from_train(
+        self, n, expected_train, expected_val, expected_eval
+    ):
+        # Eval keeps split_pool_train_eval's 1-in-3 share; the remainder
+        # splits 2:1 into train and val.
+        pool = list(range(n))
+        train, val, eval_items = split_pool_train_val_eval(pool, random.Random(0))
+        assert len(train) == expected_train
+        assert len(val) == expected_val
+        assert len(eval_items) == expected_eval
+        # Partition: disjoint and complete.
+        assert sorted(train + val + eval_items) == pool
+
+    def test_does_not_mutate_input(self):
+        pool = list(range(9))
+        original = list(pool)
+        split_pool_train_val_eval(pool, random.Random(1))
+        assert pool == original
+
+    def test_deterministic_under_seed(self):
+        pool = list(range(9))
+        a = split_pool_train_val_eval(pool, random.Random(42))
+        b = split_pool_train_val_eval(pool, random.Random(42))
         assert a == b
 
 
@@ -350,6 +389,7 @@ def _make_dataset(
         reviewed_examples,
         "eval_tag",
         "train_tag",
+        "val_tag",
         "golden_tag",
         "Test Spec",
         rng=random.Random(seed),
@@ -361,6 +401,7 @@ def _by_split(task_runs):
     return {
         "eval": [tr for tr in task_runs if "eval_tag" in tr.tags],
         "train": [tr for tr in task_runs if "train_tag" in tr.tags],
+        "val": [tr for tr in task_runs if "val_tag" in tr.tags],
         "golden": [tr for tr in task_runs if "golden_tag" in tr.tags],
     }
 
@@ -394,32 +435,38 @@ class TestCreateDatasetTaskRuns:
     def test_splits_are_disjoint_and_complete(self):
         task_runs = _make_dataset(_samples(60), _reviewed(4))
         for tr in task_runs:
-            split_tags = {"eval_tag", "train_tag", "golden_tag"} & set(tr.tags)
+            split_tags = {"eval_tag", "train_tag", "val_tag", "golden_tag"} & set(
+                tr.tags
+            )
             assert len(split_tags) == 1, f"run {tr.input} has splits {split_tags}"
         buckets = _by_split(task_runs)
-        assert len(buckets["eval"]) + len(buckets["train"]) + len(
+        assert len(buckets["eval"]) + len(buckets["train"]) + len(buckets["val"]) + len(
             buckets["golden"]
         ) == len(task_runs)
 
-    def test_unrated_pool_splits_two_to_one(self):
+    def test_unrated_pool_split_counts(self):
+        # eval keeps its 1-in-3 share; the remainder splits 2:1 train:val.
         task_runs = _make_dataset(_samples(60), _reviewed(0))
         buckets = _by_split(task_runs)
         assert len(buckets["eval"]) == 20  # 60 // 3
-        assert len(buckets["train"]) == 40
+        assert len(buckets["val"]) == 13  # 40 // 3
+        assert len(buckets["train"]) == 27
 
     def test_one_rated_small_pool(self):
-        # golden=1 (rated); the 3 unrated split 2:1 → train 2, eval 1.
+        # golden=1 (rated); the 3 unrated → eval 1, then 2//3 == 0 val, train 2.
         task_runs = _make_dataset(_samples(3), _reviewed(1))
         buckets = _by_split(task_runs)
         assert len(buckets["golden"]) == 1
         assert len(buckets["train"]) == 2
+        assert len(buckets["val"]) == 0
         assert len(buckets["eval"]) == 1
 
     def test_tiny_pool_all_train_no_eval(self):
-        # 2 unrated → 2//3 == 0 eval, both to train (documented small-N edge).
+        # 2 unrated → 2//3 == 0 eval, 0 val, both to train (small-N edge).
         task_runs = _make_dataset(_samples(2), _reviewed(0))
         buckets = _by_split(task_runs)
         assert len(buckets["train"]) == 2
+        assert len(buckets["val"]) == 0
         assert len(buckets["eval"]) == 0
 
     def test_handles_insufficient_examples(self):
@@ -648,7 +695,7 @@ class TestSavePendingChildren:
             claim_review=_claim_review_api(),
         )
         dataset = create_dataset_task_runs(
-            [], [reviewed], "eval_tag", "train_tag", "golden_tag", "My Spec"
+            [], [reviewed], "eval_tag", "train_tag", "val_tag", "golden_tag", "My Spec"
         )
         assert len(dataset.task_runs) == 1
         run = dataset.task_runs[0]

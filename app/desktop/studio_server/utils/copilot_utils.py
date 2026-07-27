@@ -75,7 +75,9 @@ NUM_TOPICS = 15
 # the chains (select_golden_leaves) and the remainder is all train — the
 # eval slice is EvalInput items minted from the driven cases, not chains.
 # Single-turn: golden is the reviewed examples (structurally small, no cap
-# needed) and the unrated pool splits train:eval at 2:1 (the 50:25). If
+# needed) and the unrated pool splits train:eval at 2:1 (the 50:25), with
+# the validation split then carved out of the train share at 2:1
+# (split_pool_train_val_eval) so the eval share is unchanged. If
 # fewer than the target fraction are rated the answer key is simply smaller
 # (warned). One owner so the golden fraction can't drift between the
 # single-turn and multi-turn splitters.
@@ -193,6 +195,22 @@ def split_pool_train_eval(pool: list[T], rng: random.Random) -> tuple[list[T], l
         len(shuffled) * EVAL_SPLIT_WEIGHT // (TRAIN_SPLIT_WEIGHT + EVAL_SPLIT_WEIGHT)
     )
     return shuffled[eval_count:], shuffled[:eval_count]
+
+
+def split_pool_train_val_eval(
+    pool: list[T], rng: random.Random
+) -> tuple[list[T], list[T], list[T]]:
+    """Divide the non-golden pool into (train, val, eval).
+
+    Eval keeps the same 1-in-3 share as split_pool_train_eval (the 25 of the
+    50/25/25 split); the former train share then splits 2:1 into train and
+    val — the validation set is carved out of train so the eval share is
+    unchanged. val takes the floor share so train is never starved on small
+    pools. The input list is not mutated.
+    """
+    remainder, eval_examples = split_pool_train_eval(pool, rng)
+    val_count = len(remainder) // 3
+    return remainder[val_count:], remainder[:val_count], eval_examples
 
 
 def warn_if_golden_below_target(golden_count: int, total_count: int) -> None:
@@ -351,18 +369,21 @@ def create_dataset_task_runs(
     reviewed_examples: list[ReviewedExample],
     eval_tag: str,
     train_tag: str,
+    val_tag: str,
     golden_tag: str,
     spec_name: str,
     rng: random.Random | None = None,
 ) -> DatasetTaskRuns:
-    """Create TaskRuns for the golden, eval, and train datasets (disjoint).
+    """Create TaskRuns for the golden, eval, val, and train datasets (disjoint).
 
     - Golden: the human-rated reviewed examples ONLY (the answer key). Never
       padded with unrated machine examples — an unrated golden calibrates
       nothing.
-    - Eval + train: the unrated machine pool, split 2:1 (the 50:25 of the split).
+    - Eval + val + train: the unrated machine pool — eval keeps its 1-in-3
+      share (the 25 of the 50/25/25 split), then the former train share
+      splits 2:1 into train and val.
 
-    The three tag sets never overlap. `rng` is injected for deterministic
+    The four tag sets never overlap. `rng` is injected for deterministic
     tests; None uses a fresh system-seeded Random. `all_examples` is not
     mutated. Returns DatasetTaskRuns without parent set — the caller sets
     parent and calls save_pending_children after saving each run.
@@ -381,12 +402,19 @@ def create_dataset_task_runs(
         )
         result.add_run(task_run, feedback_text, reviewed.claim_review)
 
-    # The unrated machine pool fills eval + train (disjoint from golden). The
-    # single-turn golden set is the reviewed examples only (a small human-rated
-    # pool from a separate source), so it is structurally well under the 25%
-    # cap — no cap needed here, unlike the multi-turn all-rated case.
-    train_examples, eval_examples = split_pool_train_eval(all_examples, rng)
+    # The unrated machine pool fills eval + val + train (disjoint from golden).
+    # The single-turn golden set is the reviewed examples only (a small
+    # human-rated pool from a separate source), so it is structurally well
+    # under the 25% cap — no cap needed here, unlike the multi-turn all-rated
+    # case.
+    train_examples, val_examples, eval_examples = split_pool_train_val_eval(
+        all_examples, rng
+    )
     write_eval_slice(result, eval_examples, eval_tag, extra_tags)
+
+    for example in val_examples:
+        result.add_run(create_task_run_from_sample(example, val_tag, extra_tags))
+
     for example in train_examples:
         result.add_run(create_task_run_from_sample(example, train_tag, extra_tags))
 

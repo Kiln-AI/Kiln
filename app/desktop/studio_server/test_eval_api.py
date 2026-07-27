@@ -49,6 +49,7 @@ from kiln_ai.datamodel.eval import (
     EvalRun,
     EvalTemplateId,
     MultiTurnSyntheticEvalInputData,
+    ScoreDirection,
     SingleTurnEvalInputData,
     SyntheticUserInfo,
     UserMessage,
@@ -262,6 +263,53 @@ async def test_create_evaluator(
     assert saved_eval.template_properties is not None
     assert saved_eval.template_properties["test_property"] == "test_value"
     assert saved_eval.template_properties["numeric_property"] == 42
+    assert saved_eval.output_scores[0].direction == ScoreDirection.higher_is_better
+
+
+@pytest.mark.asyncio
+async def test_create_evaluator_with_direction(
+    client, mock_task_from_id, valid_evaluator_request, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+    valid_evaluator_request.output_scores = [
+        EvalOutputScore(
+            name="score1",
+            type=TaskOutputRatingType.five_star,
+            direction=ScoreDirection.informational,
+        ),
+    ]
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json=valid_evaluator_request.model_dump(),
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["output_scores"][0]["direction"] == "informational"
+
+    saved_eval = mock_task.evals()[0]
+    assert saved_eval.output_scores[0].direction == ScoreDirection.informational
+
+
+@pytest.mark.asyncio
+async def test_create_evaluator_direction_omitted_in_request(
+    client, mock_task_from_id, valid_evaluator_request, mock_task
+):
+    """Requests from clients that predate the direction field get the default."""
+    mock_task_from_id.return_value = mock_task
+    request_json = valid_evaluator_request.model_dump()
+    for score in request_json["output_scores"]:
+        del score["direction"]
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json=request_json,
+    )
+
+    assert response.status_code == 200
+    saved_eval = mock_task.evals()[0]
+    assert saved_eval.output_scores[0].direction == ScoreDirection.higher_is_better
 
 
 @pytest.mark.asyncio
@@ -1731,6 +1779,126 @@ async def test_get_eval_run_results(
         "/eval_config/eval_config1/run_config/invalid_run_config/results"
     )
     assert response.status_code == 404
+
+
+@pytest.fixture
+def eval_runs_across_splits(mock_task, mock_eval, mock_eval_config):
+    """One saved task run + eval run per split tag, plus one outside every split.
+
+    Sets explicit train/val filter ids on the eval so split membership is
+    driven by the tags below. Returns eval run ids keyed by tag.
+    """
+    mock_eval.train_set_filter_id = "tag::train_set"
+    mock_eval.val_set_filter_id = "tag::val_set"
+    mock_eval.save_to_file()
+
+    data_source = DataSource(
+        type=DataSourceType.synthetic,
+        properties={
+            "model_name": "gpt-4",
+            "model_provider": "openai",
+            "adapter_name": "test_adapter",
+        },
+    )
+    eval_run_ids = {}
+    for tag in ["eval_set", "train_set", "val_set", "no_split"]:
+        task_run = TaskRun(
+            input=f"input {tag}",
+            input_source=data_source,
+            output=TaskOutput(output=f"output {tag}"),
+            tags=[tag],
+            parent=mock_task,
+        )
+        task_run.save_to_file()
+        eval_run = EvalRun(
+            task_run_config_id="run_config1",
+            scores={"score1": 3.0, "overall_rating": 1.0},
+            input=f"input {tag}",
+            output=f"output {tag}",
+            dataset_id=task_run.id,
+            parent=mock_eval_config,
+        )
+        eval_run.save_to_file()
+        eval_run_ids[tag] = eval_run.id
+    return eval_run_ids
+
+
+_RESULTS_PATH = (
+    "/api/projects/project1/tasks/task1/evals/eval1"
+    "/eval_config/eval_config1/run_config/run_config1/results"
+)
+
+
+@pytest.mark.asyncio
+async def test_get_eval_run_results_split_filtering(
+    client,
+    mock_task_from_id,
+    mock_task,
+    mock_eval,
+    mock_eval_config,
+    mock_run_config,
+    eval_runs_across_splits,
+):
+    mock_task_from_id.return_value = mock_task
+
+    # No split param: today's behavior — every eval run for the pair, including
+    # the one whose dataset item is outside all split filters.
+    response = client.get(_RESULTS_PATH)
+    assert response.status_code == 200
+    result_ids = {r["id"] for r in response.json()["results"]}
+    assert result_ids == set(eval_runs_across_splits.values())
+
+    # Each split returns only its members. "test" is the eval set filter.
+    for split, tag in [
+        ("test", "eval_set"),
+        ("train", "train_set"),
+        ("val", "val_set"),
+    ]:
+        response = client.get(_RESULTS_PATH, params={"split": split})
+        assert response.status_code == 200
+        result_ids = {r["id"] for r in response.json()["results"]}
+        assert result_ids == {eval_runs_across_splits[tag]}, split
+
+
+@pytest.mark.asyncio
+async def test_get_eval_run_results_split_unset_422(
+    client,
+    mock_task_from_id,
+    mock_task,
+    mock_eval,
+    mock_eval_config,
+    mock_run_config,
+):
+    mock_task_from_id.return_value = mock_task
+
+    # Loading from disk lazily mints train/val filter ids, so an unset split
+    # only occurs for evals constructed without one — return that state directly.
+    with patch(
+        "app.desktop.studio_server.eval_api.eval_from_id", return_value=mock_eval
+    ):
+        assert mock_eval.train_set_filter_id is None
+        response = client.get(_RESULTS_PATH, params={"split": "train"})
+        assert response.status_code == 422
+        assert "no train split configured" in response.json()["message"]
+
+        # The test split is the required eval_set_filter_id: it always resolves.
+        response = client.get(_RESULTS_PATH, params={"split": "test"})
+        assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_get_eval_run_results_invalid_split_422(
+    client,
+    mock_task_from_id,
+    mock_task,
+    mock_eval,
+    mock_eval_config,
+    mock_run_config,
+):
+    mock_task_from_id.return_value = mock_task
+
+    response = client.get(_RESULTS_PATH, params={"split": "golden"})
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio

@@ -38,7 +38,7 @@ function make_score(
   name: string,
   type: EvalOutputScore["type"],
 ): EvalOutputScore {
-  return { name, type, instruction: null }
+  return { name, type, instruction: null, direction: "higher_is_better" }
 }
 
 describe("CodeEvalForm", () => {

@@ -4,6 +4,8 @@ import asyncio
 import json
 import uuid
 
+from unittest.mock import patch
+
 import httpx
 import pytest
 import pytest_asyncio
@@ -22,6 +24,8 @@ from app.desktop.studio_server.jobs.workers.eval import (
 )
 from app.desktop.studio_server.jobs.workers.noop import NoopJobWorker
 from fastapi import FastAPI
+from kiln_ai.datamodel import TaskOutputRatingType
+from kiln_ai.datamodel.eval import Eval, EvalOutputScore
 from pydantic import BaseModel
 
 
@@ -171,6 +175,7 @@ _EVAL_PARAMS = {
     "eval_config_id": "ec1",
     "run_config_id": "rc1",
     "concurrency": None,
+    "split": None,
 }
 
 
@@ -215,6 +220,71 @@ async def test_run_eval_job_invalid_params_422(client, registry):
     # Missing required eval params.
     resp = await client.post(_EVAL_RUN_PATH, json={"project_id": "p_eval"})
     assert resp.status_code == 422
+
+
+def _eval_with_splits(train_set_filter_id: str | None) -> Eval:
+    return Eval(
+        id="e1",
+        name="Test Eval",
+        eval_set_filter_id="tag::eval_set",
+        eval_configs_filter_id="tag::golden",
+        train_set_filter_id=train_set_filter_id,
+        output_scores=[
+            EvalOutputScore(
+                name="Accuracy",
+                instruction="Check accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_with_split_creates_job(client, registry, stub_eval_worker):
+    with patch.object(
+        jobs_api, "eval_from_id", return_value=_eval_with_splits("tag::train_set")
+    ) as mock_eval_from_id:
+        resp = await client.post(
+            _EVAL_RUN_PATH, json={**_EVAL_PARAMS, "split": "train"}
+        )
+
+    assert resp.status_code == 201, resp.text
+    mock_eval_from_id.assert_called_once_with("p_eval", "t1", "e1")
+    job = registry._jobs[resp.json()["job_id"]]
+    assert job.params == {**_EVAL_PARAMS, "split": "train"}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_split_unset_on_eval_422(client, registry):
+    # The eval exists but has no train split configured: fail at creation with
+    # a 422 — never create a job doomed to fail in the background.
+    with patch.object(jobs_api, "eval_from_id", return_value=_eval_with_splits(None)):
+        resp = await client.post(
+            _EVAL_RUN_PATH, json={**_EVAL_PARAMS, "split": "train"}
+        )
+
+    assert resp.status_code == 422
+    assert "no train split configured" in resp.json()["detail"]
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_unknown_split_422(client, registry):
+    resp = await client.post(_EVAL_RUN_PATH, json={**_EVAL_PARAMS, "split": "golden"})
+    assert resp.status_code == 422
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_without_split_skips_resolution(
+    client, registry, stub_eval_worker
+):
+    # No split requested: today's behavior — no eval load, no resolution.
+    with patch.object(jobs_api, "eval_from_id") as mock_eval_from_id:
+        resp = await client.post(_EVAL_RUN_PATH, json=_EVAL_PARAMS)
+
+    assert resp.status_code == 201, resp.text
+    mock_eval_from_id.assert_not_called()
 
 
 # -- list --------------------------------------------------------------------

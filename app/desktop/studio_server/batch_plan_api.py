@@ -36,7 +36,7 @@ class BatchPlanApiInput(BaseModel):
     count: int = Field(
         description="Number of inputs to plan — the planner returns one prompt per input.",
         ge=1,
-        le=500,
+        le=200,
     )
     data_guide: str | None = Field(
         default=None,

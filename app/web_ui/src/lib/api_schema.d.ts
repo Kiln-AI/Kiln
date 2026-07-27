@@ -7106,7 +7106,7 @@ export interface components {
             current_config_id?: string | null;
             /**
              * Eval Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included when running this eval (V1 TaskRun-typed).
+             * @description The id of the dataset filter which defines which dataset items are included when running this eval (V1 TaskRun-typed). This is the eval's test set; the 'eval set' name is legacy.
              */
             eval_set_filter_id?: string | null;
             /**
@@ -7119,6 +7119,11 @@ export interface components {
              * @description The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning.
              */
             train_set_filter_id?: string | null;
+            /**
+             * Val Set Filter Id
+             * @description The id of the dataset filter which defines which dataset items are included in the validation set.
+             */
+            val_set_filter_id?: string | null;
             /**
              * Eval Input Filter Id
              * @description Filter ID for EvalInput-backed datasets (V2). Mutually exclusive with eval_set_filter_id.
@@ -7333,6 +7338,11 @@ export interface components {
              * @description Max dataset items evaluated in parallel by the runner. Leave null to use the runner's default (25).
              */
             concurrency?: number | null;
+            /**
+             * Split
+             * @description Which of the eval's dataset splits to run: train, val, or test. Fails with 422 if the eval has no filter configured for the split. Leave null to run the eval set (the test set — today's default behavior).
+             */
+            split?: ("train" | "val" | "test") | null;
         };
         /**
          * EvalOutputScore
@@ -7353,6 +7363,11 @@ export interface components {
             instruction?: string | null;
             /** @description The type of rating ('five_star', 'pass_fail', 'pass_fail_critical', or 'custom'). Custom scores are unbounded numeric metrics (e.g. token counts, cost, latency); they can only be produced by code evals, so an eval with any custom score cannot use LLM-judge configs. */
             type: components["schemas"]["TaskOutputRatingType"];
+            /**
+             * @description The direction of improvement for this score: 'higher_is_better', 'lower_is_better', or 'informational' (context only, no preferred direction). Rating scales ('five_star', 'pass_fail', 'pass_fail_critical') are higher-is-better by definition, so they allow 'higher_is_better' and 'informational' but not 'lower_is_better'.
+             * @default higher_is_better
+             */
+            direction: components["schemas"]["ScoreDirection"];
         };
         /**
          * EvalProgress
@@ -12001,6 +12016,17 @@ export interface components {
             /** Untagged */
             untagged?: number | null;
         };
+        /**
+         * ScoreDirection
+         * @description The direction of improvement for an eval output score.
+         *
+         *     Tells consumers how to interpret a change in the score's value: 'higher_is_better'
+         *     means an increase is an improvement, 'lower_is_better' means a decrease is an
+         *     improvement, and 'informational' scores carry context only and should never drive
+         *     decisions in either direction.
+         * @enum {string}
+         */
+        ScoreDirection: "higher_is_better" | "lower_is_better" | "informational";
         /**
          * ScoreSummary
          * @description Summary of scores for an eval run.
@@ -19474,7 +19500,10 @@ export interface operations {
     };
     get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only return results for dataset items in this split of the eval (train, val, or test). 422 if the eval has no filter configured for the split. Omit to return all results (no split filtering). */
+                split?: ("train" | "val" | "test") | null;
+            };
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */

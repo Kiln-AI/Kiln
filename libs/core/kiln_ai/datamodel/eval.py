@@ -36,6 +36,11 @@ if TYPE_CHECKING:
 
 EvalScores = Dict[str, float]
 
+# The named dataset splits an eval carries. "test" is stored in eval_set_filter_id
+# (the "eval set" — the name is legacy), "train" in train_set_filter_id and "val"
+# in val_set_filter_id.
+EvalSplitName = Literal["train", "val", "test"]
+
 # Module-level set to track evals currently being migrated (to prevent recursion)
 # Protected by _migration_lock to ensure thread-safe access
 _migration_lock = Lock()
@@ -556,6 +561,21 @@ class EvalTaskInput(BaseModel):
         )
 
 
+class ScoreDirection(str, Enum):
+    """
+    The direction of improvement for an eval output score.
+
+    Tells consumers how to interpret a change in the score's value: 'higher_is_better'
+    means an increase is an improvement, 'lower_is_better' means a decrease is an
+    improvement, and 'informational' scores carry context only and should never drive
+    decisions in either direction.
+    """
+
+    higher_is_better = "higher_is_better"
+    lower_is_better = "lower_is_better"
+    informational = "informational"
+
+
 class EvalOutputScore(BaseModel):
     """
     A definition of a score that an evaluator will produce.
@@ -573,6 +593,10 @@ class EvalOutputScore(BaseModel):
     type: TaskOutputRatingType = Field(
         description="The type of rating ('five_star', 'pass_fail', 'pass_fail_critical', or 'custom'). Custom scores are unbounded numeric metrics (e.g. token counts, cost, latency); they can only be produced by code evals, so an eval with any custom score cannot use LLM-judge configs.",
     )
+    direction: ScoreDirection = Field(
+        default=ScoreDirection.higher_is_better,
+        description="The direction of improvement for this score: 'higher_is_better', 'lower_is_better', or 'informational' (context only, no preferred direction). Rating scales ('five_star', 'pass_fail', 'pass_fail_critical') are higher-is-better by definition, so they allow 'higher_is_better' and 'informational' but not 'lower_is_better'.",
+    )
 
     def json_key(self) -> str:
         """
@@ -581,6 +605,25 @@ class EvalOutputScore(BaseModel):
         For example, "Overall Rating" -> "overall_rating"
         """
         return string_to_json_key(self.name)
+
+    @model_validator(mode="after")
+    def validate_direction(self) -> Self:
+        match self.type:
+            case (
+                TaskOutputRatingType.five_star
+                | TaskOutputRatingType.pass_fail
+                | TaskOutputRatingType.pass_fail_critical
+            ):
+                if self.direction == ScoreDirection.lower_is_better:
+                    raise ValueError(
+                        f"Score '{self.name}' has type '{self.type.value}', which is higher-is-better by definition. 'lower_is_better' is only valid for custom scores."
+                    )
+            case TaskOutputRatingType.custom:
+                # Any direction is valid for custom scores (unbounded numeric metrics).
+                pass
+            case _:
+                raise_exhaustive_enum_error(self.type)
+        return self
 
 
 class EvalRun(KilnParentedModel):
@@ -983,9 +1026,11 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         default=None,
         description="The id of the current config to use for this eval. This can be changed over time to run the same eval with different configs.",
     )
+    # Despite its name, eval_set_filter_id defines the eval's TEST set. The "eval set"
+    # name is legacy, kept for file-format compatibility.
     eval_set_filter_id: DatasetFilterId | None = Field(
         default=None,
-        description="The id of the dataset filter which defines which dataset items are included when running this eval (V1 TaskRun-typed).",
+        description="The id of the dataset filter which defines which dataset items are included when running this eval (V1 TaskRun-typed). This is the eval's test set; the 'eval set' name is legacy.",
     )
     eval_configs_filter_id: DatasetFilterId | None = Field(
         default=None,
@@ -994,6 +1039,10 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     train_set_filter_id: DatasetFilterId | None = Field(
         default=None,
         description="The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning.",
+    )
+    val_set_filter_id: DatasetFilterId | None = Field(
+        default=None,
+        description="The id of the dataset filter which defines which dataset items are included in the validation set.",
     )
     eval_input_filter_id: EvalInputFilterId | None = Field(
         default=None,
@@ -1029,6 +1078,24 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
 
     def configs(self, readonly: bool = False) -> list[EvalConfig]:
         return super().configs(readonly=readonly)  # type: ignore
+
+    def filter_id_for_split(self, split: EvalSplitName) -> DatasetFilterId | None:
+        """The dataset filter id backing one of this eval's named splits.
+
+        "test" maps to eval_set_filter_id (the eval set — the name is legacy),
+        which is unset on V2 (EvalInput-backed) evals. "train" and "val" may be
+        None on evals constructed without them; evals loaded from file get both
+        via lazy migration.
+        """
+        match split:
+            case "train":
+                return self.train_set_filter_id
+            case "val":
+                return self.val_set_filter_id
+            case "test":
+                return self.eval_set_filter_id
+            case _:
+                raise_exhaustive_enum_error(split)
 
     # Workaround to return typed parent without importing Spec
     def associated_spec(self, readonly: bool = False) -> Union["Spec", None]:
@@ -1109,6 +1176,10 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
 
         return self
 
+    def _split_tag_suffix(self) -> str:
+        """The eval-name slug used to build split tag filter IDs (e.g., "My Eval" -> "my_eval")."""
+        return self.name.lower().replace(" ", "_")
+
     @model_validator(mode="after")
     def migrate_train_set_filter_id(self) -> Self:
         """
@@ -1126,8 +1197,27 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         if self.train_set_filter_id is not None:
             return self
 
-        tag_suffix = self.name.lower().replace(" ", "_")
-        self.train_set_filter_id = f"tag::train_{tag_suffix}"
+        self.train_set_filter_id = f"tag::train_{self._split_tag_suffix()}"
+        return self
+
+    @model_validator(mode="after")
+    def migrate_val_set_filter_id(self) -> Self:
+        """
+        Migration: Auto-create a val_set_filter_id for evals that don't have one.
+
+        Generates a tag-based filter ID from the eval name following the convention
+        used by spec-based evals (e.g., "val_{name_slug}").
+        """
+        if self.id is None:
+            return self
+
+        if not self._loaded_from_file:
+            return self
+
+        if self.val_set_filter_id is not None:
+            return self
+
+        self.val_set_filter_id = f"tag::val_{self._split_tag_suffix()}"
         return self
 
     @model_validator(mode="after")

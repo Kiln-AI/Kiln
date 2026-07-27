@@ -1,11 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte"
   import { get } from "svelte/store"
-  import { pushState } from "$app/navigation"
+  import { goto, pushState } from "$app/navigation"
   import { page } from "$app/stores"
   import posthog from "posthog-js"
   import { client } from "$lib/api_client"
-  import ConnectKilnCopilotSteps from "$lib/ui/kiln_copilot/connect_kiln_copilot_steps.svelte"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
   import IncrementUi from "$lib/ui/increment_ui.svelte"
@@ -32,8 +31,7 @@
 
   let inputs_dialog: Dialog | null = null
 
-  let current_state: "loading" | "connect" | "ready" = "loading"
-  let connect_success = false
+  let current_state: "loading" | "ready" = "loading"
 
   // Stage within the connected flow.
   let stage: "intro" | "planning" | "plan" | "inputs" = "intro"
@@ -64,21 +62,22 @@
   let unsaved_samples = false
 
   onMount(async () => {
+    let pro_available = false
     try {
-      current_state = (await checkKilnCopilotAvailable()) ? "ready" : "connect"
+      pro_available = await checkKilnCopilotAvailable()
     } catch {
-      current_state = "connect"
+      pro_available = false
     }
-  })
-
-  function handle_connect_success() {
-    connect_success = true
-  }
-
-  function proceed_after_connect() {
+    // Pro is required for the batch planner. If the key isn't connected, send
+    // the user to the static connect route, which returns here once connected.
+    // The static path keeps the Kinde OAuth redirect_uri a fixed, allow-listed
+    // URL (the project/task can't be in the path).
+    if (!pro_available) {
+      goto(`/generate/synth_data_pro_auth`, { replaceState: true })
+      return
+    }
     current_state = "ready"
-    connect_success = false
-  }
+  })
 
   // The template the guidance box started from, so edits can be undone.
   let batch_guidance_template = ""
@@ -215,23 +214,6 @@
   <div class="flex justify-center items-center min-h-[50vh]">
     <div class="loading loading-spinner loading-lg"></div>
   </div>
-{:else if current_state === "connect"}
-  <div
-    class="flex flex-col max-w-[400px] mx-auto mt-24 md:mt-36 border border-base-300 rounded-2xl bg-base-100 px-6 shadow-lg py-8 md:py-12"
-  >
-    <ConnectKilnCopilotSteps
-      onSuccess={handle_connect_success}
-      showCheckmark={connect_success}
-    />
-    {#if connect_success}
-      <button
-        class="btn btn-primary mt-4 btn-wide mx-auto"
-        on:click={proceed_after_connect}
-      >
-        Continue
-      </button>
-    {/if}
-  </div>
 {:else if stage === "planning"}
   <div class="flex flex-col items-center justify-center min-h-[50vh] mt-12">
     <RefiningAnimation
@@ -276,7 +258,7 @@
     >
       <div class="flex flex-row items-center gap-4">
         <div class="flex-grow font-medium text-sm">Sample Count</div>
-        <IncrementUi bind:value={num_inputs} max={500} />
+        <IncrementUi bind:value={num_inputs} max={200} />
       </div>
       <FormElement
         id="batch_guidance"
