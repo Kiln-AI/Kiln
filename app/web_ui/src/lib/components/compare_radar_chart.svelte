@@ -12,6 +12,7 @@
     getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   // Type for comparison features (same as parent page)
   type ComparisonFeature = {
@@ -31,6 +32,36 @@
   export let model_info: ProviderModels | null
   export let prompts: PromptResponse | null = null
   export let selectedRunConfigIds: string[]
+  // Full-range maximum for a data key (eg 1 for pass/fail, 5 for 5-star), used by
+  // the "Full Scale" axis mode. Keys without an entry (unbounded custom scores)
+  // fall back to the data-relative max.
+  export let scoreAxisMaxes: Record<string, number> = {}
+
+  // Axis scaling mode. Relative scales each axis to the best value across the selected
+  // run configs, which is the better lens for spotting differences between configs.
+  // Full scale uses the score's own range, which is the only readable option when
+  // there's nothing to compare against. Default follows the selection until the user
+  // picks a mode, after which their choice sticks.
+  let absoluteScale = false
+  let userChoseScale = false
+  $: if (!userChoseScale) {
+    absoluteScale = plottedConfigCount <= 1
+  }
+
+  function setScale(useAbsolute: boolean) {
+    absoluteScale = useAbsolute
+    userChoseScale = true
+  }
+
+  // Fallback full-scale max when we don't know the score's type. Most eval scores are
+  // normalized to 0-1, and we only use it when the data actually fits under it.
+  const DEFAULT_ABSOLUTE_MAX = 1
+
+  const SCALE_TOOLTIP = `**Relative**: each axis is scaled to the highest value across the selected run configs. Best for spotting differences between configs.
+
+**Full Scale**: each axis uses the score's own range (0-1 for pass/fail, 1-5 for 5-star). Best when looking at one run config on its own, where there is nothing to compare against.
+
+Cost and latency axes score each run config against the others, so they stay relative in both modes. With a single run config there's nothing to compare against and they both sit at the midpoint.`
 
   // Chart instance
   let chartInstance: echarts.ECharts | null = null
@@ -86,6 +117,15 @@
     COST_KEY,
     LATENCY_KEY,
   ]
+
+  // Run configs that will actually be drawn: selected, and with at least one eval
+  // result. A config with nothing to show shouldn't make the chart behave as though
+  // there's something to compare against.
+  $: plottedConfigCount = selectedRunConfigIds.filter(
+    (configId) =>
+      run_configs.some((c) => c.id === configId) &&
+      dataKeys.some((key) => getModelValueRaw(configId, key) !== null),
+  ).length
 
   // Get labels for radar indicators
   function getKeyLabel(dataKey: string): string {
@@ -200,6 +240,21 @@
     return html
   }
 
+  // Axis max in "Full Scale" mode: the score's own range when we know it, otherwise
+  // the normalized 0-1 default. Never returns a max below the data, so nothing is
+  // clipped for unbounded (custom) scores or unrecognized score types.
+  function absoluteAxisMax(
+    key: string,
+    rawMax: number,
+    paddedMax: number,
+  ): number {
+    const knownMax = scoreAxisMaxes[key]
+    if (knownMax !== undefined && knownMax >= rawMax) {
+      return knownMax
+    }
+    return rawMax <= DEFAULT_ABSOLUTE_MAX ? DEFAULT_ABSOLUTE_MAX : paddedMax
+  }
+
   function generateChartData(): {
     indicators: { name: string; max: number }[]
     series: { value: number[]; name: string }[]
@@ -215,8 +270,8 @@
       return { indicators, series, legend, lowerIsBetterValues }
     }
 
-    // Calculate max values for each data key across all selected run configs
-    const maxValues: Record<string, number> = {}
+    // Calculate the max of each axis, in the current scale mode
+    const axisMaxes: Record<string, number> = {}
 
     for (const key of dataKeys) {
       let max = 0
@@ -230,15 +285,22 @@
           lowerIsBetterValues[key].push(value)
         }
       }
+      if (isLowerIsBetterMetric(key)) {
+        // Already a 0-100 score, in both scale modes
+        axisMaxes[key] = 100
+        continue
+      }
       // Add 10% padding to max for better visualization
-      maxValues[key] = max > 0 ? max * 1.1 : 1
+      const paddedMax = max > 0 ? max * 1.1 : 1
+      axisMaxes[key] = absoluteScale
+        ? absoluteAxisMax(key, max, paddedMax)
+        : paddedMax
     }
 
-    // Build indicators with actual max values (lower-is-better metrics use 0-100 scale)
     for (const key of dataKeys) {
       indicators.push({
         name: getKeyLabel(key),
-        max: isLowerIsBetterMetric(key) ? 100 : maxValues[key],
+        max: axisMaxes[key],
       })
     }
 
@@ -297,43 +359,63 @@
 
     const legendFormatter = buildLegendFormatter()
 
+    // A couple of configs don't need a legend column - centering the radar and
+    // dropping the legend underneath buys a much larger plot.
+    const compactLayout = series.length <= 2
+
+    const legendTextStyle = {
+      lineHeight: 16,
+      rich: {
+        sub: {
+          fontSize: 11,
+          color: "#666",
+          lineHeight: 14,
+        },
+      },
+    }
+
     chartInstance.setOption(
       {
         tooltip: {
           trigger: "item",
+          confine: true,
           formatter: (params: { name: string }) =>
             buildRunConfigTooltip(params.name, lowerIsBetterValues),
         },
         legend: {
           data: legend,
-          orient: "vertical",
-          left: "60%",
-          top: "middle",
-          itemGap: 16,
           formatter: (name: string) => legendFormatter[name] || name,
           tooltip: {
             show: true,
             formatter: (params: { name: string }) =>
               buildRunConfigTooltip(params.name, lowerIsBetterValues),
           },
-          textStyle: {
-            lineHeight: 16,
-            rich: {
-              sub: {
-                fontSize: 11,
-                color: "#666",
-                lineHeight: 14,
-              },
-            },
-          },
+          textStyle: legendTextStyle,
+          ...(compactLayout
+            ? {
+                orient: "horizontal" as const,
+                bottom: 0,
+                left: "center" as const,
+                itemGap: 40,
+              }
+            : {
+                orient: "vertical" as const,
+                left: "60%",
+                top: "middle" as const,
+                itemGap: 16,
+              }),
         },
         radar: {
           indicator: indicators,
-          center: ["32%", "50%"],
-          radius: "85%",
+          center: compactLayout ? ["50%", "46%"] : ["32%", "50%"],
+          radius: compactLayout ? "62%" : "85%",
           axisName: {
             color: "#666",
             fontSize: 12,
+            // Wrap long score names instead of letting neighbours collide
+            width: 110,
+            overflow: "break",
+            lineHeight: 14,
           },
           splitArea: {
             areaStyle: {
@@ -360,6 +442,8 @@
               width: 2,
             },
             symbolSize: 6,
+            // Filling one shape makes it readable. Filling several makes mud.
+            ...(series.length === 1 ? { areaStyle: { opacity: 0.2 } } : {}),
           },
         ],
       },
@@ -367,11 +451,18 @@
     )
   }
 
-  // Update chart when data changes (model_info and prompts may load async)
+  // Named so the reactive block below re-runs when the scaling mode is toggled
+  $: axisScaleMode = absoluteScale ? "absolute" : "relative"
+
+  // Update chart when data changes (model_info and prompts may load async). Every
+  // input that changes what's drawn has to be referenced here, or the chart keeps
+  // showing the previous render.
   $: if (
     chartInstance &&
     comparisonFeatures &&
     selectedRunConfigIds &&
+    axisScaleMode &&
+    scoreAxisMaxes &&
     (model_info || model_info === null) &&
     (prompts || prompts === null)
   ) {
@@ -404,12 +495,41 @@
   <div
     class="bg-white border border-gray-200 rounded-lg p-6 mb-6 h-full flex flex-col"
   >
-    <div class="text-xl font-bold">Radar Chart</div>
-    <div class="text-sm text-gray-500 mb-4">
-      Compare the evaluation scores of the run configurations selected above.
+    <div class="flex flex-row gap-4 items-start">
+      <div class="flex-grow">
+        <div class="text-xl font-bold">Radar Chart</div>
+        <div class="text-sm text-gray-500 mb-4">
+          Compare the evaluation scores of the run configurations selected
+          above.
+        </div>
+      </div>
+      <div class="flex flex-row gap-1 items-center flex-shrink-0">
+        <div class="join">
+          <button
+            type="button"
+            class="join-item btn btn-sm {absoluteScale ? '' : 'btn-active'}"
+            aria-pressed={!absoluteScale}
+            on:click={() => setScale(false)}
+          >
+            Relative
+          </button>
+          <button
+            type="button"
+            class="join-item btn btn-sm {absoluteScale ? 'btn-active' : ''}"
+            aria-pressed={absoluteScale}
+            on:click={() => setScale(true)}
+          >
+            Full Scale
+          </button>
+        </div>
+        <InfoTooltip tooltip_text={SCALE_TOOLTIP} position="bottom" />
+      </div>
     </div>
     {#if hasData}
-      <div use:initChart class="w-full flex-1 min-h-[400px]"></div>
+      <div
+        use:initChart
+        class="w-full flex-1 min-h-[500px] xl:min-h-[620px]"
+      ></div>
     {:else}
       <ChartNoData />
     {/if}
