@@ -62,6 +62,9 @@
   // in the comparison table above.
   const MAX_TOOLTIP_SCORES = 10
 
+  // Below this many axes there's no shape to read, so there's no chart to draw
+  const MIN_RADAR_AXES = 3
+
   const SCALE_TOOLTIP = `**Relative**: each axis is scaled to the highest value across the selected run configs. Best for spotting differences between configs.
 
 **Full Scale**: each axis uses the score's own range (0-1 for pass/fail, 1-5 for 5-star). Best when looking at one run config on its own, where there is nothing to compare against.
@@ -144,12 +147,27 @@ Cost, latency and token axes score each run config against the others, so they s
 
   // Run configs that will actually be drawn: selected, and with at least one eval
   // result. A config with nothing to show shouldn't make the chart behave as though
-  // there's something to compare against.
+  // there's something to compare against. Computed here rather than read back out of
+  // generateChartData() so that the scale default below doesn't depend on a value
+  // that itself depends on the scale.
   $: plottedConfigCount = selectedRunConfigIds.filter(
     (configId) =>
       run_configs.some((c) => c.id === configId) &&
       dataKeys.some((key) => getModelValueRaw(configId, key) !== null),
   ).length
+
+  $: notShownNote = (() => {
+    const parts: string[] = []
+    if (noResultAxisCount > 0) {
+      parts.push(
+        `${noResultAxisCount} ${
+          noResultAxisCount === 1 ? "score" : "scores"
+        } without results for every selected run config`,
+      )
+    }
+    if (parts.length === 0) return null
+    return `Not shown: ${parts.join(", ")}. See the table above.`
+  })()
 
   // Get labels for radar indicators
   function getKeyLabel(dataKey: string): string {
@@ -328,32 +346,68 @@ Cost, latency and token axes score each run config against the others, so they s
 
   function generateChartData(): {
     indicators: { name: string; max: number }[]
-    series: { value: number[]; name: string }[]
+    series: { value: (number | null)[]; name: string }[]
     legend: string[]
     axisMaxes: Record<string, number>
     keys: string[]
+    noResultKeyCount: number
   } {
     const indicators: { name: string; max: number }[] = []
-    const series: { value: number[]; name: string }[] = []
+    const series: { value: (number | null)[]; name: string }[] = []
     const legend: string[] = []
     const axisMaxes: Record<string, number> = {}
-    const usageValues: Record<string, number[]> = {}
-
-    if (dataKeys.length === 0 || selectedRunConfigIds.length === 0) {
-      return { indicators, series, legend, axisMaxes, keys: [] }
+    const empty = {
+      indicators,
+      series,
+      legend,
+      axisMaxes,
+      keys: [] as string[],
     }
 
-    const keys = [...dataKeys, ...visibleUsageKeys]
+    if (dataKeys.length === 0 || selectedRunConfigIds.length === 0) {
+      return { ...empty, noResultKeyCount: 0 }
+    }
+
+    // Run configs with at least one result. One with nothing to plot is left out
+    // entirely rather than emptying every axis. Same rule as the module-level
+    // plottedConfigCount, which the scale default reads.
+    const plottedConfigs = selectedRunConfigIds
+      .map((configId) => run_configs.find((c) => c.id === configId))
+      .filter((config): config is TaskRunConfig => !!config)
+      .filter((config) =>
+        dataKeys.some(
+          (key) => getModelValueRaw(config.id ?? null, key) !== null,
+        ),
+      )
+
+    const candidateKeys = [...dataKeys, ...visibleUsageKeys]
+
+    // Only scores every plotted config has a result for. ECharts draws a missing
+    // radar value at the center of the chart (radarLayout's getValueMissingPoint),
+    // which is indistinguishable from scoring zero - so an axis one config hasn't
+    // been evaluated on can't be drawn honestly at all. It's left out, and counted
+    // under the chart title instead.
+    const keys = candidateKeys.filter((key) =>
+      plottedConfigs.every(
+        (config) => getModelValueRaw(config.id ?? null, key) !== null,
+      ),
+    )
+    const noResultKeyCount = candidateKeys.length - keys.length
+
+    if (keys.length < MIN_RADAR_AXES) {
+      return { ...empty, noResultKeyCount }
+    }
 
     // Every value on a usage axis, so each can be scored by its position among them
+    const usageValues: Record<string, number[]> = {}
     for (const key of keys) {
       if (!isLowerIsBetterMetric(key)) continue
-      usageValues[key] = selectedRunConfigIds
-        .map((configId) => getModelValueRaw(configId, key))
+      usageValues[key] = plottedConfigs
+        .map((config) => getModelValueRaw(config.id ?? null, key))
         .filter((value): value is number => value !== null)
     }
 
-    // Calculate max values for each data key across all selected run configs
+    // Calculate max values for each data key across the plotted run configs
     for (const key of keys) {
       if (isLowerIsBetterMetric(key)) {
         // Already a 0-100 score, in both scale modes
@@ -361,8 +415,8 @@ Cost, latency and token axes score each run config against the others, so they s
         continue
       }
       let max = 0
-      for (const configId of selectedRunConfigIds) {
-        const value = getModelValueRaw(configId, key)
+      for (const config of plottedConfigs) {
+        const value = getModelValueRaw(config.id ?? null, key)
         if (value !== null && value > max) {
           max = value
         }
@@ -381,42 +435,27 @@ Cost, latency and token axes score each run config against the others, so they s
       })
     }
 
-    // Build series data for each selected run config
-    for (const configId of selectedRunConfigIds) {
-      const config = run_configs.find((c) => c.id === configId)
-      if (!config) continue
-
-      const values: number[] = []
-      let hasAnyValue = false
-
-      for (const key of keys) {
-        const rawValue = getModelValueRaw(configId, key)
-        let displayValue: number
-        if (rawValue === null) {
-          displayValue = 0
-        } else if (isLowerIsBetterMetric(key)) {
-          displayValue = metricToScore(rawValue, usageValues[key] || [])
-        } else {
-          displayValue = rawValue
-        }
-        values.push(displayValue)
-        if (rawValue !== null) hasAnyValue = true
-      }
-
-      // Only include if at least one value is available
-      if (hasAnyValue) {
-        const name = getSeriesDisplayName(config)
-        legend.push(name)
-        series.push({ value: values, name })
-      }
+    // Build series data for each plotted run config. Every one of them has a value
+    // for every key by construction above.
+    for (const config of plottedConfigs) {
+      const values = keys.map((key) => {
+        const rawValue = getModelValueRaw(config.id ?? null, key)
+        if (rawValue === null) return null
+        return isLowerIsBetterMetric(key)
+          ? metricToScore(rawValue, usageValues[key] || [])
+          : rawValue
+      })
+      const name = getSeriesDisplayName(config)
+      legend.push(name)
+      series.push({ value: values, name })
     }
 
-    return { indicators, series, legend, axisMaxes, keys }
+    return { indicators, series, legend, axisMaxes, keys, noResultKeyCount }
   }
 
   // Check if there's data to display (reactive - references every input that can
   // change what generateChartData() returns)
-  $: hasData = (() => {
+  $: chartSummary = (() => {
     // visibleUsageKeys is referenced so this re-runs when a usage row is hidden
     if (
       !dataKeys ||
@@ -424,11 +463,22 @@ Cost, latency and token axes score each run config against the others, so they s
       !selectedRunConfigIds ||
       !visibleUsageKeys
     ) {
-      return false
+      return { hasData: false, noResultKeyCount: 0 }
     }
-    const { indicators, series } = generateChartData()
-    return indicators.length > 0 && series.length > 0
+    const { indicators, series, noResultKeyCount } = generateChartData()
+    return {
+      hasData: indicators.length > 0 && series.length > 0,
+      noResultKeyCount,
+    }
   })()
+  $: hasData = chartSummary.hasData
+  $: noResultAxisCount = chartSummary.noResultKeyCount
+
+  // When there's nothing to draw, say which of the two reasons it is
+  $: noDataMessage =
+    noResultAxisCount > 0
+      ? `The selected run configurations share fewer than ${MIN_RADAR_AXES} scores with results. Run the missing evals, or compare fewer run configurations.`
+      : "Create and run evals to see a comparison chart."
 
   function updateChart() {
     if (!chartInstance) return
@@ -577,17 +627,20 @@ Cost, latency and token axes score each run config against the others, so they s
 <!-- Radar charts don't really work with <3 items. Counts the usage axes too: they
      are axes like any other, and a task with one or two eval scores still has a
      chart worth drawing once cost, latency and tokens are on it. -->
-{#if dataKeys.length + visibleUsageKeys.length >= 3}
+{#if dataKeys.length + visibleUsageKeys.length >= MIN_RADAR_AXES}
   <div
     class="bg-white border border-gray-200 rounded-lg p-6 mb-6 h-full flex flex-col"
   >
     <div class="flex flex-row gap-4 items-start">
       <div class="flex-grow">
         <div class="text-xl font-bold">Radar Chart</div>
-        <div class="text-sm text-gray-500 mb-4">
+        <div class="text-sm text-gray-500 {notShownNote ? '' : 'mb-4'}">
           Compare the evaluation scores of the run configurations selected
           above.
         </div>
+        {#if notShownNote}
+          <div class="text-xs text-gray-400 mt-1 mb-4">{notShownNote}</div>
+        {/if}
       </div>
       <div class="flex flex-row gap-1 items-center flex-shrink-0">
         <div class="join">
@@ -617,7 +670,12 @@ Cost, latency and token axes score each run config against the others, so they s
         class="w-full flex-1 min-h-[500px] xl:min-h-[620px]"
       ></div>
     {:else}
-      <ChartNoData />
+      <ChartNoData
+        title={noResultAxisCount > 0
+          ? "Not Enough Shared Scores"
+          : "No Data Available"}
+        message={noDataMessage}
+      />
     {/if}
   </div>
 {/if}
