@@ -58,6 +58,7 @@
   let columns = 2 // Start with 2 columns
   let selectedModels: (string | null)[] = [null, null] // Track selected model for each column
   let hiddenEvalIds: string[] = [] // Eval IDs hidden by the user (kiln_cost_section is never hideable)
+  let hiddenUsageKeys: string[] = [] // Individual cost/usage rows hidden by the user
 
   // Run configs state
   let loading_run_configs = true
@@ -113,6 +114,18 @@
         ),
       ]
     }
+
+    const urlHiddenUsage = urlParams.get("hidden_usage")
+    if (urlHiddenUsage) {
+      hiddenUsageKeys = [
+        ...new Set(
+          urlHiddenUsage
+            .split(",")
+            .map((key) => key.trim())
+            .filter((key) => key.startsWith("cost::")),
+        ),
+      ]
+    }
   }
 
   // Restore model selections from URL after data is loaded
@@ -163,13 +176,22 @@
       urlParams.delete("hidden_evals")
     }
 
+    if (hiddenUsageKeys.length > 0) {
+      urlParams.set("hidden_usage", hiddenUsageKeys.join(","))
+    } else {
+      urlParams.delete("hidden_usage")
+    }
+
     // Use replace to avoid creating new history entries
     const newURL = `${$page.url.pathname}?${urlParams.toString()}`
     goto(newURL, { replaceState: true })
   }
 
   // Reactive statements to update URL when state changes
-  $: if (!isInitializing && (columns || selectedModels || hiddenEvalIds)) {
+  $: if (
+    !isInitializing &&
+    (columns || selectedModels || hiddenEvalIds || hiddenUsageKeys)
+  ) {
     updateURL()
   }
 
@@ -349,28 +371,42 @@
     eval_scores_cache,
   )
 
-  // Filter out user-hidden evals (cost section is never hideable). hiddenEvalIds is
-  // passed in as a parameter (rather than read via closure) so that Svelte's reactive
-  // `$:` statements track it as a dependency and re-run when it changes.
-  function filterVisibleFeatures<T extends { eval_id: string }>(
-    features: T[],
-    hidden: string[],
-  ): T[] {
-    if (hidden.length === 0) return features
-    return features.filter(
-      (section) =>
-        section.eval_id === "kiln_cost_section" ||
-        !hidden.includes(section.eval_id),
-    )
+  // Filter out user-hidden evals, and user-hidden rows of the cost section (the cost
+  // section itself is never hideable, but its individual metrics are). hiddenEvalIds
+  // and hiddenUsageKeys are passed in as parameters (rather than read via closure) so
+  // that Svelte's reactive `$:` statements track them as dependencies and re-run when
+  // they change.
+  function filterVisibleFeatures<
+    T extends { eval_id: string; items: { label: string; key: string }[] },
+  >(features: T[], hidden: string[], hiddenUsage: string[]): T[] {
+    if (hidden.length === 0 && hiddenUsage.length === 0) return features
+    return features
+      .filter(
+        (section) =>
+          section.eval_id === "kiln_cost_section" ||
+          !hidden.includes(section.eval_id),
+      )
+      .map((section) =>
+        section.eval_id === "kiln_cost_section" && hiddenUsage.length > 0
+          ? {
+              ...section,
+              items: section.items.filter(
+                (item) => !hiddenUsage.includes(item.key),
+              ),
+            }
+          : section,
+      )
   }
 
   $: visibleComparisonFeatures = filterVisibleFeatures(
     comparisonFeatures,
     hiddenEvalIds,
+    hiddenUsageKeys,
   )
   $: visibleChartComparisonFeatures = filterVisibleFeatures(
     chartComparisonFeatures,
     hiddenEvalIds,
+    hiddenUsageKeys,
   )
 
   // Names of currently-hidden evals (used for the "show hidden" dropdown).
@@ -384,6 +420,15 @@
       return { eval_id: evalId, category: feature?.category ?? "Unknown eval" }
     })
 
+  // Labels of currently-hidden cost section rows, for the same dropdown
+  $: hiddenUsageInfo = hiddenUsageKeys.map((key) => {
+    const costSection = chartComparisonFeatures.find(
+      (s) => s.eval_id === "kiln_cost_section",
+    )
+    const item = costSection?.items.find((i) => i.key === key)
+    return { key, label: item?.label ?? key }
+  })
+
   function hideEval(evalId: string) {
     if (evalId === "kiln_cost_section") return
     if (hiddenEvalIds.includes(evalId)) return
@@ -394,19 +439,46 @@
     hiddenEvalIds = hiddenEvalIds.filter((id) => id !== evalId)
   }
 
-  function showAllHiddenEvals() {
-    hiddenEvalIds = []
+  function hideUsageMetric(key: string) {
+    if (hiddenUsageKeys.includes(key)) return
+    hiddenUsageKeys = [...hiddenUsageKeys, key]
   }
 
+  function showUsageMetric(key: string) {
+    hiddenUsageKeys = hiddenUsageKeys.filter((k) => k !== key)
+  }
+
+  function showAllHiddenEvals() {
+    hiddenEvalIds = []
+    hiddenUsageKeys = []
+  }
+
+  $: hiddenCount = hiddenEvalsInfo.length + hiddenUsageInfo.length
+
   $: hiddenEvalsMenuItems = [
-    { label: "Show Eval", header: true },
-    ...hiddenEvalsInfo.map(
-      (info): FloatingMenuItem => ({
-        label: info.category,
-        onclick: () => showEval(info.eval_id),
-      }),
-    ),
-    ...(hiddenEvalsInfo.length > 1
+    ...(hiddenEvalsInfo.length > 0
+      ? [
+          { label: "Show Eval", header: true },
+          ...hiddenEvalsInfo.map(
+            (info): FloatingMenuItem => ({
+              label: info.category,
+              onclick: () => showEval(info.eval_id),
+            }),
+          ),
+        ]
+      : []),
+    ...(hiddenUsageInfo.length > 0
+      ? [
+          { label: "Show Metric", header: true },
+          ...hiddenUsageInfo.map(
+            (info): FloatingMenuItem => ({
+              label: info.label,
+              onclick: () => showUsageMetric(info.key),
+            }),
+          ),
+        ]
+      : []),
+    ...(hiddenCount > 1
       ? [{ label: "Show All", onclick: showAllHiddenEvals }]
       : []),
   ] as FloatingMenuItem[]
@@ -807,7 +879,7 @@
       {:else}
         <!-- Table action buttons - positioned above table on the right -->
         <div class="flex justify-end gap-2 mb-4">
-          {#if hiddenEvalsInfo.length > 0}
+          {#if hiddenCount > 0}
             <div class="hidden-evals-dropdown">
               <FloatingMenu items={hiddenEvalsMenuItems} width="w-72">
                 <button
@@ -815,7 +887,7 @@
                   type="button"
                   class="btn btn-sm btn-outline"
                 >
-                  Hidden Evals ({hiddenEvalsInfo.length})
+                  Hidden ({hiddenCount})
                 </button>
               </FloatingMenu>
             </div>
@@ -955,7 +1027,7 @@
             {#each visibleComparisonFeatures as section}
               <!-- Section Header -->
               <div
-                class="bg-gray-50 px-6 py-3 border-b border-gray-200 flex items-center justify-between gap-2"
+                class="bg-gray-50 px-6 py-3 border-b border-gray-200 flex items-center gap-2"
               >
                 <h4
                   class="text-sm font-semibold text-gray-900 uppercase tracking-wide"
@@ -973,7 +1045,9 @@
                 {/if}
               </div>
 
-              {#if section.items.length == 0}
+              <!-- The cost section empties out when the user hides all its rows,
+                   which is not an error state - it just has nothing left to show. -->
+              {#if section.items.length == 0 && section.eval_id !== "kiln_cost_section"}
                 <div
                   class="grid gap-4 border-b border-gray-100 last:border-b-0"
                   style="grid-template-columns: 200px repeat(1, 1fr);"
@@ -1021,9 +1095,20 @@
                   {#each section.items as item, item_index}
                     <!-- Feature Label -->
                     <div
-                      class="px-6 py-4 bg-gray-50 font-medium text-gray-700 flex items-center border-b border-gray-100"
+                      class="px-6 py-4 bg-gray-50 font-medium text-gray-700 flex items-center gap-2 border-b border-gray-100"
                     >
                       {item.label}
+                      {#if section.eval_id === "kiln_cost_section"}
+                        <!-- Always visible, matching the eval section's hide button -->
+                        <button
+                          type="button"
+                          on:click={() => hideUsageMetric(item.key)}
+                          class="w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+                          title="Hide this metric"
+                        >
+                          ✕
+                        </button>
+                      {/if}
                     </div>
 
                     <!-- Model Values -->

@@ -11,6 +11,7 @@
     getRunConfigPromptDisplayName,
     getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
+  import { formatLatency } from "$lib/utils/formatters"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
@@ -57,24 +58,44 @@
   // normalized to 0-1, and we only use it when the data actually fits under it.
   const DEFAULT_ABSOLUTE_MAX = 1
 
+  // Above this many scores the tooltip lists only the weakest ones - the full set is
+  // in the comparison table above.
+  const MAX_TOOLTIP_SCORES = 10
+
   const SCALE_TOOLTIP = `**Relative**: each axis is scaled to the highest value across the selected run configs. Best for spotting differences between configs.
 
 **Full Scale**: each axis uses the score's own range (0-1 for pass/fail, 1-5 for 5-star). Best when looking at one run config on its own, where there is nothing to compare against.
 
-Cost and latency axes score each run config against the others, so they stay relative in both modes. With a single run config there's nothing to compare against and they both sit at the midpoint.`
+Cost, latency and token axes score each run config against the others, so they stay relative in both modes. With a single run config there's nothing to compare against and they all sit at the midpoint. Hide one with the x on its row in the table above.`
 
   // Chart instance
   let chartInstance: echarts.ECharts | null = null
 
-  // Keys that should be included in radar chart where lower is better
   const COST_KEY = "cost::mean_cost"
   const LATENCY_KEY = "cost::mean_total_llm_latency_ms"
 
-  // Check if a key is a lower-is-better metric
-  function isLowerIsBetterMetric(key: string): boolean {
-    return key === COST_KEY || key === LATENCY_KEY
+  // Cost, latency and token counts are lower-is-better raw quantities with no
+  // absolute range, so they're scored by position within the selected run configs
+  // (metricToScore) on a shared 0-100 axis. That's a comparison, which means these
+  // axes only carry information when there are at least two configs to compare - and
+  // it's why they stay relative even in Full Scale mode.
+  //
+  // On the chart they're named for the direction that's better, since a bigger value
+  // means less cost / less time / fewer tokens.
+  const USAGE_LABELS: Record<string, string> = {
+    [COST_KEY]: "Cost Efficiency",
+    [LATENCY_KEY]: "Speed",
+    "cost::mean_total_tokens": "Token Efficiency",
+    "cost::mean_input_tokens": "Input Token Efficiency",
+    "cost::mean_output_tokens": "Output Token Efficiency",
   }
 
+  function isLowerIsBetterMetric(key: string): boolean {
+    return key.startsWith("cost::")
+  }
+
+  // Position of a lower-is-better value within the selected configs, as a 0-100
+  // score. Ties (or a single config) land at 50: no better, no worse.
   export function metricToScore(
     cost: number,
     costs: number[],
@@ -109,14 +130,17 @@ Cost and latency axes score each run config against the others, so they stay rel
     return Math.max(0, Math.min(100, score))
   }
 
-  // Get all data keys: include eval metrics + cost (but exclude token counts)
-  $: dataKeys = [
-    ...comparisonFeatures
-      .filter((f) => f.eval_id !== "kiln_cost_section")
-      .flatMap((f) => f.items.map((item) => item.key)),
-    COST_KEY,
-    LATENCY_KEY,
-  ]
+  // Eval score keys (the cost section is excluded - its metrics come back as usage
+  // axes below, on their own terms)
+  $: dataKeys = comparisonFeatures
+    .filter((f) => f.eval_id !== "kiln_cost_section")
+    .flatMap((f) => f.items.map((item) => item.key))
+
+  // Usage axes come from the cost section of the table, so hiding a row there with
+  // its x removes the axis here too - one control, where the numbers are.
+  $: visibleUsageKeys = comparisonFeatures
+    .filter((f) => f.eval_id === "kiln_cost_section")
+    .flatMap((f) => f.items.map((item) => item.key))
 
   // Run configs that will actually be drawn: selected, and with at least one eval
   // result. A config with nothing to show shouldn't make the chart behave as though
@@ -129,13 +153,7 @@ Cost and latency axes score each run config against the others, so they stay rel
 
   // Get labels for radar indicators
   function getKeyLabel(dataKey: string): string {
-    // Special handling for lower-is-better metrics
-    if (dataKey === COST_KEY) {
-      return "Cost Efficiency"
-    }
-    if (dataKey === LATENCY_KEY) {
-      return "Speed"
-    }
+    if (USAGE_LABELS[dataKey]) return USAGE_LABELS[dataKey]
     for (const feature of comparisonFeatures) {
       const item = feature.items.find((i) => i.key === dataKey)
       if (item) return item.label
@@ -152,19 +170,53 @@ Cost and latency axes score each run config against the others, so they stay rel
     return getRunConfigModelDisplayName(config, model_info) ?? "Unknown"
   }
 
+  // The raw quantity behind a usage axis, in its own units
+  function formatUsageValue(key: string, value: number | null): string {
+    if (value === null) return "N/A"
+    if (key === COST_KEY) return `$${value.toFixed(6)}`
+    if (key === LATENCY_KEY) return formatLatency(value)
+    return `${Math.round(value).toLocaleString()} tokens`
+  }
+
+  // Mean usage for a config, formatted for display. Null when unavailable.
+  function getUsageSummary(config: TaskRunConfig | undefined): {
+    cost: string | null
+    latency: string | null
+    totalTokens: string | null
+  } {
+    const raw = (key: string) =>
+      config?.id ? getModelValueRaw(config.id, key) : null
+    const meanCost = raw(COST_KEY)
+    const meanLatency = raw(LATENCY_KEY)
+    const meanTotalTokens = raw("cost::mean_total_tokens")
+    return {
+      cost: meanCost === null ? null : formatUsageValue(COST_KEY, meanCost),
+      latency:
+        meanLatency === null
+          ? null
+          : formatUsageValue(LATENCY_KEY, meanLatency),
+      totalTokens:
+        meanTotalTokens === null
+          ? null
+          : formatUsageValue("cost::mean_total_tokens", meanTotalTokens),
+    }
+  }
+
   function buildLegendSubtext(config: TaskRunConfig): string {
+    const parts: string[] = []
     if (isMcpRunConfig(config.run_config_properties)) {
       const toolName =
         config.run_config_properties.tool_reference.tool_name ?? "MCP Tool"
-      return `{sub|Tool: ${toolName}}`
+      parts.push(`{sub|Tool: ${toolName}}`)
+    } else {
+      const modelName =
+        getRunConfigModelDisplayName(config, model_info) || "Unknown"
+      const promptName = getRunConfigPromptDisplayName(config, prompts)
+      parts.push(`{sub|Model: ${modelName}}`)
+      if (promptName) parts.push(`{sub|Prompt: ${promptName}}`)
+      const transformLabel = getRunConfigInputTransformSummaryLabel(config)
+      if (transformLabel) parts.push(`{sub|Input Transform: ${transformLabel}}`)
     }
-    const modelName =
-      getRunConfigModelDisplayName(config, model_info) || "Unknown"
-    const promptName = getRunConfigPromptDisplayName(config, prompts)
-    const parts = [`{sub|Model: ${modelName}}`]
-    if (promptName) parts.push(`{sub|Prompt: ${promptName}}`)
-    const transformLabel = getRunConfigInputTransformSummaryLabel(config)
-    if (transformLabel) parts.push(`{sub|Input Transform: ${transformLabel}}`)
     return parts.join("\n")
   }
 
@@ -182,7 +234,8 @@ Cost and latency axes score each run config against the others, so they stay rel
   // Build full tooltip HTML for a run config (reused by chart tooltip and legend tooltip)
   function buildRunConfigTooltip(
     name: string,
-    lowerIsBetterValues: Record<string, number[]>,
+    axisMaxes: Record<string, number>,
+    keys: string[],
   ): string {
     const config = run_configs.find((c) => getSeriesDisplayName(c) === name)
 
@@ -209,33 +262,51 @@ Cost and latency axes score each run config against the others, so they stay rel
         }
       }
     }
-    html += `<div style="font-weight: bold; margin-bottom: 4px; padding-top: 8px;">Values</div>`
 
-    dataKeys.forEach((key) => {
-      const label = getKeyLabel(key)
-      const rawValue = config?.id ? getModelValueRaw(config.id, key) : null
-      if (rawValue === null) {
-        html += `<div>${label}: N/A</div>`
-      } else if (key === COST_KEY) {
-        const displayValue = metricToScore(
-          rawValue,
-          lowerIsBetterValues[key] || [],
-        )
-        html += `<div>${label}: ${displayValue.toFixed(1)} <span style="color: #888;">(Mean Cost: $${rawValue.toFixed(6)})</span></div>`
-      } else if (key === LATENCY_KEY) {
-        const displayValue = metricToScore(
-          rawValue,
-          lowerIsBetterValues[key] || [],
-        )
-        const formatted =
-          rawValue < 1000
-            ? `${Math.round(rawValue)}ms`
-            : `${(rawValue / 1000).toFixed(1)}s`
-        html += `<div>${label}: ${displayValue.toFixed(1)} <span style="color: #888;">(Mean Latency: ${formatted})</span></div>`
-      } else {
-        html += `<div>${label}: ${rawValue.toFixed(3)}</div>`
-      }
-    })
+    const usage = getUsageSummary(config)
+    if (usage.cost) html += `<div>Mean Cost: ${usage.cost}</div>`
+    if (usage.latency) html += `<div>Mean Latency: ${usage.latency}</div>`
+    if (usage.totalTokens) {
+      html += `<div>Mean Total Tokens: ${usage.totalTokens}</div>`
+    }
+
+    // Eval scores only. The usage axes plot a relative score rather than their raw
+    // quantity, so ranking them against pass rates would compare unlike things -
+    // their real values are listed above instead.
+    const scores = keys
+      .filter((key) => !isLowerIsBetterMetric(key))
+      .map((key) => {
+        const value = config?.id ? getModelValueRaw(config.id, key) : null
+        const max = axisMaxes[key] || 1
+        return {
+          label: getKeyLabel(key),
+          value,
+          // Rank by position on the axis, so scores with different ranges (0-1 vs
+          // 1-5) are comparable. Missing values sort first: "didn't run" is worth
+          // surfacing.
+          position: value === null ? -1 : value / max,
+        }
+      })
+
+    const trimmed = scores.length > MAX_TOOLTIP_SCORES
+    const shown = trimmed
+      ? [...scores]
+          .sort((a, b) => a.position - b.position)
+          .slice(0, MAX_TOOLTIP_SCORES)
+      : scores
+
+    html += `<div style="font-weight: bold; margin-bottom: 4px; padding-top: 8px;">${
+      trimmed ? "Lowest Scores" : "Values"
+    }</div>`
+    for (const score of shown) {
+      const formatted = score.value === null ? "N/A" : score.value.toFixed(3)
+      html += `<div>${score.label}: ${formatted}</div>`
+    }
+    if (trimmed) {
+      html += `<div style="color: #888; padding-top: 4px;">+${
+        scores.length - shown.length
+      } more in the table above</div>`
+    }
 
     return html
   }
@@ -259,36 +330,42 @@ Cost and latency axes score each run config against the others, so they stay rel
     indicators: { name: string; max: number }[]
     series: { value: number[]; name: string }[]
     legend: string[]
-    lowerIsBetterValues: Record<string, number[]>
+    axisMaxes: Record<string, number>
+    keys: string[]
   } {
     const indicators: { name: string; max: number }[] = []
     const series: { value: number[]; name: string }[] = []
     const legend: string[] = []
-    const lowerIsBetterValues: Record<string, number[]> = {}
+    const axisMaxes: Record<string, number> = {}
+    const usageValues: Record<string, number[]> = {}
 
     if (dataKeys.length === 0 || selectedRunConfigIds.length === 0) {
-      return { indicators, series, legend, lowerIsBetterValues }
+      return { indicators, series, legend, axisMaxes, keys: [] }
     }
 
-    // Calculate the max of each axis, in the current scale mode
-    const axisMaxes: Record<string, number> = {}
+    const keys = [...dataKeys, ...visibleUsageKeys]
 
-    for (const key of dataKeys) {
+    // Every value on a usage axis, so each can be scored by its position among them
+    for (const key of keys) {
+      if (!isLowerIsBetterMetric(key)) continue
+      usageValues[key] = selectedRunConfigIds
+        .map((configId) => getModelValueRaw(configId, key))
+        .filter((value): value is number => value !== null)
+    }
+
+    // Calculate max values for each data key across all selected run configs
+    for (const key of keys) {
+      if (isLowerIsBetterMetric(key)) {
+        // Already a 0-100 score, in both scale modes
+        axisMaxes[key] = 100
+        continue
+      }
       let max = 0
       for (const configId of selectedRunConfigIds) {
         const value = getModelValueRaw(configId, key)
         if (value !== null && value > max) {
           max = value
         }
-        if (value !== null && isLowerIsBetterMetric(key)) {
-          if (!lowerIsBetterValues[key]) lowerIsBetterValues[key] = []
-          lowerIsBetterValues[key].push(value)
-        }
-      }
-      if (isLowerIsBetterMetric(key)) {
-        // Already a 0-100 score, in both scale modes
-        axisMaxes[key] = 100
-        continue
       }
       // Add 10% padding to max for better visualization
       const paddedMax = max > 0 ? max * 1.1 : 1
@@ -297,7 +374,7 @@ Cost and latency axes score each run config against the others, so they stay rel
         : paddedMax
     }
 
-    for (const key of dataKeys) {
+    for (const key of keys) {
       indicators.push({
         name: getKeyLabel(key),
         max: axisMaxes[key],
@@ -312,13 +389,13 @@ Cost and latency axes score each run config against the others, so they stay rel
       const values: number[] = []
       let hasAnyValue = false
 
-      for (const key of dataKeys) {
+      for (const key of keys) {
         const rawValue = getModelValueRaw(configId, key)
         let displayValue: number
         if (rawValue === null) {
           displayValue = 0
         } else if (isLowerIsBetterMetric(key)) {
-          displayValue = metricToScore(rawValue, lowerIsBetterValues[key] || [])
+          displayValue = metricToScore(rawValue, usageValues[key] || [])
         } else {
           displayValue = rawValue
         }
@@ -334,12 +411,19 @@ Cost and latency axes score each run config against the others, so they stay rel
       }
     }
 
-    return { indicators, series, legend, lowerIsBetterValues }
+    return { indicators, series, legend, axisMaxes, keys }
   }
 
-  // Check if there's data to display (reactive, depends on dataKeys and selectedRunConfigIds)
+  // Check if there's data to display (reactive - references every input that can
+  // change what generateChartData() returns)
   $: hasData = (() => {
-    if (!dataKeys || dataKeys.length === 0 || !selectedRunConfigIds) {
+    // visibleUsageKeys is referenced so this re-runs when a usage row is hidden
+    if (
+      !dataKeys ||
+      dataKeys.length === 0 ||
+      !selectedRunConfigIds ||
+      !visibleUsageKeys
+    ) {
       return false
     }
     const { indicators, series } = generateChartData()
@@ -354,8 +438,7 @@ Cost and latency axes score each run config against the others, so they stay rel
       return
     }
 
-    const { indicators, series, legend, lowerIsBetterValues } =
-      generateChartData()
+    const { indicators, series, legend, axisMaxes, keys } = generateChartData()
 
     const legendFormatter = buildLegendFormatter()
 
@@ -380,7 +463,7 @@ Cost and latency axes score each run config against the others, so they stay rel
           trigger: "item",
           confine: true,
           formatter: (params: { name: string }) =>
-            buildRunConfigTooltip(params.name, lowerIsBetterValues),
+            buildRunConfigTooltip(params.name, axisMaxes, keys),
         },
         legend: {
           data: legend,
@@ -388,7 +471,7 @@ Cost and latency axes score each run config against the others, so they stay rel
           tooltip: {
             show: true,
             formatter: (params: { name: string }) =>
-              buildRunConfigTooltip(params.name, lowerIsBetterValues),
+              buildRunConfigTooltip(params.name, axisMaxes, keys),
           },
           textStyle: legendTextStyle,
           ...(compactLayout
@@ -463,6 +546,7 @@ Cost and latency axes score each run config against the others, so they stay rel
     selectedRunConfigIds &&
     axisScaleMode &&
     scoreAxisMaxes &&
+    visibleUsageKeys &&
     (model_info || model_info === null) &&
     (prompts || prompts === null)
   ) {
@@ -490,8 +574,10 @@ Cost and latency axes score each run config against the others, so they stay rel
   }
 </script>
 
-<!-- Radar charts don't really work with <3 items -->
-{#if dataKeys.length >= 3}
+<!-- Radar charts don't really work with <3 items. Counts the usage axes too: they
+     are axes like any other, and a task with one or two eval scores still has a
+     chart worth drawing once cost, latency and tokens are on it. -->
+{#if dataKeys.length + visibleUsageKeys.length >= 3}
   <div
     class="bg-white border border-gray-200 rounded-lg p-6 mb-6 h-full flex flex-col"
   >
