@@ -182,9 +182,11 @@
       urlParams.delete("hidden_usage")
     }
 
-    // Use replace to avoid creating new history entries
+    // Use replace to avoid creating new history entries. noScroll/keepFocus because
+    // this only ever records existing UI state in the URL - without them, hiding a
+    // row or adding a column jumps the page back to the top and drops focus.
     const newURL = `${$page.url.pathname}?${urlParams.toString()}`
-    goto(newURL, { replaceState: true })
+    goto(newURL, { replaceState: true, noScroll: true, keepFocus: true })
   }
 
   // Reactive statements to update URL when state changes
