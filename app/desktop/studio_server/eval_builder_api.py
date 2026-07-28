@@ -31,6 +31,7 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     BuildClaimsApiInput,
     BuildClaimsApiOutput,
     JudgeConfig,
+    PipelineBatchAbortedEvent,
     PipelineBatchCompletedEvent,
     PipelineBatchStartedEvent,
     PipelineCaseDrivenEvent,
@@ -62,6 +63,11 @@ from app.desktop.studio_server.utils.eval_builder_utils import (
     transcript_io_for_trace,
 )
 from fastapi import FastAPI, HTTPException, Path, Request
+from kiln_ai.adapters.retry_classification import (
+    is_batch_fatal_error,
+    is_retryable_error,
+    unwrap_kiln_run_error,
+)
 from kiln_ai.datamodel.basemodel import FilenameStringShort
 from kiln_ai.datamodel.task import Task
 from kiln_ai.synthetic_user.case import SyntheticUserCase as RunnerCase
@@ -90,6 +96,33 @@ logger = logging.getLogger(__name__)
 #                        the single-turn review.
 DRIVE_CONCURRENCY = 10
 REVIEW_CONCURRENCY = 8
+
+# The judge lane's retry policy — the same posture (shared classifier, same
+# attempt count and delay) as the drive runner in
+# kiln_ai.synthetic_user.runner: transient provider failures retry,
+# deterministic ones fail the case immediately. The judge is the one local
+# leg without a runner-owned retry; the remote copilot legs already retry
+# inside kiln_server (pipeline jobs, retries=3), so no client retry stacks
+# on top of them.
+JUDGE_MAX_RETRIES = 2
+JUDGE_RETRY_DELAY_SECONDS = 1.0
+
+
+async def run_judge_with_retry(*args, **kwargs):
+    """run_judge_for_trace under the shared transient-retry policy.
+
+    A thin wrapper rather than a judge-side AsyncJobRunner: the pool engine
+    takes a fixed job list, but judge work arrives streaming as each drive
+    completes."""
+    attempt = 0
+    while True:
+        try:
+            return await run_judge_for_trace(*args, **kwargs)
+        except Exception as e:
+            attempt += 1
+            if attempt > JUDGE_MAX_RETRIES or not is_retryable_error(e):
+                raise
+            await asyncio.sleep(JUDGE_RETRY_DELAY_SECONDS)
 
 
 def _sse(payload: dict | BaseModel) -> str:
@@ -244,6 +277,9 @@ class ReviewPipelineRun:
         self._failed_count = 0
         self._total_cost = 0.0
         self._batch_tag = input.batch_tag or ""
+        # Set by the first batch-fatal failure; events() then skips
+        # batch_completed and its finally tears everything down.
+        self._aborted = False
 
     async def events(self) -> AsyncIterator[str]:
         """The SSE stream: drain frames until every stage finished, then
@@ -268,24 +304,30 @@ class ReviewPipelineRun:
                 if frame is None:
                     break
                 yield frame
-            # The closer swallows a drive-level crash (its finally still
-            # closes the queue) — re-raise it here so the client sees
-            # batch_failed, not a clean-looking batch_completed. Our own
-            # teardown never reaches this line, so a cancelled drive here
-            # means a stray CancelledError killed it: also a failure.
-            if drive_task.cancelled():
-                raise RuntimeError("The drive was cancelled unexpectedly.")
-            drive_error = drive_task.exception() if drive_task.done() else None
-            if drive_error is not None:
-                raise drive_error
-            yield _sse(
-                PipelineBatchCompletedEvent(
-                    judged=self._judged_count,
-                    failed=self._failed_count,
-                    batch_tag=self._batch_tag,
-                    total_cost=self._total_cost,
+            # A batch-fatal abort already emitted batch_aborted in place of
+            # batch_completed — fall through to the finally, which runs the
+            # same teardown as a consumer disconnect (drive cancelled, so
+            # AsyncJobRunner cancels its workers; in-flight judges
+            # cancelled) and a doomed batch stops spending.
+            if not self._aborted:
+                # The closer swallows a drive-level crash (its finally still
+                # closes the queue) — re-raise it here so the client sees
+                # batch_failed, not a clean-looking batch_completed. Our own
+                # teardown never reaches this line, so a cancelled drive here
+                # means a stray CancelledError killed it: also a failure.
+                if drive_task.cancelled():
+                    raise RuntimeError("The drive was cancelled unexpectedly.")
+                drive_error = drive_task.exception() if drive_task.done() else None
+                if drive_error is not None:
+                    raise drive_error
+                yield _sse(
+                    PipelineBatchCompletedEvent(
+                        judged=self._judged_count,
+                        failed=self._failed_count,
+                        batch_tag=self._batch_tag,
+                        total_cost=self._total_cost,
+                    )
                 )
-            )
         except Exception as e:  # noqa: BLE001 — last-resort surface for developer bugs
             # Per-case failures never reach here (they become case_failed
             # frames); this catches orchestration bugs only.
@@ -406,7 +448,7 @@ class ReviewPipelineRun:
         async with self._review_sem:
             try:
                 raw_input, raw_output = transcript_io_for_trace(trace)
-                verdict = await run_judge_for_trace(
+                verdict = await run_judge_with_retry(
                     self._project_id,
                     self._task_id,
                     raw_input,
@@ -430,12 +472,42 @@ class ReviewPipelineRun:
                     )
                 )
             except Exception as e:  # noqa: BLE001 — isolate to this case
+                # A config-scoped failure (bad key, deprecated model) will
+                # kill every judgment identically while the drives keep
+                # BILLING — abort the whole pipeline on the first one
+                # instead of failing 40 cases one by one.
+                if is_batch_fatal_error(e):
+                    await self._abort_batch("judge", e)
+                    return
                 await self._fail_case(
                     case_index, "judge", "judge_failed", f"{type(e).__name__}: {e}"
                 )
                 return
             self._judged_count += 1
             await self._queue.put(frame)
+
+    async def _abort_batch(
+        self, stage: Literal["drive", "judge"], error: BaseException
+    ) -> None:
+        """First batch-fatal failure wins: emit ONE batch_aborted frame and
+        close the queue — events()' finally then runs the consumer-disconnect
+        teardown (drive + in-flight judges cancelled). Partial chains already
+        on disk stay covered by the client's delete-on-next-drive cleanup."""
+        if self._aborted:
+            return
+        self._aborted = True
+        root = unwrap_kiln_run_error(error)
+        logger.error(
+            "review_pipeline: batch-fatal %s failure, aborting the batch: %s",
+            stage,
+            root,
+        )
+        await self._emit(
+            PipelineBatchAbortedEvent(
+                error=f"{type(root).__name__}: {root}", stage=stage
+            )
+        )
+        await self._queue.put(None)
 
     async def _fail_case(
         self,
@@ -514,6 +586,9 @@ def connect_eval_builder_api(app: FastAPI):
                               judge_score, judge_reasoning, total_cost }
           - case_failed     { case_index, stage, code, message }  (batch continues)
           - batch_completed { judged, failed, batch_tag, total_cost }
+          - batch_aborted   { error, stage }  (in place of batch_completed:
+                              a config-scoped judge failure aborted the whole
+                              batch; results already streamed remain valid)
         Terminated by `data: complete`. Claims are built afterwards, per
         opened trace, via build_claims.
         """

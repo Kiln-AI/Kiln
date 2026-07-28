@@ -3194,6 +3194,9 @@ export interface paths {
          *                           judge_score, judge_reasoning, total_cost }
          *       - case_failed     { case_index, stage, code, message }  (batch continues)
          *       - batch_completed { judged, failed, batch_tag, total_cost }
+         *       - batch_aborted   { error, stage }  (in place of batch_completed:
+         *                           a config-scoped judge failure aborted the whole
+         *                           batch; results already streamed remain valid)
          *     Terminated by `data: complete`. Claims are built afterwards, per
          *     opened trace, via build_claims.
          */

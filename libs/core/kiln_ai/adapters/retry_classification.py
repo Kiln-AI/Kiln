@@ -48,3 +48,27 @@ def is_retryable_error(e: BaseException) -> bool:
         return True
 
     return False
+
+
+def is_batch_fatal_error(e: BaseException) -> bool:
+    """True for config-scoped failures guaranteed to kill every case in a
+    batch identically: bad or revoked credentials, a deprecated/unknown
+    model, a hard budget wall. On the first such error a batch owner should
+    abort the whole batch rather than fail its cases one by one (and keep
+    paying for the upstream work that feeds them).
+
+    Disjoint from is_retryable_error — these are deterministic. Deliberately
+    conservative: an unrecognized error stays case-scoped; never abort a
+    batch on a guess.
+    """
+    e = unwrap_kiln_run_error(e)
+
+    return isinstance(
+        e,
+        (
+            litellm.AuthenticationError,  # 401 — bad/revoked key
+            litellm.PermissionDeniedError,  # 403 — key lacks access
+            litellm.NotFoundError,  # 404 — model deprecated/unknown
+            litellm.BudgetExceededError,  # hard spend ceiling
+        ),
+    )

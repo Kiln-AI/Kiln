@@ -308,3 +308,18 @@ class PipelineBatchCompletedEvent(BaseModel):
     failed: int
     batch_tag: str
     total_cost: float
+
+
+class PipelineBatchAbortedEvent(BaseModel):
+    """The whole batch was aborted on a config-scoped (batch-fatal) failure —
+    an error guaranteed to kill every case identically (bad credentials,
+    deprecated model, hard budget wall; see retry_classification.
+    is_batch_fatal_error). Emitted ONCE in place of batch_completed, then
+    the stream tears down like a consumer disconnect, cancelling queued and
+    in-flight cases so a doomed batch stops spending. Judge-lane only today:
+    a drive-lane config error fails every case fast and free, so the
+    client's stop banner covers it without an abort."""
+
+    type: Literal["batch_aborted"] = "batch_aborted"
+    error: str
+    stage: Literal["drive", "judge"]

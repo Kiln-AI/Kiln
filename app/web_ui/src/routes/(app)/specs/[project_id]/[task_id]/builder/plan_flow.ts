@@ -11,6 +11,10 @@ export type DriveStop = {
   survivors: number
   failed: number
   dominant_error: string | null
+  // Set when a config-scoped failure aborted the whole batch server-side
+  // (the batch_aborted frame) — the banner then leads with the abort
+  // diagnosis instead of per-case counts.
+  aborted_error?: string | null
 }
 
 // Dominant per-case error: the most frequent case_failed message.
@@ -40,10 +44,28 @@ export function dominant_failure_message(messages: string[]): string | null {
 export function drive_stop_banner(
   stop: DriveStop,
   run_config_name: string | null,
+  run_config_model: string | null = null,
 ): string {
   const config_clause = run_config_name
     ? ` (run config: ${run_config_name})`
     : ""
+  if (stop.aborted_error) {
+    // A config-scoped failure aborted the batch mid-drive: the run config
+    // (name + model) IS the diagnosis, and cases judged before the abort
+    // remain valid survivors.
+    const abort_config = run_config_name
+      ? ` (run config: ${run_config_name}${
+          run_config_model ? `, ${run_config_model}` : ""
+        })`
+      : ""
+    const recovery =
+      stop.survivors > 0
+        ? `${stop.survivors} conversation${
+            stop.survivors === 1 ? "" : "s"
+          } completed before the abort — continue with those, or [test your run config](/run) and drive again.`
+        : `You can [test your run config](/run), then drive again.`
+    return `Drive aborted — ${stop.aborted_error}${abort_config}. ${recovery}`
+  }
   if (stop.survivors === 0) {
     // Every case failed identically — a capability boundary of the run
     // config, not bad luck. Point at the one place it can be verified.

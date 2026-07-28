@@ -1,6 +1,8 @@
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import litellm
 import pytest
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.build_claim_evidence_output import (
     BuildClaimEvidenceOutput,
@@ -807,6 +809,24 @@ def _real_trace(i: int) -> list[dict]:
     ]
 
 
+def _rate_limit_error() -> litellm.RateLimitError:
+    """A transient provider error, per the shared retry classifier."""
+    return litellm.RateLimitError(
+        message="upstream rate limit",
+        llm_provider="openrouter",
+        model="gpt_5_5",
+    )
+
+
+def _auth_error() -> litellm.AuthenticationError:
+    """A config-scoped (batch-fatal) provider error."""
+    return litellm.AuthenticationError(
+        message="invalid api key",
+        llm_provider="openrouter",
+        model="gpt_5_5",
+    )
+
+
 def _fake_run_cases_batch(*, fail_case: int | None = None, events_per_case: int = 2):
     """An async-generator stand-in for the libs/core runner: batch_started,
     then per case its turn events and completion (or failure)."""
@@ -1194,6 +1214,156 @@ class TestReviewPipeline:
         assert len(failed) == 1
         assert failed[0]["code"] == "internal_error"
         assert "runner exploded" in failed[0]["message"]
+        assert events[-1] == "complete"
+
+    def test_judge_transient_failure_retries_then_succeeds(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        """A transient judge failure (shared retry classifier) is retried in
+        place — the case still lands as case_judged, never case_failed."""
+        calls = {"case_0": 0}
+
+        async def flaky_judge(
+            _project_id, _task_id, _raw_input, _raw_output, _judge, **kwargs
+        ):
+            if kwargs["trace"][1]["content"] == "question 0":
+                calls["case_0"] += 1
+                if calls["case_0"] == 1:
+                    raise _rate_limit_error()
+            return JudgeVerdict("pass", "fine")
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+                new=AsyncMock(side_effect=flaky_judge),
+            ),
+            patch(
+                "app.desktop.studio_server.eval_builder_api.JUDGE_RETRY_DELAY_SECONDS",
+                0,
+            ),
+        ):
+            resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        events = _parse_sse(resp.text)
+        assert _events_of(events, "case_failed") == []
+        judged = _events_of(events, "case_judged")
+        assert sorted(e["case_index"] for e in judged) == [0, 1]
+        assert calls["case_0"] == 2  # first attempt + one retry
+        completed = _events_of(events, "batch_completed")[0]
+        assert completed["judged"] == 2
+        assert completed["failed"] == 0
+
+    def test_judge_deterministic_failure_does_not_retry(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        """Deterministic judge failures fail the case on the FIRST attempt —
+        retrying a non-transient error would just triple the spend."""
+        calls = {"case_0": 0}
+
+        async def broken_judge(
+            _project_id, _task_id, _raw_input, _raw_output, _judge, **kwargs
+        ):
+            if kwargs["trace"][1]["content"] == "question 0":
+                calls["case_0"] += 1
+                raise ValueError("judge output unparseable")
+            return JudgeVerdict("pass", "fine")
+
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+            new=AsyncMock(side_effect=broken_judge),
+        ):
+            resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        events = _parse_sse(resp.text)
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 1
+        assert failed[0]["stage"] == "judge"
+        assert calls["case_0"] == 1  # no retry
+        assert [e["case_index"] for e in _events_of(events, "case_judged")] == [1]
+
+    def test_judge_batch_fatal_failure_aborts_pipeline(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        """A config-scoped judge failure (dead key, deprecated model) aborts
+        the WHOLE batch: one batch_aborted frame in place of batch_completed,
+        no per-case failure spam, stream still terminates cleanly."""
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+            new=AsyncMock(side_effect=_auth_error()),
+        ):
+            resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        events = _parse_sse(resp.text)
+        aborted = _events_of(events, "batch_aborted")
+        assert len(aborted) == 1  # first batch-fatal error wins, exactly once
+        assert aborted[0]["stage"] == "judge"
+        assert "AuthenticationError" in aborted[0]["error"]
+        assert _events_of(events, "batch_completed") == []
+        assert _events_of(events, "case_failed") == []
+        assert events[-1] == "complete"
+
+    def test_abort_cancels_the_running_drive(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        """The abort reuses the consumer-disconnect teardown: the drive task
+        is cancelled mid-flight (AsyncJobRunner then cancels its workers), so
+        a doomed batch stops spending instead of driving the queued cases."""
+        from kiln_ai.synthetic_user.runner import (
+            BatchStartedEvent,
+            CaseCompletedEvent,
+            TurnCompletedEvent,
+        )
+
+        drive_cancelled = {"flag": False}
+
+        async def slow_runner(*, cases, turns, **_kwargs):
+            yield BatchStartedEvent(batch_tag="tag123", num_cases=len(cases))
+            yield TurnCompletedEvent(
+                case_index=0,
+                turn_index=1,
+                assistant_run_id="run-0",
+                su_next_message="next",
+                cumulative_cost=0.01,
+                trace=_real_trace(0),
+            )
+            yield CaseCompletedEvent(
+                case_index=0,
+                chain_run_ids=["run-0-a"],
+                leaf_run_id="leaf-0",
+                total_turns=turns,
+                total_cost=0.05,
+            )
+            try:
+                # Case 1 would take much longer; the abort must not wait it out.
+                await asyncio.sleep(30)
+                yield CaseCompletedEvent(
+                    case_index=1,
+                    chain_run_ids=["run-1-a"],
+                    leaf_run_id="leaf-1",
+                    total_turns=turns,
+                    total_cost=0.05,
+                )
+            except asyncio.CancelledError:
+                drive_cancelled["flag"] = True
+                raise
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.run_cases_batch",
+                new=slow_runner,
+            ),
+            patch(
+                "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+                new=AsyncMock(side_effect=_auth_error()),
+            ),
+        ):
+            resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        events = _parse_sse(resp.text)
+        assert len(_events_of(events, "batch_aborted")) == 1
+        # Case 1 never drove: its 30s of spend was cancelled by the abort.
+        assert [e["case_index"] for e in _events_of(events, "case_driven")] == [0]
+        assert drive_cancelled["flag"] is True
         assert events[-1] == "complete"
 
     def test_missing_copilot_key_is_401_before_any_drive(

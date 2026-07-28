@@ -79,6 +79,46 @@ describe("drive_stop_banner", () => {
     expect(msg).not.toContain("run config:")
     expect(msg).toContain("[test your run config](/run)")
   })
+
+  it("abort with survivors: diagnosis with name+model, continue-or-test recovery", () => {
+    const msg = drive_stop_banner(
+      {
+        survivors: 12,
+        failed: 28,
+        dominant_error: null,
+        aborted_error: "AuthenticationError: invalid api key",
+      },
+      "Polite Hawk",
+      "gpt_5_5",
+    )
+    expect(msg).toBe(
+      "Drive aborted — AuthenticationError: invalid api key (run config: Polite Hawk, gpt_5_5). 12 conversations completed before the abort — continue with those, or [test your run config](/run) and drive again.",
+    )
+  })
+
+  it("abort with no survivors: test-then-drive recovery only", () => {
+    const msg = drive_stop_banner(
+      {
+        survivors: 0,
+        failed: 40,
+        dominant_error: null,
+        aborted_error: "NotFoundError: model gpt_5_5 is deprecated",
+      },
+      "Polite Hawk",
+      "gpt_5_5",
+    )
+    expect(msg).toBe(
+      "Drive aborted — NotFoundError: model gpt_5_5 is deprecated (run config: Polite Hawk, gpt_5_5). You can [test your run config](/run), then drive again.",
+    )
+  })
+
+  it("abort outranks the all-failed wording even at zero survivors", () => {
+    const msg = drive_stop_banner(
+      { survivors: 0, failed: 3, dominant_error: "x", aborted_error: "boom" },
+      null,
+    )
+    expect(msg).toMatch(/^Drive aborted — boom\./)
+  })
 })
 
 describe("driven_data_confirm", () => {

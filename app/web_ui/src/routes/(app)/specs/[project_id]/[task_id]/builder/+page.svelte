@@ -542,8 +542,10 @@
   // aggregated into the stop banner's "most common" diagnosis.
   let case_failure_messages: string[] = []
   // The run config the drive ran with — named in the stop banner so a
-  // config-class failure is diagnosable without leaving the wizard.
+  // config-class failure is diagnosable without leaving the wizard. The
+  // model rides along for the abort banner (the model IS the usual culprit).
   let drive_run_config_name: string | null = null
+  let drive_run_config_model: string | null = null
   // Set when on_generate_multi_turn had to fall back to the first available
   // run config because the task has no default set — surfaced in the UI so
   // testers know which model the chains were generated against.
@@ -652,6 +654,7 @@
         total_cost: number
       }
     | { type: "batch_failed"; code: string; message: string }
+    | { type: "batch_aborted"; error: string; stage: "drive" | "judge" }
 
   // THE spec text — the single source every consumer reads (batch planning,
   // synthetic-user generation, the default judge prompt, and the saved Spec),
@@ -852,6 +855,7 @@
           "Multi-turn requires a Kiln Agent run config; the selected one isn't."
         return
       }
+      drive_run_config_model = rcp.model_name
       if (!chosen_config.id) {
         generation_error = "The selected run config has no id."
         return
@@ -938,6 +942,9 @@
       // out of order); compacted into trace_claims at batch end.
       const built: (TraceClaims | null)[] = new Array(cases.length).fill(null)
       let any_case_driven = false
+      // Set by a batch_aborted frame: a config-scoped judge failure aborted
+      // the batch server-side. Cases judged before it remain valid.
+      let batch_abort: { error: string; stage: string } | null = null
       const reader = response.body.getReader()
       stream_loop: for await (const payload of sse_data_payloads(reader)) {
         if (payload === "complete") break
@@ -1002,16 +1009,28 @@
           })
           generation_error = `The pipeline failed: ${event.message}`
           break stream_loop
+        } else if (event.type === "batch_aborted") {
+          posthog.capture("eval_v2_pipeline_batch_aborted", {
+            stage: event.stage,
+          })
+          // Keep draining: results that raced past the abort frame are
+          // still valid survivors; the server ends the stream right after.
+          batch_abort = { error: event.error, stage: event.stage }
         }
         // batch_completed carries totals the rows already reflect; the
         // `complete` terminator ends the loop.
       }
       if (any_case_driven) {
-        // The server deleted the superseded batches once replacements
-        // existed — drop them from the cleanup list.
-        undeleted_batch_tags = undeleted_batch_tags.filter(
-          (t) => !tags_to_replace.includes(t),
-        )
+        if (!batch_abort) {
+          // The server deleted the superseded batches once replacements
+          // existed — drop them from the cleanup list.
+          undeleted_batch_tags = undeleted_batch_tags.filter(
+            (t) => !tags_to_replace.includes(t),
+          )
+        }
+        // On an abort the deletion may never have run (the drive was torn
+        // down mid-flight) — keep the tags. Delete-on-next-drive is
+        // idempotent, so re-passing an already-deleted tag is harmless.
       } else {
         // Nothing was driven: no replacement chains, no deletions — keep
         // pointing at the previous batch (and its cases) so save/cleanup
@@ -1031,6 +1050,18 @@
         selected_trace_indices = select_review_subset(complete)
       }
       if (generation_error) return
+      if (batch_abort) {
+        // The server aborted the whole batch on a config-scoped judge
+        // failure — the same stop screen, reached in seconds, with the
+        // abort diagnosis leading the banner.
+        drive_stop = {
+          survivors: complete.length,
+          failed: approved_prompts.length - complete.length,
+          dominant_error: null,
+          aborted_error: batch_abort.error,
+        }
+        return
+      }
       // Failures reaching here are TERMINAL — transient errors were already
       // retried by the drive runner. A clean batch auto-advances silently;
       // ANY shortfall vs the approved plan stops once on the plan screen
@@ -2131,12 +2162,16 @@
                    deeplink (renders target=_blank, wizard state survives). -->
               <div class="mb-4">
                 <Warning
-                  warning_color={drive_stop.survivors > 0 ? "warning" : "error"}
+                  warning_color={drive_stop.survivors > 0 &&
+                  !drive_stop.aborted_error
+                    ? "warning"
+                    : "error"}
                   markdown
                   trusted
                   warning_message={drive_stop_banner(
                     drive_stop,
                     drive_run_config_name,
+                    drive_run_config_model,
                   )}
                 />
               </div>
