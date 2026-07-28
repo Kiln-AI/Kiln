@@ -22,6 +22,7 @@ from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.spec_properties import SpecType
 from kiln_ai.datamodel.task import RunConfigProperties, TaskOutputRatingType, TaskRun
+from kiln_ai.datamodel.task_run import Usage
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 DEFAULT_SYSTEM_PROMPT = "You are an evaluator."
@@ -322,13 +323,13 @@ class BaseEval:
 
     async def run_task_and_eval(
         self, eval_job_item: TaskRun
-    ) -> tuple[TaskRun, EvalScores, Dict[str, str] | None]:
+    ) -> tuple[TaskRun, EvalScores, Dict[str, str] | None, Usage | None]:
         """
         Runs the task on the provided run_config to generate fresh output, then runs the eval on that output.
         """
         run_output = await self.run_task(eval_job_item)
 
-        eval_output, intermediate_outputs = await self.run_eval(
+        eval_output, intermediate_outputs, eval_usage = await self.run_eval(
             run_output, eval_job_item
         )
 
@@ -336,16 +337,18 @@ class BaseEval:
             eval_output, self.score_schema, "Eval output does not match score schema."
         )
 
-        return run_output, eval_output, intermediate_outputs
+        return run_output, eval_output, intermediate_outputs, eval_usage
 
     @abstractmethod
     async def run_eval(
         self, task_run: TaskRun, eval_job_item: TaskRun | None = None
-    ) -> tuple[EvalScores, Dict[str, str] | None]:
+    ) -> tuple[EvalScores, Dict[str, str] | None, Usage | None]:
         """
         Runs the eval on the given task run.
 
-        Returns a dictionary of scores which should conform to the score schema, and a dictionary of intermediate outputs (eval thinking).
+        Returns a dictionary of scores which should conform to the score schema, a dictionary of
+        intermediate outputs (eval thinking), and the evaluation model's Usage (None for evals
+        that don't invoke a model).
         """
         pass
 
@@ -463,11 +466,11 @@ class BaseV2EvalBridge(BaseEval):
 
     async def run_eval(
         self, task_run: TaskRun, eval_job_item: TaskRun | None = None
-    ) -> tuple[EvalScores, Dict[str, str] | None]:
+    ) -> tuple[EvalScores, Dict[str, str] | None, Usage | None]:
         eval_task_input = EvalTaskInput.from_task_run(task_run)
         result = await self.evaluate(eval_task_input)
         if result.skipped_reason is not None:
             raise ValueError(
                 f"V2 eval was skipped ({result.skipped_reason}): {result.skipped_detail}"
             )
-        return result.scores, result.intermediate_outputs
+        return result.scores, result.intermediate_outputs, result.eval_usage

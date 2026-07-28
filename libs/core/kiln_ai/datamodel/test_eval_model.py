@@ -32,6 +32,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import TaskOutputRatingType
+from kiln_ai.datamodel.usage import Usage
 
 
 @pytest.fixture
@@ -399,6 +400,63 @@ def test_eval_run_valid_creation():
     assert eval_run.input == '{"key": "value"}'
     assert eval_run.output == '{"result": "success"}'
     assert eval_run.scores == {"accuracy": 0.95}
+
+
+def test_eval_run_eval_usage_defaults_none_and_round_trips(tmp_path):
+    """eval_usage is additive: absent on existing records (None), and a set
+    value survives the disk round-trip."""
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+    eval = Eval(
+        name="Usage Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    config = EvalConfig(
+        name="cfg",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="out"),
+        parent=eval,
+    )
+    config.save_to_file()
+
+    plain = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0},
+        input="in",
+        output="out",
+        dataset_id="d1",
+        parent=config,
+    )
+    assert plain.eval_usage is None
+    plain.save_to_file()
+    assert EvalRun.load_from_file(plain.path).eval_usage is None
+
+    judged = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0},
+        input="in",
+        output="out",
+        dataset_id="d2",
+        eval_usage=Usage(
+            input_tokens=1500, output_tokens=42, total_tokens=1542, cost=0.005
+        ),
+        parent=config,
+    )
+    judged.save_to_file()
+    reloaded = EvalRun.load_from_file(judged.path)
+    assert reloaded.eval_usage is not None
+    assert reloaded.eval_usage.input_tokens == 1500
+    assert reloaded.eval_usage.output_tokens == 42
+    assert reloaded.eval_usage.total_tokens == 1542
+    assert reloaded.eval_usage.cost == 0.005
 
 
 def test_eval_run_plaintext():

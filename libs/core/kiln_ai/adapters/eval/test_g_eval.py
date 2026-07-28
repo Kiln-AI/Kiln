@@ -151,7 +151,11 @@ async def run_g_eval_test(
     g_eval = GEval(test_eval_config, test_run_config)
 
     # Run the evaluation
-    eval_result, intermediate_outputs = await g_eval.run_eval(test_task_run)
+    eval_result, intermediate_outputs, eval_usage = await g_eval.run_eval(test_task_run)
+
+    # The judge model's usage is captured for EvalRun.eval_usage. The adapter
+    # always returns a Usage object; token counts depend on the provider.
+    assert eval_usage is not None
 
     # "chain_of_thought" comes from the multi-turn COT prompt strategy, "reasoning"
     # comes from native model reasoning (e.g. Gemini thinking). Both can be present.
@@ -209,7 +213,7 @@ async def test_run_g_eval_e2e(
         input="chickens",
         output=TaskOutput(output=""),
     )
-    _, scores, intermediate_outputs = await g_eval.run_task_and_eval(eval_job_item)
+    _, scores, intermediate_outputs, _ = await g_eval.run_task_and_eval(eval_job_item)
 
     # Verify the evaluation results
     assert isinstance(scores, dict)

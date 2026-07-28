@@ -3969,7 +3969,7 @@ class TestTestV2Eval:
         )
         mock_adapter = MagicMock()
         mock_adapter.invoke_returning_run_output = AsyncMock(
-            return_value=(None, mock_run_output)
+            return_value=(MagicMock(usage=None), mock_run_output)
         )
         with (
             patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
@@ -4025,7 +4025,7 @@ class TestTestV2Eval:
         )
         mock_adapter = MagicMock()
         mock_adapter.invoke_returning_run_output = AsyncMock(
-            return_value=(None, mock_run_output)
+            return_value=(MagicMock(usage=None), mock_run_output)
         )
         with (
             patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,

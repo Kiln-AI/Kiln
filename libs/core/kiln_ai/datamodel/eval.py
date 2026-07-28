@@ -355,6 +355,10 @@ class V2EvalResult(BaseModel):
     skipped_reason: SkippedReason | None = None
     skipped_detail: str | None = None
     intermediate_outputs: Dict[str, str] | None = None
+    eval_usage: Usage | None = Field(
+        default=None,
+        description="Usage of the evaluation model (judge) that produced these scores, aggregated across every LLM call the judgment made. None for non-LLM evals.",
+    )
 
 
 class UserMessage(BaseModel):
@@ -550,6 +554,10 @@ class EvalRun(KilnParentedModel):
     task_run_usage: Usage | None = Field(
         default=None,
         description="The usage of the task run that produced this eval run output (not the usage by the evaluation model).",
+    )
+    eval_usage: Usage | None = Field(
+        default=None,
+        description="The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field.",
     )
 
     eval_input_id: ID_TYPE | None = Field(

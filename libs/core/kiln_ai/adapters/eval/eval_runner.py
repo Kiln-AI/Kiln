@@ -325,8 +325,11 @@ class EvalRunner:
         scores: EvalScores | None = None
         intermediate_outputs: Dict[str, str] | None = None
         task_run_usage: Usage | None = None
+        eval_usage: Usage | None = None
         if job.type == "eval_config_eval":
-            scores, intermediate_outputs = await evaluator.run_eval(job.item)
+            scores, intermediate_outputs, eval_usage = await evaluator.run_eval(
+                job.item
+            )
             task_output = job.item.output.output
             task_run_usage = job.item.usage
         else:
@@ -334,6 +337,7 @@ class EvalRunner:
                 result_task_run,
                 scores,
                 intermediate_outputs,
+                eval_usage,
             ) = await evaluator.run_task_and_eval(job.item)
             task_output = result_task_run.output.output
             task_run_usage = result_task_run.usage
@@ -367,6 +371,7 @@ class EvalRunner:
                 intermediate_outputs=intermediate_outputs,
                 task_run_trace=trace,
                 task_run_usage=task_run_usage,
+                eval_usage=eval_usage,
             )
             eval_run.save_to_file()
 
@@ -485,6 +490,7 @@ class EvalRunner:
                     else None,
                     skipped_detail=result.skipped_detail,
                     intermediate_outputs=result.intermediate_outputs,
+                    eval_usage=result.eval_usage,
                 )
                 eval_run.save_to_file()
             return True
@@ -515,6 +521,7 @@ class EvalRunner:
                     else None,
                     skipped_detail=result.skipped_detail,
                     intermediate_outputs=result.intermediate_outputs,
+                    eval_usage=result.eval_usage,
                 )
                 eval_run.save_to_file()
             return True
@@ -544,6 +551,7 @@ class EvalRunner:
                     else None,
                     skipped_detail=result.skipped_detail,
                     intermediate_outputs=result.intermediate_outputs,
+                    eval_usage=result.eval_usage,
                 )
                 eval_run.save_to_file()
             return True
