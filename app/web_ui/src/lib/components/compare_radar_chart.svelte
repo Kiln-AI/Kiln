@@ -78,6 +78,78 @@ Cost, latency and token axes score each run config against the others, so they s
   // Chart instance
   let chartInstance: echarts.ECharts | null = null
 
+  // Which axis the pointer is nearest. echarts' radar tooltip is per-series - its
+  // formatTooltip() is handed a dataIndex and maps over every indicator - so the
+  // hovered axis has to be worked out from the pointer instead.
+  let hoveredAxisIndex: number | null = null
+
+  type RadarCoordSys = {
+    cx: number
+    cy: number
+    getIndicatorAxes: () => { angle: number }[]
+  }
+
+  // getModel() is private in echarts' typings, and the radar's coordinate system is
+  // the only place its centre and axis angles are exposed. Kept behind one cast and
+  // fully guarded, so a change in echarts degrades to the whole-config tooltip
+  // rather than throwing.
+  function radarCoordSys(): RadarCoordSys | null {
+    if (!chartInstance) return null
+    const chart = chartInstance as unknown as {
+      getModel?: () => {
+        getComponent?: (
+          mainType: string,
+        ) => { coordinateSystem?: RadarCoordSys } | undefined
+      }
+    }
+    const coordSys = chart
+      .getModel?.()
+      ?.getComponent?.("radar")?.coordinateSystem
+    if (!coordSys || typeof coordSys.cx !== "number") return null
+    if (typeof coordSys.getIndicatorAxes !== "function") return null
+    return coordSys
+  }
+
+  // Prefer the symbol under the pointer, which echarts tags with the axis it belongs
+  // to. Falls back to the nearest axis by angle, so hovering the line or the filled
+  // area still resolves to one metric.
+  function axisIndexFromPointer(event: {
+    target?: { __dimIdx?: number }
+    offsetX?: number
+    offsetY?: number
+  }): number | null {
+    const dimIdx = event.target?.__dimIdx
+    if (typeof dimIdx === "number") return dimIdx
+
+    const coordSys = radarCoordSys()
+    if (
+      !coordSys ||
+      event.offsetX === undefined ||
+      event.offsetY === undefined
+    ) {
+      return null
+    }
+    const axes = coordSys.getIndicatorAxes()
+    if (!axes?.length) return null
+
+    // Same convention as the radar's dataToPoint: y grows downward, angles don't
+    const pointerAngle = Math.atan2(
+      coordSys.cy - event.offsetY,
+      event.offsetX - coordSys.cx,
+    )
+    let best = 0
+    let bestDelta = Infinity
+    axes.forEach((axis, index) => {
+      let delta = Math.abs(pointerAngle - axis.angle) % (Math.PI * 2)
+      if (delta > Math.PI) delta = Math.PI * 2 - delta
+      if (delta < bestDelta) {
+        bestDelta = delta
+        best = index
+      }
+    })
+    return best
+  }
+
   const COST_KEY = "cost::mean_cost"
   const LATENCY_KEY = "cost::mean_total_llm_latency_ms"
 
@@ -269,6 +341,54 @@ Cost, latency and token axes score each run config against the others, so they s
       formatter[displayName] = `${displayName}\n${buildLegendSubtext(config)}`
     }
     return formatter
+  }
+
+  // Colours are assigned per data item from the palette, in series order
+  function seriesColorAt(index: number): string {
+    const palette = chartInstance?.getOption()?.color as string[] | undefined
+    if (!palette?.length) return "#888"
+    return palette[index % palette.length]
+  }
+
+  function tooltipMarker(color: string): string {
+    return `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};margin-right:6px;"></span>`
+  }
+
+  // One metric across every plotted run config, so hovering a point answers "how do
+  // they compare here" rather than reciting everything this config scored.
+  function buildAxisTooltip(
+    axisIndex: number,
+    keys: string[],
+    series: { value: (number | null)[]; name: string }[],
+    hoveredName: string,
+  ): string {
+    const key = keys[axisIndex]
+    const isUsage = isLowerIsBetterMetric(key)
+
+    let html = `<div style="font-weight: bold; margin-bottom: 6px;">${getKeyLabel(key)}</div>`
+    series.forEach((entry, index) => {
+      const plotted = entry.value[axisIndex]
+      const config = run_configs.find(
+        (c) => getSeriesDisplayName(c) === entry.name,
+      )
+      const rawValue = config?.id ? getModelValueRaw(config.id, key) : null
+
+      let shown: string
+      if (plotted === null || rawValue === null) {
+        shown = "N/A"
+      } else if (isUsage) {
+        // The axis plots a relative score, so give the quantity behind it too
+        shown = `${plotted.toFixed(1)} <span style="color: #888;">(${formatUsageValue(key, rawValue)})</span>`
+      } else {
+        shown = rawValue.toFixed(3)
+      }
+
+      const weight = entry.name === hoveredName ? "600" : "400"
+      html += `<div style="font-weight: ${weight};">${tooltipMarker(
+        seriesColorAt(index),
+      )}${entry.name}: ${shown}</div>`
+    })
+    return html
   }
 
   // Build full tooltip HTML for a run config (reused by chart tooltip and legend tooltip)
@@ -534,8 +654,23 @@ Cost, latency and token axes score each run config against the others, so they s
         tooltip: {
           trigger: "item",
           confine: true,
-          formatter: (params: { name: string }) =>
-            buildRunConfigTooltip(params.name, axisMaxes, keys),
+          formatter: (params: { name: string }) => {
+            // The legend keeps the whole-config summary; on the chart itself a
+            // hovered point is a question about one metric.
+            if (
+              hoveredAxisIndex !== null &&
+              hoveredAxisIndex >= 0 &&
+              hoveredAxisIndex < keys.length
+            ) {
+              return buildAxisTooltip(
+                hoveredAxisIndex,
+                keys,
+                series,
+                params.name,
+              )
+            }
+            return buildRunConfigTooltip(params.name, axisMaxes, keys)
+          },
         },
         legend: {
           data: legend,
@@ -635,11 +770,29 @@ Cost, latency and token axes score each run config against the others, so they s
     })
     resizeObserver.observe(node)
 
+    // Track the pointer at the zrender level: it updates before the tooltip is
+    // built, so the formatter knows which axis is under the cursor.
+    const zr = chartInstance.getZr()
+    const onPointerMove = (event: {
+      target?: { __dimIdx?: number }
+      offsetX?: number
+      offsetY?: number
+    }) => {
+      hoveredAxisIndex = axisIndexFromPointer(event)
+    }
+    const onPointerOut = () => {
+      hoveredAxisIndex = null
+    }
+    zr.on("mousemove", onPointerMove)
+    zr.on("globalout", onPointerOut)
+
     updateChart()
 
     return {
       destroy() {
         resizeObserver.disconnect()
+        zr.off("mousemove", onPointerMove)
+        zr.off("globalout", onPointerOut)
         chartInstance?.dispose()
         chartInstance = null
       },
