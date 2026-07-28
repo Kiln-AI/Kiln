@@ -1,7 +1,7 @@
 import json
 import logging
 from dataclasses import dataclass
-from typing import AsyncGenerator, Dict, List, Literal, Set
+from typing import Any, AsyncGenerator, Dict, List, Literal, Set
 
 import litellm
 
@@ -30,6 +30,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
+from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 
@@ -485,6 +486,7 @@ class EvalRunner:
                     else None,
                     skipped_detail=result.skipped_detail,
                     intermediate_outputs=result.intermediate_outputs,
+                    task_run_usage=_usage_from_trace(eval_task_input.trace),
                 )
                 eval_run.save_to_file()
             return True
@@ -515,6 +517,7 @@ class EvalRunner:
                     else None,
                     skipped_detail=result.skipped_detail,
                     intermediate_outputs=result.intermediate_outputs,
+                    task_run_usage=_usage_from_trace(eval_task_input.trace),
                 )
                 eval_run.save_to_file()
             return True
@@ -547,6 +550,32 @@ class EvalRunner:
                 )
                 eval_run.save_to_file()
             return True
+
+
+def _usage_from_trace(trace: list[dict[str, Any]] | None) -> Usage | None:
+    """Aggregate per-message usage and latency into run-level Usage.
+
+    The v2 lanes score traces (fresh generations from run_task, or a golden
+    TaskRun's stored conversation) rather than persisted TaskRuns, so
+    run-level usage must be derived from the trace itself. Latency is the
+    sum of per-call latency_ms: calls within one conversation run
+    sequentially, so the sum is the real time spent waiting on the model."""
+    if not trace:
+        return None
+    message_usage = MessageUsage()
+    latency = 0
+    for message in trace:
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        raw_usage = message.get("usage")
+        if isinstance(raw_usage, MessageUsage):
+            message_usage = message_usage + raw_usage
+        elif isinstance(raw_usage, dict):
+            message_usage = message_usage + MessageUsage.model_validate(raw_usage)
+        latency += message.get("latency_ms") or 0
+    if message_usage == MessageUsage() and not latency:
+        return None
+    return Usage(**message_usage.model_dump(), total_llm_latency_ms=latency or None)
 
 
 def _unwrap_kiln_run_error(e: BaseException) -> BaseException:

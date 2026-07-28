@@ -1661,6 +1661,81 @@ class TestV2FreshGeneration:
         assert saved.skipped_reason is None
 
     @pytest.mark.asyncio
+    async def test_task_run_eval_derives_usage_from_trace(
+        self,
+        mock_v2_task_run_eval_runner,
+        mock_v2_task_run_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        stale_task_run = TaskRun(
+            input="test input",
+            output=TaskOutput(output="stale output", source=data_source),
+            parent=mock_v2_task_run_eval_runner.task,
+        )
+        stale_task_run.save_to_file()
+
+        fresh_task_run = TaskRun(
+            input="test input",
+            output=TaskOutput(output="hello", source=data_source),
+            parent=mock_v2_task_run_eval_runner.task,
+            trace=[
+                {"role": "user", "content": "test input"},
+                {
+                    "role": "assistant",
+                    "content": "thinking...",
+                    "usage": {
+                        "input_tokens": 10,
+                        "output_tokens": 5,
+                        "total_tokens": 15,
+                        "cost": 0.01,
+                    },
+                    "latency_ms": 100,
+                },
+                {
+                    "role": "assistant",
+                    "content": "hello",
+                    "usage": {
+                        "input_tokens": 20,
+                        "output_tokens": 7,
+                        "total_tokens": 27,
+                        "cost": 0.02,
+                    },
+                    "latency_ms": 250,
+                },
+            ],
+        )
+        fresh_task_run.save_to_file()
+
+        job = EvalJob(
+            item=stale_task_run,
+            eval_config=mock_v2_task_run_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+
+        stub = StubV2Eval(mock_v2_task_run_eval_config)
+        with (
+            patch.object(stub, "run_task", return_value=fresh_task_run),
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+        ):
+            result = await mock_v2_task_run_eval_runner.run_job(job)
+
+        assert result is True
+        runs = mock_v2_task_run_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.task_run_usage is not None
+        assert saved.task_run_usage.input_tokens == 30
+        assert saved.task_run_usage.output_tokens == 12
+        assert saved.task_run_usage.total_tokens == 42
+        assert saved.task_run_usage.cost == pytest.approx(0.03)
+        assert saved.task_run_usage.total_llm_latency_ms == 350
+
+    @pytest.mark.asyncio
     async def test_task_run_eval_persists_fresh_output_not_stale(
         self,
         mock_v2_task_run_eval_runner,
