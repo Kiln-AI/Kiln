@@ -2064,7 +2064,8 @@
                  house batch-progress readout (slim bar + tiny count line,
                  mirroring /generate's batch generation). The bar tracks
                  TURNS for smooth motion (cases complete in concurrency
-                 waves); the count line speaks in conversations. -->
+                 waves), so the count line LEADS with turns — the number
+                 that moves with the bar — then the conversation outcome. -->
             <AnalyzingAnimation
               title="Driving Conversations"
               description="Kiln is driving and judging each conversation against your agent. Hold tight!"
@@ -2077,10 +2078,9 @@
                 max={multi_turn_total_turns}
               ></progress>
               <div class="font-light text-xs text-center mt-1">
-                {judged_case_count} of {pipeline_total_cases}
-                {#if pipeline_failed_count > 0}
-                  complete, {pipeline_failed_count} failed
-                {/if}
+                {multi_turn_turns_done} of {multi_turn_total_turns} turns, {judged_case_count}
+                of {pipeline_total_cases} conversations complete{#if pipeline_failed_count > 0},
+                  {pipeline_failed_count} failed{/if}
               </div>
             </div>
           {/if}
@@ -2283,10 +2283,12 @@
               save_disabled_tooltip={save_gate_met
                 ? null
                 : is_multi_turn
-                  ? `Review at least ${multi_turn_review_target} conversation${
-                      multi_turn_review_target === 1 ? "" : "s"
-                    } — your ratings become the eval's answer key. Disagreements need a reason.`
-                  : "Give every trace an overall agree/disagree; disagreements need a reason."}
+                  ? `Review ${
+                      multi_turn_review_target === 1
+                        ? "the conversation"
+                        : `all ${multi_turn_review_target} conversations`
+                    } to continue. Your ratings teach the eval what correct looks like, and your reasons for disagreeing help improve the judge.`
+                  : "Review every example to continue. If you disagree, add a short reason so we can improve the judge."}
             />
           {/if}
         {:else if current_step === "save"}
