@@ -486,6 +486,7 @@
     turns_by_case = {}
     judged_case_count = 0
     pipeline_failed_count = 0
+    case_failure_messages = []
   }
 
   // A generated synthetic-user case as the wire carries it: the seed
@@ -510,9 +511,24 @@
   // Cases actually driven this run (salvage can make it smaller than the
   // plan) — the denominator for pipeline progress.
   let pipeline_total_cases = 0
-  // Non-fatal outcome notice (e.g. some cases failed but survivors exist) —
-  // shown above the status table without hiding it, unlike generation_error.
-  let pipeline_warning: string | null = null
+  // Unified stop screen: set when a drive ends short of the approved plan
+  // (post-retry case failures or upstream salvage drops). The plan screen
+  // stops ONCE with an informational banner and the recovery actions —
+  // Continue with the survivors (iff any) or Drive again. No failure is
+  // shown without an action, and no failure silently shrinks the batch;
+  // all-failed is the same screen with Continue naturally absent.
+  type DriveStop = {
+    survivors: number
+    failed: number
+    dominant_error: string | null
+  }
+  let drive_stop: DriveStop | null = null
+  // Per-case failure messages from the last drive's case_failed frames —
+  // aggregated into the stop banner's "most common" diagnosis.
+  let case_failure_messages: string[] = []
+  // The run config the drive ran with — named in the stop banner so a
+  // config-class failure is diagnosable without leaving the wizard.
+  let drive_run_config_name: string | null = null
   // Set when on_generate_multi_turn had to fall back to the first available
   // run config because the task has no default set — surfaced in the UI so
   // testers know which model the chains were generated against.
@@ -644,7 +660,7 @@
     batch_plan = null
     batch_plan_edited = false
     reset_pipeline_counters()
-    pipeline_warning = null
+    drive_stop = null
     // Deliberately NOT clearing multi_turn_batch_tag (save still needs it)
     // or undeleted_batch_tags: the next drive passes the cleanup list as
     // replace_batch_tags, and the server deletes those batches once the new
@@ -692,15 +708,78 @@
     }
   }
 
+  // Driven results worth guarding: the exact current plan has judged
+  // conversations behind it. True both on the accepted has-data screen and
+  // on the failure stop screen with survivors.
+  $: has_driven_results =
+    trace_claims.length > 0 &&
+    batch_plan !== null &&
+    driven_prompts_json === JSON.stringify(batch_plan.prompts)
+  // Accepted has-data state (clean drive, or survivors accepted via
+  // Continue): Drive is hidden — Continue to Review is the only forward
+  // action. On the stop screen Drive stays visible as the re-drive
+  // recovery.
+  $: has_data_accepted = has_driven_results && drive_stop === null
+  // How many cases the last drive was asked to run — the denominator for
+  // the has-data notice (survivors vs. the approved plan at drive time).
+  $: driven_plan_size = driven_prompts_json
+    ? (JSON.parse(driven_prompts_json) as string[]).length
+    : 0
+
+  // SDG's confirm formula for the destructive tier that carries real work.
+  // The review-progress clause applies only once the user accepted the
+  // results (was in review) — on the stop screen no review exists yet.
+  function driven_data_confirm(action: string): string {
+    const n = trace_claims.length
+    const progress_clause =
+      drive_stop === null ? " and your review progress" : ""
+    return `You have ${n} driven conversation${
+      n === 1 ? "" : "s"
+    }${progress_clause}. ${action} will discard them. This cannot be undone.`
+  }
+
+  // Clears the driven results (conversations, review progress, stop banner)
+  // so the plan screen returns to its pre-drive editable form. Batch tags
+  // are deliberately kept — the next drive passes them as replace_batch_tags
+  // so the chains on disk are cleaned up then.
+  function discard_driven_results() {
+    trace_claims = []
+    trace_reviews = []
+    selected_trace_indices = []
+    driven_prompts_json = null
+    drive_stop = null
+    reset_pipeline_counters()
+  }
+
   function on_delete_plan_prompt(index: number) {
     if (!batch_plan) return
+    // Deleting a row from a plan with driven results discards those results
+    // (the plan no longer matches what ran) — confirm at the destructive
+    // click. A pristine or merely-edited plan deletes rows freely, matching
+    // SDG's unconfirmed row deletes.
+    if (has_driven_results) {
+      if (!confirm(driven_data_confirm("Editing the plan"))) return
+      discard_driven_results()
+    }
     batch_plan = {
       ...batch_plan,
       prompts: batch_plan.prompts.filter((_, i) => i !== index),
     }
     batch_plan_edited = true
-    // The last run's outcome no longer describes this plan.
-    pipeline_warning = null
+  }
+
+  // New Batch Plan ALWAYS confirms — a plan alone costs minutes to make
+  // (SDG's New Batch Plan routes through its destructive-back confirm too).
+  // Three-tier wording: what you lose scales the message — plan only /
+  // plan + row deletions / driven conversations.
+  function on_new_plan_with_confirm() {
+    const msg = has_driven_results
+      ? driven_data_confirm("A new plan")
+      : batch_plan_edited
+        ? "Are you sure you want to discard the current batch plan, including the dataset items you removed? This cannot be undone."
+        : "Are you sure you want to discard the current batch plan? This cannot be undone."
+    if (!confirm(msg)) return
+    on_plan_multi_turn()
   }
 
   // Step 4 (multi-turn) part 2 — drive from the approved plan. The approved
@@ -721,7 +800,7 @@
     const tags_to_replace = [...undeleted_batch_tags]
     generation_loading = true
     generation_error = null
-    pipeline_warning = null
+    drive_stop = null
     trace_claims = []
     trace_reviews = []
     selected_trace_indices = []
@@ -757,6 +836,7 @@
       multi_turn_fallback_run_config_name = default_match
         ? null
         : chosen_config.name
+      drive_run_config_name = chosen_config.name
       const rcp = chosen_config.run_config_properties
       if (!isKilnAgentRunConfig(rcp)) {
         generation_error =
@@ -900,6 +980,9 @@
           judged_case_count += 1
         } else if (event.type === "case_failed") {
           pipeline_failed_count += 1
+          // Keep the message: the stop banner aggregates these into the
+          // dominant-error diagnosis.
+          case_failure_messages.push(event.message)
           posthog.capture("eval_v2_pipeline_case_failed", {
             stage: event.stage,
             code: event.code,
@@ -939,20 +1022,18 @@
         selected_trace_indices = select_review_subset(complete)
       }
       if (generation_error) return
-      if (complete.length === 0) {
-        generation_error =
-          "All conversations failed — check task and model availability, then retry."
-        return
-      }
-      const dropped = approved_prompts.length - complete.length
       // Failures reaching here are TERMINAL — transient errors were already
-      // retried by the drive runner. A badly degraded batch (>10% lost)
-      // stops at the plan screen for an explicit review-the-survivors /
-      // re-drive choice; a rare straggler loss degrades silently, like SU
-      // generation salvage — nothing for the user to act on, and the review
-      // subtitle's denominator reflects the survivors.
-      if (dropped * 10 > approved_prompts.length) {
-        pipeline_warning = `${dropped} of ${approved_prompts.length} conversations failed — review the survivors or drive again.`
+      // retried by the drive runner. A clean batch auto-advances silently;
+      // ANY shortfall vs the approved plan stops once on the plan screen
+      // with the outcome and the recovery choice (continue with survivors /
+      // re-drive) — informed consent instead of silent shrinkage.
+      const failed = approved_prompts.length - complete.length
+      if (failed > 0) {
+        drive_stop = {
+          survivors: complete.length,
+          failed,
+          dominant_error: dominant_failure_message(case_failure_messages),
+        }
         return
       }
       // PUSH review (single-turn replaces): Back must return to the plan.
@@ -965,6 +1046,56 @@
     } finally {
       generation_loading = false
     }
+  }
+
+  // Dominant per-case error: the most frequent case_failed message.
+  // Config-class failures repeat identically, so the mode IS the diagnosis;
+  // ties resolve to the first seen.
+  function dominant_failure_message(messages: string[]): string | null {
+    const counts = new Map<string, number>()
+    for (const m of messages) {
+      if (!m) continue
+      counts.set(m, (counts.get(m) ?? 0) + 1)
+    }
+    let best: string | null = null
+    let best_count = 0
+    for (const [m, c] of counts) {
+      if (c > best_count) {
+        best = m
+        best_count = c
+      }
+    }
+    return best
+  }
+
+  // The stop banner's message. Rendered via Warning's markdown+trusted mode
+  // so the all-failed variant can carry the run-page deeplink in-message —
+  // markdown links open in a new tab by component design, so the wizard tab
+  // (and the plan behind it) survive the detour.
+  function drive_stop_banner(stop: DriveStop): string {
+    const config_clause = drive_run_config_name
+      ? ` (run config: ${drive_run_config_name})`
+      : ""
+    if (stop.survivors === 0) {
+      // Every case failed identically — a capability boundary of the run
+      // config, not bad luck. Point at the one place it can be verified.
+      return `All conversations failed — ${
+        stop.dominant_error ?? "no error details"
+      }${config_clause}. You can [test your run config](/run), then drive again.`
+    }
+    const total = stop.survivors + stop.failed
+    const common_clause = stop.dominant_error
+      ? ` (most common: ${stop.dominant_error})`
+      : ""
+    return `${stop.survivors} of ${total} conversations completed — ${stop.failed} failed after retries${common_clause}. Continue with the ${stop.survivors} that completed, or drive the batch again.`
+  }
+
+  // Accepting the survivors from the stop screen: from here the normal
+  // has-data rules apply (Drive hidden; destructive actions confirm with
+  // the review-progress clause).
+  function on_continue_with_survivors() {
+    drive_stop = null
+    continue_to_review()
   }
 
   function on_continue_from_generate_step() {
@@ -1905,11 +2036,17 @@
           {/if}
 
           {#if show_plan_approval && batch_plan}
-            {#if pipeline_warning}
+            {#if drive_stop}
+              <!-- The unified stop banner: partial failure warns, all-failed
+                   errors — same surface, message and actions scale with what
+                   happened. trusted+markdown for the in-message /run
+                   deeplink (renders target=_blank, wizard state survives). -->
               <div class="mb-4">
                 <Warning
-                  warning_color="warning"
-                  warning_message={pipeline_warning}
+                  warning_color={drive_stop.survivors > 0 ? "warning" : "error"}
+                  markdown
+                  trusted
+                  warning_message={drive_stop_banner(drive_stop)}
                 />
               </div>
             {/if}
@@ -1921,14 +2058,17 @@
               plan={batch_plan}
               summary_out_of_sync={batch_plan_edited}
               on_generate_inputs={on_drive_multi_turn}
-              on_regenerate={on_plan_multi_turn}
+              on_regenerate={on_new_plan_with_confirm}
               on_delete_prompt={on_delete_plan_prompt}
+              hide_generate_button={has_data_accepted}
               generate_button_label={`Drive ${batch_plan.prompts.length} Conversation${
                 batch_plan.prompts.length === 1 ? "" : "s"
               }`}
             />
             <!-- Wizard chrome stays outside the shared component: it has
-                 no slots, and /generate has no back/continue concept. -->
+                 no slots, and /generate has no back/continue concept.
+                 Back never confirms — confirms live on destructive actions,
+                 not navigation (review state embeds human grading work). -->
             <div class="flex flex-row justify-between mt-4">
               <button
                 class="btn btn-ghost btn-sm"
@@ -1936,16 +2076,25 @@
               >
                 ← Back
               </button>
-              {#if trace_claims.length > 0 && driven_prompts_json === JSON.stringify(batch_plan.prompts)}
-                <!-- Conversations were already driven from this exact plan
-                     (user navigated Back from review) — returning to the
-                     results doesn't re-spend model calls. -->
-                <button
-                  class="btn btn-sm btn-primary"
-                  on:click={continue_to_review}
-                >
-                  Continue to Review →
-                </button>
+              {#if has_driven_results}
+                <!-- Conversations were already driven from this exact plan —
+                     returning to the results doesn't re-spend model calls.
+                     Also the survivors path from the stop banner. -->
+                <div class="flex flex-row items-center gap-3">
+                  <span class="font-light text-xs text-gray-500">
+                    {#if trace_claims.length < driven_plan_size}
+                      {trace_claims.length} of {driven_plan_size} conversations completed
+                    {:else}
+                      {trace_claims.length} conversations driven
+                    {/if}
+                  </span>
+                  <button
+                    class="btn btn-sm btn-primary"
+                    on:click={on_continue_with_survivors}
+                  >
+                    Continue to Review →
+                  </button>
+                </div>
               {/if}
             </div>
           {:else if !generation_loading && !generation_error}

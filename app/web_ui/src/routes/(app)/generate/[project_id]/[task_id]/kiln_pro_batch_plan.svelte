@@ -11,6 +11,10 @@
   // click starts a full conversation drive (long, paid), not quick sample
   // generation — its label must say so. Default keeps /generate unchanged.
   export let generate_button_label: string | null = null
+  // The eval builder hides the generate button once the exact current plan
+  // already has driven results — continuing to those results is the only
+  // forward action there. Default keeps /generate unchanged.
+  export let hide_generate_button = false
 
   $: count = plan.prompts.length
 
@@ -29,13 +33,15 @@
     <div class="flex flex-row gap-2 shrink-0">
       <button class="btn btn-md" on:click={on_regenerate}>New Batch Plan</button
       >
-      <button
-        class="btn btn-md btn-primary"
-        disabled={count === 0}
-        on:click={on_generate_inputs}
-      >
-        {generate_button_label ?? `Generate Batch (${count})`}
-      </button>
+      {#if !hide_generate_button}
+        <button
+          class="btn btn-md btn-primary"
+          disabled={count === 0}
+          on:click={on_generate_inputs}
+        >
+          {generate_button_label ?? `Generate Batch (${count})`}
+        </button>
+      {/if}
     </div>
   </div>
 
