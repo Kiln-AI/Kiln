@@ -45,6 +45,16 @@
     type TraceClaims,
     type TraceReview,
   } from "./claim_evidence"
+  // Step 4 plan-flow logic (stop banner, destructive-action confirms, the
+  // preparing-review gate's resolved counting) — pure and unit-tested.
+  import {
+    dominant_failure_message,
+    drive_stop_banner,
+    driven_data_confirm,
+    new_plan_confirm,
+    resolved_selected_count,
+    type DriveStop,
+  } from "./plan_flow"
   // Reuse v1's themed loading animations on the wizard's transition screens
   // instead of bare dot-spinners, so the two builders feel consistent.
   import QuestioningAnimation from "$lib/ui/animations/questioning_animation.svelte"
@@ -172,6 +182,13 @@
   function sync_step_from_history(step: BuilderStep | undefined) {
     if (!step || step === current_step) return
     abort_copilot_request()
+    // Navigating away also cancels the preparing-review gate's ownership of
+    // the advance: in-flight claim builds keep running (they belong to the
+    // traces, not the screen), but the gate must not push the user into
+    // review from another step. Continue re-enters it, resolving instantly
+    // when everything already built.
+    preparing_review = false
+    claims_gate_error = null
     current_step = step
   }
   $: sync_step_from_history(
@@ -469,7 +486,10 @@
     is_multi_turn &&
     batch_plan !== null &&
     !generation_loading &&
-    !generation_error
+    !generation_error &&
+    // The preparing-review gate owns the screen between drive and review.
+    !preparing_review &&
+    claims_gate_error === null
   // Live pipeline counters, reset at each drive. Latest completed-turn count
   // per case (the stream's turns_completed is per-case cumulative, so a
   // re-delivered event can't double-count a turn); counting turns makes
@@ -517,11 +537,6 @@
   // Continue with the survivors (iff any) or Drive again. No failure is
   // shown without an action, and no failure silently shrinks the batch;
   // all-failed is the same screen with Continue naturally absent.
-  type DriveStop = {
-    survivors: number
-    failed: number
-    dominant_error: string | null
-  }
   let drive_stop: DriveStop | null = null
   // Per-case failure messages from the last drive's case_failed frames —
   // aggregated into the stop banner's "most common" diagnosis.
@@ -726,18 +741,6 @@
     ? (JSON.parse(driven_prompts_json) as string[]).length
     : 0
 
-  // SDG's confirm formula for the destructive tier that carries real work.
-  // The review-progress clause applies only once the user accepted the
-  // results (was in review) — on the stop screen no review exists yet.
-  function driven_data_confirm(action: string): string {
-    const n = trace_claims.length
-    const progress_clause =
-      drive_stop === null ? " and your review progress" : ""
-    return `You have ${n} driven conversation${
-      n === 1 ? "" : "s"
-    }${progress_clause}. ${action} will discard them. This cannot be undone.`
-  }
-
   // Clears the driven results (conversations, review progress, stop banner)
   // so the plan screen returns to its pre-drive editable form. Batch tags
   // are deliberately kept — the next drive passes them as replace_batch_tags
@@ -758,7 +761,14 @@
     // click. A pristine or merely-edited plan deletes rows freely, matching
     // SDG's unconfirmed row deletes.
     if (has_driven_results) {
-      if (!confirm(driven_data_confirm("Editing the plan"))) return
+      const msg = driven_data_confirm(
+        "Editing the plan",
+        trace_claims.length,
+        // Review progress exists only once the user accepted the results
+        // (was in review) — on the stop screen no review exists yet.
+        drive_stop === null,
+      )
+      if (!confirm(msg)) return
       discard_driven_results()
     }
     batch_plan = {
@@ -770,14 +780,13 @@
 
   // New Batch Plan ALWAYS confirms — a plan alone costs minutes to make
   // (SDG's New Batch Plan routes through its destructive-back confirm too).
-  // Three-tier wording: what you lose scales the message — plan only /
-  // plan + row deletions / driven conversations.
   function on_new_plan_with_confirm() {
-    const msg = has_driven_results
-      ? driven_data_confirm("A new plan")
-      : batch_plan_edited
-        ? "Are you sure you want to discard the current batch plan, including the dataset items you removed? This cannot be undone."
-        : "Are you sure you want to discard the current batch plan? This cannot be undone."
+    const msg = new_plan_confirm({
+      has_driven_results,
+      survivors: trace_claims.length,
+      include_review_progress: drive_stop === null,
+      plan_edited: batch_plan_edited,
+    })
     if (!confirm(msg)) return
     on_plan_multi_turn()
   }
@@ -1036,9 +1045,9 @@
         }
         return
       }
-      // PUSH review (single-turn replaces): Back must return to the plan.
-      prefetch_selected_claims()
-      goto_step("review")
+      // Clean batch: hold the progress screen while the selected traces'
+      // claims build, then advance to a fully-loaded review.
+      start_claims_gate()
     } catch (e) {
       if (is_abort_error(e)) return
       generation_error =
@@ -1046,48 +1055,6 @@
     } finally {
       generation_loading = false
     }
-  }
-
-  // Dominant per-case error: the most frequent case_failed message.
-  // Config-class failures repeat identically, so the mode IS the diagnosis;
-  // ties resolve to the first seen.
-  function dominant_failure_message(messages: string[]): string | null {
-    const counts = new Map<string, number>()
-    for (const m of messages) {
-      if (!m) continue
-      counts.set(m, (counts.get(m) ?? 0) + 1)
-    }
-    let best: string | null = null
-    let best_count = 0
-    for (const [m, c] of counts) {
-      if (c > best_count) {
-        best = m
-        best_count = c
-      }
-    }
-    return best
-  }
-
-  // The stop banner's message. Rendered via Warning's markdown+trusted mode
-  // so the all-failed variant can carry the run-page deeplink in-message —
-  // markdown links open in a new tab by component design, so the wizard tab
-  // (and the plan behind it) survive the detour.
-  function drive_stop_banner(stop: DriveStop): string {
-    const config_clause = drive_run_config_name
-      ? ` (run config: ${drive_run_config_name})`
-      : ""
-    if (stop.survivors === 0) {
-      // Every case failed identically — a capability boundary of the run
-      // config, not bad luck. Point at the one place it can be verified.
-      return `All conversations failed — ${
-        stop.dominant_error ?? "no error details"
-      }${config_clause}. You can [test your run config](/run), then drive again.`
-    }
-    const total = stop.survivors + stop.failed
-    const common_clause = stop.dominant_error
-      ? ` (most common: ${stop.dominant_error})`
-      : ""
-    return `${stop.survivors} of ${total} conversations completed — ${stop.failed} failed after retries${common_clause}. Continue with the ${stop.survivors} that completed, or drive the batch again.`
   }
 
   // Accepting the survivors from the stop screen: from here the normal
@@ -1171,20 +1138,29 @@
     )
   }
 
-  async function build_claims_for_index(index: number): Promise<void> {
+  // Outcome feeds the preparing-review gate: "config_error" (auth-class
+  // HTTP failure — dead copilot key etc.) means every remaining build would
+  // fail identically, so the gate cancels its queue instead of opening a
+  // review full of dead cards.
+  type ClaimsBuildOutcome = "built" | "error" | "config_error" | "skipped"
+
+  async function build_claims_for_index(
+    index: number,
+  ): Promise<ClaimsBuildOutcome> {
     const tc = trace_claims[index]
     const judge = review_judge
-    if (!tc || !judge) return
+    if (!tc || !judge) return "skipped"
     // "error" and "unbuilt" both proceed — re-opening an errored trace is
     // the retry affordance.
-    if (tc.claims_state === "built" || tc.claims_state === "building") return
+    if (tc.claims_state === "built" || tc.claims_state === "building")
+      return "skipped"
     const trace_id = tc.trace_id
     patch_trace_claims(index, trace_id, {
       claims_state: "building",
       claims_error: null,
     })
     try {
-      const { data, error } = await client.POST(
+      const { data, error, response } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/eval_builder/build_claims",
         {
           params: { path: { project_id, task_id } },
@@ -1206,7 +1182,9 @@
           claims_state: "error",
           claims_error: createKilnError(error).getMessage(),
         })
-        return
+        return response?.status === 401 || response?.status === 403
+          ? "config_error"
+          : "error"
       }
       const claims = (data.claims ?? []) as Claim[]
       patch_trace_claims(index, trace_id, {
@@ -1221,31 +1199,90 @@
           ? { ...r, claim_verdicts: empty_claim_verdicts(claims) }
           : r,
       )
+      return "built"
     } catch (e) {
       patch_trace_claims(index, trace_id, {
         claims_state: "error",
         claims_error:
           e instanceof Error ? e.message : "Failed to build claims.",
       })
+      return "error"
     }
   }
 
-  // Prefetch claims for the selected subset with a small worker pool, so
-  // the first traces are ready by the time the reviewer reaches them.
-  function prefetch_selected_claims() {
-    const queue = selected_trace_indices.filter(
-      (i) => trace_claims[i]?.claims_state === "unbuilt",
-    )
+  // Build claims for the selected subset with a small worker pool.
+  // include_errored re-enqueues errored traces — the gate's Retry path
+  // (normally an errored build resolves as-is and keeps its in-review
+  // retry card).
+  function prefetch_selected_claims(include_errored = false) {
+    const queue = selected_trace_indices.filter((i) => {
+      const s = trace_claims[i]?.claims_state
+      return s === "unbuilt" || (include_errored && s === "error")
+    })
     const workers = Math.min(CLAIMS_BUILD_CONCURRENCY, queue.length)
     for (let w = 0; w < workers; w++) {
       void (async () => {
         while (queue.length > 0) {
           const next = queue.shift()
           if (next === undefined) break
-          await build_claims_for_index(next)
+          const outcome = await build_claims_for_index(next)
+          if (outcome === "config_error" && preparing_review) {
+            // Auth-class failure (dead copilot key etc.): every remaining
+            // build would fail identically — cancel the queue and stop the
+            // gate with ONE error + Retry instead of opening a review full
+            // of dead cards.
+            queue.length = 0
+            claims_gate_error = `Couldn't build the review claims: ${
+              trace_claims[next]?.claims_error ?? "authorization failed"
+            }`
+            preparing_review = false
+          }
         }
       })()
     }
+  }
+
+  // ── The preparing-review gate (multi-turn). After the drive (or after
+  // accepting survivors), hold the Step 4 progress screen while the worker
+  // pool builds claims for the stratified selection, and advance only once
+  // EVERY selected trace is RESOLVED — built or errored. Review then opens
+  // fully loaded: navigation is non-linear (dots jump anywhere), so only
+  // wait-for-all removes loading states from review entirely. Errored
+  // builds don't hold the door — they keep their in-review error+retry
+  // card.
+  let preparing_review = false
+  let claims_gate_error: string | null = null
+  // Gate start time — claim-build duration had no telemetry at all.
+  let claims_gate_started_ms = 0
+
+  function start_claims_gate(include_errored = false) {
+    claims_gate_error = null
+    preparing_review = true
+    claims_gate_started_ms = Date.now()
+    prefetch_selected_claims(include_errored)
+  }
+
+  $: selected_claims_resolved = resolved_selected_count(
+    trace_claims,
+    selected_trace_indices,
+  )
+  $: if (
+    preparing_review &&
+    current_step === "generate" &&
+    claims_gate_error === null &&
+    selected_trace_indices.length > 0 &&
+    selected_claims_resolved === selected_trace_indices.length
+  ) {
+    preparing_review = false
+    posthog.capture("eval_v2_claims_build_completed", {
+      duration_ms: Date.now() - claims_gate_started_ms,
+      num_selected: selected_trace_indices.length,
+      num_errored: selected_trace_indices.filter(
+        (i) => trace_claims[i]?.claims_state === "error",
+      ).length,
+    })
+    // PUSH review (single-turn replaces): Back must return to the plan.
+    goto_step("review")
   }
 
   // The review component reports the trace it's showing (also its retry
@@ -1450,7 +1487,13 @@
       // Still empty with no error = aborted mid-build — stay put.
       if (trace_claims.length === 0) return
     }
-    prefetch_selected_claims()
+    if (is_multi_turn) {
+      // Multi-turn claims are lazy — gate the advance on the selected
+      // subset being fully resolved (instant when already built).
+      start_claims_gate()
+      return
+    }
+    // Single-turn claims were built eagerly with the examples — advance.
     goto_step("review")
   }
 
@@ -2010,6 +2053,51 @@
               </div>
             </div>
           {/if}
+          {#if preparing_review}
+            <!-- The claims gate: the progress screen holds while the
+                 selected traces' claims build, so review opens fully
+                 loaded — no spinners behind any dot. -->
+            <AnalyzingAnimation
+              title="Preparing Review"
+              description="Kiln is distilling each conversation into claims for you to review. Hold tight!"
+              warning={null}
+            />
+            <div class="flex flex-col items-center mt-2">
+              <progress
+                class="progress w-56 progress-success"
+                value={selected_claims_resolved}
+                max={selected_trace_indices.length}
+              ></progress>
+              <div class="font-light text-xs text-center mt-1">
+                Preparing review — {selected_claims_resolved} of {selected_trace_indices.length}
+                ready
+              </div>
+            </div>
+          {/if}
+          {#if claims_gate_error}
+            <!-- Config-class build failure — same error+retry surface as
+                 the wizard's other loading stages. -->
+            <Warning
+              warning_color="error"
+              warning_message={claims_gate_error}
+            />
+            <div class="text-center py-4 flex justify-center gap-2">
+              <button
+                class="btn"
+                on:click={() => {
+                  claims_gate_error = null
+                }}
+              >
+                ← Back to plan
+              </button>
+              <button
+                class="btn btn-primary"
+                on:click={() => start_claims_gate(true)}
+              >
+                Retry →
+              </button>
+            </div>
+          {/if}
 
           {#if generation_error}
             <Warning warning_color="error" warning_message={generation_error} />
@@ -2046,7 +2134,10 @@
                   warning_color={drive_stop.survivors > 0 ? "warning" : "error"}
                   markdown
                   trusted
-                  warning_message={drive_stop_banner(drive_stop)}
+                  warning_message={drive_stop_banner(
+                    drive_stop,
+                    drive_run_config_name,
+                  )}
                 />
               </div>
             {/if}
@@ -2097,7 +2188,7 @@
                 </div>
               {/if}
             </div>
-          {:else if !generation_loading && !generation_error}
+          {:else if !generation_loading && !generation_error && !preparing_review && !claims_gate_error}
             <div class="flex justify-end mt-8">
               {#if single_turn_examples.length > 0 || trace_claims.length > 0}
                 <!-- Generation already ran (navigated back into this step) —
