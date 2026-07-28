@@ -165,7 +165,11 @@ class LlmJudgeEval(BaseV2EvalBridge):
             ),
         )
 
-        _, run_output = await adapter.invoke_returning_run_output(rendered_prompt)
+        # The judge TaskRun is never persisted (allow_saving=False), but its usage covers
+        # every LLM call the judgment made, so we keep it for the EvalRun record.
+        judge_run, run_output = await adapter.invoke_returning_run_output(
+            rendered_prompt
+        )
 
         if props.g_eval:
             scores = build_g_eval_score(
@@ -183,4 +187,5 @@ class LlmJudgeEval(BaseV2EvalBridge):
         return V2EvalResult(
             scores=scores,
             intermediate_outputs=run_output.intermediate_outputs,
+            eval_usage=judge_run.usage,
         )

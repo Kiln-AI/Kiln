@@ -37,6 +37,7 @@ from kiln_ai.datamodel import Project, Task, TaskRun
 from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, EvalDataType, EvalScores
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import RunConfigProperties, StructuredOutputMode
+from kiln_ai.datamodel.task_run import Usage
 
 
 class GEvalTask(Task, parent_of={}):
@@ -253,7 +254,7 @@ This is the full conversation history for the task run:
 
     async def run_eval(
         self, task_run: TaskRun, eval_job_item: TaskRun | None = None
-    ) -> tuple[EvalScores, Dict[str, str] | None]:
+    ) -> tuple[EvalScores, Dict[str, str] | None, Usage | None]:
         """
         Run this eval on the given task run.
         """
@@ -323,15 +324,25 @@ This is the full conversation history for the task run:
                 task_run.input, task_run.output.output
             )
 
-        # We don't need the run, but invoke_returning_run_output() runs validations for us over _run()
-        _, run_output = await adapter.invoke_returning_run_output(run_description)
+        # The judge TaskRun is never persisted (allow_saving=False), but its usage covers
+        # every LLM call the judgment made (the COT heuristic can make two), so we keep it.
+        # invoke_returning_run_output() also runs validations for us over _run().
+        judge_run, run_output = await adapter.invoke_returning_run_output(
+            run_description
+        )
 
         if self.eval_config.config_type == EvalConfigType.llm_as_judge:
-            return self.build_llm_as_judge_score(
-                run_output
-            ), run_output.intermediate_outputs
+            return (
+                self.build_llm_as_judge_score(run_output),
+                run_output.intermediate_outputs,
+                judge_run.usage,
+            )
         else:
-            return self.build_g_eval_score(run_output), run_output.intermediate_outputs
+            return (
+                self.build_g_eval_score(run_output),
+                run_output.intermediate_outputs,
+                judge_run.usage,
+            )
 
     def build_llm_as_judge_score(self, run_output: RunOutput) -> EvalScores:
         """Build the LLM as Judge score for the given run and run output."""

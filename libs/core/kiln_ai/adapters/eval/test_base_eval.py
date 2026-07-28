@@ -30,7 +30,7 @@ from kiln_ai.datamodel.task import (
     TaskRunConfig,
 )
 from kiln_ai.datamodel.task_output import TaskOutput
-from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.task_run import TaskRun, Usage
 
 
 def test_score_schema_five_star():
@@ -271,8 +271,8 @@ class EvalTester(BaseEval):
 
     async def run_eval(
         self, task_run: TaskRun, eval_job_item: TaskRun | None = None
-    ) -> tuple[EvalScores, Dict[str, str] | None]:
-        return {"overall_rating": 5.0, "quality": 4.0}, None
+    ) -> tuple[EvalScores, Dict[str, str] | None, Usage | None]:
+        return {"overall_rating": 5.0, "quality": 4.0}, None, None
 
 
 def test_judge_on_custom_score_eval_rejected_at_runtime():
@@ -368,7 +368,7 @@ async def test_run_method():
         input="test input",
         output=TaskOutput(output=""),
     )
-    task_run, eval_scores, _ = await evaluator.run_task_and_eval(eval_job_item)
+    task_run, eval_scores, _, _ = await evaluator.run_task_and_eval(eval_job_item)
 
     # Verify task run was created
     assert task_run.input == "test input"
@@ -438,10 +438,12 @@ async def test_run_task_and_eval():
     class MockEval(BaseEval):
         async def run_eval(
             self, task_run: TaskRun, eval_job_item: TaskRun | None = None
-        ) -> tuple[EvalScores, Dict[str, str] | None]:
-            return {"overall_rating": 5.0, "quality": 4.0}, {
-                "thinking": "test thinking"
-            }
+        ) -> tuple[EvalScores, Dict[str, str] | None, Usage | None]:
+            return (
+                {"overall_rating": 5.0, "quality": 4.0},
+                {"thinking": "test thinking"},
+                None,
+            )
 
     evaluator = MockEval(eval_config, run_config.run_config_properties)
 
@@ -495,7 +497,7 @@ async def test_run_task_and_eval():
         )
 
         # Verify return values
-        task_run, eval_scores, intermediate_outputs = result
+        task_run, eval_scores, intermediate_outputs, _ = result
         assert task_run == mock_task_run
         assert eval_scores == {"overall_rating": 5, "quality": 4}
         assert intermediate_outputs == {"thinking": "test thinking"}
@@ -540,8 +542,8 @@ async def test_run_task_and_eval_no_run_config():
     class MockEval(BaseEval):
         async def run_eval(
             self, task_run: TaskRun, eval_job_item: TaskRun | None = None
-        ) -> tuple[EvalScores, Dict[str, str] | None]:
-            return {"quality": 4.0}, None
+        ) -> tuple[EvalScores, Dict[str, str] | None, Usage | None]:
+            return {"quality": 4.0}, None, None
 
     evaluator = MockEval(eval_config, None)
 

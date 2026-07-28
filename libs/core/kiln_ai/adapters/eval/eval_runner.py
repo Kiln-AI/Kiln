@@ -402,8 +402,11 @@ class EvalRunner:
         scores: EvalScores | None = None
         intermediate_outputs: Dict[str, str] | None = None
         task_run_usage: Usage | None = None
+        eval_usage: Usage | None = None
         if job.type == "eval_config_eval":
-            scores, intermediate_outputs = await evaluator.run_eval(job.item)
+            scores, intermediate_outputs, eval_usage = await evaluator.run_eval(
+                job.item
+            )
             task_output = job.item.output.output
             task_run_usage = job.item.usage
         else:
@@ -411,6 +414,7 @@ class EvalRunner:
                 result_task_run,
                 scores,
                 intermediate_outputs,
+                eval_usage,
             ) = await evaluator.run_task_and_eval(job.item)
             task_output = result_task_run.output.output
             task_run_usage = result_task_run.usage
@@ -444,6 +448,7 @@ class EvalRunner:
                 intermediate_outputs=intermediate_outputs,
                 task_run_trace=trace,
                 task_run_usage=task_run_usage,
+                eval_usage=eval_usage,
             )
             eval_run.save_to_file()
 
@@ -571,6 +576,7 @@ class EvalRunner:
                     skipped_detail=result.skipped_detail,
                     intermediate_outputs=result.intermediate_outputs,
                     task_run_trace=trace_json,
+                    eval_usage=result.eval_usage,
                 )
                 eval_run.save_to_file()
             return True
@@ -623,6 +629,7 @@ class EvalRunner:
                     # place the evaluated conversation survives.
                     task_run_trace=_serialize_trace(eval_task_input.trace),
                     task_run_usage=_usage_from_trace(eval_task_input.trace),
+                    eval_usage=result.eval_usage,
                 )
                 eval_run.save_to_file()
             return True
@@ -657,6 +664,7 @@ class EvalRunner:
                     # one — kept regardless of scoring outcome.
                     task_run_trace=_serialize_trace(eval_task_input.trace),
                     task_run_usage=_usage_from_trace(eval_task_input.trace),
+                    eval_usage=result.eval_usage,
                 )
                 eval_run.save_to_file()
             return True
@@ -686,6 +694,7 @@ class EvalRunner:
                     else None,
                     skipped_detail=result.skipped_detail,
                     intermediate_outputs=result.intermediate_outputs,
+                    eval_usage=result.eval_usage,
                 )
                 eval_run.save_to_file()
             return True
@@ -837,6 +846,7 @@ class EvalRunner:
                 # of the sibling that originally drove them.
                 task_run_trace=_serialize_trace(eval_task_input.trace),
                 task_run_usage=_usage_from_trace(eval_task_input.trace),
+                eval_usage=result.eval_usage,
                 drive_fingerprint=fingerprint,
             )
             eval_run.save_to_file()

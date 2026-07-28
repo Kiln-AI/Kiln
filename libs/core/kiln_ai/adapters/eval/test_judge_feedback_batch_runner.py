@@ -157,7 +157,7 @@ def scripted_evaluator_factory(
             assert not generate, "run_eval should not be called in generate mode"
             if calls is not None:
                 calls.append(task_run.id)
-            return score_fn(task_run), _feedback(task_run)
+            return score_fn(task_run), _feedback(task_run), None
 
         async def run_task_and_eval(self, eval_job_item):
             assert generate, "run_task_and_eval should not be called"
@@ -171,7 +171,7 @@ def scripted_evaluator_factory(
                 if fresh_usage is not None
                 else eval_job_item
             )
-            return fresh_run, score_fn(eval_job_item), _feedback(eval_job_item)
+            return fresh_run, score_fn(eval_job_item), _feedback(eval_job_item), None
 
     return lambda *args, **kwargs: ScriptedEvaluator(*args, **kwargs)
 

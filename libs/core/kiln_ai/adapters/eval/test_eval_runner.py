@@ -47,7 +47,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
-from kiln_ai.datamodel.usage import MessageUsage
+from kiln_ai.datamodel.usage import MessageUsage, Usage
 from kiln_ai.utils.async_job_runner import RetryableError
 from kiln_ai.utils.git_sync_protocols import default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
@@ -637,6 +637,7 @@ async def test_run_job_success_task_run_eval(
                 ),
                 mock_scores,
                 {"intermediate_output": "intermediate output"},
+                None,
             )
 
     with patch(
@@ -661,6 +662,67 @@ async def test_run_job_success_task_run_eval(
     }
     assert saved_run.parent_eval_config().id == mock_eval_config.id
     assert saved_run.eval_config_eval is False
+
+
+@pytest.mark.asyncio
+async def test_run_job_persists_judge_eval_usage(
+    mock_eval_runner, mock_task, data_source, mock_run_config, mock_eval_config
+):
+    """A judged EvalRun must carry the judge model's usage in eval_usage."""
+    task_run = TaskRun(
+        parent=mock_task,
+        input="test input",
+        input_source=data_source,
+        output=TaskOutput(output="test output"),
+    )
+    task_run.save_to_file()
+
+    job = EvalJob(
+        item=task_run,
+        task_run_config=mock_run_config,
+        type="task_run_eval",
+        eval_config=mock_eval_config,
+    )
+
+    judge_usage = Usage(
+        input_tokens=1234, output_tokens=56, total_tokens=1290, cost=0.0042
+    )
+
+    class MockEvaluator(BaseEval):
+        async def run_task_and_eval(self, eval_job_item: TaskRun):
+            return (
+                TaskRun(
+                    input=eval_job_item.input,
+                    input_source=data_source,
+                    output=TaskOutput(output="evaluated output"),
+                ),
+                {"accuracy": 0.95},
+                None,
+                judge_usage,
+            )
+
+    with patch(
+        "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
+        return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
+    ):
+        success = await mock_eval_runner.run_job(job)
+
+    assert success is True
+    eval_runs = mock_eval_config.runs()
+    assert len(eval_runs) == 1
+    saved_run = eval_runs[0]
+    assert saved_run.eval_usage is not None
+    assert saved_run.eval_usage.input_tokens == 1234
+    assert saved_run.eval_usage.output_tokens == 56
+    assert saved_run.eval_usage.total_tokens == 1290
+    assert saved_run.eval_usage.cost == 0.0042
+
+    # Round-trip through disk: the usage must survive persistence.
+    assert saved_run.path is not None
+    reloaded = EvalRun.load_from_file(saved_run.path)
+    assert reloaded.eval_usage is not None
+    assert reloaded.eval_usage.total_tokens == 1290
+    assert reloaded.eval_usage.cost == 0.0042
 
 
 @pytest.mark.asyncio
@@ -692,8 +754,8 @@ async def test_run_job_success_eval_config_eval(
 
         async def run_eval(
             self, task_run: TaskRun, eval_job_item: TaskRun | None = None
-        ) -> tuple[EvalScores, Dict[str, str] | None]:
-            return mock_scores, {"intermediate_output": "intermediate output"}
+        ) -> tuple[EvalScores, Dict[str, str] | None, Usage | None]:
+            return mock_scores, {"intermediate_output": "intermediate output"}, None
 
     with patch(
         "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
@@ -871,6 +933,7 @@ async def test_run_job_with_full_trace_evaluation_data_type(
                 result_task_run,
                 mock_scores,
                 {"intermediate_output": "intermediate output"},
+                None,
             )
 
     with patch(
@@ -939,6 +1002,7 @@ async def test_run_job_with_final_answer_evaluation_data_type(
                 result_task_run,
                 mock_scores,
                 {"intermediate_output": "intermediate output"},
+                None,
             )
 
     with patch(
@@ -997,6 +1061,7 @@ async def test_run_job_with_none_trace(
                 result_task_run,
                 mock_scores,
                 {"intermediate_output": "intermediate output"},
+                None,
             )
 
     with patch(
@@ -1199,6 +1264,7 @@ async def test_run_job_custom_save_context_wraps_save(
                 ),
                 {"accuracy": 1.0},
                 {},
+                None,
             )
 
     with patch(
@@ -1250,6 +1316,7 @@ async def test_run_job_save_context_sees_save_exception(
                 ),
                 {"accuracy": 1.0},
                 {},
+                None,
             )
 
     with (
@@ -1305,6 +1372,7 @@ async def test_other_jobs_unaffected_by_save_context_rollback(
                 ),
                 {"accuracy": 1.0},
                 {},
+                None,
             )
 
     call_count = {"n": 0}
@@ -1972,6 +2040,64 @@ class TestV2FreshGeneration:
         assert saved.scores == {"accuracy": 1.0}
         assert saved.eval_config_eval is False
         assert saved.skipped_reason is None
+
+    @pytest.mark.asyncio
+    async def test_task_run_eval_persists_v2_eval_usage(
+        self,
+        mock_v2_task_run_eval_runner,
+        mock_v2_task_run_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        """The V2 lane persists the judge's usage from V2EvalResult.eval_usage."""
+        stale_task_run = TaskRun(
+            input="test input",
+            output=TaskOutput(output="stale output", source=data_source),
+            parent=mock_v2_task_run_eval_runner.task,
+        )
+        stale_task_run.save_to_file()
+
+        fresh_task_run = TaskRun(
+            input="test input",
+            output=TaskOutput(output="hello", source=data_source),
+            parent=mock_v2_task_run_eval_runner.task,
+        )
+        fresh_task_run.save_to_file()
+
+        job = EvalJob(
+            item=stale_task_run,
+            eval_config=mock_v2_task_run_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+
+        judge_usage = Usage(
+            input_tokens=800, output_tokens=30, total_tokens=830, cost=0.002
+        )
+
+        class UsageStubV2Eval(StubV2Eval):
+            async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
+                return V2EvalResult(scores={"accuracy": 1.0}, eval_usage=judge_usage)
+
+        stub = UsageStubV2Eval(mock_v2_task_run_eval_config)
+        with (
+            patch.object(stub, "run_task", return_value=fresh_task_run),
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+        ):
+            result = await mock_v2_task_run_eval_runner.run_job(job)
+
+        assert result is True
+        runs = mock_v2_task_run_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.eval_usage is not None
+        assert saved.eval_usage.input_tokens == 800
+        assert saved.eval_usage.output_tokens == 30
+        assert saved.eval_usage.total_tokens == 830
+        assert saved.eval_usage.cost == 0.002
 
     @pytest.mark.asyncio
     async def test_task_run_eval_persists_fresh_output_not_stale(
@@ -2906,6 +3032,7 @@ class TestV1LegacyRunnerCoexistence:
                     ),
                     mock_scores,
                     None,
+                    None,
                 )
 
         with patch(
@@ -2971,6 +3098,7 @@ class TestV1LegacyRunnerCoexistence:
                     ),
                     mock_scores,
                     None,
+                    None,
                 )
 
         with patch(
@@ -3034,6 +3162,7 @@ class TestV1LegacyRunnerCoexistence:
                         output=TaskOutput(output="legacy, not v2"),
                     ),
                     mock_scores,
+                    None,
                     None,
                 )
 

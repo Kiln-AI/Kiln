@@ -533,14 +533,16 @@ class JudgeFeedbackBatchRunner:
                     # Run the candidate config to produce a fresh output, then judge it. The fresh
                     # TaskRun is returned un-saved (allow_saving=False) and not persisted — we keep
                     # only the JudgeFeedbackBatchRun (and the run's usage), never polluting the
-                    # dataset.
+                    # dataset. The judge's own usage (the 4th element) isn't persisted on
+                    # JudgeFeedbackBatchRun records today.
                     (
                         fresh_run,
                         scores,
                         intermediate,
+                        _judge_usage,
                     ) = await evaluator.run_task_and_eval(task_run)
                     return scores, intermediate, fresh_run.usage
-                scores, intermediate = await evaluator.run_eval(task_run)
+                scores, intermediate, _judge_usage = await evaluator.run_eval(task_run)
                 return scores, intermediate, None
             except Exception as e:
                 last_error = e

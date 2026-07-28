@@ -7609,6 +7609,8 @@ export interface components {
             };
             /** @description The usage of the task run that produced this eval run output (not the usage by the evaluation model). */
             task_run_usage?: components["schemas"]["Usage"] | null;
+            /** @description The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field. */
+            eval_usage?: components["schemas"]["Usage"] | null;
             /**
              * Eval Input Id
              * @description ID of the EvalInput used for this run (V2 evals). Mutually exclusive with dataset_id.
