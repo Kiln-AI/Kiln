@@ -622,6 +622,7 @@ class EvalRunner:
                     # Fresh generations are transient — the record is the only
                     # place the evaluated conversation survives.
                     task_run_trace=_serialize_trace(eval_task_input.trace),
+                    task_run_usage=_usage_from_trace(eval_task_input.trace),
                 )
                 eval_run.save_to_file()
             return True
@@ -655,6 +656,7 @@ class EvalRunner:
                     # The fresh run's conversation, when the adapter produced
                     # one — kept regardless of scoring outcome.
                     task_run_trace=_serialize_trace(eval_task_input.trace),
+                    task_run_usage=_usage_from_trace(eval_task_input.trace),
                 )
                 eval_run.save_to_file()
             return True
@@ -834,6 +836,7 @@ class EvalRunner:
                 # conversation, and self-contained records survive deletion
                 # of the sibling that originally drove them.
                 task_run_trace=_serialize_trace(eval_task_input.trace),
+                task_run_usage=_usage_from_trace(eval_task_input.trace),
                 drive_fingerprint=fingerprint,
             )
             eval_run.save_to_file()
@@ -923,6 +926,33 @@ def _trace_json_default(obj: object) -> object:
     if isinstance(obj, MessageUsage):
         return obj.model_dump(mode="json")
     raise TypeError(f"{type(obj).__name__} is not JSON serializable")
+
+
+def _usage_from_trace(trace: list[dict[str, Any]] | None) -> Usage | None:
+    """Aggregate per-message usage and latency into run-level Usage.
+
+    The v2 lanes score traces (fresh-driven, reused, or single-turn
+    generations) rather than persisted TaskRuns, so run-level usage must be
+    derived from the trace itself — this also covers the reused-trace branch,
+    where no leaf TaskRun exists. Latency is the sum of per-call latency_ms:
+    calls within one conversation run sequentially, so the sum is the real
+    time spent waiting on the model."""
+    if not trace:
+        return None
+    message_usage = MessageUsage()
+    latency = 0
+    for message in trace:
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        raw_usage = message.get("usage")
+        if isinstance(raw_usage, MessageUsage):
+            message_usage = message_usage + raw_usage
+        elif isinstance(raw_usage, dict):
+            message_usage = message_usage + MessageUsage.model_validate(raw_usage)
+        latency += message.get("latency_ms") or 0
+    if message_usage == MessageUsage() and not latency:
+        return None
+    return Usage(**message_usage.model_dump(), total_llm_latency_ms=latency or None)
 
 
 def _serialize_trace(trace: list[dict[str, Any]] | None) -> str | None:
