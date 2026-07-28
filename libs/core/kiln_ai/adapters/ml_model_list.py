@@ -1946,6 +1946,14 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="openai/gpt-oss-120b",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                # Featherless doesn't advertise tool_use for this model
+                supports_function_calling=False,
+            ),
         ],
     ),
     # GPT OSS 20B
@@ -4559,6 +4567,11 @@ built_in_models: List[KilnModel] = [
                 model_id="ai/llama3.3:70B-Q4_K_M",
                 supports_function_calling=False,
             ),
+            # Featherless provider omitted: meta-llama/Llama-3.3-70B-Instruct is
+            # gated (HTTP 403 model_gated_needs_oauth), requiring each user to link
+            # a HuggingFace org to their Featherless account. All 20 official
+            # meta-llama repos on Featherless are gated, so no Llama variant works
+            # here out of the box.
         ],
     ),
     # Phi 3.5
@@ -4612,6 +4625,11 @@ built_in_models: List[KilnModel] = [
                 model_id="ai/phi4:14B-Q4_K_M",
                 supports_function_calling=False,
             ),
+            # Featherless provider omitted: phi-4 wraps its JSON in prose and
+            # markdown fences, and Featherless can't constrain it -- LiteLLM's
+            # featherless_ai provider rejects response_format entirely, so the
+            # json_instruction_and_object / json_schema modes aren't available.
+            # llm_as_judge and structured-output COT fail persistently as a result.
         ],
     ),
     # Phi 4 5.6B
@@ -4679,6 +4697,19 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
                 max_parallel_requests=2,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="google/gemma-4-31B-it",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
             ),
         ],
     ),
@@ -5396,6 +5427,13 @@ built_in_models: List[KilnModel] = [
                 uncensored=True,
                 supports_function_calling=False,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="mistralai/Mistral-Small-24B-Instruct-2501",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                uncensored=True,
+                supports_function_calling=False,
+            ),
         ],
     ),
     # DeepSeek R1 0528
@@ -5498,6 +5536,12 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
+                model_id="deepseek-ai/DeepSeek-V4-Pro",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
                 model_id="deepseek-ai/DeepSeek-V4-Pro",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
@@ -6487,6 +6531,10 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+            # Featherless provider omitted: this model's Featherless deployment
+            # returns degenerate output -- it rambles to the 4096 token cap with
+            # unrelated word lists, failing even the plaintext test. Not a config
+            # issue; the served weights appear broken.
         ],
     ),
     # Qwen 3 Max
@@ -7722,6 +7770,13 @@ built_in_models: List[KilnModel] = [
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="zai-org/GLM-5.2",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+            ),
         ],
     ),
     # GLM 5.2 Fast — Fireworks speed-optimized serving of GLM 5.2 (routers/ slug, ~2x throughput)
@@ -8182,6 +8237,20 @@ built_in_models: List[KilnModel] = [
             #     ],
             #     multimodal_requires_pdf_as_image=True,
             # ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="moonshotai/Kimi-K2.6",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
         ],
     ),
     # Kimi K2.5
@@ -8543,6 +8612,27 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 suggested_for_evals=True,
+            ),
+            # Featherless serves the raw weights, which emit <think> inline. Use the
+            # optional parser so the tags are stripped when present, and leave
+            # reasoning_capable False since (per the Fireworks note above) M3 does not
+            # always emit reasoning -- requiring it would error on those responses.
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="MiniMaxAI/MiniMax-M3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.optional_r1_thinking,
+                supports_data_gen=True,
+                # Featherless doesn't advertise tool_use for this model
+                supports_function_calling=False,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
             ),
         ],
     ),
