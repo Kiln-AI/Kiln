@@ -437,13 +437,16 @@ async def _drive_one_case_and_emit(
             "synthetic_user runner: unexpected error in case %d", case_index
         )
         await _delete_partial_chain(persisted_runs, save_ctx)
+        # The adapter's KilnRunError message is genericized user-facing
+        # text — unwrap so failure events name the real provider failure
+        # (the terminal case_failed message feeds the stop banner's
+        # dominant-error diagnosis, so the root cause must survive).
+        cause = unwrap_kiln_run_error(e)
         if is_retryable_error(e):
-            # The adapter's KilnRunError message is genericized user-facing
-            # text — unwrap so the exhausted-retries event names the real
-            # provider failure.
-            cause = unwrap_kiln_run_error(e)
             raise RetryableError(f"{type(cause).__name__}: {cause}") from e
-        raise _CaseFailure("unexpected_error", f"{type(e).__name__}: {e}") from e
+        raise _CaseFailure(
+            "unexpected_error", f"{type(cause).__name__}: {cause}"
+        ) from e
 
 
 async def _delete_partial_chain(
