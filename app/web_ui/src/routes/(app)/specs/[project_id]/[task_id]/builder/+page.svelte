@@ -16,7 +16,18 @@
     load_task_run_configs,
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
-  import { get } from "svelte/store"
+  import { indexedDBStore } from "$lib/stores/index_db_store"
+  import { get, type Writable } from "svelte/store"
+  // Draft persistence: the wizard's authoring state mirrors into IndexedDB
+  // so navigation/reload can't destroy a session's work (SDG synth pattern).
+  import {
+    builder_draft_key,
+    builder_mock_active,
+    draft_has_content,
+    restore_step,
+    EMPTY_BUILDER_DRAFT,
+    type BuilderDraft,
+  } from "./builder_draft"
   import { isKilnAgentRunConfig } from "$lib/types"
   // Reuse v1 spec_builder components so v2 looks identical on the shared
   // screens (clarify Q&A, refine). When v1 evolves, v2 follows for free.
@@ -204,7 +215,24 @@
   // history can't guard a real unload (mirrors v1's warn_before_unload). SPA
   // transitions (the save redirect) don't trigger beforeunload, so a successful
   // save won't spuriously prompt.
-  $: warn_before_unload = current_step !== "describe" && current_step !== "done"
+  //
+  // With draft persistence the authoring state (spec fields, approved plan)
+  // survives navigation, so the guards protect only what a draft can't
+  // restore: the clarify answers, driven results and review progress, and
+  // work in flight. Under the dev mock nothing persists, so everything
+  // counts as unpersisted.
+  $: has_unpersisted_work =
+    current_step === "clarify" ||
+    trace_claims.length > 0 ||
+    single_turn_examples.length > 0 ||
+    generation_loading ||
+    preparing_review ||
+    saving ||
+    !draft_ready
+  $: warn_before_unload =
+    current_step !== "describe" &&
+    current_step !== "done" &&
+    has_unpersisted_work
   function handle_before_unload(event: BeforeUnloadEvent) {
     if (!warn_before_unload) return
     event.preventDefault()
@@ -225,12 +253,100 @@
     if (nav.type === "leave") return
     if (
       !confirm(
-        "Leave the eval builder? Generated data and review progress here will be lost.",
+        "Leave the eval builder? Your answers, generated data, and review progress here will be lost.",
       )
     ) {
       nav.cancel()
     }
   })
+
+  // ── Draft persistence (builder_draft.ts). The mirror below rewrites the
+  // draft on every change to a persisted field; onMount restores it silently
+  // to the furthest safe step (never past the plan screen, never review).
+  // The batch tags ride along as a correctness carry: they name chains on
+  // disk, and without them a lost session would orphan those chains forever
+  // (delete-on-next-drive would never learn about them).
+  let draft_ready = false
+  let draft_store: Writable<BuilderDraft> | null = null
+  let persist_draft: () => Promise<void> = () => Promise.resolve()
+
+  // Reactive mirror: referencing every persisted field makes any change to
+  // one rewrite the draft (the store's subscriber writes IndexedDB async).
+  // draft_ready guards the pre-restore window — mirroring the initial empty
+  // state would wipe the saved draft — and stays false under the mock.
+  $: if (draft_ready && draft_store) {
+    draft_store.set({
+      description,
+      spec_type,
+      name,
+      property_values,
+      refined_property_values,
+      suggested_edits,
+      not_incorporated_feedback,
+      batch_plan,
+      batch_plan_edited,
+      multi_turn_batch_tag,
+      undeleted_batch_tags,
+    })
+  }
+
+  // Restore silently — no resume prompt. The three-tier destructive-action
+  // confirms (New Batch Plan etc.) are the reset escape hatch, so a stale
+  // draft never traps the user.
+  async function restore_draft() {
+    const { store, initialized, persist } = indexedDBStore(
+      builder_draft_key(project_id, task_id),
+      EMPTY_BUILDER_DRAFT,
+    )
+    await initialized
+    draft_store = store
+    persist_draft = persist
+    const saved = get(store)
+    if (draft_has_content(saved)) {
+      description = saved.description
+      spec_type = saved.spec_type
+      name = saved.name
+      // An empty stored record keeps the var's seeded default (e.g.
+      // property_values starts with the issue keys) instead of erasing it.
+      if (Object.keys(saved.property_values).length > 0) {
+        property_values = saved.property_values
+      }
+      refined_property_values = saved.refined_property_values
+      suggested_edits = saved.suggested_edits
+      not_incorporated_feedback = saved.not_incorporated_feedback
+      batch_plan = saved.batch_plan
+      batch_plan_edited = saved.batch_plan_edited
+      multi_turn_batch_tag = saved.multi_turn_batch_tag
+      undeleted_batch_tags = saved.undeleted_batch_tags
+      // Rebuild the shallow-routing chain up to the restored step (the
+      // mount already seeded "describe") so the browser's Back walks the
+      // wizard steps exactly as in the original session instead of
+      // immediately leaving the builder.
+      const step = restore_step(saved)
+      if (step === "refine" || step === "generate") {
+        goto_step("refine")
+      }
+      if (step === "generate") {
+        goto_step("generate")
+      }
+    }
+    draft_ready = true
+  }
+
+  // Clear the draft once the save persisted (the leave-guard hook point):
+  // stop the mirror FIRST so the wizard's still-populated state can't
+  // rewrite the draft after the wipe, then flush — the store's subscriber
+  // writes async, and navigating before the write lands would resurrect
+  // the draft on the next visit.
+  async function clear_builder_draft() {
+    draft_ready = false
+    draft_store?.set(EMPTY_BUILDER_DRAFT)
+    try {
+      await persist_draft()
+    } catch (e) {
+      console.error("Failed to clear the builder draft:", e)
+    }
+  }
 
   // ── Task (drives is_multi_turn, which branches Step 3 onward)
   let task: Task | null = null
@@ -248,6 +364,14 @@
       posthog.capture("eval_v2_builder_opened", {
         is_multi_turn: task?.turn_mode === "multiturn",
       })
+      // Restore the saved draft after the task loads (a task error skips
+      // it), and never under the dev mock: canned mock state must not
+      // persist into a real draft, nor a real draft restore into a mock
+      // session — the mock leaves draft_ready false, so the mirror never
+      // writes either.
+      if (!builder_mock_active()) {
+        await restore_draft()
+      }
     } catch (e) {
       task_error = e instanceof Error ? e.message : "Failed to load task."
     } finally {
@@ -1678,8 +1802,11 @@
           num_cases: trace_claims.length,
         })
         const saved = data as { id?: string }
+        // Persisted — the leave guard has nothing left to protect, and the
+        // draft's job is done (a kept draft would restore a stale wizard
+        // over the saved eval on the next visit).
+        await clear_builder_draft()
         if (saved.id) {
-          // Persisted — the leave guard has nothing left to protect.
           leave_guard_suppressed = true
           goto(`/specs/${project_id}/${task_id}/${saved.id}`)
         } else {
@@ -1743,8 +1870,11 @@
       // Land on the spec/eval detail page (titled "Eval: ..."). This is
       // the same destination v1 uses.
       const saved = data as { id?: string }
+      // Persisted — the leave guard has nothing left to protect, and the
+      // draft's job is done (a kept draft would restore a stale wizard
+      // over the saved eval on the next visit).
+      await clear_builder_draft()
       if (saved.id) {
-        // Persisted — the leave guard has nothing left to protect.
         leave_guard_suppressed = true
         goto(`/specs/${project_id}/${task_id}/${saved.id}`)
       } else {
