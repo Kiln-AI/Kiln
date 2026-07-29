@@ -137,3 +137,26 @@ export function restore_step(draft: BuilderDraft): RestoreStep {
   }
   return "describe"
 }
+
+// A fresh draft that KEEPS the batch-tag bookkeeping. Reset must not wipe
+// the tags: they name chains already on disk, and delete-on-next-drive is
+// the only thing that ever cleans those up — a full wipe would orphan them
+// forever (the leak the draft's tag persistence exists to prevent).
+export function reset_draft_keeping_tags(draft: BuilderDraft): BuilderDraft {
+  return {
+    ...EMPTY_BUILDER_DRAFT,
+    multi_turn_batch_tag: draft.multi_turn_batch_tag,
+    undeleted_batch_tags: draft.undeleted_batch_tags,
+  }
+}
+
+// The Evals page's create button advertises a resumable draft (the silent
+// restore already happens on builder entry; this makes it discoverable).
+// Copilot-gated: without copilot the button routes to the legacy flow,
+// where no draft exists.
+export function create_eval_button_label(
+  has_copilot: boolean,
+  has_draft: boolean,
+): string {
+  return has_copilot && has_draft ? "Continue Eval Draft" : "Create Eval"
+}

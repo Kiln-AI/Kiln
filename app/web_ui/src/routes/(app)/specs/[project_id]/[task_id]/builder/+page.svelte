@@ -29,6 +29,7 @@
     builder_draft_key,
     builder_mock_active,
     draft_has_content,
+    reset_draft_keeping_tags,
     restore_step,
     reusable_cached_cases,
     EMPTY_BUILDER_DRAFT,
@@ -245,7 +246,7 @@
     current_step !== "done" &&
     has_unpersisted_work
   function handle_before_unload(event: BeforeUnloadEvent) {
-    if (!warn_before_unload) return
+    if (!warn_before_unload || leave_guard_suppressed) return
     event.preventDefault()
     event.returnValue = ""
   }
@@ -285,21 +286,57 @@
   // one rewrite the draft (the store's subscriber writes IndexedDB async).
   // draft_ready guards the pre-restore window — mirroring the initial empty
   // state would wipe the saved draft — and stays false under the mock.
-  $: if (draft_ready && draft_store) {
-    draft_store.set({
-      description,
-      spec_type,
-      name,
-      property_values,
-      refined_property_values,
-      suggested_edits,
-      not_incorporated_feedback,
-      batch_plan,
-      batch_plan_edited,
-      cached_su_cases,
-      multi_turn_batch_tag,
-      undeleted_batch_tags,
-    })
+  $: current_draft = draft_ready
+    ? {
+        description,
+        spec_type,
+        name,
+        property_values,
+        refined_property_values,
+        suggested_edits,
+        not_incorporated_feedback,
+        batch_plan,
+        batch_plan_edited,
+        cached_su_cases,
+        multi_turn_batch_tag,
+        undeleted_batch_tags,
+      }
+    : null
+  $: if (current_draft && draft_store) {
+    draft_store.set(current_draft)
+  }
+
+  // The header Reset button (SDG's is_setup pattern): appears once the
+  // draft carries anything and stays through every step — the confirm's
+  // wording, not the button's visibility, is what escalates with the
+  // stakes. Absent under the mock (draft_ready never flips there).
+  $: reset_available =
+    current_draft !== null && draft_has_content(current_draft)
+
+  // Start the wizard over: wipe the draft but CARRY the batch tags (they
+  // name chains on disk that only delete-on-next-drive cleans up), then
+  // reload into a fresh mount — SDG's clear-and-reload move.
+  async function reset_draft_with_confirm() {
+    const msg =
+      trace_claims.length > 0
+        ? driven_data_confirm(
+            "Resetting",
+            trace_claims.length,
+            drive_stop === null,
+          )
+        : "Are you sure you want to start over? Your draft (description, refined spec, and batch plan) will be discarded. This cannot be undone."
+    if (!confirm(msg)) return
+    const carried = draft_store ? get(draft_store) : EMPTY_BUILDER_DRAFT
+    draft_ready = false
+    draft_store?.set(reset_draft_keeping_tags(carried))
+    try {
+      await persist_draft()
+    } catch (e) {
+      console.error("Failed to persist the reset draft:", e)
+    }
+    // The reset is persisted — suppress both guards for the reload.
+    leave_guard_suppressed = true
+    window.location.reload()
   }
 
   // Restore silently — no resume prompt. The three-tier destructive-action
@@ -2176,7 +2213,14 @@
      Centring v1's inner content is handled by AppPage's own header/slot
      layout, so no mx-auto here. -->
 <div class={page_max_w}>
-  <AppPage title={page_title} subtitle={page_subtitle} no_y_padding>
+  <AppPage
+    title={page_title}
+    subtitle={page_subtitle}
+    no_y_padding
+    action_buttons={reset_available
+      ? [{ label: "Reset", handler: reset_draft_with_confirm }]
+      : []}
+  >
     {#if $kilnCopilotConnected === null}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>

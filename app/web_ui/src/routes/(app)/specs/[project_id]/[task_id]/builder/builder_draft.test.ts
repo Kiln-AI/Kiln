@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   builder_draft_key,
   builder_mock_active,
+  create_eval_button_label,
   draft_has_content,
+  reset_draft_keeping_tags,
   restore_step,
   reusable_cached_cases,
   EMPTY_BUILDER_DRAFT,
@@ -269,5 +271,47 @@ describe("reusable_cached_cases — SU-case reuse", () => {
     expect(
       reusable_cached_cases(cache, ["scenario b", "scenario a"], spec),
     ).toBeNull()
+  })
+})
+
+describe("reset_draft_keeping_tags", () => {
+  it("wipes all authoring state but carries the batch tags", () => {
+    const fresh = reset_draft_keeping_tags(full_draft)
+    expect(fresh.multi_turn_batch_tag).toBe("multi_turn_batch_1234")
+    expect(fresh.undeleted_batch_tags).toEqual([
+      "multi_turn_batch_1200",
+      "multi_turn_batch_1234",
+    ])
+    expect(fresh.description).toBe("")
+    expect(fresh.name).toBe("")
+    expect(fresh.batch_plan).toBeNull()
+    expect(fresh.cached_su_cases).toBeNull()
+    expect(fresh.refined_property_values).toEqual({})
+  })
+
+  it("resolves to the describe step after reset", () => {
+    expect(restore_step(reset_draft_keeping_tags(full_draft))).toBe("describe")
+  })
+
+  it("still counts as content when tags exist, so cleanup survives another restore", () => {
+    expect(draft_has_content(reset_draft_keeping_tags(full_draft))).toBe(true)
+  })
+
+  it("is a full empty draft when there were no tags", () => {
+    const no_tags = {
+      ...full_draft,
+      multi_turn_batch_tag: null,
+      undeleted_batch_tags: [],
+    }
+    expect(reset_draft_keeping_tags(no_tags)).toEqual(EMPTY_BUILDER_DRAFT)
+  })
+})
+
+describe("create_eval_button_label", () => {
+  it("advertises the draft only with copilot AND content", () => {
+    expect(create_eval_button_label(true, true)).toBe("Continue Eval Draft")
+    expect(create_eval_button_label(true, false)).toBe("Create Eval")
+    expect(create_eval_button_label(false, true)).toBe("Create Eval")
+    expect(create_eval_button_label(false, false)).toBe("Create Eval")
   })
 })
