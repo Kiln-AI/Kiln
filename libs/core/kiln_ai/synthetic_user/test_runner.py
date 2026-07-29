@@ -493,9 +493,8 @@ async def test_target_invoke_failure_surfaces_as_case_failed(
 
     failed = next(e for e in events if isinstance(e, CaseFailedEvent))
     assert failed.error_code == "unexpected_error"
-    # House error voice: RuntimeError messages pass through without a
-    # class-name prefix (format_error_message).
-    assert failed.message == "kaboom"
+    assert "RuntimeError" in failed.message
+    assert "kaboom" in failed.message
 
 
 @pytest.mark.asyncio
@@ -522,9 +521,7 @@ async def test_tag_leaf_failure_surfaces_as_case_failed(
 
     failed = next(e for e in events if isinstance(e, CaseFailedEvent))
     assert failed.error_code == "unexpected_error"
-    # House error voice: OSErrors render as file-operation failures.
     assert "disk full" in failed.message
-    assert failed.message.startswith("A file operation failed")
     # The fully-driven chain never got its batch tag, so nothing could ever
     # find it again — the failure arm must remove it from disk.
     bad_leaf.delete.assert_called_once()

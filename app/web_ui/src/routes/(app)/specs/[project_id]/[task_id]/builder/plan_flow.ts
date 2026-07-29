@@ -40,7 +40,10 @@ export function dominant_failure_message(messages: string[]): string | null {
 // The stop banner's message. Rendered via Warning's markdown+trusted mode
 // so the all-failed variant can carry the run-page deeplink in-message —
 // markdown links open in a new tab by component design, so the wizard tab
-// (and the plan behind it) survive the detour.
+// (and the plan behind it) survive the detour. The recovery sentence is
+// its own PARAGRAPH (blank markdown line): raw error text can be long
+// (full provider messages ride through unfiltered), and the action must
+// never drown in the diagnosis.
 export function drive_stop_banner(
   stop: DriveStop,
   run_config_name: string | null,
@@ -64,20 +67,20 @@ export function drive_stop_banner(
             stop.survivors === 1 ? "" : "s"
           } completed before the abort — continue with those, or [test your run config](/run) and drive again.`
         : `You can [test your run config](/run), then drive again.`
-    return `Drive aborted — ${stop.aborted_error}${abort_config}. ${recovery}`
+    return `Drive aborted — ${stop.aborted_error}${abort_config}.\n\n${recovery}`
   }
   if (stop.survivors === 0) {
     // Every case failed identically — a capability boundary of the run
     // config, not bad luck. Point at the one place it can be verified.
     return `All conversations failed — ${
       stop.dominant_error ?? "no error details"
-    }${config_clause}. You can [test your run config](/run), then drive again.`
+    }${config_clause}.\n\nYou can [test your run config](/run), then drive again.`
   }
   const total = stop.survivors + stop.failed
   const common_clause = stop.dominant_error
     ? ` (most common: ${stop.dominant_error})`
     : ""
-  return `${stop.survivors} of ${total} conversations completed — ${stop.failed} failed after retries${common_clause}. Continue with the ${stop.survivors} that completed, or drive the batch again.`
+  return `${stop.survivors} of ${total} conversations completed — ${stop.failed} failed after retries${common_clause}.\n\nContinue with the ${stop.survivors} that completed, or drive the batch again.`
 }
 
 // SDG's confirm formula for the destructive tier that carries real work.
