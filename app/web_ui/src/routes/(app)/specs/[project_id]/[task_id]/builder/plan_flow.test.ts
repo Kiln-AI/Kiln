@@ -251,15 +251,20 @@ describe("drive_stop_banner — preflight stop", () => {
           lane: "run config",
           message: "AuthenticationError: invalid api key",
           model: null,
+          provider: null,
         },
       },
       "Polite Hawk",
       "gpt_5_5",
     )
-    expect(banner).toContain("the run config failed its check")
+    expect(banner).toContain(
+      "Could not generate conversations. Your run config failed a test call",
+    )
     expect(banner).toContain("AuthenticationError: invalid api key")
     expect(banner).toContain("(run config: Polite Hawk, gpt_5_5)")
-    expect(banner).toContain("Nothing was driven and nothing was spent.")
+    expect(banner).toContain(
+      "You can [test your run config](/run), then start again.",
+    )
     expect(banner).toContain("[test your run config](/run)")
     // The recovery action is its own paragraph, never drowned in the error.
     expect(banner).toContain("\n\n")
@@ -275,14 +280,25 @@ describe("drive_stop_banner — preflight stop", () => {
           lane: "judge",
           message: "NotFoundError: model retired",
           model: "gpt_4o via openrouter",
+          provider: "OpenRouter",
         },
       },
       "Polite Hawk",
       "gpt_5_5",
     )
-    expect(banner).toContain("the judge failed its check")
-    expect(banner).toContain("(gpt_4o via openrouter)")
-    expect(banner).toContain("[Settings](/settings/providers)")
+    // Kiln-chosen lanes stay generic: neither the raw error nor the model
+    // renders — the house generic, unadorned.
+    // Kiln-chosen lanes show the raw error (the SDG precedent) plus the
+    // requirement fact and the providers deeplink.
+    expect(banner).toContain(
+      "The judge model failed a test call: NotFoundError: model retired (gpt_4o via openrouter).",
+    )
+    expect(banner).toContain(
+      "Generating conversations requires your OpenRouter API key.",
+    )
+    expect(banner).toContain(
+      "You can [check your model providers](/settings/providers), then try again.",
+    )
     expect(banner).not.toContain("Polite Hawk")
   })
 
@@ -298,12 +314,14 @@ describe("drive_stop_banner — preflight stop", () => {
           lane: "synthetic-user driver",
           message: "BudgetExceededError: quota",
           model: "claude_4_5_haiku via openrouter",
+          provider: "OpenRouter",
         },
       },
       "Polite Hawk",
     )
-    expect(banner).toContain("Didn't start the drive")
+    expect(banner).toContain("Could not generate conversations.")
     expect(banner).not.toContain("12 of")
     expect(banner).not.toContain("old error")
+    expect(banner).toContain("BudgetExceededError")
   })
 })

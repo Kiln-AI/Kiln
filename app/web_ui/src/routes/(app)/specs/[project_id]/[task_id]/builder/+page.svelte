@@ -12,7 +12,11 @@
   } from "$app/navigation"
   import { client, base_url } from "$lib/api_client"
   import FormElement from "$lib/utils/form_element.svelte"
-  import { get_task_composite_id, load_task } from "$lib/stores"
+  import {
+    get_task_composite_id,
+    load_task,
+    provider_name_from_id,
+  } from "$lib/stores"
   import {
     load_task_run_configs,
     run_configs_by_task_composite_id,
@@ -987,6 +991,7 @@
     const outcomes = await Promise.all(
       lanes.map(async (l) => {
         const model = `${l.model_name} via ${l.model_provider}`
+        const provider = provider_name_from_id(l.model_provider)
         const { error } = await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/eval_builder/preflight_model",
           {
@@ -1001,11 +1006,20 @@
           },
         )
         if (error) {
+          // The route's typed error nests {code, message} inside the
+          // handler's {message} wrapper — unwrap it directly: the message
+          // IS the diagnosis, and createKilnError would prefix "Unexpected
+          // error:" onto it. Fall back for any other shape.
+          const wrapped = (error as { message?: string | { message?: string } })
+            .message
+          const detail =
+            typeof wrapped === "string" ? wrapped : wrapped?.message
           return {
             lane: l.lane,
             ok: false,
-            message: createKilnError(error).getMessage(),
+            message: detail || createKilnError(error).getMessage(),
             model,
+            provider,
           }
         }
         return { lane: l.lane, ok: true }

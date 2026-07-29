@@ -14,14 +14,19 @@ export type PreflightOutcome = {
   ok: boolean
   // The failure diagnosis (the route's unwrapped root provider error).
   message?: string | null
-  // The lane's model, for the banner ("gpt_4o via openrouter").
+  // The lane's model ("gpt_4o via openrouter") — kept for telemetry;
+  // Kiln-chosen lanes don't render it.
   model?: string | null
+  // The lane's provider display name ("OpenRouter") — the one specific,
+  // factual thing the generic lanes DO render: which key the step needs.
+  provider?: string | null
 }
 
 export type PreflightFailure = {
   lane: PreflightLane
   message: string
   model: string | null
+  provider: string | null
 }
 
 // The unified stop outcome: a drive that ended short of the approved plan.
@@ -53,6 +58,7 @@ export function first_preflight_failure(
     lane: failed.lane,
     message: failed.message || "the model did not respond",
     model: failed.model ?? null,
+    provider: failed.provider ?? null,
   }
 }
 
@@ -92,24 +98,31 @@ export function drive_stop_banner(
     ? ` (run config: ${run_config_name})`
     : ""
   if (stop.preflight) {
-    // A lane failed its pre-drive check: nothing ran and nothing was spent
-    // — say so, because this same screen otherwise reports paid failures.
+    // A lane failed its pre-drive test call: nothing ran and nothing was
+    // spent. All lanes show the raw error (the SDG precedent — generation
+    // failures render getMessage() verbatim), with a parenthetical naming
+    // what was tested: the run config (name + model) on the user's lane,
+    // the model on the Kiln-chosen lanes. Recovery is the banner family's
+    // deeplink formula; the Kiln-chosen lanes also state the one
+    // requirement fact we know (which provider's key the step runs on).
     const f = stop.preflight
-    const lane_clause =
-      f.lane === "run config"
-        ? run_config_name
-          ? ` (run config: ${run_config_name}${
-              run_config_model ? `, ${run_config_model}` : ""
-            })`
-          : ""
-        : f.model
-          ? ` (${f.model})`
-          : ""
-    const recovery =
-      f.lane === "run config"
-        ? `Nothing was driven and nothing was spent. You can [test your run config](/run), then drive again.`
-        : `Nothing was driven and nothing was spent. Check the model's provider key in [Settings](/settings/providers), then drive again.`
-    return `Didn't start the drive — the ${f.lane} failed its check: ${f.message}${lane_clause}.\n\n${recovery}`
+    if (f.lane === "run config") {
+      const clause = run_config_name
+        ? ` (run config: ${run_config_name}${
+            run_config_model ? `, ${run_config_model}` : ""
+          })`
+        : ""
+      return `Could not generate conversations. Your run config failed a test call: ${f.message}${clause}.\n\nYou can [test your run config](/run), then start again.`
+    }
+    const subject =
+      f.lane === "synthetic-user driver"
+        ? "The synthetic-user model"
+        : "The judge model"
+    const model_clause = f.model ? ` (${f.model})` : ""
+    const requirement = f.provider
+      ? `Generating conversations requires your ${f.provider} API key. `
+      : ""
+    return `Could not generate conversations. ${subject} failed a test call: ${f.message}${model_clause}.\n\n${requirement}You can [check your model providers](/settings/providers), then try again.`
   }
   if (stop.aborted_error) {
     // A config-scoped failure aborted the batch mid-drive: the run config

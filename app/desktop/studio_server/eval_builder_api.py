@@ -773,12 +773,19 @@ def connect_eval_builder_api(app: FastAPI):
             await adapter.invoke(input="Say OK")
         except Exception as e:  # noqa: BLE001 — any failure IS the diagnosis
             root = unwrap_kiln_run_error(e)
+            # litellm exceptions already lead with their class name
+            # ("litellm.APIError: …") — prefixing the type again would
+            # stutter; only add it when the message doesn't carry it.
+            root_str = str(root)
+            type_name = type(root).__name__
+            message = (
+                root_str
+                if root_str.startswith((type_name, f"litellm.{type_name}"))
+                else f"{type_name}: {root_str}"
+            )
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "code": "preflight_failed",
-                    "message": f"{type(root).__name__}: {root}",
-                },
+                detail={"code": "preflight_failed", "message": message},
             ) from e
         return PreflightModelApiOutput()
 

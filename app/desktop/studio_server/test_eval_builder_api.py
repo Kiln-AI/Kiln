@@ -1461,6 +1461,10 @@ class TestPreflightModel:
         assert "AuthenticationError" in message
         assert "invalid api key" in message
         assert "unexpected error" not in message
+        # litellm strings already lead with the class name — the route must
+        # not stack its own prefix on top ("AuthenticationError: litellm.
+        # AuthenticationError: …").
+        assert not message.startswith("AuthenticationError: litellm.")
 
     def test_never_persists_and_never_uses_the_real_task(
         self, client, preflight_request, preflight_seams
