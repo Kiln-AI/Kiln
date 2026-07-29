@@ -8,6 +8,7 @@
   import SidebarRailSettings from "./sidebar_rail_settings.svelte"
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
+  import ForkIcon from "$lib/ui/icons/fork_icon.svelte"
   import JobsIcon from "$lib/ui/icons/jobs_icon.svelte"
   import SidebarJobsIndicator from "$lib/components/SidebarJobsIndicator.svelte"
   import { jobs_dialog } from "$lib/stores/jobs_dialog"
@@ -110,6 +111,16 @@
   >
     <div slot="icon" class="w-full h-full">
       <EvalIcon />
+    </div>
+  </SidebarRailItem>
+
+  <SidebarRailItem
+    href={`/evolution/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
+    active={section === Section.Evolution}
+    label="Evolution"
+  >
+    <div slot="icon" class="w-full h-full">
+      <ForkIcon />
     </div>
   </SidebarRailItem>
 

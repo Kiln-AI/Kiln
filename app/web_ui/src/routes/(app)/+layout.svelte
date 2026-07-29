@@ -14,6 +14,7 @@
   import FileIcon from "$lib/ui/icons/file_icon.svelte"
   import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
+  import ForkIcon from "$lib/ui/icons/fork_icon.svelte"
   import OptimizeIcon from "$lib/ui/icons/optimize_icon.svelte"
   import SkillsIcon from "$lib/ui/icons/skills_icon.svelte"
   import ToolsIcon from "$lib/ui/icons/tools_icon.svelte"
@@ -120,6 +121,8 @@
       section = Section.Optimize
     } else if (path_start("/assistant", $page.url.pathname)) {
       section = Section.Assistant
+    } else if (path_start("/evolution", $page.url.pathname)) {
+      section = Section.Evolution
     } else {
       section = Section.None
     }
@@ -287,6 +290,18 @@
             </div>
 
             Evals</a
+          >
+        </li>
+
+        <li class="menu-sm">
+          <a
+            href={`/evolution/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
+            class={section == Section.Evolution ? "active" : ""}
+          >
+            <div class="sidebar-icon">
+              <ForkIcon />
+            </div>
+            Evolution</a
           >
         </li>
 

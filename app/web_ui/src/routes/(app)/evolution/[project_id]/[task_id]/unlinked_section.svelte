@@ -1,0 +1,104 @@
+<script lang="ts">
+  import { createEventDispatcher } from "svelte"
+  import type { EvoNode } from "$lib/utils/evolution/graph_assembly"
+  import type { NodeDisplay } from "$lib/utils/evolution/score_lens"
+  import EvolutionNode from "./evolution_node.svelte"
+
+  // Expected sorted created_at desc (build_forest emits unlinkedIds that way)
+  export let nodes: EvoNode[] = []
+  export let displays: Record<string, NodeDisplay> = {}
+  export let selected_id: string | null = null
+  export let expanded: boolean = false
+  export let collapsible: boolean = true
+
+  const dispatch = createEventDispatcher<{
+    select: string
+    toggle: undefined
+  }>()
+
+  function month_label(created_at: string | null): string {
+    if (!created_at) {
+      return "Unknown date"
+    }
+    const date = new Date(created_at)
+    if (isNaN(date.getTime())) {
+      return "Unknown date"
+    }
+    return date.toLocaleDateString(undefined, {
+      month: "long",
+      year: "numeric",
+    })
+  }
+
+  // Group into consecutive month buckets, preserving created_at-desc order
+  $: month_groups = nodes.reduce(
+    (groups: { label: string; nodes: EvoNode[] }[], node) => {
+      const label = month_label(node.created_at)
+      const last = groups[groups.length - 1]
+      if (last && last.label === label) {
+        last.nodes.push(node)
+      } else {
+        groups.push({ label, nodes: [node] })
+      }
+      return groups
+    },
+    [],
+  )
+</script>
+
+{#if nodes.length > 0}
+  <div class="mt-8">
+    {#if collapsible}
+      <button
+        type="button"
+        class="flex items-center gap-2 text-sm font-medium text-gray-900"
+        on:click={() => dispatch("toggle")}
+      >
+        <svg
+          class="w-4 h-4 text-gray-500 transition-transform {expanded
+            ? 'rotate-90'
+            : ''}"
+          viewBox="0 0 24 24"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+        >
+          <path
+            d="M9 6L15 12L9 18"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        Unlinked run configs ({nodes.length})
+      </button>
+    {:else}
+      <div class="text-sm font-medium text-gray-900">
+        Unlinked run configs ({nodes.length})
+      </div>
+    {/if}
+
+    {#if expanded || !collapsible}
+      {#each month_groups as group (group.label)}
+        <div
+          class="text-xs font-medium text-gray-500 uppercase tracking-wide mt-4 mb-2"
+        >
+          {group.label}
+        </div>
+        <div
+          class="grid grid-cols-[repeat(auto-fill,minmax(200px,max-content))] gap-3"
+        >
+          {#each group.nodes as node (node.id)}
+            <EvolutionNode
+              {node}
+              display={displays[node.id]}
+              selected={selected_id === node.id}
+              on:select={(event) => dispatch("select", event.detail)}
+            />
+          {/each}
+        </div>
+      {/each}
+    {/if}
+  </div>
+{/if}
