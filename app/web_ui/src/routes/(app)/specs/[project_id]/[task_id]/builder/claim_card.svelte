@@ -97,12 +97,12 @@
     <div class="font-medium text-sm min-w-0">
       {#if is_final_judgement}
         <!-- Deterministic headline from the server-pinned expected_result —
-             the judge is an implementation detail the reviewer doesn't need
-             (Mike's framing): the question is simply whether the overall
-             call on the {judged_noun} was right. House callout formula:
-             the verdict color lives in the icon (warning.svelte's exact
-             exclaim/check glyphs), the sentence stays neutral in the claim
-             headings' typography. -->
+             the judge is an implementation detail the reviewer doesn't
+             need: the question is simply whether the overall call on the
+             {judged_noun} was right. House callout formula: the verdict
+             color lives in the icon (warning.svelte's exact exclaim/check
+             glyphs), the sentence stays neutral in the claim headings'
+             typography. -->
         <span class="flex items-center gap-2">
           {#if claim.expected_result === "fail"}
             <svg

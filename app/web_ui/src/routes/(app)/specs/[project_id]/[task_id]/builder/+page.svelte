@@ -2076,8 +2076,8 @@
       case "generate":
         return is_multi_turn ? "Generate Conversations" : "Generate Examples"
       case "review":
-        // Mike's framing (2026-07-28): the reviewer is checking their AGENT,
-        // not grading a judge — calibration is an implementation detail.
+        // The reviewer is checking their AGENT, not grading a judge —
+        // calibration is an implementation detail the copy never mentions.
         return "Where did your agent go wrong?"
       case "save":
         return "Creating Eval"
