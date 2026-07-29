@@ -31,6 +31,8 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     BuildClaimsApiInput,
     BuildClaimsApiOutput,
     JudgeConfig,
+    PreflightModelApiInput,
+    PreflightModelApiOutput,
     PipelineBatchAbortedEvent,
     PipelineBatchCompletedEvent,
     PipelineBatchStartedEvent,
@@ -63,11 +65,16 @@ from app.desktop.studio_server.utils.eval_builder_utils import (
     transcript_io_for_trace,
 )
 from fastapi import FastAPI, HTTPException, Path, Request
+from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.retry_classification import (
     is_batch_fatal_error,
     is_retryable_error,
     unwrap_kiln_run_error,
 )
+from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+from kiln_ai.datamodel.prompt_id import PromptGenerators
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.basemodel import FilenameStringShort
 from kiln_ai.datamodel.task import Task
 from kiln_ai.synthetic_user.case import SyntheticUserCase as RunnerCase
@@ -719,6 +726,61 @@ def connect_eval_builder_api(app: FastAPI):
             judge_score=input.judge_score,
             judge_reasoning=input.judge_reasoning,
         )
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/preflight_model",
+        tags=["Eval Builder"],
+        summary="Preflight a Model Lane",
+        openapi_extra=agent_policy_require_approval(
+            "Send a one-word test completion to verify a model config works? "
+            "(negligible cost)"
+        ),
+    )
+    async def preflight_model(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[str, Path(description="The unique identifier of the task.")],
+        input: PreflightModelApiInput,
+    ) -> PreflightModelApiOutput:
+        """One cheap completion through the SAME adapter model/provider
+        resolution a real run uses (that resolution is where a dead model
+        surfaces), on the user's same keys. Catches key/billing/deprecation/
+        unreachable failures for a lane BEFORE the drive commits the
+        plan/SU-gen minutes and the batch's model spend. Explicitly does NOT
+        validate tools/MCP or mid-run rate limits. Nothing persists:
+        allow_saving=False, so no TaskRun lands in the dataset (the
+        transient-judge precedent).
+        """
+        task_from_id(project_id, task_id)  # 404 on a bad path; not used further
+        # A transient one-liner task, NOT the real task prompt: the check
+        # verifies the lane responds at all, at the smallest possible spend.
+        preflight_task = Task(
+            name="preflight_check",
+            instruction='Reply with exactly "OK".',
+        )
+        try:
+            adapter = adapter_for_task(
+                preflight_task,
+                run_config_properties=KilnAgentRunConfigProperties(
+                    model_name=input.model_name,
+                    model_provider_name=input.model_provider,
+                    prompt_id=PromptGenerators.SIMPLE,
+                    structured_output_mode=StructuredOutputMode.default,
+                ),
+                base_adapter_config=AdapterConfig(allow_saving=False),
+            )
+            await adapter.invoke(input="Say OK")
+        except Exception as e:  # noqa: BLE001 — any failure IS the diagnosis
+            root = unwrap_kiln_run_error(e)
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "preflight_failed",
+                    "message": f"{type(root).__name__}: {root}",
+                },
+            ) from e
+        return PreflightModelApiOutput()
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/eval_builder/refine_judge",

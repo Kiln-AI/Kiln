@@ -3260,6 +3260,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_builder/preflight_model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preflight a Model Lane
+         * @description One cheap completion through the SAME adapter model/provider
+         *     resolution a real run uses (that resolution is where a dead model
+         *     surfaces), on the user's same keys. Catches key/billing/deprecation/
+         *     unreachable failures for a lane BEFORE the drive commits the
+         *     plan/SU-gen minutes and the batch's model spend. Explicitly does NOT
+         *     validate tools/MCP or mid-run rate limits. Nothing persists:
+         *     allow_saving=False, so no TaskRun lands in the dataset (the
+         *     transient-judge precedent).
+         */
+        post: operations["preflight_model_api_projects__project_id__tasks__task_id__eval_builder_preflight_model_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/eval_builder/refine_judge": {
         parameters: {
             query?: never;
@@ -9529,6 +9556,38 @@ export interface components {
              * @enum {string}
              */
             mode: "must_match" | "must_not_match";
+        };
+        /**
+         * PreflightModelApiInput
+         * @description One model lane to verify before a drive commits real spend.
+         *
+         *     The client pings each lane the pipeline will use (target run config,
+         *     synthetic-user driver, judge) with one of these before generate_cases,
+         *     so a dead key/model stops the drive before the plan/SU-gen minutes and
+         *     the batch's model spend, not after.
+         */
+        PreflightModelApiInput: {
+            /**
+             * Model Name
+             * @description The model to verify.
+             */
+            model_name: string;
+            /** @description The provider to verify the model against. */
+            model_provider: components["schemas"]["ModelProviderName"];
+        };
+        /**
+         * PreflightModelApiOutput
+         * @description The lane answered a one-word completion — key, billing, and model
+         *     resolution all work. Failures surface as a 400 with the unwrapped root
+         *     provider error instead.
+         */
+        PreflightModelApiOutput: {
+            /**
+             * Ok
+             * @default true
+             * @constant
+             */
+            ok: true;
         };
         /**
          * Priority
@@ -20387,6 +20446,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BuildClaimsApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preflight_model_api_projects__project_id__tasks__task_id__eval_builder_preflight_model_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreflightModelApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreflightModelApiOutput"];
                 };
             };
             /** @description Validation Error */

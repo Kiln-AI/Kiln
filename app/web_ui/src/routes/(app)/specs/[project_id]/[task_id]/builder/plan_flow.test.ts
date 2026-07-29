@@ -3,6 +3,7 @@ import {
   dominant_failure_message,
   drive_stop_banner,
   driven_data_confirm,
+  first_preflight_failure,
   is_claims_resolved,
   new_plan_confirm,
   resolved_selected_count,
@@ -206,5 +207,103 @@ describe("claims gate resolution", () => {
 
   it("empty selection resolves to zero", () => {
     expect(resolved_selected_count(traces(["built"]), [])).toBe(0)
+  })
+})
+
+describe("first_preflight_failure", () => {
+  it("returns null when every lane passed", () => {
+    expect(
+      first_preflight_failure([
+        { lane: "run config", ok: true },
+        { lane: "synthetic-user driver", ok: true },
+        { lane: "judge", ok: true },
+      ]),
+    ).toBeNull()
+  })
+
+  it("picks the first failure in blame order, not race order", () => {
+    const failure = first_preflight_failure([
+      { lane: "run config", ok: false, message: "config dead" },
+      { lane: "synthetic-user driver", ok: true },
+      { lane: "judge", ok: false, message: "judge dead" },
+    ])
+    expect(failure?.lane).toBe("run config")
+    expect(failure?.message).toBe("config dead")
+  })
+
+  it("falls back to a generic message when the lane gave none", () => {
+    const failure = first_preflight_failure([
+      { lane: "judge", ok: false, message: null },
+    ])
+    expect(failure?.message).toBe("the model did not respond")
+    expect(failure?.model).toBeNull()
+  })
+})
+
+describe("drive_stop_banner — preflight stop", () => {
+  it("run-config lane names the config and deep-links /run", () => {
+    const banner = drive_stop_banner(
+      {
+        survivors: 0,
+        failed: 0,
+        dominant_error: null,
+        preflight: {
+          lane: "run config",
+          message: "AuthenticationError: invalid api key",
+          model: null,
+        },
+      },
+      "Polite Hawk",
+      "gpt_5_5",
+    )
+    expect(banner).toContain("the run config failed its check")
+    expect(banner).toContain("AuthenticationError: invalid api key")
+    expect(banner).toContain("(run config: Polite Hawk, gpt_5_5)")
+    expect(banner).toContain("Nothing was driven and nothing was spent.")
+    expect(banner).toContain("[test your run config](/run)")
+    // The recovery action is its own paragraph, never drowned in the error.
+    expect(banner).toContain("\n\n")
+  })
+
+  it("judge lane names the model and points at Settings", () => {
+    const banner = drive_stop_banner(
+      {
+        survivors: 0,
+        failed: 0,
+        dominant_error: null,
+        preflight: {
+          lane: "judge",
+          message: "NotFoundError: model retired",
+          model: "gpt_4o via openrouter",
+        },
+      },
+      "Polite Hawk",
+      "gpt_5_5",
+    )
+    expect(banner).toContain("the judge failed its check")
+    expect(banner).toContain("(gpt_4o via openrouter)")
+    expect(banner).toContain("[Settings](/settings/providers)")
+    expect(banner).not.toContain("Polite Hawk")
+  })
+
+  it("preflight wins over the other banner variants", () => {
+    // A preflight stop can coexist with survivors from a PREVIOUS drive —
+    // the banner must report the check failure, not paid case counts.
+    const banner = drive_stop_banner(
+      {
+        survivors: 12,
+        failed: 0,
+        dominant_error: "old error",
+        preflight: {
+          lane: "synthetic-user driver",
+          message: "BudgetExceededError: quota",
+          model: "claude_4_5_haiku via openrouter",
+        },
+      },
+      "Polite Hawk",
+    )
+    expect(banner).toContain("Didn't start the drive")
+    expect(banner).not.toContain("12 of")
+    expect(banner).not.toContain("old error")
   })
 })

@@ -67,9 +67,12 @@
     dominant_failure_message,
     drive_stop_banner,
     driven_data_confirm,
+    first_preflight_failure,
     new_plan_confirm,
     resolved_selected_count,
     type DriveStop,
+    type PreflightFailure,
+    type PreflightLane,
   } from "./plan_flow"
   // Reuse v1's themed loading animations on the wizard's transition screens
   // instead of bare dot-spinners, so the two builders feel consistent.
@@ -95,6 +98,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import type {
     Task,
+    ModelProviderName,
     QuestionSet,
     QuestionWithAnswer,
     SpecType,
@@ -626,6 +630,7 @@
   // not a phase, so no code path can strand it behind a stale flag.
   type MultiTurnPhase =
     | "idle"
+    | "preflight"
     | "planning"
     | "generating_cases"
     | "running_pipeline"
@@ -752,9 +757,12 @@
   //      drives the task with the saved config verbatim (model, prompt,
   //      sampling, tools). Multi-turn requires a KilnAgentRunConfig (the
   //      conversation needs an agent-shaped invoker).
-  //   3. POST /multiturn_sdg/generate_cases with the approved prompts →
+  //   3. Preflight the three model lanes (target config, SU driver, judge)
+  //      with one-word completions — a dead key/model stops the drive
+  //      before any spend instead of after the SU-gen minutes.
+  //   4. POST /multiturn_sdg/generate_cases with the approved prompts →
   //      ONE batch call, one synthetic-user case per prompt.
-  //   4. POST /eval_builder/review_pipeline as SSE; the server runs
+  //   5. POST /eval_builder/review_pipeline as SSE; the server runs
   //      [drive → judge → claims] per case and the PipelineEvent frames
   //      drive the per-row status pills + the review results.
   //
@@ -949,28 +957,56 @@
   // via generate_cases' case_prompts), then a single review_pipeline stream
   // runs [drive → judge → claims] per case — each case flows through
   // independently, so the plan rows light up as their case progresses.
+  // Ping every lane concurrently (~2s total); the returned failure is the
+  // first in blame order, not race order. Each lane costs about a token —
+  // nothing next to the batch spend a dead lane would waste.
+  async function preflight_lanes(
+    lanes: {
+      lane: PreflightLane
+      model_name: string
+      model_provider: string
+    }[],
+    signal: AbortSignal,
+  ): Promise<PreflightFailure | null> {
+    const outcomes = await Promise.all(
+      lanes.map(async (l) => {
+        const model = `${l.model_name} via ${l.model_provider}`
+        const { error } = await client.POST(
+          "/api/projects/{project_id}/tasks/{task_id}/eval_builder/preflight_model",
+          {
+            params: { path: { project_id, task_id } },
+            body: {
+              model_name: l.model_name,
+              // JudgeConfig carries the provider as a plain string; the
+              // route 422s on a value outside the enum.
+              model_provider: l.model_provider as ModelProviderName,
+            },
+            signal,
+          },
+        )
+        if (error) {
+          return {
+            lane: l.lane,
+            ok: false,
+            message: createKilnError(error).getMessage(),
+            model,
+          }
+        }
+        return { lane: l.lane, ok: true }
+      }),
+    )
+    return first_preflight_failure(outcomes)
+  }
+
   async function on_drive_multi_turn() {
     if (!batch_plan || batch_plan.prompts.length === 0) {
       generation_error = "No approved plan — plan the batch first."
       return
     }
     const approved_prompts = batch_plan.prompts
-    // Every undeleted previous batch is superseded — the pipeline deletes
-    // their chains once this drive has produced replacements.
-    const previous_batch_tag = multi_turn_batch_tag
-    const previous_driven_cases = driven_cases
-    const tags_to_replace = [...undeleted_batch_tags]
     generation_loading = true
     generation_error = null
-    drive_stop = null
-    trace_claims = []
-    trace_reviews = []
-    selected_trace_indices = []
-    driven_cases = []
-    driven_prompts_json = JSON.stringify(approved_prompts)
-    pipeline_total_cases = approved_prompts.length
-    reset_pipeline_counters()
-    multi_turn_phase = "generating_cases"
+    multi_turn_phase = "preflight"
 
     try {
       // 1. Resolve target_run_config: prefer the task's default; if none
@@ -1019,7 +1055,63 @@
       // verbatim, so model, prompt, sampling, and TOOLS all match a manual run.
       const target_run_config_id = chosen_config.id
 
-      // 2. Generate synthetic-user cases via copilot — ONE batch call, one
+      // 2. The judge, resolved BEFORE the pipeline (not just before the
+      // stream) so the preflight below covers the judge lane too — the
+      // judge-dies-after-drives case is the expensive one.
+      const judge = judge_info ?? build_default_judge_info(spec_text())
+
+      // 3. Preflight ALL THREE lanes concurrently before anything runs or
+      // is discarded: a dead key/model stops the drive here — before the
+      // SU-gen minutes and the batch's model spend — on the same stop
+      // screen, with the previous drive's results (if any) left intact.
+      // Validates key/billing/model resolution only, not tools/MCP or
+      // mid-run rate limits.
+      const preflight_failure = await preflight_lanes(
+        [
+          {
+            lane: "run config",
+            model_name: rcp.model_name,
+            model_provider: rcp.model_provider_name,
+          },
+          {
+            lane: "synthetic-user driver",
+            model_name: SU_DRIVER_DEFAULT.model_name,
+            model_provider: SU_DRIVER_DEFAULT.model_provider,
+          },
+          {
+            lane: "judge",
+            model_name: judge.model_name,
+            model_provider: judge.model_provider,
+          },
+        ],
+        new_copilot_abort_signal(),
+      )
+      if (preflight_failure) {
+        drive_stop = {
+          survivors: trace_claims.length,
+          failed: 0,
+          dominant_error: null,
+          preflight: preflight_failure,
+        }
+        return
+      }
+
+      // 4. Preflight passed — commit to the drive. Every undeleted previous
+      // batch is superseded from here: the pipeline deletes their chains
+      // once this drive has produced replacements.
+      const previous_batch_tag = multi_turn_batch_tag
+      const previous_driven_cases = driven_cases
+      const tags_to_replace = [...undeleted_batch_tags]
+      drive_stop = null
+      trace_claims = []
+      trace_reviews = []
+      selected_trace_indices = []
+      driven_cases = []
+      driven_prompts_json = JSON.stringify(approved_prompts)
+      pipeline_total_cases = approved_prompts.length
+      reset_pipeline_counters()
+
+      // 5. Generate synthetic-user cases via copilot — ONE batch call, one
       // case per approved scenario prompt. Under the upstream salvage
       // contract a flaky case is dropped instead of failing the batch;
       // scenario_index maps each survivor back to its plan row.
@@ -1045,14 +1137,13 @@
       // denominator) is what actually came back, not the plan size.
       pipeline_total_cases = cases.length
 
-      // 3. The review, in the ONE JudgeConfig shape used by review and save
-      // alike — remember the judge and identity BEFORE the pipeline runs so
-      // save can verify nothing changed under the results.
-      const judge = judge_info ?? build_default_judge_info(spec_text())
+      // 6. Remember the judge (the ONE JudgeConfig shape used by review and
+      // save alike, resolved at step 2) and identity BEFORE the pipeline
+      // runs so save can verify nothing changed under the results.
       review_judge = judge
       reviewed_identity = JSON.stringify({ name, spec: spec_text() })
 
-      // 4. One SSE stream runs the whole pipeline: [drive → judge → claims]
+      // 7. One SSE stream runs the whole pipeline: [drive → judge → claims]
       // per case. POST endpoint, so fetch + shared SSE reader (EventSource
       // is GET-only).
       multi_turn_phase = "running_pipeline"
@@ -2006,7 +2097,9 @@
   $: generate_animation_description = is_multi_turn
     ? multi_turn_phase === "planning"
       ? `Planning a balanced batch of ${NUM_CASES} synthetic-user scenarios…`
-      : `Creating ${multi_turn_total} synthetic users from the approved plan…`
+      : multi_turn_phase === "preflight"
+        ? "Checking that your run config, synthetic-user driver, and judge respond before driving…"
+        : `Creating ${multi_turn_total} synthetic users from the approved plan…`
     : "Kiln is generating example data to review and creating a judge. Hold tight!"
 
   // Multi-turn save tags existing chains rather than generating a dataset, so
@@ -2216,12 +2309,16 @@
               title={is_multi_turn
                 ? multi_turn_phase === "planning"
                   ? "Planning Batch"
-                  : "Creating Synthetic Users"
+                  : multi_turn_phase === "preflight"
+                    ? "Checking Configuration"
+                    : "Creating Synthetic Users"
                 : "Analyzing Eval"}
               description={generate_animation_description}
-              warning={is_multi_turn
+              warning={is_multi_turn && multi_turn_phase !== "preflight"
                 ? "This may take a while, depending on the number of scenarios"
-                : "This may take a while"}
+                : is_multi_turn
+                  ? null
+                  : "This may take a while"}
             />
           {/if}
           {#if pipeline_running}
@@ -2328,7 +2425,8 @@
               <div class="mb-4">
                 <Warning
                   warning_color={drive_stop.survivors > 0 &&
-                  !drive_stop.aborted_error
+                  !drive_stop.aborted_error &&
+                  !drive_stop.preflight
                     ? "warning"
                     : "error"}
                   markdown

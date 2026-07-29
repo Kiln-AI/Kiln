@@ -26,6 +26,7 @@ from app.desktop.studio_server.utils.eval_builder_utils import (
 )
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
@@ -1403,3 +1404,88 @@ class TestReviewPipeline:
         pipeline_request["replace_batch_tag"] = "oldbatch123"
         resp = client.post(PIPELINE_URL, json=pipeline_request)
         assert resp.status_code == 422
+
+
+# ───────────────────────── preflight_model ─────────────────────────
+
+PREFLIGHT_URL = "/api/projects/p1/tasks/t1/eval_builder/preflight_model"
+
+
+@pytest.fixture
+def preflight_request():
+    return {"model_name": "gpt_5_5", "model_provider": "openrouter"}
+
+
+@pytest.fixture
+def preflight_seams():
+    """task_from_id (path validation only) + adapter_for_task (the lane)."""
+    with (
+        patch(
+            "app.desktop.studio_server.eval_builder_api.task_from_id"
+        ) as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.eval_builder_api.adapter_for_task"
+        ) as mock_adapter_for_task,
+    ):
+        mock_task_from_id.return_value = Mock()
+        adapter = Mock()
+        adapter.invoke = AsyncMock(return_value=Mock())
+        mock_adapter_for_task.return_value = adapter
+        yield mock_task_from_id, mock_adapter_for_task, adapter
+
+
+class TestPreflightModel:
+    def test_ok(self, client, preflight_request, preflight_seams):
+        _, _, adapter = preflight_seams
+        resp = client.post(PREFLIGHT_URL, json=preflight_request)
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        adapter.invoke.assert_awaited_once_with(input="Say OK")
+
+    def test_config_dead_returns_unwrapped_root_error(
+        self, client, preflight_request, preflight_seams
+    ):
+        """A dead lane 400s with the ROOT provider error, not the KilnRunError
+        wrapper's genericized message — the stop banner shows this text."""
+        _, _, adapter = preflight_seams
+        adapter.invoke = AsyncMock(
+            side_effect=KilnRunError(
+                "An unexpected error occurred.",
+                partial_trace=None,
+                original=_auth_error(),
+            )
+        )
+        resp = client.post(PREFLIGHT_URL, json=preflight_request)
+        assert resp.status_code == 400
+        message = resp.json()["message"]["message"]
+        assert "AuthenticationError" in message
+        assert "invalid api key" in message
+        assert "unexpected error" not in message
+
+    def test_never_persists_and_never_uses_the_real_task(
+        self, client, preflight_request, preflight_seams
+    ):
+        """No TaskRun may land in the dataset (allow_saving=False), and the
+        completion runs against a transient one-liner task, not the user's
+        task prompt."""
+        mock_task_from_id, mock_adapter_for_task, _ = preflight_seams
+        resp = client.post(PREFLIGHT_URL, json=preflight_request)
+        assert resp.status_code == 200
+        kwargs = mock_adapter_for_task.call_args.kwargs
+        args = mock_adapter_for_task.call_args.args
+        assert kwargs["base_adapter_config"].allow_saving is False
+        preflight_task = args[0]
+        assert preflight_task is not mock_task_from_id.return_value
+        assert preflight_task.name == "preflight_check"
+        rcp = kwargs["run_config_properties"]
+        assert rcp.model_name == "gpt_5_5"
+        assert rcp.model_provider_name == ModelProviderName.openrouter
+
+    def test_unknown_provider_is_rejected_before_any_call(
+        self, client, preflight_request, preflight_seams
+    ):
+        _, mock_adapter_for_task, _ = preflight_seams
+        preflight_request["model_provider"] = "not_a_provider"
+        resp = client.post(PREFLIGHT_URL, json=preflight_request)
+        assert resp.status_code == 422
+        mock_adapter_for_task.assert_not_called()

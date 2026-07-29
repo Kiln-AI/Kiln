@@ -4,6 +4,26 @@
 
 import type { ClaimsBuildState } from "./claim_evidence"
 
+// The three model lanes a drive spends through, checked before anything
+// runs. Lane order IS blame order: the target run config is the likeliest
+// culprit and the one the user can fix in-app.
+export type PreflightLane = "run config" | "synthetic-user driver" | "judge"
+
+export type PreflightOutcome = {
+  lane: PreflightLane
+  ok: boolean
+  // The failure diagnosis (the route's unwrapped root provider error).
+  message?: string | null
+  // The lane's model, for the banner ("gpt_4o via openrouter").
+  model?: string | null
+}
+
+export type PreflightFailure = {
+  lane: PreflightLane
+  message: string
+  model: string | null
+}
+
 // The unified stop outcome: a drive that ended short of the approved plan.
 // survivors = judged conversations; failed = post-retry case failures plus
 // upstream salvage drops.
@@ -15,6 +35,25 @@ export type DriveStop = {
   // (the batch_aborted frame) — the banner then leads with the abort
   // diagnosis instead of per-case counts.
   aborted_error?: string | null
+  // Set when a lane failed its pre-drive check: NOTHING ran — no cases
+  // generated, no spend. The banner leads with the lane's diagnosis.
+  preflight?: PreflightFailure | null
+}
+
+// The one failure the banner reports, chosen in the given (blame) order —
+// deterministic regardless of which lane's ping lost the race. All lanes
+// are checked concurrently, so with several dead lanes the user fixes them
+// front-to-back across re-drives.
+export function first_preflight_failure(
+  outcomes: PreflightOutcome[],
+): PreflightFailure | null {
+  const failed = outcomes.find((o) => !o.ok)
+  if (!failed) return null
+  return {
+    lane: failed.lane,
+    message: failed.message || "the model did not respond",
+    model: failed.model ?? null,
+  }
 }
 
 // Dominant per-case error: the most frequent case_failed message.
@@ -52,6 +91,26 @@ export function drive_stop_banner(
   const config_clause = run_config_name
     ? ` (run config: ${run_config_name})`
     : ""
+  if (stop.preflight) {
+    // A lane failed its pre-drive check: nothing ran and nothing was spent
+    // — say so, because this same screen otherwise reports paid failures.
+    const f = stop.preflight
+    const lane_clause =
+      f.lane === "run config"
+        ? run_config_name
+          ? ` (run config: ${run_config_name}${
+              run_config_model ? `, ${run_config_model}` : ""
+            })`
+          : ""
+        : f.model
+          ? ` (${f.model})`
+          : ""
+    const recovery =
+      f.lane === "run config"
+        ? `Nothing was driven and nothing was spent. You can [test your run config](/run), then drive again.`
+        : `Nothing was driven and nothing was spent. Check the model's provider key in [Settings](/settings/providers), then drive again.`
+    return `Didn't start the drive — the ${f.lane} failed its check: ${f.message}${lane_clause}.\n\n${recovery}`
+  }
   if (stop.aborted_error) {
     // A config-scoped failure aborted the batch mid-drive: the run config
     // (name + model) IS the diagnosis, and cases judged before the abort

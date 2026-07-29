@@ -11,6 +11,7 @@ from typing import Literal
 
 from kiln_ai.datamodel.basemodel import FilenameStringShort
 from kiln_ai.datamodel.claim_review import GradedClaim
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -147,6 +148,32 @@ class BuildClaimsApiOutput(BaseModel):
 
     claims: list[ClaimApi]
     final_judgement: FinalJudgementApi
+
+
+# ── Run-config preflight ──────────────────────────────────────────────────
+
+
+class PreflightModelApiInput(BaseModel):
+    """One model lane to verify before a drive commits real spend.
+
+    The client pings each lane the pipeline will use (target run config,
+    synthetic-user driver, judge) with one of these before generate_cases,
+    so a dead key/model stops the drive before the plan/SU-gen minutes and
+    the batch's model spend, not after.
+    """
+
+    model_name: str = Field(description="The model to verify.")
+    model_provider: ModelProviderName = Field(
+        description="The provider to verify the model against."
+    )
+
+
+class PreflightModelApiOutput(BaseModel):
+    """The lane answered a one-word completion — key, billing, and model
+    resolution all work. Failures surface as a 400 with the unwrapped root
+    provider error instead."""
+
+    ok: Literal[True] = True
 
 
 # ── Refine judge loop ─────────────────────────────────────────────────────
