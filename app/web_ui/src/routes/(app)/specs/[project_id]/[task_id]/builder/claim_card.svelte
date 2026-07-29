@@ -30,13 +30,16 @@
   // True when the verdict is the only card (empty claims list).
   export let sole_card = false
 
-  // The model's conclusion usually opens with its own "Eval fails — " style
-  // prefix; the deterministic headline already says that, so strip the
-  // duplication when present (shown as-is when the phrasing varies).
+  // The model's conclusion opens with an "Eval fails — " style prefix, and
+  // about half the time (per the capture corpus) it's the BARE verdict with
+  // all substance in the evidence sentence. The deterministic headline
+  // already states the verdict, so: strip the prefix; a bare verdict yields
+  // NO reason text, and the evidence steps back in as the reason.
   $: final_reason = strip_verdict_prefix(claim.claim)
   function strip_verdict_prefix(text: string): string {
-    const stripped = text.replace(/^eval (fails|passes)\s*[—:-]?\s*/i, "")
-    if (stripped === text || stripped.length === 0) return text
+    const stripped = text.replace(/^eval (fails|passes)\s*[—:.-]?\s*/i, "")
+    if (stripped.length === 0) return ""
+    if (stripped === text) return text
     return stripped.charAt(0).toUpperCase() + stripped.slice(1)
   }
 
@@ -116,11 +119,11 @@
     </div>
   </div>
 
-  {#if is_final_judgement}
+  {#if is_final_judgement && final_reason}
     <!-- The model's conclusion, demoted to the verdict's reason. -->
     <p class="text-sm text-gray-600 mt-2 leading-relaxed">{final_reason}</p>
   {/if}
-  {#if !is_final_judgement || sole_card}
+  {#if !is_final_judgement || sole_card || !final_reason}
     <!-- Evidence: one sentence with inline [n] chips that open the trace modal. -->
     <p class="text-sm text-gray-600 mt-2 leading-relaxed">
       {#each tokens as token}
