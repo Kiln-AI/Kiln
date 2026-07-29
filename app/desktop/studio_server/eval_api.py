@@ -27,6 +27,11 @@ from kiln_ai.adapters.eval.v2_eval_code_eval import (
     add_code_trust,
     has_add_code_trust,
 )
+from kiln_ai.datamodel.datamodel_enums import (
+    EvalStatus,
+    Priority,
+    TaskOutputRatingType,
+)
 from kiln_ai.datamodel.eval import (
     CodeEvalProperties,
     Eval,
@@ -46,13 +51,17 @@ from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
 from kiln_ai.datamodel.prompt_type import generator_label
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.spec import SpecStatus
+from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.spec_utils import (
+    generate_spec_eval_filter_ids,
+    generate_spec_eval_tags,
+)
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     DENY_AGENT,
@@ -106,6 +115,19 @@ def eval_from_id(project_id: str, task_id: str, eval_id: str) -> Eval:
         status_code=404,
         detail=f"Eval not found. ID: {eval_id}",
     )
+
+
+def resolve_eval_display_fields(eval: Eval, spec: Spec | None = None) -> Eval:
+    """Fill priority/status with their resolved values for API responses.
+
+    Priority/status live on the eval, but evals created before that carry None
+    and fall through to their spec. Responses always return concrete values so
+    the UI never re-implements the fallthrough. Mutates the request-scoped
+    instance without saving, so legacy files stay untouched.
+    """
+    eval.priority = eval.resolved_priority(spec)
+    eval.status = eval.resolved_status(spec)
+    return eval
 
 
 def eval_config_from_id(
@@ -204,11 +226,13 @@ class CreateEvaluatorRequest(BaseModel):
     template: EvalTemplateId | None = Field(
         default=None, description="The eval template to use."
     )
-    output_scores: list[EvalOutputScore] = Field(
-        description="The scores this evaluator should produce."
+    output_scores: list[EvalOutputScore] | None = Field(
+        default=None,
+        description="The scores this evaluator should produce. When omitted, a pass/fail score named after the eval is generated.",
     )
-    eval_set_filter_id: DatasetFilterId = Field(
-        description="The dataset filter for the eval set."
+    eval_set_filter_id: DatasetFilterId | None = Field(
+        default=None,
+        description="The dataset filter for the eval set. When omitted, tag-based eval/train/golden filters are generated from the eval name, matching what spec-backed evals get.",
     )
     eval_configs_filter_id: DatasetFilterId | None = Field(
         default=None, description="The dataset filter for comparing eval configs."
@@ -218,6 +242,12 @@ class CreateEvaluatorRequest(BaseModel):
     )
     evaluation_data_type: EvalDataType = Field(
         description="The type of task output to evaluate."
+    )
+    priority: Priority = Field(
+        default=Priority.p1, description="The priority of the eval."
+    )
+    status: EvalStatus = Field(
+        default=EvalStatus.active, description="The status of the eval."
     )
 
 
@@ -389,6 +419,8 @@ class UpdateEvalRequest(BaseModel):
     description: str | None = Field(
         default=None, description="The updated description."
     )
+    priority: Priority | None = Field(default=None, description="The updated priority.")
+    status: EvalStatus | None = Field(default=None, description="The updated status.")
     train_set_filter_id: str | None = Field(
         default=None, description="The updated train set filter ID."
     )
@@ -727,15 +759,41 @@ def connect_evals_api(app: FastAPI):
         request: CreateEvaluatorRequest,
     ) -> Eval:
         task = task_from_id(project_id, task_id)
+
+        # When no eval set filter is provided, generate the same tag-based
+        # filters a spec-backed eval would get, so downstream features (synth
+        # data gen, fine-tuning, golden sets) work identically.
+        eval_set_filter_id = request.eval_set_filter_id
+        eval_configs_filter_id = request.eval_configs_filter_id
+        train_set_filter_id = None
+        if eval_set_filter_id is None:
+            eval_tag, train_tag, golden_tag = generate_spec_eval_tags(request.name)
+            eval_set_filter_id, train_set_filter_id, generated_configs_filter_id = (
+                generate_spec_eval_filter_ids(eval_tag, train_tag, golden_tag)
+            )
+            if eval_configs_filter_id is None:
+                eval_configs_filter_id = generated_configs_filter_id
+
+        output_scores = request.output_scores or [
+            EvalOutputScore(
+                name=request.name,
+                type=TaskOutputRatingType.pass_fail,
+                instruction=f"Evaluate whether the model's behaviour passes the eval: {request.name}.",
+            )
+        ]
+
         eval = Eval(
             name=request.name,
             description=request.description,
             template=request.template,
-            output_scores=request.output_scores,
-            eval_set_filter_id=request.eval_set_filter_id,
-            eval_configs_filter_id=request.eval_configs_filter_id,
+            output_scores=output_scores,
+            eval_set_filter_id=eval_set_filter_id,
+            eval_configs_filter_id=eval_configs_filter_id,
+            train_set_filter_id=train_set_filter_id,
             template_properties=request.template_properties,
             evaluation_data_type=request.evaluation_data_type,
+            priority=request.priority,
+            status=request.status,
             parent=task,
         )
         eval.save_to_file()
@@ -774,7 +832,7 @@ def connect_evals_api(app: FastAPI):
         ],
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> Eval:
-        return eval_from_id(project_id, task_id, eval_id)
+        return resolve_eval_display_fields(eval_from_id(project_id, task_id, eval_id))
 
     @app.delete(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
@@ -820,6 +878,10 @@ def connect_evals_api(app: FastAPI):
             eval.name = request.name
         if request.description is not None:
             eval.description = request.description
+        if request.priority is not None:
+            eval.priority = request.priority
+        if request.status is not None:
+            eval.status = request.status
 
         # legacy evals (not created with Specs) do not have a train set filter, but we need one
         # for some features such as prompt optimization
@@ -834,7 +896,7 @@ def connect_evals_api(app: FastAPI):
             eval.train_set_filter_id = request.train_set_filter_id
 
         eval.save_to_file()
-        return eval
+        return resolve_eval_display_fields(eval)
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals",
@@ -853,7 +915,13 @@ def connect_evals_api(app: FastAPI):
     ) -> list[Eval]:
         """List all evals for a task."""
         task = task_from_id(project_id, task_id)
-        return task.evals()
+        specs_by_eval_id = {
+            spec.eval_id: spec for spec in task.specs(readonly=True) if spec.eval_id
+        }
+        evals = task.evals()
+        for eval in evals:
+            resolve_eval_display_fields(eval, specs_by_eval_id.get(eval.id))
+        return evals
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
@@ -1761,16 +1829,14 @@ def connect_evals_api(app: FastAPI):
         # Verify the run config exists
         task_run_config_from_id(project_id, task_id, run_config_id)
 
-        # Build a mapping from eval_id to spec_id for evals that are associated with specs
-        # Also track which eval_ids belong to archived specs so we can exclude them
+        # Build a mapping from eval_id to spec for evals that are associated with
+        # specs. Used to attach spec ids to results and to resolve each eval's
+        # status (status lives on the eval, falling back to the spec for legacy files).
         specs = task.specs()
-        eval_id_to_spec_id: Dict[str, str] = {}
-        archived_eval_ids: set[str] = set()
+        eval_id_to_spec: Dict[str, Spec] = {}
         for spec in specs:
             if spec.eval_id and spec.id:
-                eval_id_to_spec_id[spec.eval_id] = spec.id
-                if spec.status == SpecStatus.archived:
-                    archived_eval_ids.add(spec.eval_id)
+                eval_id_to_spec[spec.eval_id] = spec
 
         evals = task.evals()
         eval_results: List[RunConfigEvalResult] = []
@@ -1789,8 +1855,9 @@ def connect_evals_api(app: FastAPI):
         total_eval_runs = 0
 
         for eval in evals:
-            # Skip evals associated with archived specs
-            if eval.id and eval.id in archived_eval_ids:
+            # Skip archived evals
+            associated_spec = eval_id_to_spec.get(eval.id) if eval.id else None
+            if eval.resolved_status(associated_spec) == EvalStatus.archived:
                 continue
 
             # Get the dataset size for this eval
@@ -1826,7 +1893,7 @@ def connect_evals_api(app: FastAPI):
                         dataset_size=dataset_size,
                         eval_config_result=None,
                         missing_default_eval_config=True,
-                        spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
+                        spec_id=associated_spec.id if associated_spec else None,
                     )
                 )
                 continue
@@ -1924,7 +1991,7 @@ def connect_evals_api(app: FastAPI):
                     eval_name=eval.name,
                     dataset_size=dataset_size,
                     missing_default_eval_config=False,
-                    spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
+                    spec_id=associated_spec.id if associated_spec else None,
                     eval_config_result=EvalConfigResult(
                         eval_config_id=eval_config.id,
                         results=results,

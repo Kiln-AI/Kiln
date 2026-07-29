@@ -14,6 +14,7 @@
   import posthog from "posthog-js"
   import { set_current_eval_config } from "$lib/stores/evals_store"
   import LlmJudgeForm from "$lib/components/eval_types/llm_judge_form.svelte"
+  import JudgeConfigFields from "$lib/components/eval_types/judge_config_fields.svelte"
   import {
     getV2EvalTypeMetadata,
     manualExampleSupport,
@@ -650,6 +651,7 @@
             {task_id}
             {project_id}
             {eval_id}
+            show_criteria_field={spec === null}
             bind:model_name={llm_model_name}
             bind:provider_name={llm_provider_name}
             bind:combined_model_name={llm_combined_model_name}
@@ -657,38 +659,17 @@
             bind:judge_prompt={llm_judge_prompt}
             bind:system_prompt={llm_system_prompt}
           />
-        {:else if eval_config_type === "code_eval" && metadata}
-          <svelte:component
-            this={metadata.createFormComponent}
+        {:else}
+          <JudgeConfigFields
             bind:this={v2FormComponentRef}
-            bind:code_string={code_eval_code}
-            output_scores={evaluator?.output_scores}
-          />
-        {:else if (eval_config_type === "exact_match" || eval_config_type === "contains" || eval_config_type === "set_check") && metadata}
-          <svelte:component
-            this={metadata.createFormComponent}
-            bind:this={v2FormComponentRef}
-            {reference_candidate_keys}
-            bind:required_reference_fields
-            bind:output_value_expression={active_value_expression}
-          />
-        {:else if eval_config_type === "pattern_match" && metadata}
-          <svelte:component
-            this={metadata.createFormComponent}
-            bind:this={v2FormComponentRef}
-            bind:output_value_expression={active_value_expression}
-          />
-        {:else if eval_config_type === "tool_call_check" && metadata}
-          <svelte:component
-            this={metadata.createFormComponent}
-            bind:this={v2FormComponentRef}
+            {eval_config_type}
             {project_id}
             {task_id}
-          />
-        {:else if metadata}
-          <svelte:component
-            this={metadata.createFormComponent}
-            bind:this={v2FormComponentRef}
+            {reference_candidate_keys}
+            output_scores={evaluator?.output_scores}
+            bind:code_string={code_eval_code}
+            bind:required_reference_fields
+            bind:output_value_expression={active_value_expression}
           />
         {/if}
 

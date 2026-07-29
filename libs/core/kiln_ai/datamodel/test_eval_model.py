@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.basemodel import KilnParentModel
+from kiln_ai.datamodel.datamodel_enums import EvalStatus, Priority
 from kiln_ai.datamodel.eval import (
     ArgMatch,
     CodeEvalProperties,
@@ -30,6 +31,8 @@ from kiln_ai.datamodel.eval import (
     reference_data_keys,
     validate_scores_against_output_scores,
 )
+from kiln_ai.datamodel.spec import Spec
+from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import TaskOutputRatingType
 
@@ -3442,3 +3445,90 @@ class TestEvalReferenceDataKeys:
         )
         eval_obj = self._make_eval_with_configs([p1, p2])
         assert eval_obj.eval_reference_data_keys() == ["b", "a", "c"]
+
+
+class TestEvalPriorityStatusResolution:
+    """Priority/status live on the eval, falling back to the associated spec
+    for evals created before that (legacy files), then to defaults."""
+
+    def _make_eval(self, **kwargs) -> Eval:
+        return Eval(
+            name="Resolution Eval",
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
+            ],
+            **kwargs,
+        )
+
+    def test_fields_default_to_none_and_resolve_to_defaults(self):
+        eval = self._make_eval()
+        assert eval.priority is None
+        assert eval.status is None
+        assert eval.resolved_priority() == Priority.p1
+        assert eval.resolved_status() == EvalStatus.active
+
+    def test_own_values_win(self, mock_task, tmp_path):
+        mock_task.path = tmp_path / "task.kiln"
+        mock_task.save_to_file()
+
+        eval = self._make_eval(
+            parent=mock_task, priority=Priority.p0, status=EvalStatus.deprecated
+        )
+        eval.save_to_file()
+        spec = Spec(
+            name="Backing Spec",
+            definition="definition",
+            properties=DesiredBehaviourProperties(
+                spec_type=SpecType.desired_behaviour,
+                desired_behaviour_description="be nice",
+            ),
+            priority=Priority.p3,
+            status=EvalStatus.archived,
+            eval_id=eval.id,
+            parent=mock_task,
+        )
+        spec.save_to_file()
+
+        assert eval.resolved_priority() == Priority.p0
+        assert eval.resolved_status() == EvalStatus.deprecated
+
+    def test_falls_back_to_spec(self, mock_task, tmp_path):
+        mock_task.path = tmp_path / "task.kiln"
+        mock_task.save_to_file()
+
+        eval = self._make_eval(parent=mock_task)
+        eval.save_to_file()
+        spec = Spec(
+            name="Backing Spec",
+            definition="definition",
+            properties=DesiredBehaviourProperties(
+                spec_type=SpecType.desired_behaviour,
+                desired_behaviour_description="be nice",
+            ),
+            priority=Priority.p2,
+            status=EvalStatus.future,
+            eval_id=eval.id,
+            parent=mock_task,
+        )
+        spec.save_to_file()
+
+        # Resolved via a task scan, and via an explicitly passed spec
+        assert eval.resolved_priority() == Priority.p2
+        assert eval.resolved_status() == EvalStatus.future
+        assert eval.resolved_priority(spec) == Priority.p2
+        assert eval.resolved_status(spec) == EvalStatus.future
+
+    def test_round_trips_through_file(self, mock_task, tmp_path):
+        mock_task.path = tmp_path / "task.kiln"
+        mock_task.save_to_file()
+
+        eval = self._make_eval(
+            parent=mock_task, priority=Priority.p2, status=EvalStatus.future
+        )
+        eval.save_to_file()
+
+        loaded = Eval.load_from_file(str(eval.path))
+        assert loaded.priority == Priority.p2
+        assert loaded.status == EvalStatus.future

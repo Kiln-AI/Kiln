@@ -259,15 +259,16 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
       return {
         label: "Step Count Check",
         description:
-          "Count steps in the trace and check they're within bounds.",
+          "Check the agent finished within an expected number of steps.",
 
         requiresTrust: false,
         tags: [],
         pageTitle: "Add a Step Count Check",
-        pageSubtitle:
-          "Check the number of steps in the trace is within bounds.",
+        pageSubtitle: "Pass when the agent's step count is within bounds.",
         explainer:
-          "Counts tool calls, model responses, or turns in the agent's trace and checks whether the count falls within specified bounds.",
+          "Counts steps in the agent's trace — tool calls, model responses, or conversation turns — and passes when the count is within the bounds you set.",
+        example:
+          "Cap an agent at 5 tool calls to catch runaway loops, or require at least 1 to confirm it actually used a tool.",
         createFormComponent: StepCountCheckForm,
         resultRendererComponent: StepCountCheckResult,
       }

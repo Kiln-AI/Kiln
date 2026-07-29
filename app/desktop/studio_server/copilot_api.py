@@ -51,7 +51,7 @@ from app.desktop.studio_server.utils.response_utils import unwrap_response
 from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.basemodel import FilenameString
-from kiln_ai.datamodel.datamodel_enums import Priority
+from kiln_ai.datamodel.datamodel_enums import EvalStatus, Priority
 from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalConfigType
 from kiln_ai.datamodel.spec import (
     Spec,
@@ -318,7 +318,8 @@ def connect_copilot_api(app: FastAPI):
         # Build models but don't save yet, collect all models first
         models_to_save: list[Eval | EvalConfig | TaskRun | Spec] = []
 
-        # 1. Create the Eval
+        # 1. Create the Eval. Priority/status live on the eval; the spec below
+        # mirrors them at creation for a truthful spec file.
         eval = Eval(
             parent=task,
             name=request.name,
@@ -330,6 +331,8 @@ def connect_copilot_api(app: FastAPI):
             eval_configs_filter_id=eval_configs_filter_id,
             template_properties=None,
             evaluation_data_type=evaluation_data_type,
+            priority=Priority.p1,
+            status=EvalStatus.active,
         )
         models_to_save.append(eval)
 

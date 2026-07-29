@@ -5,6 +5,7 @@
   import AppPage from "../../../../app_page.svelte"
   import { load_task } from "$lib/stores"
   import { checkDefaultRunConfigHasTools } from "../spec_utils"
+  import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
   import { agentInfo } from "$lib/agent"
@@ -17,6 +18,7 @@
 
   let loading = true
   let default_run_config_has_tools = false
+  let connecting_pro = false
   let error: KilnError | null = null
 
   onMount(async () => {
@@ -37,7 +39,27 @@
   })
 
   function proceed_to_select_template() {
-    goto(`/specs/${project_id}/${task_id}/select_template`)
+    goto(`/specs/${project_id}/${task_id}/select_template?workflow=manual`)
+  }
+
+  // Kiln Pro needs an account. If one is already connected, skip the connect
+  // page entirely; otherwise send them through it and it returns here's next
+  // step (the template picker) once they're connected.
+  async function proceed_with_kiln_pro() {
+    error = null
+    connecting_pro = true
+    try {
+      const connected = await checkKilnCopilotAvailable()
+      if (connected) {
+        goto(`/specs/${project_id}/${task_id}/select_template?workflow=pro`)
+      } else {
+        goto(`/specs/pro_auth`)
+      }
+    } catch (e) {
+      error = createKilnError(e)
+    } finally {
+      connecting_pro = false
+    }
   }
 </script>
 
@@ -135,6 +157,7 @@
                 <td class="text-center pt-4">
                   <button
                     class="btn btn-outline btn-sm whitespace-nowrap"
+                    disabled={connecting_pro}
                     on:click={proceed_to_select_template}
                   >
                     Create Manually
@@ -149,13 +172,15 @@
                   >
                     <button
                       class="btn btn-primary btn-sm whitespace-nowrap"
-                      disabled={loading || default_run_config_has_tools}
-                      on:click={() =>
-                        goto(`/specs/pro_auth`, {
-                          replaceState: true,
-                        })}
+                      disabled={loading ||
+                        connecting_pro ||
+                        default_run_config_has_tools}
+                      on:click={proceed_with_kiln_pro}
                     >
-                      Connect Kiln Pro
+                      {#if connecting_pro}
+                        <span class="loading loading-spinner loading-xs"></span>
+                      {/if}
+                      Use Kiln Pro
                     </button>
                   </div>
                 </td>

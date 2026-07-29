@@ -16,5 +16,5 @@
   title="Create Eval"
   docs_link="https://docs.kiln.tech/docs/evals-and-specs"
   breadcrumbs={[{ label: "Evals", href: `/specs/${project_id}/${task_id}` }]}
-  success_redirect_url={`/specs/${project_id}/${task_id}/select_template`}
+  success_redirect_url={`/specs/${project_id}/${task_id}/select_template?workflow=pro`}
 />

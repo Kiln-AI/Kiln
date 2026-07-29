@@ -112,6 +112,9 @@ def connect_spec_api(app: FastAPI):
             spec_type, spec_data.evaluate_full_trace
         )
 
+        # Priority and status live on the eval. They're also written to the spec
+        # below so the spec file stays truthful, but the eval is the source of
+        # truth for reads and later edits.
         eval = Eval(
             parent=task,
             name=spec_data.name,
@@ -123,6 +126,8 @@ def connect_spec_api(app: FastAPI):
             eval_configs_filter_id=eval_configs_filter_id,
             template_properties=None,
             evaluation_data_type=evaluation_data_type,
+            priority=spec_data.priority,
+            status=spec_data.status,
         )
 
         spec = Spec(

@@ -21,7 +21,20 @@
   export let judge_prompt: string | undefined = undefined
   export let system_prompt: string | undefined = undefined
 
+  // Evals without a spec have nothing to derive judging criteria from -- the
+  // server's default prompt only knows the eval's name. When enabled, a
+  // criteria field is shown and its text is injected into the judge prompt.
+  export let show_criteria_field: boolean = false
+  let judge_criteria: string = ""
+
   let prompt_fetch_error: string | null = null
+
+  // The server's default prompt, before any criteria are injected, and the
+  // last prompt this component generated. While the advanced prompt still
+  // matches the last generated value the user hasn't touched it, so it's safe
+  // to regenerate as they type criteria; after a manual edit, their text wins.
+  let base_judge_prompt: string | undefined = undefined
+  let last_generated_prompt: string | undefined = undefined
 
   onMount(async () => {
     try {
@@ -30,8 +43,10 @@
         task_id,
         eval_id,
       )
+      base_judge_prompt = defaults.judge_prompt
       if (judge_prompt === undefined) {
-        judge_prompt = defaults.judge_prompt
+        judge_prompt = inject_criteria(defaults.judge_prompt, judge_criteria)
+        last_generated_prompt = judge_prompt
       }
       if (system_prompt === undefined) {
         system_prompt = defaults.system_prompt
@@ -42,6 +57,40 @@
       console.warn("Failed to fetch default LLM judge prompt:", e)
     }
   })
+
+  $: if (show_criteria_field && base_judge_prompt !== undefined) {
+    regenerate_prompt(judge_criteria)
+  }
+
+  function regenerate_prompt(criteria: string) {
+    if (judge_prompt !== undefined && judge_prompt !== last_generated_prompt) {
+      return
+    }
+    const generated = inject_criteria(base_judge_prompt ?? "", criteria)
+    judge_prompt = generated
+    last_generated_prompt = generated
+  }
+
+  // Mirrors the backend's conditionally_raw_wrap: the judge prompt is a Jinja2
+  // template, so criteria containing Jinja openers must be wrapped in a raw
+  // block (with any literal endraw defused) to be treated as text.
+  function escape_jinja(text: string): string {
+    if (!/{{|{%|{#/.test(text)) return text
+    const defused = text.replace(/\{(%\s*endraw\s*%\})/g, "{ $1")
+    return "{% raw %}" + defused + "{% endraw %}"
+  }
+
+  function inject_criteria(base: string, criteria: string): string {
+    if (!show_criteria_field || !criteria.trim()) return base
+    return (
+      base +
+      "\n\nEvaluate the model's output against the following criteria:\n" +
+      "<eval_criteria>\n" +
+      escape_jinja(criteria.trim()) +
+      "\n</eval_criteria>\n" +
+      "The eval should pass only if the output meets all of the criteria."
+    )
+  }
 
   const evaluator_algorithms: {
     id: EvalConfigType
@@ -173,6 +222,21 @@
 </script>
 
 <div class="flex flex-col gap-6">
+  {#if show_criteria_field}
+    <!--
+      This eval has no spec, so the default judge prompt has no criteria to
+      grade against -- this field is what the judge will actually check.
+    -->
+    <FormElement
+      label="What to Look For"
+      id="judge_criteria"
+      inputType="textarea"
+      description="Describe what the judge should check when scoring an output. This is added to the judge prompt, which you can review under Advanced below."
+      info_description={`e.g., "The response must not include clickbait headlines." You can refine the full prompt under Advanced: Judge Prompt; once you edit the prompt directly, it stops updating from this field.`}
+      bind:value={judge_criteria}
+    />
+  {/if}
+
   <div class="text-sm font-medium text-left flex flex-col gap-1">
     <div class="text-xl font-bold">Select Judge Model</div>
     <div class="text-xs text-gray-500">
@@ -281,7 +345,9 @@
     <div class="flex flex-col gap-2">
       <p class="text-xs text-gray-500 font-medium">
         Customizing the judge prompt can improve eval quality. We've pre-filled
-        a default based on your task and spec.
+        a default based on your task and {show_criteria_field
+          ? "the criteria above"
+          : "spec"}.
       </p>
       <p class="text-xs text-gray-500">
         The judge prompt is in Jinja2 format and may contain the following

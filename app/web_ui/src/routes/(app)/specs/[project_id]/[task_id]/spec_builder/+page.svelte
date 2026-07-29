@@ -23,6 +23,10 @@
   import {
     checkDefaultRunConfigHasTools,
     buildSpecDefinition,
+    parseSpecWorkflow,
+    implied_judge_for_spec_type,
+    eval_template_for_spec_type,
+    type SpecWorkflow,
     type SuggestedEdit,
     type ReviewRow,
   } from "../spec_utils"
@@ -33,7 +37,21 @@
     available_models,
     load_available_models,
   } from "$lib/stores"
+  import { set_current_eval_config } from "$lib/stores/evals_store"
+  import {
+    createEvalConfig,
+    createEvaluator,
+    checkAddCodeTrust,
+    addCodeTrust,
+  } from "$lib/api/v2_eval_api"
+  import {
+    ALL_V2_EVAL_TYPES,
+    getV2EvalTypeMetadata,
+    type V2EvalType,
+  } from "$lib/utils/eval_types/registry"
+  import Dialog from "$lib/ui/dialog.svelte"
   import CreateSpecForm from "./create_spec_form.svelte"
+  import CreateSpecJudgeForm from "./create_spec_judge_form.svelte"
   import ReviewExamples from "./review_examples.svelte"
   import RefineSpec from "./refine_spec.svelte"
   import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
@@ -86,8 +104,21 @@
   let evaluate_full_trace = false
   let priority: Priority = 1
 
-  // Tool use spec: tool_id is not a form field but is required in the saved properties
-  let selected_tool_id: string | null = null
+  // The judge chosen on the previous screen. Null means the LLM-judge flow (the
+  // full template form, saved as a spec); any other type means a judge that
+  // never reads a written rubric, so no spec is created at all -- just an eval
+  // with the judge attached.
+  let judge_type: V2EvalType | null = null
+  let workflow: SpecWorkflow = "manual"
+  let judge_form: CreateSpecJudgeForm
+  let trust_dialog: Dialog
+
+  $: is_non_llm_judge = judge_type !== null && judge_type !== "llm_judge"
+
+  // Tool-call and step-count judges score the agent's execution trace, so their
+  // evals have to be created against the full history, not just the final answer.
+  $: judge_requires_full_trace =
+    judge_type === "tool_call_check" || judge_type === "step_count_check"
 
   // Copilot availability
   let has_kiln_copilot = false
@@ -190,14 +221,18 @@
   // Advanced options
   $: is_tool_use_spec = spec_type === "appropriate_tool_use"
   $: is_reference_answer_spec = spec_type === "reference_answer_accuracy"
-  $: full_trace_disabled = is_tool_use_spec
+  $: full_trace_disabled = is_tool_use_spec || judge_requires_full_trace
   $: hide_full_trace_option = is_reference_answer_spec
-  $: if (is_tool_use_spec) evaluate_full_trace = true
+  $: if (is_tool_use_spec || judge_requires_full_trace)
+    evaluate_full_trace = true
 
-  // Tool call and RAG specs don't support copilot
-  // Also disable copilot when the default run config has tools (tool calling not supported yet)
+  // Kiln Pro only builds LLM judges, and only for users who chose it on the
+  // workflow screen. Tool call and RAG specs don't support it, nor do tasks whose
+  // default run config has tools (tool calling isn't supported yet).
   $: copilot_enabled =
     has_kiln_copilot &&
+    workflow === "pro" &&
+    !is_non_llm_judge &&
     !is_tool_use_spec &&
     !is_reference_answer_spec &&
     !default_run_config_has_tools
@@ -237,7 +272,16 @@
       spec_type = spec_type_param as SpecType
       name = autofillSpecName(spec_type)
 
-      // Initialize property values from field configs
+      workflow = parseSpecWorkflow($page.url.searchParams.get("workflow"))
+
+      const judge_param = $page.url.searchParams.get("judge")
+      judge_type = ALL_V2_EVAL_TYPES.includes(judge_param as V2EvalType)
+        ? (judge_param as V2EvalType)
+        : null
+
+      // Initialize property values from field configs. Fields the user never sees
+      // (because a non-LLM judge is scoring) still save their template default, so
+      // the spec stays valid and reads sensibly on the eval's detail page.
       const fieldConfigs = spec_field_configs[spec_type] || []
       const values: Record<string, string | null> = {}
 
@@ -249,15 +293,6 @@
 
       property_values = values
       initial_property_values = { ...values }
-
-      // Override tool fields if provided in URL
-      const tool_function_name_param =
-        $page.url.searchParams.get("tool_function_name")
-      if (tool_function_name_param) {
-        property_values["tool_function_name"] = tool_function_name_param
-        initial_property_values["tool_function_name"] = tool_function_name_param
-      }
-      selected_tool_id = $page.url.searchParams.get("tool_id")
     } catch (e) {
       loading_error = createKilnError(e)
     } finally {
@@ -396,7 +431,6 @@
     const properties = {
       spec_type: spec_type,
       ...filteredValues,
-      ...(selected_tool_id ? { tool_id: selected_tool_id } : {}),
     } as SpecProperties
 
     // Call the appropriate endpoint based on whether copilot is being used
@@ -465,6 +499,7 @@
       )
       if (api_error) throw api_error
       spec_id = data?.id
+
       posthog.capture("create_spec", {
         spec_type: spec_type,
         with_copilot: false,
@@ -491,6 +526,99 @@
       submitting = false
       saving_spec = false
     }
+  }
+
+  // Handler for creating an eval together with a non-LLM judge. No spec is
+  // created: the judge never reads a written rubric, so there are no spec
+  // fields worth asking for. The eval carries the template, priority, and the
+  // judge config, and reads/edits work exactly like any other spec-less eval.
+  async function handle_create_eval_with_judge() {
+    error = null
+    try {
+      // Validate the judge before writing anything: an eval saved with a judge
+      // we then fail to create would strand the user on a half-built eval.
+      const judge_error = judge_form.validateJudge()
+      if (judge_error) {
+        error = new KilnError(judge_error)
+        await tick() // Let FormContainer apply submitting=true before we clear it
+        return
+      }
+
+      // Code judges execute Python locally, so get consent before creating anything.
+      if (judge_type && getV2EvalTypeMetadata(judge_type).requiresTrust) {
+        const trust = await checkAddCodeTrust(project_id)
+        if (!trust.trusted) {
+          trust_dialog.show()
+          return
+        }
+      }
+
+      // Read the judge's values while its form is still on screen: the saving
+      // spinner replaces it, and a destroyed component can't be read.
+      const judge_properties = judge_form.getJudgeProperties()
+
+      saving_spec = true
+      name = normalize_filename_string(name)
+
+      const evaluator = await createEvaluator(project_id, task_id, {
+        name,
+        template: eval_template_for_spec_type(spec_type),
+        evaluation_data_type: evaluate_full_trace
+          ? "full_trace"
+          : "final_answer",
+        priority: Number(priority) as 0 | 1 | 2 | 3,
+        status: "active",
+      })
+      if (!evaluator.id) {
+        throw new KilnError("Failed to create eval. Please try again.")
+      }
+
+      // Attach the judge and make it the default, so the eval is ready to run
+      // instead of landing on "Not Ready - Configure".
+      const eval_config = await createEvalConfig(
+        project_id,
+        task_id,
+        evaluator.id,
+        {
+          type: "v2",
+          properties: judge_properties,
+          model_name: null,
+          provider: null,
+        },
+      )
+      if (eval_config.id) {
+        await set_current_eval_config(
+          project_id,
+          task_id,
+          evaluator.id,
+          eval_config.id,
+        )
+      }
+
+      posthog.capture("create_eval_with_judge", {
+        spec_type: spec_type,
+        judge_type: judge_type ?? undefined,
+      })
+
+      complete = true
+      goto(`/specs/${project_id}/${task_id}/legacy/${evaluator.id}`)
+    } catch (e) {
+      error = createKilnError(e)
+    } finally {
+      submitting = false
+      saving_spec = false
+    }
+  }
+
+  async function grant_trust_and_save(): Promise<boolean> {
+    try {
+      await addCodeTrust(project_id)
+    } catch (e) {
+      error = createKilnError(e)
+      return false
+    }
+    await handle_create_eval_with_judge()
+    return true
   }
 
   // Handler for creating spec from review (all feedback aligned)
@@ -847,6 +975,30 @@
   $: page_subtitle = getPageSubtitle(current_state)
   $: page_class = getPageClass(current_state)
 
+  // Templates whose judge is implied skip the judge picker, so it isn't a step
+  // the user can navigate back to.
+  $: came_via_judge_picker =
+    judge_type !== null && !implied_judge_for_spec_type(spec_type)
+
+  $: breadcrumbs = [
+    {
+      label: "Evals",
+      href: `/specs/${project_id}/${task_id}`,
+    },
+    {
+      label: "Eval Templates",
+      href: `/specs/${project_id}/${task_id}/select_template?workflow=${workflow}`,
+    },
+    ...(came_via_judge_picker
+      ? [
+          {
+            label: "Judge Type",
+            href: `/specs/${project_id}/${task_id}/select_judge?type=${spec_type}&workflow=${workflow}`,
+          },
+        ]
+      : []),
+  ]
+
   // Warn before unload when there are unsaved changes
   $: warn_before_unload = !complete && !loading
 </script>
@@ -857,16 +1009,7 @@
     subtitle={page_subtitle}
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
-    breadcrumbs={[
-      {
-        label: "Evals",
-        href: `/specs/${project_id}/${task_id}`,
-      },
-      {
-        label: "Eval Templates",
-        href: `/specs/${project_id}/${task_id}/select_template`,
-      },
-    ]}
+    {breadcrumbs}
   >
     {#if loading || (saving_spec && current_state !== "saving_with_copilot")}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -876,6 +1019,21 @@
       <div class="text-error text-sm">
         {loading_error.getMessage() || "An unknown error occurred"}
       </div>
+    {:else if current_state === "create" && is_non_llm_judge && judge_type}
+      <CreateSpecJudgeForm
+        bind:this={judge_form}
+        bind:name
+        bind:evaluate_full_trace
+        bind:priority
+        {judge_type}
+        {project_id}
+        {task_id}
+        {full_trace_disabled}
+        bind:error
+        bind:submitting
+        {warn_before_unload}
+        on:save={handle_create_eval_with_judge}
+      />
     {:else if current_state === "create"}
       <CreateSpecForm
         bind:name
@@ -964,3 +1122,37 @@
     {/if}
   </AppPage>
 </div>
+
+<Dialog
+  bind:this={trust_dialog}
+  title="Trust Code and Project?"
+  action_buttons={[
+    {
+      label: "I Trust this Code",
+      isWarning: true,
+      asyncAction: grant_trust_and_save,
+    },
+  ]}
+>
+  <div class="flex flex-row items-start gap-4">
+    <!-- exclaim icon from warning.svelte (keep in sync) -->
+    <svg
+      class="w-10 h-10 text-warning flex-none"
+      fill="currentColor"
+      viewBox="0 0 256 256"
+      xmlns="http://www.w3.org/2000/svg"
+      data-testid="trust-warning-icon"
+    >
+      <path
+        d="M128,20.00012a108,108,0,1,0,108,108A108.12217,108.12217,0,0,0,128,20.00012Zm0,192a84,84,0,1,1,84-84A84.0953,84.0953,0,0,1,128,212.00012Zm-12-80v-52a12,12,0,1,1,24,0v52a12,12,0,1,1-24,0Zm28,40a16,16,0,1,1-16-16A16.018,16.018,0,0,1,144,172.00012Z"
+      />
+    </svg>
+    <div class="flex flex-col gap-2 text-sm text-left">
+      <p>
+        This project wants to run Python code on your machine. Only proceed if
+        you trust the eval code and this project.
+      </p>
+      <p class="font-bold">Never paste code from a stranger or the internet.</p>
+    </div>
+  </div>
+</Dialog>

@@ -3,7 +3,6 @@
   import { page } from "$app/stores"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { client } from "$lib/api_client"
-  import { onMount } from "svelte"
   import Intro from "$lib/ui/intro.svelte"
   import type { Spec, SpecStatus, Eval, Priority } from "$lib/types"
   import { goto, replaceState } from "$app/navigation"
@@ -12,15 +11,19 @@
   import TableToolbar from "$lib/ui/table_toolbar.svelte"
   import AddTagsDialog from "$lib/ui/add_tags_dialog.svelte"
   import RemoveTagsDialog from "$lib/ui/remove_tags_dialog.svelte"
-  import { formatDate, formatSpecType } from "$lib/utils/formatters"
+  import {
+    capitalize,
+    formatDate,
+    formatPriority,
+    formatSpecType,
+  } from "$lib/utils/formatters"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import EditablePriorityField from "./editable_priority_field.svelte"
   import EditableStatusField from "./editable_status_field.svelte"
   import {
-    updateSpecPriority as updateSpecPriorityUtil,
-    updateSpecStatus as updateSpecStatusUtil,
+    updateEvalPriority as updateEvalPriorityUtil,
+    updateEvalStatus as updateEvalStatusUtil,
   } from "./spec_utils"
-  import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import Banner from "$lib/ui/banner.svelte"
   import posthog from "posthog-js"
@@ -42,12 +45,25 @@
   let evals_error: KilnError | null = null
   let evals_loading = true
 
-  let settings_loading = true
-  let settings_error: KilnError | null = null
-  let has_kiln_copilot = false
+  $: loading = specs_loading || evals_loading
+  $: error = specs_error || evals_error
 
-  $: loading = specs_loading || evals_loading || settings_loading
-  $: error = specs_error || evals_error || settings_error
+  // Priority/status live on the eval; the server resolves legacy spec-backed
+  // evals through their spec on read. Spec rows look their eval up here, and
+  // fall back to the spec's own (legacy) values only if the eval is missing.
+  $: evals_by_id = new Map((evals || []).map((e) => [e.id ?? "", e]))
+
+  function resolved_priority(spec: Spec, by_id: Map<string, Eval>): Priority {
+    return (
+      (spec.eval_id ? by_id.get(spec.eval_id)?.priority : null) ?? spec.priority
+    )
+  }
+
+  function resolved_status(spec: Spec, by_id: Map<string, Eval>): SpecStatus {
+    return (
+      (spec.eval_id ? by_id.get(spec.eval_id)?.status : null) ?? spec.status
+    )
+  }
 
   type TableRow =
     | { type: "spec"; data: Spec }
@@ -84,10 +100,10 @@
     if (selected_spec_objects.length === 0) return null
 
     const all_archived = selected_spec_objects.every(
-      (spec) => spec.status === "archived",
+      (spec) => resolved_status(spec, evals_by_id) === "archived",
     )
     const all_unarchived = selected_spec_objects.every(
-      (spec) => spec.status !== "archived",
+      (spec) => resolved_status(spec, evals_by_id) !== "archived",
     )
 
     if (all_archived) return "unarchive"
@@ -135,29 +151,25 @@
   }
 
   $: is_empty = (!specs || specs.length === 0) && (!evals || evals.length === 0)
-  $: has_archived_specs = specs
-    ? specs.some((spec) => spec.status === "archived")
-    : false
+  $: has_archived_specs =
+    (specs || []).some(
+      (spec) => resolved_status(spec, evals_by_id) === "archived",
+    ) || (evals || []).some((e) => e.status === "archived")
+
+  // When everything is archived, an empty-looking list would read as "no
+  // evals" -- show the archived rows instead. One-way: never flips back off.
+  $: if (
+    !loading &&
+    specs &&
+    specs.length > 0 &&
+    specs.every((spec) => resolved_status(spec, evals_by_id) === "archived")
+  ) {
+    show_archived = true
+  }
 
   $: if (project_id && task_id) {
     load_specs(project_id, task_id)
     load_evals(project_id, task_id)
-  }
-
-  onMount(async () => {
-    await load_has_kiln_copilot()
-  })
-
-  async function load_has_kiln_copilot() {
-    try {
-      settings_loading = true
-      settings_error = null
-      has_kiln_copilot = await checkKilnCopilotAvailable()
-    } catch (e) {
-      settings_error = createKilnError(e)
-    } finally {
-      settings_loading = false
-    }
   }
 
   async function load_specs(req_project_id: string, req_task_id: string) {
@@ -177,12 +189,6 @@
         throw error
       }
       specs = data
-      if (specs && specs.length > 0) {
-        const all_archived = specs.every((spec) => spec.status === "archived")
-        if (all_archived) {
-          show_archived = true
-        }
-      }
       filterAndSortSpecs()
     } catch (error) {
       if (req_project_id !== project_id || req_task_id !== task_id) return
@@ -229,8 +235,12 @@
       return
     }
 
-    let active_specs = specs.filter((spec) => spec.status !== "archived")
-    let archived_specs = specs.filter((spec) => spec.status === "archived")
+    let active_specs = specs.filter(
+      (spec) => resolved_status(spec, evals_by_id) !== "archived",
+    )
+    let archived_specs = specs.filter(
+      (spec) => resolved_status(spec, evals_by_id) === "archived",
+    )
 
     let filtered_active =
       filter_tags.length > 0
@@ -254,7 +264,10 @@
       specs.map((spec) => spec.eval_id).filter((id) => id != null),
     )
     const legacy_evals = (evals || []).filter(
-      (e) => e.id && !spec_eval_ids.has(e.id),
+      (e) =>
+        e.id &&
+        !spec_eval_ids.has(e.id) &&
+        (show_archived || (e.status ?? "active") !== "archived"),
     )
 
     const spec_rows: TableRow[] = all_specs_to_show.map((spec) => ({
@@ -294,6 +307,18 @@
     }
   }
 
+  function row_priority(row: TableRow): Priority {
+    return row.type === "spec"
+      ? resolved_priority(row.data, evals_by_id)
+      : row.data.priority ?? 1
+  }
+
+  function row_status(row: TableRow): SpecStatus {
+    return row.type === "spec"
+      ? resolved_status(row.data, evals_by_id)
+      : row.data.status ?? "active"
+  }
+
   function sortFunction(a: TableRow, b: TableRow) {
     let aValue: string | number | Date | null | undefined
     let bValue: string | number | Date | null | undefined
@@ -303,34 +328,23 @@
     const aEval = a.type === "legacy_eval" ? a.data : null
     const bEval = b.type === "legacy_eval" ? b.data : null
 
-    const aIsNA =
-      a.type === "legacy_eval" &&
-      (sortColumn === "priority" || sortColumn === "status")
-    const bIsNA =
-      b.type === "legacy_eval" &&
-      (sortColumn === "priority" || sortColumn === "status")
-
-    if (aIsNA && !bIsNA) return 1
-    if (!aIsNA && bIsNA) return -1
-    if (aIsNA && bIsNA) return 0
-
     switch (sortColumn) {
       case "name":
         aValue = (aData?.name || aEval?.name || "").toLowerCase()
         bValue = (bData?.name || bEval?.name || "").toLowerCase()
         break
       case "template":
-        aValue = aData?.properties.spec_type || (aEval ? "legacy_eval" : "")
-        bValue = bData?.properties.spec_type || (bEval ? "legacy_eval" : "")
+        aValue = aData?.properties.spec_type || (aEval ? "none" : "")
+        bValue = bData?.properties.spec_type || (bEval ? "none" : "")
         break
       case "priority":
         // Priority is flipped since P0 is the highest priority
-        aValue = bData?.priority ?? null
-        bValue = aData?.priority ?? null
+        aValue = row_priority(b)
+        bValue = row_priority(a)
         break
       case "status":
-        aValue = aData ? getStatusSortOrder(aData.status) : null
-        bValue = bData ? getStatusSortOrder(bData.status) : null
+        aValue = getStatusSortOrder(row_status(a))
+        bValue = getStatusSortOrder(row_status(b))
         break
       case "created_at":
         aValue =
@@ -600,8 +614,10 @@
       }
 
       for (const spec of specs_to_update) {
+        const evaluator = spec.eval_id ? evals_by_id.get(spec.eval_id) : null
+        if (!evaluator) continue
         const new_status = should_archive ? "archived" : "active"
-        await updateSpecStatus(spec, new_status as SpecStatus)
+        await updateEvalStatus(evaluator, new_status as SpecStatus)
       }
 
       posthog.capture(should_archive ? "archive_specs" : "unarchive_specs", {
@@ -649,86 +665,84 @@
     ]
   }
 
-  async function updateSpecPriority(spec: Spec, newPriority: number) {
+  async function updateEvalPriority(evaluator: Eval, newPriority: number) {
     if (
-      !spec.id ||
-      spec.priority === newPriority ||
-      updating_priorities.has(spec.id)
+      !evaluator.id ||
+      evaluator.priority === newPriority ||
+      updating_priorities.has(evaluator.id)
     ) {
       return
     }
 
-    updating_priorities.add(spec.id)
+    updating_priorities.add(evaluator.id)
     try {
-      const data = await updateSpecPriorityUtil(
+      const data = await updateEvalPriorityUtil(
         project_id,
         task_id,
-        spec,
+        evaluator,
         newPriority,
       )
 
-      if (data && specs) {
-        const index = specs.findIndex((s) => s.id === spec.id)
+      if (data && evals) {
+        const index = evals.findIndex((e) => e.id === evaluator.id)
         if (index !== -1) {
-          specs[index] = data
-          specs = specs
+          evals[index] = data
+          evals = evals
           filterAndSortSpecs()
         }
       }
     } catch (error) {
-      specs_error = createKilnError(error)
+      evals_error = createKilnError(error)
     } finally {
-      updating_priorities.delete(spec.id)
+      updating_priorities.delete(evaluator.id)
     }
   }
 
-  async function updateSpecStatus(spec: Spec, newStatus: SpecStatus) {
+  async function updateEvalStatus(evaluator: Eval, newStatus: SpecStatus) {
     if (
-      !spec.id ||
-      spec.status === newStatus ||
-      updating_statuses.has(spec.id)
+      !evaluator.id ||
+      evaluator.status === newStatus ||
+      updating_statuses.has(evaluator.id)
     ) {
       return
     }
 
-    updating_statuses.add(spec.id)
+    updating_statuses.add(evaluator.id)
     try {
-      const data = await updateSpecStatusUtil(
+      const data = await updateEvalStatusUtil(
         project_id,
         task_id,
-        spec,
+        evaluator,
         newStatus,
       )
 
-      if (data && specs) {
-        const index = specs.findIndex((s) => s.id === spec.id)
+      if (data && evals) {
+        const index = evals.findIndex((e) => e.id === evaluator.id)
         if (index !== -1) {
-          specs[index] = data
-          specs = specs
+          evals[index] = data
+          evals = evals
           filterAndSortSpecs()
         }
       }
     } catch (error) {
-      specs_error = createKilnError(error)
+      evals_error = createKilnError(error)
     } finally {
-      updating_statuses.delete(spec.id)
+      updating_statuses.delete(evaluator.id)
     }
   }
 
-  function handlePriorityUpdate(spec: Spec, value: Priority) {
-    updateSpecPriority(spec, value)
+  function handlePriorityUpdate(evaluator: Eval, value: Priority) {
+    updateEvalPriority(evaluator, value)
   }
 
-  function handleStatusUpdate(spec: Spec, value: SpecStatus) {
-    updateSpecStatus(spec, value)
+  function handleStatusUpdate(evaluator: Eval, value: SpecStatus) {
+    updateEvalStatus(evaluator, value)
   }
 
-  async function check_kiln_copilot_and_proceed() {
-    if (!has_kiln_copilot) {
-      goto(`/specs/${project_id}/${task_id}/select_workflow`)
-    } else {
-      goto(`/specs/${project_id}/${task_id}/select_template`)
-    }
+  // Every eval starts at the workflow picker, including for users who already
+  // have Kiln Pro: choosing Manual has to be able to opt out of the Pro flow.
+  function create_eval() {
+    goto(`/specs/${project_id}/${task_id}/select_workflow`)
   }
 </script>
 
@@ -744,7 +758,7 @@
         {
           label: "Create Eval",
           handler: async () => {
-            await check_kiln_copilot_and_proceed()
+            create_eval()
           },
           primary: true,
         },
@@ -771,7 +785,7 @@
             {
               label: "Create Eval",
               onClick: async () => {
-                await check_kiln_copilot_and_proceed()
+                create_eval()
               },
               is_primary: true,
             },
@@ -915,6 +929,9 @@
               {#each sorted_specs || [] as row}
                 {#if row.type === "spec"}
                   {@const spec = row.data}
+                  {@const spec_eval = spec.eval_id
+                    ? evals_by_id.get(spec.eval_id)
+                    : null}
                   <tr
                     class="{select_mode
                       ? ''
@@ -922,7 +939,7 @@
                     spec.id &&
                     selected_specs.has(spec.id)
                       ? 'bg-base-200'
-                      : ''} {spec.status === 'archived'
+                      : ''} {resolved_status(spec, evals_by_id) === 'archived'
                       ? 'text-base-content/60'
                       : ''}"
                     on:click={() => {
@@ -948,20 +965,29 @@
                       {formatSpecType(spec.properties.spec_type)}
                     </td>
                     <td>
-                      <EditablePriorityField
-                        {spec}
-                        options={getPriorityOptions()}
-                        aria_label="Priority"
-                        onUpdate={handlePriorityUpdate}
-                      />
+                      {#if spec_eval}
+                        <EditablePriorityField
+                          evaluator={spec_eval}
+                          options={getPriorityOptions()}
+                          aria_label="Priority"
+                          onUpdate={handlePriorityUpdate}
+                        />
+                      {:else}
+                        <span class="px-2">{formatPriority(spec.priority)}</span
+                        >
+                      {/if}
                     </td>
                     <td>
-                      <EditableStatusField
-                        {spec}
-                        options={getStatusOptions()}
-                        aria_label="Status"
-                        onUpdate={handleStatusUpdate}
-                      />
+                      {#if spec_eval}
+                        <EditableStatusField
+                          evaluator={spec_eval}
+                          options={getStatusOptions()}
+                          aria_label="Status"
+                          onUpdate={handleStatusUpdate}
+                        />
+                      {:else}
+                        <span class="px-2">{capitalize(spec.status)}</span>
+                      {/if}
                     </td>
                     <td>
                       {#if spec.tags && spec.tags.length > 0}
@@ -996,7 +1022,11 @@
                 {:else if row.type === "legacy_eval"}
                   {@const eval_data = row.data}
                   <tr
-                    class="{select_mode ? '' : 'hover'} cursor-pointer"
+                    class="{select_mode
+                      ? ''
+                      : 'hover'} cursor-pointer {eval_data.status === 'archived'
+                      ? 'text-base-content/60'
+                      : ''}"
                     on:click={() => {
                       if (!select_mode && eval_data.id) {
                         goto(
@@ -1009,10 +1039,24 @@
                       <td></td>
                     {/if}
                     <td class="font-medium">{eval_data.name}</td>
-                    <td>Legacy Eval</td>
-                    <td class="text-gray-500 pl-6">N/A</td>
-                    <td class="text-gray-500 pl-6">N/A</td>
-                    <td class="text-gray-500">N/A</td>
+                    <td>None</td>
+                    <td>
+                      <EditablePriorityField
+                        evaluator={eval_data}
+                        options={getPriorityOptions()}
+                        aria_label="Priority"
+                        onUpdate={handlePriorityUpdate}
+                      />
+                    </td>
+                    <td>
+                      <EditableStatusField
+                        evaluator={eval_data}
+                        options={getStatusOptions()}
+                        aria_label="Status"
+                        onUpdate={handleStatusUpdate}
+                      />
+                    </td>
+                    <td class="text-gray-500">None</td>
                     <td class="text-sm text-gray-500">
                       {formatDate(eval_data.created_at)}
                     </td>

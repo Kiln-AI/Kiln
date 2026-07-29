@@ -37,8 +37,8 @@
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import { load_task_prompts } from "$lib/stores/prompts_store"
   import {
-    updateSpecPriority as updateSpecPriorityUtil,
-    updateSpecStatus as updateSpecStatusUtil,
+    updateEvalPriority as updateEvalPriorityUtil,
+    updateEvalStatus as updateEvalStatusUtil,
     linkFromFilterId,
   } from "../spec_utils"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
@@ -143,17 +143,24 @@
     ]
   }
 
-  async function updateSpecPriority(newPriority: number) {
-    if (!spec?.id || spec.priority === newPriority || updating_priorities) {
+  // Priority/status live on the eval; the server resolves legacy spec-backed
+  // evals through their spec on read, so `evaluator` always carries the
+  // effective values once loaded.
+  async function updateEvalPriority(newPriority: number) {
+    if (
+      !evaluator?.id ||
+      evaluator.priority === newPriority ||
+      updating_priorities
+    ) {
       return
     }
 
     updating_priorities = true
     try {
-      spec = await updateSpecPriorityUtil(
+      evaluator = await updateEvalPriorityUtil(
         project_id,
         task_id,
-        spec,
+        evaluator,
         newPriority,
       )
     } catch (error) {
@@ -164,20 +171,25 @@
   }
 
   async function toggleArchive() {
-    if (!spec) return
+    if (!evaluator) return
     const newStatus: SpecStatus =
-      spec.status === "archived" ? "active" : "archived"
-    await updateSpecStatus(newStatus)
+      evaluator.status === "archived" ? "active" : "archived"
+    await updateEvalStatus(newStatus)
   }
 
-  async function updateSpecStatus(newStatus: SpecStatus) {
-    if (!spec?.id || spec.status === newStatus || updating_statuses) {
+  async function updateEvalStatus(newStatus: SpecStatus) {
+    if (!evaluator?.id || evaluator.status === newStatus || updating_statuses) {
       return
     }
 
     updating_statuses = true
     try {
-      spec = await updateSpecStatusUtil(project_id, task_id, spec, newStatus)
+      evaluator = await updateEvalStatusUtil(
+        project_id,
+        task_id,
+        evaluator,
+        newStatus,
+      )
     } catch (error) {
       spec_error = createKilnError(error)
     } finally {
@@ -185,12 +197,12 @@
     }
   }
 
-  function handlePriorityUpdate(spec: Spec, value: Priority) {
-    updateSpecPriority(value)
+  function handlePriorityUpdate(_evaluator: Eval, value: Priority) {
+    updateEvalPriority(value)
   }
 
-  function handleStatusUpdate(spec: Spec, value: SpecStatus) {
-    updateSpecStatus(value)
+  function handleStatusUpdate(_evaluator: Eval, value: SpecStatus) {
+    updateEvalStatus(value)
   }
 
   $: has_eval = spec?.eval_id
@@ -526,8 +538,8 @@
     ]}
     action_buttons={[
       {
-        label: spec?.status === "archived" ? "Unarchive" : "Archive",
-        disabled: loading || error !== null,
+        label: evaluator?.status === "archived" ? "Unarchive" : "Archive",
+        disabled: loading || error !== null || !evaluator,
         loading: updating_statuses,
         handler: () => {
           toggleArchive()
@@ -576,13 +588,13 @@
               },
               {
                 name: "Priority",
-                value: formatPriority(spec.priority),
-                use_custom_slot: true,
+                value: formatPriority(evaluator?.priority ?? spec.priority),
+                use_custom_slot: evaluator !== null,
               },
               {
                 name: "Status",
-                value: capitalize(spec.status),
-                use_custom_slot: true,
+                value: capitalize(evaluator?.status ?? spec.status),
+                use_custom_slot: evaluator !== null,
               },
               {
                 name: "Eval ID",
@@ -645,10 +657,10 @@
           >
             <!-- @ts-ignore - PropertyList has custom_value slot but lacks $$Slots typing -->
             <svelte:fragment slot="custom_value" let:property>
-              {#if property.name === "Priority"}
+              {#if property.name === "Priority" && evaluator}
                 <EditablePriorityField
                   bind:this={priorityField}
-                  {spec}
+                  {evaluator}
                   options={getPriorityOptions()}
                   aria_label="Priority"
                   onUpdate={handlePriorityUpdate}
@@ -657,10 +669,10 @@
                     statusField?.close()
                   }}
                 />
-              {:else if property.name === "Status"}
+              {:else if property.name === "Status" && evaluator}
                 <EditableStatusField
                   bind:this={statusField}
-                  {spec}
+                  {evaluator}
                   options={getStatusOptions()}
                   aria_label="Status"
                   onUpdate={handleStatusUpdate}

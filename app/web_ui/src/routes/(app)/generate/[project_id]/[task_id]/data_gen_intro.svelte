@@ -366,7 +366,7 @@
   {:else if eval_options.length > 0}
     <div class="flex items-center mt-4">
       <a
-        href={`/specs/${project_id}/${task_id}/select_template`}
+        href={`/specs/${project_id}/${task_id}/select_workflow`}
         class="btn btn-wide btn-outline mx-auto my-4"
       >
         Create a New Eval
@@ -399,7 +399,7 @@
     </div>
     <div class="flex items-center mt-4">
       <a
-        href={`/specs/${project_id}/${task_id}/select_template`}
+        href={`/specs/${project_id}/${task_id}/select_workflow`}
         class="btn btn-wide btn-primary mx-auto my-4"
       >
         Create a New Eval

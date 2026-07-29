@@ -55,25 +55,26 @@
   <FormElement
     id="step_count_check_count_type"
     label="What to Count"
-    description="Choose what to count in the agent's trace."
+    description="Choose what counts as one step in the agent's trace."
     inputType="radio"
     radio_options={[
       {
         value: "tool_calls",
         label: "Tool calls",
-        description: "Count each tool or function call the agent made.",
+        description:
+          "Each individual tool invocation. A single response that calls three tools counts as three.",
       },
       {
         value: "model_responses",
         label: "Model responses",
         description:
-          "Count each response the model generated (one per inference call).",
+          "Each message the model generates, including intermediate messages that only call tools.",
       },
       {
         value: "turns",
-        label: "Turns",
+        label: "Conversation turns",
         description:
-          "Count conversational turns (each user-then-assistant exchange counts as one turn).",
+          "Each user message and everything the agent does to answer it. Tool calls and model responses within a turn don't add to the count.",
       },
     ]}
     bind:value={properties.count_type}

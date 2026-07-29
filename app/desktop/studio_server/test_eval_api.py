@@ -3159,6 +3159,8 @@ async def test_get_run_config_eval_scores_excludes_archived_specs(
     mock_eval_for_api.output_scores = mock_eval.output_scores
     mock_eval_for_api.current_config_id = mock_eval_config.id
     mock_eval_for_api.configs.return_value = [mock_eval_config_for_api]
+    # Use the real eval's status resolution so the spec fallthrough is exercised
+    mock_eval_for_api.resolved_status.side_effect = mock_eval.resolved_status
 
     archived_eval_config_for_api = MagicMock()
     archived_eval_config_for_api.id = archived_eval_config.id
@@ -3171,6 +3173,7 @@ async def test_get_run_config_eval_scores_excludes_archived_specs(
     archived_eval_for_api.output_scores = archived_eval.output_scores
     archived_eval_for_api.current_config_id = archived_eval_config.id
     archived_eval_for_api.configs.return_value = [archived_eval_config_for_api]
+    archived_eval_for_api.resolved_status.side_effect = archived_eval.resolved_status
 
     mock_task_for_api = MagicMock()
     mock_task_for_api.evals.return_value = [mock_eval_for_api, archived_eval_for_api]
@@ -4582,3 +4585,141 @@ class TestTestV2EvalOverrides:
             == "Custom {{ task_input }} {{ final_message }}"
         )
         assert call_kwargs.kwargs["system_prompt"] == "Be strict."
+
+
+@pytest.mark.asyncio
+async def test_create_evaluator_generates_filters_scores_priority_status(
+    client, mock_task_from_id, mock_task
+):
+    """Omitting filters/scores generates the same tag-based setup a spec-backed
+    eval gets, and priority/status are stored on the eval."""
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json={
+            "name": "My Issue Eval",
+            "template": "kiln_issue",
+            "evaluation_data_type": "final_answer",
+            "priority": 2,
+            "status": "future",
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["eval_set_filter_id"] == "tag::eval_my_issue_eval"
+    assert result["train_set_filter_id"] == "tag::train_my_issue_eval"
+    assert result["eval_configs_filter_id"] == "tag::eval_golden_my_issue_eval"
+    assert result["priority"] == 2
+    assert result["status"] == "future"
+    assert len(result["output_scores"]) == 1
+    assert result["output_scores"][0]["name"] == "My Issue Eval"
+    assert result["output_scores"][0]["type"] == "pass_fail"
+
+    saved_eval = mock_task.evals()[0]
+    assert saved_eval.priority == Priority.p2
+    assert saved_eval.status == SpecStatus.future
+    assert saved_eval.eval_set_filter_id == "tag::eval_my_issue_eval"
+
+
+@pytest.mark.asyncio
+async def test_create_evaluator_defaults_priority_and_status(
+    client, mock_task_from_id, mock_task, valid_evaluator_request
+):
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json=valid_evaluator_request.model_dump(),
+    )
+
+    assert response.status_code == 200
+    saved_eval = mock_task.evals()[0]
+    assert saved_eval.priority == Priority.p1
+    assert saved_eval.status == SpecStatus.active
+
+
+def test_update_eval_priority_and_status(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/evals/eval1",
+        json={"priority": 0, "status": "archived"},
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["priority"] == 0
+    assert result["status"] == "archived"
+
+    saved_eval = mock_task.evals()[0]
+    assert saved_eval.priority == Priority.p0
+    assert saved_eval.status == SpecStatus.archived
+
+
+def test_get_eval_resolves_priority_status_from_spec(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """A legacy spec-backed eval (no own priority/status) reads through to its spec."""
+    spec = Spec(
+        name="Backing Spec",
+        definition="definition",
+        properties=DesiredBehaviourProperties(
+            spec_type=SpecType.desired_behaviour,
+            desired_behaviour_description="be nice",
+        ),
+        priority=Priority.p3,
+        status=SpecStatus.deprecated,
+        eval_id=mock_eval.id,
+        parent=mock_task,
+    )
+    spec.save_to_file()
+
+    response = client.get("/api/projects/project1/tasks/task1/evals/eval1")
+    assert response.status_code == 200
+    result = response.json()
+    assert result["priority"] == 3
+    assert result["status"] == "deprecated"
+
+    # The resolution is response-only: the eval file keeps None so the
+    # fallthrough continues to track the spec.
+    saved_eval = mock_task.evals()[0]
+    assert saved_eval.priority is None
+    assert saved_eval.status is None
+
+
+def test_get_evals_resolves_priority_status(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """List endpoint resolves spec-backed evals via their spec, and evals with
+    no spec to defaults."""
+    spec = Spec(
+        name="Backing Spec",
+        definition="definition",
+        properties=DesiredBehaviourProperties(
+            spec_type=SpecType.desired_behaviour,
+            desired_behaviour_description="be nice",
+        ),
+        priority=Priority.p0,
+        status=SpecStatus.future,
+        eval_id=mock_eval.id,
+        parent=mock_task,
+    )
+    spec.save_to_file()
+
+    legacy_eval = Eval(
+        id="legacy_eval1",
+        name="Legacy Eval",
+        output_scores=[
+            EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
+        ],
+        eval_set_filter_id="tag::eval_set",
+        eval_configs_filter_id="tag::golden",
+        parent=mock_task,
+    )
+    legacy_eval.save_to_file()
+
+    response = client.get("/api/projects/project1/tasks/task1/evals")
+    assert response.status_code == 200
+    by_id = {e["id"]: e for e in response.json()}
+    assert by_id["eval1"]["priority"] == 0
+    assert by_id["eval1"]["status"] == "future"
+    assert by_id["legacy_eval1"]["priority"] == 1
+    assert by_id["legacy_eval1"]["status"] == "active"

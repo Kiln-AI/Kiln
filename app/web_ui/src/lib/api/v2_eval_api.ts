@@ -25,6 +25,35 @@ export type CreateEvalConfigRequest =
 export type CreateLlmJudgeConfigRequest =
   components["schemas"]["CreateLlmJudgeConfigRequest"]
 export type LlmJudgeBuilderInput = components["schemas"]["LlmJudgeBuilderInput"]
+export type CreateEvaluatorRequest =
+  components["schemas"]["CreateEvaluatorRequest"]
+
+/**
+ * Create an eval directly (no spec). Filters and output scores are generated
+ * server-side from the eval name when omitted.
+ */
+export async function createEvaluator(
+  projectId: string,
+  taskId: string,
+  request: CreateEvaluatorRequest,
+): Promise<components["schemas"]["Eval"]> {
+  const { data, error } = await client.POST(
+    "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
+    {
+      params: {
+        path: {
+          project_id: projectId,
+          task_id: taskId,
+        },
+      },
+      body: request,
+    },
+  )
+  if (error) {
+    throw new Error(`create_evaluator failed: ${extractErrorMessage(error)}`)
+  }
+  return data
+}
 
 /**
  * Run a V2 eval config test without persisting.

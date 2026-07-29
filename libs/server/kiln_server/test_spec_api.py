@@ -1509,3 +1509,31 @@ def test_update_spec_name_rollback_eval_fails_logs_error(
                         )
 
     assert "Failed to roll back eval name after spec save failure" in caplog.text
+
+
+def test_create_spec_sets_priority_and_status_on_eval(client, project_and_task):
+    """Priority/status live on the eval going forward; spec creation writes them there."""
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Eval Fields Spec",
+        "definition": "The system should always respond politely",
+        "priority": Priority.p2,
+        "status": SpecStatus.future.value,
+        "properties": create_tone_properties_dict(),
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
+        )
+
+    assert response.status_code == 200
+
+    evals = task.evals()
+    assert len(evals) == 1
+    assert evals[0].priority == Priority.p2
+    assert evals[0].status == SpecStatus.future
+    assert evals[0].resolved_priority() == Priority.p2
+    assert evals[0].resolved_status() == SpecStatus.future

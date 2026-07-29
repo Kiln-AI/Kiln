@@ -6,51 +6,31 @@
   import AppPage from "../../../../app_page.svelte"
   import { formatSpecTypeName } from "$lib/utils/formatters"
   import { spec_categories } from "./spec_templates"
-  import Dialog from "$lib/ui/dialog.svelte"
-  import ToolsSelector from "$lib/ui/run_config_component/tools_selector.svelte"
   import type { SpecTemplateData } from "./spec_templates"
-  import { tool_id_to_function_name } from "$lib/stores/tools_store"
+  import { next_page_after_template, parseSpecWorkflow } from "../spec_utils"
   import { agentInfo } from "$lib/agent"
 
   // ### Spec Template Select ###
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: workflow = parseSpecWorkflow($page.url.searchParams.get("workflow"))
   $: agentInfo.set({
     name: "Select Eval Template",
     description: `Select an eval template as part of the eval creation process for project ID ${project_id}, task ID ${task_id}. Choose from available eval workflow templates.`,
   })
 
-  let current_params = new URLSearchParams()
-
-  let current_template_data: SpecTemplateData | undefined = undefined
-
   function on_select(template_data: SpecTemplateData): () => void {
     return () => {
-      current_template_data = template_data
-      if (template_data.spec_type === "appropriate_tool_use") {
-        tool_selection_dialog?.show()
-      } else {
-        go_to_create_spec(current_template_data)
-      }
-    }
-  }
-
-  async function go_to_create_spec(template_data: SpecTemplateData) {
-    current_params = new URLSearchParams()
-    current_params.set("type", template_data.spec_type)
-    if (template_data.spec_type === "appropriate_tool_use" && selected_tool) {
-      const tool_function_name = await tool_id_to_function_name(
-        selected_tool,
-        project_id,
-        task_id,
+      goto(
+        next_page_after_template(
+          project_id,
+          task_id,
+          template_data.spec_type,
+          workflow,
+        ),
       )
-      current_params.set("tool_function_name", tool_function_name)
-      current_params.set("tool_id", selected_tool)
     }
-    goto(
-      `/specs/${project_id}/${task_id}/spec_builder?${current_params.toString()}`,
-    )
   }
 
   $: spec_sections = spec_categories.map((category) => ({
@@ -64,9 +44,6 @@
       }),
     ),
   }))
-
-  let tool_selection_dialog: Dialog | undefined = undefined
-  let selected_tool: string | null = null
 </script>
 
 <div class="max-w-[1400px]">
@@ -86,39 +63,4 @@
       {/each}
     </div>
   </AppPage>
-
-  <Dialog
-    bind:this={tool_selection_dialog}
-    title="Tool for this Eval"
-    action_buttons={[
-      {
-        label: "Next",
-        isPrimary: true,
-        asyncAction: async () => {
-          if (!current_template_data) {
-            return false
-          }
-          await go_to_create_spec(current_template_data)
-          return true
-        },
-      },
-    ]}
-    on:close={() => {
-      current_template_data = undefined
-      selected_tool = null
-    }}
-  >
-    <ToolsSelector
-      {project_id}
-      {task_id}
-      label="Tool to Use"
-      settings={{
-        description: "Select the tool you want to use for this eval.",
-        hide_info_description: true,
-        single_select: true,
-        optional: false,
-      }}
-      bind:single_select_selected_tool={selected_tool}
-    />
-  </Dialog>
 </div>

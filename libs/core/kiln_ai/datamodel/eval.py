@@ -20,7 +20,11 @@ from kiln_ai.datamodel.basemodel import (
     KilnParentedModel,
     KilnParentModel,
 )
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.datamodel_enums import (
+    EvalStatus,
+    Priority,
+    TaskOutputRatingType,
+)
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, EvalInputFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.task_run import Usage
@@ -854,6 +858,14 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         default=False,
         description="Whether this eval is a favourite of the user. Rendered as a star icon in the UI.",
     )
+    priority: Priority | None = Field(
+        default=None,
+        description="The priority of the eval. None on evals created before priority lived on evals; read through resolved_priority(), which falls back to the associated spec.",
+    )
+    status: EvalStatus | None = Field(
+        default=None,
+        description="The status of the eval. None on evals created before status lived on evals; read through resolved_status(), which falls back to the associated spec.",
+    )
     template_properties: dict[str, str | int | bool | float] | None = Field(
         default=None,
         description="Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.",
@@ -888,6 +900,31 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
             if spec.eval_id == self.id:
                 return spec
         return None
+
+    def resolved_priority(self, spec: Union["Spec", None] = None) -> Priority:
+        """
+        The eval's effective priority. Priority lives on the eval; evals created
+        before that (spec-backed legacy files) fall back to their spec's value.
+        Pass *spec* when the caller already has it, to avoid a re-scan.
+        """
+        if self.priority is not None:
+            return self.priority
+        spec = spec or self.associated_spec(readonly=True)
+        if spec is not None:
+            return spec.priority
+        return Priority.p1
+
+    def resolved_status(self, spec: Union["Spec", None] = None) -> EvalStatus:
+        """
+        The eval's effective status, with the same spec fallthrough as
+        resolved_priority().
+        """
+        if self.status is not None:
+            return self.status
+        spec = spec or self.associated_spec(readonly=True)
+        if spec is not None:
+            return spec.status
+        return EvalStatus.active
 
     def eval_reference_data_keys(self) -> list[str]:
         """Union of reference-data keys across all of this eval's V2 configs.

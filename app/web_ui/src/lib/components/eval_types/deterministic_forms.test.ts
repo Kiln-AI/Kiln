@@ -1054,7 +1054,7 @@ describe("Phase 8: StepCountCheckForm section structure and progressive disclosu
     })
     expect(getAllByText("Tool calls").length).toBeGreaterThan(0)
     expect(getAllByText("Model responses").length).toBeGreaterThan(0)
-    expect(getAllByText("Turns").length).toBeGreaterThan(0)
+    expect(getAllByText("Conversation turns").length).toBeGreaterThan(0)
   })
 
   it("renders Bounds header_only FormElement", () => {
@@ -1147,16 +1147,18 @@ describe("Phase 8: StepCountCheckForm section structure and progressive disclosu
       },
     })
     expect(
-      getAllByText("Count each tool or function call the agent made.").length,
-    ).toBeGreaterThan(0)
-    expect(
       getAllByText(
-        "Count each response the model generated (one per inference call).",
+        "Each individual tool invocation. A single response that calls three tools counts as three.",
       ).length,
     ).toBeGreaterThan(0)
     expect(
       getAllByText(
-        "Count conversational turns (each user-then-assistant exchange counts as one turn).",
+        "Each message the model generates, including intermediate messages that only call tools.",
+      ).length,
+    ).toBeGreaterThan(0)
+    expect(
+      getAllByText(
+        "Each user message and everything the agent does to answer it. Tool calls and model responses within a turn don't add to the count.",
       ).length,
     ).toBeGreaterThan(0)
   })
@@ -2052,7 +2054,7 @@ describe("StepCountCheckForm UI polish", () => {
     expect(indent).toBeTruthy()
   })
 
-  it("turns description clarifies user-then-assistant exchange", () => {
+  it("turns description explains what a turn spans", () => {
     const { getAllByText } = render(StepCountCheckForm, {
       props: {
         properties: {
@@ -2065,12 +2067,12 @@ describe("StepCountCheckForm UI polish", () => {
     })
     expect(
       getAllByText(
-        "Count conversational turns (each user-then-assistant exchange counts as one turn).",
+        "Each user message and everything the agent does to answer it. Tool calls and model responses within a turn don't add to the count.",
       ).length,
     ).toBeGreaterThan(0)
   })
 
-  it("model_responses description clarifies one per inference call", () => {
+  it("model_responses description clarifies tool-call-only messages count", () => {
     const { getAllByText } = render(StepCountCheckForm, {
       props: {
         properties: {
@@ -2083,7 +2085,7 @@ describe("StepCountCheckForm UI polish", () => {
     })
     expect(
       getAllByText(
-        "Count each response the model generated (one per inference call).",
+        "Each message the model generates, including intermediate messages that only call tools.",
       ).length,
     ).toBeGreaterThan(0)
   })
