@@ -628,9 +628,9 @@
   // so results are never presented for a plan edited after the drive.
   let driven_prompts_json: string | null = null
   // The plan's generated synthetic users, reused on a re-drive while the
-  // plan and spec are byte-unchanged (finding #14: SU cases don't depend on
-  // the run config, so a fix-config-then-drive-again loop shouldn't re-pay
-  // the multi-minute generation). Rides the persisted draft.
+  // plan and spec are byte-unchanged: SU cases don't depend on the run
+  // config, so a fix-config-then-drive-again loop shouldn't re-pay the
+  // multi-minute generation. Rides the persisted draft.
   let cached_su_cases: CachedSuCases | null = null
   // Approved plan length drives the batch size; NUM_CASES is the requested
   // plan size before any deletions.

@@ -6,6 +6,7 @@
   // claims and the final judgement — expected_result is server-side signal
   // the reviewer doesn't need to see.
   import {
+    final_judgement_reason,
     type Citation,
     type Claim,
     type ClaimVerdict,
@@ -31,17 +32,12 @@
   export let sole_card = false
 
   // The model's conclusion opens with an "Eval fails — " style prefix, and
-  // about half the time (per the capture corpus) it's the BARE verdict with
-  // all substance in the evidence sentence. The deterministic headline
-  // already states the verdict, so: strip the prefix; a bare verdict yields
-  // NO reason text, and the evidence steps back in as the reason.
-  $: final_reason = strip_verdict_prefix(claim.claim)
-  function strip_verdict_prefix(text: string): string {
-    const stripped = text.replace(/^eval (fails|passes)\s*[—:.-]?\s*/i, "")
-    if (stripped.length === 0) return ""
-    if (stripped === text) return text
-    return stripped.charAt(0).toUpperCase() + stripped.slice(1)
-  }
+  // is frequently just the BARE verdict with all substance in the evidence
+  // sentence — or a circular "per the judge's verdict". The deterministic
+  // headline already states the verdict, so: strip the prefix; a bare or
+  // content-free reason yields NO reason text, and the evidence steps back
+  // in as the reason.
+  $: final_reason = final_judgement_reason(claim.claim)
 
   let why_input: HTMLTextAreaElement | null = null
 
