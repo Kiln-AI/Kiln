@@ -3,7 +3,12 @@
   import { page } from "$app/stores"
   import { onMount, onDestroy } from "svelte"
   import { agentInfo } from "$lib/agent"
-  import { goto, pushState, replaceState } from "$app/navigation"
+  import {
+    beforeNavigate,
+    goto,
+    pushState,
+    replaceState,
+  } from "$app/navigation"
   import { client, base_url } from "$lib/api_client"
   import FormElement from "$lib/utils/form_element.svelte"
   import { get_task_composite_id, load_task } from "$lib/stores"
@@ -205,6 +210,27 @@
     event.preventDefault()
     event.returnValue = ""
   }
+
+  // beforeunload never fires for in-app SPA navigation (sidebar, deeplinks),
+  // which unmounts the wizard and loses all component-local state just the
+  // same — guard those too. In-wizard steps use shallow routing
+  // (pushState/replaceState), which doesn't run beforeNavigate, so step
+  // Back/Forward stays free; this fires only when the ROUTE changes.
+  // The save-success redirect suppresses it: the work is persisted.
+  let leave_guard_suppressed = false
+  beforeNavigate((nav) => {
+    if (leave_guard_suppressed || !warn_before_unload) return
+    // "leave" = real unload (reload/close) — the beforeunload handler owns
+    // that path and cancel() can't stop it anyway.
+    if (nav.type === "leave") return
+    if (
+      !confirm(
+        "Leave the eval builder? Generated data and review progress here will be lost.",
+      )
+    ) {
+      nav.cancel()
+    }
+  })
 
   // ── Task (drives is_multi_turn, which branches Step 3 onward)
   let task: Task | null = null
@@ -827,6 +853,11 @@
       // set, fall back to the first available run config so the user
       // doesn't have to detour into task settings just to try v2. Only
       // error when the task has zero configs (genuinely unrunnable).
+      // Re-fetch the task first: the default run config can change while
+      // the wizard is open — the stop banner's own recovery loop sends
+      // the user to /run in another tab to fix it — and driving with the
+      // mount-time snapshot would resolve the OLD default.
+      task = await load_task(project_id, task_id)
       if (!task?.id) {
         generation_error = "Task not loaded."
         return
@@ -1648,6 +1679,8 @@
         })
         const saved = data as { id?: string }
         if (saved.id) {
+          // Persisted — the leave guard has nothing left to protect.
+          leave_guard_suppressed = true
           goto(`/specs/${project_id}/${task_id}/${saved.id}`)
         } else {
           replace_step("done")
@@ -1711,6 +1744,8 @@
       // the same destination v1 uses.
       const saved = data as { id?: string }
       if (saved.id) {
+        // Persisted — the leave guard has nothing left to protect.
+        leave_guard_suppressed = true
         goto(`/specs/${project_id}/${task_id}/${saved.id}`)
       } else {
         replace_step("done")
