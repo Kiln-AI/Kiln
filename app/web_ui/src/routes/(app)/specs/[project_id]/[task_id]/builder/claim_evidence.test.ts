@@ -5,6 +5,7 @@ import {
   build_graded_traces,
   build_trace_reviews,
   disagreement_feedback,
+  final_judgement_reason,
   is_trace_reviewed,
   MAX_JUDGE_PROMPT_CHARS,
   resolve_citation_span,
@@ -337,5 +338,60 @@ describe("resolve_citation_span", () => {
     expect(
       resolve_citation_span("no anchors here", { from: "30 days", to: "x" }),
     ).toBeNull()
+  })
+})
+
+describe("final_judgement_reason — the verdict card's reason line", () => {
+  it("strips the verdict prefix and capitalizes the substance", () => {
+    expect(
+      final_judgement_reason(
+        "Eval fails — the agent fabricated a return policy.",
+      ),
+    ).toBe("The agent fabricated a return policy.")
+  })
+
+  it("a bare verdict yields no reason (evidence steps in)", () => {
+    expect(final_judgement_reason("Eval passes")).toBe("")
+    expect(final_judgement_reason("Eval fails.")).toBe("")
+  })
+
+  it("the live circular shape yields no reason (finding #15)", () => {
+    // The exact co-dominant output mode from Daniel's documented run and
+    // the capture corpus (2/60 there, 4/10 live).
+    expect(final_judgement_reason("Eval passes per the judge's verdict.")).toBe(
+      "",
+    )
+    expect(final_judgement_reason("Eval fails — per the judge's verdict")).toBe(
+      "",
+    )
+  })
+
+  it("circular variants without the eval prefix are also content-free", () => {
+    expect(final_judgement_reason("Per the judge's verdict.")).toBe("")
+    expect(final_judgement_reason("Based on the judge's assessment")).toBe("")
+    expect(final_judgement_reason("The judge's conclusion.")).toBe("")
+    expect(final_judgement_reason("per the verdict")).toBe("")
+  })
+
+  it("is conservative: one substantive word keeps the model's text", () => {
+    expect(
+      final_judgement_reason(
+        "Eval fails — per the judge's verdict, the agent fabricated policies.",
+      ),
+    ).toBe("Per the judge's verdict, the agent fabricated policies.")
+    // Mentions the judge mid-sentence — substantive, kept.
+    expect(
+      final_judgement_reason("Eval passes — the judge missed nothing here."),
+    ).toBe("The judge missed nothing here.")
+    // Short but substantive (real corpus line) — kept.
+    expect(
+      final_judgement_reason("Eval passes. Under the spec as written."),
+    ).toBe("Under the spec as written.")
+  })
+
+  it("text without any verdict prefix passes through untouched", () => {
+    expect(
+      final_judgement_reason("The agent complied with the spec throughout."),
+    ).toBe("The agent complied with the spec throughout.")
   })
 })
