@@ -1,11 +1,10 @@
 <script lang="ts">
-  // Claim/Evidence review step — one trace at a time. The reviewer answers a
-  // few questions (agree/disagree on distilled claims) without reading the
-  // trace, opening a [n] citation into the trace modal only for the hard
-  // calls. The judge's pass/fail verdict is deliberately NOT displayed while
-  // claims are graded — the reviewer's calls calibrate the judge, so its
-  // label must not anchor them. (The final judgement's claim text still
-  // states a conclusion to agree/disagree with; that's the question itself.)
+  // Claim/Evidence review step — one trace at a time. The reviewer grades a
+  // few statements (Correct/Incorrect on distilled claims) without reading
+  // the trace, opening a [n] citation into the trace modal only for the
+  // hard calls. Claim text never states the verdict — the reviewer's calls
+  // calibrate the judge, so its label must not anchor them; the overall
+  // verdict lives on the final card, pinned last as the conclusion.
   //
   // Subset review: `selected_indices` is the judge-stratified sample the
   // reviewer grades (sized to the golden answer key) — the review shows
@@ -129,9 +128,17 @@
   </div>
 
   {#if current && current_verdicts}
-    <!-- Trace header: just the escape hatch to the full trace. The judge's
-         verdict label is intentionally absent (see the header comment). -->
-    <div class="flex items-center justify-end mb-4">
+    <!-- Trace header: position eyebrow (review-order numbering, matching
+         the dots) + the escape hatch to the full trace. The verdict label
+         stays out of THIS row — the overall card carries it, pinned last. -->
+    <div class="flex items-center justify-between mb-4">
+      <!-- Same typography as the wizard's "Step 4 of 6" indicator — this is
+           the same kind of positional chrome, one level down. -->
+      <span class="text-sm text-gray-500">
+        {judged_noun.charAt(0).toUpperCase() + judged_noun.slice(1)}
+        <span class="font-medium">{selected.indexOf(current_index) + 1}</span>
+        of {selected.length}
+      </span>
       <button
         class="btn btn-xs btn-ghost"
         on:click={() => current && trace_modal?.open_trace(current)}
@@ -165,7 +172,7 @@
     {:else if current.claims_state === "error"}
       <Warning
         warning_color="error"
-        warning_message={`Couldn't distill this trace into claims: ${
+        warning_message={`Couldn't analyze this ${judged_noun}: ${
           current.claims_error ?? "unknown error"
         }`}
       />
@@ -182,7 +189,7 @@
            as in-progress. -->
       <div class="text-center py-12 text-gray-500">
         <div class="loading loading-dots loading-md mb-2"></div>
-        <div class="text-sm">Distilling this trace into claims to review…</div>
+        <div class="text-sm">Analyzing this {judged_noun}…</div>
       </div>
     {/if}
   {/if}

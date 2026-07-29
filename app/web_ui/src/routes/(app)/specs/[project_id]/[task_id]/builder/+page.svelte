@@ -2063,7 +2063,9 @@
       case "generate":
         return is_multi_turn ? "Generate Conversations" : "Generate Examples"
       case "review":
-        return "Review Claims"
+        // Mike's framing (2026-07-28): the reviewer is checking their AGENT,
+        // not grading a judge — calibration is an implementation detail.
+        return "Where did your agent go wrong?"
       case "save":
         return "Creating Eval"
       case "done":
@@ -2084,9 +2086,14 @@
           ? `Planning, then driving ${multi_turn_total} multi-turn conversations against your agent.`
           : "Generating sample inputs and outputs based on your spec."
       case "review":
+        // The mistake framing lives at the STEP level, where it's true of
+        // the batch (some conversations failed); each conversation's own
+        // verdict card says which way that one went. ~Half of every batch
+        // passes by design (balanced plan + stratified sample), so the
+        // per-conversation surface stays verdict-neutral.
         return is_multi_turn
-          ? `Reviewing ${multi_turn_review_target} of ${trace_claims.length} conversations — a judge-balanced sample. Agree or disagree with each claim; open a [n] citation to see the trace.`
-          : "Agree or disagree with each claim. Open a [n] citation to see the trace."
+          ? `A judge reviewed each conversation and flagged possible mistakes. Keep the real ones, dismiss the false alarms — you're reviewing ${multi_turn_review_target} of ${trace_claims.length} conversations. Open a [n] citation to see the moment it happened.`
+          : "A judge flagged possible mistakes. Keep the real ones, dismiss the false alarms. Open a [n] citation to see the moment it happened."
       case "save":
         return "Persisting the spec, eval, and dataset."
       case "done":
@@ -2376,7 +2383,7 @@
                  loaded — no spinners behind any dot. -->
             <AnalyzingAnimation
               title="Preparing Review"
-              description="Kiln is distilling each conversation into claims for you to review. Hold tight!"
+              description="Kiln is flagging possible mistakes in each conversation for you to review. Hold tight!"
               warning={null}
             />
             <div class="flex flex-col items-center mt-2">
@@ -2575,8 +2582,8 @@
                       multi_turn_review_target === 1
                         ? "the conversation"
                         : `all ${multi_turn_review_target} conversations`
-                    } to continue. Your ratings teach the eval what correct looks like, and your reasons for disagreeing help improve the judge.`
-                  : "Review every example to continue. If you disagree, add a short reason so we can improve the judge."}
+                    } to continue. Your answers teach the eval what correct looks like, and your reasons for marking something incorrect help it improve.`
+                  : "Review every example to continue. If you mark something incorrect, add a short reason so we can improve the eval."}
             />
           {/if}
         {:else if current_step === "save"}
