@@ -112,30 +112,34 @@
     />
   </div>
 
-  <Collapse title="Advanced Options">
-    <FormElement
-      label="Priority"
-      id="priority"
-      inputType="select"
-      bind:value={priority}
-      description="The priority level for this eval."
-      select_options={[
-        [0, "P0 - Critical"],
-        [1, "P1 - High"],
-        [2, "P2 - Medium"],
-        [3, "P3 - Low"],
-      ]}
-    />
-    <FormElement
-      label="Evaluate Complete Agent History"
-      id="evaluate_full_trace"
-      inputType="checkbox"
-      bind:value={evaluate_full_trace}
-      disabled={full_trace_disabled}
-      description="When enabled, this will be evaluated on the full agent history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
-      info_description={full_trace_disabled
-        ? `The ${judge_metadata.label} judge reads the agent's execution trace, so this eval always runs on the full history.`
-        : "Enable this for evals that cover reasoning steps, tool usage, or intermediate outputs."}
-    />
-  </Collapse>
+  <!-- "contents" keeps this dirty-tracking wrapper out of the layout so
+    FormContainer's spacing still applies to the Collapse. -->
+  <div class="contents" on:input={markDirty} on:change={markDirty}>
+    <Collapse title="Advanced Options">
+      <FormElement
+        label="Priority"
+        id="priority"
+        inputType="select"
+        bind:value={priority}
+        description="The priority level for this eval."
+        select_options={[
+          [0, "P0 - Critical"],
+          [1, "P1 - High"],
+          [2, "P2 - Medium"],
+          [3, "P3 - Low"],
+        ]}
+      />
+      <FormElement
+        label="Evaluate Complete Agent History"
+        id="evaluate_full_trace"
+        inputType="checkbox"
+        bind:value={evaluate_full_trace}
+        disabled={full_trace_disabled}
+        description="When enabled, this will be evaluated on the full agent history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
+        info_description={full_trace_disabled
+          ? `The ${judge_metadata.label} judge reads the agent's execution trace, so this eval always runs on the full history.`
+          : "Enable this for evals that cover reasoning steps, tool usage, or intermediate outputs."}
+      />
+    </Collapse>
+  </div>
 </FormContainer>

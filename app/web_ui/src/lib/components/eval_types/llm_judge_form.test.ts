@@ -522,6 +522,27 @@ describe("LlmJudgeForm", () => {
       expect(prompt.value).toBe("My custom prompt")
     })
 
+    it("defuses literal endraw tokens, including trim-marker variants", async () => {
+      const { container } = await renderWithCriteria()
+
+      const criteria = container.querySelector(
+        "#judge_criteria",
+      ) as HTMLTextAreaElement
+      await fireEvent.input(criteria, {
+        target: { value: "Echo {{ hi }} then {%- endraw -%} done" },
+      })
+      await tick()
+
+      const prompt = container.querySelector(
+        "#judge_prompt",
+      ) as HTMLTextAreaElement
+      // The raw block must not contain an active endraw that would let the
+      // criteria break out of it (matching the backend's ENDRAW_PATTERN).
+      expect(prompt.value).toContain("{% raw %}")
+      expect(prompt.value).not.toContain("{%- endraw -%}")
+      expect(prompt.value).toContain("{ %- endraw -%} done")
+    })
+
     it("wraps criteria containing Jinja in a raw block", async () => {
       const { container } = await renderWithCriteria()
 

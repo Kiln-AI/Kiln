@@ -6,7 +6,11 @@ import { client } from "$lib/api_client"
  * @throws Error if the settings API call fails
  */
 export async function checkKilnCopilotAvailable(): Promise<boolean> {
-  const { data, error } = await client.GET("/api/settings")
+  // Bounded: callers gate UI (e.g. the Kiln Pro button's spinner) on this
+  // call, so a hung request must fail rather than stick forever.
+  const { data, error } = await client.GET("/api/settings", {
+    signal: AbortSignal.timeout(10_000),
+  })
   if (error) {
     throw error
   }
