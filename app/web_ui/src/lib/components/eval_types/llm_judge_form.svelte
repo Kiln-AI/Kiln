@@ -73,10 +73,11 @@
 
   // Mirrors the backend's conditionally_raw_wrap: the judge prompt is a Jinja2
   // template, so criteria containing Jinja openers must be wrapped in a raw
-  // block (with any literal endraw defused) to be treated as text.
+  // block, with any literal endraw (including trim-marker variants like
+  // "{%- endraw -%}", matching the backend's ENDRAW_PATTERN) defused first.
   function escape_jinja(text: string): string {
     if (!/{{|{%|{#/.test(text)) return text
-    const defused = text.replace(/\{(%\s*endraw\s*%\})/g, "{ $1")
+    const defused = text.replace(/\{(%-?\s*endraw\s*-?%\})/g, "{ $1")
     return "{% raw %}" + defused + "{% endraw %}"
   }
 

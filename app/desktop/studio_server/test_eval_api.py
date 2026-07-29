@@ -4723,3 +4723,35 @@ def test_get_evals_resolves_priority_status(
     assert by_id["eval1"]["status"] == "future"
     assert by_id["legacy_eval1"]["priority"] == 1
     assert by_id["legacy_eval1"]["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_create_evaluator_rejects_long_names(
+    client, mock_task_from_id, mock_task
+):
+    """Score names cap at 32 chars, so a longer eval name must 422 rather than
+    500 while generating the default score."""
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json={
+            "name": "a" * 33,
+            "evaluation_data_type": "final_answer",
+        },
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_evaluator_rejects_empty_output_scores(
+    client, mock_task_from_id, mock_task
+):
+    """An explicit empty score list is an error, not a request for defaults."""
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json={
+            "name": "My Eval",
+            "evaluation_data_type": "final_answer",
+            "output_scores": [],
+        },
+    )
+    assert response.status_code == 422

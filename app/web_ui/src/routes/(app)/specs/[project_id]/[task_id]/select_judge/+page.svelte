@@ -67,8 +67,12 @@
       },
     ]}
   >
-    <div class="pt-6 max-w-3xl">
-      <OptionList options={eval_type_options} {select_option} />
-    </div>
+    <!-- Without a template this page is redirecting (see onMount); don't flash
+      a picker that can't build an eval in the meantime. -->
+    {#if spec_type}
+      <div class="pt-6 max-w-3xl">
+        <OptionList options={eval_type_options} {select_option} />
+      </div>
+    {/if}
   </AppPage>
 </div>

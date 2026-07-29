@@ -14,7 +14,7 @@ from kiln_ai.adapters.fine_tune.finetune_run_config_id import (
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import BasePrompt, Task, TaskRun
-from kiln_ai.datamodel.basemodel import ID_TYPE
+from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameStringShort
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
 from kiln_ai.adapters.eval.base_eval import (
     DEFAULT_SYSTEM_PROMPT,
@@ -30,7 +30,6 @@ from kiln_ai.adapters.eval.v2_eval_code_eval import (
 from kiln_ai.datamodel.datamodel_enums import (
     EvalStatus,
     Priority,
-    TaskOutputRatingType,
 )
 from kiln_ai.datamodel.eval import (
     CodeEvalProperties,
@@ -59,6 +58,7 @@ from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.spec_utils import (
+    eval_pass_fail_output_score,
     generate_spec_eval_filter_ids,
     generate_spec_eval_tags,
 )
@@ -219,7 +219,10 @@ async def run_eval_runner_with_status(eval_runner: EvalRunner) -> StreamingRespo
 class CreateEvaluatorRequest(BaseModel):
     """Request to create a new evaluator."""
 
-    name: str = Field(description="The name of the evaluator.")
+    # FilenameStringShort (not the longer FilenameString): the generated
+    # default output score is named after the eval and score names cap at 32
+    # chars, so longer names must 422 here rather than 500 in the handler.
+    name: FilenameStringShort = Field(description="The name of the evaluator.")
     description: str | None = Field(
         default=None, description="The description of the evaluator."
     )
@@ -228,6 +231,7 @@ class CreateEvaluatorRequest(BaseModel):
     )
     output_scores: list[EvalOutputScore] | None = Field(
         default=None,
+        min_length=1,
         description="The scores this evaluator should produce. When omitted, a pass/fail score named after the eval is generated.",
     )
     eval_set_filter_id: DatasetFilterId | None = Field(
@@ -774,13 +778,11 @@ def connect_evals_api(app: FastAPI):
             if eval_configs_filter_id is None:
                 eval_configs_filter_id = generated_configs_filter_id
 
-        output_scores = request.output_scores or [
-            EvalOutputScore(
-                name=request.name,
-                type=TaskOutputRatingType.pass_fail,
-                instruction=f"Evaluate whether the model's behaviour passes the eval: {request.name}.",
-            )
-        ]
+        output_scores = (
+            request.output_scores
+            if request.output_scores is not None
+            else [eval_pass_fail_output_score(request.name)]
+        )
 
         eval = Eval(
             name=request.name,

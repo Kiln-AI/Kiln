@@ -18,6 +18,20 @@ def spec_eval_output_score(spec_name: str) -> EvalOutputScore:
     )
 
 
+def eval_pass_fail_output_score(eval_name: str) -> EvalOutputScore:
+    """Default score for an eval created without a spec.
+
+    Same shape as spec_eval_output_score, kept beside it so the two creation
+    paths can't drift; only the instruction wording differs (there is no spec
+    to refer to).
+    """
+    return EvalOutputScore(
+        name=eval_name,
+        type=TaskOutputRatingType.pass_fail,
+        instruction=f"Evaluate whether the model's behaviour passes the eval: {eval_name}.",
+    )
+
+
 def spec_eval_data_type(
     spec_type: SpecType, evaluate_full_trace: bool = False
 ) -> EvalDataType:

@@ -274,10 +274,19 @@
 
       workflow = parseSpecWorkflow($page.url.searchParams.get("workflow"))
 
-      const judge_param = $page.url.searchParams.get("judge")
-      judge_type = ALL_V2_EVAL_TYPES.includes(judge_param as V2EvalType)
-        ? (judge_param as V2EvalType)
-        : null
+      // Templates whose judge is implied always use it, even if the URL says
+      // otherwise: a hand-edited judge param must not turn a rubric-only
+      // template into a spec-less deterministic eval (or bypass the pinned
+      // tool call judge).
+      const implied_judge = implied_judge_for_spec_type(spec_type)
+      if (implied_judge !== null) {
+        judge_type = implied_judge
+      } else {
+        const judge_param = $page.url.searchParams.get("judge")
+        judge_type = ALL_V2_EVAL_TYPES.includes(judge_param as V2EvalType)
+          ? (judge_param as V2EvalType)
+          : null
+      }
 
       // Initialize property values from field configs. Fields the user never sees
       // (because a non-LLM judge is scoring) still save their template default, so
@@ -574,25 +583,43 @@
       }
 
       // Attach the judge and make it the default, so the eval is ready to run
-      // instead of landing on "Not Ready - Configure".
-      const eval_config = await createEvalConfig(
-        project_id,
-        task_id,
-        evaluator.id,
-        {
-          type: "v2",
-          properties: judge_properties,
-          model_name: null,
-          provider: null,
-        },
-      )
-      if (eval_config.id) {
-        await set_current_eval_config(
+      // instead of landing on "Not Ready - Configure". If this fails, delete
+      // the eval again: a judge-less orphan would also squat on the tag
+      // filters generated from its name, breaking a retry under the same name.
+      try {
+        const eval_config = await createEvalConfig(
           project_id,
           task_id,
           evaluator.id,
-          eval_config.id,
+          {
+            type: "v2",
+            properties: judge_properties,
+            model_name: null,
+            provider: null,
+          },
         )
+        if (eval_config.id) {
+          await set_current_eval_config(
+            project_id,
+            task_id,
+            evaluator.id,
+            eval_config.id,
+          )
+        }
+      } catch (e) {
+        try {
+          await client.DELETE(
+            "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
+            {
+              params: {
+                path: { project_id, task_id, eval_id: evaluator.id },
+              },
+            },
+          )
+        } catch {
+          // Roll-back is best effort; surface the original failure.
+        }
+        throw e
       }
 
       posthog.capture("create_eval_with_judge", {

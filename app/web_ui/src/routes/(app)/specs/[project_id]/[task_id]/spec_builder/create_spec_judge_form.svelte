@@ -10,7 +10,7 @@
   import type { V2EvalConfigProperties } from "$lib/api/v2_eval_api"
   import { filename_string_short_validator } from "$lib/utils/input_validators"
   import type { KilnError } from "$lib/utils/error_handlers"
-  import type { Priority } from "$lib/types"
+  import type { EvalOutputScore, Priority } from "$lib/types"
 
   /**
    * Create form for an eval whose judge doesn't read a written rubric.
@@ -35,6 +35,12 @@
   const dispatch = createEventDispatcher<{ save: void }>()
 
   $: judge_metadata = getV2EvalTypeMetadata(judge_type)
+
+  // The eval will be created with a single pass/fail score named after the
+  // eval. The judge forms need that shape up front: the code judge derives its
+  // starter code's score key from it, and returning any other key (e.g. the
+  // "quality" fallback) would fail score validation on every run.
+  $: output_scores = [{ name, type: "pass_fail" }] as EvalOutputScore[]
 
   // The form arrives pre-filled (autofilled name, judge defaults), so "has
   // unsaved changes" has to mean the user actually touched something --
@@ -100,6 +106,7 @@
       bind:this={judge_fields}
       eval_config_type={judge_type}
       bind:code_string
+      {output_scores}
       {project_id}
       {task_id}
     />

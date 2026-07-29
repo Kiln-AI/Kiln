@@ -24,6 +24,12 @@
     updateEvalPriority as updateEvalPriorityUtil,
     updateEvalStatus as updateEvalStatusUtil,
   } from "./spec_utils"
+  import {
+    compute_table,
+    resolved_status,
+    type SortableColumn,
+    type TableRow,
+  } from "./spec_table"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import Banner from "$lib/ui/banner.svelte"
   import posthog from "posthog-js"
@@ -48,26 +54,8 @@
   $: loading = specs_loading || evals_loading
   $: error = specs_error || evals_error
 
-  // Priority/status live on the eval; the server resolves legacy spec-backed
-  // evals through their spec on read. Spec rows look their eval up here, and
-  // fall back to the spec's own (legacy) values only if the eval is missing.
+  // Eval lookup for spec rows; priority/status resolution lives in spec_table.ts.
   $: evals_by_id = new Map((evals || []).map((e) => [e.id ?? "", e]))
-
-  function resolved_priority(spec: Spec, by_id: Map<string, Eval>): Priority {
-    return (
-      (spec.eval_id ? by_id.get(spec.eval_id)?.priority : null) ?? spec.priority
-    )
-  }
-
-  function resolved_status(spec: Spec, by_id: Map<string, Eval>): SpecStatus {
-    return (
-      (spec.eval_id ? by_id.get(spec.eval_id)?.status : null) ?? spec.status
-    )
-  }
-
-  type TableRow =
-    | { type: "spec"; data: Spec }
-    | { type: "legacy_eval"; data: Eval }
 
   let sortColumn: "name" | "template" | "priority" | "status" | "created_at" =
     "created_at"
@@ -118,12 +106,6 @@
   let removeable_tags: Record<string, number> = {}
   let show_archived = false
 
-  type SortableColumn =
-    | "name"
-    | "template"
-    | "priority"
-    | "status"
-    | "created_at"
   type TableColumn = {
     key: string
     label: string
@@ -147,7 +129,6 @@
   $: {
     const url = new URL(window.location.href)
     filter_tags = url.searchParams.getAll("tags") as string[]
-    filterAndSortSpecs()
   }
 
   $: is_empty = (!specs || specs.length === 0) && (!evals || evals.length === 0)
@@ -189,7 +170,6 @@
         throw error
       }
       specs = data
-      filterAndSortSpecs()
     } catch (error) {
       if (req_project_id !== project_id || req_task_id !== task_id) return
       specs_error = createKilnError(error)
@@ -217,7 +197,6 @@
         throw error
       }
       evals = data
-      filterAndSortSpecs()
     } catch (error) {
       if (req_project_id !== project_id || req_task_id !== task_id) return
       evals_error = createKilnError(error)
@@ -228,145 +207,19 @@
     }
   }
 
-  function filterAndSortSpecs() {
-    if (!specs) {
-      filtered_specs = null
-      sorted_specs = null
-      return
-    }
-
-    let active_specs = specs.filter(
-      (spec) => resolved_status(spec, evals_by_id) !== "archived",
-    )
-    let archived_specs = specs.filter(
-      (spec) => resolved_status(spec, evals_by_id) === "archived",
-    )
-
-    let filtered_active =
-      filter_tags.length > 0
-        ? active_specs.filter((spec) =>
-            filter_tags.every((tag) => spec.tags?.includes(tag)),
-          )
-        : active_specs
-
-    let filtered_archived =
-      filter_tags.length > 0
-        ? archived_specs.filter((spec) =>
-            filter_tags.every((tag) => spec.tags?.includes(tag)),
-          )
-        : archived_specs
-
-    let all_specs_to_show = show_archived
-      ? [...filtered_active, ...filtered_archived]
-      : filtered_active
-
-    const spec_eval_ids = new Set(
-      specs.map((spec) => spec.eval_id).filter((id) => id != null),
-    )
-    const legacy_evals = (evals || []).filter(
-      (e) =>
-        e.id &&
-        !spec_eval_ids.has(e.id) &&
-        (show_archived || (e.status ?? "active") !== "archived"),
-    )
-
-    const spec_rows: TableRow[] = all_specs_to_show.map((spec) => ({
-      type: "spec" as const,
-      data: spec,
-    }))
-    const legacy_eval_rows: TableRow[] = legacy_evals.map((e) => ({
-      type: "legacy_eval" as const,
-      data: e,
-    }))
-
-    let all_rows: TableRow[] = [...spec_rows, ...legacy_eval_rows]
-
-    if (sortColumn && sortDirection) {
-      sorted_specs = [...all_rows].sort(sortFunction)
-    } else {
-      sorted_specs = all_rows
-    }
-
-    filtered_specs = all_specs_to_show
-  }
-
-  function getStatusSortOrder(status: SpecStatus): number {
-    switch (status) {
-      case "active":
-        return 0
-      case "future":
-        return 1
-      case "deprecated":
-        return 2
-      case "archived":
-        return 3
-      default: {
-        const _: never = status
-        return 4
-      }
-    }
-  }
-
-  function row_priority(row: TableRow): Priority {
-    return row.type === "spec"
-      ? resolved_priority(row.data, evals_by_id)
-      : row.data.priority ?? 1
-  }
-
-  function row_status(row: TableRow): SpecStatus {
-    return row.type === "spec"
-      ? resolved_status(row.data, evals_by_id)
-      : row.data.status ?? "active"
-  }
-
-  function sortFunction(a: TableRow, b: TableRow) {
-    let aValue: string | number | Date | null | undefined
-    let bValue: string | number | Date | null | undefined
-
-    const aData = a.type === "spec" ? a.data : null
-    const bData = b.type === "spec" ? b.data : null
-    const aEval = a.type === "legacy_eval" ? a.data : null
-    const bEval = b.type === "legacy_eval" ? b.data : null
-
-    switch (sortColumn) {
-      case "name":
-        aValue = (aData?.name || aEval?.name || "").toLowerCase()
-        bValue = (bData?.name || bEval?.name || "").toLowerCase()
-        break
-      case "template":
-        aValue = aData?.properties.spec_type || (aEval ? "none" : "")
-        bValue = bData?.properties.spec_type || (bEval ? "none" : "")
-        break
-      case "priority":
-        // Priority is flipped since P0 is the highest priority
-        aValue = row_priority(b)
-        bValue = row_priority(a)
-        break
-      case "status":
-        aValue = getStatusSortOrder(row_status(a))
-        bValue = getStatusSortOrder(row_status(b))
-        break
-      case "created_at":
-        aValue =
-          aData?.created_at || aEval?.created_at
-            ? new Date((aData?.created_at || aEval?.created_at)!).getTime()
-            : 0
-        bValue =
-          bData?.created_at || bEval?.created_at
-            ? new Date((bData?.created_at || bEval?.created_at)!).getTime()
-            : 0
-        break
-      default:
-        return 0
-    }
-
-    if (!aValue && aValue !== 0) return sortDirection === "asc" ? 1 : -1
-    if (!bValue && bValue !== 0) return sortDirection === "asc" ? -1 : 1
-
-    if (aValue < bValue) return sortDirection === "asc" ? -1 : 1
-    if (aValue > bValue) return sortDirection === "asc" ? 1 : -1
-    return 0
-  }
+  // The table is a pure derivation of its inputs. This must not be an
+  // imperative "recompute" call: reactive values like evals_by_id only flush
+  // at the end of the task, so a synchronous `evals = ...; recompute()` would
+  // read the previous map and partition rows by stale statuses.
+  $: ({ filtered: filtered_specs, rows: sorted_specs } = compute_table(
+    specs,
+    evals,
+    evals_by_id,
+    show_archived,
+    filter_tags,
+    sortColumn,
+    sortDirection,
+  ))
 
   function handleSort(column: SortableColumn) {
     let newDirection: "asc" | "desc" = "desc"
@@ -375,7 +228,6 @@
     }
     sortColumn = column
     sortDirection = newDirection
-    filterAndSortSpecs()
   }
 
   function handleColumnClick(sortKey?: string) {
@@ -414,7 +266,6 @@
     }
 
     replaceState(url, {})
-    filterAndSortSpecs()
   }
 
   $: available_filter_tags = get_available_filter_tags(
@@ -613,11 +464,21 @@
         return false
       }
 
+      const skipped: string[] = []
       for (const spec of specs_to_update) {
         const evaluator = spec.eval_id ? evals_by_id.get(spec.eval_id) : null
-        if (!evaluator) continue
+        if (!evaluator) {
+          // Status lives on the eval; a spec without one can't be updated.
+          skipped.push(spec.name)
+          continue
+        }
         const new_status = should_archive ? "archived" : "active"
         await updateEvalStatus(evaluator, new_status as SpecStatus)
+      }
+      if (skipped.length > 0) {
+        evals_error = new KilnError(
+          `Could not update ${skipped.join(", ")}: no matching eval found.`,
+        )
       }
 
       posthog.capture(should_archive ? "archive_specs" : "unarchive_specs", {
@@ -688,7 +549,6 @@
         if (index !== -1) {
           evals[index] = data
           evals = evals
-          filterAndSortSpecs()
         }
       }
     } catch (error) {
@@ -721,7 +581,6 @@
         if (index !== -1) {
           evals[index] = data
           evals = evals
-          filterAndSortSpecs()
         }
       }
     } catch (error) {
@@ -872,7 +731,6 @@
             onShowArchived={has_archived_specs
               ? () => {
                   show_archived = !show_archived
-                  filterAndSortSpecs()
                 }
               : undefined}
             {show_archived}
