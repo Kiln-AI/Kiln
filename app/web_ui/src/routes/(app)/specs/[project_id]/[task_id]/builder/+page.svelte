@@ -179,10 +179,9 @@
   //
   // Each step transition records the step in history.state, so the browser's
   // own Back/Forward move between steps — the component stays mounted, so no
-  // data is lost — instead of leaving the builder. popstate then restores the
-  // correct step (fixing the old "Back jumps to the wrong step" bug). The step
-  // is just a value in history.state, not a per-step route, so this survives
-  // any future change to the set of steps.
+  // data is lost — instead of leaving the builder. popstate then restores
+  // the correct step. The step is just a value in history.state, not a
+  // per-step route, so this survives any future change to the set of steps.
   //
   //   goto_step    — forward to a step the user dwells on (pushes an entry).
   //   replace_step — swap the current entry for a result step, so transient
@@ -394,9 +393,8 @@
 
   // ── Step 1 state
   let description = ""
-  // classify_spec_description should overwrite spec_type / name /
-  // property_values when the kiln_server classifier ships. Defaulting to
-  // "issue" keeps refine + save shapes valid in the meantime.
+  // Defaulting to "issue" keeps the refine + save shapes valid even when
+  // classification fails or is unavailable.
   let spec_type: SpecType = "issue"
   let name = ""
   let property_values: Record<string, string | null> = {
@@ -409,10 +407,9 @@
   $: field_configs = spec_field_configs[spec_type]
 
   // Call classify_spec_description to map the free-text Step 1 description
-  // to a spec_type + suggested name + structured property_values. The
-  // endpoint currently returns 501 — on error we keep the "issue" defaults
-  // so the user can still proceed and fill in property_values via the
-  // Q&A / Refine steps.
+  // to a spec_type + suggested name + structured property_values. On error
+  // we keep the "issue" defaults so the user can still proceed and fill in
+  // property_values via the Q&A / Refine steps.
   async function classify_then_continue() {
     classifying = true
     classify_error = null
@@ -769,8 +766,8 @@
   //      [drive → judge → claims] per case and the PipelineEvent frames
   //      drive the per-row status pills + the review results.
   //
-  // SU driver model is hardcoded for MVP (see design.md) — claude_4_5_haiku
-  // via openrouter. Exposing the choice in the UI is deferred.
+  // The synthetic-user driver model is fixed rather than user-selectable;
+  // making it selectable would go in the UI here.
   const SU_DRIVER_DEFAULT = {
     model_name: "claude_4_5_haiku",
     model_provider: "openrouter",
@@ -1556,7 +1553,7 @@
   // card.
   let preparing_review = false
   let claims_gate_error: string | null = null
-  // Gate start time — claim-build duration had no telemetry at all.
+  // Gate start time for the claims-build duration telemetry event.
   let claims_gate_started_ms = 0
 
   function start_claims_gate(include_errored = false) {

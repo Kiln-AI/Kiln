@@ -2943,8 +2943,8 @@ export interface paths {
         put?: never;
         /**
          * Classify Spec Description
-         * @description Stub for spec classification — kiln_server classifier hasn't
-         *     shipped. Returns 501 so callers can fall back to manual selection.
+         * @description Spec classification is not implemented; returns 501 so callers
+         *     can fall back to manual selection.
          */
         post: operations["classify_spec_description_api_copilot_classify_spec_description_post"];
         delete?: never;
@@ -3277,8 +3277,8 @@ export interface paths {
          *     unreachable failures for a lane BEFORE the drive commits the
          *     plan/SU-gen minutes and the batch's model spend. Explicitly does NOT
          *     validate tools/MCP or mid-run rate limits. Nothing persists:
-         *     allow_saving=False, so no TaskRun lands in the dataset (the
-         *     transient-judge precedent).
+         *     allow_saving=False, so no TaskRun lands in the dataset — same as
+         *     the transient review judge.
          */
         post: operations["preflight_model_api_projects__project_id__tasks__task_id__eval_builder_preflight_model_post"];
         delete?: never;
@@ -6067,8 +6067,7 @@ export interface components {
          *       `# Presentation Defaults`.
          *     - **Kiln Pro / Copilot flow** (analyze pipeline): only `# Semantics`,
          *       `# Style`, `# Presentation Defaults` — the analyze prompt derives rules
-         *       from input documents rather than quoting them, matching Mike's
-         *       GENERATE_CORPUS_GUIDELINES vocabulary.
+         *       from input documents rather than quoting them.
          *
          *     The metaprompter treats the whole body as one editable artifact and returns
          *     a refined version on each refine pass; refine auto-detects which shape it

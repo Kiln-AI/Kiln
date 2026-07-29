@@ -2,9 +2,9 @@
   // One claim in the Claim/Evidence review — to the reviewer it's just a
   // question to answer: the atomic statement, its one-sentence evidence with
   // clickable [n] citations into the trace, and agree/disagree (+ a required
-  // reason on disagree, which feeds the refine loop). Same mechanics for
-  // claims and the final judgement — expected_result is server-side signal
-  // the reviewer doesn't need to see.
+  // reason on disagree, which feeds the refine loop). Same agree/disagree
+  // mechanics for claims and the final judgement; regular claims never
+  // surface expected_result (the final-judgement headline does — see below).
   import {
     final_judgement_reason,
     type Citation,

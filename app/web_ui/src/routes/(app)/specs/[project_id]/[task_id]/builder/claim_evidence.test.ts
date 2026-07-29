@@ -355,9 +355,9 @@ describe("final_judgement_reason — the verdict card's reason line", () => {
     expect(final_judgement_reason("Eval fails.")).toBe("")
   })
 
-  it("the live circular shape yields no reason (finding #15)", () => {
-    // The exact co-dominant output mode from Daniel's documented run and
-    // the capture corpus (2/60 there, 4/10 live).
+  it("the circular restatement shape yields no reason", () => {
+    // The exact circular phrasing the model commonly produces — common
+    // enough to pin exactly.
     expect(final_judgement_reason("Eval passes per the judge's verdict.")).toBe(
       "",
     )
@@ -383,7 +383,7 @@ describe("final_judgement_reason — the verdict card's reason line", () => {
     expect(
       final_judgement_reason("Eval passes — the judge missed nothing here."),
     ).toBe("The judge missed nothing here.")
-    // Short but substantive (real corpus line) — kept.
+    // Short but substantive — kept.
     expect(
       final_judgement_reason("Eval passes. Under the spec as written."),
     ).toBe("Under the spec as written.")

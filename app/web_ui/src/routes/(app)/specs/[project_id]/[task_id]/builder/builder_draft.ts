@@ -85,11 +85,11 @@ export function builder_draft_key(project_id: string, task_id: string): string {
   return `eval_builder_draft_${project_id}_${task_id}_v1`
 }
 
-// The dev-only fetch mock (untracked builder_mock.ts) marks the window when
-// it installs. Drafts are gated on it in BOTH directions: canned mock state
-// must never persist into a real session, and a real draft must never
-// restore under the mock. The flag check (rather than an import) keeps the
-// committed build free of the mock scaffolding.
+// A dev-only fetch mock may mark the window when installed. Drafts are
+// gated on it in BOTH directions: canned mock state must never persist into
+// a real session, and a real draft must never restore under the mock.
+// Checking the flag rather than importing keeps mock code out of production
+// builds.
 export function builder_mock_active(): boolean {
   return (
     typeof window !== "undefined" && "__KILN_BUILDER_MOCK_ACTIVE__" in window

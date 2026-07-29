@@ -6,7 +6,7 @@ Two stages, run per trace by the orchestrator in eval_builder_api:
     step happens before any Eval exists on disk, so nothing is persisted).
   - build_claims_for_trace — REMOTE. Thin call to kiln_server's claim builder.
 
-These are the only places that touch the (WIP) server/SDK shapes; they return
+These are the only places that touch the server/SDK shapes; they return
 the stable UI-facing models so the endpoints and UI never see SDK types.
 """
 
@@ -187,8 +187,8 @@ async def run_judge_for_trace(
 
     Multi-turn callers pass the structured `trace` so the judge scores the full
     conversation rather than a flattened transcript. Raises when the adapter
-    skips or returns no score — the orchestrator surfaces that as a trace_error
-    SSE event, never a fabricated verdict.
+    skips or returns no score — the orchestrator surfaces that as an error
+    frame (trace_error / case_failed), never a fabricated verdict.
     """
     task = task_from_id(project_id, task_id)
     eval_config = build_transient_judge_eval_config(
@@ -226,7 +226,8 @@ async def run_judge_for_trace(
     # Read the key off the same output score the adapter scored against, so
     # the lookup can't drift from however the score name is derived.
     parent_eval = eval_config.parent_eval()
-    assert parent_eval is not None  # built with a parent three lines up
+    # build_transient_judge_eval_config always sets a parent Eval.
+    assert parent_eval is not None
     score = result.scores.get(parent_eval.output_scores[0].json_key())
     if score is None:
         raise ValueError("Judge returned no score for this trace.")

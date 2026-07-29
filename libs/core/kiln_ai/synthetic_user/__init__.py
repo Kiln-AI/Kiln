@@ -1,7 +1,7 @@
 """Local synthetic-user player.
 
-OSS-side per-turn invocation: replaces the removed kiln_server `/respond`
-HTTP endpoint. Calls the LLM using the user's own provider keys.
+Plays the synthetic-user side of a conversation locally, calling the LLM
+with the user's own provider keys.
 
 Public surface:
 

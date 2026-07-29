@@ -1,8 +1,8 @@
 <script lang="ts">
   // Trace modal for Claim/Evidence review. Hidden by default; opened either to
   // view a whole trace or jumped to a specific [n] citation, where it scrolls
-  // to and highlights the cited span. "Most people never open the trace" — this
-  // is the escape hatch for the hard calls.
+  // to and highlights the cited span. Most reviewers never need the full
+  // trace; this is the escape hatch for hard calls.
   import { tick } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import {

@@ -108,7 +108,7 @@ export type TraceReview = {
 // anchor is absent — the UI then shows the citation without a highlight rather
 // than highlighting the wrong place.
 //
-// Grep-safety note (Mike's open question): for repeated identical `from`
+// Grep-safety note (open question): for repeated identical `from`
 // snippets this anchors to the FIRST match, which can mis-locate. Mitigation is
 // on the model side (pick a `from` long enough to be locally unique); a future
 // optional occurrence index could disambiguate if it proves necessary.
@@ -366,9 +366,9 @@ const CONTENT_FREE_REASON =
 
 // The reason the verdict card shows under its deterministic headline: the
 // model's conclusion with the "Eval fails — " style prefix stripped. Returns
-// "" when nothing substantive remains — the BARE verdict (half the capture
-// corpus) and the circular restatement alike — so the evidence sentence
-// steps back in as the reason (the a2183a070 fallback, extended by #15).
+// "" when nothing substantive remains — a bare verdict or a circular
+// restatement — so the caller falls back to the evidence sentence as the
+// reason.
 export function final_judgement_reason(text: string): string {
   const stripped = text.replace(/^eval (fails|passes)\s*[—:.-]?\s*/i, "")
   if (CONTENT_FREE_REASON.test(stripped.trim())) return ""

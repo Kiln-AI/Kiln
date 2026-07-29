@@ -1,10 +1,10 @@
 """Pydantic models for the Eval Builder review pipeline (studio side).
 
 These are the STABLE, UI-driven contract (mirrors builder/claim_evidence.ts).
-They are deliberately decoupled from the kiln_server SDK models: the server
-side (claim builder, judge) is WIP and will churn, so the studio orchestrator
-maps between these UI-facing models and the SDK internally. No SDK types leak
-to the UI.
+They are deliberately decoupled from the kiln_server SDK models so
+server-side changes don't ripple into the UI contract: the studio
+orchestrator maps between these UI-facing models and the SDK internally.
+No SDK types leak to the UI.
 """
 
 from typing import Literal
@@ -45,8 +45,8 @@ class TraceInput(BaseModel):
     raw_input: str = Field(description="The task's raw input.")
     raw_output: str = Field(description="The task's raw output.")
 
-    # forbid: a client still sending the retired multi-turn `trace` key must
-    # fail loudly here, not have its trace silently dropped.
+    # forbid: an unexpected key (e.g. a structured `trace`) must fail loudly
+    # here, not be silently dropped.
     model_config = ConfigDict(extra="forbid")
 
 
@@ -301,10 +301,10 @@ class PipelineCaseDrivenEvent(BaseModel):
 class PipelineCaseJudgedEvent(BaseModel):
     """A case completed the [drive → judge] pipeline.
 
-    raw_input/raw_output are the canonical transcript rendering of the
-    runner's REAL trace (tool calls and system turns included) — the same
-    text the judge saw and the claim builder will see, so citations built
-    later resolve against it.
+    raw_output is the canonical transcript rendering of the runner's REAL
+    trace (tool calls and system turns included) and raw_input is the
+    conversation's opening user message — the same text the judge saw and
+    the claim builder will see, so citations built later resolve against it.
     """
 
     type: Literal["case_judged"] = "case_judged"

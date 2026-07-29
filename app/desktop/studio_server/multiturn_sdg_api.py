@@ -21,7 +21,7 @@ upstream work — the runner depends on multi-turn TaskRun chaining
 The kiln_server API key is read server-side (`get_copilot_api_key`) and
 never crosses to the browser, matching the copilot pattern. The SU
 driver model is exposed to the caller because the choice of model
-affects probe quality and cost — deliberate, not internal.
+affects probe quality and cost.
 """
 
 import dataclasses
@@ -336,8 +336,9 @@ def _to_http_exception(
     at the call site — gives the type checker NoReturn semantics for free
     and avoids any chance of unbound-variable bugs after the try block.
 
-    Status preservation: upstream's HTTP status is passed through faithfully
-    when it's one of the 4xx/5xx codes the SDK models (401, 422, 500, 502).
+    Status preservation: upstream's status is passed through faithfully for
+    401/422 client errors and for any upstream 5xx; everything else collapses
+    to a clean 400/500.
     Collapsing a 401 to 400 hides whether the operator's stored API key is
     bad vs the caller's body being malformed — both knowable distinctions
     that the consumer needs to act on.

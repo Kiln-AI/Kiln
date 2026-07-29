@@ -57,7 +57,7 @@ DRIVE_TIMEOUT_PER_TURN_SECONDS = 120.0
 DRIVE_MAX_RETRIES = 2
 DRIVE_RETRY_DELAY_SECONDS = 1.0
 
-# Tag scheme. `_TAG_SU_CASE` lets the dataset view filter to all SU-generated
+# Tag scheme. `_TAG_SU_CASE` lets consumers filter to all SU-generated
 # leaves; `_TAG_PREFIX_SU_BATCH` (+ batch_tag) groups one batch for review.
 _TAG_SU_CASE = "synthetic_user_case"
 _TAG_PREFIX_SU_BATCH = "synthetic_user_batch:"
@@ -86,7 +86,7 @@ class TurnCompletedEvent:
     su_next_message: str
     cumulative_cost: float
     # Cumulative OpenAI-format trace at this point (system + all turns so far).
-    # Lets the UI render the live conversation without a follow-up fetch.
+    # Lets consumers observe the live conversation without reloading the run.
     trace: list[ChatCompletionMessageParam]
 
 
@@ -275,7 +275,7 @@ async def run_cases_batch(
             total_cost=total_cost,
         )
     finally:
-        # Consumer disconnect (e.g. browser closes the SSE): cancel the job
+        # If the consumer stops iterating the generator early, cancel the job
         # runner — its own teardown cancels in-flight case workers, so
         # abandoned drives stop spending.
         jobs_task.cancel()
@@ -291,7 +291,7 @@ class _CaseFailure(Exception):
 
     Deterministic input problems, per-case timeouts (a retry would pin a
     worker for another full drive budget), and provider errors the shared
-    classifier calls permanent. `code` rides the case_failed wire event.
+    classifier calls permanent. `code` is surfaced on CaseFailedEvent.
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -300,7 +300,7 @@ class _CaseFailure(Exception):
 
 
 def _failure_details(error: Exception) -> tuple[str, str]:
-    """Map a case's terminal exception to the case_failed wire fields."""
+    """Map a case's terminal exception to CaseFailedEvent's code and message."""
     if isinstance(error, _CaseFailure):
         return error.code, str(error)
     # A RetryableError whose attempts ran out (or an unexpected
@@ -334,9 +334,9 @@ async def _drive_one_case_and_emit(
     """
     # Runs persist per turn (adapter autosave) but the batch tag only lands
     # on the leaf after a successful drive, so a mid-drive failure would
-    # strand an untagged chain that no eval loader or delete-on-redrive
-    # sweep can ever find. Track what this attempt persisted so the failure
-    # arms can remove it.
+    # strand an untagged chain no downstream consumer can find — discovery
+    # is tag-based. Track what this attempt persisted so the failure arms
+    # can remove it.
     persisted_runs: dict[str, TaskRun] = {}
     try:
         # Malformed blob fails this case without affecting others. Parsing
@@ -373,8 +373,8 @@ async def _drive_one_case_and_emit(
                     assistant_run_id=str(run.id) if run.id is not None else "",
                     su_next_message=su_message,
                     cumulative_cost=_cumulative_cost(run),
-                    # Snapshot the cumulative trace so the UI can render
-                    # the live conversation without a follow-up fetch.
+                    # Snapshot the cumulative trace so consumers see the
+                    # conversation as of this turn.
                     trace=list(run.trace) if run.trace else [],
                 )
             )
@@ -439,8 +439,7 @@ async def _drive_one_case_and_emit(
         await _delete_partial_chain(persisted_runs, save_ctx)
         # The adapter's KilnRunError message is genericized user-facing
         # text — unwrap so failure events name the real provider failure
-        # (the terminal case_failed message feeds the stop banner's
-        # dominant-error diagnosis, so the root cause must survive).
+        # instead of the generic wrapper text.
         cause = unwrap_kiln_run_error(e)
         if is_retryable_error(e):
             raise RetryableError(f"{type(cause).__name__}: {cause}") from e

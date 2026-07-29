@@ -1477,7 +1477,7 @@ class TestDataGuideJob:
             response = client.get(self.RESULT_URL)
         assert response.status_code == 200
         draft = response.json()["draft_guide"]
-        # Copilot draft emits the Mike-strict three-section shape.
+        # Copilot draft emits the canonical three-section guide shape.
         assert draft.startswith("# Semantics")
         assert "# Style" in draft
         assert "# Presentation Defaults" in draft

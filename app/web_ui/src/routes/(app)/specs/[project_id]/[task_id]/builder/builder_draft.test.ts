@@ -223,7 +223,7 @@ describe("builder_mock_active — the mock gate", () => {
   })
 })
 
-describe("reusable_cached_cases — SU-case reuse (#14)", () => {
+describe("reusable_cached_cases — SU-case reuse", () => {
   const prompts = ["scenario a", "scenario b"]
   const spec = "no fabrication"
   const cache: CachedSuCases = {

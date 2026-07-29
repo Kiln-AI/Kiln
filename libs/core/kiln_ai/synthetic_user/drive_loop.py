@@ -3,7 +3,7 @@
 `drive_case` alternates the target task adapter with the local
 `SyntheticUserDriver`, producing a chain of `TaskRun`s on the target side.
 The loop runs for a fixed `turns` count — no early termination, no
-`<DONE>` / `<CANCEL>` sentinels — by design (see spec).
+`<DONE>` / `<CANCEL>` sentinels — by design.
 
 Persistence is fully delegated to `target_invoker(...)`: the batch runner's
 invoker writes each TaskRun to disk (with `parent_task_run_id` chaining),

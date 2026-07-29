@@ -18,8 +18,8 @@
 
   $: count = plan.prompts.length
 
-  // No confirm here: this leaves the plan the same way the back button does, so
-  // the parent confirms once for both, at the point history actually pops.
+  // No confirm here — each parent decides whether and when regenerating
+  // needs confirmation (e.g. before discarding driven results).
 </script>
 
 <div class="flex flex-col gap-4 mt-12">

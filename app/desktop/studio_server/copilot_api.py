@@ -635,8 +635,8 @@ def connect_copilot_api(app: FastAPI):
     async def classify_spec_description(
         input: ClassifySpecDescriptionInput,
     ) -> ClassifySpecDescriptionOutput:
-        """Stub for spec classification — kiln_server classifier hasn't
-        shipped. Returns 501 so callers can fall back to manual selection.
+        """Spec classification is not implemented; returns 501 so callers
+        can fall back to manual selection.
         """
         raise HTTPException(
             status_code=501,
@@ -1017,8 +1017,8 @@ def connect_copilot_api(app: FastAPI):
 
         # The builder's judge template never renders a reference answer, so a
         # reference_answer eval would save fine and then mis-score every run.
-        # Unreachable from the UI (spec classification stubs everything to
-        # Issue) — this guards direct API/agent clients.
+        # Not reachable from the current UI flow — this guards direct
+        # API/agent clients.
         if evaluation_data_type == EvalDataType.reference_answer:
             raise HTTPException(
                 status_code=400,

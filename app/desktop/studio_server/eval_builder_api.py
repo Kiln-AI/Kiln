@@ -16,8 +16,8 @@ Two streams, one frame contract (see api_models/eval_builder_models.py):
   review_traces (single-turn) — judge + claims over already-generated I/O
   pairs, fanned out per trace.
 
-The remote kiln_server is only reached for the claim builder (secret sauce);
-the judge runs locally via the Eval V2 llm_judge adapter (the user's keys).
+Only the claim builder reaches the remote kiln_server; the judge runs
+locally via the Eval V2 llm_judge adapter (the user's keys).
 Orchestration and concurrency live here so the UI stays a thin SSE consumer.
 """
 
@@ -749,8 +749,8 @@ def connect_eval_builder_api(app: FastAPI):
         unreachable failures for a lane BEFORE the drive commits the
         plan/SU-gen minutes and the batch's model spend. Explicitly does NOT
         validate tools/MCP or mid-run rate limits. Nothing persists:
-        allow_saving=False, so no TaskRun lands in the dataset (the
-        transient-judge precedent).
+        allow_saving=False, so no TaskRun lands in the dataset — same as
+        the transient review judge.
         """
         task_from_id(project_id, task_id)  # 404 on a bad path; not used further
         # A transient one-liner task, NOT the real task prompt: the check
@@ -801,8 +801,8 @@ def connect_eval_builder_api(app: FastAPI):
         The refined prompt is a PROPOSAL — the UI validates it and shows the
         changes for approval; it is never auto-applied.
         """
-        # Fail fast on a missing copilot key before the remote refine call
-        # (5.2 convention): a keyless caller gets a clean 401, not a deep error.
+        # Fail fast on a missing copilot key before the remote refine call:
+        # a keyless caller gets a clean 401, not a deep upstream error.
         get_copilot_api_key()
         # Remote failures propagate as HTTPExceptions with the upstream's
         # message (custom_errors renders {"message": ...} for the UI), same as

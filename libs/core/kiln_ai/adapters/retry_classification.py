@@ -66,9 +66,9 @@ def is_batch_fatal_error(e: BaseException) -> bool:
     return isinstance(
         e,
         (
-            litellm.AuthenticationError,  # 401 — bad/revoked key
-            litellm.PermissionDeniedError,  # 403 — key lacks access
-            litellm.NotFoundError,  # 404 — model deprecated/unknown
+            litellm.AuthenticationError,  # bad/revoked key
+            litellm.PermissionDeniedError,  # key lacks access
+            litellm.NotFoundError,  # model deprecated/unknown
             litellm.BudgetExceededError,  # hard spend ceiling
         ),
     )

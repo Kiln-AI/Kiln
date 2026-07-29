@@ -430,8 +430,9 @@ def delete_multi_turn_batch_chains(task: Task, batch_tag: str) -> int:
 
     Re-driving a batch mints a new batch_tag, which would orphan the previous
     batch's chains on disk forever — the caller passes the superseded tag and
-    this removes those chains (every run from leaf to root) before the new
-    drive begins. Returns the number of TaskRuns deleted.
+    this removes those chains (every run from leaf to root) once the replacing
+    drive has produced results, so a failed re-drive never destroys the only
+    batch on disk. Returns the number of TaskRuns deleted.
 
     Safety: a chain is only deleted when its leaf carries EXACTLY the
     runner's own tags, no rating, and no descendants. Any extra tag, a
