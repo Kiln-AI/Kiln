@@ -209,7 +209,11 @@
         disabled={!has_next}>Next →</button
       >
     </div>
-    <div class="tooltip tooltip-top" data-tip={save_disabled_tooltip}>
+    <!-- tooltip-left: the button sits at the viewport's bottom-right, where
+         a top-centered tooltip this long clips off the right edge on small
+         screens; leftward it grows into the content area (the v1 review
+         sibling's exact pattern for its long right-edge tooltip). -->
+    <div class="tooltip tooltip-left" data-tip={save_disabled_tooltip}>
       <button
         class="btn btn-primary"
         on:click={on_save}
