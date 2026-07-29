@@ -4,6 +4,7 @@
   import { onMount, onDestroy } from "svelte"
   import { agentInfo } from "$lib/agent"
   import {
+    afterNavigate,
     beforeNavigate,
     goto,
     pushState,
@@ -362,7 +363,19 @@
   let task_error: string | null = null
   $: is_multi_turn = task?.turn_mode === "multiturn"
 
+  // On a HARD page load, onMount fires during hydration — BEFORE SvelteKit's
+  // router is initialized — and replaceState/pushState then throw, killing
+  // onMount and wedging the loading screen. afterNavigate fires exactly once
+  // the router is ready (initial load and SPA entry alike), so every history
+  // call below awaits this instead of racing it.
+  let router_ready: () => void
+  const router_ready_promise = new Promise<void>((resolve) => {
+    router_ready = resolve
+  })
+  afterNavigate(() => router_ready())
+
   onMount(async () => {
+    await router_ready_promise
     // Seed the first history entry with the starting step so Back from Step 2
     // returns to Step 1 rather than leaving the builder.
     replaceState("", { builder_step: current_step })
