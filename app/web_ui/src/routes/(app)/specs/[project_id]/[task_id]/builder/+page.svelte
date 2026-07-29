@@ -25,8 +25,11 @@
     builder_mock_active,
     draft_has_content,
     restore_step,
+    reusable_cached_cases,
     EMPTY_BUILDER_DRAFT,
     type BuilderDraft,
+    type CachedSuCases,
+    type SyntheticUserCaseWire,
   } from "./builder_draft"
   import { isKilnAgentRunConfig } from "$lib/types"
   // Reuse v1 spec_builder components so v2 looks identical on the shared
@@ -289,6 +292,7 @@
       not_incorporated_feedback,
       batch_plan,
       batch_plan_edited,
+      cached_su_cases,
       multi_turn_batch_tag,
       undeleted_batch_tags,
     })
@@ -320,6 +324,7 @@
       not_incorporated_feedback = saved.not_incorporated_feedback
       batch_plan = saved.batch_plan
       batch_plan_edited = saved.batch_plan_edited
+      cached_su_cases = saved.cached_su_cases ?? null
       multi_turn_batch_tag = saved.multi_turn_batch_tag
       undeleted_batch_tags = saved.undeleted_batch_tags
       // Rebuild the shallow-routing chain up to the restored step (the
@@ -622,6 +627,11 @@
   // Snapshot of the prompts a drive actually ran — gates "Continue to Review"
   // so results are never presented for a plan edited after the drive.
   let driven_prompts_json: string | null = null
+  // The plan's generated synthetic users, reused on a re-drive while the
+  // plan and spec are byte-unchanged (finding #14: SU cases don't depend on
+  // the run config, so a fix-config-then-drive-again loop shouldn't re-pay
+  // the multi-minute generation). Rides the persisted draft.
+  let cached_su_cases: CachedSuCases | null = null
   // Approved plan length drives the batch size; NUM_CASES is the requested
   // plan size before any deletions.
   $: multi_turn_total = batch_plan?.prompts.length ?? NUM_CASES
@@ -664,13 +674,6 @@
     case_failure_messages = []
   }
 
-  // A generated synthetic-user case as the wire carries it: the seed
-  // message, the persona blob, and the plan scenario it came from.
-  type SyntheticUserCaseWire = {
-    seed_prompt: string
-    synthetic_user_info: string
-    scenario_index?: number | null
-  }
   // The cases whose conversations were actually driven (chains exist on
   // disk). Save mints one EvalInput per driven case — the eval slice the
   // runner re-drives per run config.
@@ -835,6 +838,9 @@
     generation_error = null
     batch_plan = null
     batch_plan_edited = false
+    // The cached synthetic users belong to the discarded plan (the byte
+    // compare would reject them anyway) — drop the payload from the draft.
+    cached_su_cases = null
     reset_pipeline_counters()
     drive_stop = null
     // Deliberately NOT clearing multi_turn_batch_tag (save still needs it)
@@ -1111,28 +1117,49 @@
       pipeline_total_cases = approved_prompts.length
       reset_pipeline_counters()
 
-      // 5. Generate synthetic-user cases via copilot — ONE batch call, one
-      // case per approved scenario prompt. Under the upstream salvage
-      // contract a flaky case is dropped instead of failing the batch;
-      // scenario_index maps each survivor back to its plan row.
-      multi_turn_phase = "generating_cases"
-      const cases_resp = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/generate_cases",
-        {
-          params: { path: { project_id, task_id } },
-          body: {
-            target_specification: spec_text(),
-            num_cases: approved_prompts.length,
-            case_prompts: approved_prompts,
-          },
-          signal: new_copilot_abort_signal(),
-        },
+      // 5. The synthetic-user cases. Their generation depends only on the
+      // plan and the spec — never the run config — so a re-drive with both
+      // byte-unchanged (the fix-config-then-drive-again recovery loop)
+      // reuses the cached cases instead of re-paying the multi-minute
+      // copilot call. Any plan edit or New Batch Plan misses the cache.
+      let cases = reusable_cached_cases(
+        cached_su_cases,
+        approved_prompts,
+        spec_text(),
       )
-      if (cases_resp.error || !cases_resp.data) {
-        generation_error = "Failed to generate synthetic-user cases."
-        return
+      if (cases) {
+        posthog.capture("eval_v2_su_cases_reused", {
+          num_cases: cases.length,
+        })
+      } else {
+        // Generate via copilot — ONE batch call, one case per approved
+        // scenario prompt. Under the upstream salvage contract a flaky case
+        // is dropped instead of failing the batch; scenario_index maps each
+        // survivor back to its plan row.
+        multi_turn_phase = "generating_cases"
+        const cases_resp = await client.POST(
+          "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/generate_cases",
+          {
+            params: { path: { project_id, task_id } },
+            body: {
+              target_specification: spec_text(),
+              num_cases: approved_prompts.length,
+              case_prompts: approved_prompts,
+            },
+            signal: new_copilot_abort_signal(),
+          },
+        )
+        if (cases_resp.error || !cases_resp.data) {
+          generation_error = "Failed to generate synthetic-user cases."
+          return
+        }
+        cases = cases_resp.data.cases as SyntheticUserCaseWire[]
+        cached_su_cases = {
+          prompts_json: JSON.stringify(approved_prompts),
+          spec_text: spec_text(),
+          cases,
+        }
       }
-      const cases = cases_resp.data.cases as SyntheticUserCaseWire[]
       // Salvage can drop cases upstream: the driven count (the progress
       // denominator) is what actually came back, not the plan size.
       pipeline_total_cases = cases.length

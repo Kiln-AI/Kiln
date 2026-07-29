@@ -10,6 +10,40 @@
 import type { SpecType } from "$lib/types"
 import type { SuggestedEdit } from "../spec_utils"
 
+// A generated synthetic-user case as the wire carries it: the seed message,
+// the persona blob, and the plan scenario it came from.
+export type SyntheticUserCaseWire = {
+  seed_prompt: string
+  synthetic_user_info: string
+  scenario_index?: number | null
+}
+
+// The generate_cases output, cached against exactly the inputs it depends
+// on (the approved prompts + the spec text — the run config plays no part
+// in persona generation). A re-drive with both unchanged reuses the cases
+// instead of re-paying the multi-minute copilot generation, which makes the
+// fix-config-then-drive-again recovery loop fast.
+export type CachedSuCases = {
+  prompts_json: string
+  spec_text: string
+  cases: SyntheticUserCaseWire[]
+}
+
+// The cached cases iff they were generated from EXACTLY this plan and spec
+// (byte-compare); anything else means regenerate. Fresh variation on the
+// same scenarios is deliberately not offered — that's what New Batch Plan
+// is for.
+export function reusable_cached_cases(
+  cache: CachedSuCases | null,
+  approved_prompts: string[],
+  spec: string,
+): SyntheticUserCaseWire[] | null {
+  if (!cache || cache.cases.length === 0) return null
+  if (cache.spec_text !== spec) return null
+  if (cache.prompts_json !== JSON.stringify(approved_prompts)) return null
+  return cache.cases
+}
+
 export type BuilderDraft = {
   // Step 1-3 — spec authoring.
   description: string
@@ -22,6 +56,9 @@ export type BuilderDraft = {
   // Step 4 — the approved plan (minutes of copilot work to recreate).
   batch_plan: { prompts: string[]; summary: string } | null
   batch_plan_edited: boolean
+  // The plan's generated synthetic users (more minutes) — reused on drive
+  // while plan+spec are byte-unchanged, revalidated in reusable_cached_cases.
+  cached_su_cases: CachedSuCases | null
   // Batch-tag bookkeeping — a CORRECTNESS carry, not convenience: these
   // name chains already on disk. multi_turn_batch_tag is the live batch;
   // undeleted_batch_tags is the delete-on-next-drive cleanup list.
@@ -39,6 +76,7 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   not_incorporated_feedback: "",
   batch_plan: null,
   batch_plan_edited: false,
+  cached_su_cases: null,
   multi_turn_batch_tag: null,
   undeleted_batch_tags: [],
 }

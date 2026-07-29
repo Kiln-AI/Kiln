@@ -4,8 +4,10 @@ import {
   builder_mock_active,
   draft_has_content,
   restore_step,
+  reusable_cached_cases,
   EMPTY_BUILDER_DRAFT,
   type BuilderDraft,
+  type CachedSuCases,
 } from "./builder_draft"
 
 // A draft with every field populated — the round-trip and resolution
@@ -34,6 +36,25 @@ const full_draft: BuilderDraft = {
     summary: "Two fabrication-bait scenarios.",
   },
   batch_plan_edited: true,
+  cached_su_cases: {
+    prompts_json: JSON.stringify([
+      "Customer asks about a return window.",
+      "Warranty question.",
+    ]),
+    spec_text: "The agent must not fabricate or guess at policies.",
+    cases: [
+      {
+        seed_prompt: "What's your return window?",
+        synthetic_user_info: "<persona>impatient</persona>",
+        scenario_index: 0,
+      },
+      {
+        seed_prompt: "Is my laptop still under warranty?",
+        synthetic_user_info: "<persona>polite</persona>",
+        scenario_index: 1,
+      },
+    ],
+  },
   multi_turn_batch_tag: "multi_turn_batch_1234",
   undeleted_batch_tags: ["multi_turn_batch_1200", "multi_turn_batch_1234"],
 }
@@ -199,5 +220,54 @@ describe("builder_mock_active — the mock gate", () => {
       __KILN_BUILDER_MOCK_ACTIVE__: true,
     }
     expect(builder_mock_active()).toBe(true)
+  })
+})
+
+describe("reusable_cached_cases — SU-case reuse (#14)", () => {
+  const prompts = ["scenario a", "scenario b"]
+  const spec = "no fabrication"
+  const cache: CachedSuCases = {
+    prompts_json: JSON.stringify(prompts),
+    spec_text: spec,
+    cases: [
+      { seed_prompt: "hi", synthetic_user_info: "<persona>x</persona>" },
+      { seed_prompt: "yo", synthetic_user_info: "<persona>y</persona>" },
+    ],
+  }
+
+  it("reuses when plan and spec are byte-unchanged", () => {
+    expect(
+      reusable_cached_cases(cache, ["scenario a", "scenario b"], spec),
+    ).toBe(cache.cases)
+  })
+
+  it("misses with no cache", () => {
+    expect(reusable_cached_cases(null, prompts, spec)).toBeNull()
+  })
+
+  it("misses when a prompt was edited", () => {
+    expect(
+      reusable_cached_cases(cache, ["scenario a EDITED", "scenario b"], spec),
+    ).toBeNull()
+  })
+
+  it("misses when a prompt was deleted", () => {
+    expect(reusable_cached_cases(cache, ["scenario a"], spec)).toBeNull()
+  })
+
+  it("misses when the spec text changed", () => {
+    expect(reusable_cached_cases(cache, prompts, "different spec")).toBeNull()
+  })
+
+  it("misses on an empty cached case list", () => {
+    expect(
+      reusable_cached_cases({ ...cache, cases: [] }, prompts, spec),
+    ).toBeNull()
+  })
+
+  it("prompt order matters (case i maps to prompt i)", () => {
+    expect(
+      reusable_cached_cases(cache, ["scenario b", "scenario a"], spec),
+    ).toBeNull()
   })
 })
