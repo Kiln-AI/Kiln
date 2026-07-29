@@ -35,6 +35,9 @@
   export let on_save: () => void = () => {}
   export let save_disabled = true
   export let save_disabled_tooltip: string | null = null
+  // What the judge judged, for the verdict card's headline: "conversation"
+  // for multi-turn, "example" for single-turn.
+  export let judged_noun = "example"
 
   let current_index = 0
   let trace_modal: ClaimTraceModal | null = null
@@ -153,6 +156,9 @@
             claim={current.final_judgement}
             bind:verdict={current_verdicts.final_judgement_verdict}
             on_cite={open_citation}
+            is_final_judgement
+            {judged_noun}
+            sole_card={visible.length === 0}
           />
         {/if}
       </div>

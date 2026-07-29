@@ -2276,6 +2276,7 @@
               traces={trace_claims}
               bind:verdicts={trace_reviews}
               selected_indices={selected_trace_indices}
+              judged_noun={is_multi_turn ? "conversation" : "example"}
               {on_open_trace}
               on_back={() => history.back()}
               on_save={on_advance_to_save}
