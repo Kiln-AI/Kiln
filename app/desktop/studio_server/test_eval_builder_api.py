@@ -1297,7 +1297,8 @@ class TestReviewPipeline:
         aborted = _events_of(events, "batch_aborted")
         assert len(aborted) == 1  # first batch-fatal error wins, exactly once
         assert aborted[0]["stage"] == "judge"
-        assert "AuthenticationError" in aborted[0]["error"]
+        # House error voice (format_error_message), not a raw exception dump.
+        assert "Authentication with the model provider failed" in aborted[0]["error"]
         assert _events_of(events, "batch_completed") == []
         assert _events_of(events, "case_failed") == []
         assert events[-1] == "complete"

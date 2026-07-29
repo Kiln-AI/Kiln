@@ -63,6 +63,7 @@ from app.desktop.studio_server.utils.eval_builder_utils import (
     transcript_io_for_trace,
 )
 from fastapi import FastAPI, HTTPException, Path, Request
+from kiln_ai.adapters.errors import format_error_message
 from kiln_ai.adapters.retry_classification import (
     is_batch_fatal_error,
     is_retryable_error,
@@ -106,6 +107,16 @@ REVIEW_CONCURRENCY = 8
 # on top of them.
 JUDGE_MAX_RETRIES = 2
 JUDGE_RETRY_DELAY_SECONDS = 1.0
+
+
+def _friendly_error(e: BaseException) -> str:
+    """One house error voice for every wire-visible failure message: unwrap
+    to the root cause and render it with the same mapping /run uses. Feeds
+    case_failed and batch_aborted, which the client's stop banner displays
+    and aggregates — so the text must be specific but never a raw provider
+    blob."""
+    cause = unwrap_kiln_run_error(e)
+    return format_error_message(cause) if isinstance(cause, Exception) else str(cause)
 
 
 async def run_judge_with_retry(*args, **kwargs):
@@ -480,7 +491,7 @@ class ReviewPipelineRun:
                     await self._abort_batch("judge", e)
                     return
                 await self._fail_case(
-                    case_index, "judge", "judge_failed", f"{type(e).__name__}: {e}"
+                    case_index, "judge", "judge_failed", _friendly_error(e)
                 )
                 return
             self._judged_count += 1
@@ -496,16 +507,13 @@ class ReviewPipelineRun:
         if self._aborted:
             return
         self._aborted = True
-        root = unwrap_kiln_run_error(error)
         logger.error(
             "review_pipeline: batch-fatal %s failure, aborting the batch: %s",
             stage,
-            root,
+            unwrap_kiln_run_error(error),
         )
         await self._emit(
-            PipelineBatchAbortedEvent(
-                error=f"{type(root).__name__}: {root}", stage=stage
-            )
+            PipelineBatchAbortedEvent(error=_friendly_error(error), stage=stage)
         )
         await self._queue.put(None)
 

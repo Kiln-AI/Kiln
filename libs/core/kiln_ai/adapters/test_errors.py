@@ -112,6 +112,70 @@ class TestFormatUserMessage:
             == "The model's output didn't match the expected format."
         )
 
+    def test_not_found_error(self):
+        exc = _make_litellm_error(litellm.NotFoundError)
+        assert (
+            format_error_message(exc)
+            == "The model was not found or is no longer available. "
+            "Check the model in your run config."
+        )
+
+    def test_permission_denied_error(self):
+        exc = _make_litellm_error(litellm.PermissionDeniedError)
+        assert (
+            format_error_message(exc)
+            == "The model provider denied access. Check your API key's permissions."
+        )
+
+    def test_budget_exceeded_error(self):
+        exc = litellm.BudgetExceededError(current_cost=2.0, max_budget=1.0)
+        assert format_error_message(exc) == "The provider spending limit was exceeded."
+
+    def test_generic_api_error_surfaces_provider_message(self):
+        # The account-suspended / billing class of failure: litellm maps it to
+        # the generic APIError, and the only actionable detail is the
+        # provider's own {"error": {"message": ...}} body.
+        raw = (
+            'litellm.APIError: APIError: Fireworks_aiException - {"error":{'
+            '"message":"Account acme is suspended, possibly due to reaching '
+            'the monthly spending limit.","param":null,'
+            '"code":"PRECONDITION_FAILED"}}'
+        )
+        exc = litellm.APIError(
+            status_code=500,
+            message=raw,
+            llm_provider="fireworks_ai",
+            model="glm_5_2",
+        )
+        formatted = format_error_message(exc)
+        assert "Account acme is suspended" in formatted
+        assert formatted.startswith("The model provider")
+        # The raw wrapper noise must not leak through.
+        assert "Fireworks_aiException" not in formatted
+        assert "{" not in formatted
+
+    def test_generic_api_error_without_provider_body_falls_back(self):
+        exc = litellm.APIError(
+            status_code=500,
+            message="something opaque",
+            llm_provider="openai",
+            model="test-model",
+        )
+        assert format_error_message(exc) == "An unexpected error occurred."
+
+    def test_provider_message_is_bounded(self):
+        long_message = "x" * 1000
+        raw = f'{{"error":{{"message":"{long_message}"}}}}'
+        exc = litellm.APIError(
+            status_code=500, message=raw, llm_provider="openai", model="test-model"
+        )
+        formatted = format_error_message(exc)
+        assert len(formatted) < 350
+
+    def test_os_error_passes_detail_through(self):
+        exc = OSError("disk full")
+        assert format_error_message(exc) == "A file operation failed: disk full"
+
     def test_too_many_turns(self):
         exc = RuntimeError(
             "Too many turns (11). Stopping iteration to avoid using too many tokens."

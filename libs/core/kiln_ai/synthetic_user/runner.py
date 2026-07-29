@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import AsyncIterator
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
+from kiln_ai.adapters.errors import format_error_message
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, SkillsDict
 from kiln_ai.adapters.retry_classification import (
     is_retryable_error,
@@ -437,16 +438,19 @@ async def _drive_one_case_and_emit(
             "synthetic_user runner: unexpected error in case %d", case_index
         )
         await _delete_partial_chain(persisted_runs, save_ctx)
-        # The adapter's KilnRunError message is genericized user-facing
-        # text — unwrap so failure events name the real provider failure
-        # (the terminal case_failed message feeds the stop banner's
-        # dominant-error diagnosis, so the root cause must survive).
+        # Unwrap to the root provider failure, then render it in the ONE
+        # house error voice (format_error_message — the same mapping /run
+        # shows). The terminal case_failed message feeds the stop banner's
+        # dominant-error diagnosis, so it must be specific (never the
+        # KilnRunError wrapper's generic text) but user-readable (never a
+        # raw provider blob).
         cause = unwrap_kiln_run_error(e)
+        friendly = (
+            format_error_message(cause) if isinstance(cause, Exception) else str(cause)
+        )
         if is_retryable_error(e):
-            raise RetryableError(f"{type(cause).__name__}: {cause}") from e
-        raise _CaseFailure(
-            "unexpected_error", f"{type(cause).__name__}: {cause}"
-        ) from e
+            raise RetryableError(friendly) from e
+        raise _CaseFailure("unexpected_error", friendly) from e
 
 
 async def _delete_partial_chain(

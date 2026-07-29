@@ -10,12 +10,34 @@ Provides:
 
 from __future__ import annotations
 
+import re
+
 import litellm
 from pydantic import BaseModel
 
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 _GENERIC_FALLBACK_MESSAGE = "An unexpected error occurred."
+
+# The {"error": {"message": "..."}} body shape most providers return
+# (OpenAI convention; Fireworks, OpenRouter, etc. follow it).
+_PROVIDER_MESSAGE_RE = re.compile(r'"message"\s*:\s*"((?:[^"\\]|\\.)+)"')
+
+
+def _provider_error_detail(text: str) -> str | None:
+    """Best-effort extraction of the provider's own error message from a raw
+    provider error body. The actionable detail for config-class failures
+    (account suspended, billing, model retired) lives there and nowhere
+    else. Bounded; None when the standard shape isn't present."""
+    match = _PROVIDER_MESSAGE_RE.search(text)
+    if not match:
+        return None
+    detail = match.group(1).replace('\\"', '"').replace("\\n", " ").strip()
+    if not detail:
+        return None
+    if len(detail) > 240:
+        detail = detail[:240] + "…"
+    return detail
 
 
 class ErrorWithTrace(BaseModel):
@@ -94,6 +116,29 @@ def format_error_message(exc: Exception) -> str:
             return "The model provider is currently unavailable. Try again in a moment."
         if isinstance(exc, litellm.JSONSchemaValidationError):
             return "The model's output didn't match the expected format."
+        if isinstance(exc, litellm.NotFoundError):
+            return (
+                "The model was not found or is no longer available. "
+                "Check the model in your run config."
+            )
+        if isinstance(exc, litellm.PermissionDeniedError):
+            return "The model provider denied access. Check your API key's permissions."
+        if isinstance(exc, litellm.BudgetExceededError):
+            return "The provider spending limit was exceeded."
+        if isinstance(exc, litellm.APIError):
+            # A provider error none of the specific classes above matched.
+            # Surface the provider's own message when present — config-class
+            # detail (account suspended, billing) lives only there — instead
+            # of hiding it behind the generic fallback.
+            detail = _provider_error_detail(_safe_str(exc))
+            if detail:
+                provider = getattr(exc, "llm_provider", None)
+                provider_clause = f" ({provider})" if provider else ""
+                return (
+                    f"The model provider{provider_clause} rejected the "
+                    f"request: {detail}"
+                )
+            return _GENERIC_FALLBACK_MESSAGE
 
         if isinstance(exc, RuntimeError):
             msg = _safe_str(exc)
@@ -110,6 +155,11 @@ def format_error_message(exc: Exception) -> str:
             # ValueError messages from the adapter (schema mismatches, etc.)
             # are already user-readable and include helpful detail.
             return _safe_str(exc)
+
+        if isinstance(exc, OSError):
+            # Local file/system failures (disk full, permissions) — the
+            # message is actionable and leaks nothing about a provider.
+            return f"A file operation failed: {_safe_str(exc)}"
 
         return _GENERIC_FALLBACK_MESSAGE
     except Exception:
