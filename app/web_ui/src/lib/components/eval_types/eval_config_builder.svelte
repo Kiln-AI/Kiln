@@ -40,6 +40,7 @@
     uses_reference_data_llm_judge,
     uses_reference_data_code_eval,
   } from "$lib/utils/eval_types/reference_data_gate"
+  import { SHOW_REFERENCE_DATA_UI } from "$lib/utils/eval_types/reference_data_ui"
 
   export let eval_config_type: V2EvalType
   export let evaluator: Eval
@@ -134,6 +135,13 @@
     judge_prompt: string | undefined,
     code: string | undefined,
   ): boolean {
+    // While reference data is hidden from the UI there's no way to supply it in
+    // the Test Judge pane, so the test-before-save gate can never be satisfied.
+    // Report "unused" to keep the normal save flow, even if the user hand-wrote
+    // a reference_data lookup into their prompt or code.
+    if (!SHOW_REFERENCE_DATA_UI) {
+      return false
+    }
     if (type === "llm_judge") {
       return uses_reference_data_llm_judge(judge_prompt ?? "")
     }
