@@ -1630,7 +1630,6 @@ class TestV2FreshGeneration:
             output=TaskOutput(output="hello", source=data_source),
             parent=mock_v2_task_run_eval_runner.task,
         )
-        fresh_task_run.save_to_file()
 
         job = EvalJob(
             item=stale_task_run,
@@ -1655,7 +1654,7 @@ class TestV2FreshGeneration:
         assert len(runs) == 1
         saved = runs[0]
         assert saved.output == "hello"
-        assert saved.dataset_id == fresh_task_run.id
+        assert saved.dataset_id == stale_task_run.id
         assert saved.scores == {"accuracy": 1.0}
         assert saved.eval_config_eval is False
         assert saved.skipped_reason is None
@@ -1680,7 +1679,6 @@ class TestV2FreshGeneration:
             output=TaskOutput(output="new answer", source=data_source),
             parent=mock_v2_task_run_eval_runner.task,
         )
-        fresh_task_run.save_to_file()
 
         job = EvalJob(
             item=stale_task_run,
@@ -1707,7 +1705,7 @@ class TestV2FreshGeneration:
         saved = runs[0]
         assert saved.output == "new answer"
         assert saved.output != "old answer"
-        assert saved.dataset_id == fresh_task_run.id
+        assert saved.dataset_id == stale_task_run.id
 
     @pytest.mark.asyncio
     async def test_task_run_eval_skip_persists_skipped_eval_run(
@@ -1729,7 +1727,6 @@ class TestV2FreshGeneration:
             output=TaskOutput(output="fresh output", source=data_source),
             parent=mock_v2_task_run_eval_runner.task,
         )
-        fresh_task_run.save_to_file()
 
         job = EvalJob(
             item=stale_task_run,
@@ -1757,7 +1754,58 @@ class TestV2FreshGeneration:
         assert saved.output is None
         assert saved.scores == {}
         assert saved.eval_config_eval is False
-        assert saved.dataset_id == fresh_task_run.id
+        assert saved.dataset_id == stale_task_run.id
+
+    @pytest.mark.asyncio
+    async def test_task_run_eval_uses_source_id_when_fresh_run_unsaved(
+        self,
+        mock_v2_task_run_eval_runner,
+        mock_v2_task_run_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        """Production reproduction: run_task uses allow_saving=False, so the fresh
+        TaskRun comes back with id=None. The EvalRun must still record the source
+        dataset item's id."""
+        stale_task_run = TaskRun(
+            input="test input",
+            output=TaskOutput(output="stale output", source=data_source),
+            parent=mock_v2_task_run_eval_runner.task,
+        )
+        stale_task_run.save_to_file()
+
+        fresh_task_run = TaskRun(
+            input="test input",
+            output=TaskOutput(output="hello", source=data_source),
+            parent=mock_v2_task_run_eval_runner.task,
+        )
+        fresh_task_run.id = None
+
+        job = EvalJob(
+            item=stale_task_run,
+            eval_config=mock_v2_task_run_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+
+        stub = StubV2Eval(mock_v2_task_run_eval_config)
+        with (
+            patch.object(stub, "run_task", return_value=fresh_task_run),
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+        ):
+            result = await mock_v2_task_run_eval_runner.run_job(job)
+
+        assert result is True
+        runs = mock_v2_task_run_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.dataset_id == stale_task_run.id
+        assert saved.eval_input_id is None
+        assert saved.output == "hello"
+        assert saved.scores == {"accuracy": 1.0}
 
     @pytest.mark.asyncio
     async def test_eval_config_eval_scores_existing_without_fresh_gen(
