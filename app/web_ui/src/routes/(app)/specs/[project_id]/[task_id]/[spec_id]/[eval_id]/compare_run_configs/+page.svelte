@@ -29,7 +29,7 @@
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import Dialog from "$lib/ui/dialog.svelte"
   import type { ActionButton } from "$lib/types"
-  import EvalConfigInstruction from "../eval_configs/eval_config_instruction.svelte"
+  import EvalConfigInstruction from "$lib/components/eval_config_instruction.svelte"
   import Intro from "$lib/ui/intro.svelte"
   import RunConfigComparisonTable from "$lib/components/run_config_comparison_table.svelte"
   import { load_task_prompts } from "$lib/stores/prompts_store"

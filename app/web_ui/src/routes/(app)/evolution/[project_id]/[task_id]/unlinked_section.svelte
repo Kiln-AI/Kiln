@@ -10,10 +10,12 @@
   export let selected_id: string | null = null
   export let expanded: boolean = false
   export let collapsible: boolean = true
+  export let pins: string[] = []
 
   const dispatch = createEventDispatcher<{
     select: string
     toggle: undefined
+    toggle_pin: string
   }>()
 
   function month_label(created_at: string | null): string {
@@ -87,14 +89,16 @@
           {group.label}
         </div>
         <div
-          class="grid grid-cols-[repeat(auto-fill,minmax(200px,max-content))] gap-3"
+          class="grid grid-cols-[repeat(auto-fill,minmax(280px,max-content))] gap-3"
         >
           {#each group.nodes as node (node.id)}
             <EvolutionNode
               {node}
               display={displays[node.id]}
               selected={selected_id === node.id}
+              pinned={pins.includes(node.id)}
               on:select={(event) => dispatch("select", event.detail)}
+              on:toggle_pin={(event) => dispatch("toggle_pin", event.detail)}
             />
           {/each}
         </div>

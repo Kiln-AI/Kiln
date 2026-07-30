@@ -41,6 +41,16 @@
   // "informational". Unknown keys are treated as higher-is-better, which is what
   // every rating scale is by definition.
   export let scoreDirections: Record<string, string> = {}
+  // Optional: when set, clicking a legend entry invokes this with the config's
+  // id instead of toggling the series' visibility (the default echarts
+  // behavior). Used by pages that treat the legend as a selection surface.
+  export let onConfigClick: ((configId: string) => void) | null = null
+  // Where the legend sits. "side" (default) keeps the historical behavior: a
+  // vertical legend to the right of the radar, which collapses to a horizontal
+  // one underneath when there are at most two series. "bottom" always puts a
+  // scrollable horizontal legend underneath, so it can never paint over the
+  // right-hand axis labels — for narrow columns with many configs.
+  export let legend_position: "side" | "bottom" = "side"
 
   // Axis scaling mode. Relative scales each axis to the best value across the selected
   // run configs, which is the better lens for spotting differences between configs.
@@ -271,6 +281,52 @@ Cost, latency and token axes score each run config against the others, so they s
       if (item) return item.label
     }
     return dataKey
+  }
+
+  // Axis names are drawn just outside the outermost ring, where the left and
+  // right ones run straight into the chart's edge. Hard-wrapping them keeps
+  // every line inside the box instead of letting echarts clip it.
+  const AXIS_NAME_LINE_CHARS = 14
+  const AXIS_NAME_MAX_LINES = 3
+
+  export function wrapAxisName(
+    name: string,
+    lineChars: number = AXIS_NAME_LINE_CHARS,
+  ): string {
+    const lines: string[] = []
+    let line = ""
+    const push = () => {
+      if (line.length > 0) {
+        lines.push(line)
+        line = ""
+      }
+    }
+    for (const word of name.split(/\s+/).filter((w) => w.length > 0)) {
+      // A word longer than the line budget is hard-split rather than overflowing
+      if (word.length > lineChars) {
+        push()
+        for (let i = 0; i < word.length; i += lineChars) {
+          lines.push(word.slice(i, i + lineChars))
+        }
+        line = lines.pop() ?? ""
+        continue
+      }
+      if (line.length === 0) {
+        line = word
+      } else if (line.length + 1 + word.length <= lineChars) {
+        line = `${line} ${word}`
+      } else {
+        push()
+        line = word
+      }
+    }
+    push()
+    if (lines.length > AXIS_NAME_MAX_LINES) {
+      const kept = lines.slice(0, AXIS_NAME_MAX_LINES)
+      kept[AXIS_NAME_MAX_LINES - 1] = `${kept[AXIS_NAME_MAX_LINES - 1]}…`
+      return kept.join("\n")
+    }
+    return lines.join("\n")
   }
 
   // Get simple display name for the series (used as the internal name/key)
@@ -635,8 +691,10 @@ Cost, latency and token axes score each run config against the others, so they s
     const legendFormatter = buildLegendFormatter()
 
     // A couple of configs don't need a legend column - centering the radar and
-    // dropping the legend underneath buys a much larger plot.
-    const compactLayout = series.length <= 2
+    // dropping the legend underneath buys a much larger plot. legend_position
+    // "bottom" asks for that arrangement whatever the series count.
+    const forceBottomLegend = legend_position === "bottom"
+    const compactLayout = forceBottomLegend || series.length <= 2
 
     const legendTextStyle = {
       lineHeight: 16,
@@ -686,7 +744,10 @@ Cost, latency and token axes score each run config against the others, so they s
                 orient: "horizontal" as const,
                 bottom: 0,
                 left: "center" as const,
-                itemGap: 40,
+                itemGap: forceBottomLegend ? 24 : 40,
+                // Many configs in a narrow column would otherwise wrap into the
+                // plot; scroll mode keeps the legend to one paged row.
+                ...(forceBottomLegend ? { type: "scroll" as const } : {}),
               }
             : {
                 orient: "vertical" as const,
@@ -697,15 +758,29 @@ Cost, latency and token axes score each run config against the others, so they s
         },
         radar: {
           indicator: indicators,
-          center: compactLayout ? ["50%", "46%"] : ["32%", "50%"],
+          center: forceBottomLegend
+            ? ["50%", "44%"]
+            : compactLayout
+              ? ["50%", "46%"]
+              : ["32%", "50%"],
           radius: compactLayout ? "62%" : "85%",
           axisName: {
             color: "#666",
-            fontSize: 12,
-            // Wrap long score names instead of letting neighbours collide
-            width: 110,
-            overflow: "break",
-            lineHeight: 14,
+            ...(forceBottomLegend
+              ? {
+                  // Hard-wrapped by the formatter below, so no echarts-side
+                  // width/overflow is needed (and nothing gets clipped).
+                  fontSize: 10,
+                  lineHeight: 12,
+                  formatter: (name: string) => wrapAxisName(name),
+                }
+              : {
+                  fontSize: 12,
+                  // Wrap long score names instead of letting neighbours collide
+                  width: 110,
+                  overflow: "break",
+                  lineHeight: 14,
+                }),
           },
           splitArea: {
             areaStyle: {
@@ -752,6 +827,7 @@ Cost, latency and token axes score each run config against the others, so they s
     comparisonFeatures &&
     selectedRunConfigIds &&
     axisScaleMode &&
+    legend_position &&
     scoreAxisMaxes &&
     scoreDirections &&
     visibleUsageKeys &&
@@ -769,6 +845,18 @@ Cost, latency and token axes score each run config against the others, so they s
       chartInstance?.resize()
     })
     resizeObserver.observe(node)
+
+    // Legend-as-selection: undo the visibility toggle and report the click
+    chartInstance.on("legendselectchanged", (params) => {
+      if (!onConfigClick) return
+      const name = (params as { name?: string }).name
+      if (!name) return
+      chartInstance?.dispatchAction({ type: "legendSelect", name })
+      const config = run_configs.find((c) => getSeriesDisplayName(c) === name)
+      if (config?.id) {
+        onConfigClick(config.id)
+      }
+    })
 
     // Track the pointer at the zrender level: it updates before the tooltip is
     // built, so the formatter knows which axis is under the cursor.
@@ -841,9 +929,13 @@ Cost, latency and token axes score each run config against the others, so they s
       </div>
     </div>
     {#if hasData}
+      <!-- With the legend underneath the plot the card is sized by its column,
+           so it only needs a floor tall enough for the radar plus the legend. -->
       <div
         use:initChart
-        class="w-full flex-1 min-h-[500px] xl:min-h-[620px]"
+        class="w-full flex-1 {legend_position === 'bottom'
+          ? 'min-h-[380px]'
+          : 'min-h-[500px] xl:min-h-[620px]'}"
       ></div>
     {:else}
       <ChartNoData

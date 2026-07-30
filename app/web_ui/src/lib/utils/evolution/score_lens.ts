@@ -13,10 +13,25 @@ export type Lens =
 
 export type StripCellSign = -1 | 0 | 1 | null
 
+// How a strip cell is painted:
+// - "delta":    the node and its parent both have a score, so the cell carries
+//               the better/worse/neutral color of the delta.
+// - "absolute": the node has a score but there is no parent baseline to compare
+//               against, so the cell shows the node's own lens bin color,
+//               muted. A completed eval always leaves a tick this way.
+// - "empty":    no score for this key at all.
+export type StripCellMode = "delta" | "absolute" | "empty"
+
 export interface StripCell {
   evalId: string
   scoreKey: string
+  /** Sign of the delta vs the parent baseline; null unless mode is "delta" */
   sign: StripCellSign
+  mode: StripCellMode
+  /** Resolved fill color for the cell */
+  color: string
+  /** Hover text for the cell */
+  title: string
 }
 
 export interface ScoreKeyMeta {
@@ -42,7 +57,7 @@ export interface LensData {
 export interface NodeDisplay {
   lens_color: string
   lens_value: string | null
-  strip_colors: string[]
+  strip: StripCell[]
   subtitle: string
   best: boolean
   dimmed: boolean
@@ -61,6 +76,9 @@ export const STRIP_EPSILON = 0.02
 export const STRIP_BETTER_COLOR = "#3a50d9"
 export const STRIP_WORSE_COLOR = "#d03b3b"
 export const STRIP_NEUTRAL_COLOR = "#e5e7eb"
+// Cells with no score at all: present (so the strip stays aligned) but almost
+// invisible, so they never read as a result.
+export const STRIP_EMPTY_COLOR = "#f3f4f6"
 
 export function score_key_id(evalId: string, scoreKey: string): string {
   return `${evalId}::${scoreKey}`
@@ -301,38 +319,79 @@ export function delta_vs_parent(
   return child - parent
 }
 
-// One strip cell per (eval, scoreKey): sign of the direction-corrected
-// normalized delta vs the primary parent, with a +/-0.02 dead zone.
-// Informational keys carry no better/worse direction, so their sign is null.
+function format_delta(delta: number): string {
+  if (Math.abs(delta) <= STRIP_EPSILON) {
+    return "±0.00"
+  }
+  return `${delta > 0 ? "+" : "−"}${Math.abs(delta).toFixed(2)}`
+}
+
+// One strip cell per (eval, scoreKey), always the same set in the same order so
+// every card's strip lines up.
+//
+// A cell is a delta vs the primary parent when both sides have a score: sign of
+// the direction-corrected normalized delta, with a +/-0.02 dead zone. When the
+// node is scored but there is no baseline to compare against (no parent, a
+// parent with no results for that key, or an informational key, which carries
+// no better/worse direction) the cell falls back to the node's own absolute
+// lens color so a finished eval still shows a tick. Unscored keys stay blank.
 export function strip_cells(
   data: LensData,
   runConfigId: string,
   parentId: string | null,
 ): StripCell[] {
-  if (!parentId) {
-    return []
-  }
   return data.keyMetas.map((meta) => {
-    let sign: StripCellSign = null
-    if (meta.direction !== "informational") {
-      const child = normalized_score(
-        data,
-        runConfigId,
-        meta.evalId,
-        meta.scoreKey,
-      )
-      const parent = normalized_score(
-        data,
-        parentId,
-        meta.evalId,
-        meta.scoreKey,
-      )
-      if (child !== null && parent !== null) {
-        const delta = child - parent
-        sign = delta > STRIP_EPSILON ? 1 : delta < -STRIP_EPSILON ? -1 : 0
+    const label = `${meta.evalName} · ${score_key_label(meta.scoreKey)}`
+    const child = normalized_score(
+      data,
+      runConfigId,
+      meta.evalId,
+      meta.scoreKey,
+    )
+    if (child === null) {
+      return {
+        evalId: meta.evalId,
+        scoreKey: meta.scoreKey,
+        sign: null,
+        mode: "empty" as const,
+        color: STRIP_EMPTY_COLOR,
+        title: `${label}: not scored`,
       }
     }
-    return { evalId: meta.evalId, scoreKey: meta.scoreKey, sign }
+
+    const raw = raw_score(data, runConfigId, meta.evalId, meta.scoreKey)
+    const value_text = (raw ?? child).toFixed(2)
+    const parent =
+      parentId && meta.direction !== "informational"
+        ? normalized_score(data, parentId, meta.evalId, meta.scoreKey)
+        : null
+
+    if (parent !== null) {
+      const delta = child - parent
+      const sign: StripCellSign =
+        delta > STRIP_EPSILON ? 1 : delta < -STRIP_EPSILON ? -1 : 0
+      return {
+        evalId: meta.evalId,
+        scoreKey: meta.scoreKey,
+        sign,
+        mode: "delta" as const,
+        color: strip_cell_color(sign),
+        title: `${label}: ${value_text} · ${format_delta(delta)} vs parent`,
+      }
+    }
+
+    return {
+      evalId: meta.evalId,
+      scoreKey: meta.scoreKey,
+      sign: null,
+      mode: "absolute" as const,
+      color: lens_color(child),
+      title: `${label}: ${value_text}${
+        meta.direction === "informational"
+          ? " · informational"
+          : " · no parent baseline"
+      }`,
+    }
   })
 }
 

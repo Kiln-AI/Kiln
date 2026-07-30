@@ -23,7 +23,7 @@
   import type { TaskOutputRatingType } from "$lib/types"
   import type { UiProperty } from "$lib/ui/property_list"
   import Intro from "$lib/ui/intro.svelte"
-  import EvalConfigInstruction from "./eval_config_instruction.svelte"
+  import EvalConfigInstruction from "$lib/components/eval_config_instruction.svelte"
   import ClampedText from "$lib/ui/clamped_text.svelte"
 
   import { agentInfo } from "$lib/agent"

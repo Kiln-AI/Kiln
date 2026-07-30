@@ -1,17 +1,56 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from "svelte"
-  import type { EvoEdge, EvoForest } from "$lib/utils/evolution/graph_assembly"
+  import type {
+    AxisChange,
+    EvoEdge,
+    EvoForest,
+  } from "$lib/utils/evolution/graph_assembly"
   import { AXIS_LABELS } from "$lib/utils/evolution/graph_assembly"
   import type { EvolutionLayout } from "$lib/utils/evolution/layout"
   import type { NodeDisplay } from "$lib/utils/evolution/score_lens"
+  import { diff_tool_axis } from "$lib/utils/evolution/tool_diff"
+  import {
+    available_tools,
+    model_info,
+    model_name,
+    prompt_name_from_id,
+    provider_name_from_id,
+  } from "$lib/stores"
+  import type { PromptResponse } from "$lib/types"
+  import Float from "$lib/ui/float.svelte"
   import EvolutionNode from "./evolution_node.svelte"
 
   export let forest: EvoForest
   export let layout: EvolutionLayout
   export let displays: Record<string, NodeDisplay> = {}
   export let selected_id: string | null = null
+  export let project_id: string
+  export let prompts: PromptResponse | null = null
+  export let pins: string[] = []
 
-  const dispatch = createEventDispatcher<{ select: string | null }>()
+  const dispatch = createEventDispatcher<{
+    select: string | null
+    toggle_pin: string
+  }>()
+
+  // Max name badges shown per direction on the tools axis tooltip
+  const MAX_TOOL_BADGES = 4
+
+  function scalar_axis_value(change: AxisChange, value: string): string {
+    if (value === "") {
+      return "—"
+    }
+    switch (change.axis) {
+      case "model":
+        return model_name(value, $model_info)
+      case "provider":
+        return provider_name_from_id(value)
+      case "prompt":
+        return prompt_name_from_id(value, prompts)
+      default:
+        return value
+    }
+  }
 
   const MIN_ZOOM = 0.25
   const MAX_ZOOM = 2
@@ -44,10 +83,13 @@
       k = 1
       return
     }
-    // Fit the world bbox with a 40px margin on each side
+    // Fit the world bbox with a 40px margin on each side. A deep (tall) graph
+    // can bottom out at MIN_ZOOM and still not fit, in which case the view is
+    // anchored at the top-left corner of the world rather than centered on its
+    // middle - the roots are where you start reading.
     k = clamp_zoom(Math.min((vw - 80) / width, (vh - 80) / height))
-    tx = (vw - width * k) / 2
-    ty = (vh - height * k) / 2
+    tx = width * k + 80 <= vw ? (vw - width * k) / 2 : 40
+    ty = height * k + 80 <= vh ? (vh - height * k) / 2 : 40
   }
 
   export function zoom_by(factor: number) {
@@ -142,13 +184,6 @@
     fit()
   }
 
-  $: hovered_edge = hovered_edge_id
-    ? forest.edges.find((e) => e.id === hovered_edge_id) ?? null
-    : null
-  $: hovered_edge_chip = hovered_edge
-    ? layout.edgePaths.get(hovered_edge.id)?.chipAt ?? null
-    : null
-
   $: positioned_nodes = [...forest.nodes.values()].filter((n) =>
     layout.positions.has(n.id),
   )
@@ -160,7 +195,7 @@
 
 <div
   bind:this={viewport_el}
-  class="relative overflow-hidden h-[calc(100vh-280px)] min-h-[480px] rounded-lg border border-gray-200 bg-gray-50 select-none touch-none {panning
+  class="relative overflow-hidden h-[calc(100vh-240px)] min-h-[560px] rounded-lg border border-gray-200 bg-gray-50 select-none touch-none {panning
     ? 'cursor-grabbing'
     : 'cursor-grab'}"
   role="application"
@@ -210,10 +245,11 @@
       {/each}
     </svg>
 
-    <!-- Midpoint chips: up to 2 changed-axis names + overflow count -->
+    <!-- Midpoint chips: up to 2 changed-axis names + overflow count. Each chip
+         container doubles as the Floating UI anchor for the hover card. -->
     {#each forest.edges as edge (edge.id + "-chip")}
       {@const path = layout.edgePaths.get(edge.id)}
-      {#if path && edge.changedAxes.length > 0}
+      {#if path}
         <div
           class="absolute flex flex-row gap-0.5 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
           style="left: {path.chipAt.x}px; top: {path.chipAt.y}px;"
@@ -232,6 +268,99 @@
               +{edge.changedAxes.length - 2}
             </span>
           {/if}
+          {#if hovered_edge_id === edge.id}
+            <Float placement="bottom" offset_px={10} portal={true} role="none">
+              <div
+                class="max-w-[340px] bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs pointer-events-none"
+              >
+                {#if edge.cycleBroken}
+                  <div class="text-error font-medium mb-1">
+                    Cycle detected — this link was ignored for layout
+                  </div>
+                {/if}
+                {#if edge.changedAxes.length > 0}
+                  <div class="space-y-1.5">
+                    {#each edge.changedAxes as change}
+                      {#if change.axis === "tools"}
+                        {@const tool_diff = diff_tool_axis(
+                          change.from,
+                          change.to,
+                          $available_tools[project_id],
+                        )}
+                        <div>
+                          {#if tool_diff.tools_added.length > 0 || tool_diff.tools_removed.length > 0}
+                            <div class="text-gray-700">
+                              <span class="font-medium">Tools:</span>
+                              +{tool_diff.tools_added.length} / −{tool_diff
+                                .tools_removed.length}
+                            </div>
+                            <div class="flex flex-wrap gap-1 mt-0.5">
+                              {#each tool_diff.tools_added.slice(0, MAX_TOOL_BADGES) as name}
+                                <span
+                                  class="badge badge-xs bg-green-50 border-green-200 text-green-700 whitespace-nowrap max-w-[140px] truncate"
+                                  title={name}
+                                >
+                                  +{name}
+                                </span>
+                              {/each}
+                              {#each tool_diff.tools_removed.slice(0, MAX_TOOL_BADGES) as name}
+                                <span
+                                  class="badge badge-xs bg-red-50 border-red-200 text-red-700 whitespace-nowrap max-w-[140px] truncate"
+                                  title={name}
+                                >
+                                  −{name}
+                                </span>
+                              {/each}
+                              {#if tool_diff.tools_added.length > MAX_TOOL_BADGES || tool_diff.tools_removed.length > MAX_TOOL_BADGES}
+                                <span class="text-gray-500">
+                                  +{tool_diff.tools_added.length +
+                                    tool_diff.tools_removed.length -
+                                    Math.min(
+                                      tool_diff.tools_added.length,
+                                      MAX_TOOL_BADGES,
+                                    ) -
+                                    Math.min(
+                                      tool_diff.tools_removed.length,
+                                      MAX_TOOL_BADGES,
+                                    )} more
+                                </span>
+                              {/if}
+                            </div>
+                          {/if}
+                          {#if tool_diff.skills_added.length > 0 || tool_diff.skills_removed.length > 0}
+                            <div class="text-gray-700 mt-0.5">
+                              <span class="font-medium">Skills:</span>
+                              +{tool_diff.skills_added.length}/−{tool_diff
+                                .skills_removed.length}
+                            </div>
+                          {/if}
+                        </div>
+                      {:else}
+                        <div class="text-gray-700">
+                          <span class="font-medium">
+                            {AXIS_LABELS[change.axis]}:
+                          </span>
+                          {scalar_axis_value(change, change.from)} → {scalar_axis_value(
+                            change,
+                            change.to,
+                          )}
+                        </div>
+                      {/if}
+                    {/each}
+                  </div>
+                {:else}
+                  <div class="text-gray-500">No axis changes recorded</div>
+                {/if}
+                {#if edge.noteSummary}
+                  <div
+                    class="text-gray-500 italic mt-1 border-t border-gray-100 pt-1"
+                  >
+                    {edge.noteSummary}
+                  </div>
+                {/if}
+              </div>
+            </Float>
+          {/if}
         </div>
       {/if}
     {/each}
@@ -248,45 +377,11 @@
           {node}
           display={displays[node.id]}
           selected={selected_id === node.id}
+          pinned={pins.includes(node.id)}
           on:select={(event) => dispatch("select", event.detail)}
+          on:toggle_pin={(event) => dispatch("toggle_pin", event.detail)}
         />
       </div>
     {/each}
   </div>
-
-  <!-- Edge hover tooltip (viewport space, below the chip) -->
-  {#if hovered_edge && hovered_edge_chip}
-    <div
-      class="absolute z-10 max-w-[280px] bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs pointer-events-none"
-      style="left: {hovered_edge_chip.x * k + tx}px; top: {hovered_edge_chip.y *
-        k +
-        ty +
-        16}px; transform: translateX(-50%);"
-    >
-      {#if hovered_edge.cycleBroken}
-        <div class="text-error font-medium mb-1">
-          Cycle detected — this link was ignored for layout
-        </div>
-      {/if}
-      {#if hovered_edge.changedAxes.length > 0}
-        <ul class="space-y-0.5">
-          {#each hovered_edge.changedAxes as change}
-            <li class="text-gray-700">
-              <span class="font-medium">{AXIS_LABELS[change.axis]}:</span>
-              <span class="break-all">
-                {change.from || "—"} → {change.to || "—"}
-              </span>
-            </li>
-          {/each}
-        </ul>
-      {:else}
-        <div class="text-gray-500">No axis changes recorded</div>
-      {/if}
-      {#if hovered_edge.noteSummary}
-        <div class="text-gray-500 mt-1 border-t border-gray-100 pt-1">
-          {hovered_edge.noteSummary}
-        </div>
-      {/if}
-    </div>
-  {/if}
 </div>

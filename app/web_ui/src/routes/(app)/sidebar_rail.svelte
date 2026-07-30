@@ -117,7 +117,7 @@
   <SidebarRailItem
     href={`/evolution/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
     active={section === Section.Evolution}
-    label="Evolution"
+    label="Compare V2"
   >
     <div slot="icon" class="w-full h-full">
       <ForkIcon />

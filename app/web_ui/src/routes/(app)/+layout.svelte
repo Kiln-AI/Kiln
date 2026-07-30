@@ -301,7 +301,7 @@
             <div class="sidebar-icon">
               <ForkIcon />
             </div>
-            Evolution</a
+            Compare V2</a
           >
         </li>
 

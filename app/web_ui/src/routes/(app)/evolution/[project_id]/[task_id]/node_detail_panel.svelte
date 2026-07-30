@@ -21,6 +21,7 @@
     score_key_label,
   } from "$lib/utils/evolution/score_lens"
   import {
+    available_tools,
     get_task_composite_id,
     model_info,
     model_name,
@@ -29,8 +30,11 @@
   } from "$lib/stores"
   import { prompts_by_task_composite_id } from "$lib/stores/prompts_store"
   import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
-  import { prompt_link } from "$lib/utils/link_builder"
   import { formatDate, formatLatency } from "$lib/utils/formatters"
+  import { diff_tool_axis } from "$lib/utils/evolution/tool_diff"
+  import StarIcon from "$lib/ui/icons/star_icon.svelte"
+  import CloseIcon from "$lib/ui/icons/close_icon.svelte"
+  import type { ArtifactPaneTarget } from "./artifact_pane.svelte"
 
   type RunConfigEvalScoresSummary =
     components["schemas"]["RunConfigEvalScoresSummary"]
@@ -43,8 +47,18 @@
   export let eval_scores: RunConfigEvalScoresSummary | null = null
   export let eval_scores_loading: boolean = false
   export let eval_scores_error: string | null = null
+  export let pinned: boolean = false
 
-  const dispatch = createEventDispatcher<{ close: undefined; select: string }>()
+  const dispatch = createEventDispatcher<{
+    close: undefined
+    select: string
+    toggle_pin: string
+    open_pane: ArtifactPaneTarget
+    inspect: { eval_id: string }
+  }>()
+
+  // Cap on +/− tool name badges shown per direction in the diff table
+  const MAX_TOOL_BADGES = 4
 
   const DELTA_BETTER_COLOR = "#006300"
   const DELTA_WORSE_COLOR = "#d03b3b"
@@ -73,9 +87,35 @@
       ? node.config.run_config_properties
       : null
 
-  $: node_prompt_link = agent_props
-    ? prompt_link(project_id, task_id, agent_props.prompt_id)
-    : undefined
+  function open_prompt_pane() {
+    if (!agent_props) {
+      return
+    }
+    dispatch("open_pane", {
+      kind: "prompt",
+      title: "Prompt",
+      prompt_ids: [agent_props.prompt_id],
+    })
+  }
+
+  // "View both": parent prompt + this config's prompt stacked in the pane
+  function open_prompt_diff_pane(from_prompt_id: string, to_prompt_id: string) {
+    dispatch("open_pane", {
+      kind: "prompt",
+      title: "Prompt comparison",
+      prompt_ids: [from_prompt_id, to_prompt_id],
+    })
+  }
+
+  function open_run_config_pane() {
+    if (!node.config) {
+      return
+    }
+    dispatch("open_pane", {
+      kind: "run_config",
+      run_config: node.config,
+    })
+  }
 
   $: diff_parent = diff_parent_id
     ? forest.nodes.get(diff_parent_id) ?? null
@@ -201,15 +241,21 @@
   }
 </script>
 
-<div
-  class="h-[calc(100vh-280px)] min-h-[480px] rounded-lg border border-gray-200 bg-white flex flex-col overflow-hidden"
->
+<!-- Sized by its container: the page mounts this as a fixed right-side drawer. -->
+<div class="h-full w-full bg-white flex flex-col overflow-hidden">
   <!-- Header -->
   <div class="flex items-start gap-2 px-4 pt-4 pb-2 flex-none">
     <div class="min-w-0 flex-1">
-      <div class="font-medium text-gray-900 truncate" title={node.name}>
-        {#if node.starred}<span class="text-amber-500">★</span>{/if}
-        {node.name}
+      <div
+        class="font-medium text-gray-900 truncate flex items-center gap-1"
+        title={node.name}
+      >
+        {#if node.starred}
+          <span class="w-3.5 h-3.5 text-amber-500 flex-none">
+            <StarIcon filled={true} />
+          </span>
+        {/if}
+        <span class="truncate">{node.name}</span>
       </div>
       {#if node.ghost}
         <div class="text-xs text-gray-500 italic">
@@ -217,13 +263,23 @@
         </div>
       {/if}
     </div>
+    {#if !node.ghost}
+      <button
+        type="button"
+        class="btn btn-xs {pinned ? 'btn-primary' : 'btn-outline'} flex-none"
+        title={pinned ? "Remove from compare set" : "Pin to compare"}
+        on:click={() => dispatch("toggle_pin", node.id)}
+      >
+        {pinned ? "Pinned" : "Pin to compare"}
+      </button>
+    {/if}
     <button
       type="button"
-      class="w-6 h-6 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors flex-none"
+      class="w-6 h-6 rounded-full flex items-center justify-center p-1.5 text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors flex-none"
       title="Close panel"
       on:click={() => dispatch("close")}
     >
-      ✕
+      <CloseIcon />
     </button>
   </div>
 
@@ -270,13 +326,14 @@
             <tr>
               <td class="text-gray-500">Prompt</td>
               <td>
-                {#if node_prompt_link}
-                  <a href={node_prompt_link} class="link">
-                    {prompt_name_from_id(agent_props.prompt_id, prompts)}
-                  </a>
-                {:else}
+                <button
+                  type="button"
+                  class="link text-left"
+                  title="Preview the full prompt"
+                  on:click={open_prompt_pane}
+                >
                   {prompt_name_from_id(agent_props.prompt_id, prompts)}
-                {/if}
+                </button>
               </td>
             </tr>
             <tr>
@@ -387,13 +444,21 @@
           {/if}
         </div>
 
-        <div class="mt-4">
+        <div class="mt-4 flex gap-2">
           <a
             class="btn btn-sm btn-outline"
             href={`/optimize/${project_id}/${task_id}/run_config/${node.id}`}
           >
             Open run config
           </a>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline"
+            title="Preview this run config's properties in a side pane"
+            on:click={open_run_config_pane}
+          >
+            Preview
+          </button>
         </div>
       {/if}
     {:else if active_tab === "diff"}
@@ -445,12 +510,82 @@
                 {#each visible_diff_rows as row (row.axis)}
                   <tr class={row.changed ? "bg-amber-50" : ""}>
                     <td class="text-gray-500">{AXIS_LABELS[row.axis]}</td>
-                    <td class="break-all">
-                      {display_axis_value(row.axis, row.from)}
-                    </td>
-                    <td class="break-all {row.changed ? 'font-medium' : ''}">
-                      {display_axis_value(row.axis, row.to)}
-                    </td>
+                    {#if row.axis === "tools" && row.changed}
+                      {@const tool_diff = diff_tool_axis(
+                        row.from,
+                        row.to,
+                        $available_tools[project_id],
+                      )}
+                      <td colspan="2">
+                        {#if tool_diff.tools_added.length > 0 || tool_diff.tools_removed.length > 0}
+                          <div class="text-gray-700">
+                            Tools: +{tool_diff.tools_added.length} / −{tool_diff
+                              .tools_removed.length}
+                          </div>
+                          <div class="flex flex-wrap gap-1 mt-0.5">
+                            {#each tool_diff.tools_added.slice(0, MAX_TOOL_BADGES) as name}
+                              <span
+                                class="badge badge-xs bg-green-50 border-green-200 text-green-700 whitespace-nowrap max-w-[140px] truncate"
+                                title={name}
+                              >
+                                +{name}
+                              </span>
+                            {/each}
+                            {#each tool_diff.tools_removed.slice(0, MAX_TOOL_BADGES) as name}
+                              <span
+                                class="badge badge-xs bg-red-50 border-red-200 text-red-700 whitespace-nowrap max-w-[140px] truncate"
+                                title={name}
+                              >
+                                −{name}
+                              </span>
+                            {/each}
+                            {#if tool_diff.tools_added.length > MAX_TOOL_BADGES || tool_diff.tools_removed.length > MAX_TOOL_BADGES}
+                              <span class="text-gray-500">
+                                +{tool_diff.tools_added.length +
+                                  tool_diff.tools_removed.length -
+                                  Math.min(
+                                    tool_diff.tools_added.length,
+                                    MAX_TOOL_BADGES,
+                                  ) -
+                                  Math.min(
+                                    tool_diff.tools_removed.length,
+                                    MAX_TOOL_BADGES,
+                                  )} more
+                              </span>
+                            {/if}
+                          </div>
+                        {/if}
+                        {#if tool_diff.skills_added.length > 0 || tool_diff.skills_removed.length > 0}
+                          <div class="text-gray-700 mt-0.5">
+                            Skills: +{tool_diff.skills_added.length}/−{tool_diff
+                              .skills_removed.length}
+                          </div>
+                        {/if}
+                      </td>
+                    {:else if row.axis === "prompt" && row.changed}
+                      <td class="break-all">
+                        {display_axis_value(row.axis, row.from)}
+                      </td>
+                      <td class="break-all font-medium">
+                        {display_axis_value(row.axis, row.to)}
+                        <button
+                          type="button"
+                          class="link text-xs font-normal text-gray-500 whitespace-nowrap"
+                          title="View both prompts side by side"
+                          on:click={() =>
+                            open_prompt_diff_pane(row.from, row.to)}
+                        >
+                          view both
+                        </button>
+                      </td>
+                    {:else}
+                      <td class="break-all">
+                        {display_axis_value(row.axis, row.from)}
+                      </td>
+                      <td class="break-all {row.changed ? 'font-medium' : ''}">
+                        {display_axis_value(row.axis, row.to)}
+                      </td>
+                    {/if}
                   </tr>
                 {/each}
               </tbody>
@@ -484,6 +619,7 @@
               <th class="text-gray-500 font-normal">Δ vs parent</th>
               <th class="text-gray-500 font-normal text-right">n</th>
               <th class="text-gray-500 font-normal">Done</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -534,6 +670,31 @@
                     value={row.percent ?? 0}
                     max="1"
                   ></progress>
+                </td>
+                <td class="text-right">
+                  <button
+                    type="button"
+                    class="w-5 h-5 rounded flex items-center justify-center text-gray-400 hover:text-gray-900 hover:bg-gray-100"
+                    title="Inspect this eval's method and runs"
+                    on:click={() =>
+                      dispatch("inspect", { eval_id: row.evalId })}
+                  >
+                    <svg
+                      class="w-3.5 h-3.5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M9 6L15 12L9 18"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </button>
                 </td>
               </tr>
             {/each}
