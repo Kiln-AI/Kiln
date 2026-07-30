@@ -193,9 +193,12 @@
   }
 </script>
 
+<!-- Fills whatever box the page gives it: the graph section is a card that may
+     also hold the docked detail panel, so the card owns the height and border
+     and this viewport takes the width that's left. -->
 <div
   bind:this={viewport_el}
-  class="relative overflow-hidden h-[calc(100vh-240px)] min-h-[560px] rounded-lg border border-gray-200 bg-gray-50 select-none touch-none {panning
+  class="relative overflow-hidden h-full w-full bg-gray-50 select-none touch-none {panning
     ? 'cursor-grabbing'
     : 'cursor-grab'}"
   role="application"

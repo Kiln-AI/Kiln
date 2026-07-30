@@ -44,10 +44,6 @@
   // "informational". Unknown keys are treated as higher-is-better, which is what
   // every rating scale is by definition.
   export let scoreDirections: Record<string, string> = {}
-  // Optional: when set, clicking a legend entry invokes this with the config's
-  // id instead of toggling the series' visibility (the default echarts
-  // behavior). Used by pages that treat the legend as a selection surface.
-  export let onConfigClick: ((configId: string) => void) | null = null
   // Where the legend sits. "side" (default) keeps the historical behavior: a
   // vertical legend to the right of the radar, which collapses to a horizontal
   // one underneath when there are at most two series. "bottom" always puts a
@@ -287,49 +283,361 @@ Cost, latency and token axes score each run config against the others, so they s
   }
 
   // Axis names are drawn just outside the outermost ring, where the left and
-  // right ones run straight into the chart's edge. Hard-wrapping them keeps
-  // every line inside the box instead of letting echarts clip it.
-  const AXIS_NAME_LINE_CHARS = 14
+  // right ones run straight into the chart's edge. Side mode leaves that to
+  // echarts (a fixed name width plus overflow: "break"); bottom mode places
+  // them itself - see bottomAxisLabels below.
+  //
+  // "bottom" mode puts the plot in a full-width box, so the left and right
+  // margins are enormous while the vertical budget is the scarce one. A wider
+  // name spends that width to buy back height: fewer lines per name means less
+  // of the box reserved for text outside the outer ring, which is what lets
+  // the radius grow.
+  const AXIS_NAME_LINE_CHARS_WIDE = 16
   const AXIS_NAME_MAX_LINES = 3
 
-  export function wrapAxisName(
+  // What "bottom" mode has to fit around the ring, in px. echarts' percentage
+  // radius is taken against min(width, height) / 2, which knows nothing about
+  // either: a percentage large enough to fill a wide box clips the left and
+  // right names in a narrow one, and a percentage safe in a narrow box wastes
+  // most of a wide one. So bottom mode measures its box and subtracts these.
+  //
+  // Vertical: the gap from the ring to the text, plus AXIS_NAME_MAX_LINES
+  // lines at lineHeight 14. A label wraps to at most two, so the third line's
+  // worth is slack - room for the packing in bottomAxisLabels to push the
+  // crowded labels at the top and bottom poles outwards without leaving the box.
+  const AXIS_NAME_BLOCK_PX = 15 + AXIS_NAME_MAX_LINES * 14
+  // Horizontal: the widest a wrapped name gets, ~6px per char at fontSize 11,
+  // plus the same gap.
+  const AXIS_NAME_WIDTH_PX = 15 + AXIS_NAME_LINE_CHARS_WIDE * 6
+  // One scrolling legend row: the name line (lineHeight 16) over up to three
+  // {sub} lines (lineHeight 14), plus echarts' 5px legend padding either side.
+  const BOTTOM_LEGEND_PX = 16 + 3 * 14 + 10
+  // Enough ring left to be a chart at all, if the box is somehow tiny
+  const MIN_RADAR_RADIUS_PX = 40
+
+  // Ring geometry for bottom mode, in px, from the measured box. Falls back to
+  // percentages when the box hasn't been measured yet (first paint).
+  function bottomRadarGeometry(
+    width: number,
+    height: number,
+  ): { center: (number | string)[]; radius: number | string } {
+    if (width <= 0 || height <= 0) {
+      return { center: ["50%", "45%"], radius: "71%" }
+    }
+    // The legend sits under the plot, so the ring is centred in what's left
+    const cy = (height - BOTTOM_LEGEND_PX) / 2
+    const radius = Math.max(
+      Math.min(cy - AXIS_NAME_BLOCK_PX, width / 2 - AXIS_NAME_WIDTH_PX),
+      MIN_RADAR_RADIUS_PX,
+    )
+    // Centre in px rather than "50%": bottomAxisLabels positions text in the
+    // same px space, and the measured width can lag the real one by a few px
+    // (recordChartSize's threshold), so pinning both to one number keeps the
+    // labels tied to the ring even mid-resize.
+    return { center: [width / 2, cy], radius }
+  }
+
+  // ---------------------------------------------------------------------
+  // Bottom-mode axis labels
+  //
+  // echarts centres each indicator name on its axis tip and stops there - the
+  // radar component has no label de-cluttering of any kind. Vertical spacing
+  // between neighbouring axes goes to zero as an axis approaches a pole, so
+  // past ~20 axes (29 of them sit 12.4 deg apart) the names at the top and
+  // bottom print straight through each other. Bottom mode therefore turns
+  // echarts' names off and draws them as `graphic` text, placed by
+  // bottomAxisLabels().
+  //
+  // Two labels cannot overlap, by construction:
+  //   - every label on the right half of the ring is anchored at its own axis
+  //     and runs rightwards, every label on the left half runs leftwards, and
+  //     an axis tip is always on its own side of the centre. So a left box and
+  //     a right box can never share an x.
+  //   - within a half, labels are packed with at least LABEL_GAP_Y of clear
+  //     vertical space, which makes their boxes disjoint in y.
+  // Only the second part takes any work, and it is a solved problem: least
+  // total movement subject to y_i + h_i + gap <= y_i+1 is isotonic regression,
+  // which pool-adjacent-violators solves exactly in one pass.
+  // ---------------------------------------------------------------------
+
+  const LABEL_FONT_SIZE = 11
+  const LABEL_LINE_HEIGHT = 14
+  const LABEL_COLOR = "#666"
+  // Two lines is what the band between the top of the box and the legend can
+  // afford the whole way round at the 640px height floor. Longer names are
+  // ellipsized; the axis tooltip always carries the full one.
+  const LABEL_MAX_LINES = 2
+  // Clear space between two stacked labels
+  const LABEL_GAP_Y = 5
+  // From the outer ring to the nearest edge of the text
+  const LABEL_RING_GAP = 12
+  // Keep text off the container's left and right edges...
+  const LABEL_EDGE_PAD = 8
+  // ...and off the top of the box and the legend underneath
+  const LABEL_BAND_PAD = 2
+  // A budget this small holds nothing, but a degenerate box shouldn't make the
+  // labels vanish either
+  const LABEL_MIN_WIDTH_PX = 40
+  // Above this |sin| a label is near enough to a pole that packing moved it
+  // essentially along its own axis, so it is drawn further out along that axis
+  // instead of being left floating beside it
+  const LABEL_RADIAL_MIN_SIN = 0.5
+
+  type BottomAxisLabel = {
+    index: number
+    text: string
+    x: number
+    y: number
+    align: "left" | "right"
+    width: number
+    height: number
+  }
+
+  // Rough advance widths for the UI's sans-serif stack, as a fraction of the
+  // font size. This only picks wrap points and keeps text off the container's
+  // edge - labels are held apart by the layout, not by this estimate - so a few
+  // percent of error costs nothing, and it is deterministic, which measuring
+  // against whichever font actually loaded is not.
+  const WIDE_GLYPHS = /[MWmw@%]/
+  const NARROW_GLYPHS = /[ijlt.,;:'`!|()[\]/\\ ]/
+
+  function estimateTextWidth(text: string): number {
+    let width = 0
+    for (const glyph of text) {
+      if (WIDE_GLYPHS.test(glyph)) {
+        width += LABEL_FONT_SIZE * 0.92
+      } else if (NARROW_GLYPHS.test(glyph)) {
+        width += LABEL_FONT_SIZE * 0.31
+      } else if (glyph >= "A" && glyph <= "Z") {
+        width += LABEL_FONT_SIZE * 0.7
+      } else {
+        width += LABEL_FONT_SIZE * 0.55
+      }
+    }
+    return width
+  }
+
+  function ellipsize(text: string, budget: number): string {
+    if (estimateTextWidth(text) <= budget) return text
+    let kept = text.replace(/…$/, "")
+    while (kept.length > 0 && estimateTextWidth(`${kept}…`) > budget) {
+      kept = kept.slice(0, -1)
+    }
+    return `${kept}…`
+  }
+
+  // Greedy word wrap to a px budget. Every line comes back inside the budget: a
+  // single word too wide for it is ellipsized rather than left to run off the
+  // edge, and so is the last line when a name needs more than maxLines.
+  function wrapToWidth(
     name: string,
-    lineChars: number = AXIS_NAME_LINE_CHARS,
-  ): string {
+    budget: number,
+    maxLines: number,
+  ): string[] {
     const lines: string[] = []
     let line = ""
-    const push = () => {
-      if (line.length > 0) {
-        lines.push(line)
-        line = ""
-      }
-    }
-    for (const word of name.split(/\s+/).filter((w) => w.length > 0)) {
-      // A word longer than the line budget is hard-split rather than overflowing
-      if (word.length > lineChars) {
-        push()
-        for (let i = 0; i < word.length; i += lineChars) {
-          lines.push(word.slice(i, i + lineChars))
-        }
-        line = lines.pop() ?? ""
-        continue
-      }
+    for (const word of name.split(/\s+/).filter((part) => part.length > 0)) {
       if (line.length === 0) {
         line = word
-      } else if (line.length + 1 + word.length <= lineChars) {
+      } else if (estimateTextWidth(`${line} ${word}`) <= budget) {
         line = `${line} ${word}`
       } else {
-        push()
+        lines.push(line)
         line = word
       }
     }
-    push()
-    if (lines.length > AXIS_NAME_MAX_LINES) {
-      const kept = lines.slice(0, AXIS_NAME_MAX_LINES)
-      kept[AXIS_NAME_MAX_LINES - 1] = `${kept[AXIS_NAME_MAX_LINES - 1]}…`
-      return kept.join("\n")
+    if (line.length > 0) lines.push(line)
+    if (lines.length === 0) return [""]
+    if (lines.length > maxLines) {
+      lines.length = maxLines
+      lines[maxLines - 1] = `${lines[maxLines - 1]}…`
     }
-    return lines.join("\n")
+    return lines.map((entry) => ellipsize(entry, budget))
+  }
+
+  // Least total movement that leaves consecutive intervals disjoint and in
+  // order - t_i + size_i + gap <= t_i+1 - and inside [min, max]. Subtracting
+  // the room each interval's predecessors need turns "disjoint and in order"
+  // into "non-decreasing", which is isotonic regression: pool-adjacent-
+  // violators solves it exactly in one pass, and the band is then a constant
+  // box constraint on a monotone sequence, so clamping the answer into the box
+  // is still the answer (and still monotone, so still non-overlapping).
+  function packIntervals(
+    desired: number[],
+    sizes: number[],
+    gap: number,
+    min: number,
+    max: number,
+  ): number[] {
+    const count = desired.length
+    if (count === 0) return []
+    const offsets: number[] = []
+    let used = 0
+    for (let index = 0; index < count; index++) {
+      offsets.push(used)
+      used += sizes[index] + gap
+    }
+    const values: number[] = []
+    const weights: number[] = []
+    for (let index = 0; index < count; index++) {
+      let value = desired[index] - offsets[index]
+      let weight = 1
+      while (values.length > 0 && values[values.length - 1] > value) {
+        const pooledValue = values.pop() as number
+        const pooledWeight = weights.pop() as number
+        value =
+          (value * weight + pooledValue * pooledWeight) /
+          (weight + pooledWeight)
+        weight += pooledWeight
+      }
+      values.push(value)
+      weights.push(weight)
+    }
+    const tops: number[] = []
+    for (let block = 0; block < values.length; block++) {
+      for (let member = 0; member < weights[block]; member++) {
+        tops.push(values[block])
+      }
+    }
+    // The whole run needs `span` px, so the first interval can start no later
+    // than max - span. When even that is above `min` there isn't room at all,
+    // and the top edge wins: labels stay on screen rather than sliding under
+    // the legend.
+    const span = offsets[count - 1] + sizes[count - 1]
+    const latest = max - span
+    return tops.map(
+      (top, index) => Math.max(min, Math.min(top, latest)) + offsets[index],
+    )
+  }
+
+  // Where each axis name goes in bottom mode, in canvas px. `y` is the vertical
+  // centre of the text block and `x` the edge it is anchored by, which is what
+  // echarts' graphic text wants alongside align/verticalAlign.
+  function bottomAxisLabels(
+    names: string[],
+    box: {
+      cx: number
+      cy: number
+      radius: number
+      width: number
+      bandBottom: number
+    },
+  ): BottomAxisLabel[] {
+    const count = names.length
+    if (count === 0) return []
+    const ringRadius = box.radius + LABEL_RING_GAP
+    // One wrap width for the whole ring: the tightest case is an axis pointing
+    // straight left or right, and mixing wrap widths by angle reads as noise.
+    // It is also what makes the horizontal cap below exact.
+    const budget = Math.max(
+      LABEL_MIN_WIDTH_PX,
+      box.width / 2 - ringRadius - LABEL_EDGE_PAD,
+    )
+    // echarts puts indicator 0 at startAngle (90 by default) and walks
+    // counter-clockwise with screen y growing downwards - the same convention
+    // radarCoordSys() and the radar's own dataToPoint use.
+    const angles = names.map(
+      (_, index) => Math.PI / 2 + (index * Math.PI * 2) / count,
+    )
+    const tipY = (index: number) =>
+      box.cy - ringRadius * Math.sin(angles[index])
+
+    const bandTop = LABEL_BAND_PAD
+    const bandBottom = box.bandBottom - LABEL_BAND_PAD
+    const band = Math.max(bandBottom - bandTop, LABEL_LINE_HEIGHT)
+
+    // Right half of the ring first, then the left half, each in vertical order
+    const sides: number[][] = [[], []]
+    angles.forEach((angle, index) => {
+      sides[Math.cos(angle) >= 0 ? 0 : 1].push(index)
+    })
+    for (const side of sides) {
+      side.sort((first, second) => tipY(first) - tipY(second))
+    }
+
+    // Enough band for every name at its natural wrap? If not, drop to one line
+    // each, and past that show every stride-th label - the rest stay in the
+    // axis tooltip. Only reachable at an implausible axis count: the 640px
+    // height floor holds about 30 two-line labels a side.
+    let wrapped = names.map((name) =>
+      wrapToWidth(name, budget, LABEL_MAX_LINES),
+    )
+    const spanOf = (side: number[]) =>
+      side.reduce(
+        (total, index) =>
+          total + wrapped[index].length * LABEL_LINE_HEIGHT + LABEL_GAP_Y,
+        -LABEL_GAP_Y,
+      )
+    const worstSpan = () => Math.max(spanOf(sides[0]), spanOf(sides[1]))
+    if (worstSpan() > band) {
+      wrapped = names.map((name) => wrapToWidth(name, budget, 1))
+    }
+    const stride = Math.max(1, Math.ceil(worstSpan() / band))
+
+    const labels: BottomAxisLabel[] = []
+    for (const side of sides) {
+      const shown = side.filter((_, position) => position % stride === 0)
+      const heights = shown.map(
+        (index) => wrapped[index].length * LABEL_LINE_HEIGHT,
+      )
+      const tops = packIntervals(
+        shown.map((index, position) => tipY(index) - heights[position] / 2),
+        heights,
+        LABEL_GAP_Y,
+        bandTop,
+        bandBottom,
+      )
+      shown.forEach((index, position) => {
+        const angle = angles[index]
+        const sin = Math.sin(angle)
+        const cos = Math.cos(angle)
+        const y = tops[position] + heights[position] / 2
+        // A label the packing pushed towards a pole is drawn further out along
+        // its own axis rather than left floating beside it - the one direction
+        // that can't be misread as belonging to a neighbour. Capped at the
+        // horizontal reach of the ring itself, so anchor x plus a full-budget
+        // line still lands inside the box.
+        const onAxis =
+          Math.abs(sin) >= LABEL_RADIAL_MIN_SIN
+            ? (box.cy - y) / sin
+            : ringRadius
+        const cap = Math.abs(cos) > 1e-6 ? ringRadius / Math.abs(cos) : Infinity
+        const radius = Math.min(Math.max(ringRadius, onAxis), cap)
+        labels.push({
+          index,
+          text: wrapped[index].join("\n"),
+          x: box.cx + radius * cos,
+          y,
+          align: cos >= 0 ? "left" : "right",
+          width: Math.max(
+            ...wrapped[index].map((line) => estimateTextWidth(line)),
+          ),
+          height: heights[position],
+        })
+      })
+    }
+    return labels
+  }
+
+  // The measured box, rounded and thresholded so dragging a window edge
+  // doesn't re-issue setOption for every sub-pixel step. Only tracked in
+  // bottom mode: side mode's geometry is fixed percentages, so re-drawing it
+  // on resize would buy nothing and would reset the legend's selection.
+  let chartWidth = 0
+  let chartHeight = 0
+
+  function recordChartSize(node: HTMLElement) {
+    if (legend_position !== "bottom") return
+    const width = Math.round(node.clientWidth)
+    const height = Math.round(node.clientHeight)
+    if (
+      Math.abs(width - chartWidth) < 8 &&
+      Math.abs(height - chartHeight) < 8
+    ) {
+      return
+    }
+    chartWidth = width
+    chartHeight = height
   }
 
   // Get simple display name for the series (used as the internal name/key)
@@ -699,6 +1007,25 @@ Cost, latency and token axes score each run config against the others, so they s
     const forceBottomLegend = legend_position === "bottom"
     const compactLayout = forceBottomLegend || series.length <= 2
 
+    const bottomGeometry = bottomRadarGeometry(chartWidth, chartHeight)
+
+    // Bottom mode draws its own axis names. Empty on the first paint of an
+    // unmeasured box, where the geometry is still percentages - and where
+    // there's nothing on screen to label anyway.
+    const axisLabels =
+      forceBottomLegend && typeof bottomGeometry.radius === "number"
+        ? bottomAxisLabels(
+            indicators.map((indicator) => indicator.name),
+            {
+              cx: chartWidth / 2,
+              cy: bottomGeometry.center[1] as number,
+              radius: bottomGeometry.radius,
+              width: chartWidth,
+              bandBottom: chartHeight - BOTTOM_LEGEND_PX,
+            },
+          )
+        : []
+
     const legendTextStyle = {
       lineHeight: 16,
       rich: {
@@ -735,6 +1062,10 @@ Cost, latency and token axes score each run config against the others, so they s
         },
         legend: {
           data: legend,
+          // Clicking a legend entry hides/shows that run config's polygon.
+          // With this many overlapping shapes, isolating one is the only way
+          // to read the chart - the legend is not a selection surface.
+          selectedMode: true,
           formatter: (name: string) => legendFormatter[name] || name,
           tooltip: {
             show: true,
@@ -761,21 +1092,27 @@ Cost, latency and token axes score each run config against the others, so they s
         },
         radar: {
           indicator: indicators,
+          // Bottom mode fills its (tall, page-wide) box: the ring is centred
+          // above the legend row and grown until either the axis names or the
+          // legend would be squeezed - see bottomRadarGeometry. Side mode's
+          // percentages are unchanged.
           center: forceBottomLegend
-            ? ["50%", "44%"]
+            ? bottomGeometry.center
             : compactLayout
               ? ["50%", "46%"]
               : ["32%", "50%"],
-          radius: compactLayout ? "62%" : "85%",
+          radius: forceBottomLegend
+            ? bottomGeometry.radius
+            : compactLayout
+              ? "62%"
+              : "85%",
           axisName: {
-            color: "#666",
+            color: LABEL_COLOR,
             ...(forceBottomLegend
               ? {
-                  // Hard-wrapped by the formatter below, so no echarts-side
-                  // width/overflow is needed (and nothing gets clipped).
-                  fontSize: 10,
-                  lineHeight: 12,
-                  formatter: (name: string) => wrapAxisName(name),
+                  // Drawn as `graphic` text instead, so they can be
+                  // de-cluttered - echarts has no way to do that itself.
+                  show: false,
                 }
               : {
                   fontSize: 12,
@@ -814,6 +1151,31 @@ Cost, latency and token axes score each run config against the others, so they s
             ...(series.length === 1 ? { areaStyle: { opacity: 0.2 } } : {}),
           },
         ],
+        // Bottom mode's axis names, hand-placed - see bottomAxisLabels. Silent
+        // so they never take the pointer off the polygons: the tooltip works
+        // out which axis it is from where the pointer is, and a label eating
+        // the event would break that.
+        ...(forceBottomLegend
+          ? {
+              graphic: {
+                elements: axisLabels.map((label) => ({
+                  type: "text" as const,
+                  x: label.x,
+                  y: label.y,
+                  silent: true,
+                  z: 100,
+                  style: {
+                    text: label.text,
+                    align: label.align,
+                    verticalAlign: "middle" as const,
+                    fontSize: LABEL_FONT_SIZE,
+                    lineHeight: LABEL_LINE_HEIGHT,
+                    fill: LABEL_COLOR,
+                  },
+                })),
+              },
+            }
+          : {}),
       },
       true,
     )
@@ -821,6 +1183,10 @@ Cost, latency and token axes score each run config against the others, so they s
 
   // Named so the reactive block below re-runs when the scaling mode is toggled
   $: axisScaleMode = absoluteScale ? "absolute" : "relative"
+
+  // Same trick for the measured box, which bottom mode's geometry reads. Only
+  // ever changes in bottom mode, so side mode still redraws on data alone.
+  $: chartBoxKey = `${chartWidth}x${chartHeight}`
 
   // Update chart when data changes (model_info and prompts may load async). Every
   // input that changes what's drawn has to be referenced here, or the chart keeps
@@ -830,6 +1196,7 @@ Cost, latency and token axes score each run config against the others, so they s
     comparisonFeatures &&
     selectedRunConfigIds &&
     axisScaleMode &&
+    chartBoxKey &&
     legend_position &&
     scoreAxisMaxes &&
     scoreDirections &&
@@ -846,20 +1213,9 @@ Cost, latency and token axes score each run config against the others, so they s
 
     const resizeObserver = new ResizeObserver(() => {
       chartInstance?.resize()
+      recordChartSize(node)
     })
     resizeObserver.observe(node)
-
-    // Legend-as-selection: undo the visibility toggle and report the click
-    chartInstance.on("legendselectchanged", (params) => {
-      if (!onConfigClick) return
-      const name = (params as { name?: string }).name
-      if (!name) return
-      chartInstance?.dispatchAction({ type: "legendSelect", name })
-      const config = run_configs.find((c) => getSeriesDisplayName(c) === name)
-      if (config?.id) {
-        onConfigClick(config.id)
-      }
-    })
 
     // Track the pointer at the zrender level: it updates before the tooltip is
     // built, so the formatter knows which axis is under the cursor.
@@ -877,6 +1233,9 @@ Cost, latency and token axes score each run config against the others, so they s
     zr.on("mousemove", onPointerMove)
     zr.on("globalout", onPointerOut)
 
+    // Measured before the first draw so bottom mode never paints the
+    // unmeasured percentage fallback and then jumps to the real geometry
+    recordChartSize(node)
     updateChart()
 
     return {
@@ -932,12 +1291,16 @@ Cost, latency and token axes score each run config against the others, so they s
       </div>
     </div>
     {#if hasData}
-      <!-- With the legend underneath the plot the card is sized by its column,
-           so it only needs a floor tall enough for the radar plus the legend. -->
+      <!-- With the legend underneath, the radar is as big as the box is tall,
+           so this floor is what makes it the section's centrepiece rather than
+           a thumbnail: 640px carries a ~455px polygon plus wrapped axis names
+           top and bottom and the legend row. The max width stops a page-wide
+           card from stranding the plot in acres of empty margin - a radar is
+           square, so width past the point where height binds is dead space. -->
       <div
         use:initChart
         class="w-full flex-1 {legend_position === 'bottom'
-          ? 'min-h-[380px]'
+          ? 'min-h-[640px] max-w-[1080px] mx-auto'
           : 'min-h-[500px] xl:min-h-[620px]'}"
       ></div>
     {:else}

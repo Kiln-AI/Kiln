@@ -398,6 +398,23 @@
 
   $: selected_node = selected_id ? forest.nodes.get(selected_id) ?? null : null
 
+  // Docking the detail panel takes 400px off the canvas (and undocking gives it
+  // back), so the graph is re-fit to the new width - otherwise the transform
+  // from the old width leaves it off-center or half out of view. Only the
+  // transitions matter: re-fitting on every selection change would throw away
+  // the pan/zoom the user set while clicking around the graph.
+  let panel_was_docked = false
+  $: refit_on_dock_change(!!selected_node)
+  async function refit_on_dock_change(docked: boolean) {
+    if (docked === panel_was_docked) {
+      return
+    }
+    panel_was_docked = docked
+    // Wait for the column to be added/removed before measuring the viewport.
+    await tick()
+    canvas?.fit()
+  }
+
   // Lazily fetch the selected node's detailed eval scores
   $: if (selected_node && !selected_node.ghost) {
     fetch_eval_scores(selected_node.id)
@@ -800,9 +817,19 @@
       {/if}
     </div>
 
-    <!-- Row 1: the lineage graph (tall, its own pan/zoom) beside the radar -->
-    <div class="grid gap-4 grid-cols-1 lg:grid-cols-[minmax(400px,2fr)_3fr]">
-      <div class="min-w-0">
+    <!-- The three sections stack full width: graph, radar, matrix. Each one
+         wants the whole page - a two-column row forced both the DAG and the
+         radar into aspect ratios that suited neither. -->
+
+    <!-- Section 1: the lineage graph, with its own pan/zoom inside. When a node
+         is selected its detail panel docks as a right-hand column of this same
+         card - an IDE-style side panel, not an overlay: nothing floats, nothing
+         overlaps the radar below, and the canvas simply takes the width that's
+         left. -->
+    <div
+      class="min-w-0 h-[560px] min-h-[560px] flex flex-row rounded-lg border border-gray-200 overflow-hidden"
+    >
+      <div class="flex-1 min-w-0">
         {#if forest.edges.length > 0}
           <EvolutionCanvas
             bind:this={canvas}
@@ -817,9 +844,10 @@
             on:toggle_pin={(event) => toggle_pin(event.detail)}
           />
         {:else}
-          <!-- Empty state: no lineage recorded at all -->
+          <!-- Empty state: no lineage recorded at all. Fills the same card, so
+               the page doesn't jump when lineage first appears. -->
           <div
-            class="h-[calc(100vh-240px)] min-h-[560px] bg-gray-50 border border-gray-200 rounded-lg px-6 flex flex-col justify-center items-center text-center"
+            class="h-full bg-gray-50 px-6 flex flex-col justify-center items-center text-center"
           >
             <div class="text-lg font-medium text-gray-900 mb-1">
               No lineage recorded yet
@@ -832,45 +860,80 @@
           </div>
         {/if}
       </div>
-      <div class="min-w-0 min-h-[560px] flex flex-col">
-        {#if radar_available}
-          <CompareRadarChart
-            comparisonFeatures={comparison_features}
-            getModelValueRaw={get_model_value_raw}
-            run_configs={run_configs ?? []}
-            model_info={$model_info}
-            {prompts}
-            selectedRunConfigIds={pinned_ids}
-            scoreAxisMaxes={score_axis_maxes}
-            scoreDirections={score_directions}
-            legend_position="bottom"
-            onConfigClick={(id) => handle_select(id)}
+
+      {#if selected_node}
+        <!-- Intro-only transition: the column takes its full width immediately
+             (so the canvas re-fits against a settled layout) and the panel
+             fades in over it. An outro would hold the width open while the
+             canvas has already been told to re-fit. -->
+        <div
+          class="w-[400px] flex-none border-l border-gray-200 bg-white overflow-hidden"
+          in:fly={{ x: 16, duration: 150, easing: cubicOut }}
+        >
+          <NodeDetailPanel
+            node={selected_node}
+            {forest}
+            {project_id}
+            {task_id}
+            {lens_data}
+            eval_scores={eval_scores_cache[selected_node.id] ?? null}
+            eval_scores_loading={eval_scores_loading[selected_node.id] ?? false}
+            eval_scores_error={eval_scores_errors[selected_node.id] ?? null}
+            pinned={pins.includes(selected_node.id)}
+            on:close={() => handle_select(null)}
+            on:select={(event) => handle_select(event.detail)}
+            on:toggle_pin={(event) => toggle_pin(event.detail)}
+            on:open_pane={(event) => (pane_target = event.detail)}
+            on:inspect={(event) =>
+              selected_node &&
+              open_inspector(event.detail.eval_id, selected_node.id)}
           />
-        {:else}
-          <div
-            class="flex-1 bg-white border border-gray-200 rounded-lg p-6 flex flex-col justify-center items-center text-center"
-          >
-            <div class="text-lg font-medium text-gray-900 mb-1">
-              {pinned_nodes.length === 0
-                ? "Pin configs to compare"
-                : "Not enough scores to plot"}
-            </div>
-            <div class="text-sm text-gray-500 max-w-md">
-              {#if pinned_nodes.length === 0}
-                Select a run config, or hover a card and hit Pin, to build a
-                compare set. Up to {MAX_PINS} configs are charted here and listed
-                in the table below.
-              {:else}
-                A radar chart needs at least {MIN_RADAR_AXES} higher-is-better scores.
-                Every score is still in the comparison table below.
-              {/if}
-            </div>
-          </div>
-        {/if}
-      </div>
+        </div>
+      {/if}
     </div>
 
-    <!-- Row 2: the comparison matrix, full page width -->
+    <!-- Section 2: the radar chart. Full page width means height is the only
+         thing the plot can grow into, so the floor is generous: the chart's
+         own 640px box plus its card header and padding. Tall enough for
+         wrapped axis names all the way round the outer ring plus the
+         scrolling legend underneath. -->
+    <div class="min-w-0 min-h-[800px] flex flex-col mt-6">
+      {#if radar_available}
+        <CompareRadarChart
+          comparisonFeatures={comparison_features}
+          getModelValueRaw={get_model_value_raw}
+          run_configs={run_configs ?? []}
+          model_info={$model_info}
+          {prompts}
+          selectedRunConfigIds={pinned_ids}
+          scoreAxisMaxes={score_axis_maxes}
+          scoreDirections={score_directions}
+          legend_position="bottom"
+        />
+      {:else}
+        <div
+          class="flex-1 bg-white border border-gray-200 rounded-lg p-6 flex flex-col justify-center items-center text-center"
+        >
+          <div class="text-lg font-medium text-gray-900 mb-1">
+            {pinned_nodes.length === 0
+              ? "Pin configs to compare"
+              : "Not enough scores to plot"}
+          </div>
+          <div class="text-sm text-gray-500 max-w-md">
+            {#if pinned_nodes.length === 0}
+              Select a run config, or hover a card and hit Pin, to build a
+              compare set. Up to {MAX_PINS} configs are charted here and listed in
+              the table below.
+            {:else}
+              A radar chart needs at least {MIN_RADAR_AXES} higher-is-better scores.
+              Every score is still in the comparison table below.
+            {/if}
+          </div>
+        </div>
+      {/if}
+    </div>
+
+    <!-- Section 3: the comparison matrix, full page width -->
     {#if pinned_nodes.length > 0}
       <div class="mt-6">
         <div class="flex items-center gap-2 mb-2">
@@ -921,48 +984,18 @@
   {/if}
 </AppPage>
 
-<!-- Detail panel and artifact pane are fixed right-side drawers, so selecting
-     a node never reflows the canvas. The artifact pane stacks to the left of
-     the detail panel when both are open. -->
-{#if !loading && !load_error && selected_node}
-  <div
-    class="fixed top-16 right-0 bottom-0 w-[440px] bg-white border-l border-gray-200 shadow-xl z-30 overflow-hidden"
-    transition:fly={{ x: 440, duration: 180, easing: cubicOut }}
-  >
-    <NodeDetailPanel
-      node={selected_node}
-      {forest}
-      {project_id}
-      {task_id}
-      {lens_data}
-      eval_scores={eval_scores_cache[selected_node.id] ?? null}
-      eval_scores_loading={eval_scores_loading[selected_node.id] ?? false}
-      eval_scores_error={eval_scores_errors[selected_node.id] ?? null}
-      pinned={pins.includes(selected_node.id)}
-      on:close={() => handle_select(null)}
-      on:select={(event) => handle_select(event.detail)}
-      on:toggle_pin={(event) => toggle_pin(event.detail)}
-      on:open_pane={(event) => (pane_target = event.detail)}
-      on:inspect={(event) =>
-        selected_node && open_inspector(event.detail.eval_id, selected_node.id)}
-    />
-  </div>
-{/if}
-
+<!-- Artifact previews (prompt text, run config properties) are modals: docking
+     a second column beside the detail panel would leave the canvas nothing to
+     draw in, and this content reads better wide than tall. Same treatment the
+     eval inspector already gets. -->
 {#if !loading && !load_error && pane_target}
-  <div
-    class="fixed top-16 bottom-0 w-[440px] bg-white border-l border-gray-200 shadow-xl z-30 overflow-hidden transition-[right] duration-200 ease-out"
-    style="right: {selected_node ? 440 : 0}px;"
-    transition:fly={{ x: 440, duration: 180, easing: cubicOut }}
-  >
-    <ArtifactPane
-      target={pane_target}
-      {project_id}
-      {task_id}
-      {prompts}
-      on:close={() => (pane_target = null)}
-    />
-  </div>
+  <ArtifactPane
+    target={pane_target}
+    {project_id}
+    {task_id}
+    {prompts}
+    on:close={() => (pane_target = null)}
+  />
 {/if}
 
 {#if inspector}

@@ -100,7 +100,7 @@
     })
   }
 
-  // "View both": parent prompt + this config's prompt stacked in the pane
+  // "View both": parent prompt + this config's prompt stacked in the modal
   function open_prompt_diff_pane(from_prompt_id: string, to_prompt_id: string) {
     dispatch("open_pane", {
       kind: "prompt",
@@ -243,7 +243,8 @@
   }
 </script>
 
-<!-- Sized by its container: the page mounts this as a fixed right-side drawer. -->
+<!-- Sized by its container: the page docks this as the right-hand column of the
+     graph card, so it is exactly as tall as that section and scrolls inside. -->
 <div class="h-full w-full bg-white flex flex-col overflow-hidden">
   <!-- Header -->
   <div class="flex items-start gap-2 px-4 pt-4 pb-2 flex-none">
@@ -412,7 +413,7 @@
           <button
             type="button"
             class="btn btn-sm btn-outline"
-            title="Preview this run config's properties in a side pane"
+            title="Preview this run config's properties"
             on:click={open_run_config_pane}
           >
             Preview
@@ -529,7 +530,7 @@
                         <button
                           type="button"
                           class="link text-xs font-normal text-gray-500 whitespace-nowrap"
-                          title="View both prompts side by side"
+                          title="View both prompts"
                           on:click={() =>
                             open_prompt_diff_pane(row.from, row.to)}
                         >
