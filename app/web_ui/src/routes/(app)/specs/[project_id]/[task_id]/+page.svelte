@@ -464,25 +464,34 @@
         return false
       }
 
+      // Status lives on the eval; a spec without one can't be updated.
+      const updatable: Eval[] = []
       const skipped: string[] = []
       for (const spec of specs_to_update) {
         const evaluator = spec.eval_id ? evals_by_id.get(spec.eval_id) : null
-        if (!evaluator) {
-          // Status lives on the eval; a spec without one can't be updated.
+        if (evaluator) {
+          updatable.push(evaluator)
+        } else {
           skipped.push(spec.name)
-          continue
         }
-        const new_status = should_archive ? "archived" : "active"
-        await updateEvalStatus(evaluator, new_status as SpecStatus)
       }
       if (skipped.length > 0) {
         evals_error = new KilnError(
           `Could not update ${skipped.join(", ")}: no matching eval found.`,
         )
       }
+      if (updatable.length === 0) {
+        // Nothing was updated: keep the selection so the user can retry.
+        return false
+      }
+
+      for (const evaluator of updatable) {
+        const new_status = should_archive ? "archived" : "active"
+        await updateEvalStatus(evaluator, new_status as SpecStatus)
+      }
 
       posthog.capture(should_archive ? "archive_specs" : "unarchive_specs", {
-        num_specs: specs_to_update.length,
+        num_specs: updatable.length,
       })
 
       success = true
