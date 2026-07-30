@@ -59,6 +59,14 @@ const full_draft: BuilderDraft = {
   },
   multi_turn_batch_tag: "multi_turn_batch_1234",
   undeleted_batch_tags: ["multi_turn_batch_1200", "multi_turn_batch_1234"],
+  su_driver: {
+    model_name: "gpt_5_4_mini",
+    model_provider: "openai",
+  },
+  judge_model: {
+    model_name: "gpt_5_4",
+    model_provider: "openai",
+  },
 }
 
 describe("draft round-trip", () => {
@@ -313,5 +321,44 @@ describe("create_eval_button_label", () => {
     expect(create_eval_button_label(true, false)).toBe("Create Eval")
     expect(create_eval_button_label(false, true)).toBe("Create Eval")
     expect(create_eval_button_label(false, false)).toBe("Create Eval")
+  })
+})
+
+describe("model lanes (su_driver / judge_model)", () => {
+  it("round-trip through serialization", () => {
+    const restored = JSON.parse(JSON.stringify(full_draft)) as BuilderDraft
+    expect(restored.su_driver).toEqual({
+      model_name: "gpt_5_4_mini",
+      model_provider: "openai",
+    })
+    expect(restored.judge_model).toEqual({
+      model_name: "gpt_5_4",
+      model_provider: "openai",
+    })
+  })
+
+  it("a pre-Drive-Settings draft restores lanes as null via ??", () => {
+    // Drafts written before the lanes existed have no such keys. The
+    // builder restores with `saved.su_driver ?? null` — mirror that here
+    // against a legacy-shaped blob.
+    const { su_driver: _su, judge_model: _judge, ...legacy } = full_draft
+    const restored = JSON.parse(JSON.stringify(legacy)) as BuilderDraft
+    expect(restored.su_driver ?? null).toBeNull()
+    expect(restored.judge_model ?? null).toBeNull()
+  })
+
+  it("reset wipes the lanes — pre-population re-fills them", () => {
+    const reset = reset_draft_keeping_tags(full_draft)
+    expect(reset.su_driver).toBeNull()
+    expect(reset.judge_model).toBeNull()
+  })
+
+  it("lanes alone do not make a draft restorable", () => {
+    expect(
+      draft_has_content({
+        ...EMPTY_BUILDER_DRAFT,
+        su_driver: { model_name: "m", model_provider: "p" },
+      }),
+    ).toBe(false)
   })
 })

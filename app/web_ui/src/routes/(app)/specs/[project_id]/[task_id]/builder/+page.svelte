@@ -12,8 +12,14 @@
   } from "$app/navigation"
   import { client, base_url } from "$lib/api_client"
   import FormElement from "$lib/utils/form_element.svelte"
+  import FormContainer from "$lib/utils/form_container.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
+  import { build_suggested_models } from "$lib/ui/run_config_component/suggested_models"
   import {
+    available_models,
     get_task_composite_id,
+    load_available_models,
     load_task,
     provider_name_from_id,
   } from "$lib/stores"
@@ -98,6 +104,7 @@
     build_default_judge_info,
     judge_config_from_sdg_step,
     type JudgeConfig,
+    type ModelChoice,
   } from "$lib/eval/default_judge"
   import {
     kilnCopilotConnected,
@@ -300,6 +307,8 @@
         cached_su_cases,
         multi_turn_batch_tag,
         undeleted_batch_tags,
+        su_driver,
+        judge_model,
       }
     : null
   $: if (current_draft && draft_store) {
@@ -368,6 +377,9 @@
       cached_su_cases = saved.cached_su_cases ?? null
       multi_turn_batch_tag = saved.multi_turn_batch_tag
       undeleted_batch_tags = saved.undeleted_batch_tags
+      // Model lanes: pre-Drive-Settings drafts have no such keys.
+      su_driver = saved.su_driver ?? null
+      judge_model = saved.judge_model ?? null
       // Rebuild the shallow-routing chain up to the restored step (the
       // mount already seeded "describe") so the browser's Back walks the
       // wizard steps exactly as in the original session instead of
@@ -761,6 +773,12 @@
   let multi_turn_fallback_run_config_name: string | null = null
 
   async function on_generate_single_turn() {
+    // No judge lane committed (deep link / stale state) — ask, don't guess.
+    const chosen_judge = judge_model
+    if (!chosen_judge) {
+      open_drive_settings()
+      return
+    }
     generation_loading = true
     generation_error = null
     try {
@@ -785,8 +803,11 @@
       }
       single_turn_examples = data.examples_for_feedback ?? []
       sdg_session_config = data.sdg_session_config ?? null
+      // The server's judge_result names whatever model IT judged with —
+      // the user's judge pick overrides it (the prompt is the part the
+      // server authored; the model is the user's choice).
       judge_info = data.judge_result
-        ? judge_config_from_sdg_step(data.judge_result)
+        ? judge_config_from_sdg_step(data.judge_result, chosen_judge)
         : null
       await build_claims_for_review()
       if (claims_error) {
@@ -820,13 +841,174 @@
   //      [drive → judge → claims] per case and the PipelineEvent frames
   //      drive the per-row status pills + the review results.
   //
-  // The synthetic-user driver model is fixed rather than user-selectable;
-  // making it selectable would go in the UI here.
-  const SU_DRIVER_DEFAULT = {
-    model_name: "claude_4_5_haiku",
-    model_provider: "openrouter",
-  } as const
   const TURNS_PER_CASE = 5
+
+  // ── Drive Settings (SDG's Generation Settings pattern). The Drive /
+  // Generate click opens a dialog holding the model lanes — the synthetic
+  // user driver (multi-turn only) and the judge — and its submit is what
+  // starts the run, so the model choice is confirmed at the point of
+  // spend. The committed lanes ride the persisted draft; the builder has
+  // no hardcoded model or provider anywhere.
+  let su_driver: ModelChoice | null = null
+  let judge_model: ModelChoice | null = null
+  let drive_settings_dialog: Dialog | null = null
+  // Dropdown bindings: the combined "provider_id/model_id" string plus the
+  // parsed ids the dropdown maintains. Committed to the lanes on submit —
+  // closing the dialog without submitting discards dropdown changes.
+  let su_model_combined: string | null = null
+  let su_model_id: string | null = null
+  let su_provider_id: string | null = null
+  let judge_model_combined: string | null = null
+  let judge_model_id: string | null = null
+  let judge_provider_id: string | null = null
+  let drive_settings_submitting = false
+  let drive_settings_error: string | null = null
+  // One pre-population pass per mount; lanes the draft restored (or the
+  // user committed) are never overwritten — only null lanes are filled.
+  let lanes_prepopulated = false
+
+  // Lanes from the task's LAST SAVED eval — the replay-what-worked tier of
+  // pre-population. SU rides the eval itself (multi_turn_drive_config);
+  // the judge lives on the eval's current config (v2 configs keep the
+  // model in typed properties, legacy at the root). Best-effort: any miss
+  // returns null lanes and pre-population falls through to suggestions.
+  async function last_saved_eval_lanes(): Promise<{
+    su_driver: ModelChoice | null
+    judge_model: ModelChoice | null
+  }> {
+    const none = { su_driver: null, judge_model: null }
+    const { data, error } = await client.GET(
+      "/api/projects/{project_id}/tasks/{task_id}/evals",
+      { params: { path: { project_id, task_id } } },
+    )
+    if (error || !data) return none
+    const evals = [...data].sort((a, b) =>
+      (b.created_at ?? "").localeCompare(a.created_at ?? ""),
+    )
+    const drive_eval = evals.find((e) => e.multi_turn_drive_config)
+    const su = drive_eval?.multi_turn_drive_config
+      ? {
+          model_name: drive_eval.multi_turn_drive_config.model_name,
+          model_provider: drive_eval.multi_turn_drive_config.model_provider,
+        }
+      : null
+    // Judge source: the same eval when one exists, else the newest eval
+    // with a current config (single-turn tasks have no drive config).
+    const judge_eval =
+      drive_eval ?? evals.find((e) => e.id && e.current_config_id) ?? null
+    let judge: ModelChoice | null = null
+    if (judge_eval?.id && judge_eval.current_config_id) {
+      const configs = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
+        {
+          params: {
+            path: { project_id, task_id, eval_id: judge_eval.id },
+          },
+        },
+      )
+      const config = configs.data?.find(
+        (c) => c.id === judge_eval.current_config_id,
+      )
+      const props = config?.properties as
+        | { model_name?: unknown; model_provider?: unknown }
+        | undefined
+      const model =
+        typeof props?.model_name === "string"
+          ? props.model_name
+          : config?.model_name ?? null
+      const provider =
+        typeof props?.model_provider === "string"
+          ? props.model_provider
+          : config?.model_provider ?? null
+      if (model && provider) {
+        judge = { model_name: model, model_provider: provider }
+      }
+    }
+    return { su_driver: su, judge_model: judge }
+  }
+
+  // Fill null lanes: draft (already restored into the lane vars) → last
+  // saved eval on this task → first registry-suggested model among the
+  // connected providers (same flags that power the Recommended badges).
+  // A lane with no usable model anywhere stays null: the dropdown's empty
+  // state names the way out and submit refuses to start.
+  async function prepopulate_lanes() {
+    if (lanes_prepopulated) return
+    lanes_prepopulated = true
+    const su_needed = is_multi_turn && su_driver === null
+    if (!su_needed && judge_model !== null) return
+    try {
+      const saved = await last_saved_eval_lanes()
+      if (su_needed && saved.su_driver) su_driver = saved.su_driver
+      if (judge_model === null && saved.judge_model) {
+        judge_model = saved.judge_model
+      }
+    } catch (e) {
+      console.warn("Could not read the last saved eval's models:", e)
+    }
+    await load_available_models()
+    const models = get(available_models)
+    if (is_multi_turn && su_driver === null) {
+      const suggested = build_suggested_models(models, "data_gen")[0]
+      if (suggested) {
+        su_driver = {
+          model_name: suggested.model_id,
+          model_provider: suggested.provider_id,
+        }
+      }
+    }
+    if (judge_model === null) {
+      const suggested = build_suggested_models(models, "evals")[0]
+      if (suggested) {
+        judge_model = {
+          model_name: suggested.model_id,
+          model_provider: suggested.provider_id,
+        }
+      }
+    }
+  }
+
+  async function open_drive_settings() {
+    drive_settings_error = null
+    drive_settings_dialog?.show()
+    await prepopulate_lanes()
+    // Reseed the dropdowns from the committed lanes (also discards any
+    // uncommitted picks from a previously cancelled dialog).
+    su_model_combined = su_driver
+      ? `${su_driver.model_provider}/${su_driver.model_name}`
+      : su_model_combined
+    judge_model_combined = judge_model
+      ? `${judge_model.model_provider}/${judge_model.model_name}`
+      : judge_model_combined
+  }
+
+  // Commit the lanes and start the run. Refuses on an unset lane — the
+  // SDG flow would fall through to raw server errors here; we stop with a
+  // visible error instead.
+  function submit_drive_settings() {
+    drive_settings_submitting = false
+    const su_ok = !is_multi_turn || (su_model_id && su_provider_id)
+    if (!su_ok || !judge_model_id || !judge_provider_id) {
+      drive_settings_error = is_multi_turn
+        ? "Select a synthetic user and judge model to continue."
+        : "Select a judge model to continue."
+      return
+    }
+    if (is_multi_turn && su_model_id && su_provider_id) {
+      su_driver = { model_name: su_model_id, model_provider: su_provider_id }
+    }
+    judge_model = {
+      model_name: judge_model_id,
+      model_provider: judge_provider_id,
+    }
+    drive_settings_error = null
+    drive_settings_dialog?.close()
+    if (is_multi_turn) {
+      on_drive_multi_turn()
+    } else {
+      on_generate_single_turn()
+    }
+  }
 
   // Events on the merged review-pipeline stream (one stream runs
   // [drive → judge → claims] per case; see eval_builder_api.review_pipeline).
@@ -1070,6 +1252,14 @@
       generation_error = "No approved plan — plan the batch first."
       return
     }
+    // Lanes uncommitted (internal re-drive path reached before any
+    // Drive Settings submit) — ask, don't guess.
+    const chosen_su = su_driver
+    const chosen_judge_model = judge_model
+    if (!chosen_su || !chosen_judge_model) {
+      open_drive_settings()
+      return
+    }
     const approved_prompts = batch_plan.prompts
     generation_loading = true
     generation_error = null
@@ -1124,8 +1314,10 @@
 
       // 2. The judge, resolved BEFORE the pipeline (not just before the
       // stream) so the preflight below covers the judge lane too — the
-      // judge-dies-after-drives case is the expensive one.
-      const judge = judge_info ?? build_default_judge_info(spec_text())
+      // judge-dies-after-drives case is the expensive one. Runs on the
+      // user's picked judge model.
+      const judge =
+        judge_info ?? build_default_judge_info(spec_text(), chosen_judge_model)
 
       // 3. Preflight ALL THREE lanes concurrently before anything runs or
       // is discarded: a dead key/model stops the drive here — before the
@@ -1142,8 +1334,8 @@
           },
           {
             lane: "synthetic-user driver",
-            model_name: SU_DRIVER_DEFAULT.model_name,
-            model_provider: SU_DRIVER_DEFAULT.model_provider,
+            model_name: chosen_su.model_name,
+            model_provider: chosen_su.model_provider,
           },
           {
             lane: "judge",
@@ -1246,7 +1438,7 @@
           cases,
           turns: TURNS_PER_CASE,
           target_run_config_id,
-          su_driver: SU_DRIVER_DEFAULT,
+          su_driver: chosen_su,
           replace_batch_tags: tags_to_replace,
           spec_name: name,
           judge,
@@ -1444,15 +1636,18 @@
     }
   }
 
-  // Advance from the Refine step (3) into Generate (4) and immediately kick
-  // off generation — no extra click required. The in-step button only
-  // surfaces if generation errored, as a retry affordance.
+  // Advance from the Refine step (3) into Generate (4). Multi-turn plans
+  // immediately (planning needs no model choice); an existing plan renders
+  // for re-approval instead. Single-turn opens Drive Settings over the
+  // step — generation starts from the dialog's submit, so the judge choice
+  // is confirmed before any spend (SDG's pattern).
   function on_advance_to_generate() {
     goto_step("generate")
-    // An existing plan renders for re-approval instead of auto-driving —
-    // the spec may have changed since it was planned.
-    if (is_multi_turn && batch_plan !== null) return
-    on_continue_from_generate_step()
+    if (is_multi_turn) {
+      if (batch_plan === null) on_plan_multi_turn()
+      return
+    }
+    open_drive_settings()
   }
 
   // Same pattern for Review (5) → Save (6): land on Save with the request
@@ -1740,16 +1935,22 @@
   // and streams a result per trace back. Multi-turn never comes here — its
   // claims arrive on the merged review_pipeline stream during the drive.
   async function build_claims_for_review() {
+    // judge_info comes from clarify_spec (already model-overridden); fall
+    // back to the default prompt on the picked judge model. Either way,
+    // remember the judge the review ran — save persists that exact object.
+    const judge =
+      judge_info ??
+      (judge_model ? build_default_judge_info(spec_text(), judge_model) : null)
+    if (!judge) {
+      claims_error = "No judge model selected — start generation again."
+      return
+    }
     claims_loading = true
     claims_error = null
     const ios = single_turn_examples.map((e) => ({
       raw_input: e.input,
       raw_output: e.output,
     }))
-    // judge_info comes from clarify_spec; fall back to the shared default.
-    // Either way, remember the judge the review ran — save persists that
-    // exact object.
-    const judge = judge_info ?? build_default_judge_info(spec_text())
     review_judge = judge
     reviewed_identity = JSON.stringify({ name, spec: spec_text() })
     // Fill by trace_index as events arrive (they complete out of order).
@@ -1898,9 +2099,17 @@
       }
 
       // The judge to persist = the judge the review ran (review_judge). The
-      // fallback only fires if save is somehow reached without a review.
+      // fallbacks only fire if save is somehow reached without a review.
       const review_judge_config =
-        review_judge ?? judge_info ?? build_default_judge_info(spec_text())
+        review_judge ??
+        judge_info ??
+        (judge_model
+          ? build_default_judge_info(spec_text(), judge_model)
+          : null)
+      if (!review_judge_config) {
+        save_error = "No judge was configured — go back and re-run the review."
+        return
+      }
       // Under the hood: if the reviewer disagreed anywhere, refine the judge
       // from their grades so the shipped judge incorporates their feedback.
       // Falls back to the reviewed judge on any refine failure (never blocks
@@ -1913,6 +2122,14 @@
         if (multi_turn_batch_tag === null || driven_cases.length === 0) {
           save_error =
             "No multi-turn chains were generated — go back to Step 4."
+          return
+        }
+        // The SU model the chains were driven with — always committed
+        // before a drive can run; missing means no drive happened.
+        const saved_su_driver = su_driver
+        if (saved_su_driver === null) {
+          save_error =
+            "No synthetic-user model was recorded — go back to Step 4."
           return
         }
         // Carry the human's review through save: each reviewed trace maps to
@@ -1958,8 +2175,8 @@
                 // ride onto the Eval, so eval-time re-drives replay the same
                 // synthetic user (model + turns).
                 drive_config: {
-                  model_name: SU_DRIVER_DEFAULT.model_name,
-                  model_provider: SU_DRIVER_DEFAULT.model_provider,
+                  model_name: saved_su_driver.model_name,
+                  model_provider: saved_su_driver.model_provider,
                   turns: TURNS_PER_CASE,
                 },
               },
@@ -2548,7 +2765,7 @@
             <KilnProBatchPlan
               plan={batch_plan}
               summary_out_of_sync={batch_plan_edited}
-              on_generate_inputs={on_drive_multi_turn}
+              on_generate_inputs={open_drive_settings}
               on_regenerate={on_new_plan_with_confirm}
               on_delete_prompt={on_delete_plan_prompt}
               hide_generate_button={has_data_accepted}
@@ -2598,14 +2815,18 @@
                   Continue to review →
                 </button>
               {:else}
-                <!-- No results (a Back aborted generation) — offer to start it. -->
+                <!-- No results (a Back aborted generation) — offer to start
+                     it. Multi-turn only reaches this branch with no plan (a
+                     plan renders the approval view above), so planning is
+                     the next action there; single-turn goes through Drive
+                     Settings like every fresh generation. -->
                 <button
                   class="btn btn-primary"
-                  on:click={on_continue_from_generate_step}
+                  on:click={() =>
+                    is_multi_turn
+                      ? on_plan_multi_turn()
+                      : open_drive_settings()}
                 >
-                  <!-- Multi-turn only reaches this branch with no plan (a plan
-                       renders the approval view above), so planning is always
-                       the next action. -->
                   {is_multi_turn
                     ? "Plan conversations →"
                     : "Generate examples →"}
@@ -2685,3 +2906,57 @@
     {/if}
   </AppPage>
 </div>
+
+<!-- Drive Settings (SDG's Generation Settings pattern): opened by the
+     Drive / Generate click, its submit starts the run. Model-only lanes —
+     the SU driver and judge are fixed-prompt internal roles, so no
+     run-config extras. Lane filters: SU wants a data-gen-capable chat
+     model (SDG's settings); judge needs structured output (v1 judge
+     form's settings). With no usable model, the dropdowns' own empty
+     state links to provider settings (same-tab, so the models list is
+     fresh when the user returns) and submit refuses to start. -->
+<Dialog
+  bind:this={drive_settings_dialog}
+  title={is_multi_turn ? "Drive Settings" : "Generation Settings"}
+>
+  <FormContainer
+    submit_label={is_multi_turn
+      ? `Drive ${multi_turn_total} Conversation${
+          multi_turn_total === 1 ? "" : "s"
+        }`
+      : "Generate Examples"}
+    bind:submitting={drive_settings_submitting}
+    on:submit={submit_drive_settings}
+    keyboard_submit={false}
+  >
+    {#if is_multi_turn}
+      <AvailableModelsDropdown
+        label="Synthetic User Model"
+        description="Plays your agent's user in every driven conversation."
+        bind:model={su_model_combined}
+        bind:model_name={su_model_id}
+        bind:provider_name={su_provider_id}
+        settings={{
+          requires_data_gen: true,
+          suggested_mode: "data_gen",
+        }}
+      />
+    {/if}
+    <AvailableModelsDropdown
+      label="Judge Model"
+      description={`Reviews each ${
+        is_multi_turn ? "conversation" : "example"
+      } against your spec and decides pass or fail.`}
+      bind:model={judge_model_combined}
+      bind:model_name={judge_model_id}
+      bind:provider_name={judge_provider_id}
+      settings={{
+        requires_structured_output: true,
+        suggested_mode: "evals",
+      }}
+    />
+    {#if drive_settings_error}
+      <div class="text-error text-sm">{drive_settings_error}</div>
+    {/if}
+  </FormContainer>
+</Dialog>

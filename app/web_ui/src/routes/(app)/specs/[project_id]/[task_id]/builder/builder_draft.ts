@@ -8,6 +8,7 @@
 // under a saved draft, so restore never lands past the plan screen.
 
 import type { SpecType } from "$lib/types"
+import type { ModelChoice } from "$lib/eval/default_judge"
 import type { SuggestedEdit } from "../spec_utils"
 
 // A generated synthetic-user case as the wire carries it: the seed message,
@@ -64,6 +65,11 @@ export type BuilderDraft = {
   // undeleted_batch_tags is the delete-on-next-drive cleanup list.
   multi_turn_batch_tag: string | null
   undeleted_batch_tags: string[]
+  // The Drive Settings model lanes. Persisted so a reload or the
+  // connect-a-provider round trip keeps the user's picks; pre-Drive-Settings
+  // drafts restore these as null (?? below) and fall back to pre-population.
+  su_driver: ModelChoice | null
+  judge_model: ModelChoice | null
 }
 
 export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
@@ -79,6 +85,8 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   cached_su_cases: null,
   multi_turn_batch_tag: null,
   undeleted_batch_tags: [],
+  su_driver: null,
+  judge_model: null,
 }
 
 export function builder_draft_key(project_id: string, task_id: string): string {
