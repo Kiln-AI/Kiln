@@ -3,7 +3,7 @@ from typing import Annotated, List
 
 from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.datamodel.basemodel import FilenameString
-from kiln_ai.datamodel.datamodel_enums import Priority
+from kiln_ai.datamodel.datamodel_enums import EvalStatus, Priority
 from kiln_ai.datamodel.eval import Eval
 from kiln_ai.datamodel.spec import Spec, SpecStatus, TaskSample
 from kiln_ai.datamodel.spec_properties import SpecProperties
@@ -229,7 +229,7 @@ def connect_spec_api(app: FastAPI):
         # (previous value, so the eval can be rolled back if the spec save fails)
         name_rollback: tuple[str] | None = None
         priority_rollback: tuple[Priority | None] | None = None
-        status_rollback: tuple[SpecStatus | None] | None = None
+        status_rollback: tuple[EvalStatus | None] | None = None
         needs_eval_sync = (
             request.name is not None
             or request.priority is not None
