@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.memory import MAX_OVERVIEW_LENGTH
 from kiln_ai.datamodel.tool_id import (
     build_memory_tool_id,
     memory_operation_from_tool_id,
@@ -154,7 +155,9 @@ async def test_update_clears_content_with_empty_string(project):
 
 
 async def test_save_over_length_overview_is_tool_error(project):
-    result = await tool(project, "save").run(overview="a" * 141, scope="project")
+    result = await tool(project, "save").run(
+        overview="a" * (MAX_OVERVIEW_LENGTH + 1), scope="project"
+    )
     assert result.is_error
     assert result.error_message
 

@@ -18,7 +18,11 @@ from typing import Any, ClassVar
 
 from pydantic import ValidationError
 
-from kiln_ai.datamodel.memory import Memory
+from kiln_ai.datamodel.memory import (
+    MAX_CONTENT_LENGTH,
+    MAX_OVERVIEW_LENGTH,
+    Memory,
+)
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.tool_id import ToolId, memory_operation_from_tool_id
 from kiln_ai.memory import MemoryListResult, MemoryStore
@@ -118,18 +122,19 @@ class SaveMemoryTool(_MemoryTool):
             "overview": {
                 "type": "string",
                 "description": (
-                    "One-line summary (<=140 chars, no newlines) written so a future "
-                    "reader can decide whether to fetch the full content."
+                    f"One-line summary (<={MAX_OVERVIEW_LENGTH} chars, no newlines) "
+                    "written so a future reader can decide whether to fetch the "
+                    "full content."
                 ),
             },
             "scope": _SCOPE_SCHEMA,
             "content": {
                 "type": "string",
                 "description": (
-                    "The memory body (<=2000 chars): the finding/fact/decision with "
-                    "its conditions and evidence level, citing related Kiln records as "
-                    "prose IDs (e.g. 'run_config 184623901234'). Omit when the overview "
-                    "says everything."
+                    f"The memory body (<={MAX_CONTENT_LENGTH} chars): the finding/"
+                    "fact/decision with its conditions and evidence level, citing "
+                    "related Kiln records as prose IDs (e.g. 'run_config "
+                    "184623901234'). Omit when the overview says everything."
                 ),
             },
             "tags": _TAGS_SCHEMA,
@@ -251,11 +256,15 @@ class UpdateMemoryTool(_MemoryTool):
             "id": {"type": "string", "description": "The memory id to update."},
             "overview": {
                 "type": "string",
-                "description": "New one-line summary (<=140 chars, no newlines).",
+                "description": (
+                    f"New one-line summary (<={MAX_OVERVIEW_LENGTH} chars, no newlines)."
+                ),
             },
             "content": {
                 "type": "string",
-                "description": "New body (<=2000 chars). Empty string clears it.",
+                "description": (
+                    f"New body (<={MAX_CONTENT_LENGTH} chars). Empty string clears it."
+                ),
             },
             "tags": _TAGS_SCHEMA,
             "scope": _SCOPE_SCHEMA,

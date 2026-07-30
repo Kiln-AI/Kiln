@@ -2,8 +2,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from kiln_ai.datamodel import Memory, Project
+from kiln_ai.datamodel.memory import MAX_OVERVIEW_LENGTH
 from kiln_ai.memory import (
     InvalidContentMatchError,
     MemoryNotFoundError,
@@ -176,8 +178,8 @@ def test_update_partial_replace_only_provided(project: Project, store: MemorySto
 
 def test_update_revalidates_provided_field(project: Project, store: MemoryStore):
     memory = add(project, "orig", "project", minutes=0)
-    with pytest.raises(Exception):
-        store.update_memory(memory.id, overview="a" * 141)
+    with pytest.raises(ValidationError):
+        store.update_memory(memory.id, overview="a" * (MAX_OVERVIEW_LENGTH + 1))
 
 
 def test_update_content_empty_clears_to_none(project: Project, store: MemoryStore):

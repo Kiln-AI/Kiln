@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -5,6 +6,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Memory, Project
+from kiln_ai.datamodel.memory import MAX_CONTENT_LENGTH, MAX_OVERVIEW_LENGTH
 
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.memory_api import connect_memory_api
@@ -80,9 +82,46 @@ def test_save_over_length_overview_is_422(client, project):
     with _patch(project):
         resp = client.post(
             f"/api/projects/{project.id}/memories",
-            json={"overview": "a" * 141, "scope": "project"},
+            json={"overview": "a" * (MAX_OVERVIEW_LENGTH + 1), "scope": "project"},
         )
     assert resp.status_code == 422
+    error = resp.json()["source_errors"][0]
+    assert error["type"] == "string_too_long"
+    assert error["ctx"]["max_length"] == str(MAX_OVERVIEW_LENGTH)
+    assert len(project.memories()) == 0
+
+
+def test_save_over_length_content_is_422(client, project):
+    with _patch(project):
+        resp = client.post(
+            f"/api/projects/{project.id}/memories",
+            json={
+                "overview": "x",
+                "scope": "project",
+                "content": "a" * (MAX_CONTENT_LENGTH + 1),
+            },
+        )
+    assert resp.status_code == 422
+    error = resp.json()["source_errors"][0]
+    assert error["type"] == "string_too_long"
+    assert error["ctx"]["max_length"] == str(MAX_CONTENT_LENGTH)
+    assert len(project.memories()) == 0
+
+
+def test_save_accepts_exactly_max_lengths(client, project):
+    with _patch(project):
+        resp = client.post(
+            f"/api/projects/{project.id}/memories",
+            json={
+                "overview": "a" * MAX_OVERVIEW_LENGTH,
+                "scope": "project",
+                "content": "b" * MAX_CONTENT_LENGTH,
+            },
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["overview"]) == MAX_OVERVIEW_LENGTH
+    assert len(data["content"]) == MAX_CONTENT_LENGTH
 
 
 def test_save_newline_overview_is_422(client, project):
@@ -164,6 +203,43 @@ def test_list_rejects_out_of_range_paging(client, project, params):
     assert resp.status_code == 422
 
 
+def test_list_includes_stored_178_char_overview_row(client, project):
+    """Regression: a stored row with a 178-char overview (written when the write
+    path didn't stop it) used to fail load validation under the old 140 cap and
+    422 every listing. Plant the row raw on disk — bypassing write validation,
+    like the original writer — and verify it now lists and fetches fine."""
+    long_overview = "x" * 178
+    memory_dir = project.path.parent / "assistant_memory" / "999888777666"
+    memory_dir.mkdir(parents=True)
+    (memory_dir / "memory.kiln").write_text(
+        json.dumps(
+            {
+                "v": 1,
+                "id": "999888777666",
+                "created_at": BASE.isoformat(),
+                "created_by": "agent",
+                "model_type": "memory",
+                "overview": long_overview,
+                "content": None,
+                "tags": [],
+                "scope": "project",
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    with _patch(project):
+        listed = client.get(f"/api/projects/{project.id}/memories")
+        fetched = client.get(
+            f"/api/projects/{project.id}/memories/by_ids",
+            params={"ids": ["999888777666"]},
+        )
+    assert listed.status_code == 200
+    assert [r["overview"] for r in listed.json()["listings"]] == [long_overview]
+    assert fetched.status_code == 200
+    assert fetched.json()[0]["overview"] == long_overview
+
+
 # --- summary ---
 
 
@@ -230,14 +306,48 @@ def test_update_unknown_id_is_404(client, project):
     assert resp.status_code == 404
 
 
-def test_update_over_length_is_422(client, project):
+def test_update_over_length_overview_is_422(client, project):
     m = add(project, "orig", "project", 0)
     with _patch(project):
         resp = client.patch(
             f"/api/projects/{project.id}/memories/{m.id}",
-            json={"overview": "a" * 141},
+            json={"overview": "a" * (MAX_OVERVIEW_LENGTH + 1)},
         )
     assert resp.status_code == 422
+    error = resp.json()["source_errors"][0]
+    assert error["type"] == "string_too_long"
+    assert error["ctx"]["max_length"] == str(MAX_OVERVIEW_LENGTH)
+    assert project.memories()[0].overview == "orig"
+
+
+def test_update_over_length_content_is_422(client, project):
+    m = add(project, "orig", "project", 0)
+    with _patch(project):
+        resp = client.patch(
+            f"/api/projects/{project.id}/memories/{m.id}",
+            json={"content": "a" * (MAX_CONTENT_LENGTH + 1)},
+        )
+    assert resp.status_code == 422
+    error = resp.json()["source_errors"][0]
+    assert error["type"] == "string_too_long"
+    assert error["ctx"]["max_length"] == str(MAX_CONTENT_LENGTH)
+    assert project.memories()[0].content is None
+
+
+def test_update_accepts_exactly_max_lengths(client, project):
+    m = add(project, "orig", "project", 0)
+    with _patch(project):
+        resp = client.patch(
+            f"/api/projects/{project.id}/memories/{m.id}",
+            json={
+                "overview": "a" * MAX_OVERVIEW_LENGTH,
+                "content": "b" * MAX_CONTENT_LENGTH,
+            },
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["overview"]) == MAX_OVERVIEW_LENGTH
+    assert len(data["content"]) == MAX_CONTENT_LENGTH
 
 
 # --- delete ---
