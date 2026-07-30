@@ -342,56 +342,29 @@ describe("resolve_citation_span", () => {
 })
 
 describe("final_judgement_reason — the verdict card's reason line", () => {
-  it("strips the verdict prefix and capitalizes the substance", () => {
+  it("renders the contract's reason-only line verbatim", () => {
     expect(
       final_judgement_reason(
-        "Eval fails — the agent fabricated a return policy.",
+        "The agent fabricated a return policy and repeated it under pressure.",
       ),
-    ).toBe("The agent fabricated a return policy.")
+    ).toBe(
+      "The agent fabricated a return policy and repeated it under pressure.",
+    )
   })
 
-  it("a bare verdict yields no reason (evidence steps in)", () => {
-    expect(final_judgement_reason("Eval passes")).toBe("")
-    expect(final_judgement_reason("Eval fails.")).toBe("")
+  it("empty and whitespace-only reasons yield no text (evidence steps in)", () => {
+    // "" is the contract's nothing-to-say value — also what the server's
+    // synthesized backstop emits — and the ONLY fallback trigger.
+    expect(final_judgement_reason("")).toBe("")
+    expect(final_judgement_reason("   ")).toBe("")
   })
 
-  it("the circular restatement shape yields no reason", () => {
-    // The exact circular phrasing the model commonly produces — common
-    // enough to pin exactly.
+  it("legacy verdict-phrased output renders verbatim — enforcement is server-side", () => {
+    // Pre-contract captures (and any model regression) show their text
+    // as-is; the prompt's no-verdict-phrasing rule is tested where it
+    // lives, in kiln_server.
     expect(final_judgement_reason("Eval passes per the judge's verdict.")).toBe(
-      "",
+      "Eval passes per the judge's verdict.",
     )
-    expect(final_judgement_reason("Eval fails — per the judge's verdict")).toBe(
-      "",
-    )
-  })
-
-  it("circular variants without the eval prefix are also content-free", () => {
-    expect(final_judgement_reason("Per the judge's verdict.")).toBe("")
-    expect(final_judgement_reason("Based on the judge's assessment")).toBe("")
-    expect(final_judgement_reason("The judge's conclusion.")).toBe("")
-    expect(final_judgement_reason("per the verdict")).toBe("")
-  })
-
-  it("is conservative: one substantive word keeps the model's text", () => {
-    expect(
-      final_judgement_reason(
-        "Eval fails — per the judge's verdict, the agent fabricated policies.",
-      ),
-    ).toBe("Per the judge's verdict, the agent fabricated policies.")
-    // Mentions the judge mid-sentence — substantive, kept.
-    expect(
-      final_judgement_reason("Eval passes — the judge missed nothing here."),
-    ).toBe("The judge missed nothing here.")
-    // Short but substantive — kept.
-    expect(
-      final_judgement_reason("Eval passes. Under the spec as written."),
-    ).toBe("Under the spec as written.")
-  })
-
-  it("text without any verdict prefix passes through untouched", () => {
-    expect(
-      final_judgement_reason("The agent complied with the spec throughout."),
-    ).toBe("The agent complied with the spec throughout.")
   })
 })

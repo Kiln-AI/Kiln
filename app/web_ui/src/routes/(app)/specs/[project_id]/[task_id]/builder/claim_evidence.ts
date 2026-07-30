@@ -354,25 +354,13 @@ export function validate_refined_judge_prompt(prompt: string): string | null {
 
 // ── The verdict card's reason line ────────────────────────────────────────
 
-// A whole-string circular phrasing: the reason merely points back at the
-// verdict machinery ("Per the judge's verdict") with zero substance — a
-// shape the model produces regularly, not a rare glitch.
-// Deliberately TIGHT: it must name the judge/eval AND a verdict-noun (or be
-// a bare "per the verdict"), with nothing else in the string. One
-// substantive word anywhere fails the match and the model's text is shown —
-// when unsure, show the text.
-const CONTENT_FREE_REASON =
-  /^(?:(?:per|based +on|according +to|as +per|following|in +line +with|consistent +with)\s+)?(?:the\s+)?(?:judge'?s?|eval(?:uation)?'?s?)\s+(?:verdict|judgement|judgment|assessment|determination|conclusion|decision|reasoning|score|rating)\s*[.!]?$|^(?:per|based +on|according +to|as +per|following)\s+(?:the\s+)?(?:verdict|judgement|judgment)\s*[.!]?$/i
-
-// The reason the verdict card shows under its deterministic headline: the
-// model's conclusion with the "Eval fails — " style prefix stripped. Returns
-// "" when nothing substantive remains — a bare verdict or a circular
-// restatement — so the caller falls back to the evidence sentence as the
-// reason.
+// The reason under the verdict card's deterministic headline. The claim
+// builder's contract (kiln_server KIL-773) makes final_judgement.claim the
+// substantive one-line reason ONLY — no verdict phrasing, "" when the model
+// has nothing beyond the claims (including the server's synthesized
+// backstop) — so this renders it verbatim and the empty string is the
+// exact, non-heuristic signal for the card's evidence fallback. The old
+// prefix-strip and circular-reason detection died with that contract.
 export function final_judgement_reason(text: string): string {
-  const stripped = text.replace(/^eval (fails|passes)\s*[—:.-]?\s*/i, "")
-  if (CONTENT_FREE_REASON.test(stripped.trim())) return ""
-  if (stripped.length === 0) return ""
-  if (stripped === text) return text
-  return stripped.charAt(0).toUpperCase() + stripped.slice(1)
+  return text.trim()
 }

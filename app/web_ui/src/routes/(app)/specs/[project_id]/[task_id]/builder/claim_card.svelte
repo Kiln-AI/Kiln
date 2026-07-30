@@ -33,12 +33,9 @@
   // True when the verdict is the only card (empty claims list).
   export let sole_card = false
 
-  // The model's conclusion opens with an "Eval fails — " style prefix, and
-  // is frequently just the BARE verdict with all substance in the evidence
-  // sentence — or a circular "per the judge's verdict". The deterministic
-  // headline already states the verdict, so: strip the prefix; a bare or
-  // content-free reason yields NO reason text, and the evidence steps back
-  // in as the reason.
+  // The reason under the headline: the claim builder's contract makes this
+  // the substantive reason-only line, "" when there is nothing beyond the
+  // claims — the exact trigger for the evidence fallback below.
   $: final_reason = final_judgement_reason(claim.claim)
 
   let why_input: HTMLTextAreaElement | null = null
