@@ -5,7 +5,11 @@
   import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import { formatLatency } from "$lib/utils/formatters"
+  import {
+    formatLatency,
+    score_key_label,
+    score_type_max,
+  } from "$lib/utils/formatters"
   import type { Task, TaskRunConfig, Eval } from "$lib/types"
   import type { components } from "$lib/api_schema"
   import CompareChart from "$lib/components/compare_chart.svelte"
@@ -494,22 +498,9 @@
     })
   }
 
-  // Full range of each score type. Custom scores are unbounded, so they get no
-  // absolute max and stay on data-relative scaling in the radar chart.
-  function score_type_max(score_type: string): number | null {
-    switch (score_type) {
-      case "five_star":
-        return 5
-      case "pass_fail":
-        return 1
-      case "pass_fail_critical":
-        return 1
-      default:
-        return null
-    }
-  }
-
-  // Absolute (full range) max per radar axis key, for the chart's "Full Scale" mode
+  // Absolute (full range) max per radar axis key, for the chart's "Full Scale"
+  // mode. Custom scores are unbounded, so score_type_max gives them no absolute
+  // max and they stay on data-relative scaling in the radar chart.
   $: scoreAxisMaxes = (() => {
     const maxes: Record<string, number> = {}
     for (const [eval_id, evalData] of Object.entries(eval_data_cache)) {
@@ -578,9 +569,7 @@
     // Convert to comparison features format
     Object.entries(evalCategories).forEach(([evalId, scoreKeys]) => {
       const items = Array.from(scoreKeys).map((scoreKey) => ({
-        label: scoreKey
-          .replace(/_/g, " ")
-          .replace(/\b\w/g, (l) => l.toUpperCase()),
+        label: score_key_label(scoreKey),
         key: `${evalId}::${scoreKey}`,
       }))
 

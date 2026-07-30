@@ -1,3 +1,14 @@
+<script lang="ts" context="module">
+  // One eval's section of the comparison table, as fed to the chart. Exported
+  // so pages that build these don't have to redeclare the shape.
+  export type ComparisonFeature = {
+    category: string
+    items: { label: string; key: string }[]
+    has_default_eval_config: boolean | undefined
+    eval_id: string
+  }
+</script>
+
 <script lang="ts">
   import * as echarts from "echarts"
   import type {
@@ -14,14 +25,6 @@
   import { formatLatency } from "$lib/utils/formatters"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-
-  // Type for comparison features (same as parent page)
-  type ComparisonFeature = {
-    category: string
-    items: { label: string; key: string }[]
-    has_default_eval_config: boolean | undefined
-    eval_id: string
-  }
 
   // Props
   export let comparisonFeatures: ComparisonFeature[]

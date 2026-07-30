@@ -1,5 +1,6 @@
 import type { components } from "$lib/api_schema"
 import type { Eval } from "$lib/types"
+import { score_key_label, score_type_range } from "$lib/utils/formatters"
 import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
 
 type EvalResultsSummaryResponse =
@@ -183,22 +184,15 @@ export function build_lens_data(
       if (value === undefined) {
         continue
       }
-      let scaled: number
-      switch (meta.type) {
-        case "pass_fail":
-          scaled = clamp01(value)
-          break
-        case "five_star":
-          scaled = clamp01((value - 1) / 4)
-          break
-        case "pass_fail_critical":
-          scaled = clamp01((value + 1) / 2)
-          break
-        default:
-          // custom or unknown: min-max across run configs; all equal -> 0.5
-          scaled = max > min ? (value - min) / (max - min) : 0.5
-          break
-      }
+      // Known score types scale against their own full range; custom or
+      // unknown ones are min-max scaled across the run configs that have the
+      // key (all equal -> 0.5).
+      const range = score_type_range(meta.type)
+      let scaled = range
+        ? clamp01((value - range.min) / (range.max - range.min))
+        : max > min
+          ? (value - min) / (max - min)
+          : 0.5
       if (meta.direction === "lower_is_better") {
         scaled = 1 - scaled
       }
@@ -403,9 +397,4 @@ export function strip_cell_color(sign: StripCellSign): string {
     return STRIP_WORSE_COLOR
   }
   return STRIP_NEUTRAL_COLOR
-}
-
-// "false_done_claim" -> "False Done Claim"
-export function score_key_label(scoreKey: string): string {
-  return scoreKey.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
 }

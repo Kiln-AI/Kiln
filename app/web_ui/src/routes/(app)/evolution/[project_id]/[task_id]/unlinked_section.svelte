@@ -2,6 +2,7 @@
   import { createEventDispatcher } from "svelte"
   import type { EvoNode } from "$lib/utils/evolution/graph_assembly"
   import type { NodeDisplay } from "$lib/utils/evolution/score_lens"
+  import ChevronRightIcon from "$lib/ui/icons/chevron_right_icon.svelte"
   import EvolutionNode from "./evolution_node.svelte"
 
   // Expected sorted created_at desc (build_forest emits unlinkedIds that way)
@@ -56,23 +57,13 @@
         class="flex items-center gap-2 text-sm font-medium text-gray-900"
         on:click={() => dispatch("toggle")}
       >
-        <svg
-          class="w-4 h-4 text-gray-500 transition-transform {expanded
+        <span
+          class="w-4 h-4 block text-gray-500 transition-transform {expanded
             ? 'rotate-90'
             : ''}"
-          viewBox="0 0 24 24"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          aria-hidden="true"
         >
-          <path
-            d="M9 6L15 12L9 18"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
+          <ChevronRightIcon />
+        </span>
         Unlinked run configs ({nodes.length})
       </button>
     {:else}

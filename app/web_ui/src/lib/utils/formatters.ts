@@ -381,3 +381,33 @@ export function formatLatency(ms: number): string {
   if (roundedMs < 1000) return `${roundedMs}ms`
   return `${(ms / 1000).toFixed(1)}s`
 }
+
+// A JSON score key as a display label: "false_done_claim" -> "False Done Claim"
+export function score_key_label(scoreKey: string): string {
+  return scoreKey.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
+}
+
+// The full value range of a score type. Custom (and unknown) score types are
+// unbounded, so they have no fixed range and callers fall back to scaling
+// against the data instead.
+export function score_type_range(
+  score_type: string | null | undefined,
+): { min: number; max: number } | null {
+  switch (score_type) {
+    case "five_star":
+      return { min: 1, max: 5 }
+    case "pass_fail":
+      return { min: 0, max: 1 }
+    case "pass_fail_critical":
+      return { min: -1, max: 1 }
+    default:
+      return null
+  }
+}
+
+// Upper end of a score type's full range; null for unbounded (custom) scores.
+export function score_type_max(
+  score_type: string | null | undefined,
+): number | null {
+  return score_type_range(score_type)?.max ?? null
+}

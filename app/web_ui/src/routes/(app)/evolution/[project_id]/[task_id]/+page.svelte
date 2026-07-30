@@ -48,18 +48,22 @@
     parse_lens_key,
     raw_lens_value,
     score_key_id,
-    score_key_label,
     strip_cells,
   } from "$lib/utils/evolution/score_lens"
+  import { score_key_label, score_type_max } from "$lib/utils/formatters"
   import type { PromptResponse, ProviderModels } from "$lib/types"
   import { fly } from "svelte/transition"
   import { cubicOut } from "svelte/easing"
-  import CompareRadarChart from "$lib/components/compare_radar_chart.svelte"
+  import CompareRadarChart, {
+    type ComparisonFeature,
+  } from "$lib/components/compare_radar_chart.svelte"
   import EvolutionCanvas from "./evolution_canvas.svelte"
   import NodeDetailPanel from "./node_detail_panel.svelte"
   import UnlinkedSection from "./unlinked_section.svelte"
-  import CompareMatrix from "./compare_matrix.svelte"
+  import CompareMatrix, { USAGE_ROWS } from "./compare_matrix.svelte"
   import EvalInspector from "./eval_inspector.svelte"
+  import FloatingMenu from "$lib/ui/floating_menu.svelte"
+  import type { FloatingMenuItem } from "$lib/ui/floating_menu_types"
   import ArtifactPane, { type ArtifactPaneTarget } from "./artifact_pane.svelte"
 
   type EvalResultsSummaryResponse =
@@ -96,6 +100,13 @@
   let starred_only = false
   let unlinked_expanded = false
   let pins: string[] = []
+  // Matrix rows the user hid: score rows keyed `${evalId}::${scoreKey}`, usage
+  // rows keyed by their metric. Hiding is a view concern - a hidden score row
+  // drops out of the matrix and off the radar; a hidden usage row only leaves
+  // the matrix, since this page feeds the radar no usage axes. Neither touches
+  // the lens aggregate or the node delta strips, which stay full-coverage.
+  let hidden_scores: string[] = []
+  let hidden_usage: string[] = []
 
   // Drill-down UI state (not round-tripped)
   let inspector: {
@@ -139,6 +150,32 @@
     }
     starred_only = urlParams.get("starred") === "1"
     unlinked_expanded = urlParams.get("unlinked") === "1"
+
+    // Hidden rows restore before data loads - they are just keys. Deduped, and
+    // usage keys checked against the known metrics, in case of a hand-edited URL.
+    const urlHiddenScores = urlParams.get("hidden_scores")
+    if (urlHiddenScores) {
+      hidden_scores = [
+        ...new Set(
+          urlHiddenScores
+            .split(",")
+            .map((key) => key.trim())
+            .filter((key) => key.length > 0),
+        ),
+      ]
+    }
+    const urlHiddenUsage = urlParams.get("hidden_usage")
+    if (urlHiddenUsage) {
+      const known_usage_keys = new Set<string>(USAGE_ROWS.map((row) => row.key))
+      hidden_usage = [
+        ...new Set(
+          urlHiddenUsage
+            .split(",")
+            .map((key) => key.trim())
+            .filter((key) => known_usage_keys.has(key)),
+        ),
+      ]
+    }
   }
 
   // After data loads, drop URL state that doesn't resolve against it
@@ -147,6 +184,16 @@
       selected_id = null
     }
     pins = pins.filter((id) => forest.nodes.has(id)).slice(0, MAX_PINS)
+    // Drop hidden score keys that no longer exist, so a stale URL can't leave a
+    // row invisible with no way to restore it.
+    const known_score_keys = new Set(
+      lens_data.keyMetas.map((meta) =>
+        score_key_id(meta.evalId, meta.scoreKey),
+      ),
+    )
+    hidden_scores = hidden_scores.filter((key) => known_score_keys.has(key))
+    // Note: the lens is validated against ALL score keys, not the visible ones -
+    // a hidden row's key stays a legal lens.
     if (
       lens.kind === "single" &&
       !lens_data.keyMetas.some(
@@ -192,6 +239,16 @@
     } else {
       urlParams.delete("unlinked")
     }
+    if (hidden_scores.length > 0) {
+      urlParams.set("hidden_scores", hidden_scores.join(","))
+    } else {
+      urlParams.delete("hidden_scores")
+    }
+    if (hidden_usage.length > 0) {
+      urlParams.set("hidden_usage", hidden_usage.join(","))
+    } else {
+      urlParams.delete("hidden_usage")
+    }
 
     // Replace state: this only records existing UI state in the URL.
     // noScroll/keepFocus so selecting a node doesn't jump the page.
@@ -200,16 +257,23 @@
     goto(newURL, { replaceState: true, noScroll: true, keepFocus: true })
   }
 
-  // Reactive statement to sync state to the URL when it changes
-  $: if (
-    !isInitializing &&
-    (lens_selected ||
-      selected_id ||
-      starred_only ||
-      unlinked_expanded ||
-      pins ||
-      true)
-  ) {
+  // Sync state to the URL whenever any of it changes. The dependencies are
+  // passed as arguments (like the other reactive statements in this file)
+  // rather than tested in a condition — every change has to write, including
+  // the ones that clear a value, so there is nothing to branch on. updateURL()
+  // reads the current values itself and no-ops while initializing.
+  $: sync_url(
+    isInitializing,
+    lens_selected,
+    selected_id,
+    starred_only,
+    unlinked_expanded,
+    pins,
+    hidden_scores,
+    hidden_usage,
+  )
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  function sync_url(..._dependencies: unknown[]) {
     updateURL()
   }
 
@@ -375,19 +439,92 @@
   $: pinned_nodes.forEach((node) => fetch_eval_scores(node.id))
   $: pinned_ids = pinned_nodes.map((node) => node.id)
 
+  // ---- Hidden rows --------------------------------------------------------
+  // One filtered view of the score keys drives both the matrix rows and the
+  // radar axes, so the two stay consistent. `lens_data.keyMetas` itself is left
+  // whole: the strips, the aggregate lens and the lens dropdown are unaffected.
+  $: hidden_score_set = new Set(hidden_scores)
+  $: visible_key_metas = lens_data.keyMetas.filter(
+    (meta) => !hidden_score_set.has(score_key_id(meta.evalId, meta.scoreKey)),
+  )
+
+  function hide_score_row(key: string) {
+    if (!hidden_scores.includes(key)) {
+      hidden_scores = [...hidden_scores, key]
+    }
+  }
+
+  function show_score_row(key: string) {
+    hidden_scores = hidden_scores.filter((hidden) => hidden !== key)
+  }
+
+  function hide_usage_row(key: string) {
+    if (!hidden_usage.includes(key)) {
+      hidden_usage = [...hidden_usage, key]
+    }
+  }
+
+  function show_usage_row(key: string) {
+    hidden_usage = hidden_usage.filter((hidden) => hidden !== key)
+  }
+
+  function show_all_hidden_rows() {
+    hidden_scores = []
+    hidden_usage = []
+  }
+
+  $: hidden_score_info = hidden_scores.map((key) => {
+    const meta = lens_data.keyMetas.find(
+      (candidate) => score_key_id(candidate.evalId, candidate.scoreKey) === key,
+    )
+    return {
+      key,
+      label: meta
+        ? `${score_key_label(meta.scoreKey)} · ${meta.evalName}`
+        : score_key_label(key.split("::")[1] ?? key),
+    }
+  })
+
+  $: hidden_usage_info = hidden_usage.map((key) => ({
+    key,
+    label: USAGE_ROWS.find((row) => row.key === key)?.label ?? key,
+  }))
+
+  $: hidden_count = hidden_score_info.length + hidden_usage_info.length
+
+  $: hidden_menu_items = [
+    ...(hidden_score_info.length > 0
+      ? [
+          { label: "Show Score", header: true },
+          ...hidden_score_info.map(
+            (info): FloatingMenuItem => ({
+              label: info.label,
+              onclick: () => show_score_row(info.key),
+            }),
+          ),
+        ]
+      : []),
+    ...(hidden_usage_info.length > 0
+      ? [
+          { label: "Show Metric", header: true },
+          ...hidden_usage_info.map(
+            (info): FloatingMenuItem => ({
+              label: info.label,
+              onclick: () => show_usage_row(info.key),
+            }),
+          ),
+        ]
+      : []),
+    ...(hidden_count > 1
+      ? [{ label: "Restore all", onclick: show_all_hidden_rows }]
+      : []),
+  ] as FloatingMenuItem[]
+
   // ---- Radar chart inputs -------------------------------------------------
   // The radar takes the same shape the old compare page feeds it; here it is
   // derived from the lens data instead of that page's comparison table.
 
-  // Same shape the radar chart declares internally (it isn't exported)
-  type ComparisonFeature = {
-    category: string
-    items: { label: string; key: string }[]
-    has_default_eval_config: boolean | undefined
-    eval_id: string
-  }
-
-  $: comparison_features = build_features(lens_data.keyMetas)
+  $: comparison_features = build_features(visible_key_metas)
   function build_features(keyMetas: ScoreKeyMeta[]): ComparisonFeature[] {
     const by_eval = new Map<string, ScoreKeyMeta[]>()
     for (const meta of keyMetas) {
@@ -419,16 +556,10 @@
 
   $: score_axis_maxes = (() => {
     const maxes: Record<string, number> = {}
-    for (const meta of lens_data.keyMetas) {
-      const key = score_key_id(meta.evalId, meta.scoreKey)
-      switch (meta.type) {
-        case "five_star":
-          maxes[key] = 5
-          break
-        case "pass_fail":
-        case "pass_fail_critical":
-          maxes[key] = 1
-          break
+    for (const meta of visible_key_metas) {
+      const max = score_type_max(meta.type)
+      if (max !== null) {
+        maxes[score_key_id(meta.evalId, meta.scoreKey)] = max
       }
     }
     return maxes
@@ -436,7 +567,7 @@
 
   $: score_directions = (() => {
     const directions: Record<string, string> = {}
-    for (const meta of lens_data.keyMetas) {
+    for (const meta of visible_key_metas) {
       directions[score_key_id(meta.evalId, meta.scoreKey)] = meta.direction
     }
     return directions
@@ -445,7 +576,7 @@
   // The radar drops lower-is-better and informational scores (a radar reads
   // "further from center is better"), so count what's left to know whether it
   // will draw anything at all.
-  $: radar_axis_count = lens_data.keyMetas.filter(
+  $: radar_axis_count = visible_key_metas.filter(
     (meta) =>
       meta.direction !== "lower_is_better" &&
       meta.direction !== "informational",
@@ -742,18 +873,36 @@
     <!-- Row 2: the comparison matrix, full page width -->
     {#if pinned_nodes.length > 0}
       <div class="mt-6">
-        <div class="text-sm font-medium text-gray-900 mb-2">
-          Comparison ({pinned_nodes.length}
-          {pinned_nodes.length === 1 ? "config" : "configs"})
+        <div class="flex items-center gap-2 mb-2">
+          <div class="text-sm font-medium text-gray-900">
+            Comparison ({pinned_nodes.length}
+            {pinned_nodes.length === 1 ? "config" : "configs"})
+          </div>
+          {#if hidden_count > 0}
+            <FloatingMenu items={hidden_menu_items} width="w-72">
+              <button
+                slot="trigger"
+                type="button"
+                class="btn btn-xs btn-outline rounded-full font-normal"
+                title="Rows hidden from the table and the chart"
+              >
+                Hidden ({hidden_count})
+              </button>
+            </FloatingMenu>
+          {/if}
         </div>
         <CompareMatrix
           {pinned_nodes}
           {lens_data}
           {eval_scores_cache}
           {eval_scores_loading}
+          hidden_score_keys={hidden_scores}
+          hidden_usage_keys={hidden_usage}
           on:select={(event) => handle_select(event.detail)}
           on:inspect={(event) =>
             open_inspector(event.detail.eval_id, event.detail.run_config_id)}
+          on:hide_score={(event) => hide_score_row(event.detail)}
+          on:hide_usage={(event) => hide_usage_row(event.detail)}
         />
       </div>
     {/if}

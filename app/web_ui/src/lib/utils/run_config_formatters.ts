@@ -162,6 +162,9 @@ export function getRunConfigUiProperties(
   task_prompts: PromptResponse | null,
   available_tools: Record<string, ToolSetApiDescription[]> | null,
   on_view_input_transform?: () => void,
+  // When set, the Prompt row becomes a button invoking this instead of a link
+  // to the prompt's page. For surfaces that preview the prompt in place.
+  on_view_prompt?: () => void,
 ): UiProperty[] {
   const run_config_type = run_config.run_config_properties.type
   switch (run_config_type) {
@@ -263,7 +266,10 @@ export function getRunConfigUiProperties(
         {
           name: "Prompt",
           value: prompt_value,
-          link: prompt_link_value,
+          // property_list checks `action` before `link`, so only one is set
+          ...(on_view_prompt
+            ? { action: on_view_prompt }
+            : { link: prompt_link_value }),
           tooltip: prompt_info_text || undefined,
         },
         {

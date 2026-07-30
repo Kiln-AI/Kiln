@@ -1,3 +1,15 @@
+<script context="module" lang="ts">
+  // Exported so the page can label hidden usage rows without duplicating the
+  // list (and validate `?hidden_usage=` against it).
+  export const USAGE_ROWS = [
+    { key: "cost", label: "Mean cost" },
+    { key: "tokens", label: "Mean total tokens" },
+    { key: "latency", label: "Mean latency" },
+  ] as const
+
+  export type UsageRowKey = (typeof USAGE_ROWS)[number]["key"]
+</script>
+
 <script lang="ts">
   import { createEventDispatcher } from "svelte"
   import type { components } from "$lib/api_schema"
@@ -7,9 +19,10 @@
     lens_color,
     normalized_score,
     raw_score,
-    score_key_label,
+    score_key_id,
   } from "$lib/utils/evolution/score_lens"
-  import { formatLatency } from "$lib/utils/formatters"
+  import { formatLatency, score_key_label } from "$lib/utils/formatters"
+  import CloseIcon from "$lib/ui/icons/close_icon.svelte"
 
   type RunConfigEvalScoresSummary =
     components["schemas"]["RunConfigEvalScoresSummary"]
@@ -19,10 +32,16 @@
   export let lens_data: LensData
   export let eval_scores_cache: Record<string, RunConfigEvalScoresSummary> = {}
   export let eval_scores_loading: Record<string, boolean> = {}
+  // Rows the user hid. Owned (and round-tripped through the URL) by the page,
+  // which also drops the same keys from the radar chart's inputs.
+  export let hidden_score_keys: string[] = []
+  export let hidden_usage_keys: string[] = []
 
   const dispatch = createEventDispatcher<{
     select: string
     inspect: { eval_id: string; run_config_id: string }
+    hide_score: string
+    hide_usage: string
   }>()
 
   // The matrix is full page width and scrolls horizontally, so it comfortably
@@ -32,15 +51,20 @@
   $: columns = pinned_nodes.slice(0, MAX_COLUMNS)
 
   // Rows: one per (eval, score key), grouped by eval name; informational last
-  $: rows = [...lens_data.keyMetas].sort((a, b) => {
-    const a_info = a.direction === "informational" ? 1 : 0
-    const b_info = b.direction === "informational" ? 1 : 0
-    return (
-      a_info - b_info ||
-      a.evalName.localeCompare(b.evalName) ||
-      a.scoreKey.localeCompare(b.scoreKey)
+  $: rows = lens_data.keyMetas
+    .filter(
+      (meta) =>
+        !hidden_score_keys.includes(score_key_id(meta.evalId, meta.scoreKey)),
     )
-  })
+    .sort((a, b) => {
+      const a_info = a.direction === "informational" ? 1 : 0
+      const b_info = b.direction === "informational" ? 1 : 0
+      return (
+        a_info - b_info ||
+        a.evalName.localeCompare(b.evalName) ||
+        a.scoreKey.localeCompare(b.scoreKey)
+      )
+    })
 
   function cell_raw(meta: ScoreKeyMeta, run_config_id: string): number | null {
     return raw_score(lens_data, run_config_id, meta.evalId, meta.scoreKey)
@@ -69,16 +93,14 @@
     return `${delta > 0 ? "+" : "−"}${Math.abs(delta).toFixed(2)}`
   }
 
-  const usage_rows = [
-    { key: "cost", label: "Mean cost" },
-    { key: "tokens", label: "Mean total tokens" },
-    { key: "latency", label: "Mean latency" },
-  ] as const
+  $: usage_rows = USAGE_ROWS.filter(
+    (usage_row) => !hidden_usage_keys.includes(usage_row.key),
+  )
 
   // Takes the cache as a parameter so the template expression re-evaluates
   // when the lazily fetched eval scores arrive.
   function usage_value(
-    key: "cost" | "tokens" | "latency",
+    key: UsageRowKey,
     node_id: string,
     cache: Record<string, RunConfigEvalScoresSummary>,
   ): string | null {
@@ -140,7 +162,7 @@
       <tbody>
         {#each rows as meta (meta.evalId + "::" + meta.scoreKey)}
           <tr
-            class="hover cursor-pointer"
+            class="hover cursor-pointer group"
             on:click={() =>
               columns[0] &&
               dispatch("inspect", {
@@ -151,16 +173,34 @@
             <td
               class="sticky left-0 z-10 bg-base-100 border-r border-gray-200 w-44 min-w-[176px]"
             >
-              <div class="text-xs font-medium text-gray-900 truncate">
-                {score_key_label(meta.scoreKey)}
-              </div>
-              <div
-                class="text-[10px] text-gray-500 truncate"
-                title={meta.evalName}
-              >
-                {meta.evalName}{meta.direction === "informational"
-                  ? " · informational"
-                  : ""}
+              <div class="flex items-center gap-1">
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs font-medium text-gray-900 truncate">
+                    {score_key_label(meta.scoreKey)}
+                  </div>
+                  <div
+                    class="text-[10px] text-gray-500 truncate"
+                    title={meta.evalName}
+                  >
+                    {meta.evalName}{meta.direction === "informational"
+                      ? " · informational"
+                      : ""}
+                  </div>
+                </div>
+                <!-- Hover-revealed so the label column stays quiet at rest -->
+                <button
+                  type="button"
+                  class="w-3 h-3 flex-none text-gray-400 hover:text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Hide this row"
+                  aria-label="Hide {score_key_label(meta.scoreKey)}"
+                  on:click|stopPropagation={() =>
+                    dispatch(
+                      "hide_score",
+                      score_key_id(meta.evalId, meta.scoreKey),
+                    )}
+                >
+                  <CloseIcon />
+                </button>
               </div>
             </td>
             {#each columns as node, column_index (node.id)}
@@ -202,11 +242,25 @@
         {/each}
         <!-- Usage footer rows -->
         {#each usage_rows as usage_row (usage_row.key)}
-          <tr class="border-t border-gray-200">
+          <tr class="border-t border-gray-200 group">
             <td
               class="sticky left-0 z-10 bg-base-100 border-r border-gray-200 w-44 min-w-[176px]"
             >
-              <div class="text-xs text-gray-500">{usage_row.label}</div>
+              <div class="flex items-center gap-1">
+                <div class="min-w-0 flex-1 text-xs text-gray-500 truncate">
+                  {usage_row.label}
+                </div>
+                <button
+                  type="button"
+                  class="w-3 h-3 flex-none text-gray-400 hover:text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Hide this row (matrix only — usage metrics are not radar axes)"
+                  aria-label="Hide {usage_row.label}"
+                  on:click|stopPropagation={() =>
+                    dispatch("hide_usage", usage_row.key)}
+                >
+                  <CloseIcon />
+                </button>
+              </div>
             </td>
             {#each columns as node (node.id)}
               {@const value = usage_value(
@@ -226,6 +280,14 @@
             {/each}
           </tr>
         {/each}
+        <!-- Hiding every row is a valid (if odd) state, not an error -->
+        {#if rows.length === 0 && usage_rows.length === 0}
+          <tr>
+            <td class="text-xs text-gray-500" colspan={columns.length + 1}>
+              Every row is hidden. Use “Hidden” above the table to restore them.
+            </td>
+          </tr>
+        {/if}
       </tbody>
     </table>
   </div>

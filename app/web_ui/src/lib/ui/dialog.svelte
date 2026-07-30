@@ -11,7 +11,11 @@
   export let sub_subtitle: string | null = null
   export let sub_subtitle_link: string | null = null
   export let blur_background: boolean = false
-  export let width: "normal" | "wide" = "normal"
+  export let width: "normal" | "wide" | "full" = "normal"
+  // When true the box takes a fixed tall height and its body becomes a flex
+  // column, so slot content can own the scrolling (rather than the box growing
+  // with its content). For inspector-style dialogs with their own tabs/scrollers.
+  export let fill_height: boolean = false
   const id: string = "dialog-" + Math.random().toString(36)
   type ActionButton = {
     label: string
@@ -92,10 +96,12 @@
   <div
     class="modal-box text-base-content {width === 'wide'
       ? 'w-11/12 max-w-3xl'
-      : ''}"
+      : width === 'full'
+        ? 'w-11/12 max-w-6xl'
+        : ''} {fill_height ? 'h-[85vh] max-h-[85vh] flex flex-col' : ''}"
   >
     <!-- Hidden div to force the compiler to find these classes -->
-    <div class="hidden w-11/12 max-w-3xl"></div>
+    <div class="hidden w-11/12 max-w-3xl max-w-6xl h-[85vh] max-h-[85vh]"></div>
     <div class="flex flex-row gap-2 items-start">
       <div
         class="grow flex flex-col {center_content
@@ -156,7 +162,7 @@
       </div>
     </div>
 
-    <div class="mt-4">
+    <div class="mt-4 {fill_height ? 'flex-1 min-h-0 flex flex-col' : ''}">
       {#if action_running}
         <div class="flex flex-col items-center justify-center min-h-[100px]">
           <div class="loading loading-spinner loading-lg"></div>

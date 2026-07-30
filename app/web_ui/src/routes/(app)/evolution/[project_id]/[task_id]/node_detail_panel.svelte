@@ -18,7 +18,6 @@
     normalized_score,
     percent_complete,
     raw_score,
-    score_key_label,
   } from "$lib/utils/evolution/score_lens"
   import {
     available_tools,
@@ -29,11 +28,18 @@
     provider_name_from_id,
   } from "$lib/stores"
   import { prompts_by_task_composite_id } from "$lib/stores/prompts_store"
-  import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
-  import { formatDate, formatLatency } from "$lib/utils/formatters"
+  import { isKilnAgentRunConfig } from "$lib/types"
+  import {
+    formatDate,
+    formatLatency,
+    score_key_label,
+  } from "$lib/utils/formatters"
+  import { getRunConfigUiProperties } from "$lib/utils/run_config_formatters"
   import { diff_tool_axis } from "$lib/utils/evolution/tool_diff"
+  import PropertyList from "$lib/ui/property_list.svelte"
   import StarIcon from "$lib/ui/icons/star_icon.svelte"
   import CloseIcon from "$lib/ui/icons/close_icon.svelte"
+  import ChevronRightIcon from "$lib/ui/icons/chevron_right_icon.svelte"
   import type { ArtifactPaneTarget } from "./artifact_pane.svelte"
 
   type RunConfigEvalScoresSummary =
@@ -80,10 +86,6 @@
 
   $: agent_props =
     node.config && isKilnAgentRunConfig(node.config.run_config_properties)
-      ? node.config.run_config_properties
-      : null
-  $: mcp_props =
-    node.config && isMcpRunConfig(node.config.run_config_properties)
       ? node.config.run_config_properties
       : null
 
@@ -312,63 +314,19 @@
           No configuration details are available for a deleted run config. Its
           lineage links are preserved below.
         </div>
-      {:else if agent_props}
-        <table class="table table-xs w-full">
-          <tbody>
-            <tr>
-              <td class="text-gray-500 w-28">Model</td>
-              <td>{model_name(agent_props.model_name, $model_info)}</td>
-            </tr>
-            <tr>
-              <td class="text-gray-500">Provider</td>
-              <td>{provider_name_from_id(agent_props.model_provider_name)}</td>
-            </tr>
-            <tr>
-              <td class="text-gray-500">Prompt</td>
-              <td>
-                <button
-                  type="button"
-                  class="link text-left"
-                  title="Preview the full prompt"
-                  on:click={open_prompt_pane}
-                >
-                  {prompt_name_from_id(agent_props.prompt_id, prompts)}
-                </button>
-              </td>
-            </tr>
-            <tr>
-              <td class="text-gray-500">Tools</td>
-              <td title={(agent_props.tools_config?.tools ?? []).join(", ")}>
-                {agent_props.tools_config?.tools?.length ?? 0}
-              </td>
-            </tr>
-            <tr>
-              <td class="text-gray-500">Temperature</td>
-              <td>{agent_props.temperature}</td>
-            </tr>
-            <tr>
-              <td class="text-gray-500">Top P</td>
-              <td>{agent_props.top_p}</td>
-            </tr>
-            <tr>
-              <td class="text-gray-500">Thinking</td>
-              <td>{agent_props.thinking_level ?? "None"}</td>
-            </tr>
-          </tbody>
-        </table>
-      {:else if mcp_props}
-        <table class="table table-xs w-full">
-          <tbody>
-            <tr>
-              <td class="text-gray-500 w-28">Type</td>
-              <td>MCP Tool</td>
-            </tr>
-            <tr>
-              <td class="text-gray-500">Tool</td>
-              <td>{mcp_props.tool_reference?.tool_name ?? "Unknown"}</td>
-            </tr>
-          </tbody>
-        </table>
+      {:else if node.config}
+        <PropertyList
+          properties={getRunConfigUiProperties(
+            project_id,
+            task_id,
+            node.config,
+            $model_info,
+            prompts,
+            $available_tools,
+            undefined,
+            agent_props ? open_prompt_pane : undefined,
+          )}
+        />
       {/if}
 
       {#if node.noteFull}
@@ -679,21 +637,9 @@
                     on:click={() =>
                       dispatch("inspect", { eval_id: row.evalId })}
                   >
-                    <svg
-                      class="w-3.5 h-3.5"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M9 6L15 12L9 18"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      />
-                    </svg>
+                    <span class="w-3.5 h-3.5 block">
+                      <ChevronRightIcon />
+                    </span>
                   </button>
                 </td>
               </tr>
