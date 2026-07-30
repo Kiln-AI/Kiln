@@ -13,6 +13,7 @@ from app.desktop.studio_server.eval_api import (
     eval_config_from_id,
     get_all_run_configs,
     reusable_frozen_prompt_id,
+    score_summary_from_values,
     task_run_config_from_id,
 )
 from fastapi import FastAPI, HTTPException
@@ -1464,6 +1465,111 @@ async def test_get_eval_config_score_summary(
         )
 
 
+class TestScoreSummaryFromValues:
+    """Distribution fields on ScoreSummary. Percentiles are linearly
+    interpolated (numpy.percentile default) — see score_summary_from_values."""
+
+    def test_empty_is_all_none(self):
+        # Every statistic must be None, never 0.0 — a 0 would flow into
+        # downstream aggregation as if it were a real datum.
+        summary = score_summary_from_values([], 3)
+        assert summary.mean_score is None
+        assert summary.min_score is None
+        assert summary.p25_score is None
+        assert summary.median_score is None
+        assert summary.p75_score is None
+        assert summary.p90_score is None
+        assert summary.max_score is None
+        assert summary.n_used == 0
+        assert summary.n_excluded == 3
+
+    def test_single_value(self):
+        summary = score_summary_from_values([0.4], 0)
+        assert summary.mean_score == pytest.approx(0.4)
+        assert summary.min_score == pytest.approx(0.4)
+        assert summary.median_score == pytest.approx(0.4)
+        assert summary.p90_score == pytest.approx(0.4)
+        assert summary.max_score == pytest.approx(0.4)
+        assert summary.n_used == 1
+
+    def test_odd_length_median_is_middle_value(self):
+        summary = score_summary_from_values([1.0, 3.0, 2.0], 0)
+        assert summary.median_score == pytest.approx(2.0)
+        assert summary.min_score == pytest.approx(1.0)
+        assert summary.max_score == pytest.approx(3.0)
+        assert summary.n_used == 3
+
+    def test_even_length_median_interpolates(self):
+        # Interpolated midpoint (2.5), not the lower middle value (2.0).
+        summary = score_summary_from_values([1.0, 2.0, 3.0, 4.0], 0)
+        assert summary.median_score == pytest.approx(2.5)
+        assert summary.mean_score == pytest.approx(2.5)
+
+    def test_right_skewed_tail_separates_mean_from_median(self):
+        # The motivating case: one huge outlier drags the mean well above the
+        # median, and p90 exposes the tail the mean alone would hide.
+        values = [1.0] * 9 + [5.0, 100.0]
+        summary = score_summary_from_values(values, 0)
+        assert summary.mean_score == pytest.approx(114 / 11)
+        assert summary.median_score == pytest.approx(1.0)
+        assert summary.p90_score == pytest.approx(5.0)
+        assert summary.max_score == pytest.approx(100.0)
+
+    def test_quartiles(self):
+        summary = score_summary_from_values([float(v) for v in range(1, 11)], 0)
+        assert summary.p25_score == pytest.approx(3.25)
+        assert summary.median_score == pytest.approx(5.5)
+        assert summary.p75_score == pytest.approx(7.75)
+        assert summary.p90_score == pytest.approx(9.1)
+
+
+def test_score_summary_percentiles(mock_eval_for_score_summary):
+    """compute_score_summary reports the distribution, not just the mean, and
+    excludes skipped runs from it exactly as it does for the mean."""
+    eval = mock_eval_for_score_summary
+    config = Mock(spec=EvalConfig)
+
+    accuracy_values = [0.1, 0.2, 0.3, 1.0]
+    runs = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": value, "relevance": 0.5},
+            input="input",
+            output="output",
+            dataset_id=f"ds{i}",
+        )
+        for i, value in enumerate(accuracy_values)
+    ]
+    # A skipped run with a wild score must not move any statistic.
+    runs.append(
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 99.0, "relevance": 99.0},
+            input="input",
+            output="output",
+            dataset_id="ds_skipped",
+            skipped_reason="extraction_failed",
+        )
+    )
+    config.runs.return_value = runs
+
+    task_run_configs = [Mock(spec=TaskRunConfig, id="rc1")]
+    expected_dataset_ids: set[ID_TYPE] = {f"ds{i}" for i in range(4)} | {"ds_skipped"}
+
+    result = compute_score_summary(eval, config, task_run_configs, expected_dataset_ids)
+
+    scores = result.results["rc1"]["accuracy"]
+    assert scores.n_used == 4
+    assert scores.n_excluded == 1
+    assert scores.mean_score == pytest.approx(0.4)
+    assert scores.min_score == pytest.approx(0.1)
+    assert scores.p25_score == pytest.approx(0.175)
+    assert scores.median_score == pytest.approx(0.25)
+    assert scores.p75_score == pytest.approx(0.475)
+    assert scores.p90_score == pytest.approx(0.79)
+    assert scores.max_score == pytest.approx(1.0)
+
+
 def test_score_summary_n_used_n_excluded(mock_eval_for_score_summary):
     eval = mock_eval_for_score_summary
     config = Mock(spec=EvalConfig)
@@ -1549,6 +1655,14 @@ def test_score_summary_all_skipped(mock_eval_for_score_summary):
     assert scores["relevance"].mean_score is None
     assert scores["relevance"].n_used == 0
     assert scores["relevance"].n_excluded == 2
+    # Percentiles follow the mean: None, not 0.0, when nothing was scored.
+    for score_key in ("accuracy", "relevance"):
+        assert scores[score_key].min_score is None
+        assert scores[score_key].p25_score is None
+        assert scores[score_key].median_score is None
+        assert scores[score_key].p75_score is None
+        assert scores[score_key].p90_score is None
+        assert scores[score_key].max_score is None
     assert result.run_config_percent_complete["rc1"] == 1.0
 
 
@@ -3619,6 +3733,12 @@ async def test_get_run_config_eval_scores_all_skipped(
     assert ecr["results"]["overall_rating"]["n_used"] == 0
     assert ecr["results"]["overall_rating"]["n_excluded"] == 2
     assert ecr["results"]["overall_rating"]["mean_score"] is None
+    # Percentiles follow the mean: None, not 0.0, when nothing was scored.
+    for score_key in ("score1", "overall_rating"):
+        assert ecr["results"][score_key]["median_score"] is None
+        assert ecr["results"][score_key]["p90_score"] is None
+        assert ecr["results"][score_key]["min_score"] is None
+        assert ecr["results"][score_key]["max_score"] is None
     assert ecr["percent_complete"] == 1.0
 
 
@@ -3708,6 +3828,13 @@ async def test_get_run_config_eval_scores_includes_eval_input_evals(
     ecr = eval_result["eval_config_result"]
     assert ecr["results"]["accuracy"]["mean_score"] == pytest.approx(0.5)
     assert ecr["results"]["accuracy"]["n_used"] == 2
+    # Distribution over the two scores (0.0, 1.0), linearly interpolated.
+    assert ecr["results"]["accuracy"]["min_score"] == pytest.approx(0.0)
+    assert ecr["results"]["accuracy"]["p25_score"] == pytest.approx(0.25)
+    assert ecr["results"]["accuracy"]["median_score"] == pytest.approx(0.5)
+    assert ecr["results"]["accuracy"]["p75_score"] == pytest.approx(0.75)
+    assert ecr["results"]["accuracy"]["p90_score"] == pytest.approx(0.9)
+    assert ecr["results"]["accuracy"]["max_score"] == pytest.approx(1.0)
     assert ecr["percent_complete"] == 1.0
 
 
