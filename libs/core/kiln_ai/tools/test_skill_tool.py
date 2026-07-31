@@ -1,3 +1,4 @@
+import re
 from unittest.mock import MagicMock
 
 import pytest
@@ -79,6 +80,35 @@ class TestSkillToolDefinition:
         assert "resource" in desc
         assert "assets/" in desc
         assert len(desc) <= 1024
+
+    async def test_description_teaches_root_first_protocol(self, skill_tool: SkillTool):
+        desc = await skill_tool.description()
+        assert "skill(name)" in desc
+        assert "skill(name, resource)" in desc
+        assert "never guess" in desc
+
+    async def test_schema_contains_no_concrete_resource_path(
+        self, skill_tool: SkillTool
+    ):
+        """The schema must describe the shape of a resource path, never spell one out.
+
+        A concrete-looking path in a tool schema gets copied verbatim as a real
+        request. The previous description's `references/guide.md` example was
+        issued as an actual resource request 32 times on an external agent-port
+        corpus, including at skills that ship no resource files at all.
+        """
+        concrete_path = re.compile(r"(?:references|assets)/\S*\.\w+")
+        defn = await skill_tool.toolcall_definition()
+        properties = defn["function"]["parameters"]["properties"]
+        texts = [
+            await skill_tool.description(),
+            properties["name"]["description"],
+            properties["resource"]["description"],
+        ]
+        for text in texts:
+            assert concrete_path.search(text) is None, (
+                f"schema text spells out a resource path: {text!r}"
+            )
 
     async def test_toolcall_definition_schema(self, skill_tool: SkillTool):
         defn = await skill_tool.toolcall_definition()
