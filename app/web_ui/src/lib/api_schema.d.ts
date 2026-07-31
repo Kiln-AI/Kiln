@@ -3287,6 +3287,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_builder/author_judge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Author Judge
+         * @description Author a spec-tailored judge prompt for the multi-turn review.
+         *
+         *     The multi-turn counterpart of clarify_spec's judge_result: returns the
+         *     PROMPT only — the judge model is the user's pick. The client falls
+         *     back to the static default judge on any failure, so this call never
+         *     blocks a drive.
+         */
+        post: operations["author_judge_api_projects__project_id__tasks__task_id__eval_builder_author_judge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/eval_builder/refine_judge": {
         parameters: {
             query?: never;
@@ -4350,6 +4375,28 @@ export interface components {
         Audio: {
             /** Id */
             id: string;
+        };
+        /**
+         * AuthorJudgeApiInput
+         * @description The spec + target-task prompt the judge author tailors its rubric to.
+         *
+         *     The multi-turn counterpart of clarify_spec's judge authoring: same two
+         *     inputs, prompt-only output — the judge model stays the caller's choice.
+         */
+        AuthorJudgeApiInput: {
+            /** Target Specification */
+            target_specification: string;
+            /** Target Task Prompt */
+            target_task_prompt: string;
+        };
+        /**
+         * AuthorJudgeApiOutput
+         * @description The authored judge prompt — plain text, rendered into the judge
+         *     harness verbatim (same contract as the static default it replaces).
+         */
+        AuthorJudgeApiOutput: {
+            /** Judge Prompt */
+            judge_prompt: string;
         };
         /** AvailableModels */
         AvailableModels: {
@@ -20483,6 +20530,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PreflightModelApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    author_judge_api_projects__project_id__tasks__task_id__eval_builder_author_judge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthorJudgeApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorJudgeApiOutput"];
                 };
             };
             /** @description Validation Error */

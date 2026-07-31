@@ -19,7 +19,11 @@ T = TypeVar("T", bound="FinalJudgement")
 class FinalJudgement:
     """
     Attributes:
-        claim (str): The overall verdict as a claim, e.g. 'Eval passes'.
+        claim (str): The substantive one-line reason only — what the agent did, e.g. 'The agent invented an order-
+            cancellation deadline and repeated it after the user questioned it.' NEVER restate or reference the verdict — no
+            'Eval passes', no 'per the judge's verdict'; direction travels exclusively in expected_result. State the
+            decisive fact even when it repeats the top claim. Empty string ONLY for a trivial eval with nothing concrete to
+            report.
         evidence (str): ONE sentence. States the decisive fact with [n] markers; fold any real counter-point into a
             single 'though …' clause. Do NOT quote long spans.
         expected_result (ExpectedResult):

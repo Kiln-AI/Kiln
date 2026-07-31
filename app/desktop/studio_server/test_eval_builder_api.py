@@ -7,6 +7,9 @@ import pytest
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.build_claim_evidence_output import (
     BuildClaimEvidenceOutput,
 )
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.generate_judge_prompt_output import (
+    GenerateJudgePromptOutput,
+)
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_judge_prompt_output import (
     RefineJudgePromptOutput,
 )
@@ -622,6 +625,96 @@ class TestBuildClaims:
             response = client.post(BUILD_CLAIMS_URL, json=build_claims_input)
             assert response.status_code == 422
             assert "Validation error from server" in response.json()["message"]
+
+
+# ───────────────────────── author_judge ──────────────────────────────────
+
+AUTHOR_JUDGE_URL = "/api/projects/p1/tasks/t1/eval_builder/author_judge"
+
+
+@pytest.fixture
+def author_judge_input():
+    return {
+        "target_specification": "The agent must never fabricate information.",
+        "target_task_prompt": "You are a customer support agent.",
+    }
+
+
+class TestAuthorJudge:
+    def test_author_judge_no_api_key(self, client, author_judge_input):
+        """Fail-fast: a keyless caller gets a clean 401 before the remote call."""
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+        ) as mock_config_shared:
+            mock_config = mock_config_shared.return_value
+            mock_config.kiln_copilot_api_key = None
+            response = client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
+            assert response.status_code == 401
+            assert "API key not configured" in response.json()["message"]
+
+    def test_author_judge_success(self, client, author_judge_input, mock_api_key):
+        mock_output = MagicMock(spec=GenerateJudgePromptOutput)
+        mock_output.judge_evaluation_prompt = (
+            "1. When the assistant states a specific order fact, check whether "
+            "a preceding lookup returned it — fabrication fails."
+        )
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            response = client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
+            assert response.status_code == 200
+            assert "fabrication fails" in response.json()["judge_prompt"]
+
+    def test_author_judge_remote_error_surfaces_upstream_message(
+        self, client, author_judge_input, mock_api_key
+    ):
+        """A remote failure propagates the upstream status + message — the
+        client treats ANY error as fall-back-to-static-judge."""
+        mock_response = MagicMock()
+        mock_response.status_code = 502
+        mock_response.content = b'{"message": "upstream refused"}'
+        mock_response.parsed = None
+
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            response = client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
+            assert response.status_code == 502
+            assert "upstream refused" in response.json()["message"]
+
+    def test_author_judge_no_response_is_500(
+        self, client, author_judge_input, mock_api_key
+    ):
+        """A 2xx with no parsed body surfaces as a 500 with a clear message."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = None
+
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            response = client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
+            assert response.status_code == 500
+            assert "Failed to author the judge prompt" in response.json()["message"]
+
+    def test_author_judge_rejects_empty_spec(self, client, mock_api_key):
+        """target_specification must be non-empty (min_length=1) — a 422
+        before any remote call."""
+        response = client.post(
+            AUTHOR_JUDGE_URL,
+            json={"target_specification": "", "target_task_prompt": "p"},
+        )
+        assert response.status_code == 422
 
 
 # ───────────────────────── refine_judge ──────────────────────────────────

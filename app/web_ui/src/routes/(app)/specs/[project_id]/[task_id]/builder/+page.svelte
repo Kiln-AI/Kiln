@@ -100,6 +100,7 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { filename_string_short_validator } from "$lib/utils/input_validators"
   import { sse_data_payloads } from "$lib/utils/sse"
+  import { with_deadline } from "$lib/utils/deadline_signal"
   import {
     build_default_judge_info,
     judge_config_from_sdg_step,
@@ -187,6 +188,16 @@
   function is_abort_error(error: unknown): boolean {
     return error instanceof DOMException && error.name === "AbortError"
   }
+
+  // Deadlines on the two judge-copilot calls — the only copilot calls with a
+  // graceful substitute (static template / keep the current judge). The
+  // server retries for up to ~20 minutes for callers that can afford to
+  // wait; an interactive flow cannot, so these bail out and fall back.
+  // Authoring is an invisible enhancement with a perfect substitute: bail
+  // fast. Refine is user-initiated and its fallback drops their graded
+  // feedback, so it gets one full server attempt before giving up.
+  const AUTHOR_JUDGE_DEADLINE_MS = 60_000
+  const REFINE_JUDGE_DEADLINE_MS = 300_000
 
   // ── Navigation (Svelte shallow routing).
   //
@@ -703,6 +714,7 @@
   // not a phase, so no code path can strand it behind a stale flag.
   type MultiTurnPhase =
     | "idle"
+    | "authoring_judge"
     | "preflight"
     | "planning"
     | "generating_cases"
@@ -980,6 +992,75 @@
     judge_model_combined = judge_model
       ? `${judge_model.model_provider}/${judge_model.model_name}`
       : judge_model_combined
+  }
+
+  // The authored multi-turn judge prompt, cached against the spec text it
+  // was written for: a re-drive with an unchanged spec reuses it instead
+  // of re-paying the authoring call; any spec edit misses and re-authors.
+  let authored_judge_cache: { spec_text: string; prompt: string } | null = null
+
+  // Author a spec-tailored judge prompt via the studio (kiln_server's
+  // multi-turn judge author) — the multi-turn counterpart of clarify_spec's
+  // judge_result. Returns null on ANY failure, deadline expiry, or unusable
+  // prompt: the caller falls back to the static default judge, so authoring
+  // can never block or stall a drive. A USER abort still propagates —
+  // cancelling the drive cancels this; only the deadline degrades silently.
+  async function author_judge_prompt_for_spec(
+    user_signal: AbortSignal,
+  ): Promise<string | null> {
+    const spec = spec_text()
+    if (authored_judge_cache?.spec_text === spec) {
+      return authored_judge_cache.prompt
+    }
+    const { signal, timed_out } = with_deadline(
+      user_signal,
+      AUTHOR_JUDGE_DEADLINE_MS,
+    )
+    try {
+      const { data, error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/author_judge",
+        {
+          params: { path: { project_id, task_id } },
+          body: {
+            target_specification: spec,
+            target_task_prompt: task?.instruction ?? "",
+          },
+          signal,
+        },
+      )
+      if (error || !data?.judge_prompt) {
+        posthog.capture("eval_v2_judge_author_fallback", {
+          reason: "request_failed",
+        })
+        return null
+      }
+      // Same mechanical validation as the refine path: the prompt renders
+      // into the judge harness verbatim, so an unusable one falls back.
+      const validation_error = validate_refined_judge_prompt(data.judge_prompt)
+      if (validation_error) {
+        posthog.capture("eval_v2_judge_author_fallback", {
+          reason: "invalid_authored_prompt",
+        })
+        return null
+      }
+      authored_judge_cache = { spec_text: spec, prompt: data.judge_prompt }
+      return data.judge_prompt
+    } catch (e) {
+      // Deadline check FIRST: its rejection is a TimeoutError (not
+      // AbortError) in most engines, but engines vary — timed_out() is the
+      // authoritative discriminator either way.
+      if (timed_out()) {
+        posthog.capture("eval_v2_judge_author_fallback", {
+          reason: "timeout",
+        })
+        return null
+      }
+      if (is_abort_error(e)) throw e
+      posthog.capture("eval_v2_judge_author_fallback", {
+        reason: "request_failed",
+      })
+      return null
+    }
   }
 
   // Commit the lanes and start the run. Refuses on an unset lane — the
@@ -1315,9 +1396,28 @@
       // 2. The judge, resolved BEFORE the pipeline (not just before the
       // stream) so the preflight below covers the judge lane too — the
       // judge-dies-after-drives case is the expensive one. Runs on the
-      // user's picked judge model.
-      const judge =
-        judge_info ?? build_default_judge_info(spec_text(), chosen_judge_model)
+      // user's picked judge model. Prompt precedence: a judge already
+      // refined this session > freshly authored for this spec > static
+      // default. Authoring is deadline-bounded and falls back silently, so
+      // it can stall a drive by at most the deadline — but a user abort
+      // (Back/navigation) during it still cancels the whole drive.
+      let judge: JudgeConfig
+      if (judge_info) {
+        judge = judge_info
+      } else {
+        multi_turn_phase = "authoring_judge"
+        const authored = await author_judge_prompt_for_spec(
+          new_copilot_abort_signal(),
+        )
+        judge = authored
+          ? {
+              prompt: authored,
+              model_name: chosen_judge_model.model_name,
+              model_provider: chosen_judge_model.model_provider,
+            }
+          : build_default_judge_info(spec_text(), chosen_judge_model)
+        multi_turn_phase = "preflight"
+      }
 
       // 3. Preflight ALL THREE lanes concurrently before anything runs or
       // is discarded: a dead key/model stops the drive here — before the
@@ -1867,14 +1967,33 @@
         t.claims.some((c) => c.human_grade === "disagree"),
     )
     if (!has_disagreement) return judge
-    const { data, error } = await client.POST(
-      "/api/projects/{project_id}/tasks/{task_id}/eval_builder/refine_judge",
-      {
-        params: { path: { project_id, task_id } },
-        body: { judge_prompt: judge.prompt, graded_traces },
-        signal: new_copilot_abort_signal(),
-      },
+    // Deadline-bounded like authoring, but with a full server attempt's
+    // budget: the fallback here drops the user's graded feedback, so it is
+    // worth waiting longer for. A user abort still propagates as before.
+    const { signal, timed_out } = with_deadline(
+      new_copilot_abort_signal(),
+      REFINE_JUDGE_DEADLINE_MS,
     )
+    let data, error
+    try {
+      ;({ data, error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/refine_judge",
+        {
+          params: { path: { project_id, task_id } },
+          body: { judge_prompt: judge.prompt, graded_traces },
+          signal,
+        },
+      ))
+    } catch (e) {
+      if (!timed_out()) throw e
+      console.warn(
+        "Judge refinement timed out at save; keeping the reviewed judge.",
+      )
+      posthog.capture("eval_v2_judge_refine_fallback", {
+        reason: "timeout",
+      })
+      return judge
+    }
     // Refine failed — ship the original judge rather than block the save.
     // The fallback is invisible to the user by design, so leave a telemetry
     // trail: silent fallbacks would otherwise read as "refinement works".
@@ -2409,9 +2528,11 @@
   $: generate_animation_description = is_multi_turn
     ? multi_turn_phase === "planning"
       ? `Planning a balanced batch of ${NUM_CASES} synthetic-user scenarios…`
-      : multi_turn_phase === "preflight"
-        ? "Checking that your run config, synthetic-user driver, and judge respond before driving…"
-        : `Creating ${multi_turn_total} synthetic users from the approved plan…`
+      : multi_turn_phase === "authoring_judge"
+        ? "Writing a judge rubric tailored to your eval…"
+        : multi_turn_phase === "preflight"
+          ? "Checking that your run config, synthetic-user driver, and judge respond before driving…"
+          : `Creating ${multi_turn_total} synthetic users from the approved plan…`
     : "Kiln is generating example data to review and creating a judge. Hold tight!"
 
   // Multi-turn save tags existing chains rather than generating a dataset, so
@@ -2628,12 +2749,16 @@
               title={is_multi_turn
                 ? multi_turn_phase === "planning"
                   ? "Planning Batch"
-                  : multi_turn_phase === "preflight"
-                    ? "Checking Configuration"
-                    : "Creating Synthetic Users"
+                  : multi_turn_phase === "authoring_judge"
+                    ? "Authoring Judge"
+                    : multi_turn_phase === "preflight"
+                      ? "Checking Configuration"
+                      : "Creating Synthetic Users"
                 : "Analyzing Eval"}
               description={generate_animation_description}
-              warning={is_multi_turn && multi_turn_phase !== "preflight"
+              warning={is_multi_turn &&
+              multi_turn_phase !== "preflight" &&
+              multi_turn_phase !== "authoring_judge"
                 ? "This may take a while, depending on the number of scenarios"
                 : is_multi_turn
                   ? null

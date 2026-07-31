@@ -62,13 +62,16 @@ from .examples_for_feedback_item import ExamplesForFeedbackItem
 from .examples_with_feedback_item import ExamplesWithFeedbackItem
 from .expected_result import ExpectedResult
 from .file import File
-from .final_judgement import FinalJudgement
 from .file_file import FileFile
+from .final_judgement import FinalJudgement
 from .function import Function
 from .function_call import FunctionCall
 from .generate_batch_input import GenerateBatchInput
 from .generate_batch_output import GenerateBatchOutput
 from .generate_batch_output_data_by_topic import GenerateBatchOutputDataByTopic
+from .generate_judge_prompt_api_input import GenerateJudgePromptApiInput
+from .generate_judge_prompt_api_input_trace_type import GenerateJudgePromptApiInputTraceType
+from .generate_judge_prompt_output import GenerateJudgePromptOutput
 from .generate_synthetic_users_request import GenerateSyntheticUsersRequest
 from .generate_synthetic_users_response import GenerateSyntheticUsersResponse
 from .generate_v1_synthetic_user_generate_post_response_401 import GenerateV1SyntheticUserGeneratePostResponse401
@@ -98,9 +101,9 @@ from .input_audio_format import InputAudioFormat
 from .jinja_input_transform import JinjaInputTransform
 from .job_start_response import JobStartResponse
 from .job_status import JobStatus
-from .judge_score import JudgeScore
 from .job_status_response import JobStatusResponse
 from .job_type import JobType
+from .judge_score import JudgeScore
 from .kiln_agent_run_config_properties import KilnAgentRunConfigProperties
 from .kiln_base_model import KilnBaseModel
 from .list_sessions_v1_chat_sessions_get_response_400 import ListSessionsV1ChatSessionsGetResponse400
@@ -207,13 +210,16 @@ __all__ = (
     "ExamplesWithFeedbackItem",
     "ExpectedResult",
     "File",
-    "FinalJudgement",
     "FileFile",
+    "FinalJudgement",
     "Function",
     "FunctionCall",
     "GenerateBatchInput",
     "GenerateBatchOutput",
     "GenerateBatchOutputDataByTopic",
+    "GenerateJudgePromptApiInput",
+    "GenerateJudgePromptApiInputTraceType",
+    "GenerateJudgePromptOutput",
     "GenerateSyntheticUsersRequest",
     "GenerateSyntheticUsersResponse",
     "GenerateV1SyntheticUserGeneratePostResponse401",
@@ -241,9 +247,9 @@ __all__ = (
     "JinjaInputTransform",
     "JobStartResponse",
     "JobStatus",
-    "JudgeScore",
     "JobStatusResponse",
     "JobType",
+    "JudgeScore",
     "KilnAgentRunConfigProperties",
     "KilnBaseModel",
     "ListSessionsV1ChatSessionsGetResponse400",

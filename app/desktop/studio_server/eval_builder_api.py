@@ -28,6 +28,8 @@ import re
 from typing import Annotated, Any, AsyncIterator, Literal, cast
 
 from app.desktop.studio_server.api_models.eval_builder_models import (
+    AuthorJudgeApiInput,
+    AuthorJudgeApiOutput,
     BuildClaimsApiInput,
     BuildClaimsApiOutput,
     JudgeConfig,
@@ -59,6 +61,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     get_copilot_api_key,
 )
 from app.desktop.studio_server.utils.eval_builder_utils import (
+    author_judge_prompt,
     build_claims_for_trace,
     refine_judge_prompt_from_grades,
     run_judge_for_trace,
@@ -788,6 +791,35 @@ def connect_eval_builder_api(app: FastAPI):
                 detail={"code": "preflight_failed", "message": message},
             ) from e
         return PreflightModelApiOutput()
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/author_judge",
+        tags=["Eval Builder"],
+        openapi_extra=agent_policy_require_approval(
+            "Author a judge prompt tailored to the spec?"
+        ),
+    )
+    async def author_judge(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[str, Path(description="The unique identifier of the task.")],
+        input: AuthorJudgeApiInput,
+    ) -> AuthorJudgeApiOutput:
+        """Author a spec-tailored judge prompt for the multi-turn review.
+
+        The multi-turn counterpart of clarify_spec's judge_result: returns the
+        PROMPT only — the judge model is the user's pick. The client falls
+        back to the static default judge on any failure, so this call never
+        blocks a drive.
+        """
+        # Fail fast on a missing copilot key before the remote authoring call:
+        # a keyless caller gets a clean 401, not a deep upstream error.
+        get_copilot_api_key()
+        return await author_judge_prompt(
+            target_specification=input.target_specification,
+            target_task_prompt=input.target_task_prompt,
+        )
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/eval_builder/refine_judge",

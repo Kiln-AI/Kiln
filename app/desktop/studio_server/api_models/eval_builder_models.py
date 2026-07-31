@@ -229,6 +229,24 @@ class RefineJudgeApiOutput(BaseModel):
     not_incorporated_feedback: str | None
 
 
+class AuthorJudgeApiInput(BaseModel):
+    """The spec + target-task prompt the judge author tailors its rubric to.
+
+    The multi-turn counterpart of clarify_spec's judge authoring: same two
+    inputs, prompt-only output — the judge model stays the caller's choice.
+    """
+
+    target_specification: str = Field(min_length=1)
+    target_task_prompt: str
+
+
+class AuthorJudgeApiOutput(BaseModel):
+    """The authored judge prompt — plain text, rendered into the judge
+    harness verbatim (same contract as the static default it replaces)."""
+
+    judge_prompt: str
+
+
 # ── SSE event payloads ────────────────────────────────────────────────────
 #
 # ONE frame contract across every eval_builder stream: each frame is a JSON

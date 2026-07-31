@@ -16,7 +16,9 @@ T = TypeVar("T", bound="GradedFinalJudgement")
 class GradedFinalJudgement:
     """
     Attributes:
-        claim (str): The overall verdict as a claim, e.g. 'Eval passes'.
+        claim (str): The builder's substantive one-line reason for the overall verdict; may be an empty string for a
+            trivial eval where the builder had nothing concrete to report. Direction travels in expected_result, not in this
+            text.
         evidence (str): The one-sentence evidence shown to the reviewer.
         expected_result (ExpectedResult):
         human_grade (HumanGrade):

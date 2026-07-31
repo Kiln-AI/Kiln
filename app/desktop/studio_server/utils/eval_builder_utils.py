@@ -15,11 +15,14 @@ from typing import Any, cast
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     build_claim_evidence_v1_copilot_build_claim_evidence_post,
+    generate_judge_prompt_v1_copilot_generate_judge_prompt_post,
     refine_judge_prompt_v1_copilot_refine_judge_prompt_post,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     BuildClaimEvidenceInput,
     BuildClaimEvidenceOutput,
+    GenerateJudgePromptApiInput,
+    GenerateJudgePromptOutput,
     RefineJudgePromptInput,
     RefineJudgePromptOutput,
 )
@@ -27,6 +30,7 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
 from app.desktop.studio_server.api_models.eval_builder_models import (
+    AuthorJudgeApiOutput,
     BuildClaimsApiOutput,
     GradedTraceApi,
     JudgeConfig,
@@ -283,6 +287,47 @@ async def build_claims_for_trace(
         return BuildClaimsApiOutput.model_validate(result.to_dict())
 
     raise HTTPException(status_code=500, detail="Unknown error building claims.")
+
+
+async def author_judge_prompt(
+    target_specification: str,
+    target_task_prompt: str,
+) -> AuthorJudgeApiOutput:
+    """Author a spec-tailored multi-turn judge prompt via kiln_server.
+
+    Thin remote passthrough: marshal → SDK call → map back. The authoring
+    (LLM) runs on kiln_server and returns the PROMPT only — the judge model
+    stays the caller's choice. Callers fall back to the static default judge
+    on any failure here; authoring must never block a drive.
+    """
+    api_key = get_copilot_api_key()
+    client = get_authenticated_client(api_key)
+
+    # trace_type is pinned here, not exposed on the studio route: the builder
+    # is this route's only caller and it is multi-turn-only.
+    body = GenerateJudgePromptApiInput.from_dict(
+        {
+            "target_specification": target_specification,
+            "target_task_prompt": target_task_prompt,
+            "trace_type": "multi_turn",
+        }
+    )
+
+    detailed_result = await generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed(
+        client=client,
+        body=body,
+    )
+    result = unwrap_response(
+        detailed_result,
+        none_detail="Failed to author the judge prompt. Please try again.",
+    )
+
+    if isinstance(result, GenerateJudgePromptOutput):
+        return AuthorJudgeApiOutput(judge_prompt=result.judge_evaluation_prompt)
+
+    raise HTTPException(
+        status_code=500, detail="Unknown error authoring the judge prompt."
+    )
 
 
 async def refine_judge_prompt_from_grades(
