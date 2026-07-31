@@ -8,14 +8,18 @@
   //
   //   - an eval score has its own range (0-1 for pass/fail, 1-5 for five star)
   //     and higher is better, so it can be plotted against an absolute scale.
-  //   - a metric has no range at all - there is no maximum cost - and lower is
-  //     better, so the only meaningful scale is position among the configs on
-  //     the chart. See relative_metric_score.
+  //   - a metric has no range at all - there is no maximum cost - so the only
+  //     meaningful scale is position among the configs on the chart. See
+  //     relative_metric_score.
   //
-  // Every axis here is therefore lower-is-better and relatively scored, which
-  // is what lets the chart keep one grammar with plain axis names: further from
-  // the centre is better on all of them, always, and the header says so once
-  // instead of each axis having to be renamed to its own "efficiency".
+  // One grammar, and it is carried by the labels rather than by a caption:
+  // every axis is named for the virtue it measures ("Cost Efficiency", not
+  // "Cost"; "Skill Read Efficiency", not "Skill Reads Repeat"), so further from
+  // the centre reads as better on a glance instead of needing the reader to
+  // remember that this chart is inverted. Which end of a raw scale is the good
+  // one lives on the axis itself, since it is not always the low end - cache
+  // reuse is better the more of it there is. See $lib/utils/evolution/
+  // metric_axes for the naming, the families and the direction of each metric.
   //
   // Because the scale is a comparison, one run config has nothing to be scored
   // against - it would sit at the midpoint on every axis and draw a regular
@@ -37,6 +41,7 @@
   import { relative_metric_score } from "$lib/utils/relative_metric_score"
   import {
     format_metric_value,
+    wrap_axis_label,
     MIN_METRIC_AXES,
     type MetricAxis,
   } from "$lib/utils/evolution/metric_axes"
@@ -58,9 +63,9 @@
   // A comparison needs two sides
   const MIN_METRIC_CONFIGS = 2
 
-  const SCALE_TOOLTIP = `Every axis here is lower-is-better - less cost, less time, fewer tokens, fewer calls - so each one is scored by where a run config sits **relative to the others on the chart**, on a shared 0-100 scale. Further from the centre is always better.
+  const SCALE_TOOLTIP = `Each axis is named for the quality it measures, so further from the centre is better on every one of them - cheaper, faster, leaner, more cache reuse.
 
-There is no "full scale" mode: unlike a pass rate, cost and latency have no maximum to plot against.
+Scores are **relative to the other run configs on the chart**, on a shared 0-100 scale: unlike a pass rate, cost and latency have no maximum to plot against, so there is no "full scale" mode here.
 
 Because it is a comparison, at least two run configs are needed. Raw values are in the tooltip and in the table below.`
 
@@ -204,8 +209,11 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
     return `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};margin-right:6px;"></span>`
   }
 
-  function axisTitle(axis: MetricAxis): string {
-    return axis.evalName ? `${axis.label} · ${axis.evalName}` : axis.label
+  // The axis is labelled with the virtue, so the tooltip is where the raw
+  // quantity behind it is spelled out - "Cost Efficiency" over "Cost · usage
+  // rollup" - along with where the number came from.
+  function axisSubtitle(axis: MetricAxis): string {
+    return `${axis.valueLabel} · ${axis.evalName ?? "usage rollup"}`
   }
 
   // One metric across every plotted config, so hovering a point answers "how do
@@ -221,9 +229,8 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
     const axis = chartAxes[axisIndex]
     if (!axis) return ""
 
-    let html = `<div style="font-weight: bold; margin-bottom: 6px;">${axisTitle(
-      axis,
-    )}</div>`
+    let html = `<div style="font-weight: bold;">${axis.label}</div>
+      <div style="color: #888; margin-bottom: 6px;">${axisSubtitle(axis)}</div>`
     series.forEach((entry, index) => {
       const config = run_configs.find(
         (candidate) => getSeriesDisplayName(candidate) === entry.name,
@@ -279,7 +286,9 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
     html += `<div style="font-weight: bold; margin-bottom: 4px; padding-top: 8px;">Values</div>`
     for (const axis of chartAxes) {
       const rawValue = config?.id ? getMetricValue(config.id, axis.key) : null
-      html += `<div>${axis.label}: ${format_metric_value(
+      // The raw quantity's own name, not the axis label: "Cost: $0.0123", not
+      // "Cost Efficiency: $0.0123", which would read as a score.
+      html += `<div>${axis.valueLabel}: ${format_metric_value(
         axis.unit,
         rawValue,
       )}</div>`
@@ -313,14 +322,14 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
   } {
     const chartAxes = plottedAxes
     const indicators = chartAxes.map((axis) => ({
-      name: axis.label,
+      name: wrap_axis_label(axis.label),
       max: AXIS_MAX,
     }))
 
     // Every value on an axis, so each config can be scored by its position
-    // among them. Direction correction lives in relative_metric_score: the
-    // lowest raw value gets the highest score, which is what puts the cheapest
-    // and fastest config furthest from the centre.
+    // among them. Direction correction lives in relative_metric_score, pointed
+    // by the axis: the best raw value gets the highest score, which is what
+    // puts the cheapest and fastest config furthest from the centre.
     const valuesByAxis = new Map<string, number[]>()
     for (const axis of chartAxes) {
       valuesByAxis.set(
@@ -339,6 +348,7 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
         relative_metric_score(
           getMetricValue(config.id as string, axis.key) as number,
           valuesByAxis.get(axis.key) ?? [],
+          { higherIsBetter: axis.better === "higher" },
         ),
       )
       const name = getSeriesDisplayName(config)
@@ -423,11 +433,11 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
           axisName: {
             color: LABEL_COLOR,
             fontSize: 11,
-            // Wrap long metric names instead of letting neighbours collide.
-            // The axis count is capped by the page's default set, so unlike the
+            // Names arrive pre-wrapped from wrap_axis_label: echarts' own
+            // width/overflow wrapping does not reach radar axis names, and an
+            // unwrapped one runs off the side of a half-width card. The axis
+            // count is capped by the page's default set, so unlike the
             // eval-score radar this never needs hand-placed labels.
-            width: 92,
-            overflow: "break",
             lineHeight: 14,
           },
           splitArea: {
@@ -530,9 +540,8 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
     <div class="flex-grow">
       <div class="text-xl font-bold">Performance Metrics</div>
       <div class="text-sm text-gray-500 {shownNote ? '' : 'mb-4'}">
-        Cost, speed and usage for the selected run configurations. Every axis is
-        lower-is-better and scored against the others, so further from the
-        centre is better.
+        Cost, speed and usage for the selected run configurations. Higher is
+        better on every axis.
       </div>
       {#if shownNote}
         <div class="text-xs text-gray-400 mt-1 mb-4">{shownNote}</div>

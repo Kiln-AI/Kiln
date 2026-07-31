@@ -1356,7 +1356,9 @@
         </div>
 
         {#if validSelectedModels.length > 0}
-          <div class="mt-16">
+          <!-- mb-6 used to live on the card itself; it belongs here, where the
+               page decides how much room the last section gets. -->
+          <div class="mt-16 mb-6">
             <CompareRadarChart
               comparisonFeatures={visibleComparisonFeatures}
               {getModelValueRaw}

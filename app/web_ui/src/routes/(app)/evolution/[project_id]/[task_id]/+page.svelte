@@ -60,14 +60,18 @@
   import CompareMetricsRadarChart from "$lib/components/compare_metrics_radar_chart.svelte"
   import {
     build_metric_axes,
+    criterion_key_metas,
     default_metric_axis_keys,
-    informational_key_count,
+    directionless_key_count,
+    known_metric_axis_keys,
+    METRIC_FAMILY_LABELS,
     COST_KEY,
     INPUT_TOKENS_KEY,
     LATENCY_KEY,
     OUTPUT_TOKENS_KEY,
     TOTAL_TOKENS_KEY,
     USAGE_KEY_PREFIX,
+    type MetricFamily,
   } from "$lib/utils/evolution/metric_axes"
   import EvolutionCanvas from "./evolution_canvas.svelte"
   import NodeDetailPanel from "./node_detail_panel.svelte"
@@ -226,11 +230,11 @@
     )
     hidden_scores = hidden_scores.filter((key) => known_score_keys.has(key))
     // Same for the metric axes: a stale URL must not leave the chart asking for
-    // an axis that no longer exists.
+    // an axis that no longer exists. Checked against every key that could be an
+    // axis rather than the deduplicated set, since which of two sources for a
+    // quantity wins depends on usage that has not been fetched yet.
     if (metric_axis_keys !== null) {
-      const known_metric_keys = new Set(
-        build_metric_axes(lens_data.keyMetas).map((axis) => axis.key),
-      )
+      const known_metric_keys = known_metric_axis_keys(lens_data.keyMetas)
       metric_axis_keys = metric_axis_keys.filter((key) =>
         known_metric_keys.has(key),
       )
@@ -591,8 +595,15 @@
   // ---- Radar chart inputs -------------------------------------------------
   // The radar takes the same shape the old compare page feeds it; here it is
   // derived from the lens data instead of that page's comparison table.
+  //
+  // Criterion evals only. The two radars partition the score space by which
+  // eval a key came from - quality here, metrics on the chart beside it - and
+  // NOT by direction, which is what used to leave a higher-is-better metric
+  // like cache_hit_rate on the quality ring between the pass/fail judges. See
+  // criterion_key_metas.
+  $: criterion_metas = criterion_key_metas(visible_key_metas)
 
-  $: comparison_features = build_features(visible_key_metas)
+  $: comparison_features = build_features(criterion_metas)
   function build_features(keyMetas: ScoreKeyMeta[]): ComparisonFeature[] {
     const by_eval = new Map<string, ScoreKeyMeta[]>()
     for (const meta of keyMetas) {
@@ -641,10 +652,10 @@
     return directions
   })()
 
-  // The radar drops lower-is-better and informational scores (a radar reads
-  // "further from center is better"), so count what's left to know whether it
-  // will draw anything at all.
-  $: radar_axis_count = visible_key_metas.filter(
+  // Of the criterion scores, the radar still drops the lower-is-better and
+  // informational ones (it reads "further from center is better"), so count
+  // what's left to know whether it will draw anything at all.
+  $: radar_axis_count = criterion_metas.filter(
     (meta) =>
       meta.direction !== "lower_is_better" &&
       meta.direction !== "informational",
@@ -653,12 +664,31 @@
     pinned_nodes.length > 0 && radar_axis_count >= MIN_RADAR_AXES
 
   // ---- Performance-metrics radar ------------------------------------------
-  // The complement of the chart above: it plots what that one has to leave out
-  // (every lower-is-better score) plus the native usage rollup, so cost and
+  // The exact complement of the chart above: every key from a metrics eval,
+  // whichever way it points, alongside the native usage rollup - so cost and
   // speed are read on their own terms instead of being mixed in with quality.
   // See $lib/utils/evolution/metric_axes.
 
-  $: all_metric_axes = build_metric_axes(lens_data.keyMetas)
+  // Which axes actually have numbers, so a quantity reported by both the usage
+  // rollup and an eval score key resolves to whichever source can be plotted.
+  // Depends on the pinned set and the lazily fetched usage, so it is rebuilt
+  // whenever either changes.
+  $: metric_axis_has_value = make_metric_axis_has_value(
+    get_metric_value,
+    pinned_ids,
+  )
+  function make_metric_axis_has_value(
+    getter: (run_config_id: string, key: string) => number | null,
+    run_config_ids: string[],
+  ) {
+    return (key: string): boolean =>
+      run_config_ids.some((id) => getter(id, key) !== null)
+  }
+
+  $: all_metric_axes = build_metric_axes(
+    lens_data.keyMetas,
+    metric_axis_has_value,
+  )
   $: default_metric_keys = default_metric_axis_keys(all_metric_axes)
   $: shown_metric_keys = metric_axis_keys ?? default_metric_keys
   // Filtered from the canonical list rather than mapped from the selection, so
@@ -683,36 +713,46 @@
     metric_axis_keys = null
   }
 
-  $: metric_menu_items = [
-    { label: "Metric Axes", header: true },
-    ...all_metric_axes.map((axis): FloatingMenuItem => {
-      const shown = shown_metric_keys.includes(axis.key)
-      return {
-        label: `${shown ? "✓" : "+"}  ${axis.label}`,
-        description: axis.evalName ?? "Usage rollup",
-        onclick: () => toggle_metric_axis(axis.key),
+  // Grouped under the same family headings the chart lays the axes out by, so
+  // the menu reads in the same order as the ring.
+  $: metric_menu_items = (() => {
+    const items: FloatingMenuItem[] = []
+    let family: MetricFamily | null = null
+    for (const axis of all_metric_axes) {
+      if (axis.family !== family) {
+        family = axis.family
+        items.push({ label: METRIC_FAMILY_LABELS[family], header: true })
       }
-    }),
-    ...(metric_axis_keys !== null
-      ? [{ label: "Reset to default", onclick: reset_metric_axes }]
-      : []),
-  ] as FloatingMenuItem[]
+      const shown = shown_metric_keys.includes(axis.key)
+      items.push({
+        label: `${shown ? "✓" : "+"}  ${axis.label}`,
+        // The axis is named for the virtue, so the menu names the quantity
+        description: `${axis.valueLabel} · ${axis.evalName ?? "Usage rollup"}`,
+        onclick: () => toggle_metric_axis(axis.key),
+      })
+    }
+    if (metric_axis_keys !== null) {
+      items.push({ label: "Reset to default", onclick: reset_metric_axes })
+    }
+    return items
+  })()
 
-  // Both charts drop informational scores - a radar can only say "further is
-  // better", and informational means there is no better end. Counted here so
-  // the omission is stated rather than silent.
+  // What is left off, stated rather than silent. Informational score keys are
+  // plotted here whenever the chart knows which end of their scale is the good
+  // one - being a metric is the point of this chart - but one it cannot point
+  // has no better end at all, and a radar can only say "further is better".
   $: metrics_not_shown_note = (() => {
     const parts: string[] = []
     const off = all_metric_axes.length - shown_metric_axes.length
     if (off > 0) {
       parts.push(`${off} ${off === 1 ? "metric" : "metrics"} not selected`)
     }
-    const informational = informational_key_count(lens_data.keyMetas)
-    if (informational > 0) {
+    const directionless = directionless_key_count(lens_data.keyMetas)
+    if (directionless > 0) {
       parts.push(
-        `${informational} informational ${
-          informational === 1 ? "score" : "scores"
-        } (no better direction)`,
+        `${directionless} ${
+          directionless === 1 ? "score" : "scores"
+        } with no better direction`,
       )
     }
     return parts.length > 0 ? parts.join(", ") : null
@@ -1051,8 +1091,15 @@
          Height is the only thing a radar can grow into, so the floor is
          generous: the chart's own 640px box plus its card header and padding.
          Tall enough for wrapped axis names all the way round the outer ring
-         plus the scrolling legend underneath. -->
-    <div class="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
+         plus the scrolling legend underneath.
+
+         The two cards are the same height, which is what makes the row read as
+         a pair rather than two things that happen to be adjacent. Grid rows
+         size to their tallest item and both columns stretch to it, so each card
+         is `h-full` inside a column that carries the floor - and neither card
+         may add a margin of its own, which would come straight out of that
+         height on one side only. -->
+    <div class="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
       <div class="min-w-0 min-h-[800px] flex flex-col">
         {#if radar_available}
           <CompareRadarChart

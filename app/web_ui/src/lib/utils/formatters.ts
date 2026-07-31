@@ -382,9 +382,30 @@ export function formatLatency(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-// A JSON score key as a display label: "false_done_claim" -> "False Done Claim"
+// Words title case gets wrong, because they are not words. Every one of these
+// is an acronym a reader notices: "Llm Calls" reads as a typo on sight.
+const SCORE_KEY_ACRONYMS: Record<string, string> = {
+  llm: "LLM",
+  id: "ID",
+  ids: "IDs",
+  api: "API",
+  url: "URL",
+  urls: "URLs",
+  usd: "USD",
+  sql: "SQL",
+  json: "JSON",
+}
+
+// A JSON score key as a display label: "false_done_claim" -> "False Done Claim",
+// "llm_calls" -> "LLM Calls"
 export function score_key_label(scoreKey: string): string {
-  return scoreKey.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
+  return scoreKey
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .replace(
+      /\b[A-Za-z]+\b/g,
+      (word) => SCORE_KEY_ACRONYMS[word.toLowerCase()] ?? word,
+    )
 }
 
 // The full value range of a score type. Custom (and unknown) score types are

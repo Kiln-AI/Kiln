@@ -22,6 +22,7 @@ import {
   strip_cell_color,
   strip_cells,
 } from "./score_lens"
+import { build_metric_axes } from "./metric_axes"
 
 type EvalResultsSummaryResponse =
   components["schemas"]["EvalResultsSummaryResponse"]
@@ -327,6 +328,87 @@ describe("lens values", () => {
     expect(delta_vs_parent(data, "rc2", "rc1", lens)).toBeCloseTo(-0.75, 6)
     expect(delta_vs_parent(data, "rc1", null, lens)).toBeNull()
     expect(delta_vs_parent(data, "rc1", "rc3", lens)).toBeNull()
+  })
+})
+
+// A latency eval's keys are authored `informational` on purpose: they are
+// metrics, not quality, and pulling them into "overall quality" would be wrong.
+// The performance-metrics radar plots them anyway, because being a metric is
+// the entire point of that chart. Those two facts have to hold at once, so they
+// are asserted together: the aggregate is the thing that must not move.
+describe("informational metrics reach the chart, not the aggregate", () => {
+  const quality: ScoreSpec[] = [
+    { name: "pass", type: "pass_fail" },
+    { name: "five", type: "five_star" },
+  ]
+  const latency: ScoreSpec[] = [
+    "latency_ms_total",
+    "latency_ms_turn1",
+    "latency_ms_turn2",
+    "latency_ms_turn3",
+    "latency_ms_per_call",
+  ].map((name) => ({
+    name,
+    type: "custom" as ScoreType,
+    direction: "informational" as ScoreDirection,
+  }))
+
+  const latency_means = {
+    latency_ms_total: 42_000,
+    latency_ms_turn1: 12_000,
+    latency_ms_turn2: 14_000,
+    latency_ms_turn3: 16_000,
+    latency_ms_per_call: 3_500,
+  }
+
+  const quality_only = make_summary(
+    [{ id: "e1", name: "Quality", scores: quality }],
+    { rc1: { e1: { means: { pass: 1, five: 3 } } } },
+  )
+  const plus_latency = make_summary(
+    [
+      { id: "e1", name: "Quality", scores: quality },
+      { id: "l1", name: "Latency", scores: latency },
+    ],
+    {
+      rc1: {
+        e1: { means: { pass: 1, five: 3 } },
+        l1: { means: latency_means },
+      },
+    },
+  )
+  const without = build_lens_data(quality_only.summary, quality_only.evals)
+  const with_latency = build_lens_data(plus_latency.summary, plus_latency.evals)
+
+  it("plots every informational latency key on the metrics radar", () => {
+    const keys = build_metric_axes(with_latency.keyMetas).map(
+      (axis) => axis.key,
+    )
+    expect(keys).toContain("l1::latency_ms_turn1")
+    expect(keys).toContain("l1::latency_ms_turn2")
+    expect(keys).toContain("l1::latency_ms_turn3")
+    expect(keys).toContain("l1::latency_ms_per_call")
+    // latency_ms_total is the quantity the usage rollup already reports, so it
+    // is deduplicated into that axis rather than plotted twice
+    expect(keys).toContain("cost::mean_total_llm_latency_ms")
+    expect(keys).not.toContain("l1::latency_ms_total")
+  })
+
+  it("leaves the aggregate exactly where it was", () => {
+    const lens = { kind: "aggregate" as const }
+    const baseline = normalized_lens_value(without, "rc1", lens)
+    expect(baseline).toBeCloseTo(0.75, 6)
+    expect(normalized_lens_value(with_latency, "rc1", lens)).toBe(baseline)
+  })
+
+  it("does not let a large informational value drag the aggregate", () => {
+    // Five keys in the tens of thousands next to two scores on 0..1: if they
+    // were counted at all, the mean could not still be 0.75
+    const lens = { kind: "aggregate" as const }
+    expect(normalized_lens_value(with_latency, "rc1", lens)).toBeCloseTo(
+      0.75,
+      6,
+    )
   })
 })
 

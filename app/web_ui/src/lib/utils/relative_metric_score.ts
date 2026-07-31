@@ -1,5 +1,7 @@
-// Scoring for "less is better" quantities - cost, latency, token counts, tool
-// call counts - which have no absolute range to plot against.
+// Scoring for open-ended quantities - cost, latency, token counts, tool call
+// counts - which have no absolute range to plot against. Almost all of them are
+// better the smaller they get; a few (cache reuse) are the other way round, and
+// `higherIsBetter` is the only thing that differs.
 //
 // A radar axis needs a bounded scale where further from the centre is better.
 // A pass rate already has one (0-1). Cost does not: there is no "maximum cost"
@@ -29,16 +31,29 @@ export interface RelativeMetricScoreOptions {
    * are within a percent of each other don't get drawn as opposites.
    */
   relFull?: number
+  /**
+   * Set for the rare metric whose good end is the top of the scale - cached
+   * tokens, where a bigger number is more of the prompt read from cache instead
+   * of paid for again. Only the direction flips: the spread-based compression
+   * below still measures the same spread, so two axes over the same numbers
+   * stay mirror images rather than differently compressed.
+   */
+  higherIsBetter?: boolean
 }
 
 /**
- * Position of a lower-is-better `value` within `values`, as a 0-100 score where
- * higher is better. Ties, an empty set, or a single value all land at 50.
+ * Position of `value` within `values`, as a 0-100 score where higher is always
+ * better. Lower raw values score highest unless `higherIsBetter` is set. Ties,
+ * an empty set, or a single value all land at 50.
  */
 export function relative_metric_score(
   value: number,
   values: number[],
-  { padding = 10, relFull = 0.7 }: RelativeMetricScoreOptions = {},
+  {
+    padding = 10,
+    relFull = 0.7,
+    higherIsBetter = false,
+  }: RelativeMetricScoreOptions = {},
 ): number {
   if (values.length === 0) {
     return 50
@@ -49,11 +64,12 @@ export function relative_metric_score(
   const range = hi - lo
   if (range <= 0) return 50
 
-  // 1) range-based normalized position
+  // 1) range-based normalized position, pointed at the good end
   const t = (value - lo) / range
+  const position = higherIsBetter ? t : 1 - t
 
-  // 2) raw padded linear score (lower value = higher score)
-  const raw = padding + (1 - t) * (100 - 2 * padding)
+  // 2) raw padded linear score (best value = highest score)
+  const raw = padding + position * (100 - 2 * padding)
 
   // 3) compress based on range relative to magnitude ("scale from zero")
   const scale = Math.max(Math.abs(hi), 1e-12)

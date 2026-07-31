@@ -69,3 +69,39 @@ describe("relative_metric_score", () => {
     expect(Number.isFinite(relative_metric_score(0, [0, 5]))).toBe(true)
   })
 })
+
+// Not every metric is better small. Cache reuse is the counter-example: a
+// cached token is one that was not paid for again.
+describe("relative_metric_score: higherIsBetter", () => {
+  const options = { higherIsBetter: true }
+
+  it("scores the highest value highest", () => {
+    expect(relative_metric_score(10, WIDE, options)).toBeCloseTo(90, 6)
+    expect(relative_metric_score(1, WIDE, options)).toBeCloseTo(10, 6)
+  })
+
+  it("is the exact mirror of the default direction", () => {
+    for (const value of [1, 3, 5, 7, 10]) {
+      expect(relative_metric_score(value, WIDE, options)).toBeCloseTo(
+        100 - relative_metric_score(value, WIDE),
+        6,
+      )
+    }
+  })
+
+  it("compresses a small spread the same way, so the two are comparable", () => {
+    const tight = [100, 101]
+    const spread =
+      relative_metric_score(101, tight, options) -
+      relative_metric_score(100, tight, options)
+    expect(spread).toBeCloseTo(
+      relative_metric_score(100, tight) - relative_metric_score(101, tight),
+      6,
+    )
+  })
+
+  it("still puts a tie at the midpoint", () => {
+    expect(relative_metric_score(7, [7, 7], options)).toBe(50)
+    expect(relative_metric_score(3, [], options)).toBe(50)
+  })
+})

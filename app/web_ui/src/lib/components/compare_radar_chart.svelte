@@ -1223,8 +1223,11 @@ Cost, latency and token axes score each run config against the others, so they s
      are axes like any other, and a task with one or two eval scores still has a
      chart worth drawing once cost, latency and tokens are on it. -->
 {#if chartKeys.length + visibleUsageKeys.length >= MIN_RADAR_AXES}
+  <!-- No margin of its own: this card is paired with the metrics radar in a
+       grid row and has to be exactly as tall as its neighbour, which a bottom
+       margin would eat 24px out of. Spacing belongs to whatever places it. -->
   <div
-    class="bg-white border border-gray-200 rounded-lg p-6 mb-6 h-full flex flex-col"
+    class="bg-white border border-gray-200 rounded-lg p-6 h-full flex flex-col"
   >
     <div class="flex flex-row gap-4 items-start">
       <div class="flex-grow">
