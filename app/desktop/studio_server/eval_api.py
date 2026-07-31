@@ -52,6 +52,7 @@ from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
+from kiln_server.statistics_lib import percentile
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -338,6 +339,34 @@ class ScoreSummary(BaseModel):
     mean_score: float | None = Field(
         description="The mean score across all used runs. None when n_used == 0."
     )
+    # Distribution fields. Optional/defaulted so older stored payloads and
+    # existing API consumers keep working — the mean is unchanged. Numeric
+    # (custom-type) scores like tool-call counts or per-turn latency are
+    # heavily right-skewed, where the mean hides the tail that drives cost.
+    min_score: float | None = Field(
+        default=None,
+        description="The lowest score across all used runs. None when n_used == 0.",
+    )
+    p25_score: float | None = Field(
+        default=None,
+        description="The 25th-percentile score across all used runs. None when n_used == 0.",
+    )
+    median_score: float | None = Field(
+        default=None,
+        description="The median (50th-percentile) score across all used runs. None when n_used == 0.",
+    )
+    p75_score: float | None = Field(
+        default=None,
+        description="The 75th-percentile score across all used runs. None when n_used == 0.",
+    )
+    p90_score: float | None = Field(
+        default=None,
+        description="The 90th-percentile score across all used runs. None when n_used == 0.",
+    )
+    max_score: float | None = Field(
+        default=None,
+        description="The highest score across all used runs. None when n_used == 0.",
+    )
     n_used: int = Field(
         description="Number of EvalRuns with all expected scores and not skipped."
     )
@@ -619,6 +648,39 @@ def count_human_evals(
     return fully_rated_count, partially_rated_count, not_rated_count
 
 
+def score_summary_from_values(values: list[float], n_excluded: int) -> ScoreSummary:
+    """Build a ScoreSummary from the raw per-run scores of one output score key.
+
+    `values` must already exclude skipped runs and runs missing this score —
+    the caller does that filtering, exactly as it always has for the mean.
+
+    Percentiles use linear interpolation between the two nearest order
+    statistics (`statistics_lib.percentile`), matching the numpy.percentile /
+    statistics.quantiles(method="inclusive") default. So an even-length list's
+    median is the average of the two middle values, and p90 of a short list is
+    interpolated rather than snapped to an existing datum. This is the only
+    percentile definition used anywhere in eval aggregation — do not mix in
+    another.
+
+    Empty `values` yields None for every statistic (never 0.0, which would read
+    downstream as a real datum rather than "no data").
+    """
+    count = len(values)
+    if count == 0:
+        return ScoreSummary(mean_score=None, n_used=0, n_excluded=n_excluded)
+    return ScoreSummary(
+        mean_score=sum(values) / count,
+        min_score=min(values),
+        p25_score=percentile(values, 25),
+        median_score=percentile(values, 50),
+        p75_score=percentile(values, 75),
+        p90_score=percentile(values, 90),
+        max_score=max(values),
+        n_used=count,
+        n_excluded=n_excluded,
+    )
+
+
 def compute_score_summary(
     eval: Eval,
     eval_config: EvalConfig,
@@ -639,10 +701,12 @@ def compute_score_summary(
         run_config.id: 0 for run_config in task_run_configs
     }
 
-    total_scores: Dict[ID_TYPE, Dict[str, float]] = defaultdict(
-        lambda: defaultdict(float)
+    # run_config_id -> output_score_json_key -> the individual scores, kept as a
+    # list (not a running total) so the summary can report percentiles as well
+    # as the mean.
+    score_values: Dict[ID_TYPE, Dict[str, list[float]]] = defaultdict(
+        lambda: defaultdict(list)
     )
-    score_counts: Dict[ID_TYPE, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
     excluded_counts: Dict[ID_TYPE, int] = defaultdict(int)
 
     for eval_run in eval_config.runs(readonly=True):
@@ -659,17 +723,18 @@ def compute_score_summary(
 
         if eval_run.skipped_reason is not None:
             excluded_counts[run_config_id] += 1
-            _ = total_scores[run_config_id]
+            _ = score_values[run_config_id]
             continue
 
         incomplete = False
         # Ensure this run_config_id has an entry even if no scores match
-        _ = total_scores[run_config_id]
+        _ = score_values[run_config_id]
         for output_score in eval.output_scores:
             score_key = output_score.json_key()
             if score_key in eval_run.scores:
-                total_scores[run_config_id][score_key] += eval_run.scores[score_key]
-                score_counts[run_config_id][score_key] += 1
+                score_values[run_config_id][score_key].append(
+                    eval_run.scores[score_key]
+                )
             else:
                 incomplete = True
 
@@ -679,17 +744,14 @@ def compute_score_summary(
     all_score_keys = [os.json_key() for os in eval.output_scores]
 
     results: Dict[ID_TYPE, Dict[str, ScoreSummary]] = {}
-    for run_config_id, output_scores in total_scores.items():
+    for run_config_id, output_scores in score_values.items():
         results[run_config_id] = {}
         n_excluded = excluded_counts[run_config_id]
         for score_key in all_score_keys:
-            count = score_counts[run_config_id][score_key]
-            total = output_scores.get(score_key, 0.0)
-            if count > 0 or n_excluded > 0:
-                results[run_config_id][score_key] = ScoreSummary(
-                    mean_score=total / count if count > 0 else None,
-                    n_used=count,
-                    n_excluded=n_excluded,
+            values = output_scores.get(score_key, [])
+            if len(values) > 0 or n_excluded > 0:
+                results[run_config_id][score_key] = score_summary_from_values(
+                    values, n_excluded
                 )
 
     run_config_percent_complete: Dict[ID_TYPE, float] = {}
@@ -1837,9 +1899,9 @@ def connect_evals_api(app: FastAPI):
             partial_incomplete_count = 0
             eval_config_n_excluded = 0
 
-            # output_score_json_key -> score/total for calculating the mean score
-            total_scores: Dict[str, float] = {}
-            score_counts: Dict[str, int] = {}
+            # output_score_json_key -> the individual scores, for the mean and
+            # the percentile summary (see score_summary_from_values)
+            score_values: Dict[str, list[float]] = {}
 
             for eval_run in eval_config.runs(readonly=True):
                 # Only include eval_runs for our specific run_config
@@ -1880,13 +1942,11 @@ def connect_evals_api(app: FastAPI):
                 incomplete = False
                 for output_score in eval.output_scores:
                     score_key = output_score.json_key()
-                    if score_key not in total_scores:
-                        total_scores[score_key] = 0
-                        score_counts[score_key] = 0
+                    if score_key not in score_values:
+                        score_values[score_key] = []
 
                     if score_key in eval_run.scores:
-                        total_scores[score_key] += eval_run.scores[score_key]
-                        score_counts[score_key] += 1
+                        score_values[score_key].append(eval_run.scores[score_key])
                     else:
                         # We're missing a required score, so this eval_run is incomplete
                         incomplete = True
@@ -1897,13 +1957,10 @@ def connect_evals_api(app: FastAPI):
             results: Dict[str, ScoreSummary | None] = {}
             for output_score in eval.output_scores:
                 score_key = output_score.json_key()
-                count = score_counts.get(score_key, 0)
-                total = total_scores.get(score_key, 0.0)
-                if count > 0 or eval_config_n_excluded > 0:
-                    results[score_key] = ScoreSummary(
-                        mean_score=total / count if count > 0 else None,
-                        n_used=count,
-                        n_excluded=eval_config_n_excluded,
+                values = score_values.get(score_key, [])
+                if len(values) > 0 or eval_config_n_excluded > 0:
+                    results[score_key] = score_summary_from_values(
+                        values, eval_config_n_excluded
                     )
                 else:
                     results[score_key] = None
