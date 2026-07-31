@@ -297,8 +297,9 @@ async def author_judge_prompt(
 
     Thin remote passthrough: marshal → SDK call → map back. The authoring
     (LLM) runs on kiln_server and returns the PROMPT only — the judge model
-    stays the caller's choice. Callers fall back to the static default judge
-    on any failure here; authoring must never block a drive.
+    stays the caller's choice. Authoring is REQUIRED for a multi-turn drive:
+    an error here surfaces to the client, which stops the drive on a
+    retryable error (no server, no eval — there is no fallback judge).
     """
     api_key = get_copilot_api_key()
     client = get_authenticated_client(api_key)

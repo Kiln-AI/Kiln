@@ -1,13 +1,16 @@
 // Compose a user-driven abort signal with a hard deadline, keeping the two
-// causes distinguishable after the fact. Callers race an interactive request
-// against a fallback: a fired deadline means "give up and degrade
-// gracefully", while a user abort must still cancel the whole flow — so the
-// catch block needs to know which one rejected the request.
+// causes distinguishable after the fact. A fired deadline means the call is
+// over-budget and the caller applies its failure policy (surface a retryable
+// error, or keep already-good state), while a user abort must still cancel
+// the whole flow — so the catch block needs to know which one rejected the
+// request.
 export type DeadlineSignal = {
   signal: AbortSignal
-  // True iff the deadline fired and the user signal did not. A user abort
-  // wins any race — checking the user signal keeps a simultaneous firing
-  // from masking an explicit cancel as a mere timeout.
+  // True iff the deadline fired and the user signal did not. Checking the
+  // user signal guarantees an explicit cancel is never reported as a mere
+  // timeout. (The reverse race — a cancel in the instant AFTER the deadline
+  // already rejected the call — reads as an ordinary failure, not a cancel;
+  // vanishing window, benign for both callers.)
   timed_out: () => boolean
 }
 

@@ -242,7 +242,7 @@ class AuthorJudgeApiInput(BaseModel):
 
 class AuthorJudgeApiOutput(BaseModel):
     """The authored judge prompt — plain text, rendered into the judge
-    harness verbatim (same contract as the static default it replaces)."""
+    harness verbatim."""
 
     judge_prompt: str
 

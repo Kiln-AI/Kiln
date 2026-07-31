@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest"
 import { with_deadline } from "./deadline_signal"
 
+// Real timers on purpose: fake timers cannot drive AbortSignal.timeout —
+// its clock lives in the platform, not in setTimeout.
 const tick = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 describe("with_deadline", () => {

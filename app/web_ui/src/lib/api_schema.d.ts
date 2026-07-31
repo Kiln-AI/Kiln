@@ -3301,9 +3301,9 @@ export interface paths {
          * @description Author a spec-tailored judge prompt for the multi-turn review.
          *
          *     The multi-turn counterpart of clarify_spec's judge_result: returns the
-         *     PROMPT only — the judge model is the user's pick. The client falls
-         *     back to the static default judge on any failure, so this call never
-         *     blocks a drive.
+         *     PROMPT only — the judge model is the user's pick. Authoring is a
+         *     REQUIRED step of the multi-turn drive: an error here stops the drive
+         *     on a retryable error client-side. There is no fallback judge.
          */
         post: operations["author_judge_api_projects__project_id__tasks__task_id__eval_builder_author_judge_post"];
         delete?: never;
@@ -4392,7 +4392,7 @@ export interface components {
         /**
          * AuthorJudgeApiOutput
          * @description The authored judge prompt — plain text, rendered into the judge
-         *     harness verbatim (same contract as the static default it replaces).
+         *     harness verbatim.
          */
         AuthorJudgeApiOutput: {
             /** Judge Prompt */

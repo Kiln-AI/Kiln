@@ -673,8 +673,8 @@
   let single_turn_examples: SubsampleBatchOutputItemApi[] = []
   let sdg_session_config: SyntheticDataGenerationSessionConfigApi | null = null
   // The judge, in the ONE JudgeConfig shape used by review and save alike.
-  // Single-turn: mapped from clarify_spec's judge_result. Multi-turn: none
-  // until review builds the default.
+  // SINGLE-TURN ONLY: mapped from clarify_spec's judge_result. Multi-turn
+  // never sets this — its judge is authored per-drive in on_drive_multi_turn.
   let judge_info: JudgeConfig | null = null
   // The judge the review step actually ran — save persists THIS object, so
   // the judge the user calibrated against is the judge that ships.
@@ -991,10 +991,16 @@
       : judge_model_combined
   }
 
-  // The authored multi-turn judge prompt, cached against the spec text it
-  // was written for: a re-drive with an unchanged spec reuses it instead
-  // of re-paying the authoring call; any spec edit misses and re-authors.
-  let authored_judge_cache: { spec_text: string; prompt: string } | null = null
+  // The authored multi-turn judge prompt, cached against BOTH authoring
+  // inputs — spec text and the task prompt (the task is re-fetched every
+  // drive, so its instruction can change mid-session too): a re-drive with
+  // both unchanged reuses it instead of re-paying the authoring call; any
+  // edit to either misses and re-authors.
+  let authored_judge_cache: {
+    spec_text: string
+    task_prompt: string
+    prompt: string
+  } | null = null
 
   // Author a spec-tailored judge prompt via the studio (kiln_server's
   // multi-turn judge author) — the multi-turn counterpart of clarify_spec's
@@ -1007,7 +1013,11 @@
     user_signal: AbortSignal,
   ): Promise<string> {
     const spec = spec_text()
-    if (authored_judge_cache?.spec_text === spec) {
+    const task_prompt = task?.instruction ?? ""
+    if (
+      authored_judge_cache?.spec_text === spec &&
+      authored_judge_cache.task_prompt === task_prompt
+    ) {
       return authored_judge_cache.prompt
     }
     const { signal, timed_out } = with_deadline(
@@ -1022,7 +1032,7 @@
           params: { path: { project_id, task_id } },
           body: {
             target_specification: spec,
-            target_task_prompt: task?.instruction ?? "",
+            target_task_prompt: task_prompt,
           },
           signal,
         },
@@ -1041,16 +1051,20 @@
       posthog.capture("eval_v2_judge_author_failure", {
         reason: "request_failed",
       })
+      // Thrown = the request never completed (network/transport) — the one
+      // case where "check your connection" is the right diagnosis.
       throw new KilnError(
-        "Couldn't author a judge for your spec. Check your Kiln connection and try again.",
+        "Couldn't reach the server to author a judge for your spec. Check your connection and try again.",
       )
     }
     if (error || !data?.judge_prompt) {
       posthog.capture("eval_v2_judge_author_failure", {
         reason: "request_failed",
       })
+      // The request completed and the server said no — surface ITS detail
+      // (e.g. "API key not configured"), like every sibling copilot call.
       throw new KilnError(
-        "Couldn't author a judge for your spec. Check your Kiln connection and try again.",
+        `Couldn't author a judge for your spec: ${createKilnError(error).getMessage()}`,
       )
     }
     // Same mechanical validation as the refine path: the prompt renders
@@ -1064,7 +1078,11 @@
         "The authored judge prompt wasn't usable. Try driving again.",
       )
     }
-    authored_judge_cache = { spec_text: spec, prompt: data.judge_prompt }
+    authored_judge_cache = {
+      spec_text: spec,
+      task_prompt,
+      prompt: data.judge_prompt,
+    }
     return data.judge_prompt
   }
 
@@ -1349,6 +1367,10 @@
     const approved_prompts = batch_plan.prompts
     generation_loading = true
     generation_error = null
+    // Clear a previous drive's stop banner up front: authoring can fail
+    // before the post-preflight clear, and its error must not render
+    // alongside a stale stop screen.
+    drive_stop = null
     multi_turn_phase = "preflight"
 
     try {
@@ -1401,26 +1423,21 @@
       // 2. The judge, resolved BEFORE the pipeline (not just before the
       // stream) so the preflight below covers the judge lane too — the
       // judge-dies-after-drives case is the expensive one. Runs on the
-      // user's picked judge model. Prompt: a judge already refined this
-      // session, else authored for this spec. Authoring is REQUIRED — a
-      // failure throws to the drive's error surface (retryable, nothing
-      // spent yet: authoring deliberately precedes preflight and SU spend).
-      // A user abort (Back/navigation) during it cancels the whole drive.
-      let judge: JudgeConfig
-      if (judge_info) {
-        judge = judge_info
-      } else {
-        multi_turn_phase = "authoring_judge"
-        const authored = await author_judge_prompt_for_spec(
-          new_copilot_abort_signal(),
-        )
-        judge = {
-          prompt: authored,
-          model_name: chosen_judge_model.model_name,
-          model_provider: chosen_judge_model.model_provider,
-        }
-        multi_turn_phase = "preflight"
+      // user's picked judge model. Authoring is REQUIRED — a failure throws
+      // to the drive's error surface (retryable, nothing spent yet:
+      // authoring deliberately precedes preflight and SU spend) — and the
+      // per-spec cache makes re-drives free. A user abort (Back/navigation)
+      // during it cancels the whole drive.
+      multi_turn_phase = "authoring_judge"
+      const authored = await author_judge_prompt_for_spec(
+        new_copilot_abort_signal(),
+      )
+      const judge: JudgeConfig = {
+        prompt: authored,
+        model_name: chosen_judge_model.model_name,
+        model_provider: chosen_judge_model.model_provider,
       }
+      multi_turn_phase = "preflight"
 
       // 3. Preflight ALL THREE lanes concurrently before anything runs or
       // is discarded: a dead key/model stops the drive here — before the
@@ -1464,7 +1481,6 @@
       const previous_batch_tag = multi_turn_batch_tag
       const previous_driven_cases = driven_cases
       const tags_to_replace = [...undeleted_batch_tags]
-      drive_stop = null
       trace_claims = []
       trace_reviews = []
       selected_trace_indices = []
@@ -1989,13 +2005,16 @@
         },
       ))
     } catch (e) {
-      if (!timed_out()) throw e
+      // Only a USER abort propagates (it cancels the whole save). Every
+      // other throw — deadline expiry, network/transport failure — keeps
+      // the reviewed judge, same as a server-side error below.
+      if (is_abort_error(e) && !timed_out()) throw e
+      const reason = timed_out() ? "timeout" : "request_failed"
       console.warn(
-        "Judge refinement timed out at save; keeping the reviewed judge.",
+        `Judge refinement ${reason === "timeout" ? "timed out" : "failed"} at save; keeping the reviewed judge.`,
+        e,
       )
-      posthog.capture("eval_v2_judge_refine_fallback", {
-        reason: "timeout",
-      })
+      posthog.capture("eval_v2_judge_refine_fallback", { reason })
       return judge
     }
     // Refine failed — ship the original judge rather than block the save.
@@ -2221,14 +2240,11 @@
         issue_description,
       }
 
-      // The judge to persist = the judge the review ran (review_judge). The
-      // fallbacks only fire if save is somehow reached without a review.
-      const review_judge_config =
-        review_judge ??
-        judge_info ??
-        (judge_model
-          ? build_default_judge_info(spec_text(), judge_model)
-          : null)
+      // The judge to persist = the judge the review ran (review_judge), or
+      // single-turn's clarify_spec judge if save is somehow reached without
+      // a review. Deliberately NO static-template last resort: silently
+      // persisting a generic judge is the one thing save must never do.
+      const review_judge_config = review_judge ?? judge_info
       if (!review_judge_config) {
         save_error = "No judge was configured — go back and re-run the review."
         return
@@ -2533,7 +2549,7 @@
     ? multi_turn_phase === "planning"
       ? `Planning a balanced batch of ${NUM_CASES} synthetic-user scenarios…`
       : multi_turn_phase === "authoring_judge"
-        ? "Writing a judge rubric tailored to your eval…"
+        ? "Authoring a judge rubric tailored to your eval…"
         : multi_turn_phase === "preflight"
           ? "Checking that your run config, synthetic-user driver, and judge respond before driving…"
           : `Creating ${multi_turn_total} synthetic users from the approved plan…`
@@ -2761,8 +2777,8 @@
                 : "Analyzing Eval"}
               description={generate_animation_description}
               warning={is_multi_turn &&
-              multi_turn_phase !== "preflight" &&
-              multi_turn_phase !== "authoring_judge"
+              (multi_turn_phase === "planning" ||
+                multi_turn_phase === "generating_cases")
                 ? "This may take a while, depending on the number of scenarios"
                 : is_multi_turn
                   ? null

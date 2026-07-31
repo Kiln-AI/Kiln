@@ -671,11 +671,36 @@ class TestAuthorJudge:
             assert response.status_code == 200
             assert "fabrication fails" in response.json()["judge_prompt"]
 
+    def test_author_judge_pins_multi_turn_trace_type(
+        self, client, author_judge_input, mock_api_key
+    ):
+        """The SDK payload must carry trace_type=multi_turn — the run-config
+        routing on kiln_server hangs entirely on this field, and the builder
+        (this route's only caller) is multi-turn-only. A regression to
+        single_turn would author the wrong rubric with a green suite."""
+        mock_output = MagicMock(spec=GenerateJudgePromptOutput)
+        mock_output.judge_evaluation_prompt = "1. Check the transcript."
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ) as mock_post:
+            client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
+
+        body = mock_post.call_args.kwargs["body"]
+        assert body.trace_type.value == "multi_turn"
+        assert body.target_specification == author_judge_input["target_specification"]
+
     def test_author_judge_remote_error_surfaces_upstream_message(
         self, client, author_judge_input, mock_api_key
     ):
         """A remote failure propagates the upstream status + message — the
-        client treats ANY error as fall-back-to-static-judge."""
+        client stops the drive on it (authoring is required, no fallback
+        judge), so the detail must survive to be shown."""
         mock_response = MagicMock()
         mock_response.status_code = 502
         mock_response.content = b'{"message": "upstream refused"}'

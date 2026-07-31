@@ -809,9 +809,9 @@ def connect_eval_builder_api(app: FastAPI):
         """Author a spec-tailored judge prompt for the multi-turn review.
 
         The multi-turn counterpart of clarify_spec's judge_result: returns the
-        PROMPT only — the judge model is the user's pick. The client falls
-        back to the static default judge on any failure, so this call never
-        blocks a drive.
+        PROMPT only — the judge model is the user's pick. Authoring is a
+        REQUIRED step of the multi-turn drive: an error here stops the drive
+        on a retryable error client-side. There is no fallback judge.
         """
         # Fail fast on a missing copilot key before the remote authoring call:
         # a keyless caller gets a clean 401, not a deep upstream error.
