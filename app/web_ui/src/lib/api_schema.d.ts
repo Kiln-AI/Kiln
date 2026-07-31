@@ -6764,9 +6764,9 @@ export interface components {
              * Properties
              * @description Properties to be used to execute the eval config. Legacy configs use a dict; V2 configs use typed properties.
              */
-            properties?: (components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"]) | {
+            properties?: {
                 [key: string]: unknown;
-            } | null;
+            } | (components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"]) | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -7024,13 +7024,21 @@ export interface components {
         };
         /**
          * EvalRun
-         * @description The results of running an eval on a single dataset item.
+         * @description The result of running an eval on a single item, stored as a child of the
+         *     EvalConfig that produced it.
          *
-         *     This is a child of an EvalConfig, which specifies how the scores were generated.
+         *     A run serves one of two purposes:
+         *     - eval_config_eval=False: evaluating a task run — the task was run with
+         *       task_run_config_id (which must be set) and the evaluator scored its output.
+         *     - eval_config_eval=True: evaluating the eval config itself — an existing
+         *       item's output was scored so the evaluator can be compared against human
+         *       ratings. task_run_config_id must be None.
          *
-         *     Eval runs can be one of 2 types:
-         *     1) eval_config_eval=False: we were evaluating a task run (a method of running the task). We get the task input from the dataset_id.input, run the task with the task_run_config, then ran the evaluator on that output. task_run_config_id must be set. The output saved in this model is the output of the task run.
-         *     2) eval_config_eval=True: we were evaluating an eval config (a method of evaluating the task). We used the existing dataset item input/output, and ran the evaluator on it. task_run_config_id must be None. The input/output saved in this model is the input/output of the dataset item.
+         *     The evaluated item comes from exactly one of two mutually-exclusive sources:
+         *     dataset_id (a TaskRun) or eval_input_id (a V2 EvalInput).
+         *
+         *     output and scores may be missing only when skipped_reason is set, marking an
+         *     item that was skipped rather than scored.
          */
         EvalRun: {
             /**
