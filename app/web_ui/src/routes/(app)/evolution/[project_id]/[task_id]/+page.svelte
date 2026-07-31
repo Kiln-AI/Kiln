@@ -57,6 +57,18 @@
   import CompareRadarChart, {
     type ComparisonFeature,
   } from "$lib/components/compare_radar_chart.svelte"
+  import CompareMetricsRadarChart from "$lib/components/compare_metrics_radar_chart.svelte"
+  import {
+    build_metric_axes,
+    default_metric_axis_keys,
+    informational_key_count,
+    COST_KEY,
+    INPUT_TOKENS_KEY,
+    LATENCY_KEY,
+    OUTPUT_TOKENS_KEY,
+    TOTAL_TOKENS_KEY,
+    USAGE_KEY_PREFIX,
+  } from "$lib/utils/evolution/metric_axes"
   import EvolutionCanvas from "./evolution_canvas.svelte"
   import NodeDetailPanel from "./node_detail_panel.svelte"
   import UnlinkedSection from "./unlinked_section.svelte"
@@ -102,11 +114,18 @@
   let pins: string[] = []
   // Matrix rows the user hid: score rows keyed `${evalId}::${scoreKey}`, usage
   // rows keyed by their metric. Hiding is a view concern - a hidden score row
-  // drops out of the matrix and off the radar; a hidden usage row only leaves
-  // the matrix, since this page feeds the radar no usage axes. Neither touches
-  // the lens aggregate or the node delta strips, which stay full-coverage.
+  // drops out of the matrix and off the eval-score radar; a hidden usage row
+  // only leaves the matrix (the metrics radar has its own axis picker, below).
+  // Neither touches the lens aggregate or the node delta strips, which stay
+  // full-coverage.
   let hidden_scores: string[] = []
   let hidden_usage: string[] = []
+  // Axes on the performance-metrics radar. Null means "follow the default set",
+  // which is what almost every visit wants and what keeps the URL clean; a list
+  // means the user picked. Kept separate from hidden_scores/hidden_usage on
+  // purpose: those hide matrix ROWS, and an axis being off this chart must not
+  // take its number out of the table.
+  let metric_axis_keys: string[] | null = null
 
   // Drill-down UI state (not round-tripped)
   let inspector: {
@@ -176,6 +195,20 @@
         ),
       ]
     }
+    // Present-but-empty is a legal state ("no metric axes"), so the test is
+    // against null rather than truthiness. Unknown keys are dropped once the
+    // score keys are known, in validateStateFromURL.
+    const urlMetrics = urlParams.get("metrics")
+    if (urlMetrics !== null) {
+      metric_axis_keys = [
+        ...new Set(
+          urlMetrics
+            .split(",")
+            .map((key) => key.trim())
+            .filter((key) => key.length > 0),
+        ),
+      ]
+    }
   }
 
   // After data loads, drop URL state that doesn't resolve against it
@@ -192,6 +225,16 @@
       ),
     )
     hidden_scores = hidden_scores.filter((key) => known_score_keys.has(key))
+    // Same for the metric axes: a stale URL must not leave the chart asking for
+    // an axis that no longer exists.
+    if (metric_axis_keys !== null) {
+      const known_metric_keys = new Set(
+        build_metric_axes(lens_data.keyMetas).map((axis) => axis.key),
+      )
+      metric_axis_keys = metric_axis_keys.filter((key) =>
+        known_metric_keys.has(key),
+      )
+    }
     // Note: the lens is validated against ALL score keys, not the visible ones -
     // a hidden row's key stays a legal lens.
     if (
@@ -249,6 +292,13 @@
     } else {
       urlParams.delete("hidden_usage")
     }
+    // Only written once the user has picked; the default set stays implicit so
+    // it can change without stale URLs pinning an old one.
+    if (metric_axis_keys !== null) {
+      urlParams.set("metrics", metric_axis_keys.join(","))
+    } else {
+      urlParams.delete("metrics")
+    }
 
     // Replace state: this only records existing UI state in the URL.
     // noScroll/keepFocus so selecting a node doesn't jump the page.
@@ -271,6 +321,7 @@
     pins,
     hidden_scores,
     hidden_usage,
+    metric_axis_keys,
   )
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function sync_url(..._dependencies: unknown[]) {
@@ -601,6 +652,105 @@
   $: radar_available =
     pinned_nodes.length > 0 && radar_axis_count >= MIN_RADAR_AXES
 
+  // ---- Performance-metrics radar ------------------------------------------
+  // The complement of the chart above: it plots what that one has to leave out
+  // (every lower-is-better score) plus the native usage rollup, so cost and
+  // speed are read on their own terms instead of being mixed in with quality.
+  // See $lib/utils/evolution/metric_axes.
+
+  $: all_metric_axes = build_metric_axes(lens_data.keyMetas)
+  $: default_metric_keys = default_metric_axis_keys(all_metric_axes)
+  $: shown_metric_keys = metric_axis_keys ?? default_metric_keys
+  // Filtered from the canonical list rather than mapped from the selection, so
+  // the axis order is stable no matter what order they were switched on in.
+  $: shown_metric_axes = all_metric_axes.filter((axis) =>
+    shown_metric_keys.includes(axis.key),
+  )
+
+  function toggle_metric_axis(key: string) {
+    const selected = new Set(shown_metric_keys)
+    if (selected.has(key)) {
+      selected.delete(key)
+    } else {
+      selected.add(key)
+    }
+    metric_axis_keys = all_metric_axes
+      .filter((axis) => selected.has(axis.key))
+      .map((axis) => axis.key)
+  }
+
+  function reset_metric_axes() {
+    metric_axis_keys = null
+  }
+
+  $: metric_menu_items = [
+    { label: "Metric Axes", header: true },
+    ...all_metric_axes.map((axis): FloatingMenuItem => {
+      const shown = shown_metric_keys.includes(axis.key)
+      return {
+        label: `${shown ? "✓" : "+"}  ${axis.label}`,
+        description: axis.evalName ?? "Usage rollup",
+        onclick: () => toggle_metric_axis(axis.key),
+      }
+    }),
+    ...(metric_axis_keys !== null
+      ? [{ label: "Reset to default", onclick: reset_metric_axes }]
+      : []),
+  ] as FloatingMenuItem[]
+
+  // Both charts drop informational scores - a radar can only say "further is
+  // better", and informational means there is no better end. Counted here so
+  // the omission is stated rather than silent.
+  $: metrics_not_shown_note = (() => {
+    const parts: string[] = []
+    const off = all_metric_axes.length - shown_metric_axes.length
+    if (off > 0) {
+      parts.push(`${off} ${off === 1 ? "metric" : "metrics"} not selected`)
+    }
+    const informational = informational_key_count(lens_data.keyMetas)
+    if (informational > 0) {
+      parts.push(
+        `${informational} informational ${
+          informational === 1 ? "score" : "scores"
+        } (no better direction)`,
+      )
+    }
+    return parts.length > 0 ? parts.join(", ") : null
+  })()
+
+  // Score keys come from the lens; the usage rollup comes from the lazily
+  // fetched per-config summary. Both caches are passed in as arguments so the
+  // getter is rebuilt (and the chart redrawn) when either arrives.
+  $: get_metric_value = make_metric_value_getter(lens_data, eval_scores_cache)
+  function make_metric_value_getter(
+    data: LensData,
+    cache: Record<string, RunConfigEvalScoresSummary>,
+  ) {
+    return (run_config_id: string, key: string): number | null => {
+      if (!key.startsWith(USAGE_KEY_PREFIX)) {
+        return data.raw.get(run_config_id)?.get(key) ?? null
+      }
+      const usage = cache[run_config_id]?.mean_usage
+      if (!usage) {
+        return null
+      }
+      switch (key) {
+        case COST_KEY:
+          return usage.mean_cost ?? null
+        case TOTAL_TOKENS_KEY:
+          return usage.mean_total_tokens ?? null
+        case LATENCY_KEY:
+          return usage.mean_total_llm_latency_ms ?? null
+        case INPUT_TOKENS_KEY:
+          return usage.mean_input_tokens ?? null
+        case OUTPUT_TOKENS_KEY:
+          return usage.mean_output_tokens ?? null
+        default:
+          return null
+      }
+    }
+  }
+
   function toggle_pin(id: string) {
     if (pins.includes(id)) {
       pins = pins.filter((pin) => pin !== id)
@@ -892,45 +1042,75 @@
       {/if}
     </div>
 
-    <!-- Section 2: the radar chart. Full page width means height is the only
-         thing the plot can grow into, so the floor is generous: the chart's
-         own 640px box plus its card header and padding. Tall enough for
-         wrapped axis names all the way round the outer ring plus the
-         scrolling legend underneath. -->
-    <div class="min-w-0 min-h-[800px] flex flex-col mt-6">
-      {#if radar_available}
-        <CompareRadarChart
-          comparisonFeatures={comparison_features}
-          getModelValueRaw={get_model_value_raw}
+    <!-- Section 2: the two radars, side by side - quality on the left, what it
+         cost to get it on the right. They only pair up once there is room for
+         two rings plus their axis names (each needs roughly 540px before the
+         plot starts losing to the labels), so below xl they stack and each one
+         is page-width again.
+
+         Height is the only thing a radar can grow into, so the floor is
+         generous: the chart's own 640px box plus its card header and padding.
+         Tall enough for wrapped axis names all the way round the outer ring
+         plus the scrolling legend underneath. -->
+    <div class="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <div class="min-w-0 min-h-[800px] flex flex-col">
+        {#if radar_available}
+          <CompareRadarChart
+            comparisonFeatures={comparison_features}
+            getModelValueRaw={get_model_value_raw}
+            run_configs={run_configs ?? []}
+            model_info={$model_info}
+            {prompts}
+            selectedRunConfigIds={pinned_ids}
+            scoreAxisMaxes={score_axis_maxes}
+            scoreDirections={score_directions}
+            legend_position="bottom"
+          />
+        {:else}
+          <div
+            class="flex-1 bg-white border border-gray-200 rounded-lg p-6 flex flex-col justify-center items-center text-center"
+          >
+            <div class="text-lg font-medium text-gray-900 mb-1">
+              {pinned_nodes.length === 0
+                ? "Pin configs to compare"
+                : "Not enough scores to plot"}
+            </div>
+            <div class="text-sm text-gray-500 max-w-md">
+              {#if pinned_nodes.length === 0}
+                Select a run config, or hover a card and hit Pin, to build a
+                compare set. Up to {MAX_PINS} configs are charted here and listed
+                in the table below.
+              {:else}
+                A radar chart needs at least {MIN_RADAR_AXES} higher-is-better scores.
+                Every score is still in the comparison table below.
+              {/if}
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <div class="min-w-0 min-h-[800px] flex flex-col">
+        <CompareMetricsRadarChart
+          axes={shown_metric_axes}
+          getMetricValue={get_metric_value}
           run_configs={run_configs ?? []}
           model_info={$model_info}
           {prompts}
           selectedRunConfigIds={pinned_ids}
-          scoreAxisMaxes={score_axis_maxes}
-          scoreDirections={score_directions}
-          legend_position="bottom"
-        />
-      {:else}
-        <div
-          class="flex-1 bg-white border border-gray-200 rounded-lg p-6 flex flex-col justify-center items-center text-center"
+          notShownNote={metrics_not_shown_note}
         >
-          <div class="text-lg font-medium text-gray-900 mb-1">
-            {pinned_nodes.length === 0
-              ? "Pin configs to compare"
-              : "Not enough scores to plot"}
-          </div>
-          <div class="text-sm text-gray-500 max-w-md">
-            {#if pinned_nodes.length === 0}
-              Select a run config, or hover a card and hit Pin, to build a
-              compare set. Up to {MAX_PINS} configs are charted here and listed in
-              the table below.
-            {:else}
-              A radar chart needs at least {MIN_RADAR_AXES} higher-is-better scores.
-              Every score is still in the comparison table below.
-            {/if}
-          </div>
-        </div>
-      {/if}
+          <FloatingMenu slot="controls" items={metric_menu_items} width="w-64">
+            <button
+              slot="trigger"
+              type="button"
+              class="btn btn-sm font-normal"
+              title="Choose which metrics are plotted"
+            >
+              Axes ({shown_metric_axes.length})
+            </button>
+          </FloatingMenu>
+        </CompareMetricsRadarChart>
+      </div>
     </div>
 
     <!-- Section 3: the comparison matrix, full page width -->

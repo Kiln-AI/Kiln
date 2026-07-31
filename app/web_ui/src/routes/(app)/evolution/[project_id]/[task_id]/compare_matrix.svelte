@@ -253,7 +253,7 @@
                 <button
                   type="button"
                   class="w-3 h-3 flex-none text-gray-400 hover:text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="Hide this row (matrix only — usage metrics are not radar axes)"
+                  title="Hide this row from the table (the metrics radar has its own Axes menu)"
                   aria-label="Hide {usage_row.label}"
                   on:click|stopPropagation={() =>
                     dispatch("hide_usage", usage_row.key)}

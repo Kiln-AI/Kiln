@@ -23,6 +23,7 @@
     getRunConfigInputTransformSummaryLabel,
   } from "$lib/utils/run_config_formatters"
   import { formatLatency } from "$lib/utils/formatters"
+  import { relative_metric_score } from "$lib/utils/relative_metric_score"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
@@ -183,40 +184,8 @@ Cost, latency and token axes score each run config against the others, so they s
   }
 
   // Position of a lower-is-better value within the selected configs, as a 0-100
-  // score. Ties (or a single config) land at 50: no better, no worse.
-  export function metricToScore(
-    cost: number,
-    costs: number[],
-    {
-      padding = 10, // keep endpoints away from 0/100
-      relFull = 0.7, // when (hi-lo)/|hi| reaches this, use full spread (k=1)
-    }: {
-      padding?: number
-      relFull?: number
-    } = {},
-  ): number {
-    const lo = Math.min(...costs)
-    const hi = Math.max(...costs)
-
-    const range = hi - lo
-    if (range <= 0) return 50
-
-    // 1) range-based normalized position
-    const t = (cost - lo) / range
-
-    // 2) raw padded linear score (lower cost = higher score)
-    const raw = padding + (1 - t) * (100 - 2 * padding)
-
-    // 3) compress based on range relative to magnitude ("scale from zero")
-    const scale = Math.max(Math.abs(hi), 1e-12)
-    const relRange = range / scale // e.g. 0.02..0.03 => 0.01/0.03 ≈ 0.33
-    const k = Math.max(0, Math.min(1, relRange / relFull)) // small relRange -> k<1 -> compress
-
-    // 4) mix toward midpoint
-    const score = 50 + k * (raw - 50)
-
-    return Math.max(0, Math.min(100, score))
-  }
+  // score, lives in $lib/utils/relative_metric_score - the metrics radar scores
+  // its axes with the same function, so "better" means one thing in both charts.
 
   // Eval score keys (the cost section is excluded - its metrics come back as usage
   // axes below, on their own terms)
@@ -951,7 +920,7 @@ Cost, latency and token axes score each run config against the others, so they s
         const rawValue = getModelValueRaw(config.id ?? null, key)
         if (rawValue === null) return null
         return isLowerIsBetterMetric(key)
-          ? metricToScore(rawValue, usageValues[key] || [])
+          ? relative_metric_score(rawValue, usageValues[key] || [])
           : rawValue
       })
       const name = getSeriesDisplayName(config)
