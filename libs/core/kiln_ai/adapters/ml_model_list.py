@@ -5619,7 +5619,7 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="deepseek/deepseek-v4-flash",
+                model_id="deepseek/deepseek-v4-flash-0731",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
