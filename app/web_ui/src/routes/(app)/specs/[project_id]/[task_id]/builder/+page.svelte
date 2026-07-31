@@ -189,15 +189,12 @@
     return error instanceof DOMException && error.name === "AbortError"
   }
 
-  // Deadlines on the two judge-copilot calls — the only copilot calls with a
-  // graceful substitute (static template / keep the current judge). The
-  // server retries for up to ~20 minutes for callers that can afford to
-  // wait; an interactive flow cannot, so these bail out and fall back.
-  // Authoring is an invisible enhancement with a perfect substitute: bail
-  // fast. Refine is user-initiated and its fallback drops their graded
-  // feedback, so it gets one full server attempt before giving up.
-  const AUTHOR_JUDGE_DEADLINE_MS = 60_000
-  const REFINE_JUDGE_DEADLINE_MS = 300_000
+  // Deadline on the judge-copilot calls (authoring and refine-at-save): one
+  // full server attempt. The server retries for up to ~20 minutes for
+  // callers that can afford to wait; an interactive flow cannot, so past
+  // this the call is surfaced as failed — authoring as a retryable drive
+  // error, refine by keeping the judge the reviewer already calibrated.
+  const JUDGE_COPILOT_DEADLINE_MS = 300_000
 
   // ── Navigation (Svelte shallow routing).
   //
@@ -1001,23 +998,25 @@
 
   // Author a spec-tailored judge prompt via the studio (kiln_server's
   // multi-turn judge author) — the multi-turn counterpart of clarify_spec's
-  // judge_result. Returns null on ANY failure, deadline expiry, or unusable
-  // prompt: the caller falls back to the static default judge, so authoring
-  // can never block or stall a drive. A USER abort still propagates —
-  // cancelling the drive cancels this; only the deadline degrades silently.
+  // judge_result. Authoring is REQUIRED: any failure, deadline expiry, or
+  // unusable prompt throws, stopping the drive on the same retryable error
+  // surface as every other copilot step (v1's contract too: no server, no
+  // spec — a silently generic judge would mean a silently lenient eval).
+  // A USER abort propagates as an AbortError, cancelling the drive.
   async function author_judge_prompt_for_spec(
     user_signal: AbortSignal,
-  ): Promise<string | null> {
+  ): Promise<string> {
     const spec = spec_text()
     if (authored_judge_cache?.spec_text === spec) {
       return authored_judge_cache.prompt
     }
     const { signal, timed_out } = with_deadline(
       user_signal,
-      AUTHOR_JUDGE_DEADLINE_MS,
+      JUDGE_COPILOT_DEADLINE_MS,
     )
+    let data, error
     try {
-      const { data, error } = await client.POST(
+      ;({ data, error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/eval_builder/author_judge",
         {
           params: { path: { project_id, task_id } },
@@ -1027,40 +1026,46 @@
           },
           signal,
         },
-      )
-      if (error || !data?.judge_prompt) {
-        posthog.capture("eval_v2_judge_author_fallback", {
-          reason: "request_failed",
-        })
-        return null
-      }
-      // Same mechanical validation as the refine path: the prompt renders
-      // into the judge harness verbatim, so an unusable one falls back.
-      const validation_error = validate_refined_judge_prompt(data.judge_prompt)
-      if (validation_error) {
-        posthog.capture("eval_v2_judge_author_fallback", {
-          reason: "invalid_authored_prompt",
-        })
-        return null
-      }
-      authored_judge_cache = { spec_text: spec, prompt: data.judge_prompt }
-      return data.judge_prompt
+      ))
     } catch (e) {
       // Deadline check FIRST: its rejection is a TimeoutError (not
       // AbortError) in most engines, but engines vary — timed_out() is the
       // authoritative discriminator either way.
       if (timed_out()) {
-        posthog.capture("eval_v2_judge_author_fallback", {
-          reason: "timeout",
-        })
-        return null
+        posthog.capture("eval_v2_judge_author_failure", { reason: "timeout" })
+        throw new KilnError(
+          "Authoring your judge took too long. Try driving again.",
+        )
       }
       if (is_abort_error(e)) throw e
-      posthog.capture("eval_v2_judge_author_fallback", {
+      posthog.capture("eval_v2_judge_author_failure", {
         reason: "request_failed",
       })
-      return null
+      throw new KilnError(
+        "Couldn't author a judge for your spec. Check your Kiln connection and try again.",
+      )
     }
+    if (error || !data?.judge_prompt) {
+      posthog.capture("eval_v2_judge_author_failure", {
+        reason: "request_failed",
+      })
+      throw new KilnError(
+        "Couldn't author a judge for your spec. Check your Kiln connection and try again.",
+      )
+    }
+    // Same mechanical validation as the refine path: the prompt renders
+    // into the judge harness verbatim, so an unusable one is a failure.
+    const validation_error = validate_refined_judge_prompt(data.judge_prompt)
+    if (validation_error) {
+      posthog.capture("eval_v2_judge_author_failure", {
+        reason: "invalid_authored_prompt",
+      })
+      throw new KilnError(
+        "The authored judge prompt wasn't usable. Try driving again.",
+      )
+    }
+    authored_judge_cache = { spec_text: spec, prompt: data.judge_prompt }
+    return data.judge_prompt
   }
 
   // Commit the lanes and start the run. Refuses on an unset lane — the
@@ -1396,11 +1401,11 @@
       // 2. The judge, resolved BEFORE the pipeline (not just before the
       // stream) so the preflight below covers the judge lane too — the
       // judge-dies-after-drives case is the expensive one. Runs on the
-      // user's picked judge model. Prompt precedence: a judge already
-      // refined this session > freshly authored for this spec > static
-      // default. Authoring is deadline-bounded and falls back silently, so
-      // it can stall a drive by at most the deadline — but a user abort
-      // (Back/navigation) during it still cancels the whole drive.
+      // user's picked judge model. Prompt: a judge already refined this
+      // session, else authored for this spec. Authoring is REQUIRED — a
+      // failure throws to the drive's error surface (retryable, nothing
+      // spent yet: authoring deliberately precedes preflight and SU spend).
+      // A user abort (Back/navigation) during it cancels the whole drive.
       let judge: JudgeConfig
       if (judge_info) {
         judge = judge_info
@@ -1409,13 +1414,11 @@
         const authored = await author_judge_prompt_for_spec(
           new_copilot_abort_signal(),
         )
-        judge = authored
-          ? {
-              prompt: authored,
-              model_name: chosen_judge_model.model_name,
-              model_provider: chosen_judge_model.model_provider,
-            }
-          : build_default_judge_info(spec_text(), chosen_judge_model)
+        judge = {
+          prompt: authored,
+          model_name: chosen_judge_model.model_name,
+          model_provider: chosen_judge_model.model_provider,
+        }
         multi_turn_phase = "preflight"
       }
 
@@ -1967,12 +1970,13 @@
         t.claims.some((c) => c.human_grade === "disagree"),
     )
     if (!has_disagreement) return judge
-    // Deadline-bounded like authoring, but with a full server attempt's
-    // budget: the fallback here drops the user's graded feedback, so it is
-    // worth waiting longer for. A user abort still propagates as before.
+    // Deadline-bounded, but unlike authoring a refine failure does NOT
+    // block: the fallback keeps the judge the reviewer just calibrated —
+    // retaining a reviewed judge isn't degradation, and a save should never
+    // die on an optional improvement. A user abort propagates as before.
     const { signal, timed_out } = with_deadline(
       new_copilot_abort_signal(),
-      REFINE_JUDGE_DEADLINE_MS,
+      JUDGE_COPILOT_DEADLINE_MS,
     )
     let data, error
     try {
