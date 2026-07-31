@@ -2078,13 +2078,23 @@ def test_v2_eval_config_rejects_root_model_fields():
         )
 
 
-def test_v2_eval_config_requires_typed_properties():
-    """V2 config rejects a raw dict for properties."""
-    with pytest.raises(ValueError, match="V2 config requires typed properties"):
+def test_v2_eval_config_rejects_undiscriminated_dict():
+    """A V2 properties dict without a valid "type" discriminator is rejected."""
+    with pytest.raises(ValidationError, match="type"):
         EvalConfig(
             name="Bad V2",
             config_type=EvalConfigType.v2,
             properties={"eval_steps": ["step"]},
+        )
+
+
+def test_v2_eval_config_requires_typed_properties():
+    """V2 config rejects missing properties."""
+    with pytest.raises(ValueError, match="V2 config requires typed properties"):
+        EvalConfig(
+            name="Bad V2",
+            config_type=EvalConfigType.v2,
+            properties=None,
         )
 
 
@@ -2409,6 +2419,36 @@ def test_eval_input_multi_turn():
     assert ei.data.synthetic_user_info.behavior_guidance is None
 
 
+def test_eval_input_rejects_empty_tag():
+    """An empty tag is rejected: tag filters can never select it."""
+    with pytest.raises(ValidationError, match="Tags cannot be empty strings"):
+        EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+            tags=[""],
+        )
+
+
+def test_eval_input_rejects_tag_with_spaces():
+    """A tag containing spaces is rejected, matching TaskRun tag rules."""
+    with pytest.raises(ValidationError, match="Tags cannot contain spaces"):
+        EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+            tags=["bad tag"],
+        )
+
+
+def test_eval_input_valid_tags_round_trip():
+    """Valid tags are accepted and survive a dump/validate cycle."""
+    tags = ["eval_slice", "scenario:1", "synthetic_user_batch:b1"]
+    ei = EvalInput(
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+        tags=tags,
+    )
+    assert ei.tags == tags
+    rebuilt = EvalInput.model_validate(ei.model_dump())
+    assert rebuilt.tags == tags
+
+
 def test_multi_turn_synthetic_requires_synthetic_user_info():
     """The persona is required — a case without one can't be re-driven."""
     with pytest.raises(ValidationError, match="synthetic_user_info"):
@@ -2728,7 +2768,7 @@ class TestV2TemplateValidation:
             )
 
     def test_reference_data_only_prompt_template_rejected(self):
-        """A prompt_template referencing only reference_data is rejected (D30)."""
+        """A prompt_template referencing only reference_data is rejected: it never varies with the model output."""
         with pytest.raises(ValidationError, match="never references the model output"):
             _make_v2_eval_config(
                 properties=LlmJudgeProperties(
@@ -2750,7 +2790,7 @@ class TestV2TemplateValidation:
         assert cfg is not None
 
     def test_prompt_template_with_trace_passes(self):
-        """A prompt_template referencing trace passes (D30)."""
+        """A prompt_template referencing trace passes: trace counts as model output."""
         cfg = _make_v2_eval_config(
             properties=LlmJudgeProperties(
                 model_name="m",
@@ -2761,7 +2801,7 @@ class TestV2TemplateValidation:
         assert cfg is not None
 
     def test_prompt_template_with_task_input_passes(self):
-        """A prompt_template referencing task_input passes (D30)."""
+        """A prompt_template referencing task_input passes: it varies per run."""
         cfg = _make_v2_eval_config(
             properties=LlmJudgeProperties(
                 model_name="m",
@@ -3004,6 +3044,52 @@ class TestV1EvalConfigCoexistence:
         assert config.properties["type"] == "exact_match"
         assert config.properties["eval_steps"] == ["step1"]
 
+    def test_v1_properties_fully_colliding_with_v2_shape_stay_dict(self):
+        """A legacy properties dict that would parse cleanly as a typed V2 class must still load as a plain dict."""
+        props = {
+            "eval_steps": ["step1"],
+            "type": "llm_judge",
+            "model_name": "m",
+            "model_provider": "p",
+            "prompt_template": "{{ final_message }}",
+        }
+        # Premise: this dict is a valid LlmJudgeProperties payload, so only
+        # explicit dispatch (not union fallback) keeps it untyped below.
+        assert isinstance(LlmJudgeProperties.model_validate(props), LlmJudgeProperties)
+
+        config = EvalConfig.model_validate(
+            {
+                "name": "Full Collision",
+                "config_type": "g_eval",
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "properties": props,
+            }
+        )
+        assert config.config_type == EvalConfigType.g_eval
+        assert type(config.properties) is dict
+        assert config.properties["type"] == "llm_judge"
+        assert config.properties["eval_steps"] == ["step1"]
+
+    def test_v2_config_from_dict_round_trips_typed(self):
+        """V2 properties load from a raw dict into the typed class and survive dump/validate."""
+        raw = {
+            "name": "From Disk V2",
+            "config_type": "v2",
+            "properties": {
+                "type": "llm_judge",
+                "model_name": "m",
+                "model_provider": "p",
+                "prompt_template": "{{ final_message }}",
+            },
+        }
+        config = EvalConfig.model_validate(raw)
+        assert isinstance(config.properties, LlmJudgeProperties)
+
+        reloaded = EvalConfig.model_validate(config.model_dump())
+        assert isinstance(reloaded.properties, LlmJudgeProperties)
+        assert reloaded.properties == config.properties
+
     def test_v1_llm_as_judge_config_type_preserved(self):
         config = EvalConfig(
             name="LLM Judge V1",
@@ -3054,7 +3140,7 @@ class TestV1EvalConfigCoexistence:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: V1 EvalRun output=None guard (Item 1c)
+# Legacy EvalRun output: may be None only when skipped_reason is set
 # ---------------------------------------------------------------------------
 
 
@@ -3164,12 +3250,12 @@ class TestV1EvalRunOutputNoneGuard:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: CodeEvalProperties dead SyntaxError catch removed (Item 5.4)
+# CodeEvalProperties code validation: must parse and define a score function
 # ---------------------------------------------------------------------------
 
 
-class TestCodeEvalNoDeadSyntaxErrorCatch:
-    """After removing the dead except SyntaxError, ast.parse + score fn check still works."""
+class TestCodeEvalCodeValidation:
+    """CodeEvalProperties.code must be parseable Python defining a module-level score function."""
 
     def test_valid_code_with_score_fn(self):
         props = CodeEvalProperties(
@@ -3406,7 +3492,7 @@ class TestV2EvalResult:
 
 
 # ---------------------------------------------------------------------------
-# D27: expected_tools non-empty (ToolCallCheckProperties)
+# ToolCallCheckProperties.expected_tools must contain at least one tool
 # ---------------------------------------------------------------------------
 class TestToolCallCheckExpectedToolsValidator:
     def test_empty_expected_tools_rejected(self):
@@ -3421,7 +3507,7 @@ class TestToolCallCheckExpectedToolsValidator:
 
 
 # ---------------------------------------------------------------------------
-# D28: ArgMatch regex validation
+# ArgMatch.value must compile as a regex when match_mode is "regex"
 # ---------------------------------------------------------------------------
 class TestArgMatchRegexValidator:
     def test_bad_regex_rejected(self):
@@ -3442,7 +3528,7 @@ class TestArgMatchRegexValidator:
 
 
 # ---------------------------------------------------------------------------
-# D29: reference_key min_length=1
+# reference_key must be a non-empty string when provided
 # ---------------------------------------------------------------------------
 class TestReferenceKeyMinLength:
     def test_exact_match_empty_reference_key_rejected(self):
