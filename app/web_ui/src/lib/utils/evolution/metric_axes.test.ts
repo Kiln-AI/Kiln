@@ -22,7 +22,13 @@ import {
   known_metric_axis_keys,
   metric_eval_ids,
   wrap_axis_label,
+  metric_family_bands,
+  metric_band_arc,
+  fit_radar,
+  MIN_RADAR_RADIUS,
   type MetricAxis,
+  type RadarAxisLabel,
+  type MetricFamily,
 } from "./metric_axes"
 
 type ScoreDirection = components["schemas"]["ScoreDirection"]
@@ -616,5 +622,355 @@ describe("wrap_axis_label", () => {
         expect(line.length).toBeLessThanOrEqual(13)
       }
     }
+  })
+})
+
+// Every quantity the catalog knows, so the default set can be judged on a task
+// that has all of them rather than on whatever a fixture happens to carry.
+const FULL_KEY_METAS: ScoreKeyMeta[] = [
+  ...KEY_METAS,
+  meta("e1", "Efficiency", "peak_input_tokens", "lower_is_better"),
+  meta("e1", "Efficiency", "max_silent_run", "lower_is_better"),
+  meta("e1", "Efficiency", "calls_before_first_text", "lower_is_better"),
+  meta("l1", "Latency", "latency_ms_turn3", "informational"),
+]
+
+function families(axes: MetricAxis[]): MetricFamily[] {
+  return axes.map((axis) => axis.family)
+}
+
+function axis(family: MetricFamily, label: string): MetricAxis {
+  return {
+    key: `k::${label}`,
+    label,
+    valueLabel: label,
+    quantity: label,
+    family,
+    source: "score",
+    unit: "count",
+    better: "lower",
+    evalName: "e",
+  }
+}
+
+describe("the default axis set", () => {
+  const shown = (keys: string[]) =>
+    build_metric_axes(FULL_KEY_METAS).filter((a) => keys.includes(a.key))
+
+  it("is eleven axes - a radar past a dozen is a circle, not a shape", () => {
+    expect(DEFAULT_METRIC_AXIS_COUNT).toBe(11)
+    const keys = default_metric_axis_keys(build_metric_axes(FULL_KEY_METAS))
+    expect(keys).toHaveLength(11)
+  })
+
+  it("gives every family a place and lets none of them take over", () => {
+    const keys = default_metric_axis_keys(build_metric_axes(FULL_KEY_METAS))
+    const counts = new Map<MetricFamily, number>()
+    for (const family of families(shown(keys))) {
+      counts.set(family, (counts.get(family) ?? 0) + 1)
+    }
+    expect(Object.fromEntries(counts)).toEqual({
+      cost: 1,
+      tokens: 3,
+      calls: 3,
+      speed: 2,
+      responsiveness: 2,
+    })
+  })
+
+  it("defers the per-turn latencies - five Speed axes swamped the ring", () => {
+    const keys = default_metric_axis_keys(build_metric_axes(FULL_KEY_METAS))
+    expect(keys).not.toContain("l1::latency_ms_turn1")
+    expect(keys).not.toContain("l1::latency_ms_turn3")
+    // Deferred, never dropped: still an axis the Axes menu can switch on
+    expect(known_metric_axis_keys(FULL_KEY_METAS)).toContain(
+      "l1::latency_ms_turn1",
+    )
+  })
+
+  it("defers cached tokens, which the hit rate already says normalized", () => {
+    const keys = default_metric_axis_keys(build_metric_axes(FULL_KEY_METAS))
+    const labelled = labels(shown(keys))
+    expect(labelled).toContain("Cache Hit Rate")
+    expect(labelled).not.toContain("Cache Reuse")
+  })
+})
+
+describe("metric_family_bands", () => {
+  it("returns one run per family, in ring order, with its span", () => {
+    const bands = metric_family_bands([
+      axis("cost", "Cost Efficiency"),
+      axis("tokens", "Token Economy"),
+      axis("tokens", "Context Headroom"),
+      axis("calls", "Tool Call Economy"),
+    ])
+    expect(bands).toEqual([
+      {
+        family: "cost",
+        label: METRIC_FAMILY_LABELS.cost,
+        startIndex: 0,
+        endIndex: 0,
+        count: 1,
+      },
+      {
+        family: "tokens",
+        label: METRIC_FAMILY_LABELS.tokens,
+        startIndex: 1,
+        endIndex: 2,
+        count: 2,
+      },
+      {
+        family: "calls",
+        label: METRIC_FAMILY_LABELS.calls,
+        startIndex: 3,
+        endIndex: 3,
+        count: 1,
+      },
+    ])
+  })
+
+  it("covers every axis exactly once, so no label sits outside a band", () => {
+    const axes = build_metric_axes(FULL_KEY_METAS)
+    const bands = metric_family_bands(axes)
+    const covered = bands.flatMap((band) =>
+      Array.from(
+        { length: band.count },
+        (_, offset) => band.startIndex + offset,
+      ),
+    )
+    expect(covered).toEqual(axes.map((_, index) => index))
+    expect(bands[bands.length - 1].endIndex).toBe(axes.length - 1)
+  })
+
+  it("draws nothing when there is only one family - or none", () => {
+    // The case the Axes menu reaches when it is narrowed to a single family: a
+    // full circle of arc divides nothing, and a key to it would be worse.
+    expect(
+      metric_family_bands([
+        axis("tokens", "Token Economy"),
+        axis("tokens", "Context Headroom"),
+      ]),
+    ).toEqual([])
+    expect(metric_family_bands([axis("cost", "Cost Efficiency")])).toEqual([])
+    expect(metric_family_bands([])).toEqual([])
+  })
+
+  it("loses a family entirely when its last axis is switched off", () => {
+    const all = [
+      axis("cost", "Cost Efficiency"),
+      axis("tokens", "Token Economy"),
+      axis("calls", "Tool Call Economy"),
+    ]
+    const withoutTokens = all.filter((entry) => entry.family !== "tokens")
+    const bands = metric_family_bands(withoutTokens)
+    expect(bands.map((band) => band.family)).toEqual(["cost", "calls"])
+    expect(bands.map((band) => band.label)).not.toContain(
+      METRIC_FAMILY_LABELS.tokens,
+    )
+  })
+
+  it("shows a split family as the two arcs it would actually be drawn as", () => {
+    const bands = metric_family_bands([
+      axis("tokens", "Token Economy"),
+      axis("calls", "Tool Call Economy"),
+      axis("tokens", "Context Headroom"),
+    ])
+    expect(bands.map((band) => [band.family, band.count])).toEqual([
+      ["tokens", 1],
+      ["calls", 1],
+      ["tokens", 1],
+    ])
+  })
+})
+
+describe("metric_band_arc", () => {
+  const band = (startIndex: number, endIndex: number) => ({
+    startIndex,
+    endIndex,
+    count: endIndex - startIndex + 1,
+  })
+  const arc = (b: ReturnType<typeof band>, count: number, gap = 0) =>
+    metric_band_arc(b, count, { startAngleDegrees: 90, gapRadians: gap })
+
+  // Canvas angles: 0 is due east and they grow CLOCKWISE, because y points down
+  const degrees = (radians: number) => Math.round((radians * 180) / Math.PI)
+
+  it("centres a one-axis band on its own axis", () => {
+    // Four axes from the top: axis 0 is straight up, which is -90 on a canvas
+    const { startAngle, endAngle } = arc(band(0, 0), 4)
+    expect(degrees(startAngle)).toBe(-135)
+    expect(degrees(endAngle)).toBe(-45)
+    expect(degrees((startAngle + endAngle) / 2)).toBe(-90)
+  })
+
+  it("sweeps clockwise, following the indicators", () => {
+    // Axis 1 of 4 is due east with clockwise indicators, so a band over axes
+    // 0 and 1 covers the top-right quadrant and a bit either side
+    const { startAngle, endAngle } = arc(band(0, 1), 4)
+    expect(endAngle).toBeGreaterThan(startAngle)
+    expect(degrees(startAngle)).toBe(-135)
+    expect(degrees(endAngle)).toBe(45)
+  })
+
+  it("spans half a slot past the axes at each end, so boundaries fall between", () => {
+    const first = arc(band(0, 0), 4)
+    const second = arc(band(1, 1), 4)
+    expect(second.startAngle).toBeCloseTo(first.endAngle, 10)
+  })
+
+  it("takes the gap out of the sweep, half at each end", () => {
+    const step = (Math.PI * 2) / 8
+    const gap = 0.2
+    const { startAngle, endAngle } = arc(band(2, 4), 8, gap)
+    expect(endAngle - startAngle).toBeCloseTo(3 * step - gap, 10)
+    const bare = arc(band(2, 4), 8)
+    expect(startAngle - bare.startAngle).toBeCloseTo(gap / 2, 10)
+    expect(bare.endAngle - endAngle).toBeCloseTo(gap / 2, 10)
+  })
+
+  it("never lets the gap eat the band - a lone axis keeps a visible arc", () => {
+    const step = (Math.PI * 2) / 16
+    const { startAngle, endAngle } = arc(band(0, 0), 16, 99)
+    expect(endAngle - startAngle).toBeCloseTo(step * 0.5, 10)
+    expect(endAngle).toBeGreaterThan(startAngle)
+  })
+
+  it("survives a degenerate axis count rather than dividing by zero", () => {
+    const { startAngle, endAngle } = arc(band(0, 0), 0)
+    expect(Number.isFinite(startAngle)).toBe(true)
+    expect(Number.isFinite(endAngle)).toBe(true)
+  })
+})
+
+describe("fit_radar", () => {
+  const insets = { legendHeight: 54, labelGap: 21, pad: 4 }
+  // The card as the page actually lays it out: much taller than it is wide
+  const BOX = { width: 539, height: 656 }
+
+  // Axis names at the angles a radar puts them, clockwise from the top
+  function ring(labels: { width: number; height: number }[]): RadarAxisLabel[] {
+    const step = (Math.PI * 2) / labels.length
+    return labels.map((label, index) => ({
+      angle: Math.PI / 2 - index * step,
+      ...label,
+    }))
+  }
+
+  const four = ring([
+    { width: 60, height: 28 }, // due north
+    { width: 60, height: 28 }, // due east
+    { width: 60, height: 28 }, // due south
+    { width: 60, height: 28 }, // due west
+  ])
+
+  it("keeps a whole name inside the box, not half of it", () => {
+    // echarts anchors a name at the tip and lays it outward, so the eastern
+    // label runs its full 60px to the right of the ring
+    const fit = fit_radar(BOX, four, insets)
+    expect(fit.cx + fit.radius + insets.labelGap + 60).toBeLessThanOrEqual(
+      BOX.width - insets.pad + 0.01,
+    )
+    // ...and it uses that budget rather than leaving room spare
+    expect(fit.cx + fit.radius + insets.labelGap + 60).toBeGreaterThan(
+      BOX.width - insets.pad - 1,
+    )
+  })
+
+  it("spends the room a short label leaves on a bigger ring", () => {
+    const short = fit_radar(
+      BOX,
+      ring([
+        { width: 60, height: 28 },
+        { width: 20, height: 28 },
+        { width: 60, height: 28 },
+        { width: 20, height: 28 },
+      ]),
+      insets,
+    )
+    expect(short.radius).toBeGreaterThan(fit_radar(BOX, four, insets).radius)
+  })
+
+  it("prices each axis where it actually points", () => {
+    // A wide name on the diagonal costs far less than the same name due east
+    const east = fit_radar(
+      BOX,
+      ring([
+        { width: 20, height: 28 },
+        { width: 120, height: 28 },
+        { width: 20, height: 28 },
+        { width: 20, height: 28 },
+      ]),
+      insets,
+    )
+    const diagonal = fit_radar(
+      BOX,
+      [
+        { angle: Math.PI / 4, width: 120, height: 28 },
+        { angle: (Math.PI * 3) / 4, width: 20, height: 28 },
+        { angle: (-Math.PI * 3) / 4, width: 20, height: 28 },
+        { angle: -Math.PI / 4, width: 20, height: 28 },
+      ],
+      insets,
+    )
+    expect(diagonal.radius).toBeGreaterThan(east.radius)
+  })
+
+  it("beats the flat percentage it replaces on this card", () => {
+    // The real default set: the axes that reach the sides carry short names
+    const eleven = ring(
+      [
+        "Cost/Efficiency",
+        "Token Economy",
+        "Context/Headroom",
+        "Cache/Hit Rate",
+        "Tool Call/Economy",
+        "LLM Call/Economy",
+        "Skill Read/Efficiency",
+        "Speed",
+        "Per-Call/Speed",
+        "Narration/Consistency",
+        "First Reply/Speed",
+      ].map((label) => {
+        const lines = label.split("/")
+        return {
+          width: Math.max(...lines.map((line) => line.length * 6.3)),
+          height: lines.length * 14,
+        }
+      }),
+    )
+    const fit = fit_radar(BOX, eleven, insets)
+    expect(fit.radius).toBeGreaterThan(0.58 * (BOX.width / 2))
+  })
+
+  it("centres the ring in what is left after the legend", () => {
+    const fit = fit_radar(BOX, four, insets)
+    const top = fit.cy - fit.radius - insets.labelGap - 28
+    const bottom = fit.cy + fit.radius + insets.labelGap + 28
+    expect(top).toBeGreaterThanOrEqual(insets.pad - 0.01)
+    expect(bottom).toBeLessThanOrEqual(
+      BOX.height - insets.legendHeight - insets.pad + 0.01,
+    )
+    // Equal room above and below: reserving legend space by pushing the centre
+    // up would waste the same space again at the top
+    const below = BOX.height - insets.legendHeight - insets.pad - bottom
+    expect(top - insets.pad).toBeCloseTo(below, 6)
+  })
+
+  it("is bound by the height when the box is wide", () => {
+    const fit = fit_radar({ width: 1600, height: 500 }, four, insets)
+    const used = 2 * (fit.radius + insets.labelGap + 28)
+    expect(used).toBeCloseTo(500 - insets.legendHeight - insets.pad * 2, 0)
+  })
+
+  it("floors rather than inverting when the box cannot hold its labels", () => {
+    const fit = fit_radar({ width: 40, height: 40 }, four, insets)
+    expect(fit.radius).toBe(MIN_RADAR_RADIUS)
+    expect(Number.isFinite(fit.cy)).toBe(true)
+  })
+
+  it("draws something when there are no labels to fit at all", () => {
+    const fit = fit_radar(BOX, [], insets)
+    expect(fit.radius).toBeGreaterThan(MIN_RADAR_RADIUS)
+    expect(fit.cx).toBe(BOX.width / 2)
   })
 })

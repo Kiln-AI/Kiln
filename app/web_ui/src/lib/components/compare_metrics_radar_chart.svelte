@@ -42,8 +42,14 @@
   import {
     format_metric_value,
     wrap_axis_label,
+    metric_family_bands,
+    metric_band_arc,
+    fit_radar,
     MIN_METRIC_AXES,
     type MetricAxis,
+    type MetricFamilyBand,
+    type RadarAxisLabel,
+    type RadarFit,
   } from "$lib/utils/evolution/metric_axes"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
@@ -67,12 +73,77 @@
 
 Scores are **relative to the other run configs on the chart**, on a shared 0-100 scale: unlike a pass rate, cost and latency have no maximum to plot against, so there is no "full scale" mode here.
 
+Related axes sit together: reading **clockwise from the top** the ring goes cost, tokens, calls, speed, responsiveness, and the arcs just outside it mark where each family ends. Switching axes off in the Axes menu keeps the grouping.
+
 Because it is a comparison, at least two run configs are needed. Raw values are in the tooltip and in the table below.`
 
   const AXIS_MAX = 100
   const LABEL_COLOR = "#666"
 
+  // The chain reads clockwise from the top. echarts lays indicators out
+  // counterclockwise by default, which drew the families cost -> responsiveness
+  // backwards; `clockwise` on the radar fixes the picture without reversing the
+  // list everything else - the axis picker, the tooltips, the key below the
+  // title - reads in order. See METRIC_FAMILIES.
+  const RADAR_START_ANGLE = 90
+
+  // The family band: a thin arc outside the ring, broken at each boundary.
+  //
+  // Sixteen labels in one weight of grey read as an undifferentiated ring even
+  // though the families behind them are contiguous, so the grouping needs to be
+  // a property of the image rather than of the data. The band is drawn OUTSIDE
+  // the plot on purpose: the run configs are the subject of this chart, and an
+  // arc swept under them would sit beneath every polygon and change what the
+  // series look like from one sector to the next.
+  //
+  // It is neutral for the same reason. A family hue per arc is the obvious
+  // move and it does not survive contact with the constraint: to be told apart
+  // from each other five hues have to be about as saturated as the series
+  // themselves, and then the chart has two colour systems competing for the
+  // eye. Muting them far enough to recede takes them below the point where they
+  // are distinguishable at all - five pastels measure a worst pair of ~5 in
+  // OKLab dE where ~15 is the floor for telling two colours apart, so the
+  // colour would be decoration that looks like meaning. What a reader actually
+  // needed was the boundary; the axis names already say which family they are
+  // ("Tool Call Economy", "LLM Call Economy") and the key under the title names
+  // the runs in order with their counts. So: no new colour at all, one neutral,
+  // and the GAPS carry the boundary.
+  //
+  // Alternating two neutrals was tried and dropped. Five families is odd, so the
+  // first and last arc came out the same tone on either side of twelve o'clock
+  // and read as one arc oddly broken; and two tones over five groups says
+  // "two kinds of family", which is not a thing. A single tone with a gap wide
+  // enough to see says exactly what is true and nothing more.
+  const BAND_RING_GAP = 6
+  const BAND_THICKNESS = 5
+  const BAND_LABEL_GAP = 6
+  // Read as the boundary, so it is generous; clamped per band by metric_band_arc
+  const BAND_ARC_GAP = 16
+  const BAND_TONE = "#aeb4bf"
+
+  // Axis names, for solving the radius. Measured rather than estimated: a name
+  // is anchored at its axis tip and laid AWAY from the centre, so its whole
+  // width counts against the side of the card it points at, and a character
+  // count generous enough to be safe would cost real radius on every axis. The
+  // per-character fallback is for a context that cannot measure text (jsdom);
+  // it only has to be conservative, since nothing is drawn there anyway.
+  const AXIS_LABEL_FONT_SIZE = 11
+  const AXIS_LABEL_LINE_HEIGHT = 14
+  const AXIS_LABEL_FONT = `${AXIS_LABEL_FONT_SIZE}px InterVariable, Inter, system-ui, sans-serif`
+  const AXIS_LABEL_CHAR_WIDTH = 6.6
+  const CHART_PAD = 4
+
+  // The bottom legend, which the ring has to sit above: one line for the run
+  // config's name plus one per line of subtext, at the line heights set below.
+  const LEGEND_NAME_LINE_HEIGHT = 16
+  const LEGEND_SUB_LINE_HEIGHT = 14
+  const LEGEND_PADDING = 10
+
   let chartInstance: echarts.ECharts | null = null
+  // The drawing box, tracked because the radius is solved from it rather than
+  // left to echarts' percentage of min(width, height)
+  let boxWidth = 0
+  let boxHeight = 0
 
   // Which axis the pointer is nearest. echarts' radar tooltip is per-series -
   // its formatter is handed a series, not an indicator - so the hovered axis
@@ -171,8 +242,19 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
   )
   $: incompleteAxisCount = axes.length - plottedAxes.length
 
+  // The family runs as they will actually be drawn. Derived from the plotted
+  // axes rather than the selected ones, so an axis switched off in the Axes
+  // menu - or dropped for having no number on every config - takes its share of
+  // the arc with it, and a family emptied that way leaves neither an orphaned
+  // arc nor a name in the key. See metric_family_bands for the single-family
+  // case, where there is no boundary to draw and the band is silent.
+  $: familyBands = metric_family_bands(plottedAxes)
+
   $: enoughConfigs = plottedConfigs.length >= MIN_METRIC_CONFIGS
   $: hasData = enoughConfigs && plottedAxes.length >= MIN_METRIC_AXES
+  // No chart, or only one family, means no arcs - and a key to arcs that are
+  // not there would be worse than no key at all.
+  $: showFamilyKey = hasData && familyBands.length > 0
 
   $: noDataTitle = !enoughConfigs
     ? "Nothing to Compare Against"
@@ -314,6 +396,111 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
     return parts.join("\n")
   }
 
+  // One canvas for the life of the component: measuring text needs a 2d context
+  // and creating one per redraw is pure waste.
+  let textMeasurer: CanvasRenderingContext2D | null | undefined
+
+  function measureTextWidth(text: string): number {
+    if (textMeasurer === undefined) {
+      textMeasurer = document.createElement("canvas").getContext("2d")
+      if (textMeasurer) textMeasurer.font = AXIS_LABEL_FONT
+    }
+    if (!textMeasurer) return text.length * AXIS_LABEL_CHAR_WIDTH
+    return textMeasurer.measureText(text).width
+  }
+
+  // Every axis name as a box at the angle echarts will draw it. The angles have
+  // to be derived the same way the radar does it - from the start angle,
+  // clockwise, one slot per axis - because that is what decides which side of
+  // the chart each name is laid out towards.
+  function axisLabels(names: string[]): RadarAxisLabel[] {
+    const step = (Math.PI * 2) / Math.max(names.length, 1)
+    const start = (RADAR_START_ANGLE * Math.PI) / 180
+    return names.map((name, index) => {
+      const lines = name.split("\n")
+      return {
+        angle: start - index * step,
+        width: Math.max(...lines.map(measureTextWidth)),
+        height: lines.length * AXIS_LABEL_LINE_HEIGHT,
+      }
+    })
+  }
+
+  // What the bottom legend will occupy, from the subtext it is actually going
+  // to carry - an MCP config prints one line under its name, a model-and-prompt
+  // config three - so the ring is never held off by room nothing will use.
+  function legendHeight(): number {
+    let subLines = 0
+    for (const config of plottedConfigs) {
+      subLines = Math.max(
+        subLines,
+        buildLegendSubtext(config).split("\n").length,
+      )
+    }
+    return (
+      LEGEND_PADDING +
+      LEGEND_NAME_LINE_HEIGHT +
+      subLines * LEGEND_SUB_LINE_HEIGHT
+    )
+  }
+
+  // The band lives between the ring and the axis names, so from the radius
+  // solver's point of view it is part of the gap the names are held off by.
+  const AXIS_NAME_GAP = BAND_RING_GAP + BAND_THICKNESS + BAND_LABEL_GAP
+
+  function radarLayout(names: string[]): RadarFit {
+    return fit_radar(
+      { width: boxWidth, height: boxHeight },
+      axisLabels(names),
+      {
+        legendHeight: legendHeight(),
+        labelGap: AXIS_NAME_GAP,
+        pad: CHART_PAD,
+      },
+    )
+  }
+
+  // One arc per family run, drawn as a graphic rather than by the radar: echarts
+  // splits a radar's background into rings, never into sectors, and a ring is
+  // the one division this chart does not need.
+  function bandGraphics(
+    bands: MetricFamilyBand[],
+    axisCount: number,
+    layout: RadarFit,
+  ) {
+    const inner = layout.radius + BAND_RING_GAP
+    const outer = inner + BAND_THICKNESS
+    return bands.map((band) => {
+      const arc = metric_band_arc(band, axisCount, {
+        startAngleDegrees: RADAR_START_ANGLE,
+        // A gap in px, as an angle at the radius it is drawn at, so the boundary
+        // looks the same width whatever the card size
+        gapRadians: BAND_ARC_GAP / outer,
+      })
+      return {
+        type: "sector",
+        // Inert. The tooltip works out which axis is under the cursor from the
+        // pointer, and anything that could become the event target first would
+        // break that - see axisIndexFromPointer.
+        silent: true,
+        z: 0,
+        shape: {
+          cx: layout.cx,
+          cy: layout.cy,
+          r0: inner,
+          r: outer,
+          startAngle: arc.startAngle,
+          endAngle: arc.endAngle,
+          clockwise: true,
+          cornerRadius: BAND_THICKNESS / 2,
+        },
+        style: {
+          fill: BAND_TONE,
+        },
+      }
+    })
+  }
+
   function generateChartData(): {
     indicators: { name: string; max: number }[]
     series: { value: number[]; name: string }[]
@@ -365,8 +552,13 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
       chartInstance.clear()
       return
     }
+    // The radius is solved from the box, so there is nothing to draw until the
+    // box has been measured. The ResizeObserver fires on observe, so this only
+    // skips the render before the first frame.
+    if (boxWidth <= 0 || boxHeight <= 0) return
 
     const { indicators, series, legend, chartAxes } = generateChartData()
+    const layout = radarLayout(indicators.map((indicator) => indicator.name))
 
     const legendFormatter: Record<string, string> = {}
     for (const config of plottedConfigs) {
@@ -426,10 +618,20 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
           // wrapping legend would eat the plot. Scroll keeps it to one row.
           type: "scroll" as const,
         },
+        graphic: bandGraphics(familyBands, chartAxes.length, layout),
         radar: {
           indicator: indicators,
-          center: ["50%", "44%"],
-          radius: "58%",
+          // Solved rather than a percentage of min(width, height): this card is
+          // much taller than it is wide, so a percentage resolved against the
+          // width and left a small ring adrift in a tall card. See fit_radar.
+          center: [layout.cx, layout.cy],
+          radius: layout.radius,
+          startAngle: RADAR_START_ANGLE,
+          // Families read cost -> tokens -> calls -> speed -> responsiveness
+          // going clockwise, the direction a ring is read. Without this echarts
+          // walks the indicators the other way and draws the chain backwards.
+          clockwise: true,
+          axisNameGap: AXIS_NAME_GAP,
           axisName: {
             color: LABEL_COLOR,
             fontSize: 11,
@@ -438,7 +640,7 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
             // unwrapped one runs off the side of a half-width card. The axis
             // count is capped by the page's default set, so unlike the
             // eval-score radar this never needs hand-placed labels.
-            lineHeight: 14,
+            lineHeight: AXIS_LABEL_LINE_HEIGHT,
           },
           splitArea: {
             areaStyle: {
@@ -484,11 +686,16 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
     chartInstance,
     axes,
     plottedAxes,
+    familyBands,
     plottedConfigs,
     selectedRunConfigIds,
     getMetricValue,
     model_info,
     prompts,
+    // The radius and the band are solved from the box, so a resize is a redraw
+    // and not just an echarts resize()
+    boxWidth,
+    boxHeight,
   )
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function redraw(..._dependencies: unknown[]) {
@@ -497,9 +704,18 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
 
   function initChart(node: HTMLElement) {
     chartInstance = echarts.init(node)
+    // Measured up front as well as from the observer, whose first callback is a
+    // frame away - otherwise the first paint is an empty chart.
+    boxWidth = node.clientWidth
+    boxHeight = node.clientHeight
 
+    // Resizing the canvas is not enough on its own: centre, radius and the
+    // family arcs are all in px, solved from the box, so the new size has to
+    // reach the reactive statement that redraws them.
     const resizeObserver = new ResizeObserver(() => {
       chartInstance?.resize()
+      boxWidth = node.clientWidth
+      boxHeight = node.clientHeight
     })
     resizeObserver.observe(node)
 
@@ -539,12 +755,36 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
   <div class="flex flex-row gap-4 items-start">
     <div class="flex-grow">
       <div class="text-xl font-bold">Performance Metrics</div>
-      <div class="text-sm text-gray-500 {shownNote ? '' : 'mb-4'}">
+      <div
+        class="text-sm text-gray-500 {shownNote || showFamilyKey ? '' : 'mb-4'}"
+      >
         Cost, speed and usage for the selected run configurations. Higher is
         better on every axis.
       </div>
       {#if shownNote}
-        <div class="text-xs text-gray-400 mt-1 mb-4">{shownNote}</div>
+        <div class="text-xs text-gray-400 mt-1 {showFamilyKey ? '' : 'mb-4'}">
+          {shownNote}
+        </div>
+      {/if}
+      {#if showFamilyKey}
+        <!-- The arcs show WHERE the families divide; this says WHICH they are.
+             Order and count are the whole mapping - the first arc clockwise
+             from twelve o'clock covers the first name here, over as many axes
+             as it claims - so no swatch is needed and, more to the point, no
+             colour: a per-family hue would be a second colour system arguing
+             with the series. Both this and the arcs are built from the same
+             runs, so an axis switched off cannot leave a name without an arc. -->
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 mb-4">
+          <span class="text-xs text-gray-400">
+            Axis families, clockwise from the top:
+          </span>
+          {#each familyBands as band}
+            <span class="text-xs text-gray-500">
+              {band.label}
+              <span class="text-gray-400">{band.count}</span>
+            </span>
+          {/each}
+        </div>
       {/if}
     </div>
     <div class="flex flex-row gap-1 items-center flex-shrink-0">

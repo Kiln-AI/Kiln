@@ -102,7 +102,18 @@
     </div>
     {#if isOpen}
       <Float {placement} strategy="fixed">
-        <ul class="menu bg-base-100 rounded-box p-2 shadow z-[1] {width}">
+        <!-- Capped and scrollable: a long menu (the metrics radar's sixteen
+             axes, grouped, each with a second line) runs taller than the
+             window, and a floating element that overruns the viewport clips
+             its own items with no way to reach them - the axis picker was
+             losing its first five entries off the top of the screen. Float
+             publishes the room its placement actually has; 70vh is the fallback
+             for the frame before it measures. daisyUI's .menu wraps into
+             columns by default, which is what a bounded height would otherwise
+             do here, so the scroll needs flex-nowrap to win. -->
+        <ul
+          class="menu flex-nowrap max-h-[var(--float-available-height,70vh)] overflow-y-auto bg-base-100 rounded-box p-2 shadow z-[1] {width}"
+        >
           {#each visibleItems as item}
             {#if item.header}
               <li class="menu-title">

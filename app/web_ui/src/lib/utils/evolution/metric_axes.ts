@@ -69,6 +69,9 @@ export type MetricDirection = "lower" | "higher"
  *
  * The order is a chain: what it cost, what it spent to get there, how many
  * round trips that took, how long they took, and how it felt while waiting.
+ * The chart draws the chain CLOCKWISE from the top, which is the direction a
+ * ring is read; echarts lays indicators out counterclockwise unless told
+ * otherwise, so the radar sets `clockwise` rather than reversing this list.
  */
 export const METRIC_FAMILIES = [
   "cost",
@@ -202,7 +205,9 @@ const METRIC_CATALOG: MetricDefinition[] = [
     unit: "tokens",
     better: "higher",
     order: 220,
-    defaultRank: 10,
+    // Off by default: the hit rate below is the same fact normalized, and two
+    // axes for one story spend ring on nothing. Opt in from the Axes menu.
+    defaultRank: 12,
     aliases: ["cached_tokens"],
   },
   {
@@ -462,13 +467,24 @@ export const CORE_USAGE_KEYS: string[] = [
 // eval-score radar's own floor.
 export const MIN_METRIC_AXES = 3
 
-// How many axes are shown before the user opts into more. The radar component
-// has no label de-cluttering: names are centred on their axis tips, and the
-// vertical gap between neighbours goes to zero towards the poles. Deduplicating
-// by quantity took the axis count down enough that the whole picture fits, so
-// this is now a legibility ceiling rather than a curated shortlist - everything
-// past it is still one click away in the Axes menu.
-export const DEFAULT_METRIC_AXIS_COUNT = 14
+/**
+ * How many axes are shown before the user opts into more.
+ *
+ * Fourteen fit without clipping, which is what set the previous ceiling, but
+ * fitting is not reading. Past roughly a dozen axes a radar stops being a shape
+ * and becomes a circle: the vertices are 20-odd degrees apart, every polygon
+ * looks alike, and the ring of labels is long enough that finding the one you
+ * want is a search. The families make that worse when they are lopsided - five
+ * of the sixteen were per-turn latencies, so a third of the ring was Speed
+ * saying the same thing five times.
+ *
+ * Eleven is the top of the ranking, and it lands one axis of Cost, three of
+ * Tokens, three of Calls, two of Speed and two of Responsiveness: every family
+ * present, none of them dominant, and the second-order breakdowns (the per-turn
+ * latencies, the input/output split, cached tokens beside the hit rate) one
+ * click away in the Axes menu. Nothing is dropped, only deferred.
+ */
+export const DEFAULT_METRIC_AXIS_COUNT = 11
 
 /**
  * Unit for a metric score key, guessed from its name. Display only: it decides
@@ -739,6 +755,255 @@ export function wrap_axis_label(label: string, maxChars: number = 13): string {
     }
   }
   return `${words.slice(0, best).join(" ")}\n${words.slice(best).join(" ")}`
+}
+
+/**
+ * One unbroken run of same-family axes, in the order they are drawn.
+ *
+ * The families were already contiguous - `compare_axes` sees to that - but
+ * contiguity is a property of the DATA, and a reader looking at sixteen labels
+ * in one weight of grey has no way to see it. These runs are what the chart
+ * draws an arc for and what the key under the title names, so both are derived
+ * from the same list and cannot disagree about where a family ends.
+ *
+ * Runs, not groups: a family that somehow arrived split would produce two arcs,
+ * which is what the picture would actually be showing. Grouping instead would
+ * draw one arc spanning the gap and quietly lie about the axes inside it.
+ *
+ * Fewer than two runs returns nothing. A lone family divides nothing - a full
+ * circle of arc is decoration - and this is the case the axis picker reaches
+ * whenever it is narrowed to one family, so it has to be silent rather than
+ * ringed. That also covers the empty axis set.
+ */
+export interface MetricFamilyBand {
+  family: MetricFamily
+  /** The family's heading, the same one the axis picker uses */
+  label: string
+  /** Index of the run's first axis, into the axis list as drawn */
+  startIndex: number
+  /** Index of the run's last axis */
+  endIndex: number
+  /** How many axes the run covers */
+  count: number
+}
+
+export function metric_family_bands(axes: MetricAxis[]): MetricFamilyBand[] {
+  const bands: MetricFamilyBand[] = []
+  axes.forEach((axis, index) => {
+    const open = bands[bands.length - 1]
+    if (open && open.family === axis.family) {
+      open.endIndex = index
+      open.count += 1
+      return
+    }
+    bands.push({
+      family: axis.family,
+      label: METRIC_FAMILY_LABELS[axis.family],
+      startIndex: index,
+      endIndex: index,
+      count: 1,
+    })
+  })
+  return bands.length > 1 ? bands : []
+}
+
+/**
+ * The arc one family band sweeps, as canvas angles.
+ *
+ * Two angle conventions meet here and they run opposite ways, which is the only
+ * thing in this file worth a test of its own. echarts places indicator `i` at
+ * `theta = start - i * step` and plots it with `y = cy - r * sin(theta)`, so its
+ * angles are the mathematical ones, counterclockwise off a y-up axis. A canvas
+ * arc measures from the same origin but with y pointing DOWN, so the same
+ * direction is `phi = -theta`. Getting that sign wrong draws the band on the
+ * far side of the chart from the labels it belongs to.
+ *
+ * The band runs from half a slot before its first axis to half a slot after its
+ * last, so every axis sits under its own family and the boundary falls midway
+ * between the two labels it separates - which is where a reader would draw it.
+ * A gap is then taken off each end: the gap is what the eye actually reads as a
+ * boundary, so it is never allowed to consume more than half the band, and a
+ * one-axis family keeps a visible arc rather than vanishing into its own
+ * padding.
+ */
+export function metric_band_arc(
+  band: Pick<MetricFamilyBand, "startIndex" | "endIndex" | "count">,
+  axisCount: number,
+  options: { startAngleDegrees: number; gapRadians: number },
+): { startAngle: number; endAngle: number } {
+  const step = (Math.PI * 2) / Math.max(axisCount, 1)
+  const start = (options.startAngleDegrees * Math.PI) / 180
+  const gap = Math.min(Math.max(options.gapRadians, 0), band.count * step * 0.5)
+  const first = start - band.startIndex * step
+  const last = start - band.endIndex * step
+  return {
+    startAngle: -(first + step / 2) + gap / 2,
+    endAngle: -(last - step / 2) - gap / 2,
+  }
+}
+
+/** The box a radar is drawn into, in px */
+export interface RadarFitBox {
+  width: number
+  height: number
+}
+
+/** One axis name, where it points and how big it is */
+export interface RadarAxisLabel {
+  /** The indicator's angle as echarts lays it out: radians, y up, 0 due east */
+  angle: number
+  width: number
+  height: number
+}
+
+/** What has to fit around the ring, in px */
+export interface RadarFitInsets {
+  /** Room reserved at the bottom of the box for the legend */
+  legendHeight: number
+  /** Ring to the anchor of an axis name, including the family band */
+  labelGap: number
+  /** Breathing room against the edge of the box */
+  pad: number
+}
+
+export interface RadarFit {
+  cx: number
+  cy: number
+  radius: number
+}
+
+export const MIN_RADAR_RADIUS = 40
+
+/**
+ * Where echarts puts an axis name, as a box around its anchor.
+ *
+ * Not a detail that can be waved at with "half the label hangs past the tip".
+ * A radar builds its names at `nameLocation: 'end'`, which anchors the text at
+ * the tip and lays it AWAY from the centre - so a name on the east side starts
+ * at the tip and runs its FULL width to the right, and it is the whole label,
+ * not half of it, that has to fit between the ring and the edge. Only the two
+ * axes that are exactly vertical are centred horizontally, and those are the
+ * ones that hang their full height above or below instead.
+ *
+ * Offsets are relative to the anchor, in screen coordinates with y downward.
+ */
+function axis_label_box(label: RadarAxisLabel): {
+  left: number
+  right: number
+  top: number
+  bottom: number
+} {
+  const cos = Math.cos(label.angle)
+  const sin = Math.sin(label.angle)
+  // echarts' own test for "this axis is vertical", to the same tolerance
+  const vertical = Math.abs(cos) < 1e-4
+  if (vertical) {
+    return {
+      left: -label.width / 2,
+      right: label.width / 2,
+      // Above the anchor at the top of the ring, below it at the bottom
+      top: sin > 0 ? -label.height : 0,
+      bottom: sin > 0 ? 0 : label.height,
+    }
+  }
+  return {
+    left: cos > 0 ? 0 : -label.width,
+    right: cos > 0 ? label.width : 0,
+    top: -label.height / 2,
+    bottom: label.height / 2,
+  }
+}
+
+/** How far the ring and its names reach from the centre, at a given radius */
+function radar_envelope(
+  radius: number,
+  labels: RadarAxisLabel[],
+  labelGap: number,
+): { left: number; right: number; top: number; bottom: number } {
+  // The ring itself, before any name is placed
+  let left = -radius
+  let right = radius
+  let top = -radius
+  let bottom = radius
+  for (const label of labels) {
+    const reach = radius + labelGap
+    const anchorX = reach * Math.cos(label.angle)
+    const anchorY = -reach * Math.sin(label.angle)
+    const box = axis_label_box(label)
+    left = Math.min(left, anchorX + box.left)
+    right = Math.max(right, anchorX + box.right)
+    top = Math.min(top, anchorY + box.top)
+    bottom = Math.max(bottom, anchorY + box.bottom)
+  }
+  return { left, right, top, bottom }
+}
+
+/**
+ * Centre and radius for a radar that fills its box.
+ *
+ * echarts sizes a radar as a percentage of `min(width, height) / 2`, which is
+ * the wrong quantity twice over. This chart's box is far taller than it is wide
+ * at every layout the page produces - it shares a grid row with the eval-score
+ * radar, whose height it has to match - so the percentage resolved against the
+ * width, and then had to be conservative enough that the names still cleared
+ * the sides at any axis count. The result was a small ring adrift in a tall
+ * card with the height doing nothing.
+ *
+ * So the radius is solved against where the names will actually land rather
+ * than guessed from the widest one. That distinction is most of the gain: the
+ * long names on this chart sit on the diagonals, where a name costs little
+ * horizontal room, while the axes that do reach the sides carry short ones. A
+ * single worst-case number would price every axis as though it were the widest
+ * name pointing due east.
+ *
+ * Solved by bisection because the envelope is a max over per-axis boxes and
+ * turns over as the alignment flips - monotone in the radius, but not worth
+ * inverting in closed form for a number that is recomputed on resize. `cy`
+ * comes back rather than being a fixed percentage: what is left after the
+ * legend is what the ring is centred in, and reserving legend room by pushing
+ * the centre up would waste the same space again at the top.
+ *
+ * A box too small for its own labels has no feasible radius, so the result is
+ * floored at one that still draws a ring rather than solving negative.
+ */
+export function fit_radar(
+  box: RadarFitBox,
+  labels: RadarAxisLabel[],
+  insets: RadarFitInsets,
+): RadarFit {
+  const cx = box.width / 2
+  const availableHeight = box.height - insets.legendHeight - insets.pad * 2
+  const fits = (radius: number): boolean => {
+    const envelope = radar_envelope(radius, labels, insets.labelGap)
+    return (
+      cx + envelope.left >= insets.pad &&
+      cx + envelope.right <= box.width - insets.pad &&
+      envelope.bottom - envelope.top <= availableHeight
+    )
+  }
+
+  let low = MIN_RADAR_RADIUS
+  let high = Math.max(box.width, box.height)
+  for (let step = 0; step < 40; step++) {
+    const mid = (low + high) / 2
+    if (fits(mid)) {
+      low = mid
+    } else {
+      high = mid
+    }
+  }
+  const radius = Math.max(low, MIN_RADAR_RADIUS)
+
+  // Centre what the ring and its names occupy in the room that is left, so the
+  // slack a circle cannot use is shared between the top and the legend.
+  const envelope = radar_envelope(radius, labels, insets.labelGap)
+  const used = envelope.bottom - envelope.top
+  const slack = Math.max(availableHeight - used, 0)
+  return {
+    cx,
+    cy: insets.pad + slack / 2 - envelope.top,
+    radius,
+  }
 }
 
 /** A metric's raw value in its own units, for tooltips */

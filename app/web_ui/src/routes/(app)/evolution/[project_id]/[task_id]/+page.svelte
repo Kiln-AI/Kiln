@@ -714,14 +714,25 @@
   }
 
   // Grouped under the same family headings the chart lays the axes out by, so
-  // the menu reads in the same order as the ring.
+  // the menu reads in the same order as the ring. The heading counts what is ON
+  // out of what exists, which is the number the chart's own family key shows -
+  // "Tokens 3" under the title is these three ticks.
   $: metric_menu_items = (() => {
     const items: FloatingMenuItem[] = []
     let family: MetricFamily | null = null
     for (const axis of all_metric_axes) {
       if (axis.family !== family) {
         family = axis.family
-        items.push({ label: METRIC_FAMILY_LABELS[family], header: true })
+        const in_family = all_metric_axes.filter(
+          (candidate) => candidate.family === family,
+        )
+        const shown_in_family = in_family.filter((candidate) =>
+          shown_metric_keys.includes(candidate.key),
+        ).length
+        items.push({
+          label: `${METRIC_FAMILY_LABELS[family]} · ${shown_in_family} of ${in_family.length}`,
+          header: true,
+        })
       }
       const shown = shown_metric_keys.includes(axis.key)
       items.push({
