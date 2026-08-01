@@ -74,6 +74,7 @@
     USAGE_KEY_PREFIX,
     metric_eval_ids,
     metric_row_info,
+    score_row_label,
     toggled_metric_axis_keys,
     usage_row_family,
     visible_metric_axes,
@@ -609,7 +610,15 @@
   }
 
   // Carries the eval id as well as the label, so a hidden row can be offered
-  // back by the table it came out of rather than by a menu spanning both.
+  // back by the table it came out of rather than by a menu spanning both - and
+  // under the name that table gave it, which is what score_row_label settles.
+  // Deriving a label here instead named performance rows for their raw score
+  // key, so the menu offered "Latency Ms Turn1" back for a row called "Turn 1
+  // Latency": you hid one thing and were offered another.
+  //
+  // The unresolved case is a key with no meta left, which is a stale URL the
+  // moment before validateStateFromURL drops it. There is no track to route on
+  // without a meta, so it keeps the plain score-key name.
   $: hidden_score_info = hidden_scores.map((key) => {
     const meta = lens_data.keyMetas.find(
       (candidate) => score_key_id(candidate.evalId, candidate.scoreKey) === key,
@@ -618,7 +627,7 @@
       key,
       eval_id: meta?.evalId ?? key.split("::")[0] ?? "",
       label: meta
-        ? `${score_key_label(meta.scoreKey)} · ${meta.evalName}`
+        ? `${score_row_label(meta, metric_eval_id_set)} · ${meta.evalName}`
         : score_key_label(key.split("::")[1] ?? key),
     }
   })
@@ -883,6 +892,9 @@
   //
   // The quality track needs none of that: a pass rate is higher-is-better in
   // both places, so its rows keep the score key's own name.
+  //
+  // That rule lives in score_row_label rather than in each table, because the
+  // Hidden menus have to name a row the way the table that hid it did.
 
   $: metric_eval_id_set = metric_eval_ids(lens_data.keyMetas)
 
@@ -921,7 +933,7 @@
         row: {
           kind: "score" as const,
           meta,
-          label: score_key_label(meta.scoreKey),
+          label: score_row_label(meta, metric_eval_id_set),
           sublabel: score_sublabel(meta),
         },
       }
@@ -941,14 +953,14 @@
 
     for (const meta of visible_key_metas) {
       if (!metric_eval_id_set.has(meta.evalId)) continue
-      const info = metric_row_info(meta.scoreKey)
+      const family = metric_row_info(meta.scoreKey).family
       entries.push({
-        family: info.family,
-        label: METRIC_FAMILY_LABELS[info.family],
+        family,
+        label: METRIC_FAMILY_LABELS[family],
         row: {
           kind: "score",
           meta,
-          label: info.label,
+          label: score_row_label(meta, metric_eval_id_set),
           sublabel: score_sublabel(meta),
         },
       })

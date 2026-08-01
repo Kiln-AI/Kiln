@@ -26,6 +26,7 @@ import {
   wrap_axis_label,
   metric_family_bands,
   metric_row_info,
+  score_row_label,
   usage_row_family,
   fit_radar,
   MIN_RADAR_RADIUS,
@@ -1055,6 +1056,55 @@ describe("metric_row_info", () => {
   it("agrees with the radar about which family a metric is in", () => {
     for (const axis of build_metric_axes([])) {
       expect(metric_row_info(axis.quantity).family).toBe(axis.family)
+    }
+  })
+})
+
+describe("score_row_label", () => {
+  const metric_evals = metric_eval_ids(KEY_METAS)
+
+  it("names a performance row for the quantity", () => {
+    expect(
+      score_row_label(
+        meta("l1", "Latency", "latency_ms_turn1", "informational"),
+        metric_evals,
+      ),
+    ).toBe("Turn 1 Latency")
+    expect(
+      score_row_label(
+        meta("e1", "Efficiency", "cost_usd", "lower_is_better"),
+        metric_evals,
+      ),
+    ).toBe("Cost")
+  })
+
+  it("leaves a quality row with its score key's own name", () => {
+    expect(
+      score_row_label(
+        criterion("q1", "Quality", "false_done_claim"),
+        metric_evals,
+      ),
+    ).toBe("False Done Claim")
+  })
+
+  // The routing is by eval, like everything else that partitions the two
+  // tracks: a metric-shaped key on a criterion eval is a quality row, and
+  // renaming it off the metrics catalog would move it between the tables.
+  it("routes on the eval, not on the shape of the key", () => {
+    expect(
+      score_row_label(criterion("q2", "Schema", "cost_usd"), metric_evals),
+    ).toBe("Cost USD")
+  })
+
+  // The bug this exists for: the Hidden menu built its own label, so it offered
+  // "Latency Ms Turn1" back for a row the performance table called "Turn 1
+  // Latency". Both surfaces read this function now, so they cannot disagree.
+  it("is the name the performance table shows, key by key", () => {
+    for (const key_meta of KEY_METAS) {
+      if (!metric_evals.has(key_meta.evalId)) continue
+      expect(score_row_label(key_meta, metric_evals)).toBe(
+        metric_row_info(key_meta.scoreKey).label,
+      )
     }
   })
 })

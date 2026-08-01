@@ -869,6 +869,29 @@ export function metric_row_info(scoreKey: string): {
     : { family: "other", label: score_key_label(scoreKey) }
 }
 
+/**
+ * What a score row is called in the track it belongs to.
+ *
+ * The two tracks name the same kind of thing differently, for the reason
+ * `metric_row_info` sets out: a quality row keeps its score key's own name, a
+ * performance row takes the plain name of the quantity from the catalog. That
+ * is one rule, and it is written here once because three surfaces read it - the
+ * two comparison tables and the Hidden menus that offer their rows back. A menu
+ * that derived its own label offered "Latency Ms Turn1" back for a row the
+ * table had called "Turn 1 Latency", which reads as a different row.
+ *
+ * The metrics eval ids are passed in rather than recomputed so the caller's
+ * reactive statement lists them as a dependency.
+ */
+export function score_row_label(
+  meta: ScoreKeyMeta,
+  metricEvalIds: Set<string>,
+): string {
+  return metricEvalIds.has(meta.evalId)
+    ? metric_row_info(meta.scoreKey).label
+    : score_key_label(meta.scoreKey)
+}
+
 /** The catalog's family for a usage rollup key, so the rollup rows sort into it */
 export function usage_row_family(usageKey: string): MetricFamily {
   return (
