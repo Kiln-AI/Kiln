@@ -10,7 +10,9 @@ import multiprocessing
 import multiprocessing.queues
 import queue
 import sys
+import time
 import traceback
+from multiprocessing.process import BaseProcess
 from typing import Any
 
 from kiln_ai.sandbox.entrypoint import call_entrypoint
@@ -93,6 +95,19 @@ def _execute_scorer(
                 "stderr": captured_stderr.getvalue(),
             }
         )
+    except SystemExit as e:
+        # sys.exit() in user code would otherwise kill the child before a
+        # result is queued, surfacing as a generic crash with no explanation.
+        # KeyboardInterrupt is deliberately NOT caught: it means the operator
+        # interrupted the process group, not that the user's code failed.
+        result_queue.put(
+            {
+                "error": f"User code exited via sys.exit({e.code!r}) instead of returning scores",
+                "traceback": traceback.format_exc(),
+                "stdout": captured_stdout.getvalue(),
+                "stderr": captured_stderr.getvalue(),
+            }
+        )
     except Exception:
         result_queue.put(
             {
@@ -124,24 +139,59 @@ def run_scorer(
     q: multiprocessing.Queue = ctx.Queue()  # type: ignore[type-arg]
     p = ctx.Process(target=_execute_scorer, args=(code, inputs, q), daemon=True)
     start_process_with_light_main(p)
-    p.join(timeout=timeout)
-
-    if p.is_alive():
-        p.kill()
-        p.join(timeout=5)
-        raise RuntimeError(f"Code eval scorer timed out after {timeout}s")
 
     try:
-        result: dict[str, Any] = q.get_nowait()
-    except queue.Empty:
-        if p.exitcode not in (0, None):
-            raise RuntimeError(f"Scorer crashed (exit code {p.exitcode})")
-        raise RuntimeError("Scorer process exited without returning results")
+        result = _wait_for_result(p, q, timeout)
+        if result is None:
+            if p.is_alive():
+                p.kill()
+                p.join(timeout=5)
+                raise RuntimeError(f"Code eval scorer timed out after {timeout}s")
+            if p.exitcode not in (0, None):
+                raise RuntimeError(f"Scorer crashed (exit code {p.exitcode})")
+            raise RuntimeError("Scorer process exited without returning results")
     finally:
         q.close()
         q.join_thread()
 
-    if p.exitcode not in (0, None) and "ok" not in result:
+    p.join(timeout=5)
+    if p.is_alive():
+        # Result already in hand; a child that won't exit on its own (e.g.
+        # user code left non-daemon threads running) is force-reaped.
+        p.kill()
+        p.join(timeout=5)
+    elif p.exitcode not in (0, None) and "ok" not in result:
         raise RuntimeError(f"Scorer crashed (exit code {p.exitcode})")
 
     return result
+
+
+def _wait_for_result(
+    p: BaseProcess,
+    q: multiprocessing.queues.Queue,  # type: ignore[type-arg]
+    timeout: float,
+) -> dict[str, Any] | None:
+    """Wait for the child's result dict; None on timeout or silent child death.
+
+    The queue -- not the process -- is the primary wait: a result payload
+    larger than the OS pipe buffer keeps the child's queue feeder thread (and
+    so the child) alive until the parent reads it, so joining first would
+    deadlock and misreport a successful run as a timeout. Short poll intervals
+    let a child that died without reporting be noticed well before the full
+    timeout.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        try:
+            return q.get(timeout=min(0.1, remaining))
+        except queue.Empty:
+            if not p.is_alive():
+                # The child may have flushed its result between the empty read
+                # and the liveness check -- one final grace read.
+                try:
+                    return q.get(timeout=0.1)
+                except queue.Empty:
+                    return None

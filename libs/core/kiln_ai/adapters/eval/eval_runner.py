@@ -261,19 +261,26 @@ class EvalRunner:
 
         # already_run[eval_config_id][run_config_id][dataset_id]
         already_run: Dict[ID_TYPE, Dict[ID_TYPE, Set[ID_TYPE]]] = {}
+        superseded: Dict[Tuple[ID_TYPE, ID_TYPE, ID_TYPE], List[EvalRun]] = {}
         for eval_config in self.eval_configs:
             already_run[eval_config.id] = {}
             for run_config in self.run_configs or []:
                 already_run[eval_config.id][run_config.id] = set()
             for run in eval_config.runs(readonly=True):
                 if (
-                    run.task_run_config_id is not None
-                    and run.task_run_config_id in already_run[eval_config.id]
-                    and self._counts_as_already_run(run, eval_config)
+                    run.task_run_config_id is None
+                    or run.task_run_config_id not in already_run[eval_config.id]
                 ):
+                    continue
+                if self._counts_as_already_run(run, eval_config):
                     already_run[eval_config.id][run.task_run_config_id].add(
                         run.dataset_id
                     )
+                else:
+                    superseded.setdefault(
+                        (eval_config.id, run.task_run_config_id, run.dataset_id),
+                        [],
+                    ).append(run)
 
         return [
             EvalJob(
@@ -281,6 +288,9 @@ class EvalRunner:
                 task_run_config=run_config,
                 type="task_run_eval",
                 eval_config=eval_config,
+                superseded_tombstones=superseded.get(
+                    (eval_config.id, run_config.id, task_run.id), []
+                ),
             )
             for task_run in self.task.runs(readonly=True)
             if filter(task_run)
@@ -646,6 +656,22 @@ class EvalRunner:
             eval_task_input = EvalTaskInput.from_eval_input(job.item, run_output)
             result = await evaluator.evaluate(eval_task_input)
 
+            # Like the legacy runner, only successful task-run-eval records of
+            # a full_trace eval carry the serialized trace (single-shot
+            # generations don't always produce one).
+            trace_json: str | None = None
+            if (
+                result.skipped_reason is None
+                and self.eval.evaluation_data_type == EvalDataType.full_trace
+                and eval_task_input.trace
+            ):
+                trace_json = json.dumps(
+                    eval_task_input.trace,
+                    indent=2,
+                    ensure_ascii=False,
+                    default=_trace_json_default,
+                )
+
             async with self._save_context():
                 eval_run = EvalRun(
                     parent=job.eval_config,
@@ -666,6 +692,7 @@ class EvalRunner:
                     else None,
                     skipped_detail=result.skipped_detail,
                     intermediate_outputs=result.intermediate_outputs,
+                    task_run_trace=trace_json,
                     task_run_usage=run_output.usage,
                 )
                 eval_run.save_to_file()
@@ -681,6 +708,22 @@ class EvalRunner:
             # never persisted so its id is None (EvalRun would fail validation),
             # and dedup compares this field against the item's id.
             dataset_id = job.item.id
+
+            # Like the legacy runner, only successful task-run-eval records of
+            # a full_trace eval carry the serialized trace (single-shot
+            # generations don't always produce one).
+            trace_json: str | None = None
+            if (
+                result.skipped_reason is None
+                and self.eval.evaluation_data_type == EvalDataType.full_trace
+                and eval_task_input.trace
+            ):
+                trace_json = json.dumps(
+                    eval_task_input.trace,
+                    indent=2,
+                    ensure_ascii=False,
+                    default=_trace_json_default,
+                )
 
             async with self._save_context():
                 eval_run = EvalRun(
@@ -700,6 +743,7 @@ class EvalRunner:
                     else None,
                     skipped_detail=result.skipped_detail,
                     intermediate_outputs=result.intermediate_outputs,
+                    task_run_trace=trace_json,
                     task_run_usage=run_output.usage,
                 )
                 eval_run.save_to_file()
