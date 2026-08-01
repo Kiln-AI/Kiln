@@ -468,6 +468,11 @@ export const CORE_USAGE_KEYS: string[] = [
 // eval-score radar's own floor.
 export const MIN_METRIC_AXES = 3
 
+// A comparison needs two sides. These axes are scored by position among the
+// run configs on the chart, so one of them would sit at the midpoint of every
+// axis and draw a regular polygon that looks like a result but is an artefact.
+export const MIN_METRIC_CONFIGS = 2
+
 /**
  * How many axes are shown before the user opts into more.
  *
@@ -1060,6 +1065,105 @@ export function fit_radar(
     cx,
     cy: insets.pad + slack / 2 - envelope.top,
     radius,
+  }
+}
+
+/** What the metrics radar is working with when it has nothing to draw */
+export interface MetricRadarCounts {
+  /** Axes the chart was asked to plot */
+  selected: number
+  /** Of those, the ones every plotted run config has a number for */
+  plotted: number
+  /** Axes the Axes menu can offer, switched on or not */
+  available: number
+  /** Axes the row-hide x took out of the comparison entirely */
+  hidden: number
+  /** Run configs with at least one number among the selected axes */
+  configs: number
+}
+
+/**
+ * Why the metrics radar is empty, and which control fixes it. Only asked when
+ * the chart has nothing to draw.
+ *
+ * The ORDER of the tests is the substance here, not an implementation detail.
+ * `configs` counts the run configs the chart could actually plot, and that is
+ * counted THROUGH the axes - a config is plotted only if it has a number for
+ * one of them - so with no axes selected it is zero however many configs are
+ * pinned. Asking the config question first therefore answered "nothing to
+ * compare against, select run configs with results" for a reader who had hidden
+ * every performance row: untrue on both halves, since the configs are selected
+ * and they do have results. The axis question is settled first because it is
+ * the one the config count depends on.
+ *
+ * Past that, each branch names a control the reader actually has. The Axes menu
+ * can only offer what is `available`; a row taken out with the x is not among
+ * them and only the table's own Hidden control brings it back; and a task with
+ * two metrics has neither remedy, which is worth saying plainly rather than
+ * sending the reader to a menu with nothing more in it.
+ */
+export function metric_radar_empty_state(counts: MetricRadarCounts): {
+  title: string
+  message: string
+} {
+  const restore = "Use “Hidden” above the table below to restore them."
+
+  // Nothing on the ring at all. Two controls can do this and they have
+  // different remedies, so which one to name depends on what is left.
+  if (counts.selected === 0) {
+    if (counts.available === 0) {
+      return counts.hidden > 0
+        ? {
+            title: "Every Metric Is Hidden",
+            message: `Every performance metric is hidden from this comparison. ${restore}`,
+          }
+        : {
+            title: "No Metrics On The Chart",
+            message: "This task has no cost, speed or usage metrics to plot.",
+          }
+    }
+    return {
+      title: "No Metrics On The Chart",
+      message:
+        counts.hidden > 0
+          ? `Every metric is hidden or switched off. Restore rows with “Hidden” above the table below, or switch axes back on with the Axes menu.`
+          : "Every metric is switched off. Switch some back on with the Axes menu.",
+    }
+  }
+
+  if (counts.configs < MIN_METRIC_CONFIGS) {
+    return {
+      title: "Nothing to Compare Against",
+      message:
+        counts.configs === 0
+          ? "Select run configs with results to compare their cost, speed and usage."
+          : "These metrics are scored against the other run configs on the chart, so at least two are needed. Add another run config to compare.",
+    }
+  }
+
+  // Axes on the chart, but too few of them survive. An axis dropped for having
+  // no number on some config is a different story from one nobody switched on.
+  if (counts.plotted < counts.selected) {
+    return {
+      title: "Not Enough Shared Metrics",
+      message: `The selected run configs share fewer than ${MIN_METRIC_AXES} metrics with results. Add more metric axes, or compare run configs that have all been run.`,
+    }
+  }
+  if (counts.available > counts.selected) {
+    return {
+      title: "Not Enough Axes",
+      message: `A metrics radar needs at least ${MIN_METRIC_AXES} axes. Turn more on with the Axes menu.`,
+    }
+  }
+  if (counts.hidden > 0) {
+    return {
+      title: "Not Enough Axes",
+      message: `A metrics radar needs at least ${MIN_METRIC_AXES} axes, and the rest are hidden. ${restore}`,
+    }
+  }
+  return {
+    title: "Not Enough Metrics",
+    message: `A metrics radar needs at least ${MIN_METRIC_AXES} axes, and this task has ${counts.available}.`,
   }
 }
 

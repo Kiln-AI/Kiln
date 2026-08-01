@@ -759,6 +759,12 @@
   ).length
   $: radar_available =
     pinned_nodes.length > 0 && radar_axis_count >= MIN_RADAR_AXES
+  // Hiding every quality row is a different problem from a task with too few
+  // higher-is-better scores, and it has a different remedy - the table's own
+  // Hidden control. The line below it, that every score is still in the table,
+  // is also untrue in that state: the table is empty too, and says so itself.
+  $: quality_all_hidden =
+    criterion_metas.length === 0 && hidden_quality_info.length > 0
 
   // ---- Performance-metrics radar ------------------------------------------
   // The exact complement of the chart above: every key from a metrics eval,
@@ -793,6 +799,10 @@
     all_metric_axes,
     hidden_metric_axis_keys,
   )
+  // What hiding took off the ring, as a count. The chart's empty state has to
+  // name a control that can give an axis back, and for a hidden row the Axes
+  // menu is not it - it does not offer one.
+  $: hidden_axis_count = all_metric_axes.length - visible_axes.length
   $: default_metric_keys = default_metric_axis_keys(all_metric_axes)
   $: shown_metric_keys = metric_axis_keys ?? default_metric_keys
   // Filtered from the canonical list rather than mapped from the selection, so
@@ -1423,15 +1433,25 @@
             class="flex-1 bg-white border border-gray-200 rounded-lg p-6 flex flex-col justify-center items-center text-center"
           >
             <div class="text-lg font-medium text-gray-900 mb-1">
-              {pinned_nodes.length === 0
-                ? "Pin configs to compare"
-                : "Not enough scores to plot"}
+              {#if pinned_nodes.length === 0}
+                Pin configs to compare
+              {:else if quality_all_hidden}
+                Every quality score is hidden
+              {:else}
+                Not enough scores to plot
+              {/if}
             </div>
             <div class="text-sm text-gray-500 max-w-md">
               {#if pinned_nodes.length === 0}
                 Select a run config, or hover a card and hit Pin, to build a
                 compare set. Up to {MAX_PINS} configs are charted here and listed
                 in the table below.
+              {:else if quality_all_hidden}
+                Every quality score is hidden from this comparison. Use “Hidden”
+                above the table below to restore them.
+              {:else if hidden_quality_info.length > 0}
+                A radar chart needs at least {MIN_RADAR_AXES} higher-is-better scores.
+                Some are hidden — use “Hidden” above the table below to restore them.
               {:else}
                 A radar chart needs at least {MIN_RADAR_AXES} higher-is-better scores.
                 Every score is still in the comparison table below.
@@ -1450,6 +1470,8 @@
           {prompts}
           selectedRunConfigIds={pinned_ids}
           notShownNote={metrics_not_shown_note}
+          availableAxisCount={visible_axes.length}
+          hiddenAxisCount={hidden_axis_count}
         >
           <FloatingMenu slot="controls" items={metric_menu_items} width="w-64">
             <button

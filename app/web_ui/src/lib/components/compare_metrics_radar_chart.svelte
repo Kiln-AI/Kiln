@@ -43,8 +43,10 @@
     format_metric_value,
     wrap_axis_label,
     metric_family_bands,
+    metric_radar_empty_state,
     fit_radar,
     MIN_METRIC_AXES,
+    MIN_METRIC_CONFIGS,
     type MetricAxis,
     type RadarAxisLabel,
     type RadarFit,
@@ -71,9 +73,19 @@
   export let selectedRunConfigIds: string[] = []
   // Rendered under the subtitle - what the page left off and why
   export let notShownNote: string | null = null
+  // How many axes the Axes menu can offer, switched on or not. `axes` is only
+  // the ones that are on, so without this the chart cannot tell "the reader
+  // switched the rest off" from "there are no others", and an empty chart on a
+  // task with two metrics sends them to a menu with nothing more in it.
+  export let availableAxisCount: number = 0
+  // How many axes the row-hide x took out of the comparison. The Axes menu
+  // does not offer these back - only the table's own Hidden control does - so
+  // an empty chart has to name whichever of the two can help.
+  export let hiddenAxisCount: number = 0
 
-  // A comparison needs two sides
-  const MIN_METRIC_CONFIGS = 2
+  // At least what is already on the chart: a caller that reports no inventory
+  // is taken to have handed over everything it has.
+  $: availableAxes = Math.max(availableAxisCount, axes.length)
 
   const SCALE_TOOLTIP = `Each axis is named for the quality it measures, so further from the centre is better on every one of them - cheaper, faster, leaner, more cache reuse.
 
@@ -267,16 +279,19 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
   // not there would be worse than no key at all.
   $: showFamilyKey = hasData && familyBands.length > 0
 
-  $: noDataTitle = !enoughConfigs
-    ? "Nothing to Compare Against"
-    : "Not Enough Shared Metrics"
-  $: noDataMessage = !enoughConfigs
-    ? plottedConfigs.length === 0
-      ? "Select run configs with results to compare their cost, speed and usage."
-      : "These metrics are scored against the other run configs on the chart, so at least two are needed. Add another run config to compare."
-    : incompleteAxisCount > 0
-      ? `The selected run configs share fewer than ${MIN_METRIC_AXES} metrics with results. Add more metric axes, or compare run configs that have all been run.`
-      : `A metrics radar needs at least ${MIN_METRIC_AXES} axes. Turn more on with the Axes menu.`
+  // Why the chart is empty, and which control fixes it. The counts go out to
+  // metric_radar_empty_state whole rather than being tested here, because the
+  // ORDER the questions are asked in is the load-bearing part: `plottedConfigs`
+  // is counted through the axes, so with none selected the config test collapses
+  // to "nothing to compare against" for a reader whose configs are pinned and
+  // do have results.
+  $: noData = metric_radar_empty_state({
+    selected: axes.length,
+    plotted: plottedAxes.length,
+    available: availableAxes,
+    hidden: hiddenAxisCount,
+    configs: plottedConfigs.length,
+  })
 
   $: shownNote = (() => {
     const parts: string[] = []
@@ -885,6 +900,6 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
          line up when they sit side by side. -->
     <div use:initChart class="w-full flex-1 min-h-[640px]"></div>
   {:else}
-    <ChartNoData title={noDataTitle} message={noDataMessage} />
+    <ChartNoData title={noData.title} message={noData.message} />
   {/if}
 </div>
