@@ -64,6 +64,7 @@
     default_metric_axis_keys,
     directionless_key_count,
     known_metric_axis_keys,
+    METRIC_FAMILIES,
     METRIC_FAMILY_LABELS,
     COST_KEY,
     INPUT_TOKENS_KEY,
@@ -71,12 +72,27 @@
     OUTPUT_TOKENS_KEY,
     TOTAL_TOKENS_KEY,
     USAGE_KEY_PREFIX,
+    metric_eval_ids,
+    metric_row_info,
+    usage_row_family,
     type MetricFamily,
   } from "$lib/utils/evolution/metric_axes"
+  import {
+    build_score_families,
+    family_for_eval,
+    family_rank,
+    order_families,
+    type ScoreFamily,
+  } from "$lib/utils/evolution/score_families"
   import EvolutionCanvas from "./evolution_canvas.svelte"
   import NodeDetailPanel from "./node_detail_panel.svelte"
   import UnlinkedSection from "./unlinked_section.svelte"
-  import CompareMatrix, { USAGE_ROWS } from "./compare_matrix.svelte"
+  import CompareMatrix, {
+    USAGE_ROWS,
+    type MatrixGroup,
+    type MatrixRow,
+    type UsageRowKey,
+  } from "./compare_matrix.svelte"
   import EvalInspector from "./eval_inspector.svelte"
   import FloatingMenu from "$lib/ui/floating_menu.svelte"
   import type { FloatingMenuItem } from "$lib/ui/floating_menu_types"
@@ -84,6 +100,7 @@
 
   type EvalResultsSummaryResponse =
     components["schemas"]["EvalResultsSummaryResponse"]
+  type Spec = components["schemas"]["Spec"]
   type RunConfigEvalScoresSummary =
     components["schemas"]["RunConfigEvalScoresSummary"]
 
@@ -104,6 +121,11 @@
 
   let evals: Eval[] = []
   let summary: EvalResultsSummaryResponse | null = null
+  // Specs, for the quality radar's families. They carry the only grouping of
+  // the criteria that exists anywhere - see score_families - and nothing else
+  // on the page needs them, so a failure to load is not a page error: the
+  // charts simply render ungrouped.
+  let specs: Spec[] = []
 
   // Lazy per-run-config eval scores (n_used + usage footer in detail panel)
   let eval_scores_cache: Record<string, RunConfigEvalScoresSummary> = {}
@@ -346,6 +368,7 @@
       get_run_configs(),
       get_evals(),
       get_summary(),
+      get_specs(),
     ])
 
     validateStateFromURL()
@@ -382,6 +405,28 @@
       load_error = createKilnError(err)
     } finally {
       loading_evals = false
+    }
+  }
+
+  // Best-effort: specs only supply the family grouping, so a task that has none
+  // (or a request that fails) leaves the page fully functional and ungrouped.
+  // Deliberately not counted in `loading` and never sets load_error.
+  async function get_specs() {
+    try {
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/specs",
+        {
+          params: {
+            path: { project_id, task_id },
+          },
+        },
+      )
+      if (fetch_error || !data) {
+        return
+      }
+      specs = data
+    } catch {
+      specs = []
     }
   }
 
@@ -540,17 +585,15 @@
     hidden_usage = hidden_usage.filter((hidden) => hidden !== key)
   }
 
-  function show_all_hidden_rows() {
-    hidden_scores = []
-    hidden_usage = []
-  }
-
+  // Carries the eval id as well as the label, so a hidden row can be offered
+  // back by the table it came out of rather than by a menu spanning both.
   $: hidden_score_info = hidden_scores.map((key) => {
     const meta = lens_data.keyMetas.find(
       (candidate) => score_key_id(candidate.evalId, candidate.scoreKey) === key,
     )
     return {
       key,
+      eval_id: meta?.evalId ?? key.split("::")[0] ?? "",
       label: meta
         ? `${score_key_label(meta.scoreKey)} · ${meta.evalName}`
         : score_key_label(key.split("::")[1] ?? key),
@@ -561,36 +604,6 @@
     key,
     label: USAGE_ROWS.find((row) => row.key === key)?.label ?? key,
   }))
-
-  $: hidden_count = hidden_score_info.length + hidden_usage_info.length
-
-  $: hidden_menu_items = [
-    ...(hidden_score_info.length > 0
-      ? [
-          { label: "Show Score", header: true },
-          ...hidden_score_info.map(
-            (info): FloatingMenuItem => ({
-              label: info.label,
-              onclick: () => show_score_row(info.key),
-            }),
-          ),
-        ]
-      : []),
-    ...(hidden_usage_info.length > 0
-      ? [
-          { label: "Show Metric", header: true },
-          ...hidden_usage_info.map(
-            (info): FloatingMenuItem => ({
-              label: info.label,
-              onclick: () => show_usage_row(info.key),
-            }),
-          ),
-        ]
-      : []),
-    ...(hidden_count > 1
-      ? [{ label: "Restore all", onclick: show_all_hidden_rows }]
-      : []),
-  ] as FloatingMenuItem[]
 
   // ---- Radar chart inputs -------------------------------------------------
   // The radar takes the same shape the old compare page feeds it; here it is
@@ -603,7 +616,59 @@
   // criterion_key_metas.
   $: criterion_metas = criterion_key_metas(visible_key_metas)
 
-  $: comparison_features = build_features(criterion_metas)
+  // ---- Quality families ---------------------------------------------------
+  // The grouping the task itself declares, read off its specs. See
+  // score_families: it is never invented here, and a task that declares none
+  // leaves every derived value below empty, which every consumer reads as
+  // "ungrouped" and renders exactly as it did before families existed.
+  $: score_families = build_score_families(specs)
+
+  // The families actually in play on this track, in ring order. Derived from
+  // the criteria on the page rather than from every spec, so a family whose
+  // evals have no scores yet does not claim an arc or a table header.
+  $: quality_families = order_families(
+    criterion_metas.map((meta) => family_for_eval(score_families, meta.evalId)),
+  )
+  // One family divides nothing, so it is not a grouping
+  $: quality_grouped = quality_families.length > 1
+
+  // Sorted family by family, which is what makes a band on the ring an unbroken
+  // run and a group in the table contiguous. Informational keys sink within
+  // their family rather than to the bottom of everything, so a family's rows
+  // stay together.
+  $: ordered_criterion_metas = quality_grouped
+    ? [...criterion_metas].sort(
+        (a, b) =>
+          family_rank(
+            quality_families,
+            family_for_eval(score_families, a.evalId).id,
+          ) -
+            family_rank(
+              quality_families,
+              family_for_eval(score_families, b.evalId).id,
+            ) ||
+          (a.direction === "informational" ? 1 : 0) -
+            (b.direction === "informational" ? 1 : 0) ||
+          a.evalName.localeCompare(b.evalName) ||
+          a.scoreKey.localeCompare(b.scoreKey),
+      )
+    : criterion_metas
+
+  // Family per data key for the radar's bands. Empty when ungrouped, which the
+  // chart reads as "draw no arcs and no key".
+  $: quality_axis_families = (() => {
+    if (!quality_grouped) return {}
+    const families: Record<string, ScoreFamily> = {}
+    for (const meta of ordered_criterion_metas) {
+      families[score_key_id(meta.evalId, meta.scoreKey)] = family_for_eval(
+        score_families,
+        meta.evalId,
+      )
+    }
+    return families
+  })()
+
+  $: comparison_features = build_features(ordered_criterion_metas)
   function build_features(keyMetas: ScoreKeyMeta[]): ComparisonFeature[] {
     const by_eval = new Map<string, ScoreKeyMeta[]>()
     for (const meta of keyMetas) {
@@ -768,6 +833,194 @@
     }
     return parts.length > 0 ? parts.join(", ") : null
   })()
+
+  // ---- Comparison tables --------------------------------------------------
+  // Two tables, one per track, split by exactly the rule the two radars use -
+  // `is_metric_eval`, via metric_eval_ids - so a score can never appear on one
+  // chart and in the other track's table.
+  //
+  // Row labels are the one place the two tracks have to say different things.
+  // The metrics RADAR names an axis for the virtue, because the geometry
+  // already claims further-is-better and the label has to agree with it; a
+  // TABLE prints the raw number, where higher is usually worse, so "Total
+  // Latency 42,423.91 ms" under a heading reading "Speed" would contradict the
+  // row. The table therefore takes the plain quantity name - metric_row_info,
+  // the same choice the chart's own tooltips make. The family HEADINGS are
+  // shared between chart and table, and can be: "Tokens" and "Speed" name a
+  // subject, they do not claim which end is good.
+  //
+  // The quality track needs none of that: a pass rate is higher-is-better in
+  // both places, so its rows keep the score key's own name.
+
+  $: metric_eval_id_set = metric_eval_ids(lens_data.keyMetas)
+
+  // Which usage rollup key each table row reads
+  const USAGE_ROW_METRIC_KEYS: Record<UsageRowKey, string> = {
+    cost: COST_KEY,
+    tokens: TOTAL_TOKENS_KEY,
+    latency: LATENCY_KEY,
+  }
+
+  function score_sublabel(meta: ScoreKeyMeta): string {
+    return meta.direction === "informational"
+      ? `${meta.evalName} · informational`
+      : meta.evalName
+  }
+
+  /** Rows in the order given, cut into contiguous groups by family */
+  function group_rows(
+    rows: { row: MatrixRow; family: string; label: string | null }[],
+  ): MatrixGroup[] {
+    const groups: MatrixGroup[] = []
+    for (const entry of rows) {
+      const open = groups[groups.length - 1]
+      if (open && open.key === entry.family) {
+        open.rows.push(entry.row)
+        continue
+      }
+      groups.push({
+        key: entry.family,
+        label: entry.label,
+        rows: [entry.row],
+      })
+    }
+    return groups
+  }
+
+  $: quality_table_groups = group_rows(
+    ordered_criterion_metas.map((meta) => {
+      const family = family_for_eval(score_families, meta.evalId)
+      return {
+        family: quality_grouped ? family.id : "all",
+        label: quality_grouped ? family.label : null,
+        row: {
+          kind: "score" as const,
+          meta,
+          label: score_key_label(meta.scoreKey),
+          sublabel: score_sublabel(meta),
+        },
+      }
+    }),
+  )
+
+  // The performance track: every metric score key plus the native usage
+  // rollup, interleaved into one list ordered by the metrics catalog's own
+  // families. The rollup rows land inside Cost, Tokens and Speed rather than
+  // stranded under everything else, which is where they were.
+  $: performance_table_groups = (() => {
+    const entries: {
+      row: MatrixRow
+      family: MetricFamily
+      label: string
+    }[] = []
+
+    for (const meta of visible_key_metas) {
+      if (!metric_eval_id_set.has(meta.evalId)) continue
+      const info = metric_row_info(meta.scoreKey)
+      entries.push({
+        family: info.family,
+        label: METRIC_FAMILY_LABELS[info.family],
+        row: {
+          kind: "score",
+          meta,
+          label: info.label,
+          sublabel: score_sublabel(meta),
+        },
+      })
+    }
+
+    for (const usage_row of USAGE_ROWS) {
+      if (hidden_usage.includes(usage_row.key)) continue
+      const family = usage_row_family(USAGE_ROW_METRIC_KEYS[usage_row.key])
+      entries.push({
+        family,
+        label: METRIC_FAMILY_LABELS[family],
+        row: {
+          kind: "usage",
+          key: usage_row.key,
+          label: usage_row.label,
+          sublabel: "Usage rollup",
+        },
+      })
+    }
+
+    // Family order first, then the rollup ahead of the eval scores measuring
+    // the same family, then by name - so the ordering is a pure function of the
+    // rows and never depends on the order the summary listed its evals in.
+    entries.sort(
+      (a, b) =>
+        METRIC_FAMILIES.indexOf(a.family) - METRIC_FAMILIES.indexOf(b.family) ||
+        (a.row.kind === "usage" ? 0 : 1) - (b.row.kind === "usage" ? 0 : 1) ||
+        a.row.label.localeCompare(b.row.label),
+    )
+
+    return group_rows(
+      entries.map((entry) => ({
+        row: entry.row,
+        family: entry.family,
+        // Always grouped: unlike the quality families these come from a
+        // catalog this repo owns, so the headings always exist
+        label: entry.label,
+      })),
+    )
+  })()
+
+  // Hidden rows belong to whichever table they came out of, so each table
+  // carries its own restore control rather than one shared menu offering to
+  // restore a row into the other table.
+  $: hidden_quality_info = hidden_score_info.filter(
+    (info) => !metric_eval_id_set.has(info.eval_id),
+  )
+  $: hidden_performance_info = hidden_score_info.filter((info) =>
+    metric_eval_id_set.has(info.eval_id),
+  )
+
+  function hidden_menu(
+    scores: { key: string; label: string }[],
+    usage: { key: string; label: string }[],
+  ): FloatingMenuItem[] {
+    return [
+      ...(scores.length > 0
+        ? [
+            { label: "Show Score", header: true },
+            ...scores.map(
+              (info): FloatingMenuItem => ({
+                label: info.label,
+                onclick: () => show_score_row(info.key),
+              }),
+            ),
+          ]
+        : []),
+      ...(usage.length > 0
+        ? [
+            { label: "Show Metric", header: true },
+            ...usage.map(
+              (info): FloatingMenuItem => ({
+                label: info.label,
+                onclick: () => show_usage_row(info.key),
+              }),
+            ),
+          ]
+        : []),
+      ...(scores.length + usage.length > 1
+        ? [
+            {
+              label: "Restore all",
+              onclick: () => {
+                for (const info of scores) show_score_row(info.key)
+                for (const info of usage) show_usage_row(info.key)
+              },
+            },
+          ]
+        : []),
+    ] as FloatingMenuItem[]
+  }
+
+  $: quality_hidden_menu_items = hidden_menu(hidden_quality_info, [])
+  $: performance_hidden_menu_items = hidden_menu(
+    hidden_performance_info,
+    hidden_usage_info,
+  )
 
   // Score keys come from the lens; the usage rollup comes from the lazily
   // fetched per-config summary. Both caches are passed in as arguments so the
@@ -1122,6 +1375,10 @@
             selectedRunConfigIds={pinned_ids}
             scoreAxisMaxes={score_axis_maxes}
             scoreDirections={score_directions}
+            axisFamilies={quality_axis_families}
+            title="Quality Scores"
+            subtitle="Eval scores for the selected run configurations. Higher is better on every axis."
+            table_location="below"
             legend_position="bottom"
           />
         {:else}
@@ -1171,23 +1428,31 @@
       </div>
     </div>
 
-    <!-- Section 3: the comparison matrix, full page width -->
+    <!-- Section 3: the comparison tables - one per track, each full page
+         width and stacked rather than paired into columns. There can be a
+         dozen run configs, and every one of them is a column: splitting the
+         page in two would halve the columns visible before the reader has to
+         scroll, in a layout whose whole problem is horizontal room. Each
+         table scrolls inside its own container, so the page body never does.
+
+         Same partition as the two radars above (is_metric_eval), so a score
+         cannot appear on one chart and in the other track's table. -->
     {#if pinned_nodes.length > 0}
       <div class="mt-6">
         <div class="flex items-center gap-2 mb-2">
           <div class="text-sm font-medium text-gray-900">
-            Comparison ({pinned_nodes.length}
+            Quality Scores ({pinned_nodes.length}
             {pinned_nodes.length === 1 ? "config" : "configs"})
           </div>
-          {#if hidden_count > 0}
-            <FloatingMenu items={hidden_menu_items} width="w-72">
+          {#if hidden_quality_info.length > 0}
+            <FloatingMenu items={quality_hidden_menu_items} width="w-72">
               <button
                 slot="trigger"
                 type="button"
                 class="btn btn-xs btn-outline rounded-full font-normal"
-                title="Rows hidden from the table and the chart"
+                title="Rows hidden from this table and the quality radar"
               >
-                Hidden ({hidden_count})
+                Hidden ({hidden_quality_info.length})
               </button>
             </FloatingMenu>
           {/if}
@@ -1197,8 +1462,43 @@
           {lens_data}
           {eval_scores_cache}
           {eval_scores_loading}
-          hidden_score_keys={hidden_scores}
-          hidden_usage_keys={hidden_usage}
+          groups={quality_table_groups}
+          empty_message="Every quality score is hidden. Use “Hidden” above to restore them."
+          on:select={(event) => handle_select(event.detail)}
+          on:inspect={(event) =>
+            open_inspector(event.detail.eval_id, event.detail.run_config_id)}
+          on:hide_score={(event) => hide_score_row(event.detail)}
+          on:hide_usage={(event) => hide_usage_row(event.detail)}
+        />
+      </div>
+
+      <div class="mt-6">
+        <div class="flex items-center gap-2 mb-2">
+          <div class="text-sm font-medium text-gray-900">
+            Performance Metrics ({pinned_nodes.length}
+            {pinned_nodes.length === 1 ? "config" : "configs"})
+          </div>
+          {#if hidden_performance_info.length + hidden_usage_info.length > 0}
+            <FloatingMenu items={performance_hidden_menu_items} width="w-72">
+              <button
+                slot="trigger"
+                type="button"
+                class="btn btn-xs btn-outline rounded-full font-normal"
+                title="Rows hidden from this table"
+              >
+                Hidden ({hidden_performance_info.length +
+                  hidden_usage_info.length})
+              </button>
+            </FloatingMenu>
+          {/if}
+        </div>
+        <CompareMatrix
+          {pinned_nodes}
+          {lens_data}
+          {eval_scores_cache}
+          {eval_scores_loading}
+          groups={performance_table_groups}
+          empty_message="Every performance metric is hidden. Use “Hidden” above to restore them."
           on:select={(event) => handle_select(event.detail)}
           on:inspect={(event) =>
             open_inspector(event.detail.eval_id, event.detail.run_config_id)}

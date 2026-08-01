@@ -49,6 +49,7 @@
 // stays off and is counted in the note under the chart.
 
 import { formatLatency, score_key_label } from "$lib/utils/formatters"
+import { family_bands, type FamilyBand } from "./family_bands"
 import type { ScoreKeyMeta } from "./score_lens"
 import { score_key_id } from "./score_lens"
 
@@ -758,7 +759,7 @@ export function wrap_axis_label(label: string, maxChars: number = 13): string {
 }
 
 /**
- * One unbroken run of same-family axes, in the order they are drawn.
+ * The runs of same-family axes on the metrics ring, in the order they are drawn.
  *
  * The families were already contiguous - `compare_axes` sees to that - but
  * contiguity is a property of the DATA, and a reader looking at sixteen labels
@@ -766,80 +767,53 @@ export function wrap_axis_label(label: string, maxChars: number = 13): string {
  * draws an arc for and what the key under the title names, so both are derived
  * from the same list and cannot disagree about where a family ends.
  *
- * Runs, not groups: a family that somehow arrived split would produce two arcs,
- * which is what the picture would actually be showing. Grouping instead would
- * draw one arc spanning the gap and quietly lie about the axes inside it.
- *
- * Fewer than two runs returns nothing. A lone family divides nothing - a full
- * circle of arc is decoration - and this is the case the axis picker reaches
- * whenever it is narrowed to one family, so it has to be silent rather than
- * ringed. That also covers the empty axis set.
+ * The geometry is shared with the quality radar - see `./family_bands`, which
+ * is also where the single-family and empty cases are explained.
  */
-export interface MetricFamilyBand {
-  family: MetricFamily
-  /** The family's heading, the same one the axis picker uses */
-  label: string
-  /** Index of the run's first axis, into the axis list as drawn */
-  startIndex: number
-  /** Index of the run's last axis */
-  endIndex: number
-  /** How many axes the run covers */
-  count: number
-}
-
-export function metric_family_bands(axes: MetricAxis[]): MetricFamilyBand[] {
-  const bands: MetricFamilyBand[] = []
-  axes.forEach((axis, index) => {
-    const open = bands[bands.length - 1]
-    if (open && open.family === axis.family) {
-      open.endIndex = index
-      open.count += 1
-      return
-    }
-    bands.push({
+export function metric_family_bands(axes: MetricAxis[]): FamilyBand[] {
+  return family_bands(
+    axes.map((axis) => ({
       family: axis.family,
       label: METRIC_FAMILY_LABELS[axis.family],
-      startIndex: index,
-      endIndex: index,
-      count: 1,
-    })
-  })
-  return bands.length > 1 ? bands : []
+    })),
+  )
 }
 
 /**
- * The arc one family band sweeps, as canvas angles.
+ * How a metric is named and grouped in a TABLE of raw values, as opposed to on
+ * the ring.
  *
- * Two angle conventions meet here and they run opposite ways, which is the only
- * thing in this file worth a test of its own. echarts places indicator `i` at
- * `theta = start - i * step` and plots it with `y = cy - r * sin(theta)`, so its
- * angles are the mathematical ones, counterclockwise off a y-up axis. A canvas
- * arc measures from the same origin but with y pointing DOWN, so the same
- * direction is `phi = -theta`. Getting that sign wrong draws the band on the
- * far side of the chart from the labels it belongs to.
+ * The two need different names and this is the whole reason the catalog carries
+ * both. A radar can only say "further from the centre is better", so its axes
+ * are named for the virtue - "Speed", "Cost Efficiency" - and the geometry then
+ * agrees with the label. A table prints the raw number, where higher is very
+ * often worse, and "Total Latency 42,423.91 ms" under a heading that says
+ * "Speed" would be telling the reader the opposite of what the row says. So the
+ * table takes `valueLabel`, the plain name of the quantity, which is the same
+ * choice the tooltips already make ("Cost: $0.0123", never "Cost Efficiency").
  *
- * The band runs from half a slot before its first axis to half a slot after its
- * last, so every axis sits under its own family and the boundary falls midway
- * between the two labels it separates - which is where a reader would draw it.
- * A gap is then taken off each end: the gap is what the eye actually reads as a
- * boundary, so it is never allowed to consume more than half the band, and a
- * one-axis family keeps a visible arc rather than vanishing into its own
- * padding.
+ * The FAMILY headings are shared between the two, and can be: they are nouns
+ * for a subject area ("Tokens", "Speed"), not claims about which end is good.
+ *
+ * Total, unlike the axis builders: a table shows every row it is given, so a
+ * key the catalog has never heard of gets its plain label and lands in "Other"
+ * rather than being dropped.
  */
-export function metric_band_arc(
-  band: Pick<MetricFamilyBand, "startIndex" | "endIndex" | "count">,
-  axisCount: number,
-  options: { startAngleDegrees: number; gapRadians: number },
-): { startAngle: number; endAngle: number } {
-  const step = (Math.PI * 2) / Math.max(axisCount, 1)
-  const start = (options.startAngleDegrees * Math.PI) / 180
-  const gap = Math.min(Math.max(options.gapRadians, 0), band.count * step * 0.5)
-  const first = start - band.startIndex * step
-  const last = start - band.endIndex * step
-  return {
-    startAngle: -(first + step / 2) + gap / 2,
-    endAngle: -(last - step / 2) - gap / 2,
-  }
+export function metric_row_info(scoreKey: string): {
+  family: MetricFamily
+  label: string
+} {
+  const definition = definition_for_score_key(scoreKey)
+  return definition
+    ? { family: definition.family, label: definition.valueLabel }
+    : { family: "other", label: score_key_label(scoreKey) }
+}
+
+/** The catalog's family for a usage rollup key, so the rollup rows sort into it */
+export function usage_row_family(usageKey: string): MetricFamily {
+  return (
+    USAGE_METRIC_AXES.find((axis) => axis.key === usageKey)?.family ?? "other"
+  )
 }
 
 /** The box a radar is drawn into, in px */

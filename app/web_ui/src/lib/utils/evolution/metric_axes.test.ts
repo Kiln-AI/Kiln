@@ -23,7 +23,8 @@ import {
   metric_eval_ids,
   wrap_axis_label,
   metric_family_bands,
-  metric_band_arc,
+  metric_row_info,
+  usage_row_family,
   fit_radar,
   MIN_RADAR_RADIUS,
   type MetricAxis,
@@ -783,65 +784,6 @@ describe("metric_family_bands", () => {
   })
 })
 
-describe("metric_band_arc", () => {
-  const band = (startIndex: number, endIndex: number) => ({
-    startIndex,
-    endIndex,
-    count: endIndex - startIndex + 1,
-  })
-  const arc = (b: ReturnType<typeof band>, count: number, gap = 0) =>
-    metric_band_arc(b, count, { startAngleDegrees: 90, gapRadians: gap })
-
-  // Canvas angles: 0 is due east and they grow CLOCKWISE, because y points down
-  const degrees = (radians: number) => Math.round((radians * 180) / Math.PI)
-
-  it("centres a one-axis band on its own axis", () => {
-    // Four axes from the top: axis 0 is straight up, which is -90 on a canvas
-    const { startAngle, endAngle } = arc(band(0, 0), 4)
-    expect(degrees(startAngle)).toBe(-135)
-    expect(degrees(endAngle)).toBe(-45)
-    expect(degrees((startAngle + endAngle) / 2)).toBe(-90)
-  })
-
-  it("sweeps clockwise, following the indicators", () => {
-    // Axis 1 of 4 is due east with clockwise indicators, so a band over axes
-    // 0 and 1 covers the top-right quadrant and a bit either side
-    const { startAngle, endAngle } = arc(band(0, 1), 4)
-    expect(endAngle).toBeGreaterThan(startAngle)
-    expect(degrees(startAngle)).toBe(-135)
-    expect(degrees(endAngle)).toBe(45)
-  })
-
-  it("spans half a slot past the axes at each end, so boundaries fall between", () => {
-    const first = arc(band(0, 0), 4)
-    const second = arc(band(1, 1), 4)
-    expect(second.startAngle).toBeCloseTo(first.endAngle, 10)
-  })
-
-  it("takes the gap out of the sweep, half at each end", () => {
-    const step = (Math.PI * 2) / 8
-    const gap = 0.2
-    const { startAngle, endAngle } = arc(band(2, 4), 8, gap)
-    expect(endAngle - startAngle).toBeCloseTo(3 * step - gap, 10)
-    const bare = arc(band(2, 4), 8)
-    expect(startAngle - bare.startAngle).toBeCloseTo(gap / 2, 10)
-    expect(bare.endAngle - endAngle).toBeCloseTo(gap / 2, 10)
-  })
-
-  it("never lets the gap eat the band - a lone axis keeps a visible arc", () => {
-    const step = (Math.PI * 2) / 16
-    const { startAngle, endAngle } = arc(band(0, 0), 16, 99)
-    expect(endAngle - startAngle).toBeCloseTo(step * 0.5, 10)
-    expect(endAngle).toBeGreaterThan(startAngle)
-  })
-
-  it("survives a degenerate axis count rather than dividing by zero", () => {
-    const { startAngle, endAngle } = arc(band(0, 0), 0)
-    expect(Number.isFinite(startAngle)).toBe(true)
-    expect(Number.isFinite(endAngle)).toBe(true)
-  })
-})
-
 describe("fit_radar", () => {
   const insets = { legendHeight: 54, labelGap: 21, pad: 4 }
   // The card as the page actually lays it out: much taller than it is wide
@@ -972,5 +914,56 @@ describe("fit_radar", () => {
     const fit = fit_radar(BOX, [], insets)
     expect(fit.radius).toBeGreaterThan(MIN_RADAR_RADIUS)
     expect(fit.cx).toBe(BOX.width / 2)
+  })
+})
+
+describe("metric_row_info", () => {
+  // A table prints the raw number, so it takes the plain name of the quantity
+  // rather than the radar's virtue - "Total Latency 42,423.91" under a heading
+  // reading "Speed" would say the opposite of what the row says.
+  it("names the quantity, not the virtue", () => {
+    expect(metric_row_info("latency_ms_total")).toEqual({
+      family: "speed",
+      label: "Total Latency",
+    })
+    expect(metric_row_info("cost_usd").label).toBe("Cost")
+    expect(metric_row_info("skill_reads_repeat").label).toBe(
+      "Repeated Skill Reads",
+    )
+  })
+
+  it("keeps the raw-key names the table used to show readable", () => {
+    expect(metric_row_info("latency_ms_turn1")).toEqual({
+      family: "speed",
+      label: "Turn 1 Latency",
+    })
+    expect(metric_row_info("latency_ms_per_call").label).toBe(
+      "Latency per Call",
+    )
+  })
+
+  it("is total - a key the catalog never heard of still gets a row", () => {
+    expect(metric_row_info("some_new_metric")).toEqual({
+      family: "other",
+      label: "Some New Metric",
+    })
+  })
+
+  it("agrees with the radar about which family a metric is in", () => {
+    for (const axis of build_metric_axes([])) {
+      expect(metric_row_info(axis.quantity).family).toBe(axis.family)
+    }
+  })
+})
+
+describe("usage_row_family", () => {
+  it("sorts the rollup rows into the families they measure", () => {
+    expect(usage_row_family(COST_KEY)).toBe("cost")
+    expect(usage_row_family(TOTAL_TOKENS_KEY)).toBe("tokens")
+    expect(usage_row_family(LATENCY_KEY)).toBe("speed")
+  })
+
+  it("files an unknown rollup field under Other rather than throwing", () => {
+    expect(usage_row_family("cost::mean_nonsense")).toBe("other")
   })
 })

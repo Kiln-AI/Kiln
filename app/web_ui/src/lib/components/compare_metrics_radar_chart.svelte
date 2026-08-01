@@ -43,14 +43,16 @@
     format_metric_value,
     wrap_axis_label,
     metric_family_bands,
-    metric_band_arc,
     fit_radar,
     MIN_METRIC_AXES,
     type MetricAxis,
-    type MetricFamilyBand,
     type RadarAxisLabel,
     type RadarFit,
   } from "$lib/utils/evolution/metric_axes"
+  import {
+    family_band_arc,
+    type FamilyBand,
+  } from "$lib/utils/evolution/family_bands"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
@@ -117,7 +119,7 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
   const BAND_RING_GAP = 6
   const BAND_THICKNESS = 5
   const BAND_LABEL_GAP = 6
-  // Read as the boundary, so it is generous; clamped per band by metric_band_arc
+  // Read as the boundary, so it is generous; clamped per band by family_band_arc
   const BAND_ARC_GAP = 16
   const BAND_TONE = "#aeb4bf"
 
@@ -464,14 +466,14 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
   // splits a radar's background into rings, never into sectors, and a ring is
   // the one division this chart does not need.
   function bandGraphics(
-    bands: MetricFamilyBand[],
+    bands: FamilyBand[],
     axisCount: number,
     layout: RadarFit,
   ) {
     const inner = layout.radius + BAND_RING_GAP
     const outer = inner + BAND_THICKNESS
     return bands.map((band) => {
-      const arc = metric_band_arc(band, axisCount, {
+      const arc = family_band_arc(band, axisCount, {
         startAngleDegrees: RADAR_START_ANGLE,
         // A gap in px, as an angle at the radius it is drawn at, so the boundary
         // looks the same width whatever the card size

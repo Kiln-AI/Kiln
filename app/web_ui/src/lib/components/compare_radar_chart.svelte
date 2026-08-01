@@ -24,6 +24,11 @@
   } from "$lib/utils/run_config_formatters"
   import { formatLatency } from "$lib/utils/formatters"
   import { relative_metric_score } from "$lib/utils/relative_metric_score"
+  import {
+    family_bands,
+    family_band_arc,
+    type FamilyBand,
+  } from "$lib/utils/evolution/family_bands"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
@@ -51,6 +56,27 @@
   // scrollable horizontal legend underneath, so it can never paint over the
   // right-hand axis labels — for narrow columns with many configs.
   export let legend_position: "side" | "bottom" = "side"
+  // Family per data key, for grouping the ring. The page resolves these from
+  // the task's own metadata (see $lib/utils/evolution/score_families) rather
+  // than this chart classifying anything, and supplies them already ordered:
+  // the axes arrive family by family, so a band is a run of equal labels.
+  //
+  // Empty - the default, and what a task with no declared grouping produces -
+  // means no bands and no key, and the chart is exactly what it was before
+  // families existed. Only honoured in "bottom" mode, where the geometry is
+  // solved in px: "side" mode leaves the ring to echarts' percentages, and an
+  // arc cannot be placed against a radius nobody has computed.
+  export let axisFamilies: Record<string, { id: string; label: string }> = {}
+  // Card heading. Defaults are the historical text, so the older compare page -
+  // which also plots usage axes here - is unchanged; Compare V2 passes the
+  // Quality-track naming that pairs this card with the metrics one beside it.
+  export let title: string = "Radar Chart"
+  export let subtitle: string =
+    "Compare the evaluation scores of the run configurations selected above."
+  // Where the comparison table sits relative to this card, so the notes that
+  // point at it are true on both pages that use this chart: the older compare
+  // page puts its table above, Compare V2 puts it below.
+  export let table_location: "above" | "below" = "above"
 
   // Axis scaling mode. Relative scales each axis to the best value across the selected
   // run configs, which is the better lens for spotting differences between configs.
@@ -79,11 +105,19 @@
   // Below this many axes there's no shape to read, so there's no chart to draw
   const MIN_RADAR_AXES = 3
 
-  const SCALE_TOOLTIP = `**Relative**: each axis is scaled to the highest value across the selected run configs. Best for spotting differences between configs.
+  $: SCALE_TOOLTIP = `**Relative**: each axis is scaled to the highest value across the selected run configs. Best for spotting differences between configs.
 
 **Full Scale**: each axis uses the score's own range (0-1 for pass/fail, 1-5 for 5-star). Best when looking at one run config on its own, where there is nothing to compare against.
 
-Cost, latency and token axes score each run config against the others, so they stay relative in both modes. With a single run config there's nothing to compare against and they all sit at the midpoint. Hide one with the x on its row in the table above.`
+Cost, latency and token axes score each run config against the others, so they stay relative in both modes. With a single run config there's nothing to compare against and they all sit at the midpoint. Hide one with the x on its row in the table ${table_location}.`
+
+  // Only true once the task actually groups its criteria, so an ungrouped chart
+  // is never told about a division it does not draw
+  $: scaleTooltip = showFamilyKey
+    ? `${SCALE_TOOLTIP}
+
+Related criteria sit together: the axes are grouped into the families the task's specs declare, read **clockwise from the top**, and the arcs just outside the ring mark where each family ends.`
+    : SCALE_TOOLTIP
 
   // Chart instance
   let chartInstance: echarts.ECharts | null = null
@@ -159,6 +193,27 @@ Cost, latency and token axes score each run config against the others, so they s
     })
     return best
   }
+
+  // Indicator 0 sits at the top and the ring is read clockwise from there, the
+  // same way the metrics radar reads. echarts walks indicators counterclockwise
+  // unless told otherwise, which draws a grouped ring backwards - the families
+  // would come out in the reverse of the order the key names them in. Set
+  // unconditionally rather than only when families are on, so an axis is in the
+  // same place whether or not the task groups its specs.
+  const RADAR_START_ANGLE = 90
+
+  // The family band: a thin neutral arc outside the ring, broken at each
+  // boundary. Same treatment, same tones and the same reasoning as the metrics
+  // radar - the gaps carry the division and no hue is introduced, because a
+  // per-family colour would be a second colour system arguing with the series.
+  // See compare_metrics_radar_chart for the full argument.
+  const BAND_RING_GAP = 6
+  const BAND_THICKNESS = 5
+  const BAND_LABEL_GAP = 6
+  const BAND_ARC_GAP = 16
+  const BAND_TONE = "#aeb4bf"
+  // What the band costs the labels: they start outside it when it is drawn
+  const BAND_BLOCK_PX = BAND_RING_GAP + BAND_THICKNESS + BAND_LABEL_GAP
 
   const COST_KEY = "cost::mean_cost"
   const LATENCY_KEY = "cost::mean_total_llm_latency_ms"
@@ -238,7 +293,7 @@ Cost, latency and token axes score each run config against the others, so they s
       )
     }
     if (parts.length === 0) return null
-    return `Not shown: ${parts.join(", ")}. See the table above.`
+    return `Not shown: ${parts.join(", ")}. See the table ${table_location}.`
   })()
 
   // Get labels for radar indicators
@@ -289,6 +344,9 @@ Cost, latency and token axes score each run config against the others, so they s
   function bottomRadarGeometry(
     width: number,
     height: number,
+    // The band lives between the ring and the axis names, so from the radius'
+    // point of view it is simply more of the gap the names are held off by
+    bandPx: number = 0,
   ): { center: (number | string)[]; radius: number | string } {
     if (width <= 0 || height <= 0) {
       return { center: ["50%", "45%"], radius: "71%" }
@@ -296,7 +354,10 @@ Cost, latency and token axes score each run config against the others, so they s
     // The legend sits under the plot, so the ring is centred in what's left
     const cy = (height - BOTTOM_LEGEND_PX) / 2
     const radius = Math.max(
-      Math.min(cy - AXIS_NAME_BLOCK_PX, width / 2 - AXIS_NAME_WIDTH_PX),
+      Math.min(
+        cy - AXIS_NAME_BLOCK_PX - bandPx,
+        width / 2 - AXIS_NAME_WIDTH_PX - bandPx,
+      ),
       MIN_RADAR_RADIUS_PX,
     )
     // Centre in px rather than "50%": bottomAxisLabels positions text in the
@@ -490,11 +551,13 @@ Cost, latency and token axes score each run config against the others, so they s
       radius: number
       width: number
       bandBottom: number
+      /** Extra clearance for the family band, when one is drawn */
+      familyBandPx?: number
     },
   ): BottomAxisLabel[] {
     const count = names.length
     if (count === 0) return []
-    const ringRadius = box.radius + LABEL_RING_GAP
+    const ringRadius = box.radius + LABEL_RING_GAP + (box.familyBandPx ?? 0)
     // One wrap width for the whole ring: the tightest case is an axis pointing
     // straight left or right, and mixing wrap widths by angle reads as noise.
     // It is also what makes the horizontal cap below exact.
@@ -502,11 +565,13 @@ Cost, latency and token axes score each run config against the others, so they s
       LABEL_MIN_WIDTH_PX,
       box.width / 2 - ringRadius - LABEL_EDGE_PAD,
     )
-    // echarts puts indicator 0 at startAngle (90 by default) and walks
-    // counter-clockwise with screen y growing downwards - the same convention
+    // echarts puts indicator 0 at startAngle and, with `clockwise` set on the
+    // radar, walks the indicators the way the ring is read - so the angle
+    // DECREASES with the index. Screen y grows downwards, the same convention
     // radarCoordSys() and the radar's own dataToPoint use.
     const angles = names.map(
-      (_, index) => Math.PI / 2 + (index * Math.PI * 2) / count,
+      (_, index) =>
+        (RADAR_START_ANGLE * Math.PI) / 180 - (index * Math.PI * 2) / count,
     )
     const tipY = (index: number) =>
       box.cy - ringRadius * Math.sin(angles[index])
@@ -801,7 +866,7 @@ Cost, latency and token axes score each run config against the others, so they s
     if (trimmed) {
       html += `<div style="color: #888; padding-top: 4px;">+${
         scores.length - shown.length
-      } more in the table above</div>`
+      } more in the table ${table_location}</div>`
     }
 
     return html
@@ -941,16 +1006,42 @@ Cost, latency and token axes score each run config against the others, so they s
       !selectedRunConfigIds ||
       !visibleUsageKeys
     ) {
-      return { hasData: false, noResultKeyCount: 0 }
+      return { hasData: false, noResultKeyCount: 0, keys: [] as string[] }
     }
-    const { indicators, series, noResultKeyCount } = generateChartData()
+    const { indicators, series, noResultKeyCount, keys } = generateChartData()
     return {
       hasData: indicators.length > 0 && series.length > 0,
       noResultKeyCount,
+      keys,
     }
   })()
   $: hasData = chartSummary.hasData
   $: noResultAxisCount = chartSummary.noResultKeyCount
+
+  // The family runs as they will actually be drawn. Derived from the keys that
+  // survived every filter, not from what the page offered, so a score dropped
+  // for having no result on some config takes its share of the arc with it, a
+  // family emptied that way leaves neither an orphaned arc nor a name in the
+  // key, and the arcs and the key can never disagree.
+  //
+  // A key with no family - the usage axes the old compare page appends, or an
+  // eval the task's scheme missed - falls into one shared "Other" run. With no
+  // families at all every key lands there, that is a single run, and
+  // family_bands returns nothing: the no-grouping case needs no flag of its own.
+  $: familyBands =
+    legend_position === "bottom" && hasData
+      ? family_bands(
+          chartSummary.keys.map((key) => ({
+            family: axisFamilies[key]?.id ?? "__other__",
+            label: axisFamilies[key]?.label ?? "Other",
+          })),
+        )
+      : ([] as FamilyBand[])
+
+  $: showFamilyKey = hasData && familyBands.length > 0
+  // Only reserved when a band is actually drawn, so an ungrouped chart keeps
+  // every pixel of radius it had before
+  $: familyBandPx = familyBands.length > 0 ? BAND_BLOCK_PX : 0
 
   // When there's nothing to draw, say which of the two reasons it is
   $: noDataMessage =
@@ -976,7 +1067,11 @@ Cost, latency and token axes score each run config against the others, so they s
     const forceBottomLegend = legend_position === "bottom"
     const compactLayout = forceBottomLegend || series.length <= 2
 
-    const bottomGeometry = bottomRadarGeometry(chartWidth, chartHeight)
+    const bottomGeometry = bottomRadarGeometry(
+      chartWidth,
+      chartHeight,
+      familyBandPx,
+    )
 
     // Bottom mode draws its own axis names. Empty on the first paint of an
     // unmeasured box, where the geometry is still percentages - and where
@@ -991,8 +1086,49 @@ Cost, latency and token axes score each run config against the others, so they s
               radius: bottomGeometry.radius,
               width: chartWidth,
               bandBottom: chartHeight - BOTTOM_LEGEND_PX,
+              familyBandPx,
             },
           )
+        : []
+
+    // One arc per family run, drawn as a graphic rather than by the radar:
+    // echarts splits a radar's background into rings, never into sectors. Drawn
+    // OUTSIDE the plot, because the run configs are this chart's subject and a
+    // sector swept under them would sit beneath every polygon and change what
+    // the series look like from one wedge to the next.
+    const solvedRadius =
+      typeof bottomGeometry.radius === "number" ? bottomGeometry.radius : null
+    const bandGraphics =
+      solvedRadius !== null && familyBands.length > 0
+        ? familyBands.map((band) => {
+            const inner = solvedRadius + BAND_RING_GAP
+            const outer = inner + BAND_THICKNESS
+            const arc = family_band_arc(band, keys.length, {
+              startAngleDegrees: RADAR_START_ANGLE,
+              // A gap in px, as an angle at the radius it is drawn at, so the
+              // boundary looks the same width whatever the card size
+              gapRadians: BAND_ARC_GAP / outer,
+            })
+            return {
+              type: "sector" as const,
+              // Inert: the tooltip works out which axis is under the cursor
+              // from the pointer, and anything that could become the event
+              // target first would break that - see axisIndexFromPointer.
+              silent: true,
+              z: 0,
+              shape: {
+                cx: chartWidth / 2,
+                cy: bottomGeometry.center[1] as number,
+                r0: inner,
+                r: outer,
+                startAngle: arc.startAngle,
+                endAngle: arc.endAngle,
+                clockwise: true,
+                cornerRadius: BAND_THICKNESS / 2,
+              },
+              style: { fill: BAND_TONE },
+            }
+          })
         : []
 
     const legendTextStyle = {
@@ -1075,6 +1211,11 @@ Cost, latency and token axes score each run config against the others, so they s
             : compactLayout
               ? "62%"
               : "85%",
+          startAngle: RADAR_START_ANGLE,
+          // Read clockwise from the top, matching the metrics radar beside it.
+          // Without this echarts walks the indicators the other way and a
+          // grouped ring comes out in the reverse of the order its key names.
+          clockwise: true,
           axisName: {
             color: LABEL_COLOR,
             ...(forceBottomLegend
@@ -1127,21 +1268,25 @@ Cost, latency and token axes score each run config against the others, so they s
         ...(forceBottomLegend
           ? {
               graphic: {
-                elements: axisLabels.map((label) => ({
-                  type: "text" as const,
-                  x: label.x,
-                  y: label.y,
-                  silent: true,
-                  z: 100,
-                  style: {
-                    text: label.text,
-                    align: label.align,
-                    verticalAlign: "middle" as const,
-                    fontSize: LABEL_FONT_SIZE,
-                    lineHeight: LABEL_LINE_HEIGHT,
-                    fill: LABEL_COLOR,
-                  },
-                })),
+                elements: [
+                  // Family arcs first, so they sit under the labels they group
+                  ...bandGraphics,
+                  ...axisLabels.map((label) => ({
+                    type: "text" as const,
+                    x: label.x,
+                    y: label.y,
+                    silent: true,
+                    z: 100,
+                    style: {
+                      text: label.text,
+                      align: label.align,
+                      verticalAlign: "middle" as const,
+                      fontSize: LABEL_FONT_SIZE,
+                      lineHeight: LABEL_LINE_HEIGHT,
+                      fill: LABEL_COLOR,
+                    },
+                  })),
+                ],
               },
             }
           : {}),
@@ -1170,6 +1315,8 @@ Cost, latency and token axes score each run config against the others, so they s
     scoreAxisMaxes &&
     scoreDirections &&
     visibleUsageKeys &&
+    axisFamilies &&
+    familyBands &&
     (model_info || model_info === null) &&
     (prompts || prompts === null)
   ) {
@@ -1231,13 +1378,39 @@ Cost, latency and token axes score each run config against the others, so they s
   >
     <div class="flex flex-row gap-4 items-start">
       <div class="flex-grow">
-        <div class="text-xl font-bold">Radar Chart</div>
-        <div class="text-sm text-gray-500 {notShownNote ? '' : 'mb-4'}">
-          Compare the evaluation scores of the run configurations selected
-          above.
+        <div class="text-xl font-bold">{title}</div>
+        <div
+          class="text-sm text-gray-500 {notShownNote || showFamilyKey
+            ? ''
+            : 'mb-4'}"
+        >
+          {subtitle}
         </div>
         {#if notShownNote}
-          <div class="text-xs text-gray-400 mt-1 mb-4">{notShownNote}</div>
+          <div class="text-xs text-gray-400 mt-1 {showFamilyKey ? '' : 'mb-4'}">
+            {notShownNote}
+          </div>
+        {/if}
+        {#if showFamilyKey}
+          <!-- The arcs show WHERE the criteria divide; this says WHICH group is
+               which. Order and count are the whole mapping - the first arc
+               clockwise from twelve o'clock covers the first name here, over as
+               many axes as it claims - so no swatch is needed and, more to the
+               point, no colour: a per-family hue would be a second colour
+               system arguing with the series. Both this and the arcs are built
+               from the same runs, so an axis dropped for having no result
+               cannot leave a name without an arc. -->
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 mb-4">
+            <span class="text-xs text-gray-400">
+              Score families, clockwise from the top:
+            </span>
+            {#each familyBands as band}
+              <span class="text-xs text-gray-500">
+                {band.label}
+                <span class="text-gray-400">{band.count}</span>
+              </span>
+            {/each}
+          </div>
         {/if}
       </div>
       <div class="flex flex-row gap-1 items-center flex-shrink-0">
@@ -1259,7 +1432,7 @@ Cost, latency and token axes score each run config against the others, so they s
             Full Scale
           </button>
         </div>
-        <InfoTooltip tooltip_text={SCALE_TOOLTIP} position="bottom" />
+        <InfoTooltip tooltip_text={scaleTooltip} position="bottom" />
       </div>
     </div>
     {#if hasData}
