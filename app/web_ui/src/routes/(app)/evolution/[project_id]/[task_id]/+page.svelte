@@ -87,6 +87,7 @@
     order_families,
     type ScoreFamily,
   } from "$lib/utils/evolution/score_families"
+  import { spec_descriptions_by_eval } from "$lib/utils/evolution/axis_help"
   import EvolutionCanvas from "./evolution_canvas.svelte"
   import NodeDetailPanel from "./node_detail_panel.svelte"
   import UnlinkedSection from "./unlinked_section.svelte"
@@ -654,6 +655,13 @@
   // leaves every derived value below empty, which every consumer reads as
   // "ungrouped" and renders exactly as it did before families existed.
   $: score_families = build_score_families(specs)
+
+  // ...and the other thing the specs are good for: what each criterion
+  // actually says. The quality radar shows it when a reader hovers an axis
+  // name, which is otherwise a short label with nowhere on the page that
+  // explains it. Same best-effort fetch, so a task with no specs simply has no
+  // popups. See $lib/utils/evolution/axis_help.
+  $: spec_descriptions = spec_descriptions_by_eval(specs)
 
   // The families actually in play on this track, in ring order. Derived from
   // the criteria on the page rather than from every spec, so a family whose
@@ -1423,6 +1431,7 @@
             scoreAxisMaxes={score_axis_maxes}
             scoreDirections={score_directions}
             axisFamilies={quality_axis_families}
+            specDescriptions={spec_descriptions}
             title="Quality Scores"
             subtitle="Eval scores for the selected run configurations. Higher is better on every axis."
             table_location="below"

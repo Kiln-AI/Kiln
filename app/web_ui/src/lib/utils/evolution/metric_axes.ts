@@ -976,6 +976,47 @@ function axis_label_box(label: RadarAxisLabel): {
   }
 }
 
+/** A drawn axis name's box, in the same pixels the chart is laid out in */
+export interface AxisLabelRect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+/**
+ * Where echarts will draw each axis name, as a box in chart pixels.
+ *
+ * Solving the radius needs these boxes and so does hit-testing a hover on one,
+ * and they had better be the same boxes: a hover target derived separately
+ * would drift from the drawn name the moment either derivation was touched.
+ * `radar_envelope` is written in terms of this for exactly that reason, at a
+ * centre of (0, 0).
+ *
+ * `pad` grows the box outwards. Zero for fitting, where the box is what has to
+ * clear the edge of the card; a few pixels for hovering, where landing just
+ * short of an 11px glyph should still count as being on the label.
+ */
+export function axis_label_rects(
+  labels: RadarAxisLabel[],
+  fit: RadarFit,
+  labelGap: number,
+  pad: number = 0,
+): AxisLabelRect[] {
+  const reach = fit.radius + labelGap
+  return labels.map((label) => {
+    const anchorX = fit.cx + reach * Math.cos(label.angle)
+    const anchorY = fit.cy - reach * Math.sin(label.angle)
+    const box = axis_label_box(label)
+    return {
+      left: anchorX + box.left - pad,
+      top: anchorY + box.top - pad,
+      width: box.right - box.left + pad * 2,
+      height: box.bottom - box.top + pad * 2,
+    }
+  })
+}
+
 /** How far the ring and its names reach from the centre, at a given radius */
 function radar_envelope(
   radius: number,
@@ -987,15 +1028,15 @@ function radar_envelope(
   let right = radius
   let top = -radius
   let bottom = radius
-  for (const label of labels) {
-    const reach = radius + labelGap
-    const anchorX = reach * Math.cos(label.angle)
-    const anchorY = -reach * Math.sin(label.angle)
-    const box = axis_label_box(label)
-    left = Math.min(left, anchorX + box.left)
-    right = Math.max(right, anchorX + box.right)
-    top = Math.min(top, anchorY + box.top)
-    bottom = Math.max(bottom, anchorY + box.bottom)
+  for (const rect of axis_label_rects(
+    labels,
+    { cx: 0, cy: 0, radius },
+    labelGap,
+  )) {
+    left = Math.min(left, rect.left)
+    right = Math.max(right, rect.left + rect.width)
+    top = Math.min(top, rect.top)
+    bottom = Math.max(bottom, rect.top + rect.height)
   }
   return { left, right, top, bottom }
 }

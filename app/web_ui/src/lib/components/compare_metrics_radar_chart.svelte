@@ -40,6 +40,7 @@
   } from "$lib/utils/run_config_formatters"
   import { relative_metric_score } from "$lib/utils/relative_metric_score"
   import {
+    axis_label_rects,
     format_metric_value,
     wrap_axis_label,
     metric_family_bands,
@@ -51,6 +52,10 @@
     type RadarAxisLabel,
     type RadarFit,
   } from "$lib/utils/evolution/metric_axes"
+  import {
+    axis_help_html,
+    metric_axis_help,
+  } from "$lib/utils/evolution/axis_help"
   import {
     family_band_arc,
     family_band_label,
@@ -512,13 +517,20 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
     return familyBlock + FAMILY_LABEL_TAIL_GAP + tallest / 2
   }
 
-  function radarLayout(names: string[]): { fit: RadarFit; nameGap: number } {
+  // The labels come back alongside the geometry because the axis-name hover
+  // targets are placed against them - see axisHelpGraphics, which must use the
+  // boxes the radius was actually solved for and not measure its own.
+  function radarLayout(names: string[]): {
+    fit: RadarFit
+    nameGap: number
+    labels: RadarAxisLabel[]
+  } {
     const labels = axisLabels(names)
     const box = { width: boxWidth, height: boxHeight }
     const insets = { legendHeight: legendHeight(), pad: CHART_PAD }
     let nameGap = axisNameGapFor(labels, FAMILY_BLOCK_PX)
     let fit = fit_radar(box, labels, { ...insets, labelGap: nameGap })
-    if (familyBands.length === 0) return { fit, nameGap }
+    if (familyBands.length === 0) return { fit, nameGap, labels }
 
     // A family name laid along the arc stands further out at its ends than in
     // its middle, so the tier is thicker than one line - see
@@ -546,7 +558,53 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
       nameGap = axisNameGapFor(labels, block)
       fit = fit_radar(box, labels, { ...insets, labelGap: nameGap })
     }
-    return { fit, nameGap }
+    return { fit, nameGap, labels }
+  }
+
+  // How far outside a name's own box a pointer still counts as being on it.
+  // An 11px line of text is a small target, and the reader is aiming at a
+  // word rather than at a rectangle they cannot see.
+  const AXIS_HOVER_PAD = 4
+
+  // One invisible box per axis name, carrying what that axis measures.
+  //
+  // The names on THIS ring are echarts' own - the count is capped by the
+  // default axis set, so unlike the quality radar they never need hand-placing
+  // - which leaves nothing of ours under the pointer to hang a tooltip on. So
+  // the boxes are placed instead, from `axis_label_rects`: the same function
+  // `fit_radar` solves the radius against, at the same gap, so a hover target
+  // cannot drift away from the name it belongs to.
+  //
+  // Transparent rather than `invisible`, which zrender still hit-tests: a fill
+  // nobody can see is the honest way to say "this is here to be hovered".
+  function axisHelpGraphics(
+    chartAxes: MetricAxis[],
+    labels: RadarAxisLabel[],
+    layout: RadarFit,
+    nameGap: number,
+  ) {
+    return axis_label_rects(labels, layout, nameGap, AXIS_HOVER_PAD).map(
+      (rect, index) => {
+        const help = axis_help_html(metric_axis_help(chartAxes[index]))
+        return {
+          type: "rect",
+          // Over the family arcs, which reach as far out as the names do
+          z: 200,
+          // Nothing to click, so nothing that says there is
+          cursor: "default",
+          shape: {
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height,
+          },
+          style: { fill: "transparent" },
+          // echarts' own tooltip, so hovering a name and hovering a point are
+          // two views of the same object rather than two popup styles
+          tooltip: { formatter: () => help },
+        }
+      },
+    )
   }
 
   // One arc per family run plus the family's name, drawn as graphics rather than
@@ -691,9 +749,11 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
     if (boxWidth <= 0 || boxHeight <= 0) return
 
     const { indicators, series, legend, chartAxes } = generateChartData()
-    const { fit: layout, nameGap } = radarLayout(
-      indicators.map((indicator) => indicator.name),
-    )
+    const {
+      fit: layout,
+      nameGap,
+      labels,
+    } = radarLayout(indicators.map((indicator) => indicator.name))
 
     const legendFormatter: Record<string, string> = {}
     for (const config of plottedConfigs) {
@@ -753,7 +813,10 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
           // wrapping legend would eat the plot. Scroll keeps it to one row.
           type: "scroll" as const,
         },
-        graphic: bandGraphics(familyBands, chartAxes.length, layout),
+        graphic: [
+          ...bandGraphics(familyBands, chartAxes.length, layout),
+          ...axisHelpGraphics(chartAxes, labels, layout, nameGap),
+        ],
         radar: {
           indicator: indicators,
           // Solved rather than a percentage of min(width, height): this card is

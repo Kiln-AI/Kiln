@@ -39,6 +39,10 @@
     fit_radar,
     type RadarAxisLabel,
   } from "$lib/utils/evolution/metric_axes"
+  import {
+    axis_help_html,
+    quality_axis_help,
+  } from "$lib/utils/evolution/axis_help"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
@@ -77,6 +81,16 @@
   // solved in px: "side" mode leaves the ring to echarts' percentages, and an
   // arc cannot be placed against a radius nobody has computed.
   export let axisFamilies: Record<string, { id: string; label: string }> = {}
+  // What each eval's criterion actually says, keyed by eval id, for the popup
+  // that appears when the reader hovers an axis name. Resolved by the page from
+  // the task's own Specs - see $lib/utils/evolution/axis_help - because the
+  // chart has no business knowing what a spec is.
+  //
+  // Empty is the ordinary case for a task that has written no specs, and for
+  // the older compare page, which does not fetch them. An axis with no entry
+  // still names the eval it came from; one that cannot even do that gets no
+  // popup rather than a box repeating its own label.
+  export let specDescriptions: Record<string, string> = {}
   // Card heading. Defaults are the historical text, so the older compare page -
   // which also plots usage axes here - is unchanged; Compare V2 passes the
   // Quality-track naming that pairs this card with the metrics one beside it.
@@ -323,6 +337,34 @@ Related criteria sit together: the axes are grouped into the families the task's
       if (item) return item.label
     }
     return dataKey
+  }
+
+  // The eval a score belongs to, which is what carries its name and its spec
+  function featureFor(dataKey: string): ComparisonFeature | undefined {
+    return comparisonFeatures.find((feature) =>
+      feature.items.some((item) => item.key === dataKey),
+    )
+  }
+
+  // What an axis measures, for the popup on its name. Null when there is
+  // nothing to say that the label is not already saying.
+  //
+  // The label is drawn wrapped and, on a crowded ring, ellipsized, so the
+  // popup is built from the FULL name rather than from the text on screen -
+  // seeing what a truncated one says in full is half of what it is for.
+  //
+  // The usage axes the older compare page appends are left out on purpose:
+  // they are the performance track's business, and Compare V2 plots them on
+  // the metrics ring, where the metric catalog explains them properly.
+  function axisHelpHtml(dataKey: string): string | null {
+    if (isLowerIsBetterMetric(dataKey)) return null
+    const feature = featureFor(dataKey)
+    const help = quality_axis_help(
+      getKeyLabel(dataKey),
+      feature?.category,
+      feature ? specDescriptions[feature.eval_id] : null,
+    )
+    return help ? axis_help_html(help) : null
   }
 
   // Axis names are drawn just outside the outermost ring, where the left and
@@ -1398,31 +1440,44 @@ Related criteria sit together: the axes are grouped into the families the task's
             ...(series.length === 1 ? { areaStyle: { opacity: 0.2 } } : {}),
           },
         ],
-        // Bottom mode's axis names, hand-placed - see bottomAxisLabels. Silent
-        // so they never take the pointer off the polygons: the tooltip works
-        // out which axis it is from where the pointer is, and a label eating
-        // the event would break that.
+        // Bottom mode's axis names, hand-placed - see bottomAxisLabels.
+        //
+        // A name with something to explain is the hover target for its own
+        // popup, and is the one graphic here that is not silent. That is safe
+        // because a name is always drawn outside the ring - bottomAxisLabels
+        // floors every radius at the ring circle - so it can never sit over a
+        // polygon and take the pointer off a data point. A name with nothing
+        // to say stays inert, like the family arcs.
         ...(forceBottomLegend
           ? {
               graphic: {
                 elements: [
                   // Family arcs first, so they sit under the labels they group
                   ...bandGraphics,
-                  ...axisLabels.map((label) => ({
-                    type: "text" as const,
-                    x: label.x,
-                    y: label.y,
-                    silent: true,
-                    z: 100,
-                    style: {
-                      text: label.text,
-                      align: label.align,
-                      verticalAlign: "middle" as const,
-                      fontSize: LABEL_FONT_SIZE,
-                      lineHeight: LABEL_LINE_HEIGHT,
-                      fill: LABEL_COLOR,
-                    },
-                  })),
+                  ...axisLabels.map((label) => {
+                    const help = axisHelpHtml(keys[label.index])
+                    return {
+                      type: "text" as const,
+                      x: label.x,
+                      y: label.y,
+                      silent: !help,
+                      // Nothing to click, so nothing that says there is
+                      cursor: "default",
+                      z: 100,
+                      // echarts' own tooltip, so hovering a name and hovering
+                      // a point are two views of the same object rather than
+                      // two popup styles
+                      ...(help ? { tooltip: { formatter: () => help } } : {}),
+                      style: {
+                        text: label.text,
+                        align: label.align,
+                        verticalAlign: "middle" as const,
+                        fontSize: LABEL_FONT_SIZE,
+                        lineHeight: LABEL_LINE_HEIGHT,
+                        fill: LABEL_COLOR,
+                      },
+                    }
+                  }),
                 ],
               },
             }
@@ -1453,6 +1508,7 @@ Related criteria sit together: the axes are grouped into the families the task's
     scoreDirections &&
     visibleUsageKeys &&
     axisFamilies &&
+    specDescriptions &&
     familyBands &&
     (model_info || model_info === null) &&
     (prompts || prompts === null)
