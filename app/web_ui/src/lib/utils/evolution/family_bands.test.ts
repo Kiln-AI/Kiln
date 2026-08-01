@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest"
 import {
+  axis_label_clearing_radius,
   family_bands,
   family_band_arc,
   family_band_label,
   family_band_mid_angle,
   family_label_budgets,
+  family_label_reach,
   family_tone,
   family_tone_alpha,
   truncate_to_width,
@@ -326,6 +328,122 @@ describe("family_label_budgets", () => {
 
   it("never returns a negative budget out of a sweep smaller than the gap", () => {
     expect(family_label_budgets([50], [4], 16)).toEqual([0])
+  })
+})
+
+describe("family_label_reach", () => {
+  it("is the line's own outer edge when there is nothing written on it", () => {
+    expect(family_label_reach(200, 15, [])).toBe(207.5)
+    expect(family_label_reach(200, 15, [0])).toBe(207.5)
+  })
+
+  it("stands its ends further out than its middle - a straight box on a curve", () => {
+    // 90px name on a line centred at 200, 15px tall: the corner is at
+    // hypot(207.5, 45), not at 207.5. This is the whole bug: a name centred in
+    // the gap between two axes still has ends, and they are what collide.
+    expect(family_label_reach(200, 15, [90])).toBeCloseTo(212.32, 2)
+  })
+
+  it("takes the widest name, since one tier is reserved for all of them", () => {
+    const widest = family_label_reach(200, 15, [90])
+    expect(family_label_reach(200, 15, [20, 90, 40])).toBe(widest)
+  })
+
+  it("bulges less on a bigger ring, because the arc it sits on is flatter", () => {
+    const small = family_label_reach(120, 15, [90]) - (120 + 7.5)
+    const large = family_label_reach(400, 15, [90]) - (400 + 7.5)
+    expect(large).toBeLessThan(small)
+    // ...and it never vanishes, which is why a constant would not do
+    expect(large).toBeGreaterThan(0)
+  })
+
+  it("grows with the name, so a long family heading is priced as one", () => {
+    const reaches = [0, 40, 90, 200].map((width) =>
+      family_label_reach(200, 15, [width]),
+    )
+    for (let index = 1; index < reaches.length; index++) {
+      expect(reaches[index]).toBeGreaterThan(reaches[index - 1])
+    }
+  })
+})
+
+describe("axis_label_clearing_radius", () => {
+  it("asks for nothing when the box already clears", () => {
+    // Its nearest edge is 200 from the centre line, past a 180 keep-out
+    expect(axis_label_clearing_radius(180, 0.5, 200)).toBe(0)
+  })
+
+  it("pushes a box straddling the centre line right out to the keep-out", () => {
+    // Nothing of the circle is spent on height, so the whole radius is sideways
+    expect(axis_label_clearing_radius(180, 1, 0)).toBeCloseTo(180, 10)
+    expect(axis_label_clearing_radius(180, 0.5, 0)).toBeCloseTo(360, 10)
+  })
+
+  it("reads the same on either side of the ring", () => {
+    expect(axis_label_clearing_radius(180, -0.4, 60)).toBeCloseTo(
+      axis_label_clearing_radius(180, 0.4, 60),
+      10,
+    )
+  })
+
+  it("leaves a name at a pole alone - it is centred, so it has no side to go", () => {
+    expect(axis_label_clearing_radius(180, 0, 0)).toBe(0)
+    expect(axis_label_clearing_radius(180, 1e-6, 0)).toBe(0)
+  })
+
+  it("clears the circle it was given, at every angle and height", () => {
+    const keepOut = 190
+    for (let degrees = 1; degrees < 90; degrees += 1) {
+      const angle = (degrees * Math.PI) / 180
+      const cos = Math.cos(angle)
+      for (const dyNear of [0, 25, 80, 150, 189, 400]) {
+        const radius = axis_label_clearing_radius(keepOut, cos, dyNear)
+        if (radius === 0) {
+          // Only ever skipped when the box is already outside on its own
+          expect(dyNear).toBeGreaterThanOrEqual(keepOut)
+          continue
+        }
+        // The box's nearest corner: `radius * cos` to the side, `dyNear` up
+        expect(Math.hypot(radius * cos, dyNear)).toBeGreaterThanOrEqual(
+          keepOut - 1e-9,
+        )
+      }
+    }
+  })
+
+  it("holds the family tier and the axis names apart, at the ring's own numbers", () => {
+    // The two rings the compare page draws, as the components lay them out:
+    // the family line is FAMILY_LABEL_OFFSET past the ring, the axis names are
+    // anchored labelGap past it, and a name is half its height tall either side
+    // of its anchor. Before the tier's reach was measured this pair
+    // interpenetrated at every dense ring - see family_label_reach.
+    const offset = 17.5
+    const lineHeight = 15
+    const tailGap = 3
+    const labelGap = 42
+    const nameHeight = 28
+    for (const radius of [120, 153, 180, 260, 400]) {
+      for (const width of [30, 83, 120, 200]) {
+        const keepOut =
+          family_label_reach(radius + offset, lineHeight, [width]) + tailGap
+        for (let degrees = 0; degrees < 90; degrees += 3) {
+          const angle = (degrees * Math.PI) / 180
+          const cos = Math.cos(angle)
+          if (Math.abs(cos) < 1e-4) continue
+          // Worst case for a name: packing has pulled it back to the centre
+          // line, so its box straddles it and nothing is spent on height.
+          for (const dyNear of [0, nameHeight / 2, 60, 140]) {
+            const ray = Math.max(
+              radius + labelGap,
+              axis_label_clearing_radius(keepOut, cos, dyNear),
+            )
+            expect(Math.hypot(ray * cos, dyNear)).toBeGreaterThanOrEqual(
+              keepOut - 1e-9,
+            )
+          }
+        }
+      }
+    }
   })
 })
 

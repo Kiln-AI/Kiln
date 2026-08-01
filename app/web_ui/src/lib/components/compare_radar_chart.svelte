@@ -25,10 +25,12 @@
   import { formatLatency } from "$lib/utils/formatters"
   import { relative_metric_score } from "$lib/utils/relative_metric_score"
   import {
+    axis_label_clearing_radius,
     family_bands,
     family_band_arc,
     family_band_label,
     family_label_budgets,
+    family_label_reach,
     family_tone,
     truncate_to_width,
     type FamilyBand,
@@ -353,6 +355,12 @@ Related criteria sit together: the axes are grouped into the families the task's
   // Only the second part takes any work, and it is a solved problem: least
   // total movement subject to y_i + h_i + gap <= y_i+1 is isotonic regression,
   // which pool-adjacent-violators solves exactly in one pass.
+  //
+  // A label cannot overlap a FAMILY name either, and that one is not free: the
+  // family tier is an annulus just inside these names, and packing moves a name
+  // off its own tip, so where the name ends up is not where the ring reserved
+  // room for it. Every box is held outside the tier's outer circle - see
+  // family_label_reach and axis_label_clearing_radius.
   // ---------------------------------------------------------------------
 
   const LABEL_FONT_SIZE = 11
@@ -574,6 +582,8 @@ Related criteria sit together: the axes are grouped into the families the task's
       radius: number
       width: number
       bandBottom: number
+      /** No name's box may come inside this - the family tier. 0 when ungrouped */
+      keepOut: number
     },
   ): BottomAxisLabel[] {
     const count = wrapped.length
@@ -643,11 +653,25 @@ Related criteria sit together: the axes are grouped into the families the task's
           Math.abs(sin) >= LABEL_RADIAL_MIN_SIN
             ? (box.cy - y) / sin
             : ringRadius
+        // ...and one the packing pushed the other way is drawn further out
+        // too, because `labelGap` is a distance along the RAY and packing does
+        // not move a name along its ray. A name whose y was pulled back towards
+        // the centre keeps its anchor on the ring circle in x while sitting
+        // closer to the centre line in y, so its box ends up INSIDE the circle
+        // the gap was measured on - by 20px at thirty axes, which is what put
+        // the axis names on top of the family names however the family names
+        // were centred. So the clearance is enforced on the box rather than
+        // assumed from the anchor. `dyNear` is the box's own nearest edge to
+        // the centre line, zero when it straddles it.
+        const dyNear = Math.max(0, Math.abs(y - box.cy) - heights[position] / 2)
+        const clearing = vertical
+          ? 0
+          : axis_label_clearing_radius(box.keepOut, cos, dyNear)
         const reach =
           box.width / 2 - LABEL_EDGE_PAD - (vertical ? width / 2 : width)
         const cap = Math.abs(cos) > 1e-6 ? reach / Math.abs(cos) : Infinity
         const radius = Math.min(
-          Math.max(ringRadius, onAxis),
+          Math.max(ringRadius, onAxis, clearing),
           Math.max(cap, ringRadius),
         )
         labels.push({
@@ -1126,17 +1150,6 @@ Related criteria sit together: the axes are grouped into the families the task's
         )
       : null
 
-    const axisLabels = bottomFit
-      ? bottomAxisLabels(wrappedNames, {
-          cx: bottomFit.cx,
-          cy: bottomFit.cy,
-          labelGap,
-          radius: bottomFit.radius,
-          width: chartWidth,
-          bandBottom: chartHeight - BOTTOM_LEGEND_PX,
-        })
-      : []
-
     // One arc per family run plus the family's name, drawn as graphics rather
     // than by the radar: echarts splits a radar's background into rings, never
     // into sectors. Drawn OUTSIDE the plot, because the run configs are this
@@ -1145,6 +1158,9 @@ Related criteria sit together: the axes are grouped into the families the task's
     // The glyph table above is for regular weight and a family name is set
     // semibold, so the estimate is nudged up rather than left to run a few
     // percent narrow into a budget it is meant to respect.
+    //
+    // Solved BEFORE the axis names, because how far this tier reaches is what
+    // the axis names have to stay clear of - see family_label_reach.
     const measureFamily = (value: string) =>
       estimateTextWidth(value, FAMILY_LABEL_FONT_SIZE) * FAMILY_LABEL_BOLD_WIDTH
     const familyPlacements = bottomFit
@@ -1165,6 +1181,32 @@ Related criteria sit together: the axes are grouped into the families the task's
       familyPlacements.map((placement) => placement.sweep),
       BAND_ARC_GAP,
     )
+    const familyTexts = familyBands.map((band, index) =>
+      truncate_to_width(band.label, familyBudgets[index], measureFamily),
+    )
+    // The circle no axis name may come inside. Measured from the names as they
+    // will be DRAWN, so a heading cut down to its arc is priced at the width it
+    // ends up with rather than the one it asked for.
+    const familyKeepOut = bottomFit
+      ? family_label_reach(
+          bottomFit.radius + FAMILY_LABEL_OFFSET,
+          FAMILY_LABEL_LINE_HEIGHT,
+          familyTexts.filter((text) => text.length > 0).map(measureFamily),
+        ) + FAMILY_LABEL_TAIL_GAP
+      : 0
+
+    const axisLabels = bottomFit
+      ? bottomAxisLabels(wrappedNames, {
+          cx: bottomFit.cx,
+          cy: bottomFit.cy,
+          labelGap,
+          radius: bottomFit.radius,
+          width: chartWidth,
+          bandBottom: chartHeight - BOTTOM_LEGEND_PX,
+          keepOut: familyBands.length > 0 ? familyKeepOut : 0,
+        })
+      : []
+
     const bandGraphics =
       bottomFit && familyBands.length > 0
         ? familyBands.flatMap((band, index) => {
@@ -1177,11 +1219,7 @@ Related criteria sit together: the axes are grouped into the families the task's
               gapRadians: BAND_ARC_GAP / outer,
             })
             const placement = familyPlacements[index]
-            const text = truncate_to_width(
-              band.label,
-              familyBudgets[index],
-              measureFamily,
-            )
+            const text = familyTexts[index]
             return [
               {
                 type: "sector" as const,

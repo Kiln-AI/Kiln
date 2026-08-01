@@ -9,11 +9,11 @@
 // picture.
 //
 // This module is the geometry and the styling of that band - where the arc
-// sweeps, where its name is written, and what tone it is filled with - shared
-// so the two charts cannot disagree about where a family ends or look like two
-// different conventions. What a family IS differs per chart and lives
-// elsewhere: `metric_axes` has a curated catalog, `score_families` reads the
-// task's specs.
+// sweeps, where its name is written, what tone it is filled with, and how much
+// room the whole tier takes from the axis names outside it - shared so the two
+// charts cannot disagree about where a family ends or look like two different
+// conventions. What a family IS differs per chart and lives elsewhere:
+// `metric_axes` has a curated catalog, `score_families` reads the task's specs.
 
 /** One unbroken run of same-family axes, in the order they are drawn. */
 export interface FamilyBand {
@@ -321,6 +321,68 @@ export function family_label_budgets(
       room +
       Math.min(slack[(index - 1 + count) % count], slack[(index + 1) % count]),
   )
+}
+
+/**
+ * How far out the family names reach, in px from the centre of the ring.
+ *
+ * A name laid along the arc is a STRAIGHT box on a CURVE, so its ends stand
+ * further from the centre than its middle does: the outer corners sit at
+ * hypot(r, w/2) where the middle sits at r. That bulge is the whole reason a
+ * family name can print through an axis name while sitting exactly where it was
+ * asked to sit. Centring a name in the gap between two axes fixes where its
+ * MIDDLE lands and says nothing about its ends, and a name is routinely wider
+ * than one axis slot - "Data Integrity" is 83px against a 68px slot at thirty
+ * axes - so the ends run out under the names on either side. It is invisible on
+ * a sparse ring, where a slot is wide enough to hold the whole name (145px at
+ * fourteen axes), and it is 5px on a dense one, which is more clear space than
+ * the tier is given.
+ *
+ * So the tier is an annulus rather than a line, and this is its outer edge. What
+ * a caller does with it differs by chart and both are in the components: the
+ * quality ring places its own axis names and pushes any that would come inside
+ * back out, the metrics ring leaves them to echarts and has to reserve the room
+ * up front.
+ *
+ * `labelRadius` is where the names' LINE is centred and `widths` are the widths
+ * they are actually DRAWN at, after any truncation - a name cut down to its
+ * budget bulges less than the one that was asked for. With no names at all the
+ * tier is just the line's own outer edge.
+ */
+export function family_label_reach(
+  labelRadius: number,
+  lineHeight: number,
+  widths: number[],
+): number {
+  const outer = labelRadius + lineHeight / 2
+  return Math.max(outer, ...widths.map((width) => Math.hypot(outer, width / 2)))
+}
+
+/**
+ * How far along its own ray an axis name has to be anchored for its box to
+ * clear a circle of radius `keepOut` - the family tier, in practice.
+ *
+ * The box runs AWAY from the centre from its anchor, so the corner nearest the
+ * centre is the anchor's own edge, and `dyNear` is how close that edge comes to
+ * the horizontal through the centre (zero when the box straddles it). The
+ * anchor therefore has to sit at least sqrt(keepOut^2 - dyNear^2) to the side,
+ * which is `cos` of the ray radius. Zero when the box already clears, so a
+ * caller can take the larger of this and wherever it was putting the name.
+ *
+ * A name at a pole gets zero: it is CENTRED on the vertical through the centre
+ * rather than anchored to one side of it, so there is no side to push it
+ * towards - and it is also the case that cannot intrude, since a name that near
+ * a pole is driven outwards along its own axis rather than sideways.
+ */
+export function axis_label_clearing_radius(
+  keepOut: number,
+  cos: number,
+  dyNear: number,
+): number {
+  const across = Math.sqrt(Math.max(keepOut * keepOut - dyNear * dyNear, 0))
+  const along = Math.abs(cos)
+  if (across === 0 || along < 1e-4) return 0
+  return across / along
 }
 
 /**

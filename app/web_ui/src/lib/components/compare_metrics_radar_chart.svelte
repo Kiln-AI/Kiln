@@ -55,6 +55,7 @@
     family_band_arc,
     family_band_label,
     family_label_budgets,
+    family_label_reach,
     family_tone,
     truncate_to_width,
     type FamilyBand,
@@ -488,34 +489,64 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
 
   // How far out an axis name is anchored.
   //
-  // A grouped ring holds its names off past the band AND past the family name -
+  // A grouped ring holds its names off past the band AND past the family tier -
   // and then past half an axis name on top, because echarts centres a name on
   // its anchor and lays it out sideways, so the inner half of it reaches back
   // towards the ring. Without that half the family name lands underneath its
   // own family's axis names, which is exactly where a family with an odd number
   // of axes puts it: the midpoint of the arc IS an axis.
   //
+  // `familyBlock` is how far the tier reaches, which is NOT one line: a name
+  // laid along the arc stands further out at its ends. radarLayout solves it.
+  //
   // Measured from the names as wrapped rather than assumed to be the worst
   // case, so a ring of one-line names does not pay for a second line. An
   // ungrouped ring pays for none of it and keeps the radius it had before
   // families existed.
-  function axisNameGapFor(labels: RadarAxisLabel[]): number {
+  function axisNameGapFor(
+    labels: RadarAxisLabel[],
+    familyBlock: number,
+  ): number {
     if (familyBands.length === 0) return AXIS_NAME_GAP
     const tallest = Math.max(0, ...labels.map((label) => label.height))
-    return FAMILY_BLOCK_PX + FAMILY_LABEL_TAIL_GAP + tallest / 2
+    return familyBlock + FAMILY_LABEL_TAIL_GAP + tallest / 2
   }
 
   function radarLayout(names: string[]): { fit: RadarFit; nameGap: number } {
     const labels = axisLabels(names)
-    const nameGap = axisNameGapFor(labels)
-    return {
-      fit: fit_radar({ width: boxWidth, height: boxHeight }, labels, {
-        legendHeight: legendHeight(),
-        labelGap: nameGap,
-        pad: CHART_PAD,
-      }),
-      nameGap,
+    const box = { width: boxWidth, height: boxHeight }
+    const insets = { legendHeight: legendHeight(), pad: CHART_PAD }
+    let nameGap = axisNameGapFor(labels, FAMILY_BLOCK_PX)
+    let fit = fit_radar(box, labels, { ...insets, labelGap: nameGap })
+    if (familyBands.length === 0) return { fit, nameGap }
+
+    // A family name laid along the arc stands further out at its ends than in
+    // its middle, so the tier is thicker than one line - see
+    // family_label_reach. echarts places these axis names itself, at a fixed
+    // offset from the ring, so the only way to keep them off the family names
+    // is to reserve the room up front; the quality ring places its own and
+    // pushes the offenders out instead, for no radius at all.
+    //
+    // Which is circular: how far the tier reaches depends on the radius it is
+    // drawn at, and the radius depends on what is reserved for the tier. Both
+    // sides are monotone - a bigger ring is a flatter arc and a shorter reach -
+    // so refining settles, and it settles fast: the second pass moves the
+    // radius by a fraction of a pixel at every card size the page produces.
+    // Priced from each name's FULL width rather than the width it is truncated
+    // to, which over-reserves by a pixel or two on a ring crowded enough to cut
+    // one down, and cannot under-reserve.
+    const widths = familyBands.map((band) => measureFamilyWidth(band.label))
+    for (let pass = 0; pass < 2; pass++) {
+      const block =
+        family_label_reach(
+          fit.radius + FAMILY_LABEL_OFFSET,
+          FAMILY_LABEL_LINE_HEIGHT,
+          widths,
+        ) - fit.radius
+      nameGap = axisNameGapFor(labels, block)
+      fit = fit_radar(box, labels, { ...insets, labelGap: nameGap })
     }
+    return { fit, nameGap }
   }
 
   // One arc per family run plus the family's name, drawn as graphics rather than
