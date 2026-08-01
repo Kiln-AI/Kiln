@@ -108,9 +108,10 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
   // axes rather than sixteen loose ones. It goes between the arc and the axis
   // names rather than outside them, laid along the arc - see family_band_label
   // for why a ring of horizontal text outside the names is not affordable in a
-  // card this width. The tones are in family_bands too: three neutrals cycled
-  // so no arc matches a neighbour, and no hue, because the run configs already
-  // own colour here.
+  // card this width. The tone is in family_bands too: one neutral ink, laddered
+  // by opacity from lightest at twelve o'clock to darkest at the end of the
+  // sweep, and no hue, because the run configs already own colour here. The
+  // NAME does not ladder with its arc - see FAMILY_LABEL_COLOR.
   const BAND_RING_GAP = 5
   const BAND_THICKNESS = 4
   const BAND_LABEL_GAP = 1
@@ -120,6 +121,11 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
   const FAMILY_LABEL_FONT_SIZE = 13
   const FAMILY_LABEL_FONT = `600 ${FAMILY_LABEL_FONT_SIZE}px InterVariable, Inter, system-ui, sans-serif`
   const FAMILY_LABEL_CHAR_WIDTH = 8
+  // One weight for every family name, deliberately NOT its own arc's tone. The
+  // arc says where the family falls in the sweep; the name says which family it
+  // is, and identity is not a quantity. A name that laddered with its arc would
+  // also make the heading at twelve o'clock - the lightest rung, and the first
+  // one a reader lands on - the least legible text on the card.
   const FAMILY_LABEL_COLOR = "#4b5563"
   // Clear space between the name and the axis names outside it
   const FAMILY_LABEL_TAIL_GAP = 3

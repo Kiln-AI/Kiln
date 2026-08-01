@@ -196,7 +196,7 @@ export function family_band_arc(
 }
 
 /**
- * The tones an arc can be drawn in: three neutrals, no hue.
+ * The ink every family arc is drawn in - one cool grey, #8b93a1, as channels.
  *
  * No hue, because the run configs already own colour on these charts. Five
  * family hues muted enough to sit behind the series stop being tellable apart
@@ -204,42 +204,86 @@ export function family_band_arc(
  * enough to be tellable apart fight the series for the eye. Either way the
  * colour would be decoration that looks like meaning.
  *
- * Neutral, but not a RAMP. A 20/40/60/80% grey ladder is the obvious reading of
- * "different levels of the same colour", and it encodes magnitude: the eye
- * reads it as ordered, so it would be claiming Data Integrity < Format <
- * Grounded < Structural, of families that have no order at all. What is
- * actually true of two neighbouring arcs is only that they are DIFFERENT, so
- * that is the whole of what the tone says - it is a separator, and the name
- * drawn over the arc is the identity. The assignment cycles rather than
- * climbing, so no tone can be read as a rank.
+ * One ink rather than a set of tones, because what separates the arcs is their
+ * OPACITY - see family_tone_alpha. Kept as channels rather than a hex string so
+ * the arcs composite against the card instead of against a white this module
+ * assumed: baking the blend in would fix the lightest rung to one background.
  */
-export const FAMILY_TONES = ["#8b93a1", "#d3d8df", "#aeb4bf"] as const
+export const FAMILY_TONE_INK = [139, 147, 161] as const
 
 /**
- * Which tone an arc takes, given how many arcs share the ring.
+ * The two ends of the ladder, as opacities of that ink.
  *
- * The requirement is exactly graph colouring on a cycle: no arc may share a
- * tone with either neighbour, and the ring wraps, so the last arc and the first
- * are neighbours too - which is the case a plain alternation gets wrong. An
- * even count alternates in two tones and is done. An odd count cannot: two
- * tones alternated around an odd cycle always meet themselves at the seam,
- * which reads as one arc broken for no reason. Three tones are the minimum that
- * works, and they are cycled rather than saved for the seam, so no single arc
- * ends up the odd one out. When the cycle length leaves the last arc matching
- * the first anyway (counts of 7, 13, ...), that one arc steps to the tone
- * neither of its neighbours is using.
+ * The floor is where a 4px arc stops reading, and it was read off the rendered
+ * page rather than picked as a number that looks reasonable in code: 0.22, 0.3,
+ * 0.34 and 0.38 all drawn on the compare page and compared at the size the card
+ * actually shows them. The worst case is the one that decides it - a ONE-AXIS
+ * family at twelve o'clock, which is both the shortest arc on the ring and the
+ * lightest rung, and which both charts have. At 0.22 it is a smudge and at 0.3
+ * it is faint; 0.34 is the first that is unmistakably a drawn thing, #d8dadf,
+ * L* 87.0. Losing that arc is the worst loss available, because twelve o'clock
+ * is where the eye starts.
+ *
+ * The ceiling is the ink at full strength, L* 60.7. That is the tone the
+ * darkest arc has always been, so the ladder is built downwards from a top the
+ * page has already been seen to carry rather than upwards into a new one.
  */
-export function family_tone_index(index: number, count: number): number {
-  if (count <= 1) return 0
-  if (count % 2 === 0) return index % 2
-  const tone = index % FAMILY_TONES.length
-  const last = index === count - 1
-  return last && tone === 0 ? 1 : tone
+export const FAMILY_TONE_LIGHTEST = 0.34
+export const FAMILY_TONE_DARKEST = 1
+
+/**
+ * How opaque one arc is: a LADDER. Lightest at twelve o'clock, one step darker
+ * for every family clockwise, through to the last.
+ *
+ * A ramp of one colour encodes magnitude, and over nominal categories that is
+ * normally a lie - it asserts an order the categories do not have. Here they
+ * do. The families are laid out clockwise from the top in a fixed order the
+ * reader can see on the page, so the darkening tracks POSITION IN THE RING,
+ * which is true of them, rather than rank, which would not be. What that buys
+ * over tones that merely differ is that a reader who has found one arc knows
+ * which way round the ring they are looking without reading a single name.
+ *
+ * The rungs are spaced over the arcs actually DRAWN, so the ladder always spans
+ * the whole range end to end. Hiding rows until a family empties re-spaces the
+ * families that are left rather than leaving a hole where that family's rung
+ * used to be, which is the only behaviour that stays legible while someone is
+ * pruning the ring a row at a time.
+ *
+ * The wrap is left alone. Darkest meets lightest at twelve o'clock, so the
+ * largest tone difference on the ring falls exactly where two families meet,
+ * and reads as the ladder starting over. That discontinuity is the point;
+ * smoothing it would spend the range on the one boundary that needs no help.
+ *
+ * At high family counts the step COMPRESSES rather than clamping to a minimum:
+ * the range is fixed, so N families step by 1/(N-1) of it, and by twelve that
+ * is ~2.3 L* between neighbours, near the floor of what tells apart. That is
+ * deliberate, because the two things the band is read for fail at different
+ * rates. "Is this a different family from the one beside it" is answered by the
+ * gap between the arcs, which is a fixed 16px and does not shrink with N. "How
+ * far round the ring is this" is answered by comparing arcs that are NOT
+ * neighbours, and half a ring apart is half the range however many rungs it has
+ * been cut into. Holding a minimum step instead costs one of the two things the
+ * range is pinned to: lift the floor and the first arc disappears, darken the
+ * ink and two cards side by side with different family counts end up with
+ * different darkest tones, which is two conventions rather than one.
+ *
+ * A lone band is not a ladder - nothing to climb, nothing to read it against -
+ * so it takes the ink at full strength. `family_bands` has returned nothing by
+ * then anyway, so this is the definition being total rather than a case the
+ * charts reach.
+ */
+export function family_tone_alpha(index: number, count: number): number {
+  if (count <= 1) return FAMILY_TONE_DARKEST
+  const rung = Math.min(Math.max(index, 0), count - 1) / (count - 1)
+  return (
+    FAMILY_TONE_LIGHTEST + rung * (FAMILY_TONE_DARKEST - FAMILY_TONE_LIGHTEST)
+  )
 }
 
-/** The tone an arc is filled with. See `family_tone_index`. */
+/** The fill an arc is drawn with: the ink at its rung. See `family_tone_alpha`. */
 export function family_tone(index: number, count: number): string {
-  return FAMILY_TONES[family_tone_index(index, count)]
+  const [r, g, b] = FAMILY_TONE_INK
+  return `rgba(${r}, ${g}, ${b}, ${family_tone_alpha(index, count).toFixed(3)})`
 }
 
 /**

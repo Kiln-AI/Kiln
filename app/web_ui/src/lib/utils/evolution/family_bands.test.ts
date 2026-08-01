@@ -6,9 +6,11 @@ import {
   family_band_mid_angle,
   family_label_budgets,
   family_tone,
-  family_tone_index,
+  family_tone_alpha,
   truncate_to_width,
-  FAMILY_TONES,
+  FAMILY_TONE_INK,
+  FAMILY_TONE_LIGHTEST,
+  FAMILY_TONE_DARKEST,
 } from "./family_bands"
 
 describe("family_bands", () => {
@@ -214,54 +216,78 @@ describe("family_band_label", () => {
   })
 })
 
-describe("family_tone_index", () => {
-  const cycle = (count: number) =>
-    Array.from({ length: count }, (_, index) => family_tone_index(index, count))
+describe("family_tone_alpha", () => {
+  const ladder = (count: number) =>
+    Array.from({ length: count }, (_, index) => family_tone_alpha(index, count))
 
-  const no_neighbour_matches = (tones: number[]) => {
-    for (let index = 0; index < tones.length; index++) {
-      // The ring wraps, so the last arc's neighbour is the first
-      expect(tones[index]).not.toBe(tones[(index + 1) % tones.length])
-    }
-  }
-
-  it("alternates two tones when the count is even", () => {
-    expect(cycle(2)).toEqual([0, 1])
-    expect(cycle(4)).toEqual([0, 1, 0, 1])
-    expect(cycle(8)).toEqual([0, 1, 0, 1, 0, 1, 0, 1])
-  })
-
-  it("uses a third tone when the count is odd, rather than meeting itself", () => {
-    expect(cycle(3)).toEqual([0, 1, 2])
-    expect(cycle(5)).toEqual([0, 1, 2, 0, 1])
-  })
-
-  it("steps the last arc aside when the cycle would close on itself", () => {
-    // 7 % 3 leaves the last arc back on tone 0, next to the first
-    expect(cycle(7)).toEqual([0, 1, 2, 0, 1, 2, 1])
-  })
-
-  it("never puts a tone next to itself, at any count up to twelve", () => {
+  it("climbs, never repeats, at every count the ring can produce", () => {
     for (let count = 2; count <= 12; count++) {
-      no_neighbour_matches(cycle(count))
+      const rungs = ladder(count)
+      for (let index = 1; index < rungs.length; index++) {
+        expect(rungs[index]).toBeGreaterThan(rungs[index - 1])
+      }
     }
   })
 
-  it("has a tone for a lone band, which has no neighbour to differ from", () => {
-    expect(family_tone_index(0, 1)).toBe(0)
-    expect(family_tone(0, 1)).toBe(FAMILY_TONES[0])
+  it("spans the whole range whatever the count, so hiding rows leaves no hole", () => {
+    // The two counts the compare page actually draws, plus the extremes. Every
+    // one of them starts at the floor and ends at the ceiling: a family emptied
+    // by hidden rows re-spaces the rest instead of vacating a rung.
+    for (const count of [2, 4, 5, 8, 12]) {
+      const rungs = ladder(count)
+      expect(rungs[0]).toBeCloseTo(FAMILY_TONE_LIGHTEST, 10)
+      expect(rungs[count - 1]).toBeCloseTo(FAMILY_TONE_DARKEST, 10)
+    }
+  })
+
+  it("steps evenly, so no rung reads as an outlier", () => {
+    const rungs = ladder(5)
+    const steps = rungs.slice(1).map((rung, index) => rung - rungs[index])
+    for (const step of steps) {
+      expect(step).toBeCloseTo(steps[0], 10)
+    }
+  })
+
+  it("keeps the lightest rung visible against the card", () => {
+    // #d8dadf at the floor, read off the rendered page. The guard is against a
+    // later widening of the range quietly taking the first arc below where a
+    // 4px sector still shows - see FAMILY_TONE_LIGHTEST.
+    expect(FAMILY_TONE_LIGHTEST).toBeGreaterThanOrEqual(0.32)
+    expect(FAMILY_TONE_DARKEST).toBeLessThanOrEqual(1)
+  })
+
+  it("gives a lone band the ink at full strength - there is no ladder to climb", () => {
+    expect(family_tone_alpha(0, 1)).toBe(FAMILY_TONE_DARKEST)
+    expect(family_tone_alpha(0, 0)).toBe(FAMILY_TONE_DARKEST)
+  })
+
+  it("clamps an index outside the ring rather than running off the range", () => {
+    expect(family_tone_alpha(-1, 5)).toBe(FAMILY_TONE_LIGHTEST)
+    expect(family_tone_alpha(9, 5)).toBe(FAMILY_TONE_DARKEST)
   })
 
   it("is neutral - no hue - so it cannot argue with the series colours", () => {
-    for (const tone of FAMILY_TONES) {
-      const [r, g, b] = [1, 3, 5].map((at) =>
-        parseInt(tone.slice(at, at + 2), 16),
-      )
-      // Cool greys, so a channel spread of a few percent is expected; what
-      // this rules out is a tone with enough chroma to read as a family HUE
-      // and compete with the run config series for the eye.
-      expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeLessThanOrEqual(24)
-    }
+    const [r, g, b] = FAMILY_TONE_INK
+    // A cool grey, so a channel spread of a few percent is expected; what this
+    // rules out is an ink with enough chroma to read as a family HUE and
+    // compete with the run config series for the eye.
+    expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeLessThanOrEqual(24)
+  })
+})
+
+describe("family_tone", () => {
+  it("draws the one ink at the rung's opacity, so the arc composites on the card", () => {
+    const [r, g, b] = FAMILY_TONE_INK
+    expect(family_tone(0, 4)).toBe(`rgba(${r}, ${g}, ${b}, 0.340)`)
+    expect(family_tone(3, 4)).toBe(`rgba(${r}, ${g}, ${b}, 1.000)`)
+  })
+
+  it("darkens clockwise from twelve o'clock, which is where index 0 is drawn", () => {
+    const alpha = (fill: string) => Number(fill.split(",")[3].replace(")", ""))
+    // The metrics ring as the compare page draws it: Cost, Tokens, Calls,
+    // Speed, Responsiveness, lightest first
+    const fills = [0, 1, 2, 3, 4].map((index) => family_tone(index, 5))
+    expect(fills.map(alpha)).toEqual([0.34, 0.505, 0.67, 0.835, 1])
   })
 })
 

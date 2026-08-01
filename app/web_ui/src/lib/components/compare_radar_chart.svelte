@@ -221,8 +221,8 @@ Related criteria sit together: the axes are grouped into the families the task's
   const RADAR_START_ANGLE = 90
 
   // The family band: a thin arc outside the ring, broken at each boundary, with
-  // the family's name written along it. Same geometry, same tones and the same
-  // reasoning as the metrics radar - see compare_metrics_radar_chart and
+  // the family's name written along it. Same geometry, same tone ladder and the
+  // same reasoning as the metrics radar - see compare_metrics_radar_chart and
   // $lib/utils/evolution/family_bands, which both charts share so they cannot
   // come out looking like two different conventions.
   const BAND_RING_GAP = 5
@@ -231,6 +231,9 @@ Related criteria sit together: the axes are grouped into the families the task's
   const BAND_ARC_GAP = 16
   const FAMILY_LABEL_LINE_HEIGHT = 15
   const FAMILY_LABEL_FONT_SIZE = 13
+  // One weight for every family name, not its own arc's tone - see the metrics
+  // radar for why: the lightest rung would take the heading at twelve o'clock
+  // down with it.
   const FAMILY_LABEL_COLOR = "#4b5563"
   const FAMILY_LABEL_BOLD_WIDTH = 1.05
   const FAMILY_LABEL_TAIL_GAP = 3
