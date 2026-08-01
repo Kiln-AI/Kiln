@@ -21,6 +21,8 @@ import {
   is_metric_eval,
   known_metric_axis_keys,
   metric_eval_ids,
+  toggled_metric_axis_keys,
+  visible_metric_axes,
   wrap_axis_label,
   metric_family_bands,
   metric_row_info,
@@ -542,6 +544,107 @@ describe("default_metric_axis_keys", () => {
     for (const key of default_metric_axis_keys(axes)) {
       expect(known.has(key)).toBe(true)
     }
+  })
+})
+
+// Hiding a row and picking axes are two controls over one ring, and the whole
+// question is how they compose. The rule: the x takes a row out of the
+// COMPARISON - table and radar, both tracks, symmetrically - and the Axes menu
+// then picks which of what is left is plotted. What that must not turn into is
+// the two controls editing each other.
+describe("hidden rows and the axis picker", () => {
+  const AXES = build_metric_axes(KEY_METAS)
+  const DEFAULTS = default_metric_axis_keys(AXES)
+
+  // What the page does: the selection is resolved against the whole catalog,
+  // and only then filtered by what is still in the comparison.
+  function plotted(hidden: string[], selection: string[] | null): string[] {
+    return visible_metric_axes(AXES, new Set(hidden))
+      .filter((axis) => (selection ?? DEFAULTS).includes(axis.key))
+      .map((axis) => axis.key)
+  }
+
+  it("takes a hidden score row's axis off the ring", () => {
+    expect(plotted([], null)).toContain("e1::tool_calls")
+    expect(plotted(["e1::tool_calls"], null)).not.toContain("e1::tool_calls")
+  })
+
+  it("takes a hidden usage row's axis off the ring", () => {
+    expect(plotted([], null)).toContain(COST_KEY)
+    expect(plotted([COST_KEY], null)).not.toContain(COST_KEY)
+  })
+
+  it("removes exactly one axis per hidden row, and never backfills the slot", () => {
+    // The default set is capped, so there are always axes waiting off the ring.
+    // Resolving it against the whole catalog is what stops one of them being
+    // promoted the moment a hide frees a slot: hiding is a subtraction, and a
+    // reader who took Cost out did not ask for Input Token Economy instead.
+    expect(AXES.length).toBeGreaterThan(DEFAULTS.length)
+    const before = plotted([], null)
+    const after = plotted([COST_KEY], null)
+    expect(after).toEqual(before.filter((key) => key !== COST_KEY))
+    expect(after).not.toContain(INPUT_TOKENS_KEY)
+  })
+
+  it("leaves no axis behind when the quantity's other source is still visible", () => {
+    // Cost reaches the page twice - the usage rollup and the Efficiency eval's
+    // cost_usd - and dedupe gives the axis to the rollup. Hiding that row must
+    // not hand the axis to the eval: the label would not change and the number
+    // would, which is worse than the axis leaving.
+    const cost = AXES.filter((axis) => axis.quantity === "cost")
+    expect(cost.map((axis) => axis.key)).toEqual([COST_KEY])
+    expect(
+      visible_metric_axes(AXES, new Set([COST_KEY])).some(
+        (axis) => axis.quantity === "cost",
+      ),
+    ).toBe(false)
+  })
+
+  it("brings the axis back on restore, exactly as it went away", () => {
+    const before = plotted([], null)
+    plotted(["e1::llm_calls"], null)
+    expect(plotted([], null)).toEqual(before)
+  })
+
+  it("offers the menu only what is still in the comparison", () => {
+    const visible = visible_metric_axes(AXES, new Set(["e1::cache_hit_rate"]))
+    expect(visible.map((axis) => axis.key)).not.toContain("e1::cache_hit_rate")
+    // The family headings count "n of m" over this list, so a hidden row must
+    // not still be counted as available.
+    const tokens = visible.filter((axis) => axis.family === "tokens")
+    expect(tokens.map((axis) => axis.key)).not.toContain("e1::cache_hit_rate")
+  })
+
+  it("keeps a hidden axis in the selection when an unrelated axis is toggled", () => {
+    // The regression this guards: materializing the selection against the
+    // VISIBLE axes would drop the hidden one, so restoring the row would bring
+    // the row back without its axis - the user's pick silently lost to a click
+    // somewhere else in the menu.
+    const selection = toggled_metric_axis_keys(AXES, DEFAULTS, INPUT_TOKENS_KEY)
+    expect(selection).toContain("e1::tool_calls")
+    expect(selection).toContain(INPUT_TOKENS_KEY)
+    expect(plotted(["e1::tool_calls"], selection)).not.toContain(
+      "e1::tool_calls",
+    )
+    expect(plotted([], selection)).toContain("e1::tool_calls")
+  })
+
+  it("switches an axis off and back on without disturbing ring order", () => {
+    const off = toggled_metric_axis_keys(AXES, DEFAULTS, "e1::llm_calls")
+    expect(off).not.toContain("e1::llm_calls")
+    expect(toggled_metric_axis_keys(AXES, off, "e1::llm_calls")).toEqual(
+      DEFAULTS,
+    )
+  })
+
+  it("still validates a URL against every axis, hidden or not", () => {
+    // hidden_scores and metrics are separate URL params restored together, and
+    // validation runs before the page knows which rows are hidden. Judging a
+    // saved selection against the visible axes would drop the picks belonging
+    // to hidden rows on every reload.
+    const known = known_metric_axis_keys(KEY_METAS)
+    expect(known.has("e1::tool_calls")).toBe(true)
+    expect(known.has(COST_KEY)).toBe(true)
   })
 })
 

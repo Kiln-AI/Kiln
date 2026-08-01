@@ -244,9 +244,7 @@
                   <button
                     type="button"
                     class="w-3 h-3 flex-none text-gray-400 hover:text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity"
-                    title={row.kind === "usage"
-                      ? "Hide this row from the table (the metrics radar has its own Axes menu)"
-                      : "Hide this row"}
+                    title="Hide this row and its radar axis"
                     aria-label="Hide {row.label}"
                     on:click|stopPropagation={() =>
                       row.kind === "score"

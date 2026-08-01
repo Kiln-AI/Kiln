@@ -74,7 +74,9 @@
     USAGE_KEY_PREFIX,
     metric_eval_ids,
     metric_row_info,
+    toggled_metric_axis_keys,
     usage_row_family,
+    visible_metric_axes,
     type MetricFamily,
   } from "$lib/utils/evolution/metric_axes"
   import {
@@ -139,18 +141,20 @@
   let unlinked_expanded = false
   let pins: string[] = []
   // Matrix rows the user hid: score rows keyed `${evalId}::${scoreKey}`, usage
-  // rows keyed by their metric. Hiding is a view concern - a hidden score row
-  // drops out of the matrix and off the eval-score radar; a hidden usage row
-  // only leaves the matrix (the metrics radar has its own axis picker, below).
-  // Neither touches the lens aggregate or the node delta strips, which stay
-  // full-coverage.
+  // rows keyed by their metric. Hiding is a view concern, and it means one
+  // thing in both tracks - a hidden row leaves its table AND its axis leaves
+  // the radar beside it. Neither touches the lens aggregate or the node delta
+  // strips, which stay full-coverage.
   let hidden_scores: string[] = []
   let hidden_usage: string[] = []
   // Axes on the performance-metrics radar. Null means "follow the default set",
   // which is what almost every visit wants and what keeps the URL clean; a list
   // means the user picked. Kept separate from hidden_scores/hidden_usage on
-  // purpose: those hide matrix ROWS, and an axis being off this chart must not
-  // take its number out of the table.
+  // purpose, because the two controls compose rather than overlap: hiding says
+  // what is in the comparison at all, this says which of what is left is worth
+  // an axis. So an axis being off the chart never takes its number out of the
+  // table, and a hidden row never edits this selection - it comes back with its
+  // axis on if that is how it went away.
   let metric_axis_keys: string[] | null = null
 
   // Drill-down UI state (not round-tripped)
@@ -565,6 +569,25 @@
     (meta) => !hidden_score_set.has(score_key_id(meta.evalId, meta.scoreKey)),
   )
 
+  // Which usage rollup key each usage table row prints. The rollup reaches the
+  // page as one blob rather than as score keys, so this is the only link
+  // between a usage ROW and the axis it feeds.
+  const USAGE_ROW_METRIC_KEYS: Record<UsageRowKey, string> = {
+    cost: COST_KEY,
+    tokens: TOTAL_TOKENS_KEY,
+    latency: LATENCY_KEY,
+  }
+
+  // The hidden rows, as axis keys. A score row's key IS its axis key; a usage
+  // row's is the rollup field it prints. See visible_metric_axes for why the
+  // metrics radar filters on the built axes rather than on the score keys.
+  $: hidden_metric_axis_keys = new Set<string>([
+    ...hidden_scores,
+    ...USAGE_ROWS.filter((row) => hidden_usage.includes(row.key)).map(
+      (row) => USAGE_ROW_METRIC_KEYS[row.key],
+    ),
+  ])
+
   function hide_score_row(key: string) {
     if (!hidden_scores.includes(key)) {
       hidden_scores = [...hidden_scores, key]
@@ -754,24 +777,27 @@
     lens_data.keyMetas,
     metric_axis_has_value,
   )
+  // Everything the reader sees is filtered through this; the catalog above
+  // stays whole, and is what the default set and a saved selection resolve
+  // against. See visible_metric_axes.
+  $: visible_axes = visible_metric_axes(
+    all_metric_axes,
+    hidden_metric_axis_keys,
+  )
   $: default_metric_keys = default_metric_axis_keys(all_metric_axes)
   $: shown_metric_keys = metric_axis_keys ?? default_metric_keys
   // Filtered from the canonical list rather than mapped from the selection, so
   // the axis order is stable no matter what order they were switched on in.
-  $: shown_metric_axes = all_metric_axes.filter((axis) =>
+  $: shown_metric_axes = visible_axes.filter((axis) =>
     shown_metric_keys.includes(axis.key),
   )
 
   function toggle_metric_axis(key: string) {
-    const selected = new Set(shown_metric_keys)
-    if (selected.has(key)) {
-      selected.delete(key)
-    } else {
-      selected.add(key)
-    }
-    metric_axis_keys = all_metric_axes
-      .filter((axis) => selected.has(axis.key))
-      .map((axis) => axis.key)
+    metric_axis_keys = toggled_metric_axis_keys(
+      all_metric_axes,
+      shown_metric_keys,
+      key,
+    )
   }
 
   function reset_metric_axes() {
@@ -785,10 +811,13 @@
   $: metric_menu_items = (() => {
     const items: FloatingMenuItem[] = []
     let family: MetricFamily | null = null
-    for (const axis of all_metric_axes) {
+    // Over the visible axes: a hidden row is not an axis the reader can turn
+    // on, so counting it as available would make every "x of y" overstate what
+    // the menu offers.
+    for (const axis of visible_axes) {
       if (axis.family !== family) {
         family = axis.family
-        const in_family = all_metric_axes.filter(
+        const in_family = visible_axes.filter(
           (candidate) => candidate.family === family,
         )
         const shown_in_family = in_family.filter((candidate) =>
@@ -819,11 +848,14 @@
   // has no better end at all, and a radar can only say "further is better".
   $: metrics_not_shown_note = (() => {
     const parts: string[] = []
-    const off = all_metric_axes.length - shown_metric_axes.length
+    // Against the visible axes, not the catalog: a hidden row was not "not
+    // selected", it was taken out of the comparison, and the table's own
+    // "Hidden (n)" control is what states that and offers it back.
+    const off = visible_axes.length - shown_metric_axes.length
     if (off > 0) {
       parts.push(`${off} ${off === 1 ? "metric" : "metrics"} not selected`)
     }
-    const directionless = directionless_key_count(lens_data.keyMetas)
+    const directionless = directionless_key_count(visible_key_metas)
     if (directionless > 0) {
       parts.push(
         `${directionless} ${
@@ -853,13 +885,6 @@
   // both places, so its rows keep the score key's own name.
 
   $: metric_eval_id_set = metric_eval_ids(lens_data.keyMetas)
-
-  // Which usage rollup key each table row reads
-  const USAGE_ROW_METRIC_KEYS: Record<UsageRowKey, string> = {
-    cost: COST_KEY,
-    tokens: TOTAL_TOKENS_KEY,
-    latency: LATENCY_KEY,
-  }
 
   function score_sublabel(meta: ScoreKeyMeta): string {
     return meta.direction === "informational"
@@ -1484,7 +1509,7 @@
                 slot="trigger"
                 type="button"
                 class="btn btn-xs btn-outline rounded-full font-normal"
-                title="Rows hidden from this table"
+                title="Rows hidden from this table and the metrics radar"
               >
                 Hidden ({hidden_performance_info.length +
                   hidden_usage_info.length})

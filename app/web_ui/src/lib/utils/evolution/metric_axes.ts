@@ -666,6 +666,66 @@ export function build_metric_axes(
 }
 
 /**
+ * The axes left once the rows the reader hid are taken out.
+ *
+ * The x on a comparison-table row means "take this out of the comparison", and
+ * it means the same in both tracks: the row leaves its table and its axis
+ * leaves the ring. `hiddenKeys` is that set of rows expressed as axis keys - a
+ * hidden score row's key IS its axis key, and a hidden usage row contributes
+ * the rollup field it prints.
+ *
+ * Filtering happens HERE, on the built catalog, and not on the score keys going
+ * into `build_metric_axes`. Two reasons, and they are the whole reason this is
+ * a separate step:
+ *
+ *   - `build_metric_axes` deduplicates by quantity, so filtering its input can
+ *     change which SOURCE wins an axis. Hiding the cost rollup row would then
+ *     leave a "Cost Efficiency" axis behind, silently fed by an eval's
+ *     `cost_usd` instead - a different number under an unchanged label, which
+ *     is worse than the axis leaving.
+ *   - the catalog stays whole, and it is what a saved axis selection and the
+ *     default axis set are resolved against. So hiding a row cannot rewrite
+ *     either: restoring the row brings its axis back exactly if it was on, and
+ *     hiding one never promotes some other metric into the default set to
+ *     backfill the freed slot.
+ *
+ * The Axes menu then picks which of THESE are plotted. The two controls
+ * compose - one decides what is in the comparison, the other what is on the
+ * ring - rather than overlapping.
+ */
+export function visible_metric_axes(
+  axes: MetricAxis[],
+  hiddenKeys: Set<string>,
+): MetricAxis[] {
+  return axes.filter((axis) => !hiddenKeys.has(axis.key))
+}
+
+/**
+ * The axis selection after switching one axis on or off.
+ *
+ * Materialized against the UNFILTERED catalog, which is the only subtle part:
+ * an axis whose row is currently hidden is not among the visible ones, and
+ * dropping it here would quietly edit the selection as a side effect of an
+ * unrelated click - so restoring the row would bring the row back without its
+ * axis. Filtering rather than mapping the selected set also keeps the result in
+ * ring order, so the axis order never depends on the order they were switched
+ * on in.
+ */
+export function toggled_metric_axis_keys(
+  axes: MetricAxis[],
+  shownKeys: string[],
+  key: string,
+): string[] {
+  const selected = new Set(shownKeys)
+  if (selected.has(key)) {
+    selected.delete(key)
+  } else {
+    selected.add(key)
+  }
+  return axes.filter((axis) => selected.has(axis.key)).map((axis) => axis.key)
+}
+
+/**
  * Every key that could become an axis, before deduplication picks between two
  * sources for the same quantity.
  *
