@@ -2031,6 +2031,112 @@ class TestV2FreshGeneration:
         assert parsed[1]["usage"]["output_tokens"] == 7
 
     @pytest.mark.asyncio
+    async def test_task_run_eval_single_turn_full_trace_serializes_trace(
+        self,
+        mock_v2_task_run_eval_runner,
+        mock_v2_task_run_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        """Single-turn fresh generation over a stored TaskRun: a successful
+        task-run-eval record of a full_trace eval carries the fresh
+        generation's serialized trace (legacy-runner parity)."""
+        mock_v2_task_run_eval_config.parent.evaluation_data_type = (
+            EvalDataType.full_trace
+        )
+        mock_v2_task_run_eval_config.parent.save_to_file()
+
+        item = TaskRun(
+            input="test input",
+            output=TaskOutput(output="stored", source=data_source),
+            parent=mock_v2_task_run_eval_runner.task,
+        )
+        item.save_to_file()
+        fresh_trace: list[ChatCompletionMessageParam] = [
+            {"role": "user", "content": "test input"},
+            {"role": "assistant", "content": "hello"},
+        ]
+        fresh = TaskRun(
+            input="test input",
+            input_source=data_source,
+            output=TaskOutput(output="hello", source=data_source),
+            trace=fresh_trace,
+        )
+        fresh.id = None
+
+        job = EvalJob(
+            item=item,
+            eval_config=mock_v2_task_run_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+        stub = StubV2Eval(mock_v2_task_run_eval_config)
+        with (
+            patch.object(stub, "run_task", return_value=fresh),
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+        ):
+            assert await mock_v2_task_run_eval_runner.run_job(job) is True
+
+        runs = mock_v2_task_run_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.skipped_reason is None
+        assert saved.task_run_trace is not None
+        assert json.loads(saved.task_run_trace) == fresh_trace
+
+    @pytest.mark.asyncio
+    async def test_eval_input_single_turn_full_trace_serializes_trace(
+        self, mock_v2_eval_config, mock_run_config, mock_eval_inputs, data_source
+    ):
+        """Single-turn EvalInput lane: same full_trace contract as above."""
+        mock_v2_eval_config.parent.evaluation_data_type = EvalDataType.full_trace
+        mock_v2_eval_config.parent.save_to_file()
+
+        fresh_trace: list[ChatCompletionMessageParam] = [
+            {"role": "user", "content": "What is 2+2?"},
+            {"role": "assistant", "content": "hello"},
+        ]
+        fresh = TaskRun(
+            input="What is 2+2?",
+            input_source=data_source,
+            output=TaskOutput(output="hello", source=data_source),
+            trace=fresh_trace,
+        )
+        fresh.id = None
+
+        runner = EvalRunner(
+            eval_configs=[mock_v2_eval_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        job = EvalJob(
+            item=mock_eval_inputs[0],
+            eval_config=mock_v2_eval_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+        stub = StubV2Eval(mock_v2_eval_config)
+        with (
+            patch.object(stub, "run_task", return_value=fresh),
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=stub,
+            ),
+        ):
+            assert await runner.run_job(job) is True
+
+        runs = mock_v2_eval_config.runs(readonly=True)
+        assert len(runs) == 1
+        saved = runs[0]
+        assert saved.eval_input_id == mock_eval_inputs[0].id
+        assert saved.skipped_reason is None
+        assert saved.task_run_trace is not None
+        assert json.loads(saved.task_run_trace) == fresh_trace
+
+    @pytest.mark.asyncio
     async def test_eval_config_eval_scores_existing_without_fresh_gen(
         self,
         mock_v2_runner,
@@ -3271,7 +3377,7 @@ class TestRecoverableSkipRecollection:
             parent=mock_task,
         )
         task_run.save_to_file()
-        _skip_run(
+        tombstone = _skip_run(
             mock_v2_task_run_eval_config,
             mock_run_config.id,
             SkippedReason.type_not_available,
@@ -3288,6 +3394,10 @@ class TestRecoverableSkipRecollection:
         ):
             jobs = runner.collect_tasks()
         assert {j.item.id for j in jobs} == {task_run.id}
+        # The recovered tombstone rides the job (parity with the EvalInput
+        # lane) so the replacement record can delete it instead of leaving
+        # two records on one item.
+        assert [t.id for t in jobs[0].superseded_tombstones] == [tombstone.id]
 
 
 # -------------------------------------------------------------------
