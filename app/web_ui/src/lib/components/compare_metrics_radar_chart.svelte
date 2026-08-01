@@ -51,6 +51,10 @@
   } from "$lib/utils/evolution/metric_axes"
   import {
     family_band_arc,
+    family_band_label,
+    family_label_budgets,
+    family_tone,
+    truncate_to_width,
     type FamilyBand,
   } from "$lib/utils/evolution/family_bands"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
@@ -75,7 +79,7 @@
 
 Scores are **relative to the other run configs on the chart**, on a shared 0-100 scale: unlike a pass rate, cost and latency have no maximum to plot against, so there is no "full scale" mode here.
 
-Related axes sit together: reading **clockwise from the top** the ring goes cost, tokens, calls, speed, responsiveness, and the arcs just outside it mark where each family ends. Switching axes off in the Axes menu keeps the grouping.
+Related axes sit together: reading **clockwise from the top** the ring goes cost, tokens, calls, speed, responsiveness. Each family is named on the ring, over the arc that marks how far it runs. Switching axes off in the Axes menu keeps the grouping.
 
 Because it is a comparison, at least two run configs are needed. Raw values are in the tooltip and in the table below.`
 
@@ -89,7 +93,8 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
   // title - reads in order. See METRIC_FAMILIES.
   const RADAR_START_ANGLE = 90
 
-  // The family band: a thin arc outside the ring, broken at each boundary.
+  // The family band: a thin arc outside the ring, broken at each boundary, with
+  // the family's name written along it.
   //
   // Sixteen labels in one weight of grey read as an undifferentiated ring even
   // though the families behind them are contiguous, so the grouping needs to be
@@ -98,30 +103,28 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
   // arc swept under them would sit beneath every polygon and change what the
   // series look like from one sector to the next.
   //
-  // It is neutral for the same reason. A family hue per arc is the obvious
-  // move and it does not survive contact with the constraint: to be told apart
-  // from each other five hues have to be about as saturated as the series
-  // themselves, and then the chart has two colour systems competing for the
-  // eye. Muting them far enough to recede takes them below the point where they
-  // are distinguishable at all - five pastels measure a worst pair of ~5 in
-  // OKLab dE where ~15 is the floor for telling two colours apart, so the
-  // colour would be decoration that looks like meaning. What a reader actually
-  // needed was the boundary; the axis names already say which family they are
-  // ("Tool Call Economy", "LLM Call Economy") and the key under the title names
-  // the runs in order with their counts. So: no new colour at all, one neutral,
-  // and the GAPS carry the boundary.
-  //
-  // Alternating two neutrals was tried and dropped. Five families is odd, so the
-  // first and last arc came out the same tone on either side of twelve o'clock
-  // and read as one arc oddly broken; and two tones over five groups says
-  // "two kinds of family", which is not a thing. A single tone with a gap wide
-  // enough to see says exactly what is true and nothing more.
-  const BAND_RING_GAP = 6
-  const BAND_THICKNESS = 5
-  const BAND_LABEL_GAP = 6
+  // The name is what turns the arc from a divider into a heading, and it is set
+  // larger and darker than the axis names so the ring reads as five groups of
+  // axes rather than sixteen loose ones. It goes between the arc and the axis
+  // names rather than outside them, laid along the arc - see family_band_label
+  // for why a ring of horizontal text outside the names is not affordable in a
+  // card this width. The tones are in family_bands too: three neutrals cycled
+  // so no arc matches a neighbour, and no hue, because the run configs already
+  // own colour here.
+  const BAND_RING_GAP = 5
+  const BAND_THICKNESS = 4
+  const BAND_LABEL_GAP = 1
+  // Room for the name laid along the arc. Its LINE HEIGHT, not its width: it
+  // runs along the ring, so this is all the radius the whole tier costs.
+  const FAMILY_LABEL_LINE_HEIGHT = 15
+  const FAMILY_LABEL_FONT_SIZE = 13
+  const FAMILY_LABEL_FONT = `600 ${FAMILY_LABEL_FONT_SIZE}px InterVariable, Inter, system-ui, sans-serif`
+  const FAMILY_LABEL_CHAR_WIDTH = 8
+  const FAMILY_LABEL_COLOR = "#4b5563"
+  // Clear space between the name and the axis names outside it
+  const FAMILY_LABEL_TAIL_GAP = 3
   // Read as the boundary, so it is generous; clamped per band by family_band_arc
   const BAND_ARC_GAP = 16
-  const BAND_TONE = "#aeb4bf"
 
   // Axis names, for solving the radius. Measured rather than estimated: a name
   // is anchored at its axis tip and laid AWAY from the centre, so its whole
@@ -402,13 +405,21 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
   // and creating one per redraw is pure waste.
   let textMeasurer: CanvasRenderingContext2D | null | undefined
 
-  function measureTextWidth(text: string): number {
+  function measureIn(font: string, charWidth: number, text: string): number {
     if (textMeasurer === undefined) {
       textMeasurer = document.createElement("canvas").getContext("2d")
-      if (textMeasurer) textMeasurer.font = AXIS_LABEL_FONT
     }
-    if (!textMeasurer) return text.length * AXIS_LABEL_CHAR_WIDTH
+    if (!textMeasurer) return text.length * charWidth
+    textMeasurer.font = font
     return textMeasurer.measureText(text).width
+  }
+
+  function measureTextWidth(text: string): number {
+    return measureIn(AXIS_LABEL_FONT, AXIS_LABEL_CHAR_WIDTH, text)
+  }
+
+  function measureFamilyWidth(text: string): number {
+    return measureIn(FAMILY_LABEL_FONT, FAMILY_LABEL_CHAR_WIDTH, text)
   }
 
   // Every axis name as a box at the angle echarts will draw it. The angles have
@@ -446,25 +457,49 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
     )
   }
 
-  // The band lives between the ring and the axis names, so from the radius
-  // solver's point of view it is part of the gap the names are held off by.
-  const AXIS_NAME_GAP = BAND_RING_GAP + BAND_THICKNESS + BAND_LABEL_GAP
+  // Ring to the anchor of an axis name when nothing is banded
+  const AXIS_NAME_GAP = 12
+  // ...and how far out the band and the family names reach when there is one
+  const FAMILY_BLOCK_PX =
+    BAND_RING_GAP + BAND_THICKNESS + BAND_LABEL_GAP + FAMILY_LABEL_LINE_HEIGHT
+  // Centre of the family name's line, measured from the ring
+  const FAMILY_LABEL_OFFSET = FAMILY_BLOCK_PX - FAMILY_LABEL_LINE_HEIGHT / 2
 
-  function radarLayout(names: string[]): RadarFit {
-    return fit_radar(
-      { width: boxWidth, height: boxHeight },
-      axisLabels(names),
-      {
-        legendHeight: legendHeight(),
-        labelGap: AXIS_NAME_GAP,
-        pad: CHART_PAD,
-      },
-    )
+  // How far out an axis name is anchored.
+  //
+  // A grouped ring holds its names off past the band AND past the family name -
+  // and then past half an axis name on top, because echarts centres a name on
+  // its anchor and lays it out sideways, so the inner half of it reaches back
+  // towards the ring. Without that half the family name lands underneath its
+  // own family's axis names, which is exactly where a family with an odd number
+  // of axes puts it: the midpoint of the arc IS an axis.
+  //
+  // Measured from the names as wrapped rather than assumed to be the worst
+  // case, so a ring of one-line names does not pay for a second line. An
+  // ungrouped ring pays for none of it and keeps the radius it had before
+  // families existed.
+  function axisNameGapFor(labels: RadarAxisLabel[]): number {
+    if (familyBands.length === 0) return AXIS_NAME_GAP
+    const tallest = Math.max(0, ...labels.map((label) => label.height))
+    return FAMILY_BLOCK_PX + FAMILY_LABEL_TAIL_GAP + tallest / 2
   }
 
-  // One arc per family run, drawn as a graphic rather than by the radar: echarts
-  // splits a radar's background into rings, never into sectors, and a ring is
-  // the one division this chart does not need.
+  function radarLayout(names: string[]): { fit: RadarFit; nameGap: number } {
+    const labels = axisLabels(names)
+    const nameGap = axisNameGapFor(labels)
+    return {
+      fit: fit_radar({ width: boxWidth, height: boxHeight }, labels, {
+        legendHeight: legendHeight(),
+        labelGap: nameGap,
+        pad: CHART_PAD,
+      }),
+      nameGap,
+    }
+  }
+
+  // One arc per family run plus the family's name, drawn as graphics rather than
+  // by the radar: echarts splits a radar's background into rings, never into
+  // sectors, and a ring is the one division this chart does not need.
   function bandGraphics(
     bands: FamilyBand[],
     axisCount: number,
@@ -472,34 +507,78 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
   ) {
     const inner = layout.radius + BAND_RING_GAP
     const outer = inner + BAND_THICKNESS
-    return bands.map((band) => {
+    const placements = bands.map((band) =>
+      family_band_label(band, axisCount, {
+        startAngleDegrees: RADAR_START_ANGLE,
+        cx: layout.cx,
+        cy: layout.cy,
+        radius: layout.radius + FAMILY_LABEL_OFFSET,
+      }),
+    )
+    // A name may spill into a neighbour's arc when the neighbour is not using
+    // it, which is what keeps a one-axis family's heading from coming out as
+    // "Data I…" beside a twelve-axis one with 600px of empty arc.
+    const budgets = family_label_budgets(
+      bands.map((band) => measureFamilyWidth(band.label)),
+      placements.map((placement) => placement.sweep),
+      BAND_ARC_GAP,
+    )
+    return bands.flatMap((band, index) => {
       const arc = family_band_arc(band, axisCount, {
         startAngleDegrees: RADAR_START_ANGLE,
         // A gap in px, as an angle at the radius it is drawn at, so the boundary
         // looks the same width whatever the card size
         gapRadians: BAND_ARC_GAP / outer,
       })
-      return {
-        type: "sector",
-        // Inert. The tooltip works out which axis is under the cursor from the
-        // pointer, and anything that could become the event target first would
-        // break that - see axisIndexFromPointer.
-        silent: true,
-        z: 0,
-        shape: {
-          cx: layout.cx,
-          cy: layout.cy,
-          r0: inner,
-          r: outer,
-          startAngle: arc.startAngle,
-          endAngle: arc.endAngle,
-          clockwise: true,
-          cornerRadius: BAND_THICKNESS / 2,
+      const placement = placements[index]
+      const text = truncate_to_width(
+        band.label,
+        budgets[index],
+        measureFamilyWidth,
+      )
+      return [
+        {
+          type: "sector",
+          // Inert. The tooltip works out which axis is under the cursor from the
+          // pointer, and anything that could become the event target first would
+          // break that - see axisIndexFromPointer.
+          silent: true,
+          z: 0,
+          shape: {
+            cx: layout.cx,
+            cy: layout.cy,
+            r0: inner,
+            r: outer,
+            startAngle: arc.startAngle,
+            endAngle: arc.endAngle,
+            clockwise: true,
+            cornerRadius: BAND_THICKNESS / 2,
+          },
+          style: {
+            fill: family_tone(index, bands.length),
+          },
         },
-        style: {
-          fill: BAND_TONE,
-        },
-      }
+        ...(text
+          ? [
+              {
+                type: "text",
+                silent: true,
+                z: 100,
+                x: placement.x,
+                y: placement.y,
+                rotation: placement.rotation,
+                style: {
+                  text,
+                  align: "center",
+                  verticalAlign: "middle",
+                  fontSize: FAMILY_LABEL_FONT_SIZE,
+                  fontWeight: 600,
+                  fill: FAMILY_LABEL_COLOR,
+                },
+              },
+            ]
+          : []),
+      ]
     })
   }
 
@@ -560,7 +639,9 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
     if (boxWidth <= 0 || boxHeight <= 0) return
 
     const { indicators, series, legend, chartAxes } = generateChartData()
-    const layout = radarLayout(indicators.map((indicator) => indicator.name))
+    const { fit: layout, nameGap } = radarLayout(
+      indicators.map((indicator) => indicator.name),
+    )
 
     const legendFormatter: Record<string, string> = {}
     for (const config of plottedConfigs) {
@@ -633,7 +714,7 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
           // going clockwise, the direction a ring is read. Without this echarts
           // walks the indicators the other way and draws the chain backwards.
           clockwise: true,
-          axisNameGap: AXIS_NAME_GAP,
+          axisNameGap: nameGap,
           axisName: {
             color: LABEL_COLOR,
             fontSize: 11,
@@ -769,17 +850,15 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
         </div>
       {/if}
       {#if showFamilyKey}
-        <!-- The arcs show WHERE the families divide; this says WHICH they are.
-             Order and count are the whole mapping - the first arc clockwise
-             from twelve o'clock covers the first name here, over as many axes
-             as it claims - so no swatch is needed and, more to the point, no
-             colour: a per-family hue would be a second colour system arguing
-             with the series. Both this and the arcs are built from the same
-             runs, so an axis switched off cannot leave a name without an arc. -->
+        <!-- The ring says which family is which and where each one ends; what
+             it cannot say without being counted is HOW MANY axes each covers,
+             so that is all this line is for. No swatch, and no colour: the arc
+             tones are a separator, not an identity, and a key to them would
+             invite reading them as one. Both this and the arcs are built from
+             the same runs, so an axis switched off cannot leave a name here
+             without an arc on the chart. -->
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 mb-4">
-          <span class="text-xs text-gray-400">
-            Axis families, clockwise from the top:
-          </span>
+          <span class="text-xs text-gray-400"> Axis families: </span>
           {#each familyBands as band}
             <span class="text-xs text-gray-500">
               {band.label}

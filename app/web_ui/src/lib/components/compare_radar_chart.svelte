@@ -27,8 +27,16 @@
   import {
     family_bands,
     family_band_arc,
+    family_band_label,
+    family_label_budgets,
+    family_tone,
+    truncate_to_width,
     type FamilyBand,
   } from "$lib/utils/evolution/family_bands"
+  import {
+    fit_radar,
+    type RadarAxisLabel,
+  } from "$lib/utils/evolution/metric_axes"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
@@ -78,20 +86,30 @@
   // page puts its table above, Compare V2 puts it below.
   export let table_location: "above" | "below" = "above"
 
-  // Axis scaling mode. Relative scales each axis to the best value across the selected
-  // run configs, which is the better lens for spotting differences between configs.
-  // Full scale uses the score's own range, which is the only readable option when
-  // there's nothing to compare against. Default follows the selection until the user
-  // picks a mode, after which their choice sticks.
-  let absoluteScale = false
-  let userChoseScale = false
-  $: if (!userChoseScale) {
-    absoluteScale = plottedConfigCount <= 1
-  }
+  // Axis scaling mode.
+  //
+  // Full Scale is the default, and it is the honest one: these axes are bounded
+  // scores - a pass rate over 0-1, a rating over 1-5 - so the score's own range
+  // is a real range, and where a config sits in it is a fact about the config.
+  // Relative min-max normalizes each axis across whatever happens to be pinned,
+  // which turns a 0.02 spread into a full-radius swing: dramatic, and about
+  // nothing. It stays one click away for the reader who wants that magnified
+  // view of where configs differ.
+  //
+  // The consequence is accepted rather than designed around: run configs that
+  // all score near 1.0 draw a near-perfect circle with little to tell apart.
+  // They ARE that similar, and a chart that quietly switched modes to make them
+  // look different would be inventing the difference.
+  //
+  // One mechanism, not two. This used to start relative and get flipped to
+  // absolute by a reactive statement whenever a single config was plotted -
+  // which is the same default, arrived at conditionally, and it meant pinning a
+  // second config silently changed the scale under a reader who had not touched
+  // the control.
+  let absoluteScale = true
 
   function setScale(useAbsolute: boolean) {
     absoluteScale = useAbsolute
-    userChoseScale = true
   }
 
   // Fallback full-scale max when we don't know the score's type. Most eval scores are
@@ -105,9 +123,9 @@
   // Below this many axes there's no shape to read, so there's no chart to draw
   const MIN_RADAR_AXES = 3
 
-  $: SCALE_TOOLTIP = `**Relative**: each axis is scaled to the highest value across the selected run configs. Best for spotting differences between configs.
+  $: SCALE_TOOLTIP = `**Full Scale** (the default): each axis uses the score's own range - 0-1 for pass/fail, 1-5 for 5-star - so the shape is where these run configs actually stand. Run configs that all score near the top draw a near-perfect circle, which is what being that similar looks like.
 
-**Full Scale**: each axis uses the score's own range (0-1 for pass/fail, 1-5 for 5-star). Best when looking at one run config on its own, where there is nothing to compare against.
+**Relative**: each axis is scaled to the highest value across the selected run configs, magnifying whatever difference there is. Good for spotting where they differ, as long as you remember a full-radius swing may be worth 0.02.
 
 Cost, latency and token axes score each run config against the others, so they stay relative in both modes. With a single run config there's nothing to compare against and they all sit at the midpoint. Hide one with the x on its row in the table ${table_location}.`
 
@@ -116,7 +134,7 @@ Cost, latency and token axes score each run config against the others, so they s
   $: scaleTooltip = showFamilyKey
     ? `${SCALE_TOOLTIP}
 
-Related criteria sit together: the axes are grouped into the families the task's specs declare, read **clockwise from the top**, and the arcs just outside the ring mark where each family ends.`
+Related criteria sit together: the axes are grouped into the families the task's specs declare, read **clockwise from the top**. Each family is named on the ring, over the arc that marks how far it runs.`
     : SCALE_TOOLTIP
 
   // Chart instance
@@ -202,18 +220,25 @@ Related criteria sit together: the axes are grouped into the families the task's
   // same place whether or not the task groups its specs.
   const RADAR_START_ANGLE = 90
 
-  // The family band: a thin neutral arc outside the ring, broken at each
-  // boundary. Same treatment, same tones and the same reasoning as the metrics
-  // radar - the gaps carry the division and no hue is introduced, because a
-  // per-family colour would be a second colour system arguing with the series.
-  // See compare_metrics_radar_chart for the full argument.
-  const BAND_RING_GAP = 6
-  const BAND_THICKNESS = 5
-  const BAND_LABEL_GAP = 6
+  // The family band: a thin arc outside the ring, broken at each boundary, with
+  // the family's name written along it. Same geometry, same tones and the same
+  // reasoning as the metrics radar - see compare_metrics_radar_chart and
+  // $lib/utils/evolution/family_bands, which both charts share so they cannot
+  // come out looking like two different conventions.
+  const BAND_RING_GAP = 5
+  const BAND_THICKNESS = 4
+  const BAND_LABEL_GAP = 1
   const BAND_ARC_GAP = 16
-  const BAND_TONE = "#aeb4bf"
-  // What the band costs the labels: they start outside it when it is drawn
-  const BAND_BLOCK_PX = BAND_RING_GAP + BAND_THICKNESS + BAND_LABEL_GAP
+  const FAMILY_LABEL_LINE_HEIGHT = 15
+  const FAMILY_LABEL_FONT_SIZE = 13
+  const FAMILY_LABEL_COLOR = "#4b5563"
+  const FAMILY_LABEL_BOLD_WIDTH = 1.05
+  const FAMILY_LABEL_TAIL_GAP = 3
+  // How far out the band and the family names reach
+  const FAMILY_BLOCK_PX =
+    BAND_RING_GAP + BAND_THICKNESS + BAND_LABEL_GAP + FAMILY_LABEL_LINE_HEIGHT
+  // Centre of the family name's line, measured from the ring
+  const FAMILY_LABEL_OFFSET = FAMILY_BLOCK_PX - FAMILY_LABEL_LINE_HEIGHT / 2
 
   const COST_KEY = "cost::mean_cost"
   const LATENCY_KEY = "cost::mean_total_llm_latency_ms"
@@ -253,17 +278,6 @@ Related criteria sit together: the axes are grouped into the families the task's
   $: visibleUsageKeys = comparisonFeatures
     .filter((f) => f.eval_id === "kiln_cost_section")
     .flatMap((f) => f.items.map((item) => item.key))
-
-  // Run configs that will actually be drawn: selected, and with at least one eval
-  // result. A config with nothing to show shouldn't make the chart behave as though
-  // there's something to compare against. Computed here rather than read back out of
-  // generateChartData() so that the scale default below doesn't depend on a value
-  // that itself depends on the scale.
-  $: plottedConfigCount = selectedRunConfigIds.filter(
-    (configId) =>
-      run_configs.some((c) => c.id === configId) &&
-      chartKeys.some((key) => getModelValueRaw(configId, key) !== null),
-  ).length
 
   // A radar reads "further from center is better". Scores that don't share that
   // grammar are left off rather than drawn backwards: a lower-is-better score would
@@ -311,61 +325,9 @@ Related criteria sit together: the axes are grouped into the families the task's
   // echarts (a fixed name width plus overflow: "break"); bottom mode places
   // them itself - see bottomAxisLabels below.
   //
-  // "bottom" mode puts the plot in a full-width box, so the left and right
-  // margins are enormous while the vertical budget is the scarce one. A wider
-  // name spends that width to buy back height: fewer lines per name means less
-  // of the box reserved for text outside the outer ring, which is what lets
-  // the radius grow.
-  const AXIS_NAME_LINE_CHARS_WIDE = 16
-  const AXIS_NAME_MAX_LINES = 3
-
-  // What "bottom" mode has to fit around the ring, in px. echarts' percentage
-  // radius is taken against min(width, height) / 2, which knows nothing about
-  // either: a percentage large enough to fill a wide box clips the left and
-  // right names in a narrow one, and a percentage safe in a narrow box wastes
-  // most of a wide one. So bottom mode measures its box and subtracts these.
-  //
-  // Vertical: the gap from the ring to the text, plus AXIS_NAME_MAX_LINES
-  // lines at lineHeight 14. A label wraps to at most two, so the third line's
-  // worth is slack - room for the packing in bottomAxisLabels to push the
-  // crowded labels at the top and bottom poles outwards without leaving the box.
-  const AXIS_NAME_BLOCK_PX = 15 + AXIS_NAME_MAX_LINES * 14
-  // Horizontal: the widest a wrapped name gets, ~6px per char at fontSize 11,
-  // plus the same gap.
-  const AXIS_NAME_WIDTH_PX = 15 + AXIS_NAME_LINE_CHARS_WIDE * 6
   // One scrolling legend row: the name line (lineHeight 16) over up to three
   // {sub} lines (lineHeight 14), plus echarts' 5px legend padding either side.
   const BOTTOM_LEGEND_PX = 16 + 3 * 14 + 10
-  // Enough ring left to be a chart at all, if the box is somehow tiny
-  const MIN_RADAR_RADIUS_PX = 40
-
-  // Ring geometry for bottom mode, in px, from the measured box. Falls back to
-  // percentages when the box hasn't been measured yet (first paint).
-  function bottomRadarGeometry(
-    width: number,
-    height: number,
-    // The band lives between the ring and the axis names, so from the radius'
-    // point of view it is simply more of the gap the names are held off by
-    bandPx: number = 0,
-  ): { center: (number | string)[]; radius: number | string } {
-    if (width <= 0 || height <= 0) {
-      return { center: ["50%", "45%"], radius: "71%" }
-    }
-    // The legend sits under the plot, so the ring is centred in what's left
-    const cy = (height - BOTTOM_LEGEND_PX) / 2
-    const radius = Math.max(
-      Math.min(
-        cy - AXIS_NAME_BLOCK_PX - bandPx,
-        width / 2 - AXIS_NAME_WIDTH_PX - bandPx,
-      ),
-      MIN_RADAR_RADIUS_PX,
-    )
-    // Centre in px rather than "50%": bottomAxisLabels positions text in the
-    // same px space, and the measured width can lag the real one by a few px
-    // (recordChartSize's threshold), so pinning both to one number keeps the
-    // labels tied to the ring even mid-resize.
-    return { center: [width / 2, cy], radius }
-  }
 
   // ---------------------------------------------------------------------
   // Bottom-mode axis labels
@@ -393,9 +355,19 @@ Related criteria sit together: the axes are grouped into the families the task's
   const LABEL_FONT_SIZE = 11
   const LABEL_LINE_HEIGHT = 14
   const LABEL_COLOR = "#666"
-  // Two lines is what the band between the top of the box and the legend can
-  // afford the whole way round at the 640px height floor. Longer names are
-  // ellipsized; the axis tooltip always carries the full one.
+  // What a name is wrapped to, in px - the same ~13 characters the metrics
+  // radar wraps to, so the two rings carry names of the same shape. Fixed
+  // rather than "whatever is left outside the ring", which is what it used to
+  // be: that made the wrap width a function of the radius and the radius a
+  // function of the wrap width, and the knot was cut by pricing EVERY name as
+  // though it were the widest one pointing due east. See radarLayout.
+  const LABEL_WRAP_BUDGET_PX = 78
+  // The most lines a name may take. Fewer are used when the ring is crowded -
+  // see wrapAxisNames, which walks down from here until the labels fit the
+  // band. Two rather than three, because a taller name costs radius twice: it
+  // reaches further up and down the box, and it pushes every axis name outwards
+  // through axisLabelGapFor. Longer names are ellipsized; the axis tooltip
+  // always carries the full one.
   const LABEL_MAX_LINES = 2
   // Clear space between two stacked labels
   const LABEL_GAP_Y = 5
@@ -405,9 +377,6 @@ Related criteria sit together: the axes are grouped into the families the task's
   const LABEL_EDGE_PAD = 8
   // ...and off the top of the box and the legend underneath
   const LABEL_BAND_PAD = 2
-  // A budget this small holds nothing, but a degenerate box shouldn't make the
-  // labels vanish either
-  const LABEL_MIN_WIDTH_PX = 40
   // Above this |sin| a label is near enough to a pole that packing moved it
   // essentially along its own axis, so it is drawn further out along that axis
   // instead of being left floating beside it
@@ -418,7 +387,7 @@ Related criteria sit together: the axes are grouped into the families the task's
     text: string
     x: number
     y: number
-    align: "left" | "right"
+    align: "left" | "right" | "center"
     width: number
     height: number
   }
@@ -431,17 +400,20 @@ Related criteria sit together: the axes are grouped into the families the task's
   const WIDE_GLYPHS = /[MWmw@%]/
   const NARROW_GLYPHS = /[ijlt.,;:'`!|()[\]/\\ ]/
 
-  function estimateTextWidth(text: string): number {
+  function estimateTextWidth(
+    text: string,
+    fontSize: number = LABEL_FONT_SIZE,
+  ): number {
     let width = 0
     for (const glyph of text) {
       if (WIDE_GLYPHS.test(glyph)) {
-        width += LABEL_FONT_SIZE * 0.92
+        width += fontSize * 0.92
       } else if (NARROW_GLYPHS.test(glyph)) {
-        width += LABEL_FONT_SIZE * 0.31
+        width += fontSize * 0.31
       } else if (glyph >= "A" && glyph <= "Z") {
-        width += LABEL_FONT_SIZE * 0.7
+        width += fontSize * 0.7
       } else {
-        width += LABEL_FONT_SIZE * 0.55
+        width += fontSize * 0.55
       }
     }
     return width
@@ -540,39 +512,71 @@ Related criteria sit together: the axes are grouped into the families the task's
     )
   }
 
+  // echarts puts indicator 0 at startAngle and, with `clockwise` set on the
+  // radar, walks the indicators the way the ring is read - so the angle
+  // DECREASES with the index. Radians, y up, the convention radarCoordSys(),
+  // the radar's own dataToPoint and $lib/utils/evolution/metric_axes all share.
+  function axisAngles(count: number): number[] {
+    return Array.from(
+      { length: count },
+      (_, index) =>
+        (RADAR_START_ANGLE * Math.PI) / 180 - (index * Math.PI * 2) / count,
+    )
+  }
+
+  // Every name wrapped, at the most lines the ring can hold.
+  //
+  // Wrapped BEFORE the radius is solved, which is the point: fit_radar needs the
+  // boxes, and how many lines fit depends only on how many names crowd one side
+  // of the ring - a count, not a radius. So the knot the old radius-dependent
+  // wrap width tied does not have to be tied at all. Two lines while there is
+  // room for them, one when there is not, and past that the stride in
+  // bottomAxisLabels starts hiding names.
+  function wrapAxisNames(names: string[], band: number): string[][] {
+    // Half the ring, rounded up: the crowded side is the one that has to fit
+    const perSide = Math.ceil(names.length / 2)
+    for (let maxLines = LABEL_MAX_LINES; maxLines > 1; maxLines--) {
+      const wrapped = names.map((name) =>
+        wrapToWidth(name, LABEL_WRAP_BUDGET_PX, maxLines),
+      )
+      const tallest = Math.max(1, ...wrapped.map((lines) => lines.length))
+      if (perSide * (tallest * LABEL_LINE_HEIGHT + LABEL_GAP_Y) <= band) {
+        return wrapped
+      }
+    }
+    return names.map((name) => wrapToWidth(name, LABEL_WRAP_BUDGET_PX, 1))
+  }
+
+  // The wrapped names as boxes at the angles echarts would lay them out at,
+  // which is what fit_radar solves the radius against.
+  function axisLabelBoxes(wrapped: string[][]): RadarAxisLabel[] {
+    const angles = axisAngles(wrapped.length)
+    return wrapped.map((lines, index) => ({
+      angle: angles[index],
+      width: Math.max(...lines.map((line) => estimateTextWidth(line))),
+      height: lines.length * LABEL_LINE_HEIGHT,
+    }))
+  }
+
   // Where each axis name goes in bottom mode, in canvas px. `y` is the vertical
   // centre of the text block and `x` the edge it is anchored by, which is what
   // echarts' graphic text wants alongside align/verticalAlign.
   function bottomAxisLabels(
-    names: string[],
+    wrapped: string[][],
     box: {
       cx: number
       cy: number
+      /** Ring to the anchor of a name, including the family band and its names */
+      labelGap: number
       radius: number
       width: number
       bandBottom: number
-      /** Extra clearance for the family band, when one is drawn */
-      familyBandPx?: number
     },
   ): BottomAxisLabel[] {
-    const count = names.length
+    const count = wrapped.length
     if (count === 0) return []
-    const ringRadius = box.radius + LABEL_RING_GAP + (box.familyBandPx ?? 0)
-    // One wrap width for the whole ring: the tightest case is an axis pointing
-    // straight left or right, and mixing wrap widths by angle reads as noise.
-    // It is also what makes the horizontal cap below exact.
-    const budget = Math.max(
-      LABEL_MIN_WIDTH_PX,
-      box.width / 2 - ringRadius - LABEL_EDGE_PAD,
-    )
-    // echarts puts indicator 0 at startAngle and, with `clockwise` set on the
-    // radar, walks the indicators the way the ring is read - so the angle
-    // DECREASES with the index. Screen y grows downwards, the same convention
-    // radarCoordSys() and the radar's own dataToPoint use.
-    const angles = names.map(
-      (_, index) =>
-        (RADAR_START_ANGLE * Math.PI) / 180 - (index * Math.PI * 2) / count,
-    )
+    const ringRadius = box.radius + box.labelGap
+    const angles = axisAngles(count)
     const tipY = (index: number) =>
       box.cy - ringRadius * Math.sin(angles[index])
 
@@ -589,24 +593,16 @@ Related criteria sit together: the axes are grouped into the families the task's
       side.sort((first, second) => tipY(first) - tipY(second))
     }
 
-    // Enough band for every name at its natural wrap? If not, drop to one line
-    // each, and past that show every stride-th label - the rest stay in the
-    // axis tooltip. Only reachable at an implausible axis count: the 640px
-    // height floor holds about 30 two-line labels a side.
-    let wrapped = names.map((name) =>
-      wrapToWidth(name, budget, LABEL_MAX_LINES),
-    )
+    // Past the point where even one line each fits, show every stride-th label -
+    // the rest stay in the axis tooltip.
     const spanOf = (side: number[]) =>
       side.reduce(
         (total, index) =>
           total + wrapped[index].length * LABEL_LINE_HEIGHT + LABEL_GAP_Y,
         -LABEL_GAP_Y,
       )
-    const worstSpan = () => Math.max(spanOf(sides[0]), spanOf(sides[1]))
-    if (worstSpan() > band) {
-      wrapped = names.map((name) => wrapToWidth(name, budget, 1))
-    }
-    const stride = Math.max(1, Math.ceil(worstSpan() / band))
+    const worstSpan = Math.max(spanOf(sides[0]), spanOf(sides[1]))
+    const stride = Math.max(1, Math.ceil(worstSpan / band))
 
     const labels: BottomAxisLabel[] = []
     for (const side of sides) {
@@ -625,27 +621,39 @@ Related criteria sit together: the axes are grouped into the families the task's
         const angle = angles[index]
         const sin = Math.sin(angle)
         const cos = Math.cos(angle)
+        // echarts' own test for "this axis is vertical", to the same tolerance
+        // fit_radar uses: a name at a pole is centred over its tip rather than
+        // anchored to one side of it, so the box the radius was solved against
+        // is the box that gets drawn.
+        const vertical = Math.abs(cos) < 1e-4
         const y = tops[position] + heights[position] / 2
+        const width = Math.max(
+          ...wrapped[index].map((line) => estimateTextWidth(line)),
+        )
         // A label the packing pushed towards a pole is drawn further out along
         // its own axis rather than left floating beside it - the one direction
-        // that can't be misread as belonging to a neighbour. Capped at the
-        // horizontal reach of the ring itself, so anchor x plus a full-budget
-        // line still lands inside the box.
+        // that can't be misread as belonging to a neighbour. Capped so that the
+        // anchor plus this label's own width still lands inside the box: the
+        // radius was solved for the name at its tip, and pushing it outwards
+        // must not spend room the solver never reserved.
         const onAxis =
           Math.abs(sin) >= LABEL_RADIAL_MIN_SIN
             ? (box.cy - y) / sin
             : ringRadius
-        const cap = Math.abs(cos) > 1e-6 ? ringRadius / Math.abs(cos) : Infinity
-        const radius = Math.min(Math.max(ringRadius, onAxis), cap)
+        const reach =
+          box.width / 2 - LABEL_EDGE_PAD - (vertical ? width / 2 : width)
+        const cap = Math.abs(cos) > 1e-6 ? reach / Math.abs(cos) : Infinity
+        const radius = Math.min(
+          Math.max(ringRadius, onAxis),
+          Math.max(cap, ringRadius),
+        )
         labels.push({
           index,
           text: wrapped[index].join("\n"),
           x: box.cx + radius * cos,
           y,
-          align: cos >= 0 ? "left" : "right",
-          width: Math.max(
-            ...wrapped[index].map((line) => estimateTextWidth(line)),
-          ),
+          align: vertical ? "center" : cos > 0 ? "left" : "right",
+          width,
           height: heights[position],
         })
       })
@@ -912,8 +920,7 @@ Related criteria sit together: the axes are grouped into the families the task's
     }
 
     // Run configs with at least one result. One with nothing to plot is left out
-    // entirely rather than emptying every axis. Same rule as the module-level
-    // plottedConfigCount, which the scale default reads.
+    // entirely rather than emptying every axis.
     const plottedConfigs = selectedRunConfigIds
       .map((configId) => run_configs.find((c) => c.id === configId))
       .filter((config): config is TaskRunConfig => !!config)
@@ -1039,9 +1046,28 @@ Related criteria sit together: the axes are grouped into the families the task's
       : ([] as FamilyBand[])
 
   $: showFamilyKey = hasData && familyBands.length > 0
-  // Only reserved when a band is actually drawn, so an ungrouped chart keeps
-  // every pixel of radius it had before
-  $: familyBandPx = familyBands.length > 0 ? BAND_BLOCK_PX : 0
+
+  // How far out an axis name is anchored.
+  //
+  // A grouped ring holds its names off past the band AND past the family name -
+  // and then past half an axis name on top, because a name is centred on its
+  // anchor and laid out sideways, so its inner half reaches back towards the
+  // ring. Without that half the family name lands underneath its own family's
+  // axis names, which is exactly where a family with an odd number of axes puts
+  // it: the midpoint of the arc IS an axis.
+  //
+  // Measured from the names as wrapped rather than assumed to be the worst
+  // case, so a ring of one-line names does not pay for a second line. An
+  // ungrouped chart pays for none of it and keeps every pixel of radius it had
+  // before families existed.
+  function axisLabelGapFor(wrapped: string[][]): number {
+    if (familyBands.length === 0) return LABEL_RING_GAP
+    const tallest = Math.max(
+      0,
+      ...wrapped.map((lines) => lines.length * LABEL_LINE_HEIGHT),
+    )
+    return FAMILY_BLOCK_PX + FAMILY_LABEL_TAIL_GAP + tallest / 2
+  }
 
   // When there's nothing to draw, say which of the two reasons it is
   $: noDataMessage =
@@ -1067,41 +1093,79 @@ Related criteria sit together: the axes are grouped into the families the task's
     const forceBottomLegend = legend_position === "bottom"
     const compactLayout = forceBottomLegend || series.length <= 2
 
-    const bottomGeometry = bottomRadarGeometry(
-      chartWidth,
-      chartHeight,
-      familyBandPx,
+    // Bottom mode solves its own geometry and draws its own axis names. Both
+    // wait for the box to be measured; until then the ring falls back to
+    // percentages, and there is nothing on screen to label anyway.
+    const measured = forceBottomLegend && chartWidth > 0 && chartHeight > 0
+    const wrappedNames = measured
+      ? wrapAxisNames(
+          indicators.map((indicator) => indicator.name),
+          chartHeight - BOTTOM_LEGEND_PX - 2 * LABEL_BAND_PAD,
+        )
+      : []
+    const labelGap = axisLabelGapFor(wrappedNames)
+    // Solved rather than a percentage of min(width, height): this card is much
+    // taller than it is wide at every layout the page produces, so a percentage
+    // resolved against the width and left a small ring adrift in a tall card.
+    // Solved against where the names will actually LAND, too, rather than
+    // against the widest name as though every axis pointed due east - which is
+    // what this chart used to do, and what kept its ring a third smaller than
+    // the metrics ring beside it. See fit_radar.
+    const bottomFit = measured
+      ? fit_radar(
+          { width: chartWidth, height: chartHeight },
+          axisLabelBoxes(wrappedNames),
+          {
+            legendHeight: BOTTOM_LEGEND_PX,
+            labelGap,
+            pad: LABEL_EDGE_PAD,
+          },
+        )
+      : null
+
+    const axisLabels = bottomFit
+      ? bottomAxisLabels(wrappedNames, {
+          cx: bottomFit.cx,
+          cy: bottomFit.cy,
+          labelGap,
+          radius: bottomFit.radius,
+          width: chartWidth,
+          bandBottom: chartHeight - BOTTOM_LEGEND_PX,
+        })
+      : []
+
+    // One arc per family run plus the family's name, drawn as graphics rather
+    // than by the radar: echarts splits a radar's background into rings, never
+    // into sectors. Drawn OUTSIDE the plot, because the run configs are this
+    // chart's subject and a sector swept under them would sit beneath every
+    // polygon and change what the series look like from one wedge to the next.
+    // The glyph table above is for regular weight and a family name is set
+    // semibold, so the estimate is nudged up rather than left to run a few
+    // percent narrow into a budget it is meant to respect.
+    const measureFamily = (value: string) =>
+      estimateTextWidth(value, FAMILY_LABEL_FONT_SIZE) * FAMILY_LABEL_BOLD_WIDTH
+    const familyPlacements = bottomFit
+      ? familyBands.map((band) =>
+          family_band_label(band, keys.length, {
+            startAngleDegrees: RADAR_START_ANGLE,
+            cx: bottomFit.cx,
+            cy: bottomFit.cy,
+            radius: bottomFit.radius + FAMILY_LABEL_OFFSET,
+          }),
+        )
+      : []
+    // A name may spill into a neighbour's arc when the neighbour is not using
+    // it, which is what keeps a one-axis family's heading from coming out as
+    // "Data I…" beside a twelve-axis one with 600px of empty arc.
+    const familyBudgets = family_label_budgets(
+      familyBands.map((band) => measureFamily(band.label)),
+      familyPlacements.map((placement) => placement.sweep),
+      BAND_ARC_GAP,
     )
-
-    // Bottom mode draws its own axis names. Empty on the first paint of an
-    // unmeasured box, where the geometry is still percentages - and where
-    // there's nothing on screen to label anyway.
-    const axisLabels =
-      forceBottomLegend && typeof bottomGeometry.radius === "number"
-        ? bottomAxisLabels(
-            indicators.map((indicator) => indicator.name),
-            {
-              cx: chartWidth / 2,
-              cy: bottomGeometry.center[1] as number,
-              radius: bottomGeometry.radius,
-              width: chartWidth,
-              bandBottom: chartHeight - BOTTOM_LEGEND_PX,
-              familyBandPx,
-            },
-          )
-        : []
-
-    // One arc per family run, drawn as a graphic rather than by the radar:
-    // echarts splits a radar's background into rings, never into sectors. Drawn
-    // OUTSIDE the plot, because the run configs are this chart's subject and a
-    // sector swept under them would sit beneath every polygon and change what
-    // the series look like from one wedge to the next.
-    const solvedRadius =
-      typeof bottomGeometry.radius === "number" ? bottomGeometry.radius : null
     const bandGraphics =
-      solvedRadius !== null && familyBands.length > 0
-        ? familyBands.map((band) => {
-            const inner = solvedRadius + BAND_RING_GAP
+      bottomFit && familyBands.length > 0
+        ? familyBands.flatMap((band, index) => {
+            const inner = bottomFit.radius + BAND_RING_GAP
             const outer = inner + BAND_THICKNESS
             const arc = family_band_arc(band, keys.length, {
               startAngleDegrees: RADAR_START_ANGLE,
@@ -1109,25 +1173,53 @@ Related criteria sit together: the axes are grouped into the families the task's
               // boundary looks the same width whatever the card size
               gapRadians: BAND_ARC_GAP / outer,
             })
-            return {
-              type: "sector" as const,
-              // Inert: the tooltip works out which axis is under the cursor
-              // from the pointer, and anything that could become the event
-              // target first would break that - see axisIndexFromPointer.
-              silent: true,
-              z: 0,
-              shape: {
-                cx: chartWidth / 2,
-                cy: bottomGeometry.center[1] as number,
-                r0: inner,
-                r: outer,
-                startAngle: arc.startAngle,
-                endAngle: arc.endAngle,
-                clockwise: true,
-                cornerRadius: BAND_THICKNESS / 2,
+            const placement = familyPlacements[index]
+            const text = truncate_to_width(
+              band.label,
+              familyBudgets[index],
+              measureFamily,
+            )
+            return [
+              {
+                type: "sector" as const,
+                // Inert: the tooltip works out which axis is under the cursor
+                // from the pointer, and anything that could become the event
+                // target first would break that - see axisIndexFromPointer.
+                silent: true,
+                z: 0,
+                shape: {
+                  cx: bottomFit.cx,
+                  cy: bottomFit.cy,
+                  r0: inner,
+                  r: outer,
+                  startAngle: arc.startAngle,
+                  endAngle: arc.endAngle,
+                  clockwise: true,
+                  cornerRadius: BAND_THICKNESS / 2,
+                },
+                style: { fill: family_tone(index, familyBands.length) },
               },
-              style: { fill: BAND_TONE },
-            }
+              ...(text
+                ? [
+                    {
+                      type: "text" as const,
+                      silent: true,
+                      z: 100,
+                      x: placement.x,
+                      y: placement.y,
+                      rotation: placement.rotation,
+                      style: {
+                        text,
+                        align: "center" as const,
+                        verticalAlign: "middle" as const,
+                        fontSize: FAMILY_LABEL_FONT_SIZE,
+                        fontWeight: 600,
+                        fill: FAMILY_LABEL_COLOR,
+                      },
+                    },
+                  ]
+                : []),
+            ]
           })
         : []
 
@@ -1197,20 +1289,24 @@ Related criteria sit together: the axes are grouped into the families the task's
         },
         radar: {
           indicator: indicators,
-          // Bottom mode fills its (tall, page-wide) box: the ring is centred
-          // above the legend row and grown until either the axis names or the
-          // legend would be squeezed - see bottomRadarGeometry. Side mode's
-          // percentages are unchanged.
-          center: forceBottomLegend
-            ? bottomGeometry.center
-            : compactLayout
-              ? ["50%", "46%"]
-              : ["32%", "50%"],
-          radius: forceBottomLegend
-            ? bottomGeometry.radius
-            : compactLayout
-              ? "62%"
-              : "85%",
+          // Bottom mode fills its (tall, page-wide) box: the ring is centred in
+          // what the legend leaves and grown until the axis names would leave
+          // the box - see fit_radar. Side mode's percentages are unchanged, and
+          // so is the unmeasured first paint.
+          center: bottomFit
+            ? [bottomFit.cx, bottomFit.cy]
+            : forceBottomLegend
+              ? ["50%", "45%"]
+              : compactLayout
+                ? ["50%", "46%"]
+                : ["32%", "50%"],
+          radius: bottomFit
+            ? bottomFit.radius
+            : forceBottomLegend
+              ? "71%"
+              : compactLayout
+                ? "62%"
+                : "85%",
           startAngle: RADAR_START_ANGLE,
           // Read clockwise from the top, matching the metrics radar beside it.
           // Without this echarts walks the indicators the other way and a
@@ -1392,18 +1488,15 @@ Related criteria sit together: the axes are grouped into the families the task's
           </div>
         {/if}
         {#if showFamilyKey}
-          <!-- The arcs show WHERE the criteria divide; this says WHICH group is
-               which. Order and count are the whole mapping - the first arc
-               clockwise from twelve o'clock covers the first name here, over as
-               many axes as it claims - so no swatch is needed and, more to the
-               point, no colour: a per-family hue would be a second colour
-               system arguing with the series. Both this and the arcs are built
-               from the same runs, so an axis dropped for having no result
-               cannot leave a name without an arc. -->
+          <!-- The ring says which family is which and where each one ends; what
+               it cannot say without being counted is HOW MANY criteria each
+               covers, so that is all this line is for. No swatch, and no
+               colour: the arc tones are a separator, not an identity, and a key
+               to them would invite reading them as one. Both this and the arcs
+               are built from the same runs, so an axis dropped for having no
+               result cannot leave a name here without an arc on the chart. -->
           <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 mb-4">
-            <span class="text-xs text-gray-400">
-              Score families, clockwise from the top:
-            </span>
+            <span class="text-xs text-gray-400"> Score families: </span>
             {#each familyBands as band}
               <span class="text-xs text-gray-500">
                 {band.label}
