@@ -363,6 +363,7 @@ async def test_json_schema_response_format_adds_required_to_nested(config, tmp_p
         (ModelProviderName.featherless_ai, "featherless_ai"),
         # for openai-compatible providers, we expect openai as the provider name
         (ModelProviderName.siliconflow_cn, "openai"),
+        (ModelProviderName.orcarouter, "openai"),
     ],
 )
 def test_litellm_model_id_standard_providers(

@@ -242,6 +242,19 @@
       api_key_fields: ["API Key"],
     },
     {
+      name: "OrcaRouter",
+      id: "orcarouter",
+      description:
+        "One key for models from OpenAI, Anthropic, Google and more.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://www.orcarouter.ai/console",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
       name: "Weights & Biases",
       id: "wandb",
       hide_in_onboarding: true,
@@ -379,6 +392,12 @@
       custom_description: null,
     },
     featherless_ai: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    orcarouter: {
       connected: false,
       connecting: false,
       error: null,
@@ -776,6 +795,9 @@
       }
       if (data["featherless_ai_api_key"]) {
         status.featherless_ai.connected = true
+      }
+      if (data["orcarouter_api_key"]) {
+        status.orcarouter.connected = true
       }
       if (data["kiln_copilot_api_key"]) {
         status.kiln_copilot.connected = true

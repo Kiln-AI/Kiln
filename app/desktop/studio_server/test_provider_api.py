@@ -29,6 +29,7 @@ from app.desktop.studio_server.provider_api import (
     connect_huggingface,
     connect_ollama,
     connect_openrouter,
+    connect_orcarouter,
     connect_provider_api,
     connect_siliconflow,
     connect_together,
@@ -125,6 +126,7 @@ def patched_non_builtin_available_model_sources():
         "together_ai",
         "siliconflow_cn",
         "featherless_ai",
+        "orcarouter",
     ],
 )
 def test_connect_api_key_invalid_payload(client, provider):
@@ -2147,6 +2149,7 @@ def mock_config_all_providers():
     mock_config.bedrock_secret_key = "test_key"
     mock_config.siliconflow_cn_api_key = "test_key"
     mock_config.featherless_ai_api_key = "test_key"
+    mock_config.orcarouter_api_key = "test_key"
     return mock_config
 
 
@@ -4313,3 +4316,117 @@ def test_connect_api_key_featherless_success(mock_connect_featherless, client):
 
     assert response.status_code == 200
     mock_connect_featherless.assert_called_once_with("test_key")
+
+
+# OrcaRouter's /v1/models is public (200 without a key) but rejects an invalid key with
+# a 401, so an authenticated GET validates the key without spending tokens.
+
+
+def _orcarouter_expected_request(key: str):
+    return {
+        "url": "https://api.orcarouter.ai/v1/models",
+        "headers": {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        },
+    }
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_orcarouter_success(mock_config_shared, mock_requests_get):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    result = await connect_orcarouter("sk-orca-test_api_key")
+
+    expected = _orcarouter_expected_request("sk-orca-test_api_key")
+    mock_requests_get.assert_called_once_with(
+        expected["url"],
+        headers=expected["headers"],
+    )
+    assert mock_config.orcarouter_api_key == "sk-orca-test_api_key"
+    assert result.status_code == 200
+    assert result.body == b'{"message":"Connected to OrcaRouter"}'
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_orcarouter_invalid_api_key(
+    mock_config_shared, mock_requests_get
+):
+    mock_response = MagicMock()
+    mock_response.status_code = 401
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    result = await connect_orcarouter("sk-orca-invalid")
+
+    assert result.status_code == 401
+    assert "Invalid API key" in result.body.decode()
+    # the key must not be persisted when it is rejected
+    assert mock_config.orcarouter_api_key != "sk-orca-invalid"
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_orcarouter_server_error(mock_config_shared, mock_requests_get):
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    mock_response.text = "Internal Server Error"
+    mock_requests_get.return_value = mock_response
+
+    result = await connect_orcarouter("sk-orca-test_api_key")
+
+    assert result.status_code == 400
+    assert "Failed to connect to OrcaRouter" in result.body.decode()
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_orcarouter_request_exception(
+    mock_config_shared, mock_requests_get
+):
+    mock_requests_get.side_effect = Exception("Connection error")
+
+    result = await connect_orcarouter("sk-orca-test_api_key")
+
+    assert result.status_code == 400
+    assert "Failed to connect to OrcaRouter" in result.body.decode()
+
+
+@pytest.mark.asyncio
+async def test_disconnect_api_key_orcarouter(client, mock_config_all_providers):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config.return_value = mock_config_all_providers
+
+        response = client.post(
+            "/api/provider/disconnect_api_key",
+            params={"provider_id": "orcarouter"},
+        )
+
+        assert response.status_code == 200
+        assert mock_config_all_providers.orcarouter_api_key is None
+
+
+@patch("app.desktop.studio_server.provider_api.connect_orcarouter")
+def test_connect_api_key_orcarouter_success(mock_connect_orcarouter, client):
+    mock_connect_orcarouter.return_value = {"message": "Connected to OrcaRouter"}
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "orcarouter", "key_data": {"API Key": "sk-orca-test_key"}},
+    )
+
+    assert response.status_code == 200
+    mock_connect_orcarouter.assert_called_once_with("sk-orca-test_key")

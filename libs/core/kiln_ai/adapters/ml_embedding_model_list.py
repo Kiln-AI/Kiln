@@ -159,6 +159,13 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 # litellm rejecting - but model itself supports it
                 supports_custom_dimensions=False,
             ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.orcarouter,
+                model_id="openai/text-embedding-3-large",
+                n_dimensions=3072,
+                max_input_tokens=8192,
+                supports_custom_dimensions=True,
+            ),
         ],
     ),
     # OpenAI Text Embedding 3 Small
@@ -181,6 +188,13 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 max_input_tokens=8192,
                 # litellm rejecting - but model itself supports it
                 supports_custom_dimensions=False,
+            ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.orcarouter,
+                model_id="openai/text-embedding-3-small",
+                n_dimensions=1536,
+                max_input_tokens=8192,
+                supports_custom_dimensions=True,
             ),
         ],
     ),

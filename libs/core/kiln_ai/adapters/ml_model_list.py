@@ -703,6 +703,19 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
             ),
+            KilnModelProvider(
+                name=ModelProviderName.orcarouter,
+                model_id="openai/gpt-5.6-sol",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
+                default_thinking_level="none",
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
         ],
     ),
     # GPT 5.6 Terra
@@ -868,6 +881,19 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
             ),
+            KilnModelProvider(
+                name=ModelProviderName.orcarouter,
+                model_id="openai/gpt-5.5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
+                default_thinking_level="none",
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
         ],
     ),
     # GPT 5.4
@@ -1013,6 +1039,19 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.orcarouter,
+                model_id="openai/gpt-5.4-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
+                default_thinking_level="none",
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
@@ -2195,6 +2234,19 @@ built_in_models: List[KilnModel] = [
                 multimodal_requires_pdf_as_image=True,
             ),
             KilnModelProvider(
+                name=ModelProviderName.orcarouter,
+                model_id="anthropic/claude-sonnet-5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=CLAUDE_SONNET_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.anthropic,
                 model_id="claude-sonnet-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -2240,6 +2292,19 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
                 multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.orcarouter,
+                model_id="anthropic/claude-sonnet-4.6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
@@ -2449,6 +2514,19 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.orcarouter,
+                model_id="anthropic/claude-opus-4.8",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
@@ -3216,6 +3294,19 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.orcarouter,
+                model_id="google/gemini-3.5-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                default_thinking_level="high",
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
@@ -5584,6 +5675,13 @@ built_in_models: List[KilnModel] = [
                 openrouter_reasoning_object=True,
             ),
             KilnModelProvider(
+                name=ModelProviderName.orcarouter,
+                model_id="deepseek/deepseek-v4-pro",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/deepseek-v4-pro",
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
@@ -5620,6 +5718,13 @@ built_in_models: List[KilnModel] = [
                 available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="high",
                 openrouter_reasoning_object=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.orcarouter,
+                model_id="deepseek/deepseek-v4-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
@@ -6120,6 +6225,19 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
             ),
+            KilnModelProvider(
+                name=ModelProviderName.orcarouter,
+                model_id="grok/grok-4.3",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GROK_4_3_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="low",
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
         ],
     ),
     # Grok 4.20
@@ -6434,6 +6552,11 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
                 supports_function_calling=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.orcarouter,
+                model_id="qwen/qwen3.7-max",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
             # Fireworks lists qwen3p7-max on its site but the API returns 404 (not deployed).
             # Together AI hosts Qwen/Qwen3.7-Max but only in streaming-only mode
@@ -7806,6 +7929,11 @@ built_in_models: List[KilnModel] = [
                 suggested_for_data_gen=True,
             ),
             KilnModelProvider(
+                name=ModelProviderName.orcarouter,
+                model_id="z-ai/glm-5.2",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/glm-5p2",
                 structured_output_mode=StructuredOutputMode.json_instructions,
@@ -8225,6 +8353,9 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
             ),
+            # OrcaRouter is intentionally omitted for Kimi K3: the upstream model only
+            # accepts top_p=0.95 and rejects any other value with a 400, which is
+            # incompatible with Kiln's top_p control.
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/kimi-k3",

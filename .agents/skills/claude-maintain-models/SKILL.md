@@ -129,6 +129,7 @@ All changes go in `libs/core/kiln_ai/adapters/ml_model_list.py`.
 | `vertex` | Usually same as gemini_api | Verify via Vertex docs |
 | `siliconflow_cn` | Vendor/model format | Verify via SiliconFlow docs |
 | `featherless_ai` | HuggingFace repo id, case-sensitive (`zai-org/GLM-5.2`) | Verify via their `/v1/models` — see [Featherless](#featherless-ai) |
+| `orcarouter` | `vendor/model-name` | Verify via their `/v1/models` — see [OrcaRouter](#orcarouter) |
 
 **Every single `model_id` must be verified from an authoritative source. No exceptions.**
 
@@ -464,6 +465,16 @@ What you give up with `reasoning_capable=False`:
 - Logprobs: `logprobs_openrouter_options=True` if supported
 - Always `multimodal_requires_pdf_as_image=True` (OpenRouter's PDF routing breaks LiteLLM)
 
+### OrcaRouter
+
+Multi-vendor gateway on the OpenAI protocol, routed as a custom `openai` provider (like `siliconflow_cn`).
+
+- **Slugs are `vendor/model-name` but the vendor prefix is not always OpenRouter's.** OrcaRouter uses `grok/grok-4.3` (OpenRouter: `x-ai/grok-4.3`) and `kimi/kimi-k3` (OpenRouter: `moonshotai/kimi-k3`), while `z-ai/`, `openai/`, `anthropic/`, `google/`, `deepseek/`, `qwen/` match. Never copy an OpenRouter slug without checking `/v1/models`.
+- **Kimi K3 and Kimi K2.7 Code only accept `top_p=0.95`** — any other value (including `1.0`) returns a 400. Kiln sends the run config's `top_p`, so these are intentionally not listed for this provider.
+- **`json_schema` works** for the GPT-5, Claude, Gemini 3.5 Flash, DeepSeek V4 and Grok 4.3 entries. Qwen 3.7 Max returns an empty string under `json_schema` (use `json_instruction_and_object`), and GLM 5.2 matches its OpenRouter entry with `json_instructions`.
+- **No vision on GLM 5.2 or Qwen 3.7 Max** — both reject image content parts with a 400, so no multimodal flags.
+- **Embeddings honour `dimensions`**, unlike this repo's OpenRouter embedding entries.
+
 ### Featherless AI
 
 Serverless host for HuggingFace-hosted open weights. Several hard constraints — read before adding any model:
@@ -577,6 +588,7 @@ curl -s https://models.dev/api.json | jq '.["PROVIDER"].models["MODEL_ID"]'
 - OpenRouter: `curl -s https://openrouter.ai/api/v1/models | jq '.data[].id' | grep -i "SEARCH_TERM"`
 - Anthropic: https://docs.anthropic.com/en/api/models/list
 - Cerebras: https://inference-docs.cerebras.ai/models/overview
+- OrcaRouter: `curl -s https://api.orcarouter.ai/v1/models | jq -r '.data[].id' | grep -i "SEARCH_TERM"` (no key needed to enumerate)
 
 ### Lagging Providers
 

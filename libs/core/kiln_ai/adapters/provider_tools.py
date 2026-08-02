@@ -537,6 +537,8 @@ def provider_name_from_id(id: str) -> str:
                 return "Cerebras"
             case ModelProviderName.featherless_ai:
                 return "Featherless AI"
+            case ModelProviderName.orcarouter:
+                return "OrcaRouter"
             case ModelProviderName.docker_model_runner:
                 return "Docker Model Runner"
             case _:
@@ -609,6 +611,10 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
         required_config_keys=["featherless_ai_api_key"],
         message="Attempted to use Featherless AI without an API key set. \nGet your API key from https://featherless.ai/account/api-keys",
     ),
+    ModelProviderName.orcarouter: ModelProviderWarning(
+        required_config_keys=["orcarouter_api_key"],
+        message="Attempted to use OrcaRouter without an API key set. \nGet your API key from https://www.orcarouter.ai/console",
+    ),
 }
 
 
@@ -641,6 +647,19 @@ def lite_llm_core_config_for_provider(
                 },
                 additional_body_options={
                     "api_key": Config.shared().open_router_api_key,
+                },
+            )
+        case ModelProviderName.orcarouter:
+            return LiteLlmCoreConfig(
+                base_url=(
+                    os.getenv("ORCAROUTER_BASE_URL") or "https://api.orcarouter.ai/v1"
+                ),
+                default_headers={
+                    "HTTP-Referer": "https://kiln.tech/orcarouter",
+                    "X-Title": "KilnAI",
+                },
+                additional_body_options={
+                    "api_key": Config.shared().orcarouter_api_key,
                 },
             )
         case ModelProviderName.siliconflow_cn:

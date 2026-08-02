@@ -172,6 +172,11 @@ class Config:
                 env_var="FEATHERLESS_AI_API_KEY",
                 sensitive=True,
             ),
+            "orcarouter_api_key": ConfigProperty(
+                str,
+                env_var="ORCAROUTER_API_KEY",
+                sensitive=True,
+            ),
             "kiln_copilot_api_key": ConfigProperty(
                 str,
                 env_var="KILN_COPILOT_API_KEY",

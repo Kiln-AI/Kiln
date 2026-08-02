@@ -71,6 +71,7 @@ class TestGetLitellmProviderInfo:
             (ModelProviderName.openai_compatible, "openai", True),
             (ModelProviderName.kiln_custom_registry, "openai", True),
             (ModelProviderName.kiln_fine_tune, "openai", True),
+            (ModelProviderName.orcarouter, "openai", True),
         ],
     )
     def test_provider_mappings_with_model_provider(
@@ -107,6 +108,7 @@ class TestGetLitellmProviderInfo:
             (ModelProviderName.openai_compatible, "openai", True),
             (ModelProviderName.kiln_custom_registry, "openai", True),
             (ModelProviderName.kiln_fine_tune, "openai", True),
+            (ModelProviderName.orcarouter, "openai", True),
         ],
     )
     def test_provider_mappings_with_embedding_provider(
