@@ -285,6 +285,8 @@ class ReviewPipelineRun:
         self._latest_trace: dict[int, list[dict[str, Any]]] = {}
         self._judged_count = 0
         self._failed_count = 0
+        # Actual drive billing for the batch — includes failed cases and
+        # discarded retry attempts, not just surviving conversations.
         self._total_cost = 0.0
         self._batch_tag = input.batch_tag or ""
         # Set by the first batch-fatal failure; events() then skips
@@ -402,9 +404,10 @@ class ReviewPipelineRun:
                     )
                 )
             elif isinstance(event, CaseCompletedEvent):
-                # Drive spend is real once the conversation ran, whatever the
-                # review stage does with it later.
-                self._total_cost += event.total_cost
+                # Drive spend is real once billing happened: the surviving
+                # conversation plus any retried attempts whose chains were
+                # discarded. Per-case events carry conversation cost only.
+                self._total_cost += event.total_cost + event.discarded_attempts_cost
                 trace = self._latest_trace.pop(event.case_index, [])
                 if not trace:
                     # turns >= 1 guarantees a turn event before the case
@@ -436,6 +439,8 @@ class ReviewPipelineRun:
                     )
                 )
             elif isinstance(event, CaseFailedEvent):
+                # A dead case still billed for every attempt it made.
+                self._total_cost += event.total_cost
                 await self._fail_case(
                     event.case_index, "drive", event.error_code, event.message
                 )
@@ -501,8 +506,9 @@ class ReviewPipelineRun:
     ) -> None:
         """First batch-fatal failure wins: emit ONE batch_aborted frame and
         close the queue — events()' finally then runs the consumer-disconnect
-        teardown (drive + in-flight judges cancelled). Partial chains already
-        on disk stay covered by the client's delete-on-next-drive cleanup."""
+        teardown (drive + in-flight judges cancelled). Each cancelled case
+        deletes its own partial chain as it unwinds (runner-side cleanup),
+        so an abort leaves no orphan runs behind."""
         if self._aborted:
             return
         self._aborted = True

@@ -90,7 +90,7 @@ def _su_driver_with_replies(replies: list[str], cost_per_reply: float = 0.0) -> 
 async def test_drive_case_runs_exactly_turns_iterations() -> None:
     """No early termination — loop always completes `turns` iterations."""
     invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3", "a4"])
-    su = _su_driver_with_replies(["u2", "u3", "u4", "u5"])
+    su = _su_driver_with_replies(["u2", "u3", "u4"])
 
     result = await drive_case(
         seed_prompt="hi there",
@@ -102,7 +102,9 @@ async def test_drive_case_runs_exactly_turns_iterations() -> None:
     assert isinstance(result, DriveCaseResult)
     assert len(result.chain) == 4
     assert len(invoker.calls) == 4
-    assert su.respond.await_count == 4
+    # The SU only replies when another target turn will consume it —
+    # turns - 1 calls, never one after the final turn.
+    assert su.respond.await_count == 3
 
 
 @pytest.mark.asyncio
@@ -153,14 +155,14 @@ async def test_drive_case_passes_full_trace_to_su_driver() -> None:
     """The SU driver's `respond` receives the full cumulative trace —
     the driver itself filters to visible_message_roles.
     """
-    invoker = _FakeInvoker(assistant_replies=["a1", "a2"])
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3"])
     su = _su_driver_with_replies(["u2", "u3"])
 
     result = await drive_case(
         seed_prompt="u1",
         target_invoker=invoker,
         su_driver=su,
-        turns=2,
+        turns=3,
     )
 
     # First respond() got turn-1's trace ([sys, u1, a1]).
@@ -171,18 +173,55 @@ async def test_drive_case_passes_full_trace_to_su_driver() -> None:
     assert second_call_args[0] == result.chain[1].trace
 
 
+@pytest.mark.asyncio
+async def test_drive_case_skips_su_reply_after_final_turn() -> None:
+    """No SU call follows the final target turn — nothing would consume the
+    reply, so producing it would be one wasted paid LLM call per case."""
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2"])
+    su = _su_driver_with_replies(["u2"], cost_per_reply=0.01)
+
+    result = await drive_case(
+        seed_prompt="u1",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=2,
+    )
+
+    assert su.respond.await_count == 1
+    # su_total_cost covers only the calls that actually happened.
+    assert result.su_total_cost == pytest.approx(0.01)
+
+
+@pytest.mark.asyncio
+async def test_drive_case_single_turn_never_calls_su_driver() -> None:
+    """turns=1 is seed → target → done: the SU driver is never invoked."""
+    invoker = _FakeInvoker(assistant_replies=["a1"])
+    su = _su_driver_with_replies([])
+
+    result = await drive_case(
+        seed_prompt="u1",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=1,
+    )
+
+    su.respond.assert_not_awaited()
+    assert len(result.chain) == 1
+    assert result.su_total_cost == 0.0
+
+
 # ───────────────────────── on_turn hook ─────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_drive_case_on_turn_hook_fires_once_per_turn() -> None:
     invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3"])
-    su = _su_driver_with_replies(["u2", "u3", "u4"])
+    su = _su_driver_with_replies(["u2", "u3"], cost_per_reply=0.02)
 
-    captured: list[tuple[TaskRun, str]] = []
+    captured: list[tuple[TaskRun, str | None, float]] = []
 
-    async def _hook(*, run: TaskRun, su_message: str) -> None:
-        captured.append((run, su_message))
+    async def _hook(*, run: TaskRun, su_message: str | None, su_cost: float) -> None:
+        captured.append((run, su_message, su_cost))
 
     result = await drive_case(
         seed_prompt="hi there",
@@ -193,10 +232,12 @@ async def test_drive_case_on_turn_hook_fires_once_per_turn() -> None:
     )
 
     assert len(captured) == 3
-    for i, (run, msg) in enumerate(captured):
+    for i, (run, msg, cost) in enumerate(captured):
         assert run is result.chain[i]
-        # SU's replies are u2, u3, u4 per the fake.
-        assert msg == ["u2", "u3", "u4"][i]
+        # SU replies (with their cost) ride the hook on non-final turns;
+        # the final turn has no SU call, so message None and cost 0.
+        assert msg == ["u2", "u3", None][i]
+        assert cost == pytest.approx([0.02, 0.02, 0.0][i])
 
 
 @pytest.mark.asyncio

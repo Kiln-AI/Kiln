@@ -29,11 +29,13 @@ from kiln_ai.utils.open_ai_types import (
 def _is_tool_dispatch_only(msg: ChatCompletionMessageParam) -> bool:
     """True if `msg` is an assistant turn with no user-facing text (i.e.,
     a pure tool-call dispatch). The SU LLM shouldn't see these — they're
-    actions the target took, not speech the SU is reacting to. Assistant
-    turns that carry text alongside tool_calls are NOT filtered out
-    (the text is the user-facing part).
+    actions the target took, not speech the SU is reacting to. Content is
+    checked falsy, not `is None`: the adapter emits dispatch turns with
+    content `''` as well as None, and either would role-swap into a blank
+    user message. Assistant turns that carry text alongside tool_calls are
+    NOT filtered out (the text is the user-facing part).
     """
-    return msg["role"] == "assistant" and msg.get("content") is None
+    return msg["role"] == "assistant" and not msg.get("content")
 
 
 class SyntheticUserDriver:
@@ -94,7 +96,7 @@ class SyntheticUserDriver:
             for m in conversation
             if m["role"] in self._driver_config.visible_message_roles
         ]
-        # 2) Drop tool-dispatch-only assistant turns (content=None).
+        # 2) Drop tool-dispatch-only assistant turns (falsy content).
         #    See _is_tool_dispatch_only for rationale.
         visible = [m for m in visible if not _is_tool_dispatch_only(m)]
         # 3) Invariants.

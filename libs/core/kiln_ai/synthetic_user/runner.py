@@ -83,7 +83,9 @@ class TurnCompletedEvent:
     # read this rather than count events — a retried case restarts at 1.
     turn_index: int
     assistant_run_id: str
-    su_next_message: str
+    # The SU reply that seeds the next turn. None on the case's final turn:
+    # the drive loop skips the SU call when no target turn will consume it.
+    su_next_message: str | None
     cumulative_cost: float
     # Cumulative OpenAI-format trace at this point (system + all turns so far).
     # Lets consumers observe the live conversation without reloading the run.
@@ -96,8 +98,13 @@ class CaseCompletedEvent:
     chain_run_ids: list[str]
     leaf_run_id: str
     total_turns: int
-    # Target adapter cost + SU driver cost for this case.
+    # Target adapter cost + SU driver cost for THIS conversation (the
+    # surviving chain only).
     total_cost: float
+    # Real provider spend of this case's earlier failed attempts — their
+    # chains were deleted, but the billing happened. Add to total_cost for
+    # what the case actually cost end to end.
+    discarded_attempts_cost: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -105,6 +112,9 @@ class CaseFailedEvent:
     case_index: int
     error_code: str
     message: str
+    # Actual provider spend across ALL of this case's attempts. Nothing
+    # survives on disk, but the billing was real.
+    total_cost: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -112,7 +122,8 @@ class BatchCompletedEvent:
     successful: int
     failed: int
     batch_tag: str
-    # Sum of CaseCompletedEvent.total_cost across successful cases.
+    # Actual provider spend for the batch: successful conversations plus
+    # every failed or retried attempt's discarded spend.
     total_cost: float
 
 
@@ -186,6 +197,10 @@ async def run_cases_batch(
     save_ctx: SaveContext = save_context or default_save_context
     # `None` is the end-of-stream sentinel pushed when all cases finish.
     queue: asyncio.Queue[BatchEvent | None] = asyncio.Queue()
+    # Real spend of failed attempts, keyed by case index. Outlives retries
+    # (each attempt banks its spend before its chain is deleted) so the
+    # case's completion/failure event can report what was actually billed.
+    failed_attempt_spend: dict[int, float] = {}
 
     async def _drive_job(job: tuple[int, SyntheticUserCase]) -> bool:
         case_index, case = job
@@ -202,6 +217,7 @@ async def run_cases_batch(
             skills=skills,
             task_run_config_id=task_run_config_id,
             case_timeout_seconds=resolved_case_timeout,
+            failed_attempt_spend=failed_attempt_spend,
         )
         return True
 
@@ -216,7 +232,12 @@ async def run_cases_batch(
             case_index, _case = job
             code, message = _failure_details(error)
             await queue.put(
-                CaseFailedEvent(case_index=case_index, error_code=code, message=message)
+                CaseFailedEvent(
+                    case_index=case_index,
+                    error_code=code,
+                    message=message,
+                    total_cost=failed_attempt_spend.get(case_index, 0.0),
+                )
             )
 
     # AsyncJobRunner is the shared fan-out engine (same as the eval runner):
@@ -264,9 +285,10 @@ async def run_cases_batch(
             yield event
             if isinstance(event, CaseCompletedEvent):
                 successful += 1
-                total_cost += event.total_cost
+                total_cost += event.total_cost + event.discarded_attempts_cost
             elif isinstance(event, CaseFailedEvent):
                 failed += 1
+                total_cost += event.total_cost
 
         yield BatchCompletedEvent(
             successful=successful,
@@ -322,6 +344,7 @@ async def _drive_one_case_and_emit(
     skills: SkillsDict,
     task_run_config_id: str | None,
     case_timeout_seconds: float,
+    failed_attempt_spend: dict[int, float],
 ) -> None:
     """Run drive_case for one case (one ATTEMPT), emitting turn/completion
     events on `queue`.
@@ -329,15 +352,20 @@ async def _drive_one_case_and_emit(
     Failures RAISE instead of emitting: transient provider errors become
     RetryableError (the job runner re-runs the case), everything else
     becomes _CaseFailure, and case_failed is emitted once — by the runner's
-    on_error observer, after the last attempt. Any turns a failed attempt
-    persisted are removed before raising, so a retry starts clean.
+    on_error observer, after the last attempt. Any turns a failed or
+    cancelled attempt persisted are removed before raising, so a retry
+    starts clean — but the attempt's real spend is banked in
+    `failed_attempt_spend` first, so cost events stay honest about billing.
     """
     # Runs persist per turn (adapter autosave) but the batch tag only lands
     # on the leaf after a successful drive, so a mid-drive failure would
     # strand an untagged chain no downstream consumer can find — discovery
-    # is tag-based. Track what this attempt persisted so the failure arms
-    # can remove it.
+    # is tag-based. The invoker wrapper below tracks each run the moment it
+    # persists so the failure arms can remove the full chain.
     persisted_runs: dict[str, TaskRun] = {}
+    # SU spend of THIS attempt, accumulated per turn via the hook —
+    # drive_case's own total is lost when it raises mid-case.
+    attempt_su_cost = 0.0
     try:
         # Malformed blob fails this case without affecting others. Parsing
         # happens here — the wire boundary — so the driver only ever sees
@@ -349,7 +377,7 @@ async def _drive_one_case_and_emit(
             raise _CaseFailure("bad_synthetic_user_info", str(e)) from e
         su_driver = SyntheticUserDriver(su_info, su_driver_config)
 
-        target_invoker = _make_target_invoker(
+        adapter_invoker = _make_target_invoker(
             case=case,
             target_task=target_task,
             target_run_config=target_run_config,
@@ -359,13 +387,32 @@ async def _drive_one_case_and_emit(
             task_run_config_id=task_run_config_id,
         )
 
-        turns_completed = 0
-
-        async def _on_turn(*, run: TaskRun, su_message: str) -> None:
-            nonlocal turns_completed
-            turns_completed += 1
+        async def _target_invoker(
+            *,
+            input: str,
+            prior_trace: list[ChatCompletionMessageParam] | None,
+            parent_task_run: TaskRun | None,
+        ) -> TaskRun:
+            # Record each run the moment it exists on disk (the adapter
+            # autosaves inside invoke) — cleanup must see a mid-turn persist
+            # even when the turn's SU half never runs.
+            run = await adapter_invoker(
+                input=input,
+                prior_trace=prior_trace,
+                parent_task_run=parent_task_run,
+            )
             if run.id is not None:
                 persisted_runs[str(run.id)] = run
+            return run
+
+        turns_completed = 0
+
+        async def _on_turn(
+            *, run: TaskRun, su_message: str | None, su_cost: float
+        ) -> None:
+            nonlocal turns_completed, attempt_su_cost
+            turns_completed += 1
+            attempt_su_cost += su_cost
             await queue.put(
                 TurnCompletedEvent(
                     case_index=case_index,
@@ -385,7 +432,7 @@ async def _drive_one_case_and_emit(
         result = await asyncio.wait_for(
             drive_case(
                 seed_prompt=case.seed_prompt,
-                target_invoker=target_invoker,
+                target_invoker=_target_invoker,
                 su_driver=su_driver,
                 turns=turns,
                 on_turn=_on_turn,
@@ -409,10 +456,22 @@ async def _drive_one_case_and_emit(
                 leaf_run_id=str(leaf.id) if leaf.id is not None else "",
                 total_turns=len(result.chain),
                 total_cost=_cumulative_cost(leaf) + result.su_total_cost,
+                discarded_attempts_cost=failed_attempt_spend.get(case_index, 0.0),
             )
         )
     except _CaseFailure:
         # Raised above before anything persisted (parse) — pass through.
+        raise
+    except asyncio.CancelledError:
+        # Stopping the batch cancels in-flight cases mid-drive; their
+        # persisted turns must not outlive the case as untagged orphans.
+        # Shield the delete so the cancellation unwinding this task can't
+        # kill it mid-chain, then re-raise — cooperative cancellation must
+        # always propagate.
+        _bank_attempt_spend(
+            failed_attempt_spend, case_index, persisted_runs, attempt_su_cost
+        )
+        await asyncio.shield(_delete_partial_chain(persisted_runs, save_ctx))
         raise
     except asyncio.TimeoutError as e:
         # The drive exceeded its per-case budget; wait_for already cancelled
@@ -421,6 +480,9 @@ async def _drive_one_case_and_emit(
             "synthetic_user runner: case %d timed out after %.0fs",
             case_index,
             case_timeout_seconds,
+        )
+        _bank_attempt_spend(
+            failed_attempt_spend, case_index, persisted_runs, attempt_su_cost
         )
         await _delete_partial_chain(persisted_runs, save_ctx)
         raise _CaseFailure(
@@ -436,6 +498,9 @@ async def _drive_one_case_and_emit(
         logger.exception(
             "synthetic_user runner: unexpected error in case %d", case_index
         )
+        _bank_attempt_spend(
+            failed_attempt_spend, case_index, persisted_runs, attempt_su_cost
+        )
         await _delete_partial_chain(persisted_runs, save_ctx)
         # The adapter's KilnRunError message is genericized user-facing
         # text — unwrap so failure events name the real provider failure
@@ -446,6 +511,27 @@ async def _drive_one_case_and_emit(
         raise _CaseFailure(
             "unexpected_error", f"{type(cause).__name__}: {cause}"
         ) from e
+
+
+def _bank_attempt_spend(
+    failed_attempt_spend: dict[int, float],
+    case_index: int,
+    persisted_runs: dict[str, TaskRun],
+    attempt_su_cost: float,
+) -> None:
+    """Bank a failed attempt's real spend before its chain is deleted.
+
+    The deepest persisted run's `cumulative_usage` already rolls up the
+    whole chain's target cost; the SU side is accumulated per turn by the
+    caller. Deleting the chain erases the only on-disk record, so this
+    accumulator is how a discarded attempt's billing reaches cost events.
+    """
+    target_cost = 0.0
+    if persisted_runs:
+        target_cost = _cumulative_cost(next(reversed(persisted_runs.values())))
+    failed_attempt_spend[case_index] = (
+        failed_attempt_spend.get(case_index, 0.0) + target_cost + attempt_su_cost
+    )
 
 
 async def _delete_partial_chain(

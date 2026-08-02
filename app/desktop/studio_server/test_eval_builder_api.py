@@ -1146,6 +1146,57 @@ class TestReviewPipeline:
         assert completed["failed"] == 1
         assert events[-1] == "complete"
 
+    def test_batch_total_includes_failed_and_retried_attempt_spend(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        """batch_completed.total_cost reports actual billing: the surviving
+        conversation, its retried attempt's discarded spend, and the dead
+        case's attempts. Per-case events keep conversation cost only."""
+        from kiln_ai.synthetic_user.runner import (
+            BatchStartedEvent,
+            CaseCompletedEvent,
+            CaseFailedEvent,
+            TurnCompletedEvent,
+        )
+
+        async def fake(*, cases, turns, **_kwargs):
+            yield BatchStartedEvent(batch_tag="tag123", num_cases=2)
+            yield TurnCompletedEvent(
+                case_index=0,
+                turn_index=1,
+                assistant_run_id="run-0",
+                su_next_message=None,
+                cumulative_cost=0.05,
+                trace=_real_trace(0),
+            )
+            yield CaseCompletedEvent(
+                case_index=0,
+                chain_run_ids=["run-0"],
+                leaf_run_id="leaf-0",
+                total_turns=1,
+                total_cost=0.05,
+                discarded_attempts_cost=0.02,
+            )
+            yield CaseFailedEvent(
+                case_index=1,
+                error_code="unexpected_error",
+                message="drive blew up",
+                total_cost=0.03,
+            )
+
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.run_cases_batch",
+            new=fake,
+        ):
+            resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        events = _parse_sse(resp.text)
+        judged = _events_of(events, "case_judged")
+        # The judged case's cost stays the conversation's own spend.
+        assert judged[0]["total_cost"] == 0.05
+        completed = _events_of(events, "batch_completed")[0]
+        assert completed["total_cost"] == pytest.approx(0.05 + 0.02 + 0.03)
+
     def test_judge_failure_is_isolated(self, client, pipeline_request, pipeline_seams):
         async def judge(
             _project_id, _task_id, _raw_input, _raw_output, _judge, **kwargs

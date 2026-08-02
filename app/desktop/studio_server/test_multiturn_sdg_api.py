@@ -522,6 +522,7 @@ def test_run_cases_batch_emits_full_sse_event_stream(
         "case_index": 1,
         "error_code": "bad_synthetic_user_info",
         "message": "missing required tag",
+        "total_cost": 0.0,
     }
     assert events[4] == {
         "event": "batch_completed",

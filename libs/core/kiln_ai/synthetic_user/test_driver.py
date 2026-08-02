@@ -236,13 +236,49 @@ async def test_respond_drops_tool_dispatch_only_assistant_turns(
 
 
 @pytest.mark.asyncio
+async def test_respond_drops_empty_string_tool_dispatch_assistant_turns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The adapter allows dispatch turns with content `''` alongside
+    tool_calls, not just None — those must be filtered too, or the SU
+    sees a blank user message after role-swap.
+    """
+    adapter = _patch_adapter(monkeypatch, _fake_run_output("ok"))
+    drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)
+    conversation: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "what's the weather?"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "get_weather", "arguments": "{}"},
+                }
+            ],
+        },  # type: ignore[typeddict-item]
+        {"role": "assistant", "content": "It's 72F."},
+    ]
+
+    await drv.respond(conversation)
+
+    call = adapter.invoke_returning_run_output.await_args
+    # Same outcome as the content=None dispatch: the empty turn is dropped.
+    assert call.args[0] == "It's 72F."
+    prior_trace = call.kwargs["prior_trace"]
+    assert len(prior_trace) == 2
+    assert prior_trace[1] == {"role": "assistant", "content": "what's the weather?"}
+
+
+@pytest.mark.asyncio
 async def test_respond_keeps_assistant_turns_with_text_and_tool_calls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Some providers emit assistant turns with BOTH text content AND
     tool_calls in the same message ("Let me look that up." + dispatch).
-    The text is user-facing — the SU should see it. Only None-content
-    turns get dropped.
+    The text is user-facing — the SU should see it. Only turns with no
+    text (None or empty content) get dropped.
     """
     adapter = _patch_adapter(monkeypatch, _fake_run_output("ok"))
     drv = SyntheticUserDriver(_INFO, _DRIVER_CONFIG)

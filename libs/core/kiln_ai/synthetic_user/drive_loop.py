@@ -38,15 +38,20 @@ class TargetInvoker(Protocol):
 
 
 class TurnHook(Protocol):
-    """Optional callback invoked once per turn after the SU has replied.
+    """Optional callback invoked once per turn.
 
     The runner uses this to translate per-turn outcomes into BatchEvents
-    without coupling drive_case to the event shape. The hook fires after
-    both the assistant turn is persisted AND the SU's next message is
-    produced, so callers have all per-turn signal in one place.
+    without coupling drive_case to the event shape. On non-final turns the
+    hook fires after both the assistant turn is persisted AND the SU's next
+    message is produced; on the case's final turn no SU call is made, so
+    `su_message` is None. `su_cost` is the SU's LLM spend for this turn
+    (0.0 on the final turn) — surfaced per turn so callers can account
+    spend as it happens, not only when the case completes.
     """
 
-    async def __call__(self, *, run: TaskRun, su_message: str) -> None: ...
+    async def __call__(
+        self, *, run: TaskRun, su_message: str | None, su_cost: float
+    ) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -85,11 +90,11 @@ async def drive_case(
         su_driver: pre-built SU driver for this case. Caller is responsible
             for construction (so a malformed persona fails at the caller's
             layer, not here).
-        turns: exact number of assistant turns to produce. The loop runs
-            `range(turns)` and always completes all iterations — no early
-            stop.
-        on_turn: optional async hook called once per turn after `su_driver.respond`
-            returns. The runner plugs in here to emit TurnCompletedEvent.
+        turns: exact number of assistant turns to produce. The loop always
+            completes all `turns` iterations — no early stop.
+        on_turn: optional async hook called once per turn (see TurnHook for
+            the final-turn contract). The runner plugs in here to emit
+            TurnCompletedEvent.
 
     Returns:
         DriveCaseResult with the chain of TaskRuns produced (leaf last).
@@ -108,7 +113,7 @@ async def drive_case(
     chain: list[TaskRun] = []
     su_total_cost: float = 0.0
 
-    for _ in range(turns):
+    for turn in range(1, turns + 1):
         new_run = await target_invoker(
             input=user_msg,
             prior_trace=prev_trace,
@@ -116,15 +121,21 @@ async def drive_case(
         )
         chain.append(new_run)
 
-        # The SU driver does the role filtering / role swap / invariant
-        # checks itself. We pass the new run's cumulative trace as-is.
-        su_message, su_cost = await su_driver.respond(new_run.trace or [])
-        su_total_cost += su_cost
+        # The SU only speaks when another target turn will consume its
+        # reply — an SU call after the final turn would be paid LLM output
+        # nobody reads. The SU driver does the role filtering / role swap /
+        # invariant checks itself; we pass the cumulative trace as-is.
+        su_message: str | None = None
+        su_cost = 0.0
+        if turn < turns:
+            su_message, su_cost = await su_driver.respond(new_run.trace or [])
+            su_total_cost += su_cost
 
         if on_turn is not None:
-            await on_turn(run=new_run, su_message=su_message)
+            await on_turn(run=new_run, su_message=su_message, su_cost=su_cost)
 
-        user_msg = su_message
+        if su_message is not None:
+            user_msg = su_message
         prev_run = new_run
         prev_trace = new_run.trace
 

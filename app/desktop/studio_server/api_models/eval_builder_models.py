@@ -352,6 +352,8 @@ class PipelineBatchCompletedEvent(BaseModel):
     judged: int
     failed: int
     batch_tag: str
+    # Actual drive spend for the batch, including failed cases and retried
+    # attempts whose chains were discarded — not just surviving conversations.
     total_cost: float
 
 
