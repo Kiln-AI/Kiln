@@ -8,6 +8,7 @@ import {
   generateExamples,
   formatParamPreview,
   plainTextParamsSchema,
+  resolveStep2Code,
 } from "./code_tool_helpers"
 
 describe("extractParams", () => {
@@ -356,6 +357,112 @@ describe("isCodeUnmodified", () => {
     const placeholder = 'def run() -> str:\n    """test"""\n    pass\n'
     const with_import = generateImportHelper("get_user") + placeholder
     expect(isCodeUnmodified(with_import, placeholder)).toBe(false)
+  })
+})
+
+describe("resolveStep2Code", () => {
+  const placeholderA = 'def run() -> str:\n    """A"""\n    return "result"\n'
+  const placeholderB =
+    'def run(x: str) -> str:\n    """B"""\n    return "result"\n'
+
+  it("first visit with no clone seeds the fresh placeholder", () => {
+    const result = resolveStep2Code({
+      code: "",
+      newPlaceholder: placeholderA,
+      generatedPlaceholder: "",
+      schemaChangedHint: false,
+      cloneCode: null,
+    })
+    expect(result).toEqual({
+      code: placeholderA,
+      generatedPlaceholder: placeholderA,
+      schemaChangedHint: false,
+      cloneConsumed: false,
+    })
+  })
+
+  it("first visit with a clone seeds the clone code and marks it consumed", () => {
+    const cloneCode = "def run():\n    return 'cloned'\n"
+    const result = resolveStep2Code({
+      code: "",
+      newPlaceholder: placeholderA,
+      generatedPlaceholder: "",
+      schemaChangedHint: false,
+      cloneCode,
+    })
+    expect(result).toEqual({
+      code: cloneCode,
+      generatedPlaceholder: placeholderA,
+      schemaChangedHint: false,
+      cloneConsumed: true,
+    })
+  })
+
+  it("regenerates an untouched placeholder after a schema change", () => {
+    const result = resolveStep2Code({
+      code: placeholderA,
+      newPlaceholder: placeholderB,
+      generatedPlaceholder: placeholderA,
+      schemaChangedHint: false,
+      cloneCode: null,
+    })
+    expect(result).toEqual({
+      code: placeholderB,
+      generatedPlaceholder: placeholderB,
+      schemaChangedHint: false,
+      cloneConsumed: false,
+    })
+  })
+
+  // The regression this guards: returning to the Code step (browser Back makes
+  // the wizard read as a first visit) must not overwrite authored code.
+  it("preserves user-authored code and flags the schema change", () => {
+    const userCode = placeholderA + "\n# my real implementation\n"
+    const result = resolveStep2Code({
+      code: userCode,
+      newPlaceholder: placeholderB,
+      generatedPlaceholder: placeholderA,
+      schemaChangedHint: false,
+      cloneCode: null,
+    })
+    expect(result).toEqual({
+      code: userCode,
+      generatedPlaceholder: placeholderB,
+      schemaChangedHint: true,
+      cloneConsumed: false,
+    })
+  })
+
+  it("leaves user-authored code untouched when the schema is unchanged", () => {
+    const userCode = placeholderA + "\n# my real implementation\n"
+    const result = resolveStep2Code({
+      code: userCode,
+      newPlaceholder: placeholderA,
+      generatedPlaceholder: placeholderA,
+      schemaChangedHint: true,
+      cloneCode: null,
+    })
+    expect(result).toEqual({
+      code: userCode,
+      generatedPlaceholder: placeholderA,
+      schemaChangedHint: true,
+      cloneConsumed: false,
+    })
+  })
+
+  it("does not re-seed from the clone once the user has code", () => {
+    const userCode = "def run():\n    return 'edited'\n"
+    const result = resolveStep2Code({
+      code: userCode,
+      newPlaceholder: placeholderB,
+      generatedPlaceholder: placeholderA,
+      schemaChangedHint: false,
+      // A stale clone that was already consumed would still be passed as null
+      // by the caller; even if present, existing code wins.
+      cloneCode: "def run():\n    return 'cloned'\n",
+    })
+    expect(result.code).toBe(userCode)
+    expect(result.cloneConsumed).toBe(false)
   })
 })
 
