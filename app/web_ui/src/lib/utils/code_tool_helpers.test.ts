@@ -202,28 +202,83 @@ describe("generateCodeToolPlaceholder", () => {
     expect(result).toContain("def run(ids: list[int]) -> str:")
   })
 
-  it("escapes triple quotes in description", () => {
-    const schema = { type: "object", properties: {} }
-    const result = generateCodeToolPlaceholder(schema, 'has """quotes"""')
-    expect(result).not.toContain('"""has """')
-    expect(result).toContain("has ''quotes''")
-  })
-
-  it("escapes Python reserved words in parameter names", () => {
+  // The sandbox invokes run() with keyword arguments keyed by the schema's exact
+  // property names, so the stub must never rename them. Reserved-word names are
+  // rejected by CodeTool validation server-side, not rewritten here.
+  it("uses schema property names verbatim, without renaming", () => {
     const schema = {
       type: "object",
       properties: {
-        def: { type: "string" },
-        return: { type: "integer" },
+        match: { type: "string" },
+        type: { type: "integer" },
       },
-      required: ["def"],
+      required: ["match"],
     }
     const result = generateCodeToolPlaceholder(schema, "test")
-    expect(result).toContain("def_param: str")
-    expect(result).toContain("return_param: int | None = None")
-    expect(result).not.toMatch(/\(def:/)
-    expect(result).not.toMatch(/, return:/)
+    expect(result).toContain(
+      "def run(match: str, type: int | None = None) -> str:",
+    )
   })
+
+  // Each case asserts the exact stub so the docstring stays a valid Python string
+  // for any description (verified against compile() when this table was built).
+  const docstringCases: { name: string; desc: string; escaped: string }[] = [
+    {
+      name: "embedded triple quotes",
+      desc: 'has """quotes"""',
+      escaped: 'has \\"\\"\\"quotes\\"\\"\\"',
+    },
+    {
+      name: "trailing double quote",
+      desc: 'ends with "',
+      escaped: 'ends with \\"',
+    },
+    {
+      name: "trailing backslash",
+      desc: "ends with \\",
+      escaped: "ends with \\\\",
+    },
+    {
+      name: "backslash followed by triple quote",
+      desc: '\\"""',
+      escaped: '\\\\\\"\\"\\"',
+    },
+    {
+      name: "lone double quote",
+      desc: '"',
+      escaped: '\\"',
+    },
+    {
+      name: "lone backslash",
+      desc: "\\",
+      escaped: "\\\\",
+    },
+    {
+      name: "escaped-looking quote sequence",
+      desc: 'mix \\" of \\\\ and """ end "',
+      escaped: 'mix \\\\\\" of \\\\\\\\ and \\"\\"\\" end \\"',
+    },
+    {
+      name: "multiline description",
+      desc: "line one\nline two",
+      escaped: "line one\nline two",
+    },
+    {
+      name: "empty description",
+      desc: "",
+      escaped: "",
+    },
+  ]
+
+  for (const { name, desc, escaped } of docstringCases) {
+    it(`escapes docstring safely: ${name}`, () => {
+      const schema = { type: "object", properties: {} }
+      const result = generateCodeToolPlaceholder(schema, desc)
+      expect(result).toBe(
+        `def run() -> str:\n    """${escaped}"""\n    # TODO: implement\n    return "result"\n`,
+      )
+    })
+  }
 
   it("handles deeply nested array/object types", () => {
     const schema = {
