@@ -676,6 +676,109 @@ describe("EvalConfigBuilder", () => {
       expect(mockCreateEvalConfig).toHaveBeenCalledTimes(1)
     })
 
+    it("re-shows the confirm dialog when the config is edited after a passing test", async () => {
+      const { container } = await renderBuilder("exact_match")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      mockTestV2Eval.mockResolvedValueOnce({
+        scores: { accuracy: 1.0 },
+        skipped_reason: null,
+        skipped_detail: null,
+      })
+
+      await fireEvent.click(
+        container.querySelector(
+          '[data-testid="run-test-btn"]',
+        ) as HTMLButtonElement,
+      )
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      // Edit the form after the passing test. The input bubbles to the wrapper's
+      // on_config_edit, which invalidates the just-passed test.
+      const formStub = container.querySelector(
+        '[data-testid="v2-form-stub"]',
+      ) as HTMLElement
+      await fireEvent.input(formStub)
+      await tick()
+
+      resetCalls()
+      await fireEvent.click(
+        container.querySelector(
+          '[data-testid="column-save-button"]',
+        ) as HTMLButtonElement,
+      )
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(showCalls).toContain("Save Without Testing?")
+      expect(mockCreateEvalConfig).not.toHaveBeenCalled()
+    })
+
+    it("an edit while a reference_data test is in flight does not count as tested", async () => {
+      setInitialLlmJudgeValues({
+        selected_algo: "g_eval",
+        combined_model_name: "openai/gpt-4o",
+        model_name: "gpt-4o",
+        provider_name: "openai",
+        // reference_data in the prompt makes the test-before-save gate apply.
+        judge_prompt: "Grade against {{ reference_data.expected }}.",
+      })
+
+      const { container } = await renderBuilder("llm_judge")
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      // Hold the test in flight so we can edit before it resolves.
+      let resolveTest: (v: unknown) => void = () => {}
+      mockTestV2EvalLlmJudge.mockReturnValueOnce(
+        new Promise((r) => {
+          resolveTest = r
+        }),
+      )
+
+      await fireEvent.click(
+        container.querySelector(
+          '[data-testid="run-test-btn"]',
+        ) as HTMLButtonElement,
+      )
+      await tick()
+
+      // Edit while the request is in flight.
+      const formStub = container.querySelector(
+        '[data-testid="llm-judge-form-stub"]',
+      ) as HTMLElement
+      await fireEvent.input(formStub)
+      await tick()
+
+      resolveTest({ scores: { score: 1.0 }, skipped_reason: null })
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      resetCalls()
+      await fireEvent.click(
+        container.querySelector(
+          '[data-testid="column-save-button"]',
+        ) as HTMLButtonElement,
+      )
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      // The edited config was never tested, so the reference-data gate blocks it.
+      expect(showCalls).toContain("Test Required")
+      expect(mockCreateLlmJudgeConfig).not.toHaveBeenCalled()
+
+      resetInitialLlmJudgeValues()
+    })
+
     it("shows confirm dialog for code_eval after trust is already granted", async () => {
       const { container } = await renderBuilder("code_eval")
 

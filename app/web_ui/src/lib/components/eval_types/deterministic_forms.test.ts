@@ -677,14 +677,111 @@ describe("ToolCallCheckForm", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((component as any).validate()).toBeNull()
   })
+
+  it("an argument value with no name blocks save and shows an inline error", async () => {
+    const { component, container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [
+            {
+              tool_name: "search",
+              expected_args: { q: { value: "x", match_mode: "exact" } },
+            },
+          ],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+
+    // Clear the arg name while keeping its value. Previously this row was
+    // silently dropped; now it must error and gate save.
+    const nameInput = container.querySelector(
+      '[data-testid="input-arg_name_0_0"]',
+    ) as HTMLInputElement
+    await fireEvent.input(nameInput, { target: { value: "" } })
+    await tick()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).validate()).toBe(
+      "Expected Tool #1, argument #1: Add a name, or clear the value.",
+    )
+    const nameField = container.querySelector(
+      '[data-testid="form-element-arg_name_0_0"]',
+    )
+    expect(nameField?.getAttribute("data-error-message")).toContain(
+      "Add a name",
+    )
+  })
+
+  it("an invalid-JSON argument value blocks save and shows an inline error", async () => {
+    const { component, container } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [
+            {
+              tool_name: "search",
+              expected_args: { q: { value: "x", match_mode: "exact" } },
+            },
+          ],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+
+    // Previously invalid JSON was silently coerced to a raw string.
+    const valueInput = container.querySelector(
+      '[data-testid="input-arg_value_0_0"]',
+    ) as HTMLInputElement
+    await fireEvent.input(valueInput, { target: { value: "{unclosed" } })
+    await tick()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).validate()).toBe(
+      "Expected Tool #1, argument #1: Must be valid JSON.",
+    )
+    const valueField = container.querySelector(
+      '[data-testid="form-element-arg_value_0_0"]',
+    )
+    expect(valueField?.getAttribute("data-error-message")).toContain(
+      "valid JSON",
+    )
+  })
+
+  it("a named, valid-JSON argument passes validation and parses on save", () => {
+    const { component } = render(ToolCallCheckForm, {
+      props: {
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [
+            {
+              tool_name: "search",
+              expected_args: { limit: { value: 5, match_mode: "exact" } },
+            },
+          ],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((component as any).validate()).toBeNull()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = (component as any).getProperties()
+    expect(props.expected_tools[0].expected_args.limit.value).toBe(5)
+  })
 })
 
-// Phase 7: Redesigned forms — genuinely new tests for relabel, tooltips,
-// progressive disclosure, section structure, and reference_key validation path.
-// Pre-existing contract tests (getProperties shape, validate pass/fail for
-// expected_value/substring sources, radio switching) are NOT duplicated here.
+// Redesigned-form coverage: relabels, tooltips, progressive disclosure, section
+// structure, and the reference_key validation path. Pre-existing contract tests
+// (getProperties shape, validate pass/fail for expected_value/substring sources,
+// radio switching) are NOT duplicated here.
 
-describe("Phase 7: reference_key validation path", () => {
+describe("reference_key validation path", () => {
   it("ExactMatch validate returns error when reference_key source is selected but empty", async () => {
     const { component } = render(ExactMatchForm, {
       props: {
@@ -742,7 +839,7 @@ describe("Phase 7: reference_key validation path", () => {
   })
 })
 
-describe("Phase 7: Relabeled fields and Jinja tooltips", () => {
+describe("Relabeled fields and Jinja tooltips", () => {
   it("ExactMatch has 'Jinja Expression' label when custom value is set", () => {
     const { container } = render(ExactMatchForm, {
       props: {
@@ -801,7 +898,7 @@ describe("Phase 7: Relabeled fields and Jinja tooltips", () => {
   })
 })
 
-describe("Phase 7: Progressive disclosure and section structure", () => {
+describe("Progressive disclosure and section structure", () => {
   it("ExactMatch shows only expected_value input when fixed value selected", () => {
     const { container } = render(ExactMatchForm, {
       props: {
@@ -979,11 +1076,11 @@ describe("Phase 7: Progressive disclosure and section structure", () => {
   })
 })
 
-// Phase 8: Redesigned set_check, tool_call_check, step_count_check forms.
+// Redesigned set_check, tool_call_check, step_count_check forms.
 // Tests verify new section structure, radio groups, progressive disclosure,
 // and that getProperties()/validate() contracts are preserved exactly.
 
-describe("Phase 8: SetCheckForm section structure and progressive disclosure", () => {
+describe("SetCheckForm section structure and progressive disclosure", () => {
   it("renders Expected Values radio with label", () => {
     const { container } = render(SetCheckForm, {
       props: {
@@ -1210,7 +1307,7 @@ describe("Phase 8: SetCheckForm section structure and progressive disclosure", (
   })
 })
 
-describe("Phase 8: ToolCallCheckForm section structure and progressive disclosure", () => {
+describe("ToolCallCheckForm section structure and progressive disclosure", () => {
   it("renders Match Mode radio with label", () => {
     const { container } = render(ToolCallCheckForm, {
       props: {
@@ -1362,7 +1459,7 @@ describe("Phase 8: ToolCallCheckForm section structure and progressive disclosur
   })
 })
 
-describe("Phase 8: StepCountCheckForm section structure and progressive disclosure", () => {
+describe("StepCountCheckForm section structure and progressive disclosure", () => {
   it("renders What to Count radio with label", () => {
     const { container } = render(StepCountCheckForm, {
       props: {
@@ -1951,6 +2048,36 @@ describe("UI polish: regex tooltip is educational", () => {
   })
 })
 
+describe("PatternMatch regex validation on focusout", () => {
+  it("shows an inline regex error after the field loses focus", async () => {
+    const { container } = render(PatternMatchForm, {
+      props: {
+        properties: {
+          type: "pattern_match" as const,
+          pattern: "[invalid(",
+          mode: "must_match" as const,
+          value_expression: null,
+        },
+      },
+    })
+    const field = container.querySelector(
+      '[data-testid="form-element-pattern_match_pattern"]',
+    )
+    // Untouched: no error yet.
+    expect(field?.getAttribute("data-error-message")).toBe("")
+
+    // A real browser fires a bubbling focusout from the input on blur, which
+    // reaches the section wrapper's on:focusout handler.
+    const input = container.querySelector(
+      '[data-testid="input-pattern_match_pattern"]',
+    ) as HTMLInputElement
+    await fireEvent.focusOut(input)
+    await tick()
+
+    expect(field?.getAttribute("data-error-message")).toContain("Invalid regex")
+  })
+})
+
 describe("Standard controls: reference key info tooltips", () => {
   it("ExactMatch reference_key has info_description about top-level field", () => {
     const { container } = render(ExactMatchForm, {
@@ -2129,7 +2256,7 @@ describe("Standard controls: description and tooltip on visible-label fields", (
 })
 
 // ──────────────────────────────────────────────────────────────────
-// Phase 9: set_check, tool_call_check, step_count_check UI polish
+// set_check, tool_call_check, step_count_check UI polish
 // ──────────────────────────────────────────────────────────────────
 
 describe("SetCheckForm UI polish", () => {
@@ -2641,11 +2768,15 @@ describe("StepCountCheckForm UI polish", () => {
       container.querySelectorAll('[data-testid="bounds-error"]'),
     ).toHaveLength(0)
 
-    // Fire blur on the wrapper div to trigger on_bounds_blur
+    // A real browser fires a bubbling focusout from the input when it loses
+    // focus; that bubbles up to the wrapper's on:focusout handler. (A plain
+    // blur does not bubble, so the wrapper would never see it.)
     const boundsRow = container.querySelector('[data-testid="bounds-row"]')
-    const blurWrapper = boundsRow?.parentElement
-    expect(blurWrapper).toBeTruthy()
-    await fireEvent.blur(blurWrapper!)
+    const minField = boundsRow?.querySelector(
+      '[data-testid="form-element-step_count_check_min"]',
+    )
+    expect(minField).toBeTruthy()
+    await fireEvent.focusOut(minField!)
     await tick()
 
     // Error should appear exactly once (not on each input individually)
