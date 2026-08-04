@@ -264,11 +264,38 @@ def import_csv(
 ) -> ImportResult:
     """Import a CSV dataset, dispatched on `task.turn_mode`.
 
-    All rows are validated before any are persisted to files to avoid partial imports."""
+    All rows are validated before any are persisted to files, and a save
+    failure rolls back the runs already saved (best effort), so a failed
+    import leaves no partial data behind."""
 
     if task.turn_mode == TurnMode.multiturn:
         return _import_csv_multiturn(task, config)
     return _import_csv_single_turn(task, config)
+
+
+def _save_runs_with_rollback(runs: list[TaskRun]) -> None:
+    """Save all runs; if any save fails, delete the runs already saved (best
+    effort) and re-raise the original error.
+
+    Keeps a failed import all-or-nothing. This matters most for multiturn
+    chains, where a truncated chain's last-saved run would pose as a complete
+    conversation's leaf.
+    """
+    saved: list[TaskRun] = []
+    try:
+        for run in runs:
+            run.save_to_file()
+            saved.append(run)
+    except Exception:
+        for prior in saved:
+            try:
+                prior.delete()
+            except Exception:
+                logger.warning(
+                    f"Failed to clean up partially imported run {prior.id}",
+                    exc_info=True,
+                )
+        raise
 
 
 def _import_csv_single_turn(
@@ -342,8 +369,7 @@ def _import_csv_single_turn(
     add_tag_splits(rows, tag_splits)
 
     # now that we know all rows are valid, we can save them
-    for run in rows:
-        run.save_to_file()
+    _save_runs_with_rollback(rows)
 
     return ImportResult(imported_run_count=len(rows), imported_conversation_count=None)
 
@@ -617,14 +643,11 @@ def _import_csv_multiturn(
     leaves = [chain[-1] for chain in chains]
     add_tag_splits(leaves, tag_splits)
 
-    total_runs = 0
-    for chain in chains:
-        for run in chain:
-            run.save_to_file()
-            total_runs += 1
+    all_runs = [run for chain in chains for run in chain]
+    _save_runs_with_rollback(all_runs)
 
     return ImportResult(
-        imported_run_count=total_runs,
+        imported_run_count=len(all_runs),
         imported_conversation_count=len(chains),
     )
 

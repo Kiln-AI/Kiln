@@ -371,10 +371,18 @@ class TestFormatTraceFilter:
         )
 
     def test_non_list_raises_extraction_error(self):
-        with pytest.raises(JinjaExtractionError, match="expected a list"):
+        with pytest.raises(JinjaExtractionError, match="got str"):
             render_input_transform(
                 JinjaInputTransform(template="{{ input.trace | format_trace }}"),
                 {"trace": "not a list"},
+            )
+
+    def test_non_dict_member_raises_error_naming_the_member(self):
+        # The error must name the malformed member, not the (valid) container.
+        with pytest.raises(JinjaExtractionError, match="message 1 is str, not a dict"):
+            render_input_transform(
+                JinjaInputTransform(template="{{ input.trace | format_trace }}"),
+                {"trace": [{"role": "user", "content": "hi"}, "not a dict"]},
             )
 
     def test_canonical_rendering_is_frozen(self):
