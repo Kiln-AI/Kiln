@@ -38,6 +38,7 @@ from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import (
     FineTuneStatusType,
     StructuredOutputMode,
+    TurnMode,
 )
 from kiln_ai.datamodel.eval import (
     Eval,
@@ -1158,6 +1159,7 @@ async def test_get_eval_config_score_summary(
             Mock(spec=TaskRunConfig, id="run5"),
         ]
         mock_task.finetunes.return_value = []
+        mock_task.runs.return_value = []
         mock_task_from_id.return_value = mock_task
 
         response = client.get(
@@ -1174,6 +1176,8 @@ async def test_get_eval_config_score_summary(
         run_config_percent_complete = top_level_result["run_config_percent_complete"]
         assert "dataset_size" in top_level_result
         assert top_level_result["dataset_size"] == 2
+        # No runs in the task store, so no stored multi-turn conversations
+        assert top_level_result["multi_turn_item_count"] == 0
 
         # Check average scores for run1
         assert results["run1"]["accuracy"]["mean_score"] == 0.7  # (0.8 + 0.6) / 2
@@ -1252,7 +1256,9 @@ def test_score_summary_n_used_n_excluded(mock_eval_for_score_summary):
     task_run_configs = [Mock(spec=TaskRunConfig, id="rc1")]
     expected_dataset_ids: set[ID_TYPE] = {"ds1", "ds2", "ds3"}
 
-    result = compute_score_summary(eval, config, task_run_configs, expected_dataset_ids)
+    result = compute_score_summary(
+        eval, config, task_run_configs, expected_dataset_ids, multi_turn_item_count=0
+    )
 
     assert result.dataset_size == 3
     scores = result.results["rc1"]
@@ -1292,7 +1298,9 @@ def test_score_summary_all_skipped(mock_eval_for_score_summary):
     task_run_configs = [Mock(spec=TaskRunConfig, id="rc1")]
     expected_dataset_ids: set[ID_TYPE] = {"ds1", "ds2"}
 
-    result = compute_score_summary(eval, config, task_run_configs, expected_dataset_ids)
+    result = compute_score_summary(
+        eval, config, task_run_configs, expected_dataset_ids, multi_turn_item_count=0
+    )
 
     assert result.dataset_size == 2
     scores = result.results["rc1"]
@@ -1340,7 +1348,9 @@ def test_score_summary_eval_input_keyed(mock_eval_for_score_summary):
     task_run_configs = [Mock(spec=TaskRunConfig, id="rc1")]
     expected_item_ids: set[ID_TYPE] = {"ei1", "ei2", "ei3"}
 
-    result = compute_score_summary(eval, config, task_run_configs, expected_item_ids)
+    result = compute_score_summary(
+        eval, config, task_run_configs, expected_item_ids, multi_turn_item_count=0
+    )
 
     assert result.dataset_size == 3
     scores = result.results["rc1"]
@@ -1429,6 +1439,8 @@ async def test_get_eval_config_score_summary_eval_input_eval(
     assert result["results"]["rc1"]["score1"]["mean_score"] == 4.0
     assert result["results"]["rc1"]["score1"]["n_used"] == 1
     assert result["run_config_percent_complete"]["rc1"] == 0.5
+    # EvalInput-sourced sets re-drive per run config, never stored conversations
+    assert result["multi_turn_item_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -1469,6 +1481,120 @@ async def test_get_eval_config_score_summary_eval_input_eval_empty(
 
     assert response.status_code == 400
     assert "No items match" in response.json()["message"]
+
+
+def _multiturn_task_with_eval(tmp_path, evaluation_data_type: EvalDataType) -> Task:
+    """A real on-disk multiturn task with an eval (id eval1) filtering on
+    tag::eval_set and a judge config (id eval_config1)."""
+    project = Project(
+        id="project1", name="Test Project", path=tmp_path / "project.kiln"
+    )
+    project.save_to_file()
+    task = Task(
+        id="task1",
+        name="Test Task",
+        instruction="Test Instructions",
+        path=tmp_path / "task.kiln",
+        turn_mode=TurnMode.multiturn,
+        parent=project,
+    )
+    task.save_to_file()
+
+    eval = Eval(
+        id="eval1",
+        name="Eval",
+        output_scores=[
+            EvalOutputScore(
+                name="score1", instruction="desc1", type=TaskOutputRatingType.pass_fail
+            ),
+        ],
+        eval_set_filter_id="tag::eval_set",
+        eval_configs_filter_id="tag::golden",
+        evaluation_data_type=evaluation_data_type,
+        parent=task,
+    )
+    eval.save_to_file()
+    EvalConfig(
+        id="eval_config1",
+        name="Judge",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+        model_name="gpt-4",
+        model_provider="openai",
+        parent=eval,
+    ).save_to_file()
+    return task
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "evaluation_data_type",
+    [EvalDataType.final_answer, EvalDataType.full_trace],
+)
+async def test_get_eval_config_score_summary_multi_turn_item_count(
+    client, mock_task_from_id, tmp_path, evaluation_data_type
+):
+    """multi_turn_item_count counts the stored conversations (chain leaves) in
+    the eval set. It's a property of the item set alone, so it must be the same
+    for final_answer and full_trace evals."""
+    task = _multiturn_task_with_eval(tmp_path, evaluation_data_type)
+    mock_task_from_id.return_value = task
+
+    output = TaskOutput(output="test output")
+    # Single-turn item in the eval set: regenerated per run config.
+    TaskRun(input="i1", output=output, tags=["eval_set"], parent=task).save_to_file()
+    # Stored conversation in the eval set: only its leaf is an eval item.
+    root = TaskRun(input="i2", output=output, parent=task)
+    root.save_to_file()
+    TaskRun(
+        input="i3",
+        output=output,
+        tags=["eval_set"],
+        parent=task,
+        parent_task_run_id=root.id,
+    ).save_to_file()
+    # Stored conversation outside the eval set: must not count.
+    other_root = TaskRun(input="i4", output=output, parent=task)
+    other_root.save_to_file()
+    TaskRun(
+        input="i5",
+        output=output,
+        tags=["other"],
+        parent=task,
+        parent_task_run_id=other_root.id,
+    ).save_to_file()
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/score_summary"
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["dataset_size"] == 2
+    assert result["multi_turn_item_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_eval_config_score_summary_single_turn_only_set(
+    client, mock_task_from_id, tmp_path
+):
+    """A full_trace eval whose set has no stored conversations reports zero
+    multi-turn items — every item regenerates per run config."""
+    task = _multiturn_task_with_eval(tmp_path, EvalDataType.full_trace)
+    mock_task_from_id.return_value = task
+
+    output = TaskOutput(output="test output")
+    TaskRun(input="i1", output=output, tags=["eval_set"], parent=task).save_to_file()
+    TaskRun(input="i2", output=output, tags=["eval_set"], parent=task).save_to_file()
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/score_summary"
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["dataset_size"] == 2
+    assert result["multi_turn_item_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -3819,6 +3945,7 @@ async def test_eval_results_summary_happy_path(client):
     mock_task = Mock(spec=Task)
     mock_task.run_configs.return_value = [rc1_mock, rc2_mock, rc3_mock]
     mock_task.finetunes.return_value = []
+    mock_task.runs.return_value = []
     mock_task.evals.return_value = [eval1, eval2]
 
     def ds_filter_side_effect(task, filter_id, readonly):
@@ -4034,6 +4161,7 @@ async def test_eval_results_summary_behavioral_equivalence(client):
     mock_task = Mock(spec=Task)
     mock_task.run_configs.return_value = [rc1_mock]
     mock_task.finetunes.return_value = []
+    mock_task.runs.return_value = []
     mock_task.evals.return_value = [eval1]
 
     with (
@@ -4097,6 +4225,7 @@ async def test_eval_results_summary_empty_filter(client):
     mock_task = Mock(spec=Task)
     mock_task.run_configs.return_value = []
     mock_task.finetunes.return_value = []
+    mock_task.runs.return_value = []
     mock_task.evals.return_value = [eval1]
 
     with (
@@ -4142,6 +4271,7 @@ async def test_eval_results_summary_no_default_judge(client):
     mock_task = Mock(spec=Task)
     mock_task.run_configs.return_value = []
     mock_task.finetunes.return_value = []
+    mock_task.runs.return_value = []
     mock_task.evals.return_value = [eval1]
 
     with (
@@ -4170,6 +4300,7 @@ async def test_eval_results_summary_no_evals(client):
     mock_task = Mock(spec=Task)
     mock_task.run_configs.return_value = []
     mock_task.finetunes.return_value = []
+    mock_task.runs.return_value = []
     mock_task.evals.return_value = []
 
     with patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id:
@@ -4232,6 +4363,7 @@ async def test_eval_results_summary_dataset_ids_cached_per_filter(client):
     mock_task = Mock(spec=Task)
     mock_task.run_configs.return_value = [rc1_mock]
     mock_task.finetunes.return_value = []
+    mock_task.runs.return_value = []
     mock_task.evals.return_value = [eval1, eval2]
 
     runs_call_count = 0
@@ -4898,7 +5030,11 @@ class TestV1CoexistenceAPI:
         expected_dataset_ids: set[ID_TYPE] = {"ds1", "ds2"}
 
         result = compute_score_summary(
-            mock_eval_for_score_summary, config, task_run_configs, expected_dataset_ids
+            mock_eval_for_score_summary,
+            config,
+            task_run_configs,
+            expected_dataset_ids,
+            multi_turn_item_count=0,
         )
 
         assert result.dataset_size == 2

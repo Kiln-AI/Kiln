@@ -431,6 +431,11 @@ class EvalResultSummary(BaseModel):
         description="Percent of dataset processed per run config."
     )
     dataset_size: int = Field(description="Total size of the eval dataset.")
+    multi_turn_item_count: int = Field(
+        description="Items in the eval dataset that are stored multi-turn "
+        "conversations. These are scored from their saved conversation, so "
+        "every run config receives identical scores for them."
+    )
 
 
 class EvalResultsSummaryEvalInfo(BaseModel):
@@ -554,6 +559,20 @@ def runs_in_filter(
     return [run for run in task.runs(readonly=readonly) if filter(run)]
 
 
+def multi_turn_item_count_in_filter(
+    task: Task, filter_id: DatasetFilterId, readonly: bool
+) -> int:
+    """Count eval-set items that are stored multi-turn conversations (TaskRun
+    chain leaves). The eval runner scores these from their saved conversation
+    rather than re-driving them, so their scores can't vary across run configs."""
+    filter = dataset_filter_from_id(filter_id)
+    return sum(
+        1
+        for run in task.runs(readonly=readonly)
+        if run.parent_task_run_id is not None and filter(run)
+    )
+
+
 def eval_input_ids_in_filter(
     task: Task, filter_id: EvalInputFilterId, readonly: bool
 ) -> Set[ID_TYPE]:
@@ -669,15 +688,19 @@ def compute_score_summary(
     eval_config: EvalConfig,
     task_run_configs: list[TaskRunConfig],
     expected_item_ids: set[ID_TYPE],
+    multi_turn_item_count: int,
 ) -> EvalResultSummary:
     """Aggregate an eval config's runs per run config. expected_item_ids are
     TaskRun IDs or EvalInput IDs depending on the eval's slice source (see
-    expected_item_ids_for_eval); runs key on the matching EvalRun field."""
+    expected_item_ids_for_eval); runs key on the matching EvalRun field.
+    multi_turn_item_count is set-composition metadata (see
+    multi_turn_item_count_in_filter), passed through to the summary."""
     if len(expected_item_ids) == 0:
         return EvalResultSummary(
             results={},
             run_config_percent_complete={},
             dataset_size=0,
+            multi_turn_item_count=multi_turn_item_count,
         )
 
     remaining_expected_item_ids: Dict[ID_TYPE, Set[ID_TYPE]] = {
@@ -755,6 +778,7 @@ def compute_score_summary(
         results=results,
         run_config_percent_complete=run_config_percent_complete,
         dataset_size=len(expected_item_ids),
+        multi_turn_item_count=multi_turn_item_count,
     )
 
 
@@ -1578,8 +1602,22 @@ def connect_evals_api(app: FastAPI):
                 detail="No items match this eval's eval set filter. Add items matching the filter to run this eval.",
             )
 
+        # Only TaskRun-sourced sets can contain stored multi-turn conversations;
+        # EvalInput-sourced sets re-drive each conversation per run config.
+        multi_turn_item_count = (
+            multi_turn_item_count_in_filter(
+                task, eval.eval_set_filter_id, readonly=True
+            )
+            if eval.eval_set_filter_id is not None
+            else 0
+        )
+
         return compute_score_summary(
-            eval, eval_config, task_run_configs, expected_item_ids
+            eval,
+            eval_config,
+            task_run_configs,
+            expected_item_ids,
+            multi_turn_item_count,
         )
 
     @app.get(
@@ -1605,10 +1643,11 @@ def connect_evals_api(app: FastAPI):
             for rc in task_run_configs
         }
 
-        # Cache keyed by (source, filter_id): eval_set and eval_input filters
+        # Caches keyed by (source, filter_id): eval_set and eval_input filters
         # share the tag:: grammar but select different stores, so the filter id
         # alone isn't a safe cache key.
         item_ids_cache: Dict[Tuple[str, str], Set[ID_TYPE]] = {}
+        multi_turn_count_cache: Dict[Tuple[str, str], int] = {}
         evals_out: Dict[ID_TYPE, EvalResultsSummaryEvalInfo] = {}
         scores_out: Dict[ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]] = {}
 
@@ -1624,6 +1663,15 @@ def connect_evals_api(app: FastAPI):
                 # None is unreachable here (a filter is set above), but keep the
                 # cache total rather than asserting.
                 item_ids_cache[cache_key] = expected_ids or set()
+                # Only TaskRun-sourced sets can contain stored multi-turn
+                # conversations; EvalInput-sourced sets re-drive per run config.
+                multi_turn_count_cache[cache_key] = (
+                    multi_turn_item_count_in_filter(
+                        task, eval.eval_set_filter_id, readonly=True
+                    )
+                    if eval.eval_set_filter_id is not None
+                    else 0
+                )
             expected_item_ids = item_ids_cache[cache_key]
 
             evals_out[eval.id] = EvalResultsSummaryEvalInfo(
@@ -1650,6 +1698,7 @@ def connect_evals_api(app: FastAPI):
                 default_config,
                 task_run_configs,
                 expected_item_ids,
+                multi_turn_count_cache[cache_key],
             )
 
             for rc_id, scores_dict in summary.results.items():

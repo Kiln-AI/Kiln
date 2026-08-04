@@ -6940,6 +6940,11 @@ export interface components {
              * @description Total size of the eval dataset.
              */
             dataset_size: number;
+            /**
+             * Multi Turn Item Count
+             * @description Items in the eval dataset that are stored multi-turn conversations. These are scored from their saved conversation, so every run config receives identical scores for them.
+             */
+            multi_turn_item_count: number;
         };
         /**
          * EvalResultsSummaryEvalInfo

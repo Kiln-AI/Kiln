@@ -33,6 +33,7 @@
   import Intro from "$lib/ui/intro.svelte"
   import RunConfigComparisonTable from "$lib/components/run_config_comparison_table.svelte"
   import { load_task_prompts } from "$lib/stores/prompts_store"
+  import { multiTurnStoredScoreWarning } from "./multi_turn_warning"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -61,6 +62,10 @@
 
   let score_summary: EvalResultSummary | null = null
   let score_summary_error: KilnError | null = null
+
+  $: multi_turn_warning = multiTurnStoredScoreWarning(
+    score_summary?.multi_turn_item_count,
+  )
 
   // Note: not including score_summary_error, because it's not a critical error we should block the UI for
   $: loading =
@@ -471,15 +476,15 @@
         ]}
     action_buttons={action_buttons(evaluator)}
   >
-    <!-- Stored-trace tier: multi-turn items in a TaskRun-sourced eval are judged
-      over their saved conversations, which can't be regenerated per run config,
-      so those rows score identically across configs. EvalInput-sourced evals
-      re-drive per config and need no caveat. -->
-    {#if evaluator?.evaluation_data_type === "full_trace" && evaluator?.eval_set_filter_id}
+    <!-- Stored multi-turn conversations can't be regenerated per run config,
+      so the eval runner judges their saved messages and those rows score
+      identically across configs. Gate on the actual item set: the score
+      summary reports how many such items the eval set contains. -->
+    {#if multi_turn_warning}
       <Warning
         warning_color="warning"
         warning_icon="info"
-        warning_message={"Multi-turn items in this eval are scored using their saved conversations, so all run configurations receive identical scores for those items. To compare run configurations on fresh conversations, create the eval with the eval builder."}
+        warning_message={multi_turn_warning}
       />
     {/if}
     {#if loading}
