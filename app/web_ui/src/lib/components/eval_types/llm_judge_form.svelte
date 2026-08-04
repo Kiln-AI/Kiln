@@ -26,8 +26,11 @@
   // the user writes them here instead. The steps are stored on the judge
   // config and bound to {{ judge_instructions }} in the prompt template, so
   // there's nothing to keep in sync between the two editing surfaces.
-  export let show_instructions_ui: boolean = false
+  // The server decides which evals these are: its default prompt references
+  // {{ judge_instructions }} exactly when steps can't be derived, so keying
+  // the UI off the fetched default can never drift from the backend logic.
   export let judge_instructions: string[] = []
+  let show_instructions_ui = false
 
   // FormList keys its rows by item value, so a plain string[] breaks the
   // moment two rows are empty (duplicate keys). Wrap each step in an object
@@ -49,6 +52,9 @@
         project_id,
         task_id,
         eval_id,
+      )
+      show_instructions_ui = defaults.judge_prompt.includes(
+        "{{ judge_instructions }}",
       )
       if (judge_prompt === undefined) {
         judge_prompt = defaults.judge_prompt

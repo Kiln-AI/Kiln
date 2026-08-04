@@ -448,27 +448,46 @@ describe("LlmJudgeForm", () => {
   })
 
   describe("Evaluation instructions steps UI", () => {
-    it("is hidden unless show_instructions_ui is set", () => {
+    // The UI is keyed off the server's default prompt: it appears exactly
+    // when the prompt references {{ judge_instructions }} (evals with no
+    // derivable steps), so client and server can never drift.
+    async function renderWithDefaultPrompt(judge_prompt: string) {
       setModels([noLogprobsProvider])
-      const { container, queryByText } = render(LlmJudgeForm, {
+      mockGetDefaultLlmJudgePrompt.mockResolvedValueOnce({
+        judge_prompt,
+        system_prompt: "You are an evaluator.",
+      })
+      const onMountCallbacks: Array<() => unknown> = []
+      const spy = vi
+        .spyOn(svelteMod, "onMount")
+        .mockImplementation((fn: () => unknown) => {
+          onMountCallbacks.push(fn)
+        })
+      const rendered = render(LlmJudgeForm, {
         props: { task_id: "task1", project_id: "proj1", eval_id: "eval1" },
       })
+      spy.mockRestore()
+      for (const cb of onMountCallbacks) {
+        await cb()
+      }
+      await tick()
+      return rendered
+    }
+
+    it("is hidden when the default prompt has derivable steps", async () => {
+      const { container, queryByText } = await renderWithDefaultPrompt(
+        "Judge {{ final_message }} using baked steps",
+      )
       expect(container.querySelector("#judge_instruction_0")).toBeNull()
       expect(queryByText("Evaluation Instructions")).toBeNull()
       // Judge prompt stays inside the Advanced collapse
       expect(queryByText("Advanced: Judge Prompt")).not.toBeNull()
     })
 
-    it("renders steps editor and top-level judge prompt when enabled", () => {
-      setModels([noLogprobsProvider])
-      const { container, queryByText } = render(LlmJudgeForm, {
-        props: {
-          task_id: "task1",
-          project_id: "proj1",
-          eval_id: "eval1",
-          show_instructions_ui: true,
-        },
-      })
+    it("renders steps editor and top-level judge prompt when the default prompt binds instructions", async () => {
+      const { container, queryByText } = await renderWithDefaultPrompt(
+        "Judge {{ final_message }} with <steps>{{ judge_instructions }}</steps>",
+      )
       expect(queryByText("Evaluation Instructions")).not.toBeNull()
       const step = container.querySelector(
         "#judge_instruction_0",
@@ -483,15 +502,9 @@ describe("LlmJudgeForm", () => {
     })
 
     it("Add Evaluation Step appends another step row", async () => {
-      setModels([noLogprobsProvider])
-      const { container, getByText } = render(LlmJudgeForm, {
-        props: {
-          task_id: "task1",
-          project_id: "proj1",
-          eval_id: "eval1",
-          show_instructions_ui: true,
-        },
-      })
+      const { container, getByText } = await renderWithDefaultPrompt(
+        "Judge {{ final_message }} with <steps>{{ judge_instructions }}</steps>",
+      )
       expect(container.querySelector("#judge_instruction_1")).toBeNull()
 
       // Two empty rows must coexist (regression: value-keyed each blew up on

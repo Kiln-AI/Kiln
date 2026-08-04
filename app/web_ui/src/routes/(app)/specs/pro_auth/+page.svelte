@@ -17,13 +17,16 @@
 
   // The workflow screen sends the already-chosen template and judge along, so
   // a successful connect drops the user into the spec builder in pro mode.
-  // Without them (stale bookmark), restart at the template picker.
+  // Without them (stale bookmark), restart at the type picker — or the home
+  // page if ui_state has no current project/task to build a URL from.
   $: spec_type = $page.url.searchParams.get("type") as SpecType | null
   $: judge = $page.url.searchParams.get("judge") as V2EvalType | null
   $: success_redirect_url =
     spec_type && judge && project_id && task_id
       ? spec_builder_url(project_id, task_id, spec_type, "pro", judge)
-      : `/specs/${project_id}/${task_id}/select_template`
+      : project_id && task_id
+        ? `/specs/${project_id}/${task_id}/select_template`
+        : "/"
 </script>
 
 <CopilotAuthPage

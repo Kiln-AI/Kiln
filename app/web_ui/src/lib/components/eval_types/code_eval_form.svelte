@@ -23,9 +23,17 @@
   export let code_string: string = properties.code
 
   let user_has_edited = false
+  // The editor dispatches `change` for programmatic setValue too, so remember
+  // what we generated ourselves: only a change that differs from our own
+  // generation counts as a user edit. Without this, the first regeneration
+  // (e.g. from typing the eval name, which renames the score key) would mark
+  // the form as edited and freeze all further regeneration — saving starter
+  // code whose score key never matches the eval.
+  let last_generated_code = properties.code
 
   $: if (output_scores && !user_has_edited) {
     const new_code = generate_default_code(output_scores)
+    last_generated_code = new_code
     properties.code = new_code
     code_string = new_code
     code_editor?.setValue(new_code)
@@ -76,7 +84,9 @@
   function on_code_change(e: CustomEvent<string>) {
     properties.code = e.detail
     code_string = e.detail
-    user_has_edited = true
+    if (e.detail !== last_generated_code) {
+      user_has_edited = true
+    }
   }
 </script>
 

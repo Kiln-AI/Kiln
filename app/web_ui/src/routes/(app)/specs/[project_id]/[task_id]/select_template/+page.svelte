@@ -42,9 +42,10 @@
   }
 
   // The programmatic checks section: judges chosen directly, without a
-  // template. Tool Call Check routes through its template (its spec collects
-  // the tool list and guidelines); the rest create template-less evals via
-  // the spec builder's judge-only mode.
+  // template. Tool Call Check routes through its template so the eval records
+  // template: "tool_call" (no spec is created — the judge form collects the
+  // tool list); the rest create template-less evals via the spec builder's
+  // judge-only mode.
   const programmatic_judge_types: V2EvalType[] = [
     "code_eval",
     "tool_call_check",

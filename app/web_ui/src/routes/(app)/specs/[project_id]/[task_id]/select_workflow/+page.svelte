@@ -58,11 +58,13 @@
           spec_builder_url(project_id, task_id, spec_type, "manual", judge),
           { replaceState: true },
         )
+        // Keep the spinner up until the redirect lands: clearing loading here
+        // would flash the Pro/Manual table before goto completes.
         return
       }
+      loading = false
     } catch (e) {
       error = createKilnError(e)
-    } finally {
       loading = false
     }
   })

@@ -47,7 +47,7 @@
   // reference-answer template -- only the manual flow does -- so the workflow
   // and template pickers would be two no-op screens.
   $: evals_href = current_task_id
-    ? `/specs/${project_id}/${current_task_id}/spec_builder?type=reference_answer_accuracy&workflow=manual&judge=llm_judge`
+    ? `/specs/${project_id}/${current_task_id}/spec_builder?type=reference_answer_accuracy&workflow=manual`
     : undefined
 
   onMount(async () => {

@@ -35,7 +35,6 @@
     uses_reference_data_llm_judge,
     uses_reference_data_code_eval,
   } from "$lib/utils/eval_types/reference_data_gate"
-  import { llm_judge_steps_derivable } from "$lib/utils/eval_types/llm_judge_gate"
   import { SHOW_REFERENCE_DATA_UI } from "$lib/utils/eval_types/reference_data_ui"
 
   export let eval_config_type: V2EvalType
@@ -55,13 +54,11 @@
   let llm_selected_algo: EvalConfigType | undefined = undefined
   let llm_judge_prompt: string | undefined = undefined
   let llm_system_prompt: string | undefined = undefined
+  // The Evaluation Instructions steps for evals with no derivable prompt.
+  // Create-only today: this builder is only reached from create_eval_config,
+  // so there's no persisted value to load. If a judge-edit path is ever
+  // added, this must be initialized from the config's judge_instructions.
   let llm_judge_instructions: string[] = [""]
-
-  // Evals with no spec or derivable template show the Evaluation Instructions
-  // steps editor; its text is bound to {{ judge_instructions }} at render time.
-  $: show_instructions_ui =
-    eval_config_type === "llm_judge" &&
-    !llm_judge_steps_derivable(evaluator, spec_id !== "legacy")
 
   function cleaned_judge_instructions(): string[] | null {
     const cleaned = llm_judge_instructions
@@ -668,7 +665,6 @@
             {task_id}
             {project_id}
             {eval_id}
-            {show_instructions_ui}
             bind:model_name={llm_model_name}
             bind:provider_name={llm_provider_name}
             bind:combined_model_name={llm_combined_model_name}
