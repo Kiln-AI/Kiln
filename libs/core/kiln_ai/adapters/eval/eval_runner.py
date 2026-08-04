@@ -786,6 +786,12 @@ class EvalRunner:
         fingerprint = compute_drive_fingerprint(
             drive_config, job.task_run_config.run_config_properties, data
         )
+        # Synthetic-user spend for THIS record. Stays None on reuse: no driver
+        # call was made, and the spend is already booked on the record that
+        # actually drove the conversation — counting it again would double-book
+        # it. Unlike task_run_usage it cannot be recovered from the trace,
+        # because the SU's calls leave nothing in it.
+        su_usage: Usage | None = None
         reused_trace = self._find_reusable_trace(fingerprint, job.task_run_config.id)
         if reused_trace is not None:
             # Another v2 config (this eval's or a task sibling's) already
@@ -800,7 +806,7 @@ class EvalRunner:
             if eval_input.id:
                 set_eval_input_id(eval_input.id)
             try:
-                leaf = await drive_case_for_eval(
+                drive_result = await drive_case_for_eval(
                     seed_prompt=seed,
                     synthetic_user_info=data.synthetic_user_info,
                     target_task=self.task,
@@ -814,6 +820,8 @@ class EvalRunner:
                 )
             finally:
                 clear_eval_input_id()
+            leaf = drive_result.chain[-1]
+            su_usage = drive_result.su_usage
             eval_task_input = EvalTaskInput.from_eval_input(eval_input, leaf)
             # Publish the fresh trace so same-invocation sibling jobs reuse
             # it without waiting for this record to hit disk.
@@ -849,6 +857,7 @@ class EvalRunner:
                 task_run_trace=_serialize_trace(eval_task_input.trace),
                 task_run_usage=_usage_from_trace(eval_task_input.trace),
                 eval_usage=result.eval_usage,
+                synthetic_user_usage=su_usage,
                 drive_fingerprint=fingerprint,
             )
             eval_run.save_to_file()

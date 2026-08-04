@@ -21,6 +21,7 @@ from kiln_ai.datamodel.datamodel_enums import (
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.usage import Usage
 from kiln_ai.synthetic_user import runner as runner_mod
 from kiln_ai.synthetic_user.case import SyntheticUserCase
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
@@ -119,9 +120,9 @@ def _patch_su_driver(
             else list(replies_per_case)
         )
         instance = Mock(spec=SyntheticUserDriver)
-        # respond() returns (message, cost). Tests that don't care about
-        # cost get 0.0 — the runner adds it to total_cost regardless.
-        instance.respond = AsyncMock(side_effect=[(r, 0.0) for r in replies])
+        # respond() returns (message, usage). Tests that don't care about
+        # spend get None — the provider reported nothing.
+        instance.respond = AsyncMock(side_effect=[(r, None) for r in replies])
         return instance
 
     monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)
@@ -252,7 +253,9 @@ async def test_total_cost_sums_target_and_su_driver_spend(
     # Each case's driver gets two replies at $0.01 each → $0.02 SU per case.
     def _ctor(info, config):
         instance = Mock(spec=SyntheticUserDriver)
-        instance.respond = AsyncMock(side_effect=[("u2", 0.01), ("u3", 0.01)])
+        instance.respond = AsyncMock(
+            side_effect=[("u2", Usage(cost=0.01)), ("u3", Usage(cost=0.01))]
+        )
         return instance
 
     monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)
@@ -444,7 +447,7 @@ async def test_malformed_blob_surfaces_as_case_failed(
 
     def _ctor(info, config):
         instance = Mock(spec=SyntheticUserDriver)
-        instance.respond = AsyncMock(return_value=("ok", 0.0))
+        instance.respond = AsyncMock(return_value=("ok", None))
         return instance
 
     _patch_su_driver_factory(monkeypatch, _ctor)

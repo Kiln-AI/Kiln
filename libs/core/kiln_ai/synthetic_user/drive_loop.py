@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.usage import Usage
 from kiln_ai.run_context import clear_episode_id, generate_episode_id, set_episode_id
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
@@ -50,6 +51,19 @@ class TurnHook(Protocol):
     async def __call__(self, *, run: TaskRun, su_message: str) -> None: ...
 
 
+def _reported(usage: Usage) -> Usage | None:
+    """None when the accumulator holds nothing the provider actually reported.
+
+    Field-level check rather than `== Usage()` so a Usage subclass instance
+    can't defeat pydantic's class-sensitive equality. Distinguishing "no
+    usage reported" from "zero tokens" is what lets a consumer tell an
+    unmeasured drive from a free one.
+    """
+    if all(v is None for v in usage.model_dump().values()):
+        return None
+    return usage
+
+
 @dataclass(frozen=True)
 class DriveCaseResult:
     """Outcome of one drive_case run.
@@ -59,14 +73,25 @@ class DriveCaseResult:
     no stop_reason field — every case ends after exactly `turns`
     iterations by design.
 
-    `su_total_cost` sums the SU driver's per-turn LLM cost across the
-    case. SU turns aren't persisted as TaskRuns, so this is the only
-    place that spend surfaces — the runner adds it to the target's
-    `cumulative_usage.cost` to produce an honest total.
+    `su_usage` sums the SU driver's per-turn usage (tokens, cost, latency)
+    across the case. SU turns aren't persisted as TaskRuns, so this is the
+    only place that spend surfaces: callers that discard it make the driver
+    model's spend unrecoverable after the fact. None when no turn reported
+    usage.
     """
 
     chain: list[TaskRun]
-    su_total_cost: float
+    su_usage: Usage | None
+
+    @property
+    def su_total_cost(self) -> float:
+        """The SU's dollar cost alone, for callers that only need the scalar
+        (e.g. the interactive runner's per-case UI event). 0.0 when the
+        provider reported no cost — do NOT read that as a measured zero;
+        check `su_usage is None` for that."""
+        if self.su_usage is None or self.su_usage.cost is None:
+            return 0.0
+        return float(self.su_usage.cost)
 
 
 async def drive_case(
@@ -107,7 +132,7 @@ async def drive_case(
     prev_run: TaskRun | None = None
     prev_trace: list[ChatCompletionMessageParam] | None = None
     chain: list[TaskRun] = []
-    su_total_cost: float = 0.0
+    su_usage = Usage()
 
     # One episode ID for the whole case: every turn's adapter invoke (and any
     # tool call it makes) sees the same ID via the run-context contextvar,
@@ -119,7 +144,7 @@ async def drive_case(
             prev_run=prev_run,
             prev_trace=prev_trace,
             chain=chain,
-            su_total_cost=su_total_cost,
+            su_usage=su_usage,
             target_invoker=target_invoker,
             su_driver=su_driver,
             turns=turns,
@@ -135,7 +160,7 @@ async def _drive_case_turns(
     prev_run: TaskRun | None,
     prev_trace: list[ChatCompletionMessageParam] | None,
     chain: list[TaskRun],
-    su_total_cost: float,
+    su_usage: Usage,
     target_invoker: TargetInvoker,
     su_driver: SyntheticUserDriver,
     turns: int,
@@ -151,8 +176,9 @@ async def _drive_case_turns(
 
         # The SU driver does the role filtering / role swap / invariant
         # checks itself. We pass the new run's cumulative trace as-is.
-        su_message, su_cost = await su_driver.respond(new_run.trace or [])
-        su_total_cost += su_cost
+        su_message, turn_usage = await su_driver.respond(new_run.trace or [])
+        if turn_usage is not None:
+            su_usage = su_usage + turn_usage
 
         if on_turn is not None:
             await on_turn(run=new_run, su_message=su_message)
@@ -161,4 +187,4 @@ async def _drive_case_turns(
         prev_run = new_run
         prev_trace = new_run.trace
 
-    return DriveCaseResult(chain=chain, su_total_cost=su_total_cost)
+    return DriveCaseResult(chain=chain, su_usage=_reported(su_usage))

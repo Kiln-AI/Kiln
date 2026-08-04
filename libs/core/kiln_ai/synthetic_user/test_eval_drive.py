@@ -18,6 +18,7 @@ from kiln_ai.datamodel.eval import SyntheticUserInfo
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.usage import Usage
 from kiln_ai.synthetic_user import eval_drive as eval_drive_mod
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 from kiln_ai.synthetic_user.eval_drive import drive_case_for_eval
@@ -95,8 +96,12 @@ def fake_adapter(monkeypatch: pytest.MonkeyPatch) -> tuple[_FakeAdapter, dict]:
 @pytest.fixture
 def fake_su_driver(monkeypatch: pytest.MonkeyPatch) -> Mock:
     instance = Mock(spec=SyntheticUserDriver)
+    # Each turn reports the same usage, so the summed result is checkable.
     instance.respond = AsyncMock(
-        side_effect=[(f"follow-up-{i}", 0.0) for i in range(1, 10)]
+        side_effect=[
+            (f"follow-up-{i}", Usage(input_tokens=100, output_tokens=10, cost=0.001))
+            for i in range(1, 10)
+        ]
     )
     captured_ctor: dict[str, Any] = {}
 
@@ -111,11 +116,11 @@ def fake_su_driver(monkeypatch: pytest.MonkeyPatch) -> Mock:
 
 
 @pytest.mark.asyncio
-async def test_drives_turns_and_returns_leaf(fake_adapter, fake_su_driver) -> None:
+async def test_drives_turns_and_returns_result(fake_adapter, fake_su_driver) -> None:
     adapter, _ = fake_adapter
     task = Mock(spec=Task)
 
-    leaf = await drive_case_for_eval(
+    result = await drive_case_for_eval(
         seed_prompt="opening message",
         synthetic_user_info=_INFO,
         target_task=task,
@@ -134,8 +139,17 @@ async def test_drives_turns_and_returns_leaf(fake_adapter, fake_su_driver) -> No
     assert adapter.calls[0]["prior_trace"] is None
     assert len(adapter.calls[2]["prior_trace"]) == 4
     # The leaf is the last turn's run: unsaved, full cumulative trace.
+    leaf = result.chain[-1]
     assert leaf.id is None
     assert len(leaf.trace) == 6
+
+    # The synthetic user's spend rides back with the result — it exists
+    # nowhere else, since SU turns are never persisted as TaskRuns.
+    assert result.su_usage is not None
+    assert result.su_usage.input_tokens == 300
+    assert result.su_usage.output_tokens == 30
+    assert result.su_usage.cost == pytest.approx(0.003)
+    assert result.su_total_cost == pytest.approx(0.003)
 
     # The SU driver was built from the typed persona.
     assert fake_su_driver.ctor_args["info"] is _INFO

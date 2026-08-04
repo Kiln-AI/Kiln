@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.usage import Usage
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult, drive_case
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 
@@ -73,13 +74,16 @@ class _FakeInvoker:
         return _fake_run(new_trace, run_id=f"run-turn-{len(self.calls)}")
 
 
-def _su_driver_with_replies(replies: list[str], cost_per_reply: float = 0.0) -> Mock:
+def _su_driver_with_replies(
+    replies: list[str], usage_per_reply: Usage | None = None
+) -> Mock:
     """Mock(spec=SyntheticUserDriver) with respond() returning canned
-    (message, cost) tuples. `cost_per_reply` lets cost-aware tests inject
-    a non-zero per-call cost; defaults to 0.0 for the legacy tests.
+    (message, usage) tuples. `usage_per_reply` lets usage-aware tests inject
+    a per-call Usage; defaults to None (provider reported nothing), which is
+    what the structural tests want.
     """
     drv = Mock(spec=SyntheticUserDriver)
-    drv.respond = AsyncMock(side_effect=[(r, cost_per_reply) for r in replies])
+    drv.respond = AsyncMock(side_effect=[(r, usage_per_reply) for r in replies])
     return drv
 
 
@@ -214,6 +218,87 @@ async def test_drive_case_works_without_on_turn_hook() -> None:
     )
 
     assert len(result.chain) == 1
+
+
+# ───────────────────────── synthetic-user usage ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_drive_case_sums_su_usage_across_turns() -> None:
+    """The SU's spend exists only here — SU turns are never persisted as
+    TaskRuns and leave nothing in the target's trace — so the loop must sum
+    every turn's usage, not just the last one's.
+    """
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3"])
+    su = _su_driver_with_replies(
+        ["u2", "u3", "u4"],
+        usage_per_reply=Usage(
+            input_tokens=1200,
+            output_tokens=40,
+            total_tokens=1240,
+            cost=0.0009,
+            cached_tokens=1000,
+            total_llm_latency_ms=700,
+        ),
+    )
+
+    result = await drive_case(
+        seed_prompt="hi there",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=3,
+    )
+
+    assert result.su_usage is not None
+    assert result.su_usage.input_tokens == 3600
+    assert result.su_usage.output_tokens == 120
+    assert result.su_usage.total_tokens == 3720
+    assert result.su_usage.cached_tokens == 3000
+    assert result.su_usage.total_llm_latency_ms == 2100
+    assert result.su_usage.cost == pytest.approx(0.0027)
+    # The scalar accessor the interactive runner uses stays in agreement.
+    assert result.su_total_cost == pytest.approx(0.0027)
+
+
+@pytest.mark.asyncio
+async def test_drive_case_su_usage_none_when_provider_reports_nothing() -> None:
+    """No usage reported must stay None, not collapse to a zeroed Usage — an
+    unmeasured drive would otherwise read as a genuinely free one.
+    """
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2"])
+    su = _su_driver_with_replies(["u2", "u3"], usage_per_reply=None)
+
+    result = await drive_case(
+        seed_prompt="hi there",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=2,
+    )
+
+    assert result.su_usage is None
+    assert result.su_total_cost == 0.0
+
+
+@pytest.mark.asyncio
+async def test_drive_case_su_usage_survives_partially_reporting_turns() -> None:
+    """A turn with no usage must not zero out the turns that did report."""
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2"])
+    su = Mock(spec=SyntheticUserDriver)
+    su.respond = AsyncMock(
+        side_effect=[("u2", None), ("u3", Usage(input_tokens=500, cost=0.002))]
+    )
+
+    result = await drive_case(
+        seed_prompt="hi there",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=2,
+    )
+
+    assert result.su_usage is not None
+    assert result.su_usage.input_tokens == 500
+    assert result.su_usage.output_tokens is None
+    assert result.su_usage.cost == pytest.approx(0.002)
 
 
 # ───────────────────────── invariants ─────────────────────────

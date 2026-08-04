@@ -712,6 +712,126 @@ def test_eval_run_eval_usage_defaults_none_and_round_trips(tmp_path):
     assert reloaded.eval_usage.cost == 0.005
 
 
+def test_eval_run_synthetic_user_usage_defaults_none_and_round_trips(tmp_path):
+    """synthetic_user_usage is additive: absent on existing records (None),
+    and a set value survives the disk round-trip. It is a third, independent
+    usage field — the driver model's spend never mixes with the agent's
+    (task_run_usage) or the judge's (eval_usage)."""
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+    eval = Eval(
+        name="SU Usage Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    config = EvalConfig(
+        name="cfg",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="out"),
+        parent=eval,
+    )
+    config.save_to_file()
+
+    plain = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0},
+        input="in",
+        output="out",
+        dataset_id="d1",
+        parent=config,
+    )
+    assert plain.synthetic_user_usage is None
+    plain.save_to_file()
+    assert EvalRun.load_from_file(plain.path).synthetic_user_usage is None
+
+    driven = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0},
+        input="in",
+        output="out",
+        dataset_id="d2",
+        task_run_usage=Usage(input_tokens=90000, output_tokens=4000, cost=0.31),
+        eval_usage=Usage(input_tokens=23000, output_tokens=12, cost=0.064),
+        synthetic_user_usage=Usage(
+            input_tokens=2600,
+            output_tokens=90,
+            total_tokens=2690,
+            cost=0.0021,
+            cached_tokens=1800,
+            total_llm_latency_ms=3300,
+        ),
+        parent=config,
+    )
+    driven.save_to_file()
+    reloaded = EvalRun.load_from_file(driven.path)
+    assert reloaded.synthetic_user_usage is not None
+    assert reloaded.synthetic_user_usage.input_tokens == 2600
+    assert reloaded.synthetic_user_usage.output_tokens == 90
+    assert reloaded.synthetic_user_usage.total_tokens == 2690
+    assert reloaded.synthetic_user_usage.cached_tokens == 1800
+    assert reloaded.synthetic_user_usage.total_llm_latency_ms == 3300
+    assert reloaded.synthetic_user_usage.cost == 0.0021
+    # The three model lanes stay independent on the same record.
+    assert reloaded.task_run_usage is not None
+    assert reloaded.task_run_usage.input_tokens == 90000
+    assert reloaded.eval_usage is not None
+    assert reloaded.eval_usage.input_tokens == 23000
+
+
+def test_eval_run_loads_record_written_before_synthetic_user_usage_existed(tmp_path):
+    """Back-compat: a record serialized without the field still validates,
+    with the field absent rather than defaulted to a measured zero."""
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+    eval = Eval(
+        name="Legacy Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.pass_fail),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    config = EvalConfig(
+        name="cfg",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="out"),
+        parent=eval,
+    )
+    config.save_to_file()
+
+    run = EvalRun(
+        task_run_config_id="rc1",
+        scores={"quality": 1.0},
+        input="in",
+        output="out",
+        eval_input_id="ei1",
+        synthetic_user_usage=Usage(input_tokens=10, cost=0.001),
+        parent=config,
+    )
+    run.save_to_file()
+    assert run.path is not None
+
+    # Strip the key the way a pre-field writer would have left the file.
+    on_disk = json.loads(run.path.read_text())
+    del on_disk["synthetic_user_usage"]
+    run.path.write_text(json.dumps(on_disk))
+
+    legacy = EvalRun.load_from_file(run.path)
+    assert legacy.synthetic_user_usage is None
+    assert legacy.scores == {"quality": 1.0}
+
+
 def test_eval_run_plaintext():
     """Test creating an EvalRun with plaintext input/output"""
     eval_run = EvalRun(

@@ -48,6 +48,7 @@ from kiln_ai.datamodel.eval import (
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
 from kiln_ai.datamodel.usage import MessageUsage, Usage
+from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
 from kiln_ai.utils.async_job_runner import RetryableError
 from kiln_ai.utils.git_sync_protocols import default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
@@ -3296,7 +3297,7 @@ def multi_turn_eval_input(mock_task):
 
 
 def _fresh_leaf(task: Task, data_source: DataSource) -> TaskRun:
-    """The in-memory leaf drive_case_for_eval would return: id-less,
+    """The in-memory leaf drive_case_for_eval produces: id-less,
     trace-carrying, never saved."""
     leaf = TaskRun(
         input="opening message",
@@ -3307,6 +3308,21 @@ def _fresh_leaf(task: Task, data_source: DataSource) -> TaskRun:
     )
     leaf.id = None
     return leaf
+
+
+# The synthetic user's spend for one drive. Non-None by default so the
+# reuse tests, which assert it is absent, are testing the runner's branch
+# rather than a fixture that never had a value.
+FRESH_SU_USAGE = Usage(
+    input_tokens=2600, output_tokens=90, total_tokens=2690, cost=0.0021
+)
+
+
+def _fresh_drive_result(task: Task, data_source: DataSource) -> DriveCaseResult:
+    """What drive_case_for_eval returns: the chain plus the SU's usage."""
+    return DriveCaseResult(
+        chain=[_fresh_leaf(task, data_source)], su_usage=FRESH_SU_USAGE
+    )
 
 
 class TestRunV2MultiTurnRedrive:
@@ -3338,7 +3354,7 @@ class TestRunV2MultiTurnRedrive:
             ),
             patch(
                 "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
-                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
+                new=AsyncMock(return_value=_fresh_drive_result(mock_task, data_source)),
             ) as mock_drive,
         ):
             result = await runner.run_job(job)
@@ -3378,6 +3394,57 @@ class TestRunV2MultiTurnRedrive:
         assert json.loads(saved.task_run_trace) == MULTI_TURN_TRACE
         assert saved.drive_fingerprint is not None
         assert saved.drive_fingerprint.startswith("v1:")
+
+    @pytest.mark.asyncio
+    async def test_persists_synthetic_user_usage_on_a_fresh_drive(
+        self,
+        mock_task,
+        mock_run_config,
+        mock_v2_redrive_config,
+        multi_turn_eval_input,
+        data_source,
+    ):
+        """The driver model's spend must land on the record. It cannot be
+        recovered from task_run_trace — the SU's calls leave nothing in it —
+        so dropping it here makes it unmeasurable after the fact."""
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+        )
+        job = EvalJob(
+            item=multi_turn_eval_input,
+            eval_config=mock_v2_redrive_config,
+            type="task_run_eval",
+            task_run_config=mock_run_config,
+        )
+        with (
+            patch(
+                "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+                return_value=RecordingStubV2Eval(mock_v2_redrive_config),
+            ),
+            patch(
+                "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
+                new=AsyncMock(return_value=_fresh_drive_result(mock_task, data_source)),
+            ),
+        ):
+            assert await runner.run_job(job) is True
+
+        saved = mock_v2_redrive_config.runs(readonly=True)[0]
+        assert saved.synthetic_user_usage is not None
+        assert saved.synthetic_user_usage.input_tokens == 2600
+        assert saved.synthetic_user_usage.output_tokens == 90
+        assert saved.synthetic_user_usage.total_tokens == 2690
+        assert saved.synthetic_user_usage.cost == 0.0021
+        # It is the driver's spend alone — the agent's stays on task_run_usage.
+        assert saved.task_run_usage != saved.synthetic_user_usage
+
+        # Round-trip through disk: the field must survive persistence.
+        assert saved.path is not None
+        reloaded = EvalRun.load_from_file(saved.path)
+        assert reloaded.synthetic_user_usage is not None
+        assert reloaded.synthetic_user_usage.total_tokens == 2690
+        assert reloaded.synthetic_user_usage.cost == 0.0021
 
     @pytest.mark.asyncio
     async def test_missing_drive_config_skips(
@@ -3520,7 +3587,7 @@ class TestRunV2MultiTurnRedrive:
             ),
             patch(
                 "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
-                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
+                new=AsyncMock(return_value=_fresh_drive_result(mock_task, data_source)),
             ),
         ):
             result = await runner.run_job(job)
@@ -3810,6 +3877,10 @@ class TestTraceReuse:
         assert saved.output == "reply"
         assert saved.task_run_trace == seeded_trace
         assert saved.drive_fingerprint == fingerprint
+        # No driver call was made, so this record carries no synthetic-user
+        # spend. Copying it from the record that drove the conversation would
+        # double-book the same dollars across every eval that reuses the trace.
+        assert saved.synthetic_user_usage is None
         # Reuse writes no TaskRuns: the driven dataset stays transient.
         assert len(mock_task.runs(readonly=True)) == 0
 
@@ -3885,7 +3956,7 @@ class TestTraceReuse:
             ),
             patch(
                 "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
-                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
+                new=AsyncMock(return_value=_fresh_drive_result(mock_task, data_source)),
             ) as mock_drive,
         ):
             result = await runner.run_job(
@@ -3928,7 +3999,7 @@ class TestTraceReuse:
             ),
             patch(
                 "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
-                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
+                new=AsyncMock(return_value=_fresh_drive_result(mock_task, data_source)),
             ) as mock_drive,
         ):
             await runner.run_job(
@@ -3968,7 +4039,7 @@ class TestTraceReuse:
             ),
             patch(
                 "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
-                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
+                new=AsyncMock(return_value=_fresh_drive_result(mock_task, data_source)),
             ) as mock_drive,
         ):
             await runner.run_job(
@@ -4017,7 +4088,7 @@ class TestTraceReuse:
             ),
             patch(
                 "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
-                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
+                new=AsyncMock(return_value=_fresh_drive_result(mock_task, data_source)),
             ) as mock_drive,
         ):
             await runner.run_job(
@@ -4051,7 +4122,7 @@ class TestTraceReuse:
             ),
             patch(
                 "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
-                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
+                new=AsyncMock(return_value=_fresh_drive_result(mock_task, data_source)),
             ) as mock_drive,
         ):
             for config in (reuse_config_a, reuse_config_b):
@@ -4234,7 +4305,7 @@ class TestTraceReuse:
             ),
             patch(
                 "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
-                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
+                new=AsyncMock(return_value=_fresh_drive_result(mock_task, data_source)),
             ) as mock_drive,
         ):
             await runner.run_job(
@@ -4281,7 +4352,7 @@ class TestTraceReuse:
             ),
             patch(
                 "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
-                new=AsyncMock(return_value=_fresh_leaf(mock_task, data_source)),
+                new=AsyncMock(return_value=_fresh_drive_result(mock_task, data_source)),
             ) as mock_drive,
         ):
             await runner.run_job(

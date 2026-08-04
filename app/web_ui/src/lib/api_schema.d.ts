@@ -7611,6 +7611,8 @@ export interface components {
             task_run_usage?: components["schemas"]["Usage"] | null;
             /** @description The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field. */
             eval_usage?: components["schemas"]["Usage"] | null;
+            /** @description The usage of the synthetic-user (driver) model that played the customer side of a multi-turn drive, summed across the drive's turns. The third and last model in an eval run: task_run_usage is the agent under test, eval_usage is the judge, this is the driver. SU turns are never persisted as TaskRuns and never appear in task_run_trace, so this field is the only record of that spend. None when no drive happened on this record — a reused trace (the spend belongs to the record that drove it), a non-multi-turn lane, a provider that reported no usage, or a record predating this field. */
+            synthetic_user_usage?: components["schemas"]["Usage"] | null;
             /**
              * Eval Input Id
              * @description ID of the EvalInput used for this run (V2 evals). Mutually exclusive with dataset_id.
