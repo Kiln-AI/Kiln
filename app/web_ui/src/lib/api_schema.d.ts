@@ -10778,9 +10778,14 @@ export interface components {
             run_id: string | null;
             /**
              * Turn Index
-             * @description 1-based turn index in the leaf's conversation (turn 1 = root, turn N = leaf). Derived from the leaf trace's user-message count.
+             * @description 1-based turn index within the returned chain (turn 1 = first entry, turn N = leaf). For an unbroken chain this is the absolute turn number in the conversation; for a broken chain it is relative to the returned suffix, since absolute positions are unknowable when ancestors are missing.
              */
             turn_index: number;
+            /**
+             * Trace Start Index
+             * @description Index into the leaf run's trace where this turn's messages begin. A run's trace is its parent's trace plus its own turn, so this is the parent run's trace length (0 for the conversation root). None when the boundary is unknowable (first entry of a broken chain).
+             */
+            trace_start_index: number | null;
         };
         /**
          * RunChainResponse
@@ -10798,7 +10803,7 @@ export interface components {
             chain: components["schemas"]["RunChainEntry"][];
             /**
              * Chain Broken
-             * @description True if while walking parents we encountered a parent_task_run_id that could not be loaded, a cycle, the depth guard, or the chain length exceeded the leaf trace's user-message count.
+             * @description True if while walking parents we encountered a parent_task_run_id that could not be loaded, a cycle, the depth guard, or a run whose trace does not extend its parent's (so it can't be positioned in the leaf's trace).
              */
             chain_broken: boolean;
             /**

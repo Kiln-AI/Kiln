@@ -152,6 +152,37 @@ def _count_user_messages(trace: list[Any] | None) -> int:
     return sum(1 for m in trace if isinstance(m, dict) and m.get("role") == "user")
 
 
+def _position_chain_turns(
+    chain_runs: list[TaskRun], chain_broken: bool
+) -> tuple[list[TaskRun], list[int | None], bool]:
+    """
+    Map each run in a root-to-leaf chain to the index in the leaf's trace where
+    its turn begins. A run's trace is its parent's trace plus its own turn's
+    messages, so trace lengths strictly increase along the chain and each turn
+    starts at its parent's trace length (0 for the true root). Message-role
+    counting can't do this: chat strategies differ in how many user messages a
+    turn emits (e.g. chain-of-thought adds a second one).
+
+    A run whose trace fails to extend its predecessor's invalidates everything
+    before it: keep the suffix from that run onward and flag the chain broken.
+    Pass chain_broken=True when ancestors are already missing; the first kept
+    run's boundary is then unknowable and reported as None.
+    """
+    kept: list[TaskRun] = []
+    starts: list[int | None] = []
+    prev_len = 0
+    for run in chain_runs:
+        trace_len = len(run.trace or [])
+        if trace_len <= prev_len:
+            kept, starts = [run], [None]
+            chain_broken = True
+        else:
+            starts.append(None if not kept and chain_broken else prev_len)
+            kept.append(run)
+        prev_len = trace_len
+    return kept, starts, chain_broken
+
+
 def deep_update(
     source: Dict[str, Any] | None, update: Dict[str, Any | None]
 ) -> Dict[str, Any]:
@@ -210,8 +241,19 @@ class RunChainEntry(BaseModel):
     )
     turn_index: int = Field(
         description=(
-            "1-based turn index in the leaf's conversation (turn 1 = root, "
-            "turn N = leaf). Derived from the leaf trace's user-message count."
+            "1-based turn index within the returned chain (turn 1 = first "
+            "entry, turn N = leaf). For an unbroken chain this is the absolute "
+            "turn number in the conversation; for a broken chain it is relative "
+            "to the returned suffix, since absolute positions are unknowable "
+            "when ancestors are missing."
+        )
+    )
+    trace_start_index: int | None = Field(
+        description=(
+            "Index into the leaf run's trace where this turn's messages begin. "
+            "A run's trace is its parent's trace plus its own turn, so this is "
+            "the parent run's trace length (0 for the conversation root). None "
+            "when the boundary is unknowable (first entry of a broken chain)."
         )
     )
 
@@ -235,8 +277,9 @@ class RunChainResponse(BaseModel):
     chain_broken: bool = Field(
         description=(
             "True if while walking parents we encountered a parent_task_run_id "
-            "that could not be loaded, a cycle, the depth guard, or the chain "
-            "length exceeded the leaf trace's user-message count."
+            "that could not be loaded, a cycle, the depth guard, or a run whose "
+            "trace does not extend its parent's (so it can't be positioned in "
+            "the leaf's trace)."
         )
     )
     has_children: bool = Field(
@@ -446,22 +489,24 @@ def connect_run_api(app: FastAPI):
             for r in task.runs(include_intermediate_runs=True, readonly=True)
         )
         chain_runs, chain_broken = _walk_run_chain(leaf, task.path)
-        turn_count = _count_user_messages(leaf.trace)
-        # Degenerate leaf trace (no user messages at all): we can't position any
-        # run on a turn, so surface as broken-chain with an empty list.
-        if turn_count == 0:
+        # Degenerate leaf trace (no user messages at all): not a conversation,
+        # so we can't position any run on a turn. Surface as broken-chain with
+        # an empty list.
+        if _count_user_messages(leaf.trace) == 0:
             return RunChainResponse(
                 chain=[], chain_broken=True, has_children=has_children
             )
-        # Pathological: more resolved ancestors than the leaf trace can support.
-        # Treat as broken and keep only the suffix that fits.
-        if len(chain_runs) > turn_count:
-            chain_runs = chain_runs[-turn_count:]
-            chain_broken = True
+        # Each run in the chain is one turn; anchor each turn to where it
+        # begins in the leaf's trace, dropping any prefix that can't be
+        # positioned (see _position_chain_turns).
+        chain_runs, turn_starts, chain_broken = _position_chain_turns(
+            chain_runs, chain_broken
+        )
         chain = [
             RunChainEntry(
                 run_id=r.id,
-                turn_index=turn_count - (len(chain_runs) - 1 - i),
+                turn_index=i + 1,
+                trace_start_index=turn_starts[i],
             )
             for i, r in enumerate(chain_runs)
         ]
@@ -733,11 +778,30 @@ def connect_run_api(app: FastAPI):
                 )
             prior_trace = parent_task_run.trace
 
-        return await adapter.invoke(
+        run = await adapter.invoke(
             input,
             prior_trace=prior_trace,
             parent_task_run=parent_task_run,
         )
+
+        # The conversation may have been cascade-deleted while the model was
+        # generating (invoke autosaves the new run before returning). Don't
+        # resurrect a deleted conversation as an orphaned leaf: remove the
+        # just-saved run and tell the caller what happened.
+        if request.parent_task_run_id is not None:
+            parent_still_exists = (
+                TaskRun.from_id_and_parent_path(request.parent_task_run_id, task.path)
+                is not None
+            )
+            if not parent_still_exists:
+                if run.path is not None:
+                    run.delete()
+                raise HTTPException(
+                    status_code=409,
+                    detail="The conversation was deleted while the response was being generated, so the new message was discarded.",
+                )
+
+        return run
 
     @app.patch(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
