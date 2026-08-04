@@ -172,7 +172,7 @@ class BulkUploadResponse(BaseModel):
 
 
 class CreateTaskRunRequest(BaseModel):
-    """Request model for creating a synthetic TaskRun directly (without running a model)."""
+    """Request model for creating a TaskRun directly (without running a model)."""
 
     input: str = Field(description="The input for the task run")
     output: str = Field(description="The output for the task run")
@@ -180,14 +180,25 @@ class CreateTaskRunRequest(BaseModel):
     rating: TaskOutputRating | None = Field(
         default=None, description="Optional rating for the output"
     )
-    model_name: str = Field(
-        description="The name of the model used to generate the data",
+    input_source_type: DataSourceType = Field(
+        default=DataSourceType.synthetic,
+        description="The type of the data source (synthetic, human, etc.)",
     )
-    model_provider: str = Field(
-        description="The provider of the model used to generate the data",
+    model_name: str | None = Field(
+        default=None,
+        description="The name of the model used to generate the data (required for synthetic source)",
     )
-    adapter_name: str = Field(
-        description="The name of the adapter used to generate the data",
+    model_provider: str | None = Field(
+        default=None,
+        description="The provider of the model used to generate the data (required for synthetic source)",
+    )
+    adapter_name: str | None = Field(
+        default=None,
+        description="The name of the adapter used to generate the data (required for synthetic source)",
+    )
+    created_by: str | None = Field(
+        default=None,
+        description="The name of the human who created the data (only allowed for human source)",
     )
 
 
@@ -295,13 +306,20 @@ def connect_run_api(app: FastAPI):
         """Create a TaskRun directly without running a model."""
         task = task_from_id(project_id, task_id)
 
-        data_source = DataSource(
-            type=DataSourceType.synthetic,
-            properties={
+        if request.input_source_type == DataSourceType.human:
+            properties = {"created_by": request.created_by or "human"}
+        else:
+            properties = {
                 "model_name": request.model_name,
                 "model_provider": request.model_provider,
                 "adapter_name": request.adapter_name,
-            },
+            }
+            # Remove None values
+            properties = {k: v for k, v in properties.items() if v is not None}
+
+        data_source = DataSource(
+            type=request.input_source_type,
+            properties=properties,
         )
 
         output = TaskOutput(

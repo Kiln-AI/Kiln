@@ -84,6 +84,11 @@
       recommended: true,
     },
     {
+      id: "manual_entry",
+      name: "Manual Data Entry",
+      description: `Manually type or paste a prompt and response pair to add to the dataset.`,
+    },
+    {
       id: "csv",
       name: "Add CSV",
       description: `Add data from a CSV file.`,
@@ -111,6 +116,10 @@
   function select_data_source(id: string) {
     if (id === "manual") {
       manual_dialog?.show()
+    } else if (id === "manual_entry") {
+      goto(
+        `/dataset/${$page.params.project_id}/${$page.params.task_id}/add_data/manual`,
+      )
     } else if (id === "csv") {
       upload_dataset_dialog?.show()
     } else if (id === "run_task") {
