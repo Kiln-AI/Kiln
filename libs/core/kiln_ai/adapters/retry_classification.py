@@ -9,6 +9,7 @@ the synthetic-user batch runner).
 import litellm
 
 from kiln_ai.adapters.errors import KilnRunError
+from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
 
 
 def unwrap_kiln_run_error(e: BaseException) -> BaseException:
@@ -41,10 +42,9 @@ def is_retryable_error(e: BaseException) -> bool:
     ):
         return True
 
-    # ValueError thrown by Kiln's adapter when structured output doesn't match schema
-    if isinstance(
-        e, ValueError
-    ) and "This task requires a specific output schema" in str(e):
+    # ValueError raised when structured output doesn't match the task's schema;
+    # recognized by the shared prefix the raise sites prepend to the message.
+    if isinstance(e, ValueError) and TASK_OUTPUT_SCHEMA_ERROR_PREFIX in str(e):
         return True
 
     return False

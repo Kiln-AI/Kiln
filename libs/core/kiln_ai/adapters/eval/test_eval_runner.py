@@ -51,6 +51,7 @@ from kiln_ai.datamodel.run_config import (
     MCPToolReference,
 )
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
+from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
 from kiln_ai.datamodel.task_run import Usage
 from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
@@ -875,7 +876,7 @@ async def test_run_job_with_none_trace(
         litellm.BadGatewayError("bad gateway", "provider", "model", None),
         litellm.JSONSchemaValidationError("schema error", "provider", "model", None),
         ValueError(
-            "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema."
+            f"{TASK_OUTPUT_SCHEMA_ERROR_PREFIX} The error from the schema check was: ..."
         ),
     ],
 )

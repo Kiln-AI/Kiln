@@ -13,6 +13,7 @@ from kiln_ai.datamodel.json_schema import (
 )
 from kiln_ai.datamodel.run_config import McpRunConfigProperties
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
 from kiln_ai.run_context import (
     clear_agent_run_id,
     generate_agent_run_id,
@@ -183,7 +184,7 @@ class MCPAdapter(BaseAdapter):
                 validate_schema_with_value_error(
                     parsed_output,
                     self.output_schema,
-                    "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+                    TASK_OUTPUT_SCHEMA_ERROR_PREFIX,
                 )
                 run_output.output = parsed_output
             else:

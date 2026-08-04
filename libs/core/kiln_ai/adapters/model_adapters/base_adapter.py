@@ -53,6 +53,7 @@ from kiln_ai.datamodel.run_config import (
 )
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
 from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX, skill_id_from_tool_id
 
 # Import agent run context for run lifecycle management
@@ -135,14 +136,6 @@ class AdapterConfig:
     requests. This is a cost optimization and does not affect model output.
     """
     automatic_prompt_caching: bool = False
-
-    """
-    When True, thinking instructions from the prompt builder are forwarded
-    into the user message for reasoning models instead of being silently
-    dropped. This is useful for eval runs that need to replicate the exact
-    prompt seen during task execution.
-    """
-    forward_thinking_instructions: bool = False
 
 
 class BaseAdapter(metaclass=ABCMeta):
@@ -292,7 +285,7 @@ class BaseAdapter(metaclass=ABCMeta):
                     validate_schema_with_value_error(
                         parsed_output.output,
                         self.output_schema,
-                        "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+                        TASK_OUTPUT_SCHEMA_ERROR_PREFIX,
                     )
                 else:
                     if not isinstance(parsed_output.output, str):
@@ -490,7 +483,7 @@ class BaseAdapter(metaclass=ABCMeta):
                 validate_schema_with_value_error(
                     parsed_output.output,
                     self.output_schema,
-                    "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+                    TASK_OUTPUT_SCHEMA_ERROR_PREFIX,
                 )
             else:
                 if not isinstance(parsed_output.output, str):
@@ -706,7 +699,6 @@ class BaseAdapter(metaclass=ABCMeta):
                 system_message=system_message,
                 user_input=input,
                 thinking_instructions=cot_prompt,
-                forward_thinking_instructions=self.base_adapter_config.forward_thinking_instructions,
             )
         else:
             # Unstructured output with COT
@@ -716,7 +708,6 @@ class BaseAdapter(metaclass=ABCMeta):
                 system_message=system_message,
                 user_input=input,
                 thinking_instructions=cot_prompt,
-                forward_thinking_instructions=self.base_adapter_config.forward_thinking_instructions,
             )
 
     # create a run and task output

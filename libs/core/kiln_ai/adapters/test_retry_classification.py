@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import litellm
 import pytest
@@ -7,6 +9,8 @@ from kiln_ai.adapters.retry_classification import (
     is_batch_fatal_error,
     is_retryable_error,
 )
+from kiln_ai.datamodel import Task
+from kiln_ai.datamodel.task_output import TaskOutput
 
 
 def _provider_error(cls, message: str = "boom"):
@@ -85,3 +89,24 @@ class TestUnwrapInteraction:
         wrapped = _wrapped(_provider_error(litellm.RateLimitError))
         assert is_retryable_error(wrapped) is True
         assert is_batch_fatal_error(wrapped) is False
+
+
+class TestSchemaMismatchClassification:
+    def test_real_schema_mismatch_raise_site_is_retryable(self):
+        # Trigger an actual production raise site rather than a hand-built
+        # ValueError, so the classifier can't drift from the raised message.
+        task = Task(
+            name="test task",
+            instruction="test instruction",
+            output_json_schema=json.dumps(
+                {
+                    "type": "object",
+                    "properties": {"count": {"type": "integer"}},
+                    "required": ["count"],
+                }
+            ),
+        )
+        output = TaskOutput(output=json.dumps({"count": "not_an_int"}))
+        with pytest.raises(ValueError) as exc_info:
+            output.validate_output_format(task)
+        assert is_retryable_error(exc_info.value) is True
