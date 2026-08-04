@@ -5,6 +5,11 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel import Memory, Project
+from kiln_ai.datamodel.memory import (
+    MAX_CONTENT_LENGTH,
+    MAX_OVERVIEW_LENGTH,
+    MAX_SCOPE_LENGTH,
+)
 
 
 @pytest.fixture
@@ -24,19 +29,19 @@ def make_memory(**overrides) -> Memory:
 
 
 def test_overview_accepts_max_length():
-    m = make_memory(overview="a" * 140)
-    assert len(m.overview) == 140
+    m = make_memory(overview="a" * MAX_OVERVIEW_LENGTH)
+    assert len(m.overview) == MAX_OVERVIEW_LENGTH
 
 
 def test_overview_rejects_over_length():
     with pytest.raises(ValidationError):
-        make_memory(overview="a" * 141)
+        make_memory(overview="a" * (MAX_OVERVIEW_LENGTH + 1))
 
 
 def test_overview_rejects_over_length_only_after_strip():
-    # 140 real chars plus surrounding whitespace should be accepted (stripped first).
-    m = make_memory(overview="  " + "a" * 140 + "  ")
-    assert m.overview == "a" * 140
+    # Max-length real chars plus surrounding whitespace: accepted (stripped first).
+    m = make_memory(overview="  " + "a" * MAX_OVERVIEW_LENGTH + "  ")
+    assert m.overview == "a" * MAX_OVERVIEW_LENGTH
 
 
 @pytest.mark.parametrize("bad", ["line1\nline2", "line1\r\nline2", "a\rb"])
@@ -68,13 +73,13 @@ def test_content_defaults_none():
 
 
 def test_content_accepts_max_length():
-    m = make_memory(content="a" * 2000)
-    assert len(m.content) == 2000
+    m = make_memory(content="a" * MAX_CONTENT_LENGTH)
+    assert len(m.content) == MAX_CONTENT_LENGTH
 
 
 def test_content_rejects_over_length():
     with pytest.raises(ValidationError):
-        make_memory(content="a" * 2001)
+        make_memory(content="a" * (MAX_CONTENT_LENGTH + 1))
 
 
 @pytest.mark.parametrize("empty", ["", "   ", "\n"])
@@ -122,13 +127,13 @@ def test_scope_required():
 
 
 def test_scope_accepts_max_length():
-    m = make_memory(scope="s" * 255)
-    assert len(m.scope) == 255
+    m = make_memory(scope="s" * MAX_SCOPE_LENGTH)
+    assert len(m.scope) == MAX_SCOPE_LENGTH
 
 
 def test_scope_rejects_over_length():
     with pytest.raises(ValidationError):
-        make_memory(scope="s" * 256)
+        make_memory(scope="s" * (MAX_SCOPE_LENGTH + 1))
 
 
 @pytest.mark.parametrize("bad", ["a\nb", "a\r\nb"])
@@ -204,16 +209,16 @@ def test_load_leniency_boundary_values(project: Project):
     # Max-length values that once saved must always load without error.
     memory = Memory(
         parent=project,
-        overview="o" * 140,
-        scope="s" * 255,
-        content="c" * 2000,
+        overview="o" * MAX_OVERVIEW_LENGTH,
+        scope="s" * MAX_SCOPE_LENGTH,
+        content="c" * MAX_CONTENT_LENGTH,
     )
     memory.save_to_file()
 
     loaded = Memory.load_from_file(memory.path)
-    assert len(loaded.overview) == 140
-    assert len(loaded.scope) == 255
-    assert len(loaded.content) == 2000
+    assert len(loaded.overview) == MAX_OVERVIEW_LENGTH
+    assert len(loaded.scope) == MAX_SCOPE_LENGTH
+    assert len(loaded.content) == MAX_CONTENT_LENGTH
 
 
 def test_on_disk_shape(project: Project):
