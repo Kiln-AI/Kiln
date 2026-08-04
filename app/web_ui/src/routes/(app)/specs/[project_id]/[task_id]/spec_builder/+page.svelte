@@ -98,6 +98,9 @@
 
   // Form state (shared across all states)
   let spec_type: SpecType = "desired_behaviour"
+  // Judge-only mode: no template was picked (programmatic checks route here
+  // with just a judge param); the eval is created spec-less and template-less.
+  let judge_only = false
   let name = ""
   let property_values: Record<string, string | null> = {}
   let initial_property_values: Record<string, string | null> = {}
@@ -261,9 +264,22 @@
         task,
       )
 
-      // Get spec type from URL params
+      // Get spec type from URL params. Without one, a valid non-LLM judge
+      // param enters judge-only mode: a template-less eval built from just a
+      // name and the judge's config (the programmatic checks on the template
+      // picker route here). Anything else restarts at the evals page.
       const spec_type_param = $page.url.searchParams.get("type")
       if (!spec_type_param) {
+        const judge_param = $page.url.searchParams.get("judge")
+        const judge = ALL_V2_EVAL_TYPES.includes(judge_param as V2EvalType)
+          ? (judge_param as V2EvalType)
+          : null
+        if (judge !== null && judge !== "llm_judge") {
+          judge_only = true
+          judge_type = judge
+          workflow = "manual"
+          return
+        }
         complete = true
         goto(`/specs/${project_id}/${task_id}`)
         return
@@ -274,19 +290,11 @@
 
       workflow = parseSpecWorkflow($page.url.searchParams.get("workflow"))
 
-      // Templates whose judge is implied always use it, even if the URL says
-      // otherwise: a hand-edited judge param must not turn a rubric-only
+      // Every template's judge is implied; the URL's judge param is ignored
+      // for templated flows so a hand-edited param can't turn a rubric-only
       // template into a spec-less deterministic eval (or bypass the pinned
       // tool call judge).
-      const implied_judge = implied_judge_for_spec_type(spec_type)
-      if (implied_judge !== null) {
-        judge_type = implied_judge
-      } else {
-        const judge_param = $page.url.searchParams.get("judge")
-        judge_type = ALL_V2_EVAL_TYPES.includes(judge_param as V2EvalType)
-          ? (judge_param as V2EvalType)
-          : null
-      }
+      judge_type = implied_judge_for_spec_type(spec_type)
 
       // Initialize property values from field configs. Fields the user never sees
       // (because a non-LLM judge is scoring) still save their template default, so
@@ -571,7 +579,7 @@
 
       const evaluator = await createEvaluator(project_id, task_id, {
         name,
-        template: eval_template_for_spec_type(spec_type),
+        template: judge_only ? null : eval_template_for_spec_type(spec_type),
         evaluation_data_type: evaluate_full_trace
           ? "full_trace"
           : "final_answer",
@@ -623,7 +631,7 @@
       }
 
       posthog.capture("create_eval_with_judge", {
-        spec_type: spec_type,
+        spec_type: judge_only ? undefined : spec_type,
         judge_type: judge_type ?? undefined,
       })
 
@@ -1002,28 +1010,15 @@
   $: page_subtitle = getPageSubtitle(current_state)
   $: page_class = getPageClass(current_state)
 
-  // Templates whose judge is implied skip the judge picker, so it isn't a step
-  // the user can navigate back to.
-  $: came_via_judge_picker =
-    judge_type !== null && !implied_judge_for_spec_type(spec_type)
-
   $: breadcrumbs = [
     {
       label: "Evals",
       href: `/specs/${project_id}/${task_id}`,
     },
     {
-      label: "Eval Templates",
-      href: `/specs/${project_id}/${task_id}/select_template?workflow=${workflow}`,
+      label: "Eval Types",
+      href: `/specs/${project_id}/${task_id}/select_template`,
     },
-    ...(came_via_judge_picker
-      ? [
-          {
-            label: "Judge Type",
-            href: `/specs/${project_id}/${task_id}/select_judge?type=${spec_type}&workflow=${workflow}`,
-          },
-        ]
-      : []),
   ]
 
   // Warn before unload when there are unsaved changes

@@ -23,6 +23,10 @@
   import PropertyList from "$lib/ui/property_list.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
   import { getDetailedModelNameFromParts } from "$lib/utils/run_config_formatters"
+  import {
+    eval_type_display,
+    judge_type_from_config,
+  } from "$lib/utils/eval_types/eval_type_display"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { tagFromFilterId, linkFromFilterId } from "../../spec_utils"
 
@@ -229,6 +233,7 @@
 
   function get_eval_properties(
     evaluator: Eval | null,
+    spec: Spec | null,
     eval_progress: EvalProgress | null,
     modelInfo: ProviderModels | null,
   ): UiProperty[] {
@@ -247,13 +252,15 @@
         value: evaluator.description,
       })
     }
-    if (evaluator.template) {
-      properties.push({
-        name: "Template",
-        value: evaluator.template,
-        tooltip: "The template used to create this eval.",
-      })
-    }
+    properties.push({
+      name: "Type",
+      value: eval_type_display(
+        spec,
+        evaluator,
+        judge_type_from_config(eval_progress?.current_eval_method),
+      ),
+      tooltip: "The judge type scoring this eval, and what it checks.",
+    })
     if (evaluator.evaluation_data_type === "full_trace") {
       properties.push({
         name: "Conversation History",
@@ -447,9 +454,13 @@
       goals.push(output.name + " (" + output.type + ")")
     }
 
-    if (has_default_eval_config) {
+    if (has_default_eval_config && progress.dataset_size > 0) {
       // Not everything is technically setup but the user bypassed recommended steps
       // And selected a default judge. So we can just set to the final step.
+      // We don't block on the recommended dataset minimums here, but an empty
+      // eval set means there is nothing to run, so fall through to the
+      // eval-data step when the dataset is empty (common for non-LLM judges,
+      // which are set as the default judge at creation time).
       current_step = 5
       current_step_id = "compare_run_configs"
       return
@@ -825,6 +836,7 @@
           <PropertyList
             properties={get_eval_properties(
               evaluator,
+              spec,
               eval_progress,
               $model_info,
             )}

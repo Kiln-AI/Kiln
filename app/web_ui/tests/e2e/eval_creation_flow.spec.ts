@@ -2,15 +2,16 @@ import { test, expect } from "./fixtures"
 
 /**
  * The eval creation flow:
- *   workflow gate -> template -> judge picker -> create form
+ *   type picker (LLM Judges / Programmatic Checks) -> [Pro-vs-Manual for
+ *   copilot-eligible templates] -> create form
  *
- * Only the desired behaviour and issue templates offer a judge choice; every
- * other template's judge is implied (LLM judge, except tool call) and skips
- * the picker. A non-LLM judge creates an eval with no spec: the judge never
- * reads a written rubric, so no spec fields are asked for.
+ * Every template's judge is implied (LLM judge, except tool call). The
+ * programmatic checks are picked directly from the type page and create a
+ * spec-less, template-less eval: the judge never reads a written rubric, so
+ * no spec fields are asked for.
  */
 
-test("manual workflow: template -> judge picker -> non-LLM judge creates a spec-less eval", async ({
+test("programmatic check: type picker -> judge-only builder creates a template-less eval", async ({
   page,
   apiRequest,
   registeredUser,
@@ -19,28 +20,16 @@ test("manual workflow: template -> judge picker -> non-LLM judge creates a spec-
   void registeredUser
   const { project, task } = seededProjectWithTask
 
-  // Create Eval always lands on the workflow gate, even without Kiln Pro
+  // Create Eval lands straight on the type picker with both sections
   await page.goto(`/specs/${project.id}/${task.id}`)
   await page.getByRole("button", { name: "Create Eval" }).first().click()
-  await expect(page).toHaveURL(/select_workflow/)
+  await expect(page).toHaveURL(/select_template/)
+  await expect(page.getByText("LLM Judges", { exact: true })).toBeVisible()
   await expect(
-    page.getByRole("button", { name: "Create Manually", exact: true }),
-  ).toBeVisible()
-  await expect(
-    page.getByRole("button", { name: "Use Kiln Pro", exact: true }),
+    page.getByText("Programmatic Checks", { exact: true }),
   ).toBeVisible()
 
-  await page
-    .getByRole("button", { name: "Create Manually", exact: true })
-    .click()
-  await expect(page).toHaveURL(/select_template\?workflow=manual/)
-
-  // The issue template is one of the two that shows the judge picker
-  await page.getByText("Issue", { exact: true }).first().click()
-  await expect(page).toHaveURL(/select_judge\?type=issue&workflow=manual/)
-  await expect(page.getByText("LLM as Judge", { exact: true })).toBeVisible()
-
-  // A non-LLM judge: name + the judge's own config, and nothing else
+  // A programmatic check: name + the judge's own config, and nothing else
   await page.getByText("Pattern Match").first().click()
   await expect(page).toHaveURL(/spec_builder\?.*judge=pattern_match/)
   await expect(
@@ -49,10 +38,9 @@ test("manual workflow: template -> judge picker -> non-LLM judge creates a spec-
   await expect(page.getByLabel("Eval Name")).toBeVisible()
   await expect(page.getByRole("button", { name: "Save Eval" })).toBeVisible()
 
-  // No spec is created for this flow, so no spec fields are asked for, and the
-  // Kiln Pro path is absent because the user chose Manual.
+  // No spec is created for this flow, so no spec fields are asked for, and
+  // the Kiln Pro path is absent (copilot can't help a deterministic judge).
   await expect(page.getByText("Issue Description")).toHaveCount(0)
-  await expect(page.getByText("Issue Examples")).toHaveCount(0)
   await expect(page.getByRole("button", { name: /Kiln Pro/ })).toHaveCount(0)
 
   await page.getByLabel("Eval Name").fill("No Hate Regex")
@@ -71,13 +59,14 @@ test("manual workflow: template -> judge picker -> non-LLM judge creates a spec-
   ).json()
   expect(specs.length).toBe(0)
 
-  // The eval carries the template, generated filters, and priority/status
+  // The eval is template-less (the user never claimed a template) but still
+  // carries generated filters and priority/status.
   const evals = await (
     await apiRequest.get(`/api/projects/${project.id}/tasks/${task.id}/evals`)
   ).json()
   expect(evals.length).toBe(1)
   const evaluator = evals[0]
-  expect(evaluator.template).toBe("kiln_issue")
+  expect(evaluator.template).toBeNull()
   expect(evaluator.priority).toBe(1)
   expect(evaluator.status).toBe("active")
   expect(evaluator.eval_set_filter_id).toBe("tag::eval_no_hate_regex")
@@ -95,17 +84,27 @@ test("manual workflow: template -> judge picker -> non-LLM judge creates a spec-
   expect(configs[0].properties.pattern).toBe("\\bhate\\b")
   expect(evaluator.current_config_id).toBe(configs[0].id)
 
-  // The list page shows the spec-less eval with an editable priority/status
-  // and "None" in the template column (never "Legacy").
+  // The default judge types endpoint reports the judge for the list page
+  const judge_types = await (
+    await apiRequest.get(
+      `/api/projects/${project.id}/tasks/${task.id}/eval_default_judge_types`,
+    )
+  ).json()
+  expect(judge_types[evaluator.id]).toBe("pattern_match")
+
+  // The list page shows the eval with an editable priority/status and the
+  // judge's label in the Type column (never "None" or "Legacy").
   await page.goto(`/specs/${project.id}/${task.id}`)
   const row = page.getByRole("row", { name: /No Hate Regex/ })
-  await expect(row.getByText("None", { exact: true }).first()).toBeVisible()
+  await expect(
+    row.getByText("Pattern Match", { exact: true }).first(),
+  ).toBeVisible()
   await expect(row.getByLabel("Priority")).toHaveText(/P1/)
   await expect(row.getByLabel("Status")).toHaveText(/Active/)
   await expect(page.getByText("Legacy")).toHaveCount(0)
 })
 
-test("rubric templates skip the judge picker and go to the LLM judge spec form", async ({
+test("rubric templates route through the Pro-vs-Manual screen to the spec form", async ({
   page,
   registeredUser,
   seededProjectWithTask,
@@ -113,21 +112,25 @@ test("rubric templates skip the judge picker and go to the LLM judge spec form",
   void registeredUser
   const { project, task } = seededProjectWithTask
 
-  await page.goto(
-    `/specs/${project.id}/${task.id}/select_template?workflow=manual`,
-  )
+  await page.goto(`/specs/${project.id}/${task.id}/select_template`)
   await page.getByText("Toxicity", { exact: true }).first().click()
 
-  // Straight to the full template form: only issue and desired behaviour
-  // templates offer a judge choice; the rest are LLM judged.
+  // Copilot-eligible template: the Pro-vs-Manual screen comes after the
+  // template choice, not before it.
+  await expect(page).toHaveURL(/select_workflow\?.*type=toxicity/)
+  await page
+    .getByRole("button", { name: "Create Manually", exact: true })
+    .click()
+
   await expect(page).toHaveURL(/spec_builder\?.*judge=llm_judge/)
   await expect(page).toHaveURL(/type=toxicity/)
+  await expect(page).toHaveURL(/workflow=manual/)
   await expect(
     page.getByText("Toxicity Examples", { exact: true }),
   ).toBeVisible()
 })
 
-test("tool call template skips the tool dialog and the judge picker", async ({
+test("tool call check skips the workflow screen and the tool dialog", async ({
   page,
   registeredUser,
   seededProjectWithTask,
@@ -135,13 +138,12 @@ test("tool call template skips the tool dialog and the judge picker", async ({
   void registeredUser
   const { project, task } = seededProjectWithTask
 
-  await page.goto(
-    `/specs/${project.id}/${task.id}/select_template?workflow=manual`,
-  )
-  await page.getByText("Appropriate Tool Use", { exact: true }).first().click()
+  await page.goto(`/specs/${project.id}/${task.id}/select_template`)
+  await page.getByText("Tool Call Check", { exact: true }).first().click()
 
-  // Straight to the builder with the tool call judge prefilled: the judge carries
-  // its own expected-tool list, so there's nothing to pick up front.
+  // Straight to the builder with the tool call judge prefilled: the judge
+  // carries its own expected-tool list, and Kiln Pro doesn't support tool
+  // call specs so the workflow screen is skipped.
   await expect(page).toHaveURL(/spec_builder\?.*judge=tool_call_check/)
   await expect(page.getByText("Tool for this Eval")).toHaveCount(0)
   await expect(
@@ -159,7 +161,9 @@ test("kiln pro without an account routes to the connect page", async ({
   void registeredUser
   const { project, task } = seededProjectWithTask
 
-  await page.goto(`/specs/${project.id}/${task.id}/select_workflow`)
+  await page.goto(
+    `/specs/${project.id}/${task.id}/select_workflow?type=toxicity&judge=llm_judge`,
+  )
   await page.getByRole("button", { name: "Use Kiln Pro", exact: true }).click()
   await expect(page).toHaveURL(/\/specs\/pro_auth/)
 
@@ -170,11 +174,15 @@ test("kiln pro without an account routes to the connect page", async ({
   await expect(page.getByRole("button", { name: "Create Eval" })).toBeVisible()
   await expect(page.getByRole("button", { name: /Kiln Pro/ })).toHaveCount(0)
 
-  // The judge picker with no template bounces back to the template list
-  await page.goto(
-    `/specs/${project.id}/${task.id}/select_judge?workflow=manual`,
-  )
+  // The workflow screen with no template restarts at the type picker
+  await page.goto(`/specs/${project.id}/${task.id}/select_workflow`)
   await expect(page).toHaveURL(/select_template/)
+
+  // An unsupported combo skips straight to the manual builder
+  await page.goto(
+    `/specs/${project.id}/${task.id}/select_workflow?type=reference_answer_accuracy&judge=llm_judge`,
+  )
+  await expect(page).toHaveURL(/spec_builder\?.*workflow=manual/)
 })
 
 /**
@@ -200,15 +208,13 @@ test("leaving an untouched create form does not warn about unsaved changes", asy
   const { project, task } = seededProjectWithTask
   const dialogs = trackDialogs(page)
 
-  await page.goto(
-    `/specs/${project.id}/${task.id}/select_judge?type=issue&workflow=manual`,
-  )
+  await page.goto(`/specs/${project.id}/${task.id}/select_template`)
   await page.getByText("Pattern Match").first().click()
   await expect(page.getByRole("button", { name: "Save Eval" })).toBeVisible()
 
   await page.goBack()
   await page.waitForTimeout(750)
-  await expect(page).toHaveURL(/select_judge/)
+  await expect(page).toHaveURL(/select_template/)
   expect(dialogs, "must not warn when nothing was touched").toEqual([])
 })
 
@@ -221,10 +227,11 @@ test("leaving after editing the judge warns about unsaved changes", async ({
   const { project, task } = seededProjectWithTask
   const dialogs = trackDialogs(page)
 
-  await page.goto(
-    `/specs/${project.id}/${task.id}/select_judge?type=issue&workflow=manual`,
-  )
+  // Navigate in-app so goBack is an SPA navigation: the guard's confirm()
+  // carries a message there, unlike the browser's native beforeunload.
+  await page.goto(`/specs/${project.id}/${task.id}/select_template`)
   await page.getByText("Pattern Match").first().click()
+  await expect(page.getByRole("button", { name: "Save Eval" })).toBeVisible()
   await page.locator("#pattern_match_pattern").fill("^ok$")
 
   await page.goBack()
@@ -244,9 +251,8 @@ test("code judge: untouched does not warn, edited code does", async ({
 
   // The code editor doesn't emit bubbling input events, so it's tracked by value.
   await page.goto(
-    `/specs/${project.id}/${task.id}/select_judge?type=issue&workflow=manual`,
+    `/specs/${project.id}/${task.id}/spec_builder?judge=code_eval&workflow=manual`,
   )
-  await page.getByText("Code", { exact: true }).first().click()
   await expect(page.getByRole("button", { name: "Save Eval" })).toBeVisible()
   await page.goBack()
   await page.waitForTimeout(750)

@@ -723,7 +723,7 @@ describe("SynthDataGuidanceDataModel", () => {
 
       const options = get(model.select_options)
       expect(options).toHaveLength(3)
-      expect(options[0].label).toBe("Eval Template")
+      expect(options[0].label).toBe("Eval Type")
       expect(options[0].options[0].value).toBe("issue_eval_template")
       expect(options[1].label).toBe("Custom Guidance")
       expect(options[2].label).toBe("Built-in Templates")

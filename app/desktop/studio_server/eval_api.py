@@ -287,6 +287,10 @@ class LlmJudgeBuilderInput(BaseModel):
         default=None,
         description="Override the judge system prompt. Defaults to 'You are an evaluator.'",
     )
+    judge_instructions: list[str] | None = Field(
+        default=None,
+        description="User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.",
+    )
 
 
 class DefaultLlmJudgePromptResponse(BaseModel):
@@ -926,6 +930,44 @@ def connect_evals_api(app: FastAPI):
         return evals
 
     @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_default_judge_types",
+        summary="Get Default Judge Types",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_eval_default_judge_types(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> dict[str, str]:
+        """Map of eval ID to its default judge's type discriminator.
+
+        V2 configs report their properties type (e.g. "code_eval",
+        "llm_judge"); legacy configs report their config_type (e.g. "g_eval").
+        Evals with no default judge are omitted. Used by the evals list to
+        display each eval's type without fetching every config.
+        """
+        task = task_from_id(project_id, task_id)
+        result: dict[str, str] = {}
+        for eval in task.evals(readonly=True):
+            if not eval.id or not eval.current_config_id:
+                continue
+            for config in eval.configs(readonly=True):
+                if config.id != eval.current_config_id:
+                    continue
+                properties = config.properties
+                if properties is None or isinstance(properties, dict):
+                    result[eval.id] = config.config_type.value
+                else:
+                    result[eval.id] = properties.type.value
+                break
+        return result
+
+    @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
         summary="List Eval Configs",
         tags=["Evals"],
@@ -1177,6 +1219,7 @@ def connect_evals_api(app: FastAPI):
                 g_eval=request.g_eval,
                 judge_prompt=request.judge_prompt,
                 system_prompt=request.system_prompt,
+                judge_instructions=request.judge_instructions,
             )
             properties.reference_keys = list(request.reference_keys)
             eval_config = EvalConfig(
@@ -1244,6 +1287,7 @@ def connect_evals_api(app: FastAPI):
                     g_eval=builder.g_eval,
                     judge_prompt=builder.judge_prompt,
                     system_prompt=builder.system_prompt,
+                    judge_instructions=builder.judge_instructions,
                 )
             elif request.properties is not None:
                 properties = request.properties

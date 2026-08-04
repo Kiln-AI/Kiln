@@ -4,6 +4,9 @@ import {
   implied_judge_for_spec_type,
   eval_template_for_spec_type,
   next_page_after_template,
+  next_page_after_judge,
+  copilot_supported,
+  judge_only_builder_url,
   spec_builder_url,
   buildSpecDefinition,
 } from "./spec_utils"
@@ -75,17 +78,12 @@ describe("implied_judge_for_spec_type", () => {
     )
   })
 
-  it("only leaves the judge open for desired behaviour and issue", () => {
-    const open = ALL_SPEC_TYPES.filter(
-      (spec_type) => implied_judge_for_spec_type(spec_type) === null,
-    )
-    expect(open.sort()).toEqual(["desired_behaviour", "issue"])
-  })
-
   it("pins every other template to an LLM judge", () => {
     const llm_judged = ALL_SPEC_TYPES.filter(
       (spec_type) => implied_judge_for_spec_type(spec_type) === "llm_judge",
     )
+    expect(llm_judged).toContain("desired_behaviour")
+    expect(llm_judged).toContain("issue")
     expect(llm_judged).toContain("reference_answer_accuracy")
     expect(llm_judged).toContain("toxicity")
     expect(llm_judged).not.toContain("appropriate_tool_use")
@@ -113,43 +111,83 @@ describe("eval_template_for_spec_type", () => {
 })
 
 describe("next_page_after_template", () => {
-  it("sends open templates to the judge picker, carrying the workflow", () => {
-    expect(next_page_after_template("p1", "t1", "issue", "pro")).toBe(
-      "/specs/p1/t1/select_judge?type=issue&workflow=pro",
-    )
+  it("sends the open behaviour templates to the workflow screen (LLM implied)", () => {
+    const url = next_page_after_template("p1", "t1", "issue")
+    expect(url).toContain("/specs/p1/t1/select_workflow?")
+    expect(url).toContain("type=issue")
+    expect(url).toContain("judge=llm_judge")
   })
 
-  it("skips the judge picker for rubric templates, going to the LLM judge form", () => {
-    const url = next_page_after_template("p1", "t1", "toxicity", "manual")
-    expect(url).toContain("/specs/p1/t1/spec_builder?")
+  it("sends rubric templates to the Pro-vs-Manual workflow screen", () => {
+    const url = next_page_after_template("p1", "t1", "toxicity")
+    expect(url).toContain("/specs/p1/t1/select_workflow?")
     expect(url).toContain("type=toxicity")
     expect(url).toContain("judge=llm_judge")
-    expect(url).toContain("workflow=manual")
   })
 
-  it("skips the judge picker for tool call, prefilling the tool call judge", () => {
-    const url = next_page_after_template(
-      "p1",
-      "t1",
-      "appropriate_tool_use",
-      "manual",
-    )
+  it("skips both pickers for tool call, prefilling the tool call judge", () => {
+    const url = next_page_after_template("p1", "t1", "appropriate_tool_use")
     expect(url).toContain("/specs/p1/t1/spec_builder?")
     expect(url).toContain("type=appropriate_tool_use")
     expect(url).toContain("judge=tool_call_check")
     expect(url).toContain("workflow=manual")
   })
 
-  it("skips the judge picker for reference answer, going to the LLM judge form", () => {
+  // Kiln Pro doesn't support RAG specs, so the workflow screen is skipped.
+  it("skips the workflow screen for reference answer, going manual", () => {
     const url = next_page_after_template(
       "p1",
       "t1",
       "reference_answer_accuracy",
-      "pro",
     )
     expect(url).toContain("/specs/p1/t1/spec_builder?")
     expect(url).toContain("judge=llm_judge")
-    expect(url).toContain("workflow=pro")
+    expect(url).toContain("workflow=manual")
+  })
+})
+
+describe("next_page_after_judge", () => {
+  it("sends copilot-eligible combos to the workflow screen", () => {
+    const url = next_page_after_judge("p1", "t1", "issue", "llm_judge")
+    expect(url).toContain("/specs/p1/t1/select_workflow?")
+    expect(url).toContain("type=issue")
+    expect(url).toContain("judge=llm_judge")
+  })
+
+  it("sends non-LLM judges straight to the manual builder", () => {
+    const url = next_page_after_judge("p1", "t1", "issue", "code_eval")
+    expect(url).toContain("/specs/p1/t1/spec_builder?")
+    expect(url).toContain("judge=code_eval")
+    expect(url).toContain("workflow=manual")
+  })
+})
+
+describe("copilot_supported", () => {
+  it("requires an LLM judge", () => {
+    expect(copilot_supported("issue", "llm_judge")).toBe(true)
+    expect(copilot_supported("issue", "code_eval")).toBe(false)
+    expect(copilot_supported("issue", "exact_match")).toBe(false)
+  })
+
+  it("excludes tool call and RAG spec types", () => {
+    expect(copilot_supported("appropriate_tool_use", "llm_judge")).toBe(false)
+    expect(copilot_supported("reference_answer_accuracy", "llm_judge")).toBe(
+      false,
+    )
+    expect(copilot_supported("toxicity", "llm_judge")).toBe(true)
+  })
+})
+
+describe("judge_only_builder_url", () => {
+  it("routes to the spec builder with judge and manual workflow, no type", () => {
+    const url = new URL(
+      judge_only_builder_url("p1", "t1", "code_eval"),
+      "http://localhost",
+    )
+    expect(url.pathname).toBe("/specs/p1/t1/spec_builder")
+    expect(url.searchParams.get("judge")).toBe("code_eval")
+    expect(url.searchParams.get("workflow")).toBe("manual")
+    expect(url.searchParams.get("type")).toBeNull()
   })
 })
 

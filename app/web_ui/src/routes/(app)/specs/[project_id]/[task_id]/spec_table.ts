@@ -1,4 +1,5 @@
 import type { Eval, Priority, Spec, SpecStatus } from "$lib/types"
+import { eval_type_display } from "$lib/utils/eval_types/eval_type_display"
 
 /**
  * Row computation for the evals list page.
@@ -14,10 +15,32 @@ export type TableRow =
 
 export type SortableColumn =
   | "name"
-  | "template"
+  | "type"
   | "priority"
   | "status"
   | "created_at"
+
+/**
+ * The type display for a table row: judge label for programmatic evals,
+ * "LLM (Toxicity)"-style for LLM-judged ones. judge_types maps eval ID to the
+ * default judge's type discriminator (from the eval_default_judge_types
+ * endpoint).
+ */
+export function row_type_display(
+  row: TableRow,
+  by_id: Map<string, Eval>,
+  judge_types: Map<string, string>,
+): string {
+  if (row.type === "spec") {
+    const spec = row.data
+    const spec_eval = spec.eval_id ? by_id.get(spec.eval_id) : null
+    const judge_type = spec.eval_id ? judge_types.get(spec.eval_id) : null
+    return eval_type_display(spec, spec_eval, judge_type)
+  }
+  const eval_data = row.data
+  const judge_type = eval_data.id ? judge_types.get(eval_data.id) : null
+  return eval_type_display(null, eval_data, judge_type)
+}
 
 /**
  * Priority/status live on the eval; the server resolves legacy spec-backed
@@ -73,6 +96,7 @@ function sortFunction(
   a: TableRow,
   b: TableRow,
   by_id: Map<string, Eval>,
+  judge_types: Map<string, string>,
   sortColumn: SortableColumn,
   sortDirection: "asc" | "desc",
 ) {
@@ -89,9 +113,9 @@ function sortFunction(
       aValue = (aData?.name || aEval?.name || "").toLowerCase()
       bValue = (bData?.name || bEval?.name || "").toLowerCase()
       break
-    case "template":
-      aValue = aData?.properties.spec_type || (aEval ? "none" : "")
-      bValue = bData?.properties.spec_type || (bEval ? "none" : "")
+    case "type":
+      aValue = row_type_display(a, by_id, judge_types).toLowerCase()
+      bValue = row_type_display(b, by_id, judge_types).toLowerCase()
       break
     case "priority":
       // Priority is flipped since P0 is the highest priority
@@ -128,6 +152,7 @@ export function compute_table(
   specs: Spec[] | null,
   evals: Eval[] | null,
   by_id: Map<string, Eval>,
+  judge_types: Map<string, string>,
   show_archived: boolean,
   filter_tags: string[],
   sortColumn: SortableColumn,
@@ -183,7 +208,7 @@ export function compute_table(
 
   const all_rows: TableRow[] = [...spec_rows, ...legacy_eval_rows]
   const rows = [...all_rows].sort((a, b) =>
-    sortFunction(a, b, by_id, sortColumn, sortDirection),
+    sortFunction(a, b, by_id, judge_types, sortColumn, sortDirection),
   )
 
   return { filtered: all_specs_to_show, rows }

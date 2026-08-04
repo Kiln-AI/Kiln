@@ -4,33 +4,62 @@
   import { onMount } from "svelte"
   import AppPage from "../../../../app_page.svelte"
   import { load_task } from "$lib/stores"
-  import { checkDefaultRunConfigHasTools } from "../spec_utils"
+  import {
+    checkDefaultRunConfigHasTools,
+    copilot_supported,
+    spec_builder_url,
+  } from "../spec_utils"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
+  import type { SpecType } from "$lib/types"
+  import type { V2EvalType } from "$lib/utils/eval_types/registry"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: spec_type = $page.url.searchParams.get("type") as SpecType | null
+  $: judge = $page.url.searchParams.get("judge") as V2EvalType | null
   $: agentInfo.set({
     name: "Select Eval Workflow",
     description: `Select an eval workflow as part of the eval creation process for project ID ${project_id}, task ID ${task_id}. Choose between guided and advanced eval creation.`,
   })
 
   let loading = true
-  let default_run_config_has_tools = false
   let connecting_pro = false
   let error: KilnError | null = null
 
+  // This screen sits between the template/judge pickers and the spec builder,
+  // and only renders when Kiln Pro could actually assist. Landing here without
+  // a template (stale bookmark, or the pre-reorder entry URL) restarts the
+  // flow; landing with an unsupported combo — including tasks whose default
+  // run config has tools — skips straight to the manual builder.
+  // replaceState keeps the skipped screen out of back-button history.
   onMount(async () => {
+    if (!spec_type || !judge) {
+      goto(`/specs/${project_id}/${task_id}/select_template`, {
+        replaceState: true,
+      })
+      return
+    }
+    if (!copilot_supported(spec_type, judge)) {
+      goto(spec_builder_url(project_id, task_id, spec_type, "manual", judge), {
+        replaceState: true,
+      })
+      return
+    }
     try {
       const task = await load_task(project_id, task_id)
       if (!task) {
         throw new Error("Failed to load task")
       }
-      default_run_config_has_tools = await checkDefaultRunConfigHasTools(
-        project_id,
-        task,
-      )
+      const has_tools = await checkDefaultRunConfigHasTools(project_id, task)
+      if (has_tools) {
+        goto(
+          spec_builder_url(project_id, task_id, spec_type, "manual", judge),
+          { replaceState: true },
+        )
+        return
+      }
     } catch (e) {
       error = createKilnError(e)
     } finally {
@@ -38,22 +67,25 @@
     }
   })
 
-  function proceed_to_select_template() {
-    goto(`/specs/${project_id}/${task_id}/select_template?workflow=manual`)
+  function proceed_manually() {
+    if (!spec_type || !judge) return
+    goto(spec_builder_url(project_id, task_id, spec_type, "manual", judge))
   }
 
   // Kiln Pro needs an account. If one is already connected, skip the connect
-  // page entirely; otherwise send them through it and it returns here's next
-  // step (the template picker) once they're connected.
+  // page entirely; otherwise send them through it and it returns to this
+  // flow's next step (the spec builder in pro mode) once they're connected.
   async function proceed_with_kiln_pro() {
+    if (!spec_type || !judge) return
     error = null
     connecting_pro = true
     try {
       const connected = await checkKilnCopilotAvailable()
       if (connected) {
-        goto(`/specs/${project_id}/${task_id}/select_template?workflow=pro`)
+        goto(spec_builder_url(project_id, task_id, spec_type, "pro", judge))
       } else {
-        goto(`/specs/pro_auth`)
+        const params = new URLSearchParams({ type: spec_type, judge })
+        goto(`/specs/pro_auth?${params.toString()}`)
       }
     } catch (e) {
       error = createKilnError(e)
@@ -72,6 +104,10 @@
       {
         label: "Evals",
         href: `/specs/${project_id}/${task_id}`,
+      },
+      {
+        label: "Eval Types",
+        href: `/specs/${project_id}/${task_id}/select_template`,
       },
     ]}
   >
@@ -158,31 +194,22 @@
                   <button
                     class="btn btn-outline btn-sm whitespace-nowrap"
                     disabled={connecting_pro}
-                    on:click={proceed_to_select_template}
+                    on:click={proceed_manually}
                   >
                     Create Manually
                   </button>
                 </td>
                 <td class="text-center pt-4">
-                  <div
-                    class="tooltip"
-                    data-tip={default_run_config_has_tools
-                      ? "Tool calling is not yet supported in Kiln Pro. Please create the eval manually for now."
-                      : undefined}
+                  <button
+                    class="btn btn-primary btn-sm whitespace-nowrap"
+                    disabled={loading || connecting_pro}
+                    on:click={proceed_with_kiln_pro}
                   >
-                    <button
-                      class="btn btn-primary btn-sm whitespace-nowrap"
-                      disabled={loading ||
-                        connecting_pro ||
-                        default_run_config_has_tools}
-                      on:click={proceed_with_kiln_pro}
-                    >
-                      {#if connecting_pro}
-                        <span class="loading loading-spinner loading-xs"></span>
-                      {/if}
-                      Use Kiln Pro
-                    </button>
-                  </div>
+                    {#if connecting_pro}
+                      <span class="loading loading-spinner loading-xs"></span>
+                    {/if}
+                    Use Kiln Pro
+                  </button>
                 </td>
               </tr>
             </tbody>

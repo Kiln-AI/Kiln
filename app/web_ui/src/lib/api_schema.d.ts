@@ -1877,6 +1877,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_default_judge_types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Default Judge Types
+         * @description Map of eval ID to its default judge's type discriminator.
+         *
+         *     V2 configs report their properties type (e.g. "code_eval",
+         *     "llm_judge"); legacy configs report their config_type (e.g. "g_eval").
+         *     Evals with no default judge are omitted. Used by the evals list to
+         *     display each eval's type without fetching every config.
+         */
+        get: operations["get_eval_default_judge_types_api_projects__project_id__tasks__task_id__eval_default_judge_types_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs": {
         parameters: {
             query?: never;
@@ -5025,6 +5050,11 @@ export interface components {
              */
             system_prompt?: string | null;
             /**
+             * Judge Instructions
+             * @description User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.
+             */
+            judge_instructions?: string[] | null;
+            /**
              * Name
              * @description The name of the eval config.
              */
@@ -8052,6 +8082,11 @@ export interface components {
              * @description Override the judge system prompt. Defaults to 'You are an evaluator.'
              */
             system_prompt?: string | null;
+            /**
+             * Judge Instructions
+             * @description User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.
+             */
+            judge_instructions?: string[] | null;
         };
         /** LlmJudgeProperties */
         LlmJudgeProperties: {
@@ -8080,6 +8115,8 @@ export interface components {
              * @default false
              */
             g_eval: boolean;
+            /** Judge Instructions */
+            judge_instructions?: string[] | null;
         };
         /** LocalServerProperties */
         LocalServerProperties: {
@@ -16291,6 +16328,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Eval"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_eval_default_judge_types_api_projects__project_id__tasks__task_id__eval_default_judge_types_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
             /** @description Validation Error */

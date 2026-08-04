@@ -4057,6 +4057,7 @@ class TestTestV2Eval:
             g_eval=False,
             judge_prompt=None,
             system_prompt=None,
+            judge_instructions=None,
         )
         body = response.json()
         assert "accuracy" in body["scores"]
@@ -4448,7 +4449,9 @@ class TestDefaultLlmJudgePrompt:
         assert body["system_prompt"] == "You are an evaluator."
         assert "{{ task_input }}" in body["judge_prompt"]
         assert "{{ final_message }}" in body["judge_prompt"]
-        assert "Is the answer accurate?" in body["judge_prompt"]
+        # No spec or derivable template: the steps section defers to the
+        # judge_instructions binding instead of baking score instructions.
+        assert "{{ judge_instructions }}" in body["judge_prompt"]
 
     def test_eval_not_found(self, client):
         with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:

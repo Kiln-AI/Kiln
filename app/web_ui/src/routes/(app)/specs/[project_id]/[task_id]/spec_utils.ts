@@ -24,8 +24,8 @@ export type SuggestedEdit = {
 }
 
 /**
- * Which creation workflow the user picked on the first screen. Threaded through
- * the flow as a `workflow` query param.
+ * Which creation workflow the user picked on the Pro-vs-Manual screen, carried
+ * to the spec builder as a `workflow` query param.
  *
  * Anything other than an explicit "pro" is treated as manual, so a missing or
  * malformed param can never surface Kiln Pro to someone who didn't choose it.
@@ -37,20 +37,14 @@ export function parseSpecWorkflow(value: string | null): SpecWorkflow {
 }
 
 /**
- * Templates that skip the judge picker, and the judge they imply.
- *
- * Only the two open-ended behaviour templates (desired behaviour, issue) offer
- * a judge choice. Every other template describes a written rubric only an LLM
- * judge can grade, except tool call, where the Tool Call Check judge reads the
- * trace directly and collects its own tool list.
+ * The judge each template implies. Programmatic judges are chosen directly on
+ * the template picker (not via a template), so every template's judge is
+ * implied: an LLM judge for the written-rubric templates, and the Tool Call
+ * Check judge for tool call, which reads the trace directly and collects its
+ * own tool list.
  */
-export function implied_judge_for_spec_type(
-  spec_type: SpecType,
-): V2EvalType | null {
+export function implied_judge_for_spec_type(spec_type: SpecType): V2EvalType {
   switch (spec_type) {
-    case "desired_behaviour":
-    case "issue":
-      return null
     case "appropriate_tool_use":
       return "tool_call_check"
     default:
@@ -59,9 +53,10 @@ export function implied_judge_for_spec_type(
 }
 
 /**
- * The EvalTemplateId recorded on evals created without a spec. Only templates
- * that can reach a non-LLM judge need a mapping: the two open-ended behaviour
- * templates and tool call. Mirrors the server's spec_eval_template.
+ * The EvalTemplateId recorded on evals created without a spec. Tool call is
+ * the only template that still creates spec-less evals; the open-ended
+ * behaviour mappings are kept for flows that record a template after the fact.
+ * Mirrors the server's spec_eval_template.
  */
 export function eval_template_for_spec_type(
   spec_type: SpecType,
@@ -79,21 +74,71 @@ export function eval_template_for_spec_type(
 }
 
 /**
- * The next screen after a template is picked: either straight to the spec
- * builder (for templates whose judge is implied) or the judge picker.
+ * Whether the Kiln Pro copilot could assist a spec of this type with this
+ * judge. Mirrors the spec builder's own `copilot_enabled` gates that are
+ * knowable from the route alone (the builder still applies runtime checks
+ * like tool-enabled run configs and account availability).
+ */
+export function copilot_supported(
+  spec_type: SpecType,
+  judge: V2EvalType,
+): boolean {
+  return (
+    judge === "llm_judge" &&
+    spec_type !== "appropriate_tool_use" &&
+    spec_type !== "reference_answer_accuracy"
+  )
+}
+
+/**
+ * The next screen after a template is picked: the Pro-vs-Manual workflow
+ * screen when copilot could assist the template's implied judge, otherwise
+ * straight to the spec builder in manual mode.
  */
 export function next_page_after_template(
   project_id: string,
   task_id: string,
   spec_type: SpecType,
-  workflow: SpecWorkflow,
 ): string {
-  const base = `/specs/${project_id}/${task_id}`
-  const implied = implied_judge_for_spec_type(spec_type)
-  if (implied) {
-    return spec_builder_url(project_id, task_id, spec_type, workflow, implied)
+  return next_page_after_judge(
+    project_id,
+    task_id,
+    spec_type,
+    implied_judge_for_spec_type(spec_type),
+  )
+}
+
+/**
+ * The spec builder URL for a judge picked directly from the template screen's
+ * programmatic checks section. No template is involved: the eval is created
+ * spec-less and template-less, with just a name and the judge's own config.
+ */
+export function judge_only_builder_url(
+  project_id: string,
+  task_id: string,
+  judge: V2EvalType,
+): string {
+  const params = new URLSearchParams({ judge, workflow: "manual" })
+  return `/specs/${project_id}/${task_id}/spec_builder?${params.toString()}`
+}
+
+/**
+ * The next screen once both template and judge are known: the Pro-vs-Manual
+ * workflow screen when copilot could assist, otherwise straight to the spec
+ * builder in manual mode. Asking Pro-vs-Manual any earlier would pose the
+ * question to users picking judges Kiln Pro can't help with.
+ */
+export function next_page_after_judge(
+  project_id: string,
+  task_id: string,
+  spec_type: SpecType,
+  judge: V2EvalType,
+): string {
+  if (copilot_supported(spec_type, judge)) {
+    const params = new URLSearchParams({ type: spec_type, judge })
+    return `/specs/${project_id}/${task_id}/select_workflow?${params.toString()}`
   }
-  return `${base}/select_judge?type=${spec_type}&workflow=${workflow}`
+  return spec_builder_url(project_id, task_id, spec_type, "manual", judge)
 }
 
 export function spec_builder_url(

@@ -91,6 +91,10 @@ class LlmJudgeProperties(BaseModel):
     reference_keys: list[str] = []
     thinking_instruction: str | None = None
     g_eval: bool = False
+    # User-written evaluation steps, bound to {{ judge_instructions }} when the
+    # prompt template is rendered. Used by evals with no spec or template to
+    # derive default steps from.
+    judge_instructions: list[str] | None = None
 
 
 class ExactMatchProperties(BaseModel):

@@ -23,9 +23,9 @@
     capitalize,
     formatDate,
     formatPriority,
-    formatSpecType,
     formatEvalConfigName,
   } from "$lib/utils/formatters"
+  import { eval_type_display } from "$lib/utils/eval_types/eval_type_display"
   import { model_info, load_model_info } from "$lib/stores"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import { load_task, get_task_composite_id } from "$lib/stores"
@@ -583,8 +583,8 @@
                 value: spec.id ?? "None",
               },
               {
-                name: "Template",
-                value: formatSpecType(spec.properties.spec_type),
+                name: "Type",
+                value: eval_type_display(spec, evaluator, null),
               },
               {
                 name: "Priority",

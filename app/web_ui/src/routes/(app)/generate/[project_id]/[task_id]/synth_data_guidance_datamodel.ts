@@ -912,7 +912,7 @@ When generating ${task_type}, use these guidelines to create test cases that are
       }
       if (eval_options.length > 0) {
         groups.push({
-          label: "Eval Template",
+          label: "Eval Type",
           options: eval_options,
         })
       }

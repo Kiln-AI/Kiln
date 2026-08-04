@@ -11,12 +11,8 @@
   import TableToolbar from "$lib/ui/table_toolbar.svelte"
   import AddTagsDialog from "$lib/ui/add_tags_dialog.svelte"
   import RemoveTagsDialog from "$lib/ui/remove_tags_dialog.svelte"
-  import {
-    capitalize,
-    formatDate,
-    formatPriority,
-    formatSpecType,
-  } from "$lib/utils/formatters"
+  import { capitalize, formatDate, formatPriority } from "$lib/utils/formatters"
+  import { eval_type_display } from "$lib/utils/eval_types/eval_type_display"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import EditablePriorityField from "./editable_priority_field.svelte"
   import EditableStatusField from "./editable_status_field.svelte"
@@ -57,7 +53,32 @@
   // Eval lookup for spec rows; priority/status resolution lives in spec_table.ts.
   $: evals_by_id = new Map((evals || []).map((e) => [e.id ?? "", e]))
 
-  let sortColumn: "name" | "template" | "priority" | "status" | "created_at" =
+  // Default judge type per eval (for the Type column). Loads after the table;
+  // rows fall back to spec/template-derived display until it arrives.
+  let judge_types: Map<string, string> = new Map()
+
+  async function load_judge_types(req_project_id: string, req_task_id: string) {
+    try {
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_default_judge_types",
+        {
+          params: {
+            path: { project_id: req_project_id, task_id: req_task_id },
+          },
+        },
+      )
+      if (req_project_id !== project_id || req_task_id !== task_id) return
+      if (error) {
+        throw error
+      }
+      judge_types = new Map(Object.entries(data || {}))
+    } catch (error) {
+      // Non-fatal: the Type column degrades to spec/template-derived values.
+      console.warn("Failed to load eval judge types:", error)
+    }
+  }
+
+  let sortColumn: "name" | "type" | "priority" | "status" | "created_at" =
     "created_at"
   let sortDirection: "asc" | "desc" = "desc"
   let filter_tags = ($page.url.searchParams.getAll("tags") || []) as string[]
@@ -114,7 +135,7 @@
   }
   const tableColumns: TableColumn[] = [
     { key: "name", label: "Name", sortable: true, sortKey: "name" },
-    { key: "template", label: "Template", sortable: true, sortKey: "template" },
+    { key: "type", label: "Type", sortable: true, sortKey: "type" },
     { key: "priority", label: "Priority", sortable: true, sortKey: "priority" },
     { key: "status", label: "Status", sortable: true, sortKey: "status" },
     { key: "tags", label: "Tags", sortable: false },
@@ -151,6 +172,7 @@
   $: if (project_id && task_id) {
     load_specs(project_id, task_id)
     load_evals(project_id, task_id)
+    load_judge_types(project_id, task_id)
   }
 
   async function load_specs(req_project_id: string, req_task_id: string) {
@@ -215,6 +237,7 @@
     specs,
     evals,
     evals_by_id,
+    judge_types,
     show_archived,
     filter_tags,
     sortColumn,
@@ -607,10 +630,10 @@
     updateEvalStatus(evaluator, value)
   }
 
-  // Every eval starts at the workflow picker, including for users who already
-  // have Kiln Pro: choosing Manual has to be able to opt out of the Pro flow.
+  // Every eval starts at the template picker; the Pro-vs-Manual workflow
+  // screen appears later, only for templates Kiln Pro can assist with.
   function create_eval() {
-    goto(`/specs/${project_id}/${task_id}/select_workflow`)
+    goto(`/specs/${project_id}/${task_id}/select_template`)
   }
 </script>
 
@@ -829,7 +852,11 @@
                     {/if}
                     <td class="font-medium">{spec.name}</td>
                     <td>
-                      {formatSpecType(spec.properties.spec_type)}
+                      {eval_type_display(
+                        spec,
+                        spec_eval,
+                        spec.eval_id ? judge_types.get(spec.eval_id) : null,
+                      )}
                     </td>
                     <td>
                       {#if spec_eval}
@@ -906,7 +933,13 @@
                       <td></td>
                     {/if}
                     <td class="font-medium">{eval_data.name}</td>
-                    <td>None</td>
+                    <td>
+                      {eval_type_display(
+                        null,
+                        eval_data,
+                        eval_data.id ? judge_types.get(eval_data.id) : null,
+                      )}
+                    </td>
                     <td>
                       <EditablePriorityField
                         evaluator={eval_data}

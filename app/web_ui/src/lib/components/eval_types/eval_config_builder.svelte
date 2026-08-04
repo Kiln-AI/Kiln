@@ -2,13 +2,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import { page } from "$app/stores"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import type {
-    Eval,
-    Task,
-    EvalConfigType,
-    Spec,
-    TaskRunOutput,
-  } from "$lib/types"
+  import type { Eval, Task, EvalConfigType, TaskRunOutput } from "$lib/types"
   import type { components } from "$lib/api_schema"
   import { goto } from "$app/navigation"
   import posthog from "posthog-js"
@@ -41,12 +35,12 @@
     uses_reference_data_llm_judge,
     uses_reference_data_code_eval,
   } from "$lib/utils/eval_types/reference_data_gate"
+  import { llm_judge_steps_derivable } from "$lib/utils/eval_types/llm_judge_gate"
   import { SHOW_REFERENCE_DATA_UI } from "$lib/utils/eval_types/reference_data_ui"
 
   export let eval_config_type: V2EvalType
   export let evaluator: Eval
   export let task: Task
-  export let spec: Spec | null
   export let project_id: string
   export let task_id: string
   export let eval_id: string
@@ -61,6 +55,20 @@
   let llm_selected_algo: EvalConfigType | undefined = undefined
   let llm_judge_prompt: string | undefined = undefined
   let llm_system_prompt: string | undefined = undefined
+  let llm_judge_instructions: string[] = [""]
+
+  // Evals with no spec or derivable template show the Evaluation Instructions
+  // steps editor; its text is bound to {{ judge_instructions }} at render time.
+  $: show_instructions_ui =
+    eval_config_type === "llm_judge" &&
+    !llm_judge_steps_derivable(evaluator, spec_id !== "legacy")
+
+  function cleaned_judge_instructions(): string[] | null {
+    const cleaned = llm_judge_instructions
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+    return cleaned.length > 0 ? cleaned : null
+  }
 
   // Code eval form binding — tracks code edits reactively for the save gate.
   // Starts undefined so the child's initial value flows up via bind:.
@@ -168,6 +176,7 @@
       eval_config_type,
       llm_judge_prompt,
       code_eval_code,
+      llm_judge_instructions,
     )
     return (
       test_passed_snapshot.prompt_or_code === current_prompt_or_code &&
@@ -179,8 +188,13 @@
     type: V2EvalType,
     judge_prompt: string | undefined,
     code: string | undefined,
+    judge_instructions: string[],
   ): string {
-    if (type === "llm_judge") return judge_prompt ?? ""
+    if (type === "llm_judge") {
+      // Instructions are part of the effective prompt (bound via Jinja), so
+      // edits to them invalidate a passing test just like prompt edits.
+      return (judge_prompt ?? "") + "\n" + JSON.stringify(judge_instructions)
+    }
     if (type === "code_eval") return code ?? ""
     return ""
   }
@@ -365,6 +379,7 @@
             g_eval,
             judge_prompt: llm_judge_prompt ?? null,
             system_prompt: llm_system_prompt ?? null,
+            judge_instructions: cleaned_judge_instructions(),
           },
           eval_input,
           controller.signal,
@@ -411,6 +426,7 @@
               eval_config_type,
               llm_judge_prompt,
               code_eval_code,
+              llm_judge_instructions,
             ),
             reference_data: advanced_reference_data,
           }
@@ -528,6 +544,7 @@
           g_eval,
           judge_prompt: llm_judge_prompt ?? null,
           system_prompt: llm_system_prompt ?? null,
+          judge_instructions: cleaned_judge_instructions(),
           reference_keys: save_reference_keys,
         })
       } else if (eval_config_type && v2FormComponent) {
@@ -651,13 +668,14 @@
             {task_id}
             {project_id}
             {eval_id}
-            show_criteria_field={spec === null}
+            {show_instructions_ui}
             bind:model_name={llm_model_name}
             bind:provider_name={llm_provider_name}
             bind:combined_model_name={llm_combined_model_name}
             bind:selected_algo={llm_selected_algo}
             bind:judge_prompt={llm_judge_prompt}
             bind:system_prompt={llm_system_prompt}
+            bind:judge_instructions={llm_judge_instructions}
           />
         {:else}
           <JudgeConfigFields

@@ -437,129 +437,72 @@ describe("LlmJudgeForm", () => {
       expect(systemTextarea).not.toBeNull()
     })
   })
-  describe("Judge criteria field (spec-less evals)", () => {
-    // Async onMount callbacks don't run in jsdom/vitest (see note above), so
-    // capture and invoke them manually to land the default-prompt fetch.
-    async function renderWithCriteria() {
-      setModels([noLogprobsProvider])
-      const onMountCallbacks: Array<() => unknown> = []
-      const spy = vi
-        .spyOn(svelteMod, "onMount")
-        .mockImplementation((fn: () => unknown) => {
-          onMountCallbacks.push(fn)
-        })
-      const rendered = render(LlmJudgeForm, {
-        props: {
-          task_id: "task1",
-          project_id: "proj1",
-          eval_id: "eval1",
-          show_criteria_field: true,
-        },
-      })
-      spy.mockRestore()
-      for (const cb of onMountCallbacks) {
-        await cb()
-      }
-      await tick()
-
-      const prompt = rendered.container.querySelector(
-        "#judge_prompt",
-      ) as HTMLTextAreaElement
-      expect(prompt.value).toContain("Default judge prompt")
-      return rendered
-    }
-
-    it("is hidden unless show_criteria_field is set", () => {
+  describe("Judge criteria field (removed)", () => {
+    it("does not render the old spec-less criteria field", () => {
       setModels([noLogprobsProvider])
       const { container } = render(LlmJudgeForm, {
         props: { task_id: "task1", project_id: "proj1", eval_id: "eval1" },
       })
       expect(container.querySelector("#judge_criteria")).toBeNull()
     })
+  })
 
-    it("injects typed criteria into the judge prompt", async () => {
-      const { container } = await renderWithCriteria()
-
-      const criteria = container.querySelector(
-        "#judge_criteria",
-      ) as HTMLTextAreaElement
-      await fireEvent.input(criteria, {
-        target: { value: "Must not include clickbait." },
+  describe("Evaluation instructions steps UI", () => {
+    it("is hidden unless show_instructions_ui is set", () => {
+      setModels([noLogprobsProvider])
+      const { container, queryByText } = render(LlmJudgeForm, {
+        props: { task_id: "task1", project_id: "proj1", eval_id: "eval1" },
       })
-      await tick()
-
-      const prompt = container.querySelector(
-        "#judge_prompt",
-      ) as HTMLTextAreaElement
-      expect(prompt.value).toContain("Default judge prompt")
-      expect(prompt.value).toContain(
-        "<eval_criteria>\nMust not include clickbait.\n</eval_criteria>",
-      )
-
-      // Clearing the criteria returns to the plain default
-      await fireEvent.input(criteria, { target: { value: "" } })
-      await tick()
-      expect(prompt.value).not.toContain("<eval_criteria>")
+      expect(container.querySelector("#judge_instruction_0")).toBeNull()
+      expect(queryByText("Evaluation Instructions")).toBeNull()
+      // Judge prompt stays inside the Advanced collapse
+      expect(queryByText("Advanced: Judge Prompt")).not.toBeNull()
     })
 
-    it("stops regenerating once the prompt is edited by hand", async () => {
-      const { container } = await renderWithCriteria()
-
-      const prompt = container.querySelector(
-        "#judge_prompt",
-      ) as HTMLTextAreaElement
-      await fireEvent.input(prompt, { target: { value: "My custom prompt" } })
-      await tick()
-
-      const criteria = container.querySelector(
-        "#judge_criteria",
-      ) as HTMLTextAreaElement
-      await fireEvent.input(criteria, {
-        target: { value: "Must not include clickbait." },
+    it("renders steps editor and top-level judge prompt when enabled", () => {
+      setModels([noLogprobsProvider])
+      const { container, queryByText } = render(LlmJudgeForm, {
+        props: {
+          task_id: "task1",
+          project_id: "proj1",
+          eval_id: "eval1",
+          show_instructions_ui: true,
+        },
       })
-      await tick()
-
-      expect(prompt.value).toBe("My custom prompt")
+      expect(queryByText("Evaluation Instructions")).not.toBeNull()
+      const step = container.querySelector(
+        "#judge_instruction_0",
+      ) as HTMLTextAreaElement
+      expect(step).not.toBeNull()
+      expect(step.placeholder).toContain("issue X")
+      // Judge prompt is top-level, not collapsed
+      expect(queryByText("Advanced: Judge Prompt")).toBeNull()
+      expect(container.querySelector("#judge_prompt")).not.toBeNull()
+      // The judge_instructions variable is documented
+      expect(queryByText("{{ judge_instructions }}")).not.toBeNull()
     })
 
-    it("defuses literal endraw tokens, including trim-marker variants", async () => {
-      const { container } = await renderWithCriteria()
-
-      const criteria = container.querySelector(
-        "#judge_criteria",
-      ) as HTMLTextAreaElement
-      await fireEvent.input(criteria, {
-        target: { value: "Echo {{ hi }} then {%- endraw -%} done" },
+    it("Add Evaluation Step appends another step row", async () => {
+      setModels([noLogprobsProvider])
+      const { container, getByText } = render(LlmJudgeForm, {
+        props: {
+          task_id: "task1",
+          project_id: "proj1",
+          eval_id: "eval1",
+          show_instructions_ui: true,
+        },
       })
+      expect(container.querySelector("#judge_instruction_1")).toBeNull()
+
+      // Two empty rows must coexist (regression: value-keyed each blew up on
+      // duplicate empty strings, making the button a no-op).
+      await fireEvent.click(getByText("Add Evaluation Step"))
       await tick()
+      expect(container.querySelector("#judge_instruction_1")).not.toBeNull()
 
-      const prompt = container.querySelector(
-        "#judge_prompt",
-      ) as HTMLTextAreaElement
-      // The raw block must not contain an active endraw that would let the
-      // criteria break out of it (matching the backend's ENDRAW_PATTERN).
-      expect(prompt.value).toContain("{% raw %}")
-      expect(prompt.value).not.toContain("{%- endraw -%}")
-      expect(prompt.value).toContain("{ %- endraw -%} done")
-    })
-
-    it("wraps criteria containing Jinja in a raw block", async () => {
-      const { container } = await renderWithCriteria()
-
-      const criteria = container.querySelector(
-        "#judge_criteria",
-      ) as HTMLTextAreaElement
-      await fireEvent.input(criteria, {
-        target: { value: "Echo {{ task_input }} exactly" },
-      })
+      await fireEvent.click(getByText("Add Evaluation Step"))
       await tick()
-
-      const prompt = container.querySelector(
-        "#judge_prompt",
-      ) as HTMLTextAreaElement
-      expect(prompt.value).toContain(
-        "{% raw %}Echo {{ task_input }} exactly{% endraw %}",
-      )
+      expect(container.querySelector("#judge_instruction_2")).not.toBeNull()
     })
   })
 })

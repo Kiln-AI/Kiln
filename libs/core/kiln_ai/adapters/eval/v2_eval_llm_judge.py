@@ -13,7 +13,11 @@ from typing import TYPE_CHECKING
 from jinja2 import UndefinedError
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
+from kiln_ai.adapters.eval.base_eval import (
+    BaseEval,
+    BaseV2EvalBridge,
+    format_judge_instructions,
+)
 
 if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
@@ -101,6 +105,11 @@ class LlmJudgeEval(BaseV2EvalBridge):
         assert isinstance(props, LlmJudgeProperties)
 
         namespace = eval_input.model_dump()
+        # Always bound (even when unset) so templates referencing it never hit
+        # StrictUndefined; blank steps render as an empty <steps> body.
+        namespace["judge_instructions"] = format_judge_instructions(
+            props.judge_instructions
+        )
         try:
             rendered_prompt = _template_env.from_string(props.prompt_template).render(
                 **namespace

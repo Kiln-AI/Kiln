@@ -5,8 +5,9 @@
   import { available_models } from "$lib/stores"
   import Collapse from "$lib/ui/collapse.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
+  import FormList from "$lib/utils/form_list.svelte"
+  import JudgePromptFields from "$lib/components/eval_types/judge_prompt_fields.svelte"
   import { getDefaultLlmJudgePrompt } from "$lib/api/v2_eval_api"
-  import { SHOW_REFERENCE_DATA_UI } from "$lib/utils/eval_types/reference_data_ui"
   import { onMount } from "svelte"
 
   export let task_id: string
@@ -21,20 +22,26 @@
   export let judge_prompt: string | undefined = undefined
   export let system_prompt: string | undefined = undefined
 
-  // Evals without a spec have nothing to derive judging criteria from -- the
-  // server's default prompt only knows the eval's name. When enabled, a
-  // criteria field is shown and its text is injected into the judge prompt.
-  export let show_criteria_field: boolean = false
-  let judge_criteria: string = ""
+  // Evals with no spec or template have no data to derive judging steps from;
+  // the user writes them here instead. The steps are stored on the judge
+  // config and bound to {{ judge_instructions }} in the prompt template, so
+  // there's nothing to keep in sync between the two editing surfaces.
+  export let show_instructions_ui: boolean = false
+  export let judge_instructions: string[] = []
+
+  // FormList keys its rows by item value, so a plain string[] breaks the
+  // moment two rows are empty (duplicate keys). Wrap each step in an object
+  // (unique by identity) and derive the exported string[] from it.
+  let instruction_items: { value: string }[] = [{ value: "" }]
+  $: judge_instructions = instruction_items.map((item) => item.value)
+
+  const instruction_placeholders = [
+    'e.g. "Does the model\'s output contain the issue X?"',
+    'e.g. "Is the model\'s output missing any required information?"',
+    'e.g. "Considering the above, should the output pass or fail?"',
+  ]
 
   let prompt_fetch_error: string | null = null
-
-  // The server's default prompt, before any criteria are injected, and the
-  // last prompt this component generated. While the advanced prompt still
-  // matches the last generated value the user hasn't touched it, so it's safe
-  // to regenerate as they type criteria; after a manual edit, their text wins.
-  let base_judge_prompt: string | undefined = undefined
-  let last_generated_prompt: string | undefined = undefined
 
   onMount(async () => {
     try {
@@ -43,10 +50,8 @@
         task_id,
         eval_id,
       )
-      base_judge_prompt = defaults.judge_prompt
       if (judge_prompt === undefined) {
-        judge_prompt = inject_criteria(defaults.judge_prompt, judge_criteria)
-        last_generated_prompt = judge_prompt
+        judge_prompt = defaults.judge_prompt
       }
       if (system_prompt === undefined) {
         system_prompt = defaults.system_prompt
@@ -57,41 +62,6 @@
       console.warn("Failed to fetch default LLM judge prompt:", e)
     }
   })
-
-  $: if (show_criteria_field && base_judge_prompt !== undefined) {
-    regenerate_prompt(judge_criteria)
-  }
-
-  function regenerate_prompt(criteria: string) {
-    if (judge_prompt !== undefined && judge_prompt !== last_generated_prompt) {
-      return
-    }
-    const generated = inject_criteria(base_judge_prompt ?? "", criteria)
-    judge_prompt = generated
-    last_generated_prompt = generated
-  }
-
-  // Mirrors the backend's conditionally_raw_wrap: the judge prompt is a Jinja2
-  // template, so criteria containing Jinja openers must be wrapped in a raw
-  // block, with any literal endraw (including trim-marker variants like
-  // "{%- endraw -%}", matching the backend's ENDRAW_PATTERN) defused first.
-  function escape_jinja(text: string): string {
-    if (!/{{|{%|{#/.test(text)) return text
-    const defused = text.replace(/\{(%-?\s*endraw\s*-?%\})/g, "{ $1")
-    return "{% raw %}" + defused + "{% endraw %}"
-  }
-
-  function inject_criteria(base: string, criteria: string): string {
-    if (!show_criteria_field || !criteria.trim()) return base
-    return (
-      base +
-      "\n\nEvaluate the model's output against the following criteria:\n" +
-      "<eval_criteria>\n" +
-      escape_jinja(criteria.trim()) +
-      "\n</eval_criteria>\n" +
-      "The eval should pass only if the output meets all of the criteria."
-    )
-  }
 
   const evaluator_algorithms: {
     id: EvalConfigType
@@ -223,21 +193,6 @@
 </script>
 
 <div class="flex flex-col gap-6">
-  {#if show_criteria_field}
-    <!--
-      This eval has no spec, so the default judge prompt has no criteria to
-      grade against -- this field is what the judge will actually check.
-    -->
-    <FormElement
-      label="What to Look For"
-      id="judge_criteria"
-      inputType="textarea"
-      description="Describe what the judge should check when scoring an output. This is added to the judge prompt, which you can review under Advanced below."
-      info_description={`e.g., "The response must not include clickbait headlines." You can refine the full prompt under Advanced: Judge Prompt; once you edit the prompt directly, it stops updating from this field.`}
-      bind:value={judge_criteria}
-    />
-  {/if}
-
   <div class="text-sm font-medium text-left flex flex-col gap-1">
     <div class="text-xl font-bold">Select Judge Model</div>
     <div class="text-xs text-gray-500">
@@ -342,56 +297,49 @@
     </div>
   {/if}
 
-  <Collapse title="Advanced: Judge Prompt">
-    <div class="flex flex-col gap-2">
-      <p class="text-xs text-gray-500 font-medium">
-        Customizing the judge prompt can improve eval quality. We've pre-filled
-        a default based on your task and {show_criteria_field
-          ? "the criteria above"
-          : "spec"}.
-      </p>
-      <p class="text-xs text-gray-500">
-        The judge prompt is in Jinja2 format and may contain the following
-        variables:
-      </p>
-      <ul class="text-xs text-gray-500 list-disc list-inside mb-2 indent-2">
-        <li>
-          <span class="font-mono font-bold">{"{{ task_input }}"}</span> The input
-          to the task.
-        </li>
-        <li>
-          <span class="font-mono font-bold">{"{{ final_message }}"}</span> The final
-          message from the model.
-        </li>
-        <li>
-          <span class="font-mono font-bold">{"{{ trace }}"}</span> The entire trace.
-        </li>
-        {#if SHOW_REFERENCE_DATA_UI}
-          <li>
-            <span class="font-mono font-bold">{"{{ reference_data }}"}</span> Reference
-            data attached to the eval case.
-          </li>
-        {/if}
-      </ul>
+  {#if show_instructions_ui}
+    <div class="text-sm font-medium text-left flex flex-col gap-1">
+      <div class="text-xl font-bold">Evaluation Instructions</div>
+      <div class="text-xs text-gray-500">
+        A list of instructions to be used by the evaluator's model. It will
+        'think' through each of these steps in order before generating final
+        scores.
+      </div>
     </div>
-    {#if prompt_fetch_error}
-      <div class="text-xs text-warning mb-2">{prompt_fetch_error}</div>
-    {/if}
-    <FormElement
-      inputType="textarea"
-      id="judge_prompt"
-      label="Judge Prompt"
-      bind:value={judge_prompt}
-      height="xl"
-      description="The Jinja2 template used to prompt the judge model."
-    />
-    <FormElement
-      inputType="textarea"
-      id="system_prompt"
-      label="System Prompt"
-      bind:value={system_prompt}
-      optional={true}
-      height="base"
-    />
-  </Collapse>
+    <FormList
+      bind:content={instruction_items}
+      content_label="Evaluation Step"
+      empty_content={{ value: "" }}
+      let:item_index
+    >
+      <FormElement
+        label=""
+        aria_label="Evaluation Step"
+        inputType="textarea"
+        id="judge_instruction_{item_index}"
+        placeholder={instruction_placeholders[
+          Math.min(item_index, instruction_placeholders.length - 1)
+        ]}
+        bind:value={instruction_items[item_index].value}
+      />
+    </FormList>
+
+    <div class="flex flex-col gap-2">
+      <div class="text-xl font-bold">Judge Prompt</div>
+      <JudgePromptFields
+        bind:judge_prompt
+        bind:system_prompt
+        {prompt_fetch_error}
+        show_judge_instructions_variable={true}
+      />
+    </div>
+  {:else}
+    <Collapse title="Advanced: Judge Prompt">
+      <JudgePromptFields
+        bind:judge_prompt
+        bind:system_prompt
+        {prompt_fetch_error}
+      />
+    </Collapse>
+  {/if}
 </div>
