@@ -114,11 +114,16 @@ describe("EditTask — turn_mode selector", () => {
     expect(single.checked).toBe(true)
     expect(multi.checked).toBe(false)
 
-    expect(queryByTestId("multiturn-input-schema-note")).toBeNull()
-    expect(queryByTestId("multiturn-output-schema-note")).toBeNull()
-
     expect(container.textContent).toContain("Part 3: Input Schema")
     expect(container.textContent).toContain("Part 4: Output Schema")
+
+    // Both schema editors are actually mounted (not just their headings): the
+    // input and output SchemaSections each render a Plain Text / Structured
+    // JSON format toggle.
+    const structured_labels = Array.from(
+      container.querySelectorAll(".label-text"),
+    ).filter((el) => el.textContent?.trim() === "Structured JSON")
+    expect(structured_labels.length).toBe(2)
   })
 
   it("hides input + output schema sections when multiturn is selected", async () => {

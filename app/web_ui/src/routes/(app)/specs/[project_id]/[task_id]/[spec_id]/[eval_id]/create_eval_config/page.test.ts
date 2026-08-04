@@ -849,7 +849,7 @@ describe("builder route page ([eval_config_type])", () => {
   })
 })
 
-describe("EvalConfigBuilder — Phase 3: container shell + intro", () => {
+describe("EvalConfigBuilder — container shell + intro", () => {
   beforeEach(() => {
     resetCalls()
     mockFetchTaskRuns.mockReset()
@@ -986,7 +986,7 @@ describe("EvalConfigBuilder — Phase 3: container shell + intro", () => {
     expect(mockCreateEvalConfig).not.toHaveBeenCalled()
   })
 
-  it("D10: no Save button in the test run pane", async () => {
+  it("has no Save button in the test run pane", async () => {
     const { container } = await renderBuilder("exact_match")
     const pane = container.querySelector("[data-testid='test-run-pane']")
     expect(pane).not.toBeNull()
@@ -1015,7 +1015,7 @@ describe("EvalConfigBuilder — Phase 3: container shell + intro", () => {
   })
 })
 
-describe("EvalConfigBuilder — Phase 4: trust modal + bugs", () => {
+describe("EvalConfigBuilder — trust modal + save-flow behavior", () => {
   beforeEach(() => {
     resetCalls()
     mockTestV2Eval.mockReset()
@@ -1506,7 +1506,7 @@ describe("Breadcrumbs — legacy evals", () => {
   })
 })
 
-describe("Phase 9 — Docs-link audit + theme-aware colors", () => {
+describe("EvalConfigBuilder — docs links + theme-aware colors", () => {
   beforeEach(() => {
     resetCalls()
     mockFetchTaskRuns.mockReset()
