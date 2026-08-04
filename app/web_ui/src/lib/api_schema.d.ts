@@ -4540,9 +4540,14 @@ export interface components {
             reference_keys: string[];
             /**
              * Timeout Seconds
-             * @default 30
+             * @default 180
              */
             timeout_seconds: number;
+            /**
+             * Tool Allowlist
+             * @description Explicit per-tool allowlist of tools the scorer code may call.
+             */
+            tool_allowlist?: string[];
         };
         /**
          * CodeEvalTrustResponse
