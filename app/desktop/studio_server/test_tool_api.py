@@ -524,9 +524,21 @@ def test_get_tool_server_config_not_found(client, test_project):
         assert response.json()["message"] == "Tool server not found"
 
 
+def _builtin_ai_models_set(set_result):
+    """Return the always-present built-in AI Models tool set (or None)."""
+    return next(
+        (
+            s
+            for s in set_result
+            if s["type"] == "builtin" and s["set_name"] == "AI Models"
+        ),
+        None,
+    )
+
+
 def test_get_available_tools_empty(client, test_project):
-    """With no tool servers and the only built-in tool (Call Kiln API) being
-    not listed (it is an internal agent tool), no tool sets are returned."""
+    """With no tool servers, only the always-available built-in AI Models set
+    (llm + llm_judge) is returned. The Call Kiln API built-in stays hidden."""
     with patch(
         "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
@@ -536,7 +548,13 @@ def test_get_available_tools_empty(client, test_project):
 
         assert response.status_code == 200
         result = response.json()
-        assert result == []
+        assert len(result) == 1
+        ai_models = _builtin_ai_models_set(result)
+        assert ai_models is not None
+        tool_ids = {t["id"] for t in ai_models["tools"]}
+        assert tool_ids == {"kiln_tool::llm", "kiln_tool::llm_judge"}
+        # Call Kiln API is intentionally not listed.
+        assert "kiln_tool::call_kiln_api" not in tool_ids
 
 
 async def test_get_available_tools_success_single_server(client, test_project):
@@ -580,8 +598,9 @@ async def test_get_available_tools_success_single_server(client, test_project):
 
             assert response.status_code == 200
             set_result = response.json()
-            # Just the MCP set — the Call Kiln API built-in tool is not listed.
-            assert len(set_result) == 1
+            # The built-in AI Models set plus the MCP set.
+            assert len(set_result) == 2
+            assert _builtin_ai_models_set(set_result) is not None
             mcp_set = next(
                 s
                 for s in set_result
@@ -721,9 +740,10 @@ async def test_get_available_tools_multiple_servers(client, test_project):
 
             assert response.status_code == 200
             set_result = response.json()
-            assert len(set_result) == 3  # 2 MCP servers + 1 kiln task set
-            # The Call Kiln API built-in tool is intentionally not listed.
-            assert not any(s["type"] == "builtin" for s in set_result)
+            # built-in AI Models + 2 MCP servers + 1 kiln task set
+            assert len(set_result) == 4
+            # The AI Models built-in set is always present; Call Kiln API is not.
+            assert _builtin_ai_models_set(set_result) is not None
 
             # Find sets by name instead of assuming order
             server1_set = next(
@@ -816,9 +836,10 @@ async def test_get_available_tools_mcp_error_handling(client, test_project):
             assert response.status_code == 200
             result = response.json()
 
-            # Failing server is skipped; the Call Kiln API built-in tool is not listed, so
-            # no tool sets remain.
-            assert result == []
+            # Failing MCP server is skipped; only the always-present built-in
+            # AI Models set remains (Call Kiln API is not listed).
+            assert len(result) == 1
+            assert _builtin_ai_models_set(result) is not None
 
 
 def test_get_available_tools_demo_tools_enabled(client, test_project):
@@ -842,13 +863,12 @@ def test_get_available_tools_demo_tools_enabled(client, test_project):
         assert response.status_code == 200
         result = response.json()
 
-        # The Call Kiln API built-in tool is not listed, so the
-        # built-in set is omitted and only the demo set remains.
-        assert len(result) == 1
-        assert not any(s["type"] == "builtin" for s in result)
+        # The always-present built-in AI Models set plus the demo set.
+        assert len(result) == 2
+        assert _builtin_ai_models_set(result) is not None
 
-        demo_set = result[0]
-        assert demo_set["set_name"] == "Kiln Demo Tools"
+        demo_set = next(s for s in result if s["set_name"] == "Kiln Demo Tools")
+        assert demo_set["type"] == "demo"
         assert len(demo_set["tools"]) == 4
 
         # Verify all demo tools are present with correct IDs and names
@@ -899,8 +919,38 @@ def test_get_available_tools_demo_tools_disabled(client, test_project):
         assert response.status_code == 200
         result = response.json()
 
-        # Demo tools disabled and the Call Kiln API built-in tool is not listed.
-        assert result == []
+        # Demo tools disabled: only the always-present built-in AI Models set
+        # remains (Call Kiln API is still not listed).
+        assert len(result) == 1
+        assert _builtin_ai_models_set(result) is not None
+
+
+def test_get_available_tools_builtin_ai_models_always_present(client, test_project):
+    """The AI Models built-in set (llm + llm_judge) is always available, and is
+    not demo-gated (present regardless of enable_demo_tools)."""
+    with (
+        patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id,
+        patch("app.desktop.studio_server.tool_api.Config.shared") as mock_config,
+    ):
+        mock_project_from_id.return_value = test_project
+        mock_config_instance = Mock()
+        mock_config_instance.enable_demo_tools = False
+        mock_config_instance.user_id = "test_user"
+        mock_config.return_value = mock_config_instance
+
+        response = client.get(f"/api/projects/{test_project.id}/available_tools")
+
+        assert response.status_code == 200
+        ai_models = _builtin_ai_models_set(response.json())
+        assert ai_models is not None
+        by_id = {t["id"]: t for t in ai_models["tools"]}
+        assert set(by_id) == {"kiln_tool::llm", "kiln_tool::llm_judge"}
+        assert by_id["kiln_tool::llm"]["name"] == "LLM"
+        assert by_id["kiln_tool::llm"]["function_name"] == "llm"
+        assert by_id["kiln_tool::llm_judge"]["name"] == "LLM Judge"
+        assert by_id["kiln_tool::llm_judge"]["function_name"] == "llm_judge"
 
 
 async def test_create_tool_server_whitespace_handling(
@@ -3522,8 +3572,9 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
             assert response.status_code == 200
             result = response.json()
 
-            # RAG set only — the Call Kiln API built-in tool is not listed.
-            assert len(result) == 1
+            # Built-in AI Models set + RAG set.
+            assert len(result) == 2
+            assert _builtin_ai_models_set(result) is not None
             rag_set = next(s for s in result if s["set_name"] == "Search Tools (RAG)")
             assert len(rag_set["tools"]) == 2
 
@@ -3608,8 +3659,9 @@ async def test_get_available_tools_with_rag_and_mcp(client, test_project):
             assert response.status_code == 200
             result = response.json()
 
-            # RAG + MCP sets — the Call Kiln API built-in tool is not listed.
-            assert len(result) == 2
+            # Built-in AI Models + RAG + MCP sets.
+            assert len(result) == 3
+            assert _builtin_ai_models_set(result) is not None
 
             # Find both sets
             mcp_set = next(
@@ -3745,8 +3797,9 @@ async def test_available_tools_excludes_archived_rag_and_kiln_task_tools(
         assert response.status_code == 200
         result = response.json()
 
-        # RAG + Kiln task sets — the Call Kiln API built-in tool is not listed.
-        assert len(result) == 2
+        # Built-in AI Models + RAG + Kiln task sets.
+        assert len(result) == 3
+        assert _builtin_ai_models_set(result) is not None
 
         rag_set = next(
             (s for s in result if s["set_name"] == "Search Tools (RAG)"), None

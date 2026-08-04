@@ -204,6 +204,7 @@ export function generate_examples(
     "contains",
     "5 if word_count < 50 else 3 if word_count < 150 else 1",
   )
+  const triage_safe_return = build_return_dict(scores, "passing")
 
   return [
     {
@@ -261,6 +262,86 @@ def score(output):
     word_count = len(output.split())
 
     ${domain_return}
+`,
+    },
+    {
+      label: "LLM judge",
+      code: `import json
+from kiln import tools
+
+# llm_judge automatically uses this eval's own score schema, so its
+# returned keys already match what score() must return. Filter the
+# trace cheaply in Python first, then judge only the small slice.
+JUDGE_PROMPT = """Judge the assistant's behavior using only these user messages:
+
+{{ user_messages }}
+"""
+
+
+def relevant_user_messages(trace):
+    return [
+        message.get("content", "")
+        for message in (trace or [])
+        if message.get("role") == "user"
+    ]
+
+
+def score(trace):
+    user_messages = relevant_user_messages(trace)
+    return json.loads(
+        tools.llm_judge(
+            prompt=JUDGE_PROMPT,
+            input={"user_messages": user_messages},
+            model="gpt-4.1",
+            provider="openai",
+        )
+    )
+`,
+    },
+    {
+      label: "Triage then LLM judge",
+      code: `import json
+from kiln import tools
+
+# Cheap triage with a small model; only escalate to a careful judge
+# when the fast pass flags something worth a closer look.
+TRIAGE_SCHEMA = {
+    "type": "object",
+    "properties": {"verdict": {"type": "string", "enum": ["safe", "risky"]}},
+    "required": ["verdict"],
+    "additionalProperties": False,
+}
+
+
+def relevant_user_messages(trace):
+    return [
+        message.get("content", "")
+        for message in (trace or [])
+        if message.get("role") == "user"
+    ]
+
+
+def score(trace):
+    user_messages = relevant_user_messages(trace)
+    triage = json.loads(
+        tools.llm(
+            prompt="Obviously fine, or worth a closer look? {{ user_messages }}",
+            input={"user_messages": user_messages},
+            model="gpt-4.1-mini",
+            provider="openai",
+            schema=TRIAGE_SCHEMA,
+        )
+    )
+    if triage["verdict"] == "safe":
+        return ${triage_safe_return}
+    return json.loads(
+        tools.llm_judge(
+            prompt="Carefully judge the assistant's behavior. {{ user_messages }}",
+            input={"user_messages": user_messages},
+            model="gpt-4.1",
+            provider="openai",
+        )
+    )
 `,
     },
   ]

@@ -11,6 +11,12 @@ type ToolsStore = {
   selected_tool_ids_by_task_id: Record<string, string[]>
 }
 
+// Built-in tools that are only meaningful inside a code judge. They resolve
+// through the normal tool path but error off-context (and can never appear in a
+// real agent trace), so tool pickers hide them everywhere except the code-eval
+// allowlist. Centralized here so every picker applies the same filter.
+export const CODE_EVAL_ONLY_TOOL_IDS = ["kiln_tool::llm_judge"]
+
 const tools_store_key = "tools_store"
 export const { store: tools_store, initialized: tools_store_initialized } =
   indexedDBStore<ToolsStore>(tools_store_key, {

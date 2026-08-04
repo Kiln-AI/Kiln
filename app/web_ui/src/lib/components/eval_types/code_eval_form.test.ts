@@ -18,6 +18,11 @@ vi.mock("$lib/utils/form_element.svelte", async () => {
   return { default: StubModule.default }
 })
 
+vi.mock("$lib/ui/run_config_component/tools_selector.svelte", async () => {
+  const StubModule = await import("./__tests__/tools_selector_stub.svelte")
+  return { default: StubModule.default }
+})
+
 const CodeEvalForm = (await import("./code_eval_form.svelte")).default
 
 beforeAll(() => {
@@ -127,7 +132,8 @@ describe("CodeEvalForm", () => {
     const props = component.getProperties()
     expect(props.type).toBe("code_eval")
     expect(props.code).toContain("def score(")
-    expect(props.timeout_seconds).toBe(30)
+    // Default raised to 180s to accommodate nested LLM tool latency.
+    expect(props.timeout_seconds).toBe(180)
   })
 
   it("produces CodeEvalProperties with updated timeout", async () => {
@@ -182,13 +188,15 @@ describe("CodeEvalForm", () => {
     expect(dialogStub?.getAttribute("data-title")).toBe("Code Judge Examples")
   })
 
-  it("renders example tabs (Parse JSON, Check tool usage, Domain-specific grading)", () => {
+  it("renders example tabs including the LLM tool examples", () => {
     const { container } = render(CodeEvalForm)
     const tabs = container.querySelectorAll(".tab")
-    expect(tabs.length).toBe(3)
+    expect(tabs.length).toBe(5)
     expect(tabs[0].textContent?.trim()).toBe("Parse JSON")
     expect(tabs[1].textContent?.trim()).toBe("Check tool usage")
     expect(tabs[2].textContent?.trim()).toBe("Domain-specific grading")
+    expect(tabs[3].textContent?.trim()).toBe("LLM judge")
+    expect(tabs[4].textContent?.trim()).toBe("Triage then LLM judge")
   })
 
   it("switches active example tab on click", async () => {
@@ -210,6 +218,50 @@ describe("CodeEvalForm", () => {
       '[data-testid="code-editor-stub"]',
     )
     expect(editorStub).not.toBeNull()
+  })
+})
+
+describe("tool allowlist picker", () => {
+  it("renders the ToolsSelector in code-eval context", () => {
+    const { container } = render(CodeEvalForm, {
+      props: { project_id: "proj_123" },
+    })
+    const selector = container.querySelector(
+      '[data-testid="tools-selector-stub"]',
+    )
+    expect(selector).not.toBeNull()
+    expect(selector?.getAttribute("data-project-id")).toBe("proj_123")
+    // code_eval_context must be true so llm_judge is offered here.
+    expect(selector?.getAttribute("data-code-eval-context")).toBe("true")
+  })
+
+  it("binds the picker to properties.tool_allowlist", () => {
+    const customProps = {
+      type: "code_eval" as const,
+      code: 'def score(output):\n    return {"quality": 1.0}\n',
+      reference_keys: [] as string[],
+      timeout_seconds: 180,
+      tool_allowlist: ["kiln_tool::llm"],
+    }
+    const { container } = render(CodeEvalForm, {
+      props: { properties: customProps },
+    })
+    const selector = container.querySelector(
+      '[data-testid="tools-selector-stub"]',
+    )
+    expect(JSON.parse(selector?.getAttribute("data-tools") ?? "[]")).toEqual([
+      "kiln_tool::llm",
+    ])
+  })
+
+  it("selecting a tool flows back into getProperties().tool_allowlist", async () => {
+    const { component, container } = render(CodeEvalForm)
+    const add_button = container.querySelector(
+      '[data-testid="tools-selector-add"]',
+    ) as HTMLButtonElement
+    await fireEvent.click(add_button)
+    const props = component.getProperties()
+    expect(props.tool_allowlist).toEqual(["kiln_tool::llm_judge"])
   })
 })
 

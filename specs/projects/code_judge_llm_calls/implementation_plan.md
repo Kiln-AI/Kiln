@@ -29,7 +29,7 @@ Phased build order. Details live in `functional_spec.md` and `architecture.md` (
   - `CodeEvalAdapter.evaluate`: host `run_bridged_child` with the eval-schema context; delete `_code_eval_execution_lock`.
   - Tests (real spawns): `tools.llm`/`tools.llm_judge` from `score()`, sync + `async def score` w/ `gather`, allowlist enforcement, timeout mid-call, parallel code evals (regression vs deleted global lock), trust short-circuit, shared-lock/semaphore identity.
 
-- [ ] **Phase 5 — UI, examples & schema** (arch §4, §6)
+- [x] **Phase 5 — UI, examples & schema** (arch §4, §6)
   - Allowlist picker in `code_eval_form.svelte` (reuse code-tool picker); inject `llm`/`llm_judge` into the catalog; scope `llm_judge` to the code-eval context.
   - Add `tools.llm_judge` / cheap-triage examples to `code_eval_helpers.ts`; mirror them in `test_code_eval_samples.py`.
   - Regenerate OpenAPI client; UI tests.
