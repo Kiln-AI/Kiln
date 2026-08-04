@@ -19,6 +19,8 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     ClaimApi,
     FinalJudgementApi,
     JudgeConfig,
+    ReviewTracesRequest,
+    TraceReviewedEvent,
 )
 from app.desktop.studio_server.eval_builder_api import connect_eval_builder_api
 from app.desktop.studio_server.utils.eval_builder_utils import (
@@ -237,6 +239,107 @@ def test_review_traces_emits_trace_error_and_still_completes(client, review_requ
     assert all(e["code"] == "review_failed" for e in errors)
     assert all("boom" in e["message"] for e in errors)
     assert events[-1] == "complete"
+
+
+def test_review_traces_unwraps_wrapped_judge_error(client, review_request):
+    """A KilnRunError-wrapped judge failure must put the ROOT provider error
+    on the wire, not the wrapper's genericized message."""
+    root = litellm.BadRequestError(
+        message="max_tokens too large for this model",
+        model="claude_sonnet_4_6",
+        llm_provider="anthropic",
+    )
+    with (
+        patch(
+            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+            new=AsyncMock(
+                side_effect=KilnRunError(
+                    "An unexpected error occurred.",
+                    partial_trace=None,
+                    original=root,
+                )
+            ),
+        ),
+        patch(
+            "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
+            new=AsyncMock(return_value=_claims_output()),
+        ),
+    ):
+        resp = client.post(REVIEW_URL, json=review_request)
+
+    errors = [
+        e
+        for e in _parse_sse(resp.text)
+        if isinstance(e, dict) and e.get("type") == "trace_error"
+    ]
+    assert len(errors) == 2
+    for e in errors:
+        assert "BadRequestError" in e["message"]
+        assert "max_tokens too large" in e["message"]
+        assert "KilnRunError" not in e["message"]
+        assert "unexpected error" not in e["message"]
+
+
+@pytest.mark.asyncio
+async def test_review_traces_disconnect_cancels_pending_reviews(app, review_request):
+    """Cancelling the stream mid-iteration must cancel every unfinished
+    review task — abandoned judge/claim-builder calls stop spending."""
+    review_request["traces"] = [
+        {"raw_input": f"in-{i}", "raw_output": f"out-{i}"} for i in range(3)
+    ]
+    cancelled: set[int] = set()
+    first_frames = asyncio.Event()
+
+    async def fake_review(project_id, task_id, index, trace, judge, spec_name):
+        if index == 0:
+            return TraceReviewedEvent(
+                trace_index=index,
+                raw_input=trace.raw_input,
+                raw_output=trace.raw_output,
+                judge_score="fail",
+                judge_reasoning="fabricated a policy",
+                claims=[],
+                final_judgement=_final_judgement(),
+            )
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            cancelled.add(index)
+            raise
+        raise AssertionError("slow review was never cancelled")
+
+    endpoint = next(
+        route.endpoint
+        for route in app.routes
+        if getattr(route, "path", "").endswith("/review_traces")
+    )
+    with patch(
+        "app.desktop.studio_server.eval_builder_api.review_one_trace",
+        new=fake_review,
+    ):
+        response = await endpoint(
+            project_id="p1",
+            task_id="t1",
+            request=ReviewTracesRequest.model_validate(review_request),
+        )
+        frames: list[str] = []
+
+        async def consume():
+            async for frame in response.body_iterator:
+                frames.append(frame)
+                if len(frames) == 2:  # batch_started + the fast trace_reviewed
+                    first_frames.set()
+
+        consumer = asyncio.create_task(consume())
+        await asyncio.wait_for(first_frames.wait(), timeout=5)
+        # The consumer goes away mid-stream (client disconnect); the
+        # generator's teardown must cancel both still-running reviews.
+        consumer.cancel()
+        await asyncio.gather(consumer, return_exceptions=True)
+
+    assert '"batch_started"' in frames[0]
+    assert '"trace_reviewed"' in frames[1]
+    assert cancelled == {1, 2}
 
 
 # ───────────────────────── run_judge_for_trace ─────────────────────────
@@ -1220,6 +1323,40 @@ class TestReviewPipeline:
         assert "judge exploded" in failed[0]["message"]
         judged = _events_of(events, "case_judged")
         assert [e["case_index"] for e in judged] == [1]
+        assert events[-1] == "complete"
+
+    def test_judge_failure_surfaces_root_error_not_wrapper(
+        self, client, pipeline_request, pipeline_seams
+    ):
+        """A KilnRunError-wrapped judge failure must put the ROOT provider
+        error on the wire, not the wrapper's genericized message."""
+        root = litellm.BadRequestError(
+            message="max_tokens too large for this model",
+            model="claude_sonnet_4_6",
+            llm_provider="anthropic",
+        )
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+            new=AsyncMock(
+                side_effect=KilnRunError(
+                    "An unexpected error occurred.",
+                    partial_trace=None,
+                    original=root,
+                )
+            ),
+        ):
+            resp = client.post(PIPELINE_URL, json=pipeline_request)
+
+        events = _parse_sse(resp.text)
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 2
+        for e in failed:
+            assert e["stage"] == "judge"
+            assert e["code"] == "judge_failed"
+            assert "BadRequestError" in e["message"]
+            assert "max_tokens too large" in e["message"]
+            assert "KilnRunError" not in e["message"]
+            assert "unexpected error" not in e["message"]
         assert events[-1] == "complete"
 
     def test_replace_batch_tags_deleted_after_successful_drive(

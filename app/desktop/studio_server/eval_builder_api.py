@@ -494,8 +494,14 @@ class ReviewPipelineRun:
                 if is_batch_fatal_error(e):
                     await self._abort_batch("judge", e)
                     return
+                # The adapter's KilnRunError wrapper carries a genericized
+                # message — surface the root provider error, like the abort path.
+                root = unwrap_kiln_run_error(e)
                 await self._fail_case(
-                    case_index, "judge", "judge_failed", f"{type(e).__name__}: {e}"
+                    case_index,
+                    "judge",
+                    "judge_failed",
+                    f"{type(root).__name__}: {root}",
                 )
                 return
             self._judged_count += 1
@@ -605,6 +611,9 @@ def connect_eval_builder_api(app: FastAPI):
           - batch_aborted   { error, stage }  (in place of batch_completed:
                               a config-scoped judge failure aborted the whole
                               batch; results already streamed remain valid)
+          - batch_failed    { code, message }  (in place of batch_completed:
+                              an orchestration-level crash ended the stream;
+                              results already streamed remain valid)
         Terminated by `data: complete`. Claims are built afterwards, per
         opened trace, via build_claims.
         """
@@ -645,7 +654,8 @@ def connect_eval_builder_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/eval_builder/review_traces",
         tags=["Eval Builder"],
         openapi_extra=agent_policy_require_approval(
-            "Run judge and build claims for alignment traces?"
+            "Run judge and build claims for alignment traces? "
+            "Invokes the judge model per trace (cost)."
         ),
     )
     @no_write_lock  # streaming route: lock would buffer the SSE and break cancel-on-disconnect
@@ -686,11 +696,14 @@ def connect_eval_builder_api(app: FastAPI):
                         logger.exception(
                             "review_trace failed for trace_index=%s", index
                         )
+                        # The adapter's KilnRunError wrapper carries a
+                        # genericized message — surface the root provider error.
+                        root = unwrap_kiln_run_error(e)
                         return _sse(
                             TraceErrorEvent(
                                 trace_index=index,
                                 code="review_failed",
-                                message=f"{type(e).__name__}: {e}",
+                                message=f"{type(root).__name__}: {root}",
                             )
                         )
 
@@ -698,8 +711,16 @@ def connect_eval_builder_api(app: FastAPI):
             tasks = [
                 asyncio.create_task(one(i, t)) for i, t in enumerate(request.traces)
             ]
-            for finished in asyncio.as_completed(tasks):
-                yield await finished
+            try:
+                for finished in asyncio.as_completed(tasks):
+                    yield await finished
+            finally:
+                # Consumer disconnect (or any exit): cancel the unfinished
+                # reviews so abandoned LLM calls stop spending. After a full
+                # run every task is done and this is a no-op.
+                for t in tasks:
+                    t.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
             yield SSE_TERMINATOR
 
         return CancellableStreamingResponse(

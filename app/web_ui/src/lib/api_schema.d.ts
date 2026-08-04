@@ -3197,6 +3197,9 @@ export interface paths {
          *       - batch_aborted   { error, stage }  (in place of batch_completed:
          *                           a config-scoped judge failure aborted the whole
          *                           batch; results already streamed remain valid)
+         *       - batch_failed    { code, message }  (in place of batch_completed:
+         *                           an orchestration-level crash ended the stream;
+         *                           results already streamed remain valid)
          *     Terminated by `data: complete`. Claims are built afterwards, per
          *     opened trace, via build_claims.
          */
