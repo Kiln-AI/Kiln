@@ -122,7 +122,9 @@ class PythonCodeTool(KilnToolInterface):
         tool_name = self._code_tool.tool_function_name
         if outcome.timed_out:
             msg = f"Code tool '{tool_name}' timed out after {self._code_tool.timeout_seconds}s"
-            return ToolCallResult(output=msg, is_error=True, error_message=msg)
+            return ToolCallResult(
+                output=msg, is_error=True, error_message=msg, timed_out=True
+            )
         if outcome.crashed:
             msg = f"Code tool '{tool_name}' crashed (exit code {outcome.exit_code})"
             return ToolCallResult(output=msg, is_error=True, error_message=msg)
@@ -372,10 +374,9 @@ class PythonCodeTool(KilnToolInterface):
             result = await tool.run(context, **arguments)
 
             if result.is_error:
-                is_timeout = isinstance(tool, PythonCodeTool) and "timed out" in (
-                    result.output or ""
-                )
-                kind = "timeout" if is_timeout else "call_error"
+                # The result carries timeouts as a typed flag; ordinary failures
+                # whose text merely mentions a timeout must stay call_error.
+                kind = "timeout" if result.timed_out else "call_error"
                 responses.put(
                     {
                         "type": "tool_result",
@@ -467,7 +468,18 @@ class PythonCodeTool(KilnToolInterface):
 
         name_map: dict[str, list[ToolId]] = {}
         for tool_id in self._code_tool.tool_allowlist:
-            fn_name = await self._canonical_tool_name(tool_id)
+            try:
+                fn_name = await self._canonical_tool_name(tool_id)
+            except Exception as exc:
+                # A broken entry (e.g. a deleted RAG config) must not take the
+                # healthy tools down with it. Leaving it out of the map makes
+                # calls to it fail with the standard "not available" error.
+                logger.warning(
+                    "Code tool allowlist entry '%s' failed to resolve: %s",
+                    tool_id,
+                    exc,
+                )
+                continue
             name_map.setdefault(fn_name, []).append(tool_id)
 
         self._name_map = name_map
@@ -488,31 +500,39 @@ class PythonCodeTool(KilnToolInterface):
 
     async def _get_tools_info(self) -> list[dict[str, Any]]:
         """Return tool definitions for ``list_tools()``."""
+        from kiln_ai.tools.tool_registry import tool_from_id_and_project
+
         result: list[dict[str, Any]] = []
         for tool_id in self._code_tool.tool_allowlist:
             try:
-                from kiln_ai.tools.tool_registry import tool_from_id_and_project
-
                 tool = tool_from_id_and_project(
                     tool_id, project=self._project, task=self._task
                 )
                 tool_def = await tool.toolcall_definition()
-                result.append(
-                    {
-                        "name": tool_def["function"]["name"],
-                        "description": tool_def["function"]["description"],
-                        "parameters_schema": tool_def["function"]["parameters"],
-                    }
+            except Exception as exc:
+                # A broken entry (e.g. a deleted RAG config) must not hide the
+                # healthy tools. Its canonical name is unknowable without
+                # resolving it, so list it under its id with the reason.
+                logger.warning(
+                    "Code tool allowlist entry '%s' failed to resolve: %s",
+                    tool_id,
+                    exc,
                 )
-            except Exception:
-                fn_name = await self._canonical_tool_name(tool_id)
                 result.append(
                     {
-                        "name": fn_name,
-                        "description": "(unavailable)",
+                        "name": tool_id,
+                        "description": f"(unavailable: {exc})",
                         "parameters_schema": {},
                     }
                 )
+                continue
+            result.append(
+                {
+                    "name": tool_def["function"]["name"],
+                    "description": tool_def["function"]["description"],
+                    "parameters_schema": tool_def["function"]["parameters"],
+                }
+            )
         return result
 
 
