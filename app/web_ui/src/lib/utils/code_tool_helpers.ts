@@ -58,51 +58,6 @@ function jsonTypeToPython(prop: JsonSchemaProperty): string {
   }
 }
 
-const PYTHON_RESERVED_WORDS = new Set([
-  "False",
-  "None",
-  "True",
-  "and",
-  "as",
-  "assert",
-  "async",
-  "await",
-  "break",
-  "class",
-  "continue",
-  "def",
-  "del",
-  "elif",
-  "else",
-  "except",
-  "finally",
-  "for",
-  "from",
-  "global",
-  "if",
-  "import",
-  "in",
-  "is",
-  "lambda",
-  "nonlocal",
-  "not",
-  "or",
-  "pass",
-  "raise",
-  "return",
-  "try",
-  "while",
-  "with",
-  "yield",
-])
-
-/**
- * Escape a parameter name if it collides with a Python reserved word.
- */
-function safePythonName(name: string): string {
-  return PYTHON_RESERVED_WORDS.has(name) ? `${name}_param` : name
-}
-
 export interface CodeToolParam {
   name: string
   pythonType: string
@@ -141,12 +96,14 @@ function buildParamList(params: CodeToolParam[]): string {
   const requiredParams = params.filter((p) => p.required)
   const optionalParams = params.filter((p) => !p.required)
 
+  // Schema property names are used verbatim: the sandbox calls run() with
+  // keyword arguments keyed by these exact names, so renaming any would break the call.
   const parts: string[] = []
   for (const p of requiredParams) {
-    parts.push(`${safePythonName(p.name)}: ${p.pythonType}`)
+    parts.push(`${p.name}: ${p.pythonType}`)
   }
   for (const p of optionalParams) {
-    parts.push(`${safePythonName(p.name)}: ${p.pythonType} | None = None`)
+    parts.push(`${p.name}: ${p.pythonType} | None = None`)
   }
   return parts.join(", ")
 }
@@ -160,9 +117,9 @@ export function generateCodeToolPlaceholder(
 ): string {
   const params = extractParams(schema)
   const paramList = buildParamList(params)
-  // Prevent the description from prematurely closing the triple-quoted docstring.
-  // Replace any embedded """ with '' (two single-quotes) which is safe inside """.
-  const safeDesc = toolDescription.replace(/"""/g, "''")
+  // Escape backslashes then double-quotes so the description can neither close the
+  // triple-quoted docstring nor leave a dangling escape (e.g. a trailing " or \).
+  const safeDesc = toolDescription.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
 
   return `def run(${paramList}) -> str:
     """${safeDesc}"""
