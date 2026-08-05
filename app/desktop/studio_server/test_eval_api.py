@@ -4625,6 +4625,37 @@ class TestTestV2EvalDraft:
         response = client.post(self._url(), json=payload)
         assert response.status_code == 400
 
+    def test_llm_judge_through_transient_eval(
+        self, client, mock_task, mock_task_from_id
+    ):
+        # The transient eval has no path; the LLM judge adapter must still be
+        # able to build its score schema from the drafted output_scores.
+        payload = self._payload()
+        payload["properties"] = {
+            "type": "llm_judge",
+            "model_name": "gpt-4o",
+            "model_provider": "openai",
+            "prompt_template": "Is this correct? Output: {{ final_message }}",
+        }
+        mock_run_output = RunOutput(
+            output={"accuracy": "pass"},
+            intermediate_outputs=None,
+        )
+        mock_adapter = MagicMock()
+        mock_adapter.invoke_returning_run_output = AsyncMock(
+            return_value=(None, mock_run_output)
+        )
+        with patch(
+            "kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task",
+            return_value=mock_adapter,
+        ):
+            mock_task_from_id.return_value = mock_task
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert "accuracy" in body["scores"]
+        assert body["skipped_reason"] is None
+
 
 class TestTestV2EvalOverrides:
     def _url(self, eval_id: str = "eval_v2") -> str:

@@ -22,7 +22,7 @@
   } from "$lib/api/v2_eval_api"
   import { filename_string_short_validator } from "$lib/utils/input_validators"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
-  import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
+  import { validate_result_shape } from "$lib/utils/eval_types/test_run_shape"
   import type { EvalOutputScore, Priority, TaskRunOutput } from "$lib/types"
 
   /**
@@ -110,6 +110,30 @@
   let test_abort_controller: AbortController | null = null
   let trust_dialog: TrustCodeDialog
 
+  // Reference data plumbing, mirroring the add-judge builder. Dormant while
+  // SHOW_REFERENCE_DATA_UI is off (the pane hides the field), but wired so the
+  // creation pane doesn't silently drop it the day the flag flips.
+  let advanced_reference_data = ""
+  let required_reference_fields: string[] = []
+  $: reference_candidate_keys = parse_reference_keys(advanced_reference_data)
+
+  function parse_reference_keys(data: string): string[] {
+    if (!data.trim()) return []
+    try {
+      const parsed = JSON.parse(data.trim())
+      if (
+        parsed === null ||
+        typeof parsed !== "object" ||
+        Array.isArray(parsed)
+      ) {
+        return []
+      }
+      return Object.keys(parsed)
+    } catch {
+      return []
+    }
+  }
+
   $: manual_example_support = manualExampleSupport(judge_type)
 
   onMount(async () => {
@@ -147,26 +171,30 @@
         [key: string]: unknown
       }[]
     }
-    return eval_input
-  }
-
-  function validate_result_shape(scores: Record<string, number> | undefined): {
-    valid: boolean
-    message: string | null
-  } {
-    if (!scores || !output_scores.length) {
-      return { valid: true, message: null }
-    }
-    const expected_keys = output_scores.map((s) => string_to_json_key(s.name))
-    const returned_keys = Object.keys(scores)
-    const missing = expected_keys.filter((k) => !returned_keys.includes(k))
-    if (missing.length > 0) {
-      return {
-        valid: false,
-        message: `Missing expected scores: ${missing.join(", ")}. The eval returned: ${returned_keys.join(", ") || "(none)"}`,
+    if (advanced_reference_data.trim()) {
+      try {
+        const parsed = JSON.parse(advanced_reference_data.trim())
+        if (
+          parsed === null ||
+          typeof parsed !== "object" ||
+          Array.isArray(parsed)
+        ) {
+          test_error = createKilnError(
+            new Error(
+              "Reference data must be a JSON object (not null, array, string, or number).",
+            ),
+          )
+          return null
+        }
+        eval_input.reference_data = parsed
+      } catch {
+        test_error = createKilnError(
+          new Error("Reference data must be valid JSON (object)."),
+        )
+        return null
       }
     }
-    return { valid: true, message: null }
+    return eval_input
   }
 
   async function run_test() {
@@ -222,7 +250,7 @@
       test_result = result
 
       if (result.scores && !result.skipped_reason) {
-        const shape = validate_result_shape(result.scores)
+        const shape = validate_result_shape(result.scores, output_scores)
         test_has_valid_run = shape.valid
         test_shape_warning = shape.message
 
@@ -307,7 +335,9 @@
           bind:this={judge_fields}
           eval_config_type={judge_type}
           bind:code_string
+          bind:required_reference_fields
           {output_scores}
+          {reference_candidate_keys}
           code_placeholder_score_key={true}
           {project_id}
           {task_id}
@@ -356,6 +386,8 @@
       {runs_error}
       {available_runs}
       selected_run={selected_task_run}
+      reference_data={advanced_reference_data}
+      {required_reference_fields}
       {test_loading}
       {test_result}
       {test_error}
@@ -366,6 +398,7 @@
       on:select={(e) => select_task_run(e.detail)}
       on:run={run_test}
       on:cancel={cancel_test}
+      on:updateReferenceData={(e) => (advanced_reference_data = e.detail)}
       on:runAgain={run_test}
     />
   </div>

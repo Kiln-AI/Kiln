@@ -26,8 +26,9 @@
     type EvalTaskInput,
     type TestV2EvalResponse,
   } from "$lib/api/v2_eval_api"
-  import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
+  import { validate_result_shape } from "$lib/utils/eval_types/test_run_shape"
   import Dialog from "$lib/ui/dialog.svelte"
+  import TrustCodeDialog from "$lib/components/eval_types/trust_code_dialog.svelte"
   import { onMount } from "svelte"
   import EvalTypeIntro from "$lib/components/eval_types/eval_type_intro.svelte"
   import EvalTestRunPane from "$lib/components/eval_types/test_run/eval_test_run_pane.svelte"
@@ -98,7 +99,7 @@
   let test_abort_controller: AbortController | null = null
 
   // Trust, confirm, and test-required modal refs
-  let trust_dialog: Dialog
+  let trust_dialog: TrustCodeDialog
   let confirm_save_dialog: Dialog
   let test_required_dialog: Dialog
   let form_container: FormContainer
@@ -301,29 +302,6 @@
     return eval_input
   }
 
-  function validate_result_shape(scores: Record<string, number> | undefined): {
-    valid: boolean
-    message: string | null
-  } {
-    if (!scores || !evaluator?.output_scores?.length) {
-      return { valid: true, message: null }
-    }
-
-    const expected_keys = evaluator.output_scores.map((s) =>
-      string_to_json_key(s.name),
-    )
-    const returned_keys = Object.keys(scores)
-    const missing = expected_keys.filter((k) => !returned_keys.includes(k))
-
-    if (missing.length > 0) {
-      return {
-        valid: false,
-        message: `Missing expected scores: ${missing.join(", ")}. The eval returned: ${returned_keys.join(", ") || "(none)"}`,
-      }
-    }
-    return { valid: true, message: null }
-  }
-
   async function run_test() {
     // Clear all prior test state up front so a re-run never leaves a stale
     // result/warning/error on screen — even when an early-return validation
@@ -408,7 +386,10 @@
       test_result = result
 
       if (result.scores && !result.skipped_reason) {
-        const shape = validate_result_shape(result.scores)
+        const shape = validate_result_shape(
+          result.scores,
+          evaluator?.output_scores,
+        )
         test_has_valid_run = shape.valid
         test_shape_warning = shape.message
 
@@ -736,39 +717,7 @@
   </div>
 </div>
 
-<Dialog
-  bind:this={trust_dialog}
-  title="Trust Code and Project?"
-  action_buttons={[
-    {
-      label: "I Trust this Code",
-      isWarning: true,
-      asyncAction: grant_trust_and_retry,
-    },
-  ]}
->
-  <div class="flex flex-row items-start gap-4">
-    <!-- exclaim icon from warning.svelte (keep in sync) -->
-    <svg
-      class="w-10 h-10 text-warning flex-none"
-      fill="currentColor"
-      viewBox="0 0 256 256"
-      xmlns="http://www.w3.org/2000/svg"
-      data-testid="trust-warning-icon"
-    >
-      <path
-        d="M128,20.00012a108,108,0,1,0,108,108A108.12217,108.12217,0,0,0,128,20.00012Zm0,192a84,84,0,1,1,84-84A84.0953,84.0953,0,0,1,128,212.00012Zm-12-80v-52a12,12,0,1,1,24,0v52a12,12,0,1,1-24,0Zm28,40a16,16,0,1,1-16-16A16.018,16.018,0,0,1,144,172.00012Z"
-      />
-    </svg>
-    <div class="flex flex-col gap-2 text-sm text-left">
-      <p>
-        This project wants to run Python code on your machine. Only proceed if
-        you trust the eval code and this project.
-      </p>
-      <p class="font-bold">Never paste code from a stranger or the internet.</p>
-    </div>
-  </div>
-</Dialog>
+<TrustCodeDialog bind:this={trust_dialog} on_trust={grant_trust_and_retry} />
 
 <Dialog
   bind:this={confirm_save_dialog}

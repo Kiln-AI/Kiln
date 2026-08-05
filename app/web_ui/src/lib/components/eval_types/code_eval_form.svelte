@@ -71,6 +71,28 @@
     .map((score) => string_to_json_key(score.name))
     .filter((key) => key.length > 0)
 
+  // The starter was never edited if the generated placeholder key is still in
+  // the code — a string this codebase generated, so blocking on its presence
+  // at save time carries none of the false-positive risk of asserting the
+  // real key appears. (Guard against an eval genuinely named to produce this
+  // key, however unlikely.)
+  export function validate(): string | null {
+    const code = properties.code ?? ""
+    if (
+      /\bscore_name_placeholder\b/.test(code) &&
+      !expected_score_keys.includes("score_name_placeholder")
+    ) {
+      const key_hint =
+        expected_score_keys.length > 0
+          ? ` with the eval score key ${expected_score_keys
+              .map((key) => `"${key}"`)
+              .join(", ")}`
+          : ""
+      return `Replace "score_name_placeholder" in your score function${key_hint} before saving.`
+    }
+    return null
+  }
+
   // Hidden while the eval name is empty or invalid (no keys to show yet).
   $: score_key_note =
     expected_score_keys.length > 0

@@ -326,6 +326,14 @@ describe("example code correctness", () => {
         container.querySelector('[data-testid="score-key-note"]'),
       ).toBeNull()
     })
+
+    it("validate passes for code without the placeholder", () => {
+      const { component } = render(CodeEvalForm, {
+        props: { output_scores: [make_score("Accuracy", "pass_fail")] },
+      })
+      // Existing-eval starter embeds real keys, no placeholder: no block.
+      expect(component.validate()).toBeNull()
+    })
   })
 
   describe("placeholder mode (creation flow)", () => {
@@ -359,6 +367,28 @@ describe("example code correctness", () => {
       const note = container.querySelector('[data-testid="score-key-note"]')
       expect(note?.textContent).toContain('Replace "score_name_placeholder"')
       expect(note?.textContent).toContain('"my_eval"')
+    })
+
+    it("blocks saving while the placeholder is still in the code", async () => {
+      const { container, component } = render(CodeEvalForm, {
+        props: {
+          output_scores: [make_score("My Eval", "pass_fail")],
+          placeholder_score_key: true,
+        },
+      })
+      const error = component.validate()
+      expect(error).toContain('Replace "score_name_placeholder"')
+      expect(error).toContain('"my_eval"')
+
+      const editor = container.querySelector(
+        '[data-testid="code-editor-textarea"]',
+      ) as HTMLTextAreaElement
+      await fireEvent.input(editor, {
+        target: {
+          value: editor.value.replaceAll("score_name_placeholder", "my_eval"),
+        },
+      })
+      expect(component.validate()).toBeNull()
     })
   })
 })
