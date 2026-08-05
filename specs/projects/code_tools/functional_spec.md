@@ -140,9 +140,9 @@ Contract (identical for both modules; `async_tools.<name>` is the awaitable mirr
 - **Returns are always `str`** — byte-for-byte what the model would have seen from that tool. No auto-parsing, no type instability; tools that return JSON are parsed by the author (`json.loads`, one line — shown in generated placeholder code). Failures come via typed exceptions, never a differently-shaped return.
 - `tools.list_tools() -> list[dict]` — the allowlisted tools as `{name, description, parameters_schema}`, for introspective code. (Reserved name; the method wins over a same-named allowlisted tool — documented.)
 - **Typed exceptions** (importable from `kiln.tools`):
-  - `ToolNotAllowed` — the name isn't in the tool map: either it was never allowlisted, or an allowlisted entry no longer resolves (e.g. its MCP server was deleted) and is therefore omitted from the map. Message lists available names.
-  - `ToolTimeout` — the nested tool reported a timeout, classified structurally from the typed `ToolCallResult.timed_out` flag (set by the real wall-clock timeout path), plus an `asyncio.TimeoutError` raised while dispatching. A failure whose text merely mentions a timeout stays `ToolCallError`.
-  - `ToolCallError` — everything else: tool returned an error, kwargs failed schema validation, positional args used instead of kwargs, ambiguous name (§4.2). Fields: `.tool`, `.message`, `.raw` (raw output string when there is one).
+  - `ToolNotAllowed` — name doesn't resolve to any allowlisted tool; message lists available names.
+  - `ToolTimeout` — the nested tool itself reported a timeout (identifiable cases: nested code tools, asyncio timeouts; other tools' timeout errors arrive as `ToolCallError` with the raw message).
+  - `ToolCallError` — everything else: tool returned an error, kwargs failed schema validation, allowlisted tool failed to resolve (e.g. its MCP server was deleted), ambiguous name (§4.2). Fields: `.tool`, `.message`, `.raw` (raw output string when there is one).
 - **Concurrency-safe**: calls may be issued from multiple threads or gathered coroutines simultaneously; the harness executes them concurrently. **No batch/parallelism helper API** — authors write their own with stdlib; a parallel-with-retries example ships in docs (locked decision 7).
 
 ### 3.4 Nested-call semantics
@@ -245,7 +245,7 @@ After create/archive, the UI calls `uncache_available_tools()` (existing convent
 - **Timeout with nested calls in flight**: child killed, parent-side dispatch cancelled; dispatched side effects may have landed (covered by the test panel's side-effects warning).
 - **App quits mid-execution**: children are daemons — they die with the app.
 - **Concurrent invocations of one code tool**: independent subprocesses; fine.
-- **Allowlisted MCP server deleted after save**: the broken entry is omitted from the tool map (healthy tools are unaffected), so a call to it raises `ToolNotAllowed` naming the available tools, and `list_tools()` shows it as `(unavailable: <reason>)`; the code tool itself still loads.
+- **Allowlisted MCP server deleted after save**: call-time `ToolCallError`; the code tool itself still loads.
 - **Archived code tool still referenced by a run config**: resolves and executes (archive only hides from pickers).
 - **Windows/macOS/Linux + frozen builds**: explicit spawn context, `freeze_support()` untouched, stub-swap within multiprocessing's bootstrap — same guarantees and perf harness as code-evals.
 
