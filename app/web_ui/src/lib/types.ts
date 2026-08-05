@@ -140,6 +140,12 @@ export type ToolCallMessageParam =
   components["schemas"]["ChatCompletionMessageFunctionToolCallParam"]
 export type SearchToolApiDescription =
   components["schemas"]["SearchToolApiDescription"]
+export type CodeToolResponse = components["schemas"]["CodeToolResponse"]
+export type CodeToolCreateResponse =
+  components["schemas"]["CodeToolCreateResponse"]
+export type TestCodeToolResponse = components["schemas"]["TestCodeToolResponse"]
+export type ToolCallLogEntryResponse =
+  components["schemas"]["ToolCallLogEntryResponse"]
 export type Skill = components["schemas"]["SkillResponse"]
 export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
 export type Spec = components["schemas"]["Spec"]

@@ -1,3 +1,5 @@
+import type { ToolSetType } from "$lib/types"
+
 const FINE_TUNE_PROMPT_PREFIX = "fine_tune_prompt::"
 
 export function prompt_link(
@@ -46,9 +48,32 @@ export function tool_link(project_id: string, tool_id: string): string | null {
     return `/skills/${project_id}/${tool_id.split("::")[2]}`
   } else if (tool_id.startsWith("kiln_tool::rag::")) {
     return `/docs/rag_configs/${project_id}/${tool_id.split("::")[2]}/rag_config`
+  } else if (tool_id.startsWith("kiln_tool::code::")) {
+    return `/tools/${project_id}/code_tools/${tool_id.split("::")[2]}`
   } else if (tool_id.startsWith("kiln_tool::")) {
     return `/tools/${project_id}`
   } else {
     return null
+  }
+}
+
+export function tool_set_type_label(type: ToolSetType): string {
+  switch (type) {
+    case "code":
+      return "Code Tool"
+    case "mcp":
+      return "MCP"
+    case "search":
+      return "Search"
+    case "kiln_task":
+      return "Kiln Task"
+    case "demo":
+      return "Demo"
+    case "skill":
+      return "Skill"
+    case "builtin":
+      return "Built-in"
+    default:
+      return type
   }
 }

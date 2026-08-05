@@ -13,19 +13,19 @@
 #    should never have to write tags to make a read-shaped call.
 #
 # 3. Do NOT introduce a second store of eval results. JudgeFeedbackBatchRun duplicates
-#    EvalRun's job (scores for eval_config × run_config × dataset item) as a parallel,
+#    EvalRun's job (scores for eval_config x run_config x dataset item) as a parallel,
 #    API-shaped model — the name is the smell: it's shaped like a request/response, not
 #    like the domain. It is also lossier than what it duplicates: generate mode discards
 #    the TaskRun (allow_saving=False), so no input/output/trace/usage survives for
 #    debugging an item's failure, while EvalRun keeps all four. And it creates two
 #    sources of truth — these scores never feed the eval score summaries, so the same
-#    (eval × run config) can answer differently here vs the scorecard. If EvalRun lacks
+#    (eval x run config) can answer differently here vs the scorecard. If EvalRun lacks
 #    something (e.g. the judge's feedback/reasoning text), EXTEND EvalRun. Extend,
 #    don't duplicate.
 #
 # 4. Re-running identical work must hit the cache. Same run config + same input
 #    (temperature aside) yields the same result — a "fresh" re-run of an unchanged
-#    (eval_config × run_config × item) triple is cost without information. EvalRunner
+#    (eval_config x run_config x item) triple is cost without information. EvalRunner
 #    already has the correct semantics (run only missing triples, return stored results
 #    otherwise); this runner bypasses it: its own persisted runs are consulted only
 #    within a single batch, and never in generate mode. Re-run when the run config or

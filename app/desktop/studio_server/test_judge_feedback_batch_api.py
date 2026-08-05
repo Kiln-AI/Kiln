@@ -26,6 +26,7 @@ from kiln_ai.datamodel.eval import (
     EvalConfigType,
     EvalDataType,
     EvalOutputScore,
+    LlmJudgeProperties,
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
@@ -265,6 +266,39 @@ def test_create_reference_answer_eval_requires_generate(
         BASE, json={"target_tags": ["train"], "eval_config_id": "refcfg"}
     )
     assert resp.status_code == 422
+
+
+def test_create_rejects_v2_judge(client, mock_task, mock_task_from_id):
+    # JudgeFeedbackBatchRunner dispatches through legacy_eval_adapter_from_type, which has no
+    # V2 arm. Refuse at the boundary so the caller gets a 422 naming the reason rather than an
+    # internal NotImplementedError partway through a run.
+    eval = Eval(
+        id="v2eval",
+        name="v2",
+        eval_set_filter_id="all",
+        eval_configs_filter_id="all",
+        output_scores=[
+            EvalOutputScore(name="Accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    EvalConfig(
+        id="v2cfg",
+        name="c",
+        config_type=EvalConfigType.v2,
+        properties=LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="Evaluate: {{ final_message }}",
+        ),
+        parent=eval,
+    ).save_to_file()
+
+    resp = client.post(BASE, json={"target_tags": ["train"], "eval_config_id": "v2cfg"})
+    assert resp.status_code == 422
+    assert "V2 judges" in resp.json()["message"]
+    assert mock_task.judge_feedback_batches() == []
 
 
 def test_create_and_run_generate(

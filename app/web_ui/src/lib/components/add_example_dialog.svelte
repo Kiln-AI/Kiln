@@ -39,6 +39,21 @@
   // guide) pass include_output={false}; the default captures both.
   export let include_input: boolean = true
   export let include_output: boolean = true
+  // When true, skip the "Select Existing" run picker and method-selection
+  // screen entirely — the dialog opens straight into the manual entry form.
+  // Used by callers that already provide their own run picker upstream (e.g.
+  // the scorer test-run flow).
+  export let manual_only: boolean = false
+  // Dialog chrome. Defaults suit the data-guide flow; other callers pass their
+  // own copy. When title is null the header reflects add/edit mode.
+  export let title: string | null = null
+  export let sub_subtitle: string =
+    "Add a task data example to guide generation."
+  // Label for the submit button when adding (edit mode always shows "Save").
+  export let submit_label: string = "Add"
+  // When true, the submit button is disabled until at least one captured side
+  // has content — matching the older manual-example UX for the scorer flow.
+  export let disable_when_empty: boolean = false
 
   let example_dialog: Dialog
   let mode: "add" | "edit" = "add"
@@ -86,6 +101,17 @@
   $: use_structured_output =
     mode === "add" && include_output && !!output_structured_model
 
+  // A captured side has content if it's included and either uses the structured
+  // form (validated on submit) or has non-blank text. When disable_when_empty
+  // is set, the submit button stays disabled until at least one side qualifies.
+  $: input_has_content =
+    include_input && (use_structured_input || editing_input.trim().length > 0)
+  $: output_has_content =
+    include_output &&
+    (use_structured_output || editing_output.trim().length > 0)
+  $: submit_disabled =
+    disable_when_empty && !input_has_content && !output_has_content
+
   $: added_run_ids = new Set(
     existing_examples
       .map((e) => e.task_run_id)
@@ -100,15 +126,19 @@
   }>()
 
   onMount(async () => {
-    try {
-      const result = await fetch_task_sample_candidates(project_id, task_id)
-      available_runs = result.available_runs.filter(
-        (r) => r.input_source?.type !== "synthetic",
-      )
-    } catch {
-      // Non-critical
-    } finally {
+    if (manual_only) {
       loading_runs = false
+    } else {
+      try {
+        const result = await fetch_task_sample_candidates(project_id, task_id)
+        available_runs = result.available_runs.filter(
+          (r) => r.input_source?.type !== "synthetic",
+        )
+      } catch {
+        // Non-critical
+      } finally {
+        loading_runs = false
+      }
     }
 
     try {
@@ -127,7 +157,7 @@
 
   export function open_add() {
     mode = "add"
-    add_method = null
+    add_method = manual_only ? "manual" : null
     editing_index = -1
     editing_input = ""
     editing_output = ""
@@ -217,8 +247,8 @@
 <Dialog
   bind:this={example_dialog}
   width="wide"
-  title={mode === "edit" ? "Edit Example" : "Add Example"}
-  sub_subtitle="Add a task data example to guide generation."
+  title={title ?? (mode === "edit" ? "Edit Example" : "Add Example")}
+  {sub_subtitle}
 >
   {#if mode === "add" && (loading_runs || schema_loading)}
     <div class="flex justify-center items-center py-8">
@@ -319,9 +349,10 @@
           <button
             type="button"
             class="btn btn-sm h-10 btn-primary min-w-24"
+            disabled={submit_disabled}
             on:click={save_manual}
           >
-            {mode === "edit" ? "Save" : "Add"}
+            {mode === "edit" ? "Save" : submit_label}
           </button>
         </div>
       </div>

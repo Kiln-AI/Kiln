@@ -107,7 +107,7 @@ def connect_spec_api(app: FastAPI):
         (
             eval_set_filter_id,
             train_set_filter_id,
-            val_set_filter_id,
+            _val_set_filter_id,
             eval_configs_filter_id,
         ) = generate_spec_eval_filter_ids(eval_tag, train_tag, val_tag, golden_tag)
 
@@ -125,7 +125,6 @@ def connect_spec_api(app: FastAPI):
             output_scores=output_scores,
             eval_set_filter_id=eval_set_filter_id,
             train_set_filter_id=train_set_filter_id,
-            val_set_filter_id=val_set_filter_id,
             eval_configs_filter_id=eval_configs_filter_id,
             template_properties=None,
             evaluation_data_type=evaluation_data_type,

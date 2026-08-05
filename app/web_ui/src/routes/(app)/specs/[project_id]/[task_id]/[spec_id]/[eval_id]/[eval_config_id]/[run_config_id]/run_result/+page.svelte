@@ -15,7 +15,14 @@
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
-  import { eval_config_to_ui_name } from "$lib/utils/formatters"
+  import {
+    eval_config_to_ui_name,
+    eval_config_to_detailed_ui_name,
+  } from "$lib/utils/formatters"
+  import {
+    getV2TypeFromEvalConfig,
+    getV2EvalTypeMetadata,
+  } from "$lib/utils/eval_types/registry"
   import {
     get_task_composite_id,
     model_info,
@@ -144,9 +151,11 @@
     if (!run_config || !evaluator) {
       return {}
     }
-    const base = {
+    const base: Record<string, string> = {
       "Run Configuration Name": run_config.name,
-      "Task Inputs From Dataset": evaluator.eval_set_filter_id,
+    }
+    if (evaluator.eval_set_filter_id) {
+      base["Task Inputs From Dataset"] = evaluator.eval_set_filter_id
     }
     if (!isKilnAgentRunConfig(run_config.run_config_properties)) {
       return {
@@ -180,13 +189,31 @@
     if (!evaluator || !eval_config) {
       return {}
     }
+    if (eval_config.config_type === "v2") {
+      return {
+        "Judge Name": eval_config.name,
+        "Judge Type": eval_config_to_detailed_ui_name(eval_config),
+      }
+    }
     return {
       "Judge Name": eval_config.name,
       "Judge Algorithm": eval_config_to_ui_name(eval_config.config_type),
-      "Judge Model": model_name(eval_config.model_name, $model_info),
-      "Model Provider": provider_name_from_id(eval_config.model_provider),
+      "Judge Model": model_name(
+        eval_config.model_name ?? undefined,
+        $model_info,
+      ),
+      "Model Provider": provider_name_from_id(eval_config.model_provider ?? ""),
     }
   }
+
+  $: is_v2_config = results?.eval_config?.config_type === "v2"
+
+  $: v2_result_component = (() => {
+    if (!results?.eval_config) return null
+    const v2type = getV2TypeFromEvalConfig(results.eval_config)
+    if (!v2type) return null
+    return getV2EvalTypeMetadata(v2type).resultRendererComponent
+  })()
 </script>
 
 <AppPage
@@ -255,15 +282,21 @@
         <thead>
           <tr>
             <th>Input & Output</th>
-            <th>Thinking</th>
-            {#each results.eval.output_scores as score}
-              <th class="text-center">
-                {score.name}
-                {#if score.type}
-                  <OutputTypeTablePreview output_score_type={score.type} />
-                {/if}
-              </th>
-            {/each}
+            {#if !is_v2_config}
+              <th>Thinking</th>
+            {/if}
+            {#if is_v2_config && v2_result_component}
+              <th>Result</th>
+            {:else}
+              {#each results.eval.output_scores as score}
+                <th class="text-center">
+                  {score.name}
+                  {#if score.type}
+                    <OutputTypeTablePreview output_score_type={score.type} />
+                  {/if}
+                </th>
+              {/each}
+            {/if}
           </tr>
         </thead>
         <tbody>
@@ -285,44 +318,59 @@
                   {result.output}
                 </div>
               </td>
-              <td>
-                {#if result.intermediate_outputs?.reasoning || result.intermediate_outputs?.chain_of_thought}
-                  <div class="max-w-[600px] min-w-[200px]">
-                    <div class="max-h-[140px] overflow-y-hidden relative">
-                      {result.intermediate_outputs?.reasoning ||
-                        result.intermediate_outputs?.chain_of_thought ||
-                        "N/A"}
-                      <div class="absolute bottom-0 left-0 w-full">
-                        <div
-                          class="h-36 bg-gradient-to-t from-white to-transparent"
-                        ></div>
-                        <div
-                          class="text-center bg-white font-medium font-sm text-gray-500"
-                        >
-                          <button
-                            class="text-gray-500"
-                            on:click={() => {
-                              displayed_result = result
-                              thinking_dialog?.show()
-                            }}
+              {#if !is_v2_config}
+                <td>
+                  {#if result.intermediate_outputs?.reasoning || result.intermediate_outputs?.chain_of_thought}
+                    <div class="max-w-[600px] min-w-[200px]">
+                      <div class="max-h-[140px] overflow-y-hidden relative">
+                        {result.intermediate_outputs?.reasoning ||
+                          result.intermediate_outputs?.chain_of_thought ||
+                          "N/A"}
+                        <div class="absolute bottom-0 left-0 w-full">
+                          <div
+                            class="h-36 bg-gradient-to-t from-white to-transparent"
+                          ></div>
+                          <div
+                            class="text-center bg-white font-medium font-sm text-gray-500"
                           >
-                            See all
-                          </button>
+                            <button
+                              class="text-gray-500"
+                              on:click={() => {
+                                displayed_result = result
+                                thinking_dialog?.show()
+                              }}
+                            >
+                              See all
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                {:else}
-                  N/A
-                {/if}
-              </td>
-              {#each results.eval.output_scores as score}
-                {@const score_value =
-                  result.scores[string_to_json_key(score.name)]}
-                <td class="text-center">
-                  {score_value != null ? score_value.toFixed(2) : "N/A"}
+                  {:else}
+                    N/A
+                  {/if}
                 </td>
-              {/each}
+              {/if}
+              {#if is_v2_config && v2_result_component}
+                <td>
+                  <svelte:component
+                    this={v2_result_component}
+                    scores={result.scores}
+                    skipped_reason={result.skipped_reason ?? null}
+                    skipped_detail={result.skipped_detail ?? null}
+                    eval_config={results.eval_config}
+                    intermediate_outputs={result.intermediate_outputs ?? null}
+                  />
+                </td>
+              {:else}
+                {#each results.eval.output_scores as score}
+                  {@const score_value =
+                    result.scores[string_to_json_key(score.name)]}
+                  <td class="text-center">
+                    {score_value != null ? score_value.toFixed(2) : "N/A"}
+                  </td>
+                {/each}
+              {/if}
             </tr>
           {/each}
         </tbody>
@@ -368,16 +416,7 @@
   </div>
 </Dialog>
 
-<Dialog
-  bind:this={thinking_dialog}
-  title="Thinking Output"
-  action_buttons={[
-    {
-      label: "Close",
-      isCancel: true,
-    },
-  ]}
->
+<Dialog bind:this={thinking_dialog} title="Thinking Output">
   <div class="font-light text-sm whitespace-pre-wrap">
     {displayed_result?.intermediate_outputs?.reasoning ||
       displayed_result?.intermediate_outputs?.chain_of_thought ||

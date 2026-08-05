@@ -450,11 +450,10 @@ class TestCreateSpecWithCopilot:
         assert evals[0].name == "Test Spec"
         assert evals[0].current_config_id is not None
 
-        # Check the raw saved eval file: the lazy train/val migrations run on load and
-        # would synthesize these same values, masking missing wiring in the create path
+        # Check the raw saved eval file: the lazy train migration runs on load and
+        # would synthesize this same value, masking missing wiring in the create path
         saved_eval = json.loads(evals[0].path.read_text())
         assert saved_eval["train_set_filter_id"] == "tag::train_test_spec"
-        assert saved_eval["val_set_filter_id"] == "tag::val_test_spec"
 
         specs = task.specs()
         assert len(specs) == 1

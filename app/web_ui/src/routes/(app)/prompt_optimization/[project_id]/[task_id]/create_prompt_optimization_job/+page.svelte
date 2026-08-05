@@ -1059,8 +1059,8 @@
                                 </div>
                                 <div class="text-xs text-gray-500">
                                   {getDetailedModelNameFromParts(
-                                    current_config.model_name,
-                                    current_config.model_provider,
+                                    current_config.model_name ?? "",
+                                    current_config.model_provider ?? "",
                                     $model_info,
                                   )}
                                 </div>

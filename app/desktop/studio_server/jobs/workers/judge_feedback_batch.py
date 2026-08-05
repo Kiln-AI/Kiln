@@ -198,8 +198,10 @@ class JudgeFeedbackBatchJobWorker(
             eval_name=eval.name if eval is not None else "",
             judge_name=eval_config.name,
             judge_algorithm=eval_config.config_type.value,
-            judge_model_name=eval_config.model_name,
-            judge_model_provider=eval_config.model_provider,
+            # V2 eval configs carry no root-level model; blank like the run-config
+            # fields above rather than dropping the properties block.
+            judge_model_name=eval_config.model_name or "",
+            judge_model_provider=eval_config.model_provider or "",
             generate_outputs=batch.generate_outputs,
             run_config_name=run_config_name,
             run_config_model_name=run_config_model_name,

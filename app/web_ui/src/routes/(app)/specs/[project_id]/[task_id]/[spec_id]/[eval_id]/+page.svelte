@@ -7,7 +7,10 @@
   import { page } from "$app/stores"
   import type { EvalProgress } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import { eval_config_to_ui_name } from "$lib/utils/formatters"
+  import {
+    eval_config_to_ui_name,
+    eval_config_to_detailed_ui_name,
+  } from "$lib/utils/formatters"
   import {
     model_info,
     load_model_info,
@@ -309,22 +312,32 @@
     }
 
     if (eval_progress?.current_eval_method) {
-      properties.push({
-        name: "Judge Algorithm",
-        value: eval_config_to_ui_name(
-          eval_progress.current_eval_method.config_type,
-        ),
-        tooltip: "The evaluation algorithm used by your selected judge.",
-      })
-      properties.push({
-        name: "Judge Model",
-        value: getDetailedModelNameFromParts(
-          eval_progress.current_eval_method.model_name,
-          eval_progress.current_eval_method.model_provider,
-          modelInfo,
-        ),
-        tooltip: "The model used by your selected judge.",
-      })
+      if (eval_progress.current_eval_method.config_type === "v2") {
+        properties.push({
+          name: "Judge Type",
+          value: eval_config_to_detailed_ui_name(
+            eval_progress.current_eval_method,
+          ),
+          tooltip: "The type of judge used for evaluation.",
+        })
+      } else {
+        properties.push({
+          name: "Judge Algorithm",
+          value: eval_config_to_ui_name(
+            eval_progress.current_eval_method.config_type,
+          ),
+          tooltip: "The evaluation algorithm used by your selected judge.",
+        })
+        properties.push({
+          name: "Judge Model",
+          value: getDetailedModelNameFromParts(
+            eval_progress.current_eval_method.model_name ?? "",
+            eval_progress.current_eval_method.model_provider ?? "",
+            modelInfo,
+          ),
+          tooltip: "The model used by your selected judge.",
+        })
+      }
     }
 
     return properties
@@ -607,21 +620,12 @@
     let url = `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/compare_run_configs`
     goto(url)
   }
-
-  function docs_link(evaluator: Eval | null): string | undefined {
-    if (evaluator?.template === "tool_call") {
-      return "https://docs.kiln.tech/docs/evaluations/evaluate-appropriate-tool-use"
-    }
-    return "https://docs.kiln.tech/docs/evaluations"
-  }
 </script>
 
 <div class="max-w-[1400px]">
   <AppPage
     title="Eval: {evaluator?.name || ''}"
     subtitle="Follow these steps to find the best way to evaluate and run your task"
-    sub_subtitle="Read the Docs"
-    sub_subtitle_link={docs_link(evaluator)}
     breadcrumbs={spec_id === "legacy"
       ? [
           {
@@ -771,12 +775,13 @@
                     {:else if step_id == "compare_judges"}
                       <div class="mb-1">
                         {#if eval_progress?.current_eval_method}
-                          You selected the judge '{eval_config_to_ui_name(
-                            eval_progress.current_eval_method.config_type,
-                          )}' using the model '{model_name(
-                            eval_progress.current_eval_method.model_name,
-                            $model_info,
-                          )}'.
+                          You selected the judge '{eval_config_to_detailed_ui_name(
+                            eval_progress.current_eval_method,
+                          )}'{#if eval_progress.current_eval_method.model_name}
+                            using the model '{model_name(
+                              eval_progress.current_eval_method.model_name,
+                              $model_info,
+                            )}'{/if}.
                         {:else}
                           Compare automated evals to find one that aligns with
                           your human preferences.

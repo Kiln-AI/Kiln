@@ -1,5 +1,5 @@
 # TODO (merge blocker — do not merge toward main until resolved): this runner is under design
-# review. Concerns 3–5 are implemented here — the parallel eval-result store (JudgeFeedbackBatchRun
+# review. Concerns 3-5 are implemented here — the parallel eval-result store (JudgeFeedbackBatchRun
 # vs EvalRun), the cache bypass on identical re-runs, and the paired-gate logic retrofitted onto
 # tag-based sampling. Full write-up and rationale in the header of
 # kiln_ai/datamodel/judge_feedback_batch.py. Resolve there before merging toward main.
@@ -29,7 +29,7 @@ from kiln_ai.adapters.adapter_registry import load_skills_for_task
 from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.eval_runner import _is_retryable_error
-from kiln_ai.adapters.eval.registry import eval_adapter_from_type
+from kiln_ai.adapters.eval.registry import legacy_eval_adapter_from_type
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
@@ -347,7 +347,9 @@ class JudgeFeedbackBatchRunner:
             else {run.task_run_id: run for run in job.runs(readonly=True)}
         )
 
-        evaluator = eval_adapter_from_type(self.eval_config.config_type)(
+        # Legacy judges only. V2 configs raise NotImplementedError here; callers must reject
+        # them up front (see judge_feedback_batch_api.validate_judge_eval).
+        evaluator = legacy_eval_adapter_from_type(self.eval_config)(
             self.eval_config, self._run_config_properties, skills=self._skills
         )
         if not isinstance(evaluator, BaseEval):

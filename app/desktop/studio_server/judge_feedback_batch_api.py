@@ -6,7 +6,7 @@ from kiln_ai.adapters.eval.judge_feedback_batch_runner import (
     JudgeFeedbackBatchItemError,
     JudgeFeedbackBatchRunner,
 )
-from kiln_ai.datamodel.eval import EvalConfig, EvalDataType
+from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, EvalDataType
 from kiln_ai.datamodel.judge_feedback_batch import (
     JudgeFeedbackBatch,
     JudgeFeedbackBatchRun,
@@ -66,9 +66,22 @@ def validate_run_config_id(task: Task, run_config_id: str | None) -> None:
 
 
 def validate_judge_eval(eval_config: EvalConfig, generate_outputs: bool) -> None:
-    """Reference-answer evals score a candidate output against the dataset's reference answer, which
+    """Reject judge/batch combinations the runner cannot execute, at the API boundary.
+
+    V2 eval configs dispatch through v2_eval_adapter_from_config, which JudgeFeedbackBatchRunner
+    does not implement — without this it would surface as an internal NotImplementedError partway
+    through a run.
+
+    Reference-answer evals score a candidate output against the dataset's reference answer, which
     only makes sense when generating a fresh output. Judging an existing output gives nothing to
     compare against, so reject that combination (the judge would otherwise error on every item)."""
+    if eval_config.config_type == EvalConfigType.v2:
+        raise HTTPException(
+            status_code=422,
+            detail="Judge feedback batches don't support V2 judges. Eval config "
+            f"'{eval_config.id}' is a V2 config; select a G-Eval or LLM-as-judge config instead.",
+        )
+
     eval = eval_config.parent_eval()
     if (
         eval is not None

@@ -8,7 +8,7 @@ See `functional_spec.md` for behavior and `architecture.md` for design. This is 
 
 ## Phases
 
-- [ ] **Phase 1: Merge `scosman/evals_v2`.** Resolve conflicts, no new behavior. Resolve the split
+- [x] **Phase 1: Merge `scosman/evals_v2`.** Resolve conflicts, no new behavior. Resolve the split
       surface toward evals_v2 and **drop #1621's split additions rather than reconciling them** —
       `val_set_filter_id`, `filter_id_for_split`, `split_filter_id_from_eval`,
       `eval_set_filter_id_override`, the `split` API params and `migrate_val_set_filter_id` are all

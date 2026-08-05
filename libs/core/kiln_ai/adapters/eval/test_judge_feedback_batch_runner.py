@@ -191,8 +191,8 @@ async def run_job(
 ):
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(
-            "kiln_ai.adapters.eval.judge_feedback_batch_runner.eval_adapter_from_type",
-            lambda _type: scripted_evaluator_factory(
+            "kiln_ai.adapters.eval.judge_feedback_batch_runner.legacy_eval_adapter_from_type",
+            lambda _eval_config: scripted_evaluator_factory(
                 score_fn,
                 calls=calls,
                 generate=judge_feedback_batch.generate_outputs,
@@ -792,8 +792,8 @@ async def test_transient_retries_back_off_exponentially(mock_task, data_source):
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(
-            "kiln_ai.adapters.eval.judge_feedback_batch_runner.eval_adapter_from_type",
-            lambda _type: scripted_evaluator_factory(score_fn, generate=False),
+            "kiln_ai.adapters.eval.judge_feedback_batch_runner.legacy_eval_adapter_from_type",
+            lambda _eval_config: scripted_evaluator_factory(score_fn, generate=False),
         )
         mp.setattr(
             "kiln_ai.adapters.eval.judge_feedback_batch_runner.asyncio.sleep",
