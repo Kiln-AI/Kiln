@@ -21,6 +21,9 @@
   export let task_id: string = ""
   export let output_scores: EvalOutputScore[] | undefined = undefined
   export let reference_candidate_keys: string[] = []
+  // Creation flow only: the code judge seeds its starter code with a static
+  // "score_name" placeholder instead of chasing the still-being-typed eval name.
+  export let code_placeholder_score_key: boolean = false
 
   // Bound out to callers that gate on the current draft (e.g. the save-after-test
   // rule keys off code edits, and the reference-key dropdown off the expression).
@@ -53,6 +56,7 @@
     bind:this={form_ref}
     bind:code_string
     {output_scores}
+    placeholder_score_key={code_placeholder_score_key}
   />
 {:else if eval_config_type === "exact_match" || eval_config_type === "contains" || eval_config_type === "set_check"}
   <svelte:component

@@ -37,9 +37,10 @@
   $: judge_metadata = getV2EvalTypeMetadata(judge_type)
 
   // The eval will be created with a single pass/fail score named after the
-  // eval. The judge forms need that shape up front: the code judge derives its
-  // starter code's score key from it, and returning any other key (e.g. the
-  // "quality" fallback) would fail score validation on every run.
+  // eval. The judge forms need that shape up front: the code judge shows the
+  // score key it implies (live, as the name is typed) and refuses to save
+  // until the code returns it — its starter code uses a static "score_name"
+  // placeholder rather than chasing this field.
   $: output_scores = [{ name, type: "pass_fail" }] as EvalOutputScore[]
 
   // The form arrives pre-filled (autofilled name, judge defaults), so "has
@@ -107,6 +108,7 @@
       eval_config_type={judge_type}
       bind:code_string
       {output_scores}
+      code_placeholder_score_key={true}
       {project_id}
       {task_id}
     />

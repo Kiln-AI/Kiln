@@ -52,17 +52,17 @@ function render_form(judge_type: "code_eval" | "pattern_match", name: string) {
 }
 
 describe("CreateSpecJudgeForm", () => {
-  it("seeds the code judge's starter code with the eval's score key", () => {
-    // The eval is created with one pass/fail score named after the eval, so
-    // the generated code must return that key -- the "quality" fallback would
-    // fail score validation on every run.
+  it("seeds the code judge with the score_name placeholder, never the quality fallback", () => {
+    // The starter code is static by design: the score key note and save-time
+    // validation carry the real key, so the code never has to chase the
+    // still-being-typed eval name.
     const { container } = render_form("code_eval", "No Hate Regex")
 
     const editor = container.querySelector(
       '[data-testid="code-editor-textarea"]',
     ) as HTMLTextAreaElement
     expect(editor).not.toBeNull()
-    expect(editor.value).toContain('"no_hate_regex"')
+    expect(editor.value).toContain('"score_name"')
     expect(editor.value).not.toContain('"quality"')
   })
 
@@ -72,36 +72,64 @@ describe("CreateSpecJudgeForm", () => {
     expect(container.textContent).toContain("Judge Configuration")
   })
 
-  it("regenerates starter code as the eval name is typed", async () => {
-    // Judge-only mode starts with an empty name; the score key comes from
-    // whatever the user types. The editor's own programmatic setValue fires a
-    // change event, which must NOT count as a user edit — otherwise the first
-    // keystroke freezes regeneration and the saved code returns a score key
-    // that can never match the eval.
+  it("the score key note tracks the eval name; the code stays static", async () => {
+    // Judge-only mode starts with an empty name; the real key comes from
+    // whatever the user types. The code is never regenerated — the live note
+    // and validation are the contract.
     const { container } = render_form("code_eval", "")
+    const editor = container.querySelector(
+      '[data-testid="code-editor-textarea"]',
+    ) as HTMLTextAreaElement
+    const note = container.querySelector(
+      '[data-testid="score-key-note"]',
+    ) as HTMLElement
+    const name_input = container.querySelector(
+      'input[aria-label="Eval Name"]',
+    ) as HTMLInputElement
+    expect(name_input).not.toBeNull()
+    expect(note.textContent).toContain("name your eval above")
+
+    for (const partial of ["N", "No Hate", "No Hate Regex"]) {
+      await fireEvent.input(name_input, { target: { value: partial } })
+      await tick()
+    }
+    expect(note.textContent).toContain('"no_hate_regex"')
+    expect(editor.value).toContain('"score_name"')
+    expect(editor.value).not.toContain('"no_hate_regex"')
+  })
+
+  it("validation blocks saving until the code returns the real score key", async () => {
+    const { container, component } = render_form("code_eval", "")
+    const form = component as unknown as {
+      validateJudge: () => string | null
+    }
     const editor = container.querySelector(
       '[data-testid="code-editor-textarea"]',
     ) as HTMLTextAreaElement
     const name_input = container.querySelector(
       'input[aria-label="Eval Name"]',
     ) as HTMLInputElement
-    expect(name_input).not.toBeNull()
 
-    // Simulate typing keystroke by keystroke: each triggers a regeneration.
-    for (const partial of ["N", "No Hate", "No Hate Regex"]) {
-      await fireEvent.input(name_input, { target: { value: partial } })
-      await tick()
-    }
-    expect(editor.value).toContain('"no_hate_regex"')
+    await fireEvent.input(name_input, { target: { value: "No Hate Regex" } })
+    await tick()
 
-    // A real user edit freezes regeneration from then on.
+    // Untouched starter still carries the placeholder: blocked, with a hint.
+    const placeholder_error = form.validateJudge()
+    expect(placeholder_error).toContain('"no_hate_regex"')
+    expect(placeholder_error).toContain('"score_name" placeholder')
+
+    // Renaming the key in the code satisfies validation.
     await fireEvent.input(editor, {
-      target: { value: 'return {"custom": 1.0}' },
+      target: { value: editor.value.replaceAll("score_name", "no_hate_regex") },
     })
     await tick()
+    expect(form.validateJudge()).toBeNull()
+
+    // Renaming the eval afterwards re-blocks: the code no longer matches.
     await fireEvent.input(name_input, { target: { value: "Renamed" } })
     await tick()
-    expect(editor.value).toContain('"custom"')
-    expect(editor.value).not.toContain('"renamed"')
+    const renamed_error = form.validateJudge()
+    expect(renamed_error).toContain('"renamed"')
+    expect(renamed_error).not.toContain("placeholder")
   })
 })

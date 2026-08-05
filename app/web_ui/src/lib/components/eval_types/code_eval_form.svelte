@@ -7,14 +7,40 @@
   import type { EvalOutputScore } from "$lib/types"
   import { generate_default_code, generate_examples } from "./code_eval_helpers"
   import { SHOW_REFERENCE_DATA_UI } from "$lib/utils/eval_types/reference_data_ui"
+  import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
 
   export let output_scores: EvalOutputScore[] | undefined = undefined
+
+  // Creation flow: the score is named after the eval, which the user is still
+  // typing. Rather than chasing the name field with regeneration, the starter
+  // code uses a static "score_name" placeholder, the note above the editor
+  // shows the real key live, and validate() blocks saving until the code
+  // returns it.
+  export let placeholder_score_key: boolean = false
+
+  function initial_code(): string {
+    if (placeholder_score_key) {
+      return generate_default_code(placeholder_scores(output_scores))
+    }
+    return generate_default_code(output_scores)
+  }
+
+  function placeholder_scores(
+    scores: EvalOutputScore[] | undefined,
+  ): EvalOutputScore[] {
+    return [
+      {
+        name: "score_name",
+        type: scores?.[0]?.type ?? "pass_fail",
+      } as EvalOutputScore,
+    ]
+  }
 
   export let properties: components["schemas"]["CodeEvalProperties"] & {
     timeout_seconds?: number
   } = {
     type: "code_eval",
-    code: generate_default_code(output_scores),
+    code: initial_code(),
     reference_keys: [],
     timeout_seconds: 30,
   }
@@ -25,18 +51,43 @@
   let user_has_edited = false
   // The editor dispatches `change` for programmatic setValue too, so remember
   // what we generated ourselves: only a change that differs from our own
-  // generation counts as a user edit. Without this, the first regeneration
-  // (e.g. from typing the eval name, which renames the score key) would mark
-  // the form as edited and freeze all further regeneration — saving starter
-  // code whose score key never matches the eval.
+  // generation counts as a user edit. Without this, a programmatic
+  // regeneration would mark the form as edited and freeze all further
+  // regeneration.
   let last_generated_code = properties.code
 
-  $: if (output_scores && !user_has_edited) {
+  // In placeholder mode the starter is static by design — never regenerate.
+  $: if (!placeholder_score_key && output_scores && !user_has_edited) {
     const new_code = generate_default_code(output_scores)
     last_generated_code = new_code
     properties.code = new_code
     code_string = new_code
     code_editor?.setValue(new_code)
+  }
+
+  // The keys the eval expects the score function to return.
+  $: expected_score_keys = (output_scores ?? [])
+    .map((score) => string_to_json_key(score.name))
+    .filter((key) => key.length > 0)
+
+  function escape_regex(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  }
+
+  export function validate(): string | null {
+    const code = properties.code ?? ""
+    if (expected_score_keys.length === 0) {
+      return "Name your eval before saving: the score function must return a score key derived from the eval name."
+    }
+    for (const key of expected_score_keys) {
+      if (!new RegExp(`\\b${escape_regex(key)}\\b`).test(code)) {
+        const placeholder_hint = /\bscore_name\b/.test(code)
+          ? ' Replace the "score_name" placeholder in your code with it.'
+          : ""
+        return `The score function must return the score key "${key}".${placeholder_hint}`
+      }
+    }
+    return null
   }
 
   let timeout_seconds: number = properties.timeout_seconds ?? 30
@@ -102,9 +153,24 @@
     inline_action={examples_inline_action}
     value=""
   />
+  <div class="text-xs text-gray-500" data-testid="score-key-note">
+    {#if expected_score_keys.length > 0}
+      Your function must return the score key{expected_score_keys.length > 1
+        ? "s"
+        : ""}
+      {#each expected_score_keys as key, i}{i > 0 ? ", " : ""}<span
+          class="font-mono font-bold">"{key}"</span
+        >{/each}{placeholder_score_key
+        ? ' — replace the "score_name" placeholder below.'
+        : "."}
+    {:else}
+      Your function must return the score key derived from the eval name (in
+      snake case) — name your eval above to see it.
+    {/if}
+  </div>
   <CodeEditor
     bind:this={code_editor}
-    value={properties.code || generate_default_code(output_scores)}
+    value={properties.code || initial_code()}
     min_height="300px"
     on:change={on_code_change}
   />
