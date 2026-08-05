@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 scope: Train/val/test dataset splits working across both V1 (TaskRun) and V2 (EvalInput) eval data sources
 branch: scosman/eval-splits-v1-v2
 supersedes: PR #1621, PR #1620
