@@ -147,11 +147,13 @@
   ]}
 >
   <div class="flex flex-col gap-4">
-    <div class="tabs tabs-bordered">
+    <div class="tabs tabs-bordered flex-nowrap overflow-x-auto">
       {#each examples as example, i}
         <button
           type="button"
-          class="tab {active_example_tab === i ? 'tab-active' : ''}"
+          class="tab shrink-0 whitespace-nowrap {active_example_tab === i
+            ? 'tab-active'
+            : ''}"
           on:click={() => (active_example_tab = i)}
         >
           {example.label}
