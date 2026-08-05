@@ -142,7 +142,8 @@ class TestEvalTraceFormatter:
         }  # type: ignore
         result = EvalTraceFormatter.formatted_tool_calls_from_message(message)
         expected = """- Tool Name: tool1
-- Arguments: {"arg1": "value1"}- Tool Name: tool2
+- Arguments: {"arg1": "value1"}
+- Tool Name: tool2
 - Arguments: {"arg2": "value2"}"""
         assert result == expected
 
@@ -246,6 +247,8 @@ Hi there
         assert result == expected
 
     def test_trace_to_formatted_conversation_history_with_reasoning(self):
+        """Reasoning is model-internal and never rendered, whether it stands
+        alone on a message or accompanies visible text."""
         trace: list[ChatCompletionMessageParam] = [
             {"role": "user", "content": "What is 2+2?"},  # type: ignore
             {
@@ -257,12 +260,7 @@ Hi there
         expected = """user:
 <user_message>
 What is 2+2?
-</user_message>
-
-assistant reasoning:
-<assistant_reasoning_message>
-I need to add 2 and 2 together.
-</assistant_reasoning_message>"""
+</user_message>"""
         assert result == expected
 
         trace_with_content: list[ChatCompletionMessageParam] = [
@@ -382,9 +380,12 @@ Test
         result = EvalTraceFormatter.trace_to_formatted_conversation_history(trace)
         assert result == ""
 
-    def test_trace_to_formatted_conversation_history_priority_reasoning_then_tool_then_content(
+    def test_trace_to_formatted_conversation_history_text_and_tool_calls_together(
         self,
     ):
+        """An assistant that says something AND calls a tool in one message
+        must render both blocks, text first. Rendering only one of them hides
+        the call (or the preamble) from every reader of the transcript."""
         tool_calls: list[ChatCompletionMessageToolCallParam] = [
             {
                 "id": "call_123",
@@ -395,7 +396,7 @@ Test
         trace_all: list[ChatCompletionMessageParam] = [
             {
                 "role": "assistant",
-                "content": "Final answer",
+                "content": "Let me look that up.",
                 "reasoning_content": "Thinking step",
                 "tool_calls": tool_calls,
             },  # type: ignore
@@ -405,8 +406,14 @@ Test
         )
         expected_all = """assistant:
 <assistant_message>
-Final answer
-</assistant_message>"""
+Let me look that up.
+</assistant_message>
+
+assistant requested tool calls:
+<assistant_requested_tool_calls>
+- Tool Name: test_tool
+- Arguments: {"arg": "value"}
+</assistant_requested_tool_calls>"""
         assert result_all == expected_all
 
         trace_reasoning_only: list[ChatCompletionMessageParam] = [
@@ -415,14 +422,12 @@ Final answer
                 "reasoning_content": "Thinking step",
             },  # type: ignore
         ]
-        result_reasoning = EvalTraceFormatter.trace_to_formatted_conversation_history(
-            trace_reasoning_only
+        assert (
+            EvalTraceFormatter.trace_to_formatted_conversation_history(
+                trace_reasoning_only
+            )
+            == ""
         )
-        expected_reasoning = """assistant reasoning:
-<assistant_reasoning_message>
-Thinking step
-</assistant_reasoning_message>"""
-        assert result_reasoning == expected_reasoning
 
         trace_tool_only: list[ChatCompletionMessageParam] = [
             {
@@ -439,6 +444,52 @@ Thinking step
 - Arguments: {"arg": "value"}
 </assistant_requested_tool_calls>"""
         assert result_tool == expected_tool
+
+    def test_trace_to_formatted_conversation_history_parallel_tool_calls(self):
+        """Parallel calls in one message stay separated, so the arguments of
+        one can't run into the name of the next."""
+        tool_calls: list[ChatCompletionMessageToolCallParam] = [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "tool1", "arguments": '{"a": 1}'},
+            },
+            {
+                "id": "call_2",
+                "type": "function",
+                "function": {"name": "tool2", "arguments": '{"b": 2}'},
+            },
+        ]
+        trace: list[ChatCompletionMessageParam] = [
+            {"role": "assistant", "tool_calls": tool_calls},  # type: ignore
+        ]
+        result = EvalTraceFormatter.trace_to_formatted_conversation_history(trace)
+        expected = """assistant requested tool calls:
+<assistant_requested_tool_calls>
+- Tool Name: tool1
+- Arguments: {"a": 1}
+- Tool Name: tool2
+- Arguments: {"b": 2}
+</assistant_requested_tool_calls>"""
+        assert result == expected
+
+    def test_trace_to_formatted_conversation_history_skipped_first_message(self):
+        """A dropped leading message must not leave the transcript starting
+        with blank lines."""
+        trace: list[ChatCompletionMessageParam] = [
+            {
+                "role": "tool",
+                "content": "orphan result",
+                "tool_call_id": "call_missing",
+            },  # type: ignore
+            {"role": "user", "content": "Hello"},  # type: ignore
+        ]
+        result = EvalTraceFormatter.trace_to_formatted_conversation_history(trace)
+        expected = """user:
+<user_message>
+Hello
+</user_message>"""
+        assert result == expected
 
 
 class TestEvalUtils:
