@@ -103,114 +103,146 @@ an EvalInput-backed golden set representable again, handing back the exact guara
 Keeping golden outside the dict is what keeps "golden is TaskRun-only" true at the type level
 rather than by convention.
 
-### 2.4 `splits` is the only stored state; legacy fields are derived
+### 2.4 Legacy fields stay declared; nothing reads them
 
-The legacy fields stop being stored fields and become **computed fields** over `splits`:
+`eval_set_filter_id` and `train_set_filter_id` remain **real, stored, optional fields** on `Eval`.
+They are not deleted, and they are not turned into computed properties over `splits`.
 
-```python
-@computed_field
-@property
-def eval_set_filter_id(self) -> DatasetFilterId | None:
-    test = self.splits.get("test")
-    return test.filter_id if isinstance(test, TaskRunSplit) else None
+Kiln project files sync between clients running different app versions. Removing a field from the
+datamodel is a breaking change for every older client that still expects it — the field vanishing
+from the file is not something an old build can recover from. So the fields stay.
 
-@computed_field
-@property
-def train_set_filter_id(self) -> DatasetFilterId | None:
-    train = self.splits.get("train")
-    return train.filter_id if isinstance(train, TaskRunSplit) else None
-```
+What changes is that **no application code reads them**. Every reader moves to `splits`
+(§3, §4, §6). Keeping accessors under the old names would just preserve the old vocabulary inside
+new code, which is the thing this project is trying to get rid of: `eval_set_filter_id` means
+"test" and says "eval set", and no new code should have to know that.
 
-`@computed_field` is an established idiom in this datamodel (`basemodel.py:347`,
-`extraction.py:304`), and pydantic serializes computed fields on every dump.
+So the fields become **storage-format artifacts, not state**. They exist so the bytes on disk stay
+readable by older clients. Their in-memory values are not authoritative and are not read; `splits`
+is the model's read surface, and §2.6 derives what gets written from it.
 
-This is the important structural choice, and it is a correction to my first draft. Modelling the
-legacy fields as *stored state kept in sync with the dict by a save hook* creates two sources of
-truth and one hook that must fire on every persistence path — and `KilnParentedModel` has save
-paths a naive override misses. That hook failing is silent, and only breaks users on older
-builds. Deriving the fields instead **designs the failure mode out**: there is nothing to keep in
-sync, no hook to place, and serialization cannot miss them because they are part of the
-serialization.
+### 2.5 Loading: legacy fields fold into `splits`
 
-On disk the result is exactly the intended contract:
-
-- A TaskRun-backed test or train split serializes into its legacy field. **Byte-identical to
-  today** — an eval nobody has changed writes exactly as it does now, with no `splits` key added.
-- An EvalInput-backed test or train split, and every val split, serializes into `splits`.
-- Nothing is written twice, so the representations cannot drift — because there is only one.
-
-"Saving doesn't move them" holds: the dict is the API and the in-memory truth, while the bytes on
-disk keep their current shape for the splits that already have one. Moving them later is deleting
-the computed fields and the parse-time fold below.
-
-### 2.5 Parse: legacy keys fold into the dict
-
-A `mode="before"` validator reads the legacy keys out of the raw input and writes them into
-`splits`, so they never need to exist as stored fields:
+A `mode="after"` validator folds the two declared legacy fields into the dict and records that
+they came from there:
 
 ```python
-@model_validator(mode="before")
-@classmethod
-def fold_legacy_filter_fields(cls, data: Any) -> Any:
-    # eval_set_filter_id  -> splits["test"]  (task_run)
-    # train_set_filter_id -> splits["train"] (task_run)
-    # eval_input_filter_id -> splits["test"] (eval_input)   [TODO: §2.6]
-    ...
+_legacy_homed_splits: Set[str] | None = PrivateAttr(default=None)
+
+@model_validator(mode="after")
+def fold_legacy_filter_fields(self) -> Self:
+    homed: Set[str] = set()
+    if self.eval_set_filter_id is not None:
+        self.splits["test"] = TaskRunSplit(filter_id=self.eval_set_filter_id)
+        homed.add("test")
+    if self.train_set_filter_id is not None:
+        self.splits["train"] = TaskRunSplit(filter_id=self.train_set_filter_id)
+        homed.add("train")
+    self._legacy_homed_splits = homed
+    return self
 ```
 
-**Precedence: a populated legacy key wins over a `splits` entry for the same split.** At most one
-of the two is ever written for a given split (§2.4 emits exactly one), so a conflict means a
-hand-edited file. Preferring the legacy key keeps every Kiln build — old and new — agreeing on
-what the eval's test and train splits are, which is the property worth protecting.
+**Precedence: a populated legacy field wins over a `splits` entry for the same split.** At most one
+of the two is ever written for a given split (§2.6), so a conflict means a hand-edited file.
+Preferring the legacy field keeps every Kiln client — old and new — agreeing on what the eval's
+test and train splits are, which is the property worth protecting.
 
-### 2.5.1 What this costs
+The third legacy input, `eval_input_filter_id`, is handled differently — see §2.6.1.
 
-Computed fields are not assignable and not `__init__` kwargs, so two kinds of call site change,
-both of which fail loudly at type-check or import time rather than silently:
+### 2.6 Saving: the format an eval arrived in is the format it leaves in
 
-- **Construction.** `spec_api.py` and `copilot_api.py` pass `eval_set_filter_id=` /
-  `train_set_filter_id=` to `Eval(...)`. They construct `splits=` instead — which §8 already
-  requires of them for the val split.
-- **Assignment.** Exactly one non-test site: `eval_api.py:834`,
-  `eval.train_set_filter_id = request.train_set_filter_id` in the eval-update endpoint. It writes
-  `eval.splits["train"] = TaskRunSplit(...)` instead.
+Serialization is provenance-preserving, per split:
 
-Test files assign these fields in a number of places and will need updating; that is mechanical
-and the failures are immediate.
+- A split that **arrived in a legacy field** is written back to that legacy field, and omitted
+  from the serialized `splits` dict.
+- A split that **arrived in `splits`** — or was created new — is written to `splits`, and its
+  legacy field is written as null.
 
-This is a real cost, and it is the right trade: a handful of loud, compile-time call-site edits in
-exchange for deleting an entire class of silent persistence bug.
+An untouched existing eval therefore round-trips **byte-identically**: no `splits` key appears, and
+old clients keep reading it exactly as they do now. A brand-new eval created purely through
+`splits` writes only `splits`. An existing eval that gains a val split keeps its legacy test and
+train fields and gains a `splits` key containing only val.
 
-### 2.6 The `eval_input_filter_id` shim
+This is implemented as a wrap-mode `model_serializer` rather than a hook on `save_to_file`:
 
-`eval_input_filter_id` does **not** remain a field on `Eval`. It is read out of the raw input by a
-`mode="before"` validator and dropped:
+```python
+@model_serializer(mode="wrap")
+def serialize_preserving_split_format(self, handler): ...
+```
+
+The distinction matters. `KilnParentedModel` has more than one persistence path, and a projection
+that lives on one save method can be bypassed by another — silently, and only visibly to users on
+older clients. A serializer is part of serializing the model, so no persistence path can miss it.
+
+**Unknown provenance degrades to the compatible choice.** `_legacy_homed_splits` is a private
+attribute, so it does not survive `model_copy()` or `Eval(**eval.model_dump())`. When it is `None`
+— fresh construction, a copy, a round trip through a dict — serialization falls back to
+*content*-determined behavior: any TaskRun-backed test or train split is written to its legacy
+field. The fragile case degrades to **more** old-client compatibility, never to a silent format
+flip. This is the one place the provenance rule is deliberately not honored, because honoring it
+would mean guessing.
+
+**Backing changes force a format change.** If a legacy-homed test split is changed from
+TaskRun-backed to EvalInput-backed, its legacy field cannot hold the new value. It is written as
+null and the split moves into `splits`. Old clients lose that eval's test split. This is
+unavoidable — the legacy field has no representation for an EvalInput filter — and it is the
+correct failure: the eval genuinely now points at data an old client cannot resolve.
+
+### 2.6.1 The `eval_input_filter_id` shim
+
+`eval_input_filter_id` is the exception to §2.4 and is **not** kept as a declared field. It is read
+out of the raw input by a `mode="before"` validator, folded into `splits["test"]` as an
+`EvalInputSplit`, and dropped:
 
 ```python
 @model_validator(mode="before")
 @classmethod
 def migrate_eval_input_filter_id(cls, data: Any) -> Any:
     # TODO: Remove before shipping. Only internal projects contain this key;
-    # no public project file has ever had it. Carries the pre-rename value
-    # into splits["test"].
+    # no public project file has ever had it.
     ...
 ```
 
-It never enters the schema, so it never reaches the web client or the API surface, and deleting
-the shim is deleting one validator. This is the resolution of functional spec §3.4: the field
-disappears rather than being renamed, and the principle — the split is the key, the source is a
-property of its value — is expressed structurally.
+The compatibility argument in §2.4 does not apply to it: no public project file has ever contained
+the key, so there is no older client with real data to protect. Keeping it as a declared field
+would put it in the schema and the generated web client for the sake of internal projects that
+will all have been migrated before ship. As a before-validator it never enters the API surface,
+and removing it later is deleting one validator.
+
+This is the resolution of functional spec §3.4: the field disappears rather than being renamed to
+`test_eval_input_filter_id`, and the principle it was named for — the split is the key, the source
+is a property of its value — is expressed structurally by `splits` instead.
+
+### 2.6.2 What this costs at call sites
+
+The legacy fields remain constructible and assignable, so nothing breaks mechanically. But since
+their in-memory values are not authoritative, writing to them no longer changes the eval:
+
+- **Construction.** `spec_api.py` and `copilot_api.py` construct `splits=` rather than passing
+  legacy kwargs — which §8 already requires of them for the val split.
+- **Assignment.** One non-test site: `eval_api.py:834`,
+  `eval.train_set_filter_id = request.train_set_filter_id` in the eval-update endpoint. It writes
+  `eval.splits["train"] = TaskRunSplit(...)` instead.
+
+This is the one sharp edge in the design: assigning a legacy field silently does nothing rather
+than failing. Mitigations, in order of importance — (1) the fields' descriptions state they are
+storage-format artifacts and must not be read or written, (2) §9.1 covers the update endpoint
+explicitly, (3) a grep for reads and writes of both names is part of the phase's definition of
+done. If a stronger guarantee is wanted later, the fields can be renamed with a leading underscore
+alias or made `init=False`, at the cost of touching every construction site.
 
 ### 2.7 Why the fold is not gated on `_loaded_from_file`
 
 The existing migrations gate on `self._loaded_from_file`, because they *invent* data and should
-only do so for files. The §2.5 fold invents nothing — it relocates keys that are already present.
+only do so for files. The §2.5 fold invents nothing — it relocates values that are already set.
 Gating it on file loads would mean `Eval(eval_set_filter_id="tag::x")` has an empty `splits` while
 the same eval loaded from disk has a test split, which is exactly the split-brain this design
 exists to eliminate.
 
-Because it is a `mode="before"` validator it runs on every construction path, so a caller may pass
-either the legacy keys or `splits` and get the same model.
+It runs on every construction path, so a caller may pass either the legacy fields or `splits` and
+get the same model. Note the provenance consequence: an eval *constructed* with legacy kwargs is
+recorded as legacy-homed and will serialize that way, which is the same answer content-determined
+fallback would give.
 
 ### 2.8 Validation
 
@@ -229,10 +261,13 @@ rather than being reimplemented**: `splits["test"]` is a single value, so two ba
 split is not a state the model can be in. That is functional spec §1's "exactly one backing per
 split" made structural.
 
-Ordering is automatic rather than a convention to maintain: §2.5's fold is `mode="before"` and
-this is `mode="after"`, so pydantic guarantees the fold has already run. Neither loads children,
-so neither needs the `_currently_migrating_eval_ids` recursion guard — but neither may be moved
-anywhere that does.
+Both this and §2.5's fold are `mode="after"` validators, so **declaration order matters**: the
+fold must be declared first. This is the one ordering convention in the design that isn't enforced
+by pydantic, and §9.1 covers it with a test that an eval carrying only legacy fields validates
+rather than raising "must have a test split".
+
+Neither loads children, so neither needs the `_currently_migrating_eval_ids` recursion guard — but
+neither may be moved anywhere that does.
 
 ### 2.9 Known limitation: old builds drop the dict
 
@@ -551,8 +586,21 @@ Python: `pytest`, alongside the existing `test_eval_model.py`, `test_eval_runner
 - An unknown split key (`"holdout"`) loads without error and survives a round trip.
 - `EvalInputSplit(filter_id="multi_filter::a&b")` and `high_rating` raise `ValidationError`;
   `TaskRunSplit` accepts them.
-- Missing test split raises.
+- Missing test split raises. **And**: an eval carrying only legacy fields validates rather than
+  raising it — the guard on §2.8's declaration-order dependency.
 - A freshly constructed `Eval` (not loaded from file) has a populated `splits` (§2.7).
+
+Provenance (§2.6), which is where the subtle failures live:
+
+- A splits-native eval (no legacy fields in the source) round-trips writing **only** `splits`, with
+  both legacy fields null — it does not acquire them.
+- An existing legacy-format eval that gains a val split keeps its legacy test and train fields and
+  gains a `splits` key containing **only** val.
+- `Eval(**eval.model_dump())` on a legacy-format eval still serializes to legacy format — the
+  unknown-provenance fallback (§2.6) degrades toward compatibility, not away from it.
+- `model_copy()` of a legacy-format eval likewise.
+- The eval-update endpoint's train-split write (§2.6.2) is reflected in `splits` **and** in the
+  serialized output, in whichever format the eval arrived in.
 
 ### 9.2 Accessor
 
@@ -618,10 +666,23 @@ by this design.
 
 ## 11. Alternatives considered and rejected
 
-**Legacy fields as stored state, synced by a save hook.** My first draft. Rejected in favour of
-§2.4's computed fields: it created two sources of truth and a hook that had to fire on every
-persistence path, where a miss is silent and only affects users on older builds. It was the
-largest risk in the design and it was self-inflicted.
+**Legacy fields as `@computed_field` properties over `splits`.** A middle draft. It removed the
+sync problem cleanly, but it **deletes the stored fields from the datamodel** — and Kiln project
+files sync between clients on different app versions, so a field disappearing from the file is a
+breaking change an older client cannot recover from. Rejected: the fields must remain declared and
+stored (§2.4). Its good idea is kept — put the format logic in a serializer, not a save hook — and
+the safety it bought is preserved by §2.6's `model_serializer`.
+
+**Legacy fields projected by a hook on `save_to_file`.** The first draft. Rejected because
+`KilnParentedModel` has more than one persistence path, so a projection attached to one save method
+can be bypassed by another, silently, and only visibly to users on older clients.
+
+**Content-determined format instead of provenance-determined.** Always write TaskRun-backed test
+and train splits to their legacy fields, regardless of how the eval was loaded. Simpler, no private
+attribute, and strictly *more* old-client compatible — but it means a splits-native eval acquires
+legacy fields it never had, and there is no way to author an eval in the new format. Rejected in
+favour of provenance, with content-determination retained as the fallback when provenance is
+unknown (§2.6) so the fragile paths degrade to the safe answer.
 
 **Self-describing filter ids** — encode the store in the selector (`task_run:tag::x` /
 `eval_input:tag::x`), so a split is a plain string and `SplitRef` isn't needed at all. This is
@@ -646,13 +707,23 @@ split name.
 
 ## 12. Open risks
 
-1. **Validator/serializer interaction with `KilnParentedModel`.** Computed fields must appear in
-   whatever dump path `save_to_file` uses, and the `mode="before"` fold must see the raw file
-   dict. Both are standard pydantic behavior, but this datamodel has custom save machinery, so
-   the byte-identical round-trip test (§9.1) is the guard rather than an assumption.
-2. **Old builds dropping the dict** (§2.9). Accepted, bounded, documented.
-3. **`compute_score_summary` signature change** ripples into the compare page's data path; the
+1. **Assigning a legacy field silently does nothing** (§2.6.2). The fields remain declared and
+   assignable, but are no longer authoritative, so `eval.train_set_filter_id = x` is a no-op
+   rather than an error. One non-test site exists today and is being changed; the risk is a
+   *future* author reaching for the familiar name. Mitigated by field descriptions, a test, and a
+   grep in the phase's definition of done — but it is the sharpest edge in this design and worth
+   revisiting if it bites.
+2. **`model_serializer` interaction with `KilnParentedModel`.** The wrap serializer must be
+   invoked by whatever dump path `save_to_file` uses, and must compose with the parent/child
+   machinery. Standard pydantic behavior, but this datamodel has custom save code, so the
+   byte-identical round-trip test (§9.1) is the guard rather than an assumption.
+3. **Provenance is a private attribute** and does not survive copies or dict round trips. §2.6
+   defines the fallback so this degrades toward compatibility, and §9.1 tests it — but it is
+   invisible state, and invisible state is where format bugs hide.
+4. **Old builds dropping the dict** (§2.9). Accepted, bounded, documented.
+5. **`compute_score_summary` signature change** ripples into the compare page's data path; the
    change is mechanical but touches more call sites than the other endpoint edits.
-4. **Test-file churn.** Many tests assign `eval_set_filter_id` / `train_set_filter_id` directly.
-   These break loudly and are mechanical to fix, but the volume is non-trivial and should not be
-   mistaken for design trouble mid-implementation.
+6. **Test-file churn.** Many tests set `eval_set_filter_id` / `train_set_filter_id` directly.
+   Unlike the computed-field design, these keep *working* — they just stop being authoritative,
+   so a test asserting on `splits` would fail while one asserting on the legacy field passes
+   vacuously. Test updates here need reading, not just mechanical fixing.
