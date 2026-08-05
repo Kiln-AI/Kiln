@@ -473,59 +473,67 @@
   }
 
   async function archive_selected_specs(): Promise<boolean> {
-    let success = false
-    try {
-      const spec_ids = Array.from(selected_specs)
-      const specs_to_update = (filtered_specs || []).filter(
-        (spec) => spec.id && spec_ids.includes(spec.id),
-      )
+    const spec_ids = Array.from(selected_specs)
+    const specs_to_update = (filtered_specs || []).filter(
+      (spec) => spec.id && spec_ids.includes(spec.id),
+    )
 
-      const should_archive = archive_action_state === "archive"
-      const should_unarchive = archive_action_state === "unarchive"
+    const should_archive = archive_action_state === "archive"
+    const should_unarchive = archive_action_state === "unarchive"
 
-      if (!should_archive && !should_unarchive) {
-        return false
-      }
+    if (!should_archive && !should_unarchive) {
+      return false
+    }
 
-      // Status lives on the eval; a spec without one can't be updated.
-      const updatable: Eval[] = []
-      const skipped: string[] = []
-      for (const spec of specs_to_update) {
-        const evaluator = spec.eval_id ? evals_by_id.get(spec.eval_id) : null
-        if (evaluator) {
-          updatable.push(evaluator)
-        } else {
-          skipped.push(spec.name)
-        }
-      }
-      if (skipped.length > 0) {
-        evals_error = new KilnError(
-          `Could not update ${skipped.join(", ")}: no matching eval found.`,
-        )
-      }
-      if (updatable.length === 0) {
-        // Nothing was updated: keep the selection so the user can retry.
-        return false
-      }
-
-      for (const evaluator of updatable) {
-        const new_status = should_archive ? "archived" : "active"
-        await updateEvalStatus(evaluator, new_status as SpecStatus)
-      }
-
-      posthog.capture(should_archive ? "archive_specs" : "unarchive_specs", {
-        num_specs: updatable.length,
-      })
-
-      success = true
-      return true
-    } finally {
-      if (success) {
-        selected_specs = new Set()
-        select_mode = false
-        await load_specs(project_id, task_id)
+    // Status lives on the eval; a spec without one can't be updated.
+    const updatable: { spec: Spec; evaluator: Eval }[] = []
+    const failed_names: string[] = []
+    const failed_spec_ids: string[] = []
+    for (const spec of specs_to_update) {
+      const evaluator = spec.eval_id ? evals_by_id.get(spec.eval_id) : null
+      if (evaluator) {
+        updatable.push({ spec, evaluator })
+      } else {
+        failed_names.push(spec.name)
+        if (spec.id) failed_spec_ids.push(spec.id)
       }
     }
+
+    let succeeded = 0
+    for (const { spec, evaluator } of updatable) {
+      const new_status = should_archive ? "archived" : "active"
+      const updated = await updateEvalStatus(
+        evaluator,
+        new_status as SpecStatus,
+      )
+      if (updated) {
+        succeeded++
+      } else {
+        failed_names.push(spec.name)
+        if (spec.id) failed_spec_ids.push(spec.id)
+      }
+    }
+
+    if (succeeded > 0) {
+      posthog.capture(should_archive ? "archive_specs" : "unarchive_specs", {
+        num_specs: succeeded,
+      })
+      await load_specs(project_id, task_id)
+    }
+
+    if (failed_names.length > 0) {
+      // Partial (or total) failure: report it and keep the failed specs
+      // selected so the user can retry. The dialog stays open.
+      evals_error = new KilnError(
+        `Could not update ${failed_names.join(", ")}. The remaining selection can be retried.`,
+      )
+      selected_specs = new Set(failed_spec_ids)
+      return false
+    }
+
+    selected_specs = new Set()
+    select_mode = false
+    return true
   }
 
   let archive_dialog: Dialog | null = null
@@ -590,13 +598,17 @@
     }
   }
 
-  async function updateEvalStatus(evaluator: Eval, newStatus: SpecStatus) {
-    if (
-      !evaluator.id ||
-      evaluator.status === newStatus ||
-      updating_statuses.has(evaluator.id)
-    ) {
-      return
+  // Returns whether the update actually happened, so bulk callers can report
+  // partial failures instead of assuming success.
+  async function updateEvalStatus(
+    evaluator: Eval,
+    newStatus: SpecStatus,
+  ): Promise<boolean> {
+    if (!evaluator.id || updating_statuses.has(evaluator.id)) {
+      return false
+    }
+    if (evaluator.status === newStatus) {
+      return true
     }
 
     updating_statuses.add(evaluator.id)
@@ -615,8 +627,10 @@
           evals = evals
         }
       }
+      return true
     } catch (error) {
       evals_error = createKilnError(error)
+      return false
     } finally {
       updating_statuses.delete(evaluator.id)
     }
