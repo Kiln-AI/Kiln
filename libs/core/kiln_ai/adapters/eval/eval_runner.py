@@ -495,7 +495,9 @@ class EvalRunner:
             result = await evaluator.evaluate(eval_task_input)
             task_output = run_output.output.output
             task_input_str = run_output.input
-            dataset_id = run_output.id
+            # The source dataset item, not the fresh generation: run_task never
+            # persists its run, and dedupe/progress accounting key on the source id.
+            dataset_id = job.item.id
 
             async with self._save_context():
                 eval_run = EvalRun(
