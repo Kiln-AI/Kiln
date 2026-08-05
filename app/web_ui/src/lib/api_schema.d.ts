@@ -2021,6 +2021,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/test_v2_eval_draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test V2 Eval Config Draft
+         * @description Test a judge config for an eval that hasn't been created yet.
+         *
+         *     Builds a transient in-memory eval from the drafted output_scores so
+         *     the creation flow can test its judge before saving anything.
+         */
+        post: operations["test_v2_eval_draft_api_projects__project_id__tasks__task_id__test_v2_eval_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison": {
         parameters: {
             query?: never;
@@ -11192,6 +11215,27 @@ export interface components {
             duration_ms: number;
         };
         /**
+         * TestV2EvalDraftRequest
+         * @description Request to test-run a V2 eval config for an eval that doesn't exist yet.
+         *
+         *     Used by the creation flow, where the eval (and its scores) are still being
+         *     drafted; the server builds a transient in-memory eval from output_scores.
+         */
+        TestV2EvalDraftRequest: {
+            /**
+             * Properties
+             * @description The V2 eval config properties to test.
+             */
+            properties: components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"];
+            /**
+             * Output Scores
+             * @description The scores the drafted eval will declare; returned scores are validated against them.
+             */
+            output_scores: components["schemas"]["EvalOutputScore"][];
+            /** @description The input to evaluate. */
+            eval_input: components["schemas"]["EvalTaskInput"];
+        };
+        /**
          * TestV2EvalRequest
          * @description Request to test-run a V2 eval config without persisting.
          */
@@ -16624,6 +16668,44 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TestV2EvalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestV2EvalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_v2_eval_draft_api_projects__project_id__tasks__task_id__test_v2_eval_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestV2EvalDraftRequest"];
             };
         };
         responses: {

@@ -4529,6 +4529,103 @@ class TestCreateLlmJudgeConfigOverrides:
         assert response.status_code == 400
 
 
+class TestTestV2EvalDraft:
+    """The creation-flow endpoint: tests a judge for an eval that doesn't exist."""
+
+    def _url(self) -> str:
+        return "/api/projects/project1/tasks/task1/test_v2_eval_draft"
+
+    def _payload(self) -> dict:
+        return {
+            "properties": {
+                "type": "exact_match",
+                "expected_value": "hello",
+            },
+            "output_scores": [
+                {
+                    "name": "accuracy",
+                    "instruction": "Is the answer accurate?",
+                    "type": "pass_fail",
+                }
+            ],
+            "eval_input": {
+                "final_message": "hello",
+            },
+        }
+
+    def test_exact_match_pass(self, client, mock_task, mock_task_from_id):
+        mock_task_from_id.return_value = mock_task
+        response = client.post(self._url(), json=self._payload())
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"]["accuracy"] == 1.0
+        assert body["skipped_reason"] is None
+
+    def test_exact_match_fail(self, client, mock_task, mock_task_from_id):
+        mock_task_from_id.return_value = mock_task
+        payload = self._payload()
+        payload["eval_input"]["final_message"] = "world"
+        response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        assert response.json()["scores"]["accuracy"] == 0.0
+
+    def test_nothing_is_persisted(self, client, mock_task, mock_task_from_id):
+        mock_task_from_id.return_value = mock_task
+        response = client.post(self._url(), json=self._payload())
+        assert response.status_code == 200
+        # The transient eval must never be saved to the task.
+        assert mock_task.evals() == []
+
+    def test_code_eval_untrusted_skip(self, client, mock_task, mock_task_from_id):
+        payload = self._payload()
+        payload["properties"] = {
+            "type": "code_eval",
+            "code": "def score(output, **kwargs):\n    return {'accuracy': 1.0}\n",
+        }
+        with (
+            patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj,
+            patch(
+                "app.desktop.studio_server.eval_api.has_add_code_trust",
+                return_value=False,
+            ),
+        ):
+            mock_task_from_id.return_value = mock_task
+            mock_proj.return_value = Mock()
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"] == {}
+        assert body["skipped_reason"] == "code_eval_not_trusted"
+
+    def test_score_range_errors_reported(self, client, mock_task, mock_task_from_id):
+        # A code judge returning an out-of-range value for a pass_fail score.
+        payload = self._payload()
+        payload["properties"] = {
+            "type": "code_eval",
+            "code": "def score(output, **kwargs):\n    return {'accuracy': 3.0}\n",
+        }
+        with (
+            patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj,
+            patch(
+                "app.desktop.studio_server.eval_api.has_add_code_trust",
+                return_value=True,
+            ),
+        ):
+            mock_task_from_id.return_value = mock_task
+            mock_proj.return_value = Mock()
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["score_range_errors"]
+
+    def test_empty_output_scores_400(self, client, mock_task, mock_task_from_id):
+        mock_task_from_id.return_value = mock_task
+        payload = self._payload()
+        payload["output_scores"] = []
+        response = client.post(self._url(), json=payload)
+        assert response.status_code == 400
+
+
 class TestTestV2EvalOverrides:
     def _url(self, eval_id: str = "eval_v2") -> str:
         return f"/api/projects/project1/tasks/task1/evals/{eval_id}/test_v2_eval"

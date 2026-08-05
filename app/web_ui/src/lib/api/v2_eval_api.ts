@@ -85,6 +85,38 @@ export async function testV2Eval(
   return data
 }
 
+export type TestV2EvalDraftRequest =
+  components["schemas"]["TestV2EvalDraftRequest"]
+
+/**
+ * Test a judge config for an eval that hasn't been created yet (creation
+ * flow): the server builds a transient eval from the drafted output_scores.
+ */
+export async function testV2EvalDraft(
+  projectId: string,
+  taskId: string,
+  request: TestV2EvalDraftRequest,
+  signal?: AbortSignal,
+): Promise<TestV2EvalResponse> {
+  const { data, error } = await client.POST(
+    "/api/projects/{project_id}/tasks/{task_id}/test_v2_eval_draft",
+    {
+      params: {
+        path: {
+          project_id: projectId,
+          task_id: taskId,
+        },
+      },
+      body: request,
+      signal,
+    },
+  )
+  if (error) {
+    throw new Error(`test_v2_eval_draft failed: ${extractErrorMessage(error)}`)
+  }
+  return data
+}
+
 /**
  * Create an eval config, returning the created EvalConfig.
  */

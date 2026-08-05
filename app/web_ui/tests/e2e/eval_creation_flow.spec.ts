@@ -20,6 +20,21 @@ test("programmatic check: type picker -> judge-only builder creates a template-l
   void registeredUser
   const { project, task } = seededProjectWithTask
 
+  // Seed a task run so the Test Judge pane has real data to test against.
+  const run_resp = await apiRequest.post(
+    `/api/projects/${project.id}/tasks/${task.id}/runs`,
+    {
+      data: {
+        input: "Write a headline",
+        output: "Calm report: no hate here",
+        model_name: "gpt_4o",
+        model_provider: "openai",
+        adapter_name: "manual",
+      },
+    },
+  )
+  expect(run_resp.ok()).toBe(true)
+
   // Create Eval lands straight on the type picker with both sections
   await page.goto(`/specs/${project.id}/${task.id}`)
   await page.getByRole("button", { name: "Create Eval" }).first().click()
@@ -45,6 +60,17 @@ test("programmatic check: type picker -> judge-only builder creates a template-l
 
   await page.getByLabel("Eval Name").fill("No Hate Regex")
   await page.locator("#pattern_match_pattern").fill("\\bhate\\b")
+
+  // Test the judge against the seeded run before saving: the draft endpoint
+  // runs the not-yet-saved config against a transient eval.
+  await expect(
+    page.getByText("Test your judge on real data before saving."),
+  ).toBeVisible()
+  await page.getByTestId("run-test-btn").click()
+  await expect(page.getByTestId("scores-section")).toBeVisible({
+    timeout: 15000,
+  })
+
   await page.getByRole("button", { name: "Save Eval" }).click()
 
   // Lands on the eval's detail page under the spec-less ("legacy") route

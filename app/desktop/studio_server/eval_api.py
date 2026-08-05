@@ -334,6 +334,70 @@ class TestV2EvalResponse(BaseModel):
     intermediate_outputs: dict[str, str] | None = None
 
 
+class TestV2EvalDraftRequest(BaseModel):
+    """Request to test-run a V2 eval config for an eval that doesn't exist yet.
+
+    Used by the creation flow, where the eval (and its scores) are still being
+    drafted; the server builds a transient in-memory eval from output_scores.
+    """
+
+    properties: V2EvalConfigProperties = Field(
+        description="The V2 eval config properties to test."
+    )
+    output_scores: list[EvalOutputScore] = Field(
+        description="The scores the drafted eval will declare; returned scores are validated against them."
+    )
+    eval_input: EvalTaskInput = Field(description="The input to evaluate.")
+
+
+async def run_v2_eval_test(
+    project_id: str,
+    eval_obj: Eval,
+    properties: V2EvalConfigProperties,
+    eval_input: EvalTaskInput,
+) -> TestV2EvalResponse:
+    """Run a transient (unsaved) V2 eval config against one input.
+
+    Shared by the eval-scoped test endpoint and the creation-flow draft
+    endpoint; *eval_obj* may be an unsaved in-memory eval.
+    """
+    transient_config = EvalConfig(
+        name="test_run",
+        config_type=EvalConfigType.v2,
+        properties=properties,
+        parent=eval_obj,
+    )
+    adapter = v2_eval_adapter_from_config(transient_config)
+
+    # Trust-conferral gate: executing not-yet-saved code in the test pane
+    # requires code trust for this session. Saved code needs no gate.
+    if isinstance(adapter, CodeEvalAdapter):
+        project = project_from_id(project_id)
+        if not has_add_code_trust(str(project.path)):
+            return TestV2EvalResponse(
+                skipped_reason=SkippedReason.code_eval_not_trusted.value,
+                skipped_detail="Project not trusted for code eval execution.",
+            )
+
+    result = await adapter.evaluate(eval_input)
+
+    score_range_errors: list[str] | None = None
+    if result.skipped_reason is None and result.scores:
+        problems = validate_scores_against_output_scores(
+            result.scores, eval_obj.output_scores
+        )
+        if problems:
+            score_range_errors = problems
+
+    return TestV2EvalResponse(
+        scores=result.scores,
+        skipped_reason=result.skipped_reason.value if result.skipped_reason else None,
+        skipped_detail=result.skipped_detail,
+        score_range_errors=score_range_errors,
+        intermediate_outputs=result.intermediate_outputs,
+    )
+
+
 class CodeTrustResponse(BaseModel):
     """Response indicating whether code is trusted for a project in this session."""
 
@@ -1297,42 +1361,44 @@ def connect_evals_api(app: FastAPI):
                     detail="Either properties or llm_judge_builder_input must be provided.",
                 )
 
-            transient_config = EvalConfig(
-                name="test_run",
-                config_type=EvalConfigType.v2,
-                properties=properties,
-                parent=eval_obj,
+            return await run_v2_eval_test(
+                project_id, eval_obj, properties, request.eval_input
             )
-            adapter = v2_eval_adapter_from_config(transient_config)
+        except (ValueError, NotImplementedError, ValidationError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
-            # Trust-conferral gate: executing not-yet-saved code in the test pane
-            # requires code trust for this session. Saved code needs no gate.
-            if isinstance(adapter, CodeEvalAdapter):
-                project = project_from_id(project_id)
-                if not has_add_code_trust(str(project.path)):
-                    return TestV2EvalResponse(
-                        skipped_reason=SkippedReason.code_eval_not_trusted.value,
-                        skipped_detail="Project not trusted for code eval execution.",
-                    )
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/test_v2_eval_draft",
+        summary="Test V2 Eval Config Draft",
+        tags=["Evals"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def test_v2_eval_draft(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        request: TestV2EvalDraftRequest,
+    ) -> TestV2EvalResponse:
+        """Test a judge config for an eval that hasn't been created yet.
 
-            result = await adapter.evaluate(request.eval_input)
-
-            score_range_errors: list[str] | None = None
-            if result.skipped_reason is None and result.scores:
-                problems = validate_scores_against_output_scores(
-                    result.scores, eval_obj.output_scores
-                )
-                if problems:
-                    score_range_errors = problems
-
-            return TestV2EvalResponse(
-                scores=result.scores,
-                skipped_reason=result.skipped_reason.value
-                if result.skipped_reason
-                else None,
-                skipped_detail=result.skipped_detail,
-                score_range_errors=score_range_errors,
-                intermediate_outputs=result.intermediate_outputs,
+        Builds a transient in-memory eval from the drafted output_scores so
+        the creation flow can test its judge before saving anything.
+        """
+        try:
+            task = task_from_id(project_id, task_id)
+            eval_obj = Eval(
+                name="Draft Eval Test",
+                output_scores=request.output_scores,
+                eval_set_filter_id="tag::draft_test",
+                eval_configs_filter_id="tag::draft_test",
+                parent=task,
+            )
+            return await run_v2_eval_test(
+                project_id, eval_obj, request.properties, request.eval_input
             )
         except (ValueError, NotImplementedError, ValidationError) as e:
             raise HTTPException(status_code=400, detail=str(e))

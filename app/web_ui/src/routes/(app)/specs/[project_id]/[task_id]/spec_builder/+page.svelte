@@ -1008,7 +1008,12 @@
 
   $: page_title = getPageTitle(current_state)
   $: page_subtitle = getPageSubtitle(current_state)
-  $: page_class = getPageClass(current_state)
+  // Non-LLM judge creation shows the Test Judge pane beside the form, so it
+  // needs the wide layout.
+  $: page_class =
+    current_state === "create" && is_non_llm_judge
+      ? "max-w-[1400px]"
+      : getPageClass(current_state)
 
   $: breadcrumbs = [
     {

@@ -101,6 +101,16 @@ describe("CreateSpecJudgeForm", () => {
     expect(editor.value).not.toContain('"no_hate_regex"')
   })
 
+  it("renders the Test Judge pane beside the form", () => {
+    const { container } = render_form("pattern_match", "My Eval")
+    const pane = container.querySelector('[data-testid="test-run-pane"]')
+    expect(pane).not.toBeNull()
+    expect(pane?.textContent).toContain("Test Judge")
+    expect(pane?.textContent).toContain(
+      "Test your judge on real data before saving.",
+    )
+  })
+
   // Note: hiding the score-key note while the name field has a validation
   // error (name_error -> no output_scores) isn't testable here — FormElement
   // only starts validating after onMount, which jsdom/vitest doesn't run.
