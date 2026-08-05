@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -1807,6 +1809,142 @@ def test_validate_output_fields_parametrized(
         assert run.task_run_trace == trace
 
 
+# ── V2 validate_output_fields: writer-shape matrix ─────────────────────────
+#
+# The V2 eval writers attach task_run_trace for exactly one shape: a scored
+# (non-skipped), non-eval-config task run of a full_trace eval. These pin the
+# datamodel gate to that shape so a writer dropping the trace is rejected, while
+# every shape the writer legitimately leaves trace-less continues to pass.
+
+V2_TRACE = '{"messages": [{"role": "user", "content": "test"}]}'
+
+
+def _v2_eval_and_config(mock_task, data_type=EvalDataType.full_trace):
+    """A V2 (typed-properties) config parented to an eval of the given type."""
+    eval = Eval(
+        name="V2 Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+        evaluation_data_type=data_type,
+    )
+    config = EvalConfig(
+        parent=eval,
+        name="V2 Config",
+        config_type=EvalConfigType.v2,
+        properties=LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="Evaluate: {{ final_message }}",
+        ),
+    )
+    return eval, config
+
+
+def test_v2_full_trace_task_run_eval_with_trace_passes(mock_task):
+    _, config = _v2_eval_and_config(mock_task)
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+        task_run_trace=V2_TRACE,
+    )
+    assert run.task_run_trace == V2_TRACE
+
+
+def test_v2_full_trace_task_run_eval_without_trace_rejected(mock_task):
+    _, config = _v2_eval_and_config(mock_task)
+    with pytest.raises(
+        ValueError, match="full_trace task run eval runs should include trace"
+    ):
+        EvalRun(
+            parent=config,
+            eval_input_id="ei1",
+            task_run_config_id="rc1",
+            input="in",
+            output="out",
+            scores={"accuracy": 1.0},
+        )
+
+
+def test_v2_full_trace_skipped_record_without_trace_passes(mock_task):
+    _, config = _v2_eval_and_config(mock_task)
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="in",
+        output=None,
+        scores={},
+        skipped_reason=SkippedReason.missing_trace.value,
+    )
+    assert run.task_run_trace is None
+
+
+def test_v2_full_trace_eval_config_eval_without_trace_passes(mock_task):
+    _, config = _v2_eval_and_config(mock_task)
+    run = EvalRun(
+        parent=config,
+        dataset_id="ds1",
+        eval_config_eval=True,
+        task_run_config_id=None,
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+    )
+    assert run.task_run_trace is None
+
+
+def test_v2_final_answer_record_without_trace_passes(mock_task):
+    _, config = _v2_eval_and_config(mock_task, data_type=EvalDataType.final_answer)
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+    )
+    assert run.task_run_trace is None
+
+
+def test_v2_full_trace_trace_less_record_loads_from_file(mock_task, tmp_path):
+    """Historical trace-less full_trace records must still load; the gate holds
+    only new writes and rebuilds, not files already on disk."""
+    mock_task.path = tmp_path / "task.kiln"
+    mock_task.save_to_file()
+    eval, config = _v2_eval_and_config(mock_task)
+    eval.save_to_file()
+    config.save_to_file()
+
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+        task_run_trace=V2_TRACE,
+    )
+    run.save_to_file()
+
+    # Rewrite the persisted record to the trace-less shape a pre-gate writer
+    # could have produced, then confirm it still loads rather than erroring.
+    assert run.path is not None
+    data = json.loads(run.path.read_text())
+    data["task_run_trace"] = None
+    run.path.write_text(json.dumps(data))
+
+    loaded = EvalRun.load_from_file(str(run.path))
+    assert loaded.task_run_trace is None
+
+
 @pytest.mark.parametrize(
     "evaluation_data_type,reference_answer,should_raise,expected_error",
     [
@@ -2078,13 +2216,23 @@ def test_v2_eval_config_rejects_root_model_fields():
         )
 
 
-def test_v2_eval_config_requires_typed_properties():
-    """V2 config rejects a raw dict for properties."""
-    with pytest.raises(ValueError, match="V2 config requires typed properties"):
+def test_v2_eval_config_rejects_undiscriminated_dict():
+    """A V2 properties dict without a valid "type" discriminator is rejected."""
+    with pytest.raises(ValidationError, match="type"):
         EvalConfig(
             name="Bad V2",
             config_type=EvalConfigType.v2,
             properties={"eval_steps": ["step"]},
+        )
+
+
+def test_v2_eval_config_requires_typed_properties():
+    """V2 config rejects missing properties."""
+    with pytest.raises(ValueError, match="V2 config requires typed properties"):
+        EvalConfig(
+            name="Bad V2",
+            config_type=EvalConfigType.v2,
+            properties=None,
         )
 
 
@@ -2409,6 +2557,36 @@ def test_eval_input_multi_turn():
     assert ei.data.synthetic_user_info.behavior_guidance is None
 
 
+def test_eval_input_rejects_empty_tag():
+    """An empty tag is rejected: tag filters can never select it."""
+    with pytest.raises(ValidationError, match="Tags cannot be empty strings"):
+        EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+            tags=[""],
+        )
+
+
+def test_eval_input_rejects_tag_with_spaces():
+    """A tag containing spaces is rejected, matching TaskRun tag rules."""
+    with pytest.raises(ValidationError, match="Tags cannot contain spaces"):
+        EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+            tags=["bad tag"],
+        )
+
+
+def test_eval_input_valid_tags_round_trip():
+    """Valid tags are accepted and survive a dump/validate cycle."""
+    tags = ["eval_slice", "scenario:1", "synthetic_user_batch:b1"]
+    ei = EvalInput(
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+        tags=tags,
+    )
+    assert ei.tags == tags
+    rebuilt = EvalInput.model_validate(ei.model_dump())
+    assert rebuilt.tags == tags
+
+
 def test_multi_turn_synthetic_requires_synthetic_user_info():
     """The persona is required — a case without one can't be re-driven."""
     with pytest.raises(ValidationError, match="synthetic_user_info"):
@@ -2728,7 +2906,7 @@ class TestV2TemplateValidation:
             )
 
     def test_reference_data_only_prompt_template_rejected(self):
-        """A prompt_template referencing only reference_data is rejected (D30)."""
+        """A prompt_template referencing only reference_data is rejected: it never varies with the model output."""
         with pytest.raises(ValidationError, match="never references the model output"):
             _make_v2_eval_config(
                 properties=LlmJudgeProperties(
@@ -2750,7 +2928,7 @@ class TestV2TemplateValidation:
         assert cfg is not None
 
     def test_prompt_template_with_trace_passes(self):
-        """A prompt_template referencing trace passes (D30)."""
+        """A prompt_template referencing trace passes: trace counts as model output."""
         cfg = _make_v2_eval_config(
             properties=LlmJudgeProperties(
                 model_name="m",
@@ -2761,7 +2939,7 @@ class TestV2TemplateValidation:
         assert cfg is not None
 
     def test_prompt_template_with_task_input_passes(self):
-        """A prompt_template referencing task_input passes (D30)."""
+        """A prompt_template referencing task_input passes: it varies per run."""
         cfg = _make_v2_eval_config(
             properties=LlmJudgeProperties(
                 model_name="m",
@@ -3004,6 +3182,52 @@ class TestV1EvalConfigCoexistence:
         assert config.properties["type"] == "exact_match"
         assert config.properties["eval_steps"] == ["step1"]
 
+    def test_v1_properties_fully_colliding_with_v2_shape_stay_dict(self):
+        """A legacy properties dict that would parse cleanly as a typed V2 class must still load as a plain dict."""
+        props = {
+            "eval_steps": ["step1"],
+            "type": "llm_judge",
+            "model_name": "m",
+            "model_provider": "p",
+            "prompt_template": "{{ final_message }}",
+        }
+        # Premise: this dict is a valid LlmJudgeProperties payload, so only
+        # explicit dispatch (not union fallback) keeps it untyped below.
+        assert isinstance(LlmJudgeProperties.model_validate(props), LlmJudgeProperties)
+
+        config = EvalConfig.model_validate(
+            {
+                "name": "Full Collision",
+                "config_type": "g_eval",
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "properties": props,
+            }
+        )
+        assert config.config_type == EvalConfigType.g_eval
+        assert type(config.properties) is dict
+        assert config.properties["type"] == "llm_judge"
+        assert config.properties["eval_steps"] == ["step1"]
+
+    def test_v2_config_from_dict_round_trips_typed(self):
+        """V2 properties load from a raw dict into the typed class and survive dump/validate."""
+        raw = {
+            "name": "From Disk V2",
+            "config_type": "v2",
+            "properties": {
+                "type": "llm_judge",
+                "model_name": "m",
+                "model_provider": "p",
+                "prompt_template": "{{ final_message }}",
+            },
+        }
+        config = EvalConfig.model_validate(raw)
+        assert isinstance(config.properties, LlmJudgeProperties)
+
+        reloaded = EvalConfig.model_validate(config.model_dump())
+        assert isinstance(reloaded.properties, LlmJudgeProperties)
+        assert reloaded.properties == config.properties
+
     def test_v1_llm_as_judge_config_type_preserved(self):
         config = EvalConfig(
             name="LLM Judge V1",
@@ -3054,7 +3278,7 @@ class TestV1EvalConfigCoexistence:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: V1 EvalRun output=None guard (Item 1c)
+# Legacy EvalRun output: may be None only when skipped_reason is set
 # ---------------------------------------------------------------------------
 
 
@@ -3164,12 +3388,12 @@ class TestV1EvalRunOutputNoneGuard:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: CodeEvalProperties dead SyntaxError catch removed (Item 5.4)
+# CodeEvalProperties code validation: must parse and define a score function
 # ---------------------------------------------------------------------------
 
 
-class TestCodeEvalNoDeadSyntaxErrorCatch:
-    """After removing the dead except SyntaxError, ast.parse + score fn check still works."""
+class TestCodeEvalCodeValidation:
+    """CodeEvalProperties.code must be parseable Python defining a module-level score function."""
 
     def test_valid_code_with_score_fn(self):
         props = CodeEvalProperties(
@@ -3406,7 +3630,7 @@ class TestV2EvalResult:
 
 
 # ---------------------------------------------------------------------------
-# D27: expected_tools non-empty (ToolCallCheckProperties)
+# ToolCallCheckProperties.expected_tools must contain at least one tool
 # ---------------------------------------------------------------------------
 class TestToolCallCheckExpectedToolsValidator:
     def test_empty_expected_tools_rejected(self):
@@ -3421,7 +3645,7 @@ class TestToolCallCheckExpectedToolsValidator:
 
 
 # ---------------------------------------------------------------------------
-# D28: ArgMatch regex validation
+# ArgMatch.value must compile as a regex when match_mode is "regex"
 # ---------------------------------------------------------------------------
 class TestArgMatchRegexValidator:
     def test_bad_regex_rejected(self):
@@ -3442,7 +3666,7 @@ class TestArgMatchRegexValidator:
 
 
 # ---------------------------------------------------------------------------
-# D29: reference_key min_length=1
+# reference_key must be a non-empty string when provided
 # ---------------------------------------------------------------------------
 class TestReferenceKeyMinLength:
     def test_exact_match_empty_reference_key_rejected(self):

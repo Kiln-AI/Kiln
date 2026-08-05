@@ -9,6 +9,7 @@ from pydantic import (
     Discriminator,
     Field,
     JsonValue,
+    TypeAdapter,
     ValidationInfo,
     model_validator,
 )
@@ -252,6 +253,9 @@ V2EvalConfigProperties = Annotated[
     Discriminator("type"),
 ]
 
+# Parses a raw properties dict into its typed V2 class via the "type" discriminator.
+_V2_PROPERTIES_ADAPTER: TypeAdapter[Any] = TypeAdapter(V2EvalConfigProperties)
+
 # Explicit tuple of V2 property types for isinstance() checks.
 # Must list exactly the same types as the V2EvalConfigProperties union above.
 V2_PROPERTY_TYPES: tuple[type[BaseModel], ...] = (
@@ -428,6 +432,17 @@ class EvalInput(KilnParentedModel):
         description="Tags for filtering eval inputs.",
     )
 
+    @model_validator(mode="after")
+    def validate_tags(self) -> Self:
+        # Empty or space-containing tags can't be selected by tag filters, so
+        # reject them at creation instead of silently dropping the item later.
+        for tag in self.tags:
+            if not tag:
+                raise ValueError("Tags cannot be empty strings")
+            if " " in tag:
+                raise ValueError("Tags cannot contain spaces. Try underscores.")
+        return self
+
 
 class EvalTaskInput(BaseModel):
     """The runtime data bundle passed to V2 evaluators.
@@ -545,13 +560,21 @@ class EvalOutputScore(BaseModel):
 
 class EvalRun(KilnParentedModel):
     """
-    The results of running an eval on a single dataset item.
+    The result of running an eval on a single item, stored as a child of the
+    EvalConfig that produced it.
 
-    This is a child of an EvalConfig, which specifies how the scores were generated.
+    A run serves one of two purposes:
+    - eval_config_eval=False: evaluating a task run — the task was run with
+      task_run_config_id (which must be set) and the evaluator scored its output.
+    - eval_config_eval=True: evaluating the eval config itself — an existing
+      item's output was scored so the evaluator can be compared against human
+      ratings. task_run_config_id must be None.
 
-    Eval runs can be one of 2 types:
-    1) eval_config_eval=False: we were evaluating a task run (a method of running the task). We get the task input from the dataset_id.input, run the task with the task_run_config, then ran the evaluator on that output. task_run_config_id must be set. The output saved in this model is the output of the task run.
-    2) eval_config_eval=True: we were evaluating an eval config (a method of evaluating the task). We used the existing dataset item input/output, and ran the evaluator on it. task_run_config_id must be None. The input/output saved in this model is the input/output of the dataset item.
+    The evaluated item comes from exactly one of two mutually-exclusive sources:
+    dataset_id (a TaskRun) or eval_input_id (a V2 EvalInput).
+
+    output and scores may be missing only when skipped_reason is set, marking an
+    item that was skipped rather than scored.
     """
 
     dataset_id: ID_TYPE | None = Field(
@@ -625,29 +648,44 @@ class EvalRun(KilnParentedModel):
         return self
 
     @model_validator(mode="after")
-    def validate_output_fields(self) -> Self:
+    def validate_output_fields(self, info: ValidationInfo) -> Self:
         parent_eval_config = self.parent_eval_config()
-        if parent_eval_config and parent_eval_config.config_type == EvalConfigType.v2:
-            return self
         parent_eval = parent_eval_config.parent_eval() if parent_eval_config else None
         if not parent_eval:
+            return self
+
+        evaluation_data_type = parent_eval.evaluation_data_type
+
+        # A full_trace eval scores the conversation trace, so a successful task
+        # run must carry it. Both V1 and V2 writers attach the trace for exactly
+        # this shape (a scored, non-skipped task-run eval of a full_trace eval),
+        # so demanding it back makes a writer that drops the trace fail loudly
+        # instead of persisting a record that can't be re-scored. Historical
+        # files predating this gate are exempt so they still load; new writes
+        # and rebuilds are held to it.
+        if (
+            not self.eval_config_eval
+            and self.skipped_reason is None
+            and evaluation_data_type == EvalDataType.full_trace
+            and self.task_run_trace is None
+            and not self.loaded_from_file(info)
+        ):
+            raise ValueError("full_trace task run eval runs should include trace")
+
+        # Remaining checks are V1-only. V2 deliberately relaxes them: skipped
+        # runs carry no output, and V2 writers never attach a trace to a
+        # final_answer run in the first place.
+        if parent_eval_config.config_type == EvalConfigType.v2:
             return self
 
         if self.output is None and self.skipped_reason is None:
             raise ValueError("V1 EvalRun requires output to be set")
 
-        evaluation_data_type = parent_eval.evaluation_data_type
         if (
             evaluation_data_type == EvalDataType.final_answer
             and self.task_run_trace is not None
         ):
             raise ValueError("final_answer runs should not set trace")
-        elif (
-            not self.eval_config_eval
-            and evaluation_data_type == EvalDataType.full_trace
-            and self.task_run_trace is None
-        ):
-            raise ValueError("full_trace task run eval runs should include trace")
 
         return self
 
@@ -730,26 +768,25 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
         default=EvalConfigType.g_eval,
         description="This is used to determine the type of eval to run.",
     )
-    properties: V2EvalConfigProperties | dict[str, Any] | None = Field(
+    properties: dict[str, Any] | V2EvalConfigProperties | None = Field(
         default=None,
         description="Properties to be used to execute the eval config. Legacy configs use a dict; V2 configs use typed properties.",
     )
 
     @model_validator(mode="before")
     @classmethod
-    def dispatch_properties_parsing(cls, data: Any, info: ValidationInfo) -> Any:
-        # Pydantic's discriminated-union parsing would reject a plain dict for
-        # `properties` because dicts don't carry a discriminator field. V1 (legacy)
-        # configs store properties as an untyped dict, so we shallow-copy and
-        # re-assign it here to force Pydantic to accept the dict branch of the union.
+    def dispatch_properties_parsing(cls, data: Any) -> Any:
+        # The union lists dict first, so a raw dict always stays a plain dict —
+        # even one whose keys happen to match a typed V2 shape (legacy configs
+        # store arbitrary dicts). V2 configs persist properties as a dict too,
+        # so parse those into the typed union here, before field validation.
         if not isinstance(data, dict):
             return data
-        config_type = data.get("config_type", "g_eval")
-        if config_type != "v2":
+        if data.get("config_type", EvalConfigType.g_eval) == EvalConfigType.v2:
             props = data.get("properties")
-            if props is not None and isinstance(props, dict):
+            if isinstance(props, dict):
                 data = dict(data)
-                data["properties"] = props
+                data["properties"] = _V2_PROPERTIES_ADAPTER.validate_python(props)
         return data
 
     def parent_eval(self) -> Union["Eval", None]:
