@@ -175,13 +175,47 @@ auto-research and programmatic callers, which use the jobs API.
 
 | `split` | Behavior |
 |---|---|
-| `null` (omitted) | All results for the run config. Today's behavior, unchanged. |
+| `null` (omitted) | All results for the run config, across every split. Today's behavior, unchanged. |
 | set | Only results whose scored item is a member of that split. |
 
 Filtering happens at query time against stored `EvalRun`s. There is no `EvalRun` schema change,
 so it works retroactively on results recorded before this project.
 
-**Membership must be source-aware.** An `EvalRun` records either `dataset_id` (TaskRun-backed)
+### 5.1 Why `null` means "all" here and "test" on the run API
+
+The two endpoints do differ, deliberately. Omitting `split` when **running** picks a set of work
+to do, and there is no useful meaning for "run all three splits at once" — so it defaults to the
+test split, which is what running an eval has always meant. Omitting `split` when **reading**
+asks for stored records, and "everything recorded" is both meaningful and what the endpoint
+returns today.
+
+This is safe here specifically because the endpoint returns **raw, per-item `EvalRun` records
+with no aggregation**. A mixed-split response is a list the caller can inspect, filter, or ignore
+— their choice — not a number that quietly averaged val items into a test score.
+
+That safety is a property of this endpoint, not a general one, so it is stated as a rule:
+
+> **Any endpoint that aggregates across items must be scoped to a single split. Only endpoints
+> returning raw per-item results may return a mixed-split set.**
+
+The existing summary endpoints already satisfy this: they aggregate only over items in the eval's
+test split and ignore runs outside it. Nothing in this project may introduce an aggregate computed
+over an unscoped mixture — that is the bug this rule exists to prevent, and it would be invisible
+in the response.
+
+### 5.2 No per-result split label
+
+A caller that asks for everything cannot tell from a result which split it came from, and this
+project does not add a label to say so.
+
+Splits are disjoint by convention only (§3.1) — nothing enforces it, and an item may legitimately
+match two splits' filters. A single split field per result would therefore be ambiguous or wrong
+exactly when it mattered. A caller that wants a specific split asks for that split; that request
+is unambiguous by construction.
+
+### 5.3 Membership is source-aware
+
+An `EvalRun` records either `dataset_id` (TaskRun-backed)
 or `eval_input_id` (EvalInput-backed), never both. Comparing a run's item id against a split's
 id set is only meaningful when both are from the same store. An `EvalRun` from one source can
 never be a member of a split backed by the other, regardless of id values.
