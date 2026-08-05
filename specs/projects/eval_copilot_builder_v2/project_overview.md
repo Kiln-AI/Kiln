@@ -6,6 +6,8 @@ owner: TBD (separate dev — large effort)
 
 # Project: Copilot & builder create flows (V2)
 
+> **⚠️ Superseded — kept for historical context.** This project's premise — that the guided/Copilot flows still emit V1 EvalConfigs — no longer holds: the Copilot path now emits **V2** configs. Note also that the D05 row cites `app/desktop/studio_server/spec_api.py`, which does not exist in this repo. Authoritative design for the shipped judge builder: **`specs/projects/evals_v2_judge_prompt/`**.
+
 ## Why this exists
 
 The Evals V2 spec-fidelity review (2026-06-23) found that the **automated/guided** eval-creation flows still emit **V1** EvalConfigs. The spec's Batch-K decisions (`components/15 §8`) require every creation path to emit V2 going forward, and the review's adversarial pass traced the root cause: the spec's "sub-task 8" (K.1/K.2/K.3 creation-path migration) **was never assigned to any implementation phase**, and the `v1_to_v2_prompt_template()` helper was never built. This project migrates the Copilot and questionnaire-builder flows to V2.

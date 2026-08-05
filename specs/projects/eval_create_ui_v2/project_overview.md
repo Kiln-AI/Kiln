@@ -6,6 +6,8 @@ scope: Manual (hand-driven) eval-config create UI — emit V2 + rebuild "Test Yo
 
 # Project: Manual eval create UI (V2)
 
+> **⚠️ Superseded — kept for historical context.** The "current state" described below (the manual llm-judge path writing V1 configs, `getProperties()` returning `{eval_steps, task_description}`, and a gated-off free-text "Test Your Judge") no longer matches the shipped code, and the proposed work has since landed: the manual builder now emits **V2** llm_judge configs via `create_llm_judge_config`, exposes an editable judge prompt + system prompt, and tests against dataset items. Authoritative design for the shipped judge builder: **`specs/projects/evals_v2_judge_prompt/`**.
+
 ## Summary
 
 Rebuild Kiln's **manual** (hand-driven) eval-config create surface so that it (1) **emits V2 EvalConfigs** for the LLM-judge type instead of legacy V1 configs, (2) replaces the free-text "Test Your Judge" panel with the spec'd **dataset-item test harness**, and (3) fixes a set of per-type create-form defects. This is a single coherent rebuild of one surface — the create-eval-config page and the per-type form components — and should be done on one branch by one dev.

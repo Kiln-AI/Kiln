@@ -111,7 +111,7 @@ Nested-call dispatch (the message pump's `tool_call` handler):
 - No match → `not_allowed` reply (lists available names). Two matches → `call_error` "ambiguous".
 - Resolve via `tool_from_id_and_project(tool_id, project, task)`; validate kwargs against the tool's `toolcall_definition()` parameters (`validate_schema_with_value_error` — exactly what the adapter does for model-issued calls) → invalid: `call_error`.
 - `await tool.run(ToolCallContext(allow_saving=<inherited>), **kwargs)` inside `asyncio.create_task` — concurrent nested calls run concurrently; agent-run contextvars propagate (MCP sessions reused; nested code tools see the depth var).
-- Reply: success → raw output string, **passed through verbatim — no parsing** (string-returns decision); `is_error=True` → kind `timeout` when identifiable (nested code-tool timeout / `asyncio.TimeoutError`), else `call_error` with `.raw = output`.
+- Reply: success → raw output string, **passed through verbatim — no parsing** (string-returns decision); `is_error=True` → kind `timeout` when the result's typed `ToolCallResult.timed_out` flag is set (or an `asyncio.TimeoutError` surfaces during dispatch), else `call_error` with `.raw = output`.
 - `tool_call_recorder` (test endpoint) records `{tool_name, arguments, output_preview (1 KB), is_error, duration_ms}`.
 
 ## 5. Trust gate — two complementary layers

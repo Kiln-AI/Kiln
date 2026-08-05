@@ -4,6 +4,8 @@ status: complete
 
 # Architecture: Evals V2 Manual Create-Flow Remediation
 
+> **⚠️ Superseded — kept for historical context.** The manual `llm_judge` design below (a backend-baked static template, no in-UI authoring, a minimal `{model, provider, g_eval}` create request) was superseded by **`specs/projects/evals_v2_judge_prompt/`**: the shipped builder has an editable "Advanced: Judge Prompt" section, and its create request carries `judge_prompt`, `system_prompt`, and `reference_keys`.
+
 A conversion plan, not a re-spec. **Destination behavior** = `evals_v2/components/70` (+ `21`,
 `27`, `22`). Scope: the **manual create flow only** (see `functional_spec.md`). Grounded in the
 current code (file:line anchors). Single `architecture.md`, no new `components/`.
