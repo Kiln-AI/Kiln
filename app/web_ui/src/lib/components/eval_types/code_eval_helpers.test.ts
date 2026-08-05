@@ -192,12 +192,15 @@ describe("generate_examples", () => {
   })
 
   describe("LLM tool examples", () => {
-    it("LLM judge example calls tools.llm_judge and returns its scores", () => {
+    it("LLM judge example judges the response itself", () => {
       const example = generate_examples(undefined)[3]
       expect(example.label).toBe("LLM judge")
       expect(example.code).toContain("from kiln import tools")
       expect(example.code).toContain("tools.llm_judge(")
       expect(example.code).toContain("return json.loads(")
+      // Judges the model's own output (not the user's messages).
+      expect(example.code).toContain("def score(output):")
+      expect(example.code).toContain('input={"response": output}')
     })
 
     it("Triage example composes tools.llm and tools.llm_judge", () => {
@@ -205,6 +208,9 @@ describe("generate_examples", () => {
       expect(example.label).toBe("Triage then LLM judge")
       expect(example.code).toContain("tools.llm(")
       expect(example.code).toContain("tools.llm_judge(")
+      // Cheap triage decides whether the careful judge is even needed.
+      expect(example.code).toContain('"needs_review"')
+      expect(example.code).toContain("if not triage[")
       // Safe branch threads the eval's score keys via build_return_dict.
       expect(example.code).toContain('return {"quality": 1.0}')
     })
