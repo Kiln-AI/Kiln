@@ -271,11 +271,7 @@
 <div
   class="grid grid-cols-1 gap-y-6 xl:gap-x-16 xl:items-start xl:grid-cols-[minmax(0,1fr)_18rem] 2xl:grid-cols-[minmax(0,1fr)_24rem]"
 >
-  <div class="min-w-0 flex flex-col gap-6">
-    <!-- Header and intro live above the form so "Judge Configuration" aligns
-      with the Test Judge pane's header at the top of the grid row. -->
-    <div class="text-xl font-bold">Judge Configuration</div>
-    <EvalTypeIntro evalType={judge_type} metadata={judge_metadata} />
+  <div class="min-w-0">
     <FormContainer
       submit_label="Save Eval"
       on:submit={() => dispatch("save")}
@@ -303,6 +299,8 @@
         on:input={markDirty}
         on:change={markDirty}
       >
+        <div class="text-xl font-bold">Judge Configuration</div>
+        <EvalTypeIntro evalType={judge_type} metadata={judge_metadata} />
         <JudgeConfigFields
           bind:this={judge_fields}
           eval_config_type={judge_type}
