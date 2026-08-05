@@ -34,6 +34,7 @@
   import {
     builder_draft_key,
     builder_mock_active,
+    draft_after_save_keeping_stranded_tags,
     draft_has_content,
     reset_draft_keeping_tags,
     restore_step,
@@ -104,6 +105,7 @@
   import {
     build_default_judge_info,
     judge_config_from_sdg_step,
+    model_choice,
     type JudgeConfig,
     type ModelChoice,
   } from "$lib/eval/default_judge"
@@ -403,14 +405,18 @@
     draft_ready = true
   }
 
-  // Clear the draft once the save persisted (the leave-guard hook point):
+  // Retire the draft once the save persisted (the leave-guard hook point):
   // stop the mirror FIRST so the wizard's still-populated state can't
   // rewrite the draft after the wipe, then flush — the store's subscriber
   // writes async, and navigating before the write lands would resurrect
-  // the draft on the next visit.
-  async function clear_builder_draft() {
+  // the draft on the next visit. `residual` defaults to a full wipe;
+  // multi-turn passes a draft carrying only leftover cleanup tags so
+  // stranded chains from earlier aborted drives still get deleted later.
+  async function clear_builder_draft(
+    residual: BuilderDraft = EMPTY_BUILDER_DRAFT,
+  ) {
     draft_ready = false
-    draft_store?.set(EMPTY_BUILDER_DRAFT)
+    draft_store?.set(residual)
     try {
       await persist_draft()
     } catch (e) {
@@ -798,7 +804,10 @@
             task_input_schema: "",
             task_output_schema: "",
           },
-          target_specification: description,
+          // The refined spec (Step 3), not the raw Step-1 text: the saved
+          // definition and the judge both read spec_text(), so generating
+          // from anything else would diverge the examples from what ships.
+          target_specification: spec_text(),
           num_samples_per_topic: 10,
           num_topics: 10,
           providers: ["openrouter"],
@@ -896,10 +905,10 @@
     )
     const drive_eval = evals.find((e) => e.multi_turn_drive_config)
     const su = drive_eval?.multi_turn_drive_config
-      ? {
-          model_name: drive_eval.multi_turn_drive_config.model_name,
-          model_provider: drive_eval.multi_turn_drive_config.model_provider,
-        }
+      ? model_choice(
+          drive_eval.multi_turn_drive_config.model_name,
+          drive_eval.multi_turn_drive_config.model_provider,
+        )
       : null
     // Judge source: the same eval when one exists, else the newest eval
     // with a current config (single-turn tasks have no drive config).
@@ -930,7 +939,7 @@
           ? props.model_provider
           : config?.model_provider ?? null
       if (model && provider) {
-        judge = { model_name: model, model_provider: provider }
+        judge = model_choice(model, provider)
       }
     }
     return { su_driver: su, judge_model: judge }
@@ -960,19 +969,13 @@
     if (is_multi_turn && su_driver === null) {
       const suggested = build_suggested_models(models, "data_gen")[0]
       if (suggested) {
-        su_driver = {
-          model_name: suggested.model_id,
-          model_provider: suggested.provider_id,
-        }
+        su_driver = model_choice(suggested.model_id, suggested.provider_id)
       }
     }
     if (judge_model === null) {
       const suggested = build_suggested_models(models, "evals")[0]
       if (suggested) {
-        judge_model = {
-          model_name: suggested.model_id,
-          model_provider: suggested.provider_id,
-        }
+        judge_model = model_choice(suggested.model_id, suggested.provider_id)
       }
     }
   }
@@ -1099,12 +1102,9 @@
       return
     }
     if (is_multi_turn && su_model_id && su_provider_id) {
-      su_driver = { model_name: su_model_id, model_provider: su_provider_id }
+      su_driver = model_choice(su_model_id, su_provider_id)
     }
-    judge_model = {
-      model_name: judge_model_id,
-      model_provider: judge_provider_id,
-    }
+    judge_model = model_choice(judge_model_id, judge_provider_id)
     drive_settings_error = null
     drive_settings_dialog?.close()
     if (is_multi_turn) {
@@ -1590,6 +1590,12 @@
       // Set by a batch_aborted frame: a config-scoped judge failure aborted
       // the batch server-side. Cases judged before it remain valid.
       let batch_abort: { error: string; stage: string } | null = null
+      // Set by the batch_completed frame — the server's ONLY signal that the
+      // drive loop finished cleanly and _delete_superseded_batches actually
+      // ran. A batch_failed/abort tears the drive down before that delete, so
+      // without this flag the superseded tags would be dropped as deleted
+      // when they are still on disk.
+      let batch_completed = false
       const reader = response.body.getReader()
       stream_loop: for await (const payload of sse_data_payloads(reader)) {
         if (payload === "complete") break
@@ -1626,8 +1632,12 @@
         } else if (event.type === "case_judged") {
           // Claims stay unbuilt here — they're built lazily (build_claims)
           // for the traces the review selection surfaces or the user opens.
+          // The per-drive batch_tag makes the trace id unique across drives:
+          // the case index alone repeats every drive, so a stale claims
+          // build from a prior drive would pass patch_trace_claims' identity
+          // guard and corrupt the new drive's trace at the same index.
           built[event.case_index] = {
-            trace_id: `case_${event.case_index}`,
+            trace_id: `${multi_turn_batch_tag}_case_${event.case_index}`,
             leaf_run_id: event.leaf_run_id || null,
             raw_input: event.raw_input,
             raw_output: event.raw_output,
@@ -1661,21 +1671,25 @@
           // Keep draining: results that raced past the abort frame are
           // still valid survivors; the server ends the stream right after.
           batch_abort = { error: event.error, stage: event.stage }
+        } else if (event.type === "batch_completed") {
+          // The drive loop finished cleanly server-side; its totals are
+          // already reflected in the rows. This frame is the delete signal.
+          batch_completed = true
         }
-        // batch_completed carries totals the rows already reflect; the
-        // `complete` terminator ends the loop.
+        // The `complete` terminator ends the loop.
       }
       if (any_case_driven) {
-        if (!batch_abort) {
-          // The server deleted the superseded batches once replacements
-          // existed — drop them from the cleanup list.
+        if (batch_completed) {
+          // batch_completed is the server's guarantee that the drive loop
+          // ran to completion and deleted the superseded batches — only now
+          // are their chains gone, so drop them from the cleanup list. A
+          // failed or aborted drive never reaches that delete, so its tags
+          // ride to the next drive's replace_batch_tags (idempotent, so
+          // re-passing an already-deleted tag is harmless).
           undeleted_batch_tags = undeleted_batch_tags.filter(
             (t) => !tags_to_replace.includes(t),
           )
         }
-        // On an abort the deletion may never have run (the drive was torn
-        // down mid-flight) — keep the tags. Delete-on-next-drive is
-        // idempotent, so re-passing an already-deleted tag is harmless.
       } else {
         // Nothing was driven: no replacement chains, no deletions — keep
         // pointing at the previous batch (and its cases) so save/cleanup
@@ -1783,7 +1797,8 @@
   let trace_reviews: TraceReview[] = []
   // Which traces the reviewer is asked to review (indices into trace_claims):
   // a judge-stratified subset for multi-turn batches, everything for
-  // single-turn. A default, not a cap — unselected traces stay reviewable.
+  // single-turn. The review surfaces exactly this subset — unselected traces
+  // are not shown; they land in the train split unrated.
   let selected_trace_indices: number[] = []
   let claims_loading = false
   let claims_error: string | null = null
@@ -2263,6 +2278,9 @@
             "No multi-turn chains were generated — go back to Step 4."
           return
         }
+        // The saved batch's own tag: its chains become the eval, so it must
+        // be excluded from any future cleanup (below).
+        const saved_batch_tag = multi_turn_batch_tag
         // The SU model the chains were driven with — always committed
         // before a drive can run; missing means no drive happened.
         const saved_su_driver = su_driver
@@ -2307,7 +2325,7 @@
               reviewed_examples: [],
               judge_info: save_judge,
               multi_turn: {
-                batch_tag: multi_turn_batch_tag,
+                batch_tag: saved_batch_tag,
                 reviewed_chains,
                 cases: driven_cases,
                 // The drive settings this wizard's conversations ran with
@@ -2338,9 +2356,17 @@
         })
         const saved = data as { id?: string }
         // Persisted — the leave guard has nothing left to protect, and the
-        // draft's job is done (a kept draft would restore a stale wizard
-        // over the saved eval on the next visit).
-        await clear_builder_draft()
+        // draft's authoring job is done (a kept draft would restore a stale
+        // wizard over the saved eval on the next visit). But earlier aborted
+        // drives can have stranded superseded chains on disk; carry only
+        // those cleanup tags (never the just-saved batch's) so a later drive
+        // on this task deletes them instead of orphaning them forever.
+        await clear_builder_draft(
+          draft_after_save_keeping_stranded_tags(
+            saved_batch_tag,
+            undeleted_batch_tags,
+          ),
+        )
         if (saved.id) {
           leave_guard_suppressed = true
           goto(`/specs/${project_id}/${task_id}/${saved.id}`)

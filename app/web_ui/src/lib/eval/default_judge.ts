@@ -11,11 +11,30 @@ import type { components } from "$lib/api_schema"
 // and the save path persists it, so the calibrated judge is the shipped one.
 export type JudgeConfig = components["schemas"]["JudgeConfig"]
 
+// The provider registry's enum — a lane's provider is always one of these
+// (the picks come from the models registry), and JudgeConfig now validates
+// it, so ModelChoice carries the same enum end-to-end rather than a bare
+// string.
+export type ModelProviderName = components["schemas"]["ModelProviderName"]
+
 // A bare model choice for one of the builder's lanes (synthetic-user driver
 // or judge), as the wire carries it.
 export type ModelChoice = {
   model_name: string
-  model_provider: string
+  model_provider: ModelProviderName
+}
+
+// Construct a lane choice from registry-sourced ids (a dropdown pick, a
+// suggested model, or a persisted eval config). The provider always
+// originates from the models registry — a real ModelProviderName — so this is
+// the single honest wire→domain boundary where the loose string is asserted,
+// keeping every downstream lane (and the JudgeConfig built from it) enum-typed
+// without scattering casts at each construction.
+export function model_choice(
+  model_name: string,
+  model_provider: string,
+): ModelChoice {
+  return { model_name, model_provider: model_provider as ModelProviderName }
 }
 
 type SdgStepConfig =

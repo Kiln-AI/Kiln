@@ -3,6 +3,7 @@ import {
   builder_draft_key,
   builder_mock_active,
   create_eval_button_label,
+  draft_after_save_keeping_stranded_tags,
   draft_has_content,
   reset_draft_keeping_tags,
   restore_step,
@@ -315,6 +316,28 @@ describe("reset_draft_keeping_tags", () => {
   })
 })
 
+describe("draft_after_save_keeping_stranded_tags", () => {
+  it("carries stranded cleanup tags but drops the just-saved batch's own", () => {
+    const residual = draft_after_save_keeping_stranded_tags(
+      "multi_turn_batch_1234",
+      ["multi_turn_batch_1200", "multi_turn_batch_1234"],
+    )
+    // The saved batch is the eval's data — never carried (a later
+    // replace_batch_tags would delete the eval's chains). The older aborted
+    // batch is a genuine orphan, so it rides forward for cleanup.
+    expect(residual.undeleted_batch_tags).toEqual(["multi_turn_batch_1200"])
+    expect(residual.multi_turn_batch_tag).toBeNull()
+    expect(residual.description).toBe("")
+    expect(residual.batch_plan).toBeNull()
+  })
+
+  it("is a full empty draft when nothing was stranded", () => {
+    expect(
+      draft_after_save_keeping_stranded_tags("only_batch", ["only_batch"]),
+    ).toEqual(EMPTY_BUILDER_DRAFT)
+  })
+})
+
 describe("create_eval_button_label", () => {
   it("advertises the draft only with copilot AND content", () => {
     expect(create_eval_button_label(true, true)).toBe("Continue Eval Draft")
@@ -357,7 +380,7 @@ describe("model lanes (su_driver / judge_model)", () => {
     expect(
       draft_has_content({
         ...EMPTY_BUILDER_DRAFT,
-        su_driver: { model_name: "m", model_provider: "p" },
+        su_driver: { model_name: "m", model_provider: "openai" },
       }),
     ).toBe(false)
   })

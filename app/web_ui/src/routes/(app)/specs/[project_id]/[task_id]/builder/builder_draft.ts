@@ -158,6 +158,26 @@ export function reset_draft_keeping_tags(draft: BuilderDraft): BuilderDraft {
   }
 }
 
+// After a multi-turn save, the just-saved batch's chains ARE the eval's data
+// — never delete them. Earlier aborted drives can still have left superseded
+// chains on disk (undeleted_batch_tags); wiping the whole draft would orphan
+// those forever, since delete-on-next-drive is their only cleanup. Carry ONLY
+// those leftover tags — with the saved batch's own tag excluded — into an
+// otherwise-empty draft, so a later drive on this task cleans them up. The
+// saved batch is dropped from both tag slots so no future replace_batch_tags
+// can delete the eval's chains.
+export function draft_after_save_keeping_stranded_tags(
+  saved_batch_tag: string,
+  undeleted_batch_tags: string[],
+): BuilderDraft {
+  return {
+    ...EMPTY_BUILDER_DRAFT,
+    undeleted_batch_tags: undeleted_batch_tags.filter(
+      (tag) => tag !== saved_batch_tag,
+    ),
+  }
+}
+
 // The Evals page's create button advertises a resumable draft (the silent
 // restore already happens on builder entry; this makes it discoverable).
 // Copilot-gated: without copilot the button routes to the legacy flow,

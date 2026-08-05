@@ -8636,8 +8636,7 @@ export interface components {
             prompt: string;
             /** Model Name */
             model_name: string;
-            /** Model Provider */
-            model_provider: string;
+            model_provider: components["schemas"]["ModelProviderName"];
         };
         /**
          * KilnAgentRunConfigProperties

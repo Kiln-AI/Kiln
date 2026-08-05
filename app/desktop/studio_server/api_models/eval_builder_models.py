@@ -61,7 +61,10 @@ class JudgeConfig(BaseModel):
 
     prompt: str
     model_name: str
-    model_provider: str
+    # Validate the provider against the registry enum, like every other
+    # model-lane field on this surface — a bad provider must 422 here, not
+    # persist a judge config that fails deep inside every eval run.
+    model_provider: ModelProviderName
 
 
 class ReviewTracesRequest(BaseModel):

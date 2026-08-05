@@ -140,6 +140,23 @@ export function empty_claim_verdicts(claims: Claim[]): ClaimVerdict[] {
   return claims.map(() => ({ agrees: null, why: "" }))
 }
 
+// The blind final-judgement card for a trace whose claims build FAILED. The
+// distilled claims never arrived, but the overall pass/fail call is still
+// answerable from the transcript: judge_score pins the verdict headline and
+// judge_reasoning is the only context (no citations — there are no built
+// claim spans to anchor, so the reviewer opens the full trace to decide).
+// Grading this lets an errored trace count as reviewed (is_trace_reviewed
+// needs only the final judgement) and reach the save gate on the blind
+// verdict alone — the sole recovery short of a paid re-drive.
+export function blind_final_judgement(trace: TraceClaims): FinalJudgement {
+  return {
+    claim: trace.judge_reasoning,
+    expected_result: trace.judge_score,
+    evidence: "",
+    citations: [],
+  }
+}
+
 // A trace is reviewed once the final judgement has an agree/disagree and
 // every disagreement (on any claim) carries a reason. Sub-claim verdicts are
 // optional — we force only the overall call plus reasons for dissent.
@@ -184,7 +201,8 @@ export function review_target(total: number): number {
 // classes (random or take-first selection degenerates on an imbalanced
 // batch), topped up from the other bucket on shortfall, spread evenly
 // across plan order within each bucket. Purely mechanical — no LLM in the
-// selection loop. A default, not a cap: unselected traces stay reviewable.
+// selection loop. This is the exact set the reviewer grades: unselected
+// traces are not surfaced in review (they fill the train split unrated).
 // Returns ascending indices into `traces`.
 export function select_review_subset(
   traces: Pick<TraceClaims, "judge_score">[],
@@ -237,8 +255,9 @@ function graded_claim(claim: Claim, verdict: ClaimVerdict): GradedClaim {
 
 // Build the persisted per-claim grades for one reviewed trace. Only claims
 // the reviewer actually graded are included (sub-claim verdicts are
-// optional); the final judgement is always graded by the time save is
-// reachable (is_trace_reviewed gates it, which requires built claims).
+// optional). Call only for a trace with BUILT claims: it throws otherwise,
+// and a trace reviewed on the blind verdict alone (a failed claims build)
+// carries no grades — the save path sends claim_review: null for those.
 export function build_claim_review_payload(
   trace: TraceClaims,
   review: TraceReview,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   all_traces_reviewed,
+  blind_final_judgement,
   build_claim_review_payload,
   build_graded_traces,
   build_trace_reviews,
@@ -207,6 +208,55 @@ describe("reviewed_trace_count", () => {
     expect(reviewed_trace_count(traces, reviews)).toBe(0)
     reviews[0].final_judgement_verdict.agrees = true
     expect(reviewed_trace_count(traces, reviews)).toBe(1)
+  })
+})
+
+describe("blind_final_judgement (failed claims build)", () => {
+  it("pins the verdict to judge_score and demotes judge_reasoning, no citations", () => {
+    const t = trace({
+      claims: null,
+      final_judgement: null,
+      claims_state: "error",
+      claims_error: "boom",
+      judge_score: "fail",
+      judge_reasoning: "The agent leaked the discount policy.",
+    })
+    const fj = blind_final_judgement(t)
+    expect(fj.expected_result).toBe("fail")
+    expect(fj.claim).toBe("The agent leaked the discount policy.")
+    expect(fj.evidence).toBe("")
+    expect(fj.citations).toEqual([])
+  })
+})
+
+describe("errored-build trace is gradable on the blind verdict", () => {
+  // A trace whose claims build failed has no claim slots, but the overall
+  // verdict is still answerable — setting it makes the trace count toward
+  // the save gate, the only recovery short of a paid re-drive.
+  const errored = () =>
+    trace({
+      claims: null,
+      final_judgement: null,
+      claims_state: "error",
+      claims_error: "boom",
+    })
+
+  it("is_trace_reviewed accepts it once the final verdict is set", () => {
+    const t = errored()
+    const review = build_trace_reviews([t])[0]
+    expect(review.claim_verdicts).toHaveLength(0)
+    expect(is_trace_reviewed(t, review)).toBe(false)
+    review.final_judgement_verdict.agrees = true
+    expect(is_trace_reviewed(t, review)).toBe(true)
+  })
+
+  it("counts toward the save gate so it stays reachable", () => {
+    const t = errored()
+    const reviews = build_trace_reviews([t])
+    expect(reviewed_trace_count([t], reviews)).toBe(0)
+    reviews[0].final_judgement_verdict.agrees = false
+    reviews[0].final_judgement_verdict.why = "The judge was wrong."
+    expect(reviewed_trace_count([t], reviews)).toBe(1)
   })
 })
 

@@ -16,6 +16,7 @@
   import ClaimTraceModal from "./claim_trace_modal.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import {
+    blind_final_judgement,
     is_trace_reviewed,
     type Citation,
     type TraceClaims,
@@ -176,12 +177,24 @@
           current.claims_error ?? "unknown error"
         }`}
       />
+      <!-- The claims failed, but the overall pass/fail call is still
+           answerable from the transcript — render the blind verdict card so
+           the reviewer can grade it (and reach the save gate) without a
+           paid re-drive. "View full trace" above opens the transcript. -->
+      <div class="space-y-3 mt-3">
+        <ClaimCard
+          claim={blind_final_judgement(current)}
+          bind:verdict={current_verdicts.final_judgement_verdict}
+          is_final_judgement
+          {judged_noun}
+        />
+      </div>
       <div class="text-center py-4">
         <button
-          class="btn btn-sm btn-primary"
+          class="btn btn-sm btn-ghost"
           on:click={() => on_open_trace(current_index)}
         >
-          Retry →
+          Retry analysis →
         </button>
       </div>
     {:else}

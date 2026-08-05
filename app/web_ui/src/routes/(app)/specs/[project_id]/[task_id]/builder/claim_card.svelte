@@ -70,6 +70,10 @@
 
   function set_agrees(value: boolean) {
     verdict.agrees = value
+    // Agreeing hides the reason box — clear any text typed while disagreeing
+    // so the user submits exactly what they see. A stale why would otherwise
+    // ride the agree grade into the persisted review and judge refinement.
+    if (value) verdict.why = ""
     verdict = verdict
     if (!value) setTimeout(() => why_input?.focus(), 0)
   }
