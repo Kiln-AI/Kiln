@@ -23,6 +23,10 @@
   import { filename_string_short_validator } from "$lib/utils/input_validators"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import { validate_result_shape } from "$lib/utils/eval_types/test_run_shape"
+  import {
+    parse_reference_data,
+    parse_reference_keys,
+  } from "$lib/utils/eval_types/reference_data_input"
   import type { EvalOutputScore, Priority, TaskRunOutput } from "$lib/types"
 
   /**
@@ -117,23 +121,6 @@
   let required_reference_fields: string[] = []
   $: reference_candidate_keys = parse_reference_keys(advanced_reference_data)
 
-  function parse_reference_keys(data: string): string[] {
-    if (!data.trim()) return []
-    try {
-      const parsed = JSON.parse(data.trim())
-      if (
-        parsed === null ||
-        typeof parsed !== "object" ||
-        Array.isArray(parsed)
-      ) {
-        return []
-      }
-      return Object.keys(parsed)
-    } catch {
-      return []
-    }
-  }
-
   $: manual_example_support = manualExampleSupport(judge_type)
 
   onMount(async () => {
@@ -171,28 +158,13 @@
         [key: string]: unknown
       }[]
     }
-    if (advanced_reference_data.trim()) {
-      try {
-        const parsed = JSON.parse(advanced_reference_data.trim())
-        if (
-          parsed === null ||
-          typeof parsed !== "object" ||
-          Array.isArray(parsed)
-        ) {
-          test_error = createKilnError(
-            new Error(
-              "Reference data must be a JSON object (not null, array, string, or number).",
-            ),
-          )
-          return null
-        }
-        eval_input.reference_data = parsed
-      } catch {
-        test_error = createKilnError(
-          new Error("Reference data must be valid JSON (object)."),
-        )
-        return null
-      }
+    const reference = parse_reference_data(advanced_reference_data)
+    if (!reference.ok) {
+      test_error = createKilnError(new Error(reference.error))
+      return null
+    }
+    if (reference.data) {
+      eval_input.reference_data = reference.data
     }
     return eval_input
   }
