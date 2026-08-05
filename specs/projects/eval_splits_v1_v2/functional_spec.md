@@ -181,7 +181,15 @@ auto-research and programmatic callers, which use the jobs API.
 Filtering happens at query time against stored `EvalRun`s. There is no `EvalRun` schema change,
 so it works retroactively on results recorded before this project.
 
-The existing "Eval Results" page passes `test`, which is exactly what it renders today.
+**Caller update.** The endpoint has exactly one caller in the repo — the "Eval Results" page
+(`.../[eval_config_id]/[run_config_id]/run_result/+page.svelte`) — and it passes `test`, which is
+exactly what it renders today.
+
+Making the parameter required rather than defaulted means the regenerated OpenAPI client types it
+as required too, so a caller that fails to pass it is a **build failure, not a runtime 422**. Any
+caller added between now and merge is caught the same way. That is a large part of why required
+is the right call here: the breaking change is enforced at compile time in the one place it
+matters, instead of being discovered by a user looking at a table with the wrong rows in it.
 
 ### 5.1 Why `split` is required here but optional on the run API
 
@@ -230,15 +238,31 @@ unambiguous by construction; labelling the response isn't.
 
 ### 5.3 Membership is source-aware
 
-An `EvalRun` records either `dataset_id` (TaskRun-backed)
-or `eval_input_id` (EvalInput-backed), never both. Comparing a run's item id against a split's
-id set is only meaningful when both are from the same store. An `EvalRun` from one source can
-never be a member of a split backed by the other, regardless of id values.
+Membership is tag-based, and **one item can be in several splits**. An `EvalInput` tagged both
+`val_x` and `test_x` is a member of both splits, and both `?split=val` and `?split=test` return
+its results. That is expected — splits are disjoint by convention only (§3.1) — and nothing here
+restricts it.
 
-This is not merely defensive. Filter ids share the `tag::` grammar across both stores, so
-`tag::val_x` is a valid selector in either — the id alone does not identify which store it
-addresses. Any cache, lookup, or comparison keyed on a filter id or an item id must carry the
-source alongside it.
+The source-awareness point is a different one: it's about **which store a filter is evaluated
+over**, not about how many tags an item carries.
+
+A filter id is a predicate, not a location. `tag::val_x` is a valid selector in *either* store —
+run it over `task.runs()` and it yields TaskRun ids, run it over `task.eval_inputs()` and it
+yields EvalInput ids. The string is identical in both cases. What decides which store it reads is
+the split's backing, which is recorded on the split, not encoded in the filter id.
+
+So resolving a split yields ids **from one store**, and an `EvalRun` records exactly one of
+`dataset_id` (TaskRun) or `eval_input_id` (EvalInput). Testing membership means comparing ids
+that must come from the same store to mean anything. A TaskRun-backed run is not a member of an
+EvalInput-backed split — not because of anything about its tags, but because it is not the kind of
+thing that split contains.
+
+**The ids alone cannot be trusted to enforce that.** Kiln ids are `str(uuid.uuid4().int)[:12]` —
+twelve decimal digits from one generator shared by every model type. That is a ~10¹² space, not a
+full UUID, and TaskRuns and EvalInputs draw from it identically. Cross-store collisions are
+unlikely, not impossible, and a collision here doesn't fail loudly: it silently admits one item's
+result into another item's split. Any cache key, lookup, or membership test must therefore carry
+the source alongside the id or filter id, rather than relying on ids being globally distinct.
 
 ---
 
