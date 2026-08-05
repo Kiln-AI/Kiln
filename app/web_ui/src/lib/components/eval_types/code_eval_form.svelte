@@ -14,9 +14,9 @@
 
   // Creation flow: the score is named after the eval, which the user is still
   // typing. Rather than chasing the name field with regeneration, the starter
-  // code uses a static "score_name_placeholder" key, the note above the
-  // editor shows the real key live, and validate() blocks saving until the
-  // code returns it.
+  // code uses a static "score_name_placeholder" key and the note above the
+  // editor shows the real key live. Running the judge validates the returned
+  // keys against the eval's scores.
   export let placeholder_score_key: boolean = false
 
   function initial_code(): string {
@@ -71,36 +71,17 @@
     .map((score) => string_to_json_key(score.name))
     .filter((key) => key.length > 0)
 
+  // Hidden while the eval name is empty or invalid (no keys to show yet).
   $: score_key_note =
     expected_score_keys.length > 0
-      ? `Your function must return the score key${
-          expected_score_keys.length > 1 ? "s" : ""
-        } ${expected_score_keys.map((key) => `"${key}"`).join(", ")}${
-          placeholder_score_key
-            ? '. Replace "score_name_placeholder" below.'
-            : "."
-        }`
-      : "Your function must return the score key derived from the eval name (in snake case). Name your eval above to see it."
-
-  function escape_regex(s: string): string {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-  }
-
-  export function validate(): string | null {
-    const code = properties.code ?? ""
-    if (expected_score_keys.length === 0) {
-      return "Name your eval before saving: the score function must return a score key derived from the eval name."
-    }
-    for (const key of expected_score_keys) {
-      if (!new RegExp(`\\b${escape_regex(key)}\\b`).test(code)) {
-        const placeholder_hint = /\bscore_name_placeholder\b/.test(code)
-          ? ' Replace "score_name_placeholder" in your code with it.'
-          : ""
-        return `The score function must return the score key "${key}".${placeholder_hint}`
-      }
-    }
-    return null
-  }
+      ? placeholder_score_key
+        ? `Replace "score_name_placeholder" in the code below with the eval score key ${expected_score_keys
+            .map((key) => `"${key}"`)
+            .join(", ")}.`
+        : `Your function must return the score key${
+            expected_score_keys.length > 1 ? "s" : ""
+          } ${expected_score_keys.map((key) => `"${key}"`).join(", ")}.`
+      : null
 
   let timeout_seconds: number = properties.timeout_seconds ?? 30
 
@@ -170,13 +151,17 @@
     inline_action={examples_inline_action}
     value=""
   />
-  <div data-testid="score-key-note">
-    <Warning
-      warning_message={score_key_note}
-      warning_color="primary"
-      warning_icon="info"
-    />
-  </div>
+  {#if score_key_note}
+    <div data-testid="score-key-note">
+      <Warning
+        warning_message={score_key_note}
+        warning_color="primary"
+        warning_icon="info"
+        tight={true}
+        text_size="xs"
+      />
+    </div>
+  {/if}
   <CodeEditor
     bind:this={code_editor}
     value={properties.code || initial_code()}

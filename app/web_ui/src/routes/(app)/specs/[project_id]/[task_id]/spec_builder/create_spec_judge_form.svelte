@@ -38,10 +38,14 @@
 
   // The eval will be created with a single pass/fail score named after the
   // eval. The judge forms need that shape up front: the code judge shows the
-  // score key it implies (live, as the name is typed) and refuses to save
-  // until the code returns it. Its starter code uses a static
-  // "score_name_placeholder" key rather than chasing this field.
-  $: output_scores = [{ name, type: "pass_fail" }] as EvalOutputScore[]
+  // score key it implies, live as the name is typed. Its starter code uses a
+  // static "score_name_placeholder" key rather than chasing this field.
+  // While the name field is invalid, no scores are passed down: a key derived
+  // from a rejected name would be wrong, so the score-key note hides instead.
+  let name_error: string | null = null
+  $: output_scores = (
+    name_error ? [] : [{ name, type: "pass_fail" }]
+  ) as EvalOutputScore[]
 
   // The form arrives pre-filled (autofilled name, judge defaults), so "has
   // unsaved changes" has to mean the user actually touched something --
@@ -88,6 +92,7 @@
     description="A short name for your own reference."
     id="spec_name"
     bind:value={name}
+    bind:error_message={name_error}
     validator={filename_string_short_validator}
   />
 

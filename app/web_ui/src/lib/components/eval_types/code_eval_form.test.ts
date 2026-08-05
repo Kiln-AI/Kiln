@@ -302,9 +302,9 @@ describe("example code correctness", () => {
     expect(parseCode).not.toContain('"quality"')
   })
 
-  describe("score key note and validation (existing-eval mode)", () => {
-    it("shows the expected keys and passes validation on the generated starter", () => {
-      const { container, component } = render(CodeEvalForm, {
+  describe("score key note (existing-eval mode)", () => {
+    it("shows the expected keys", () => {
+      const { container } = render(CodeEvalForm, {
         props: {
           output_scores: [
             make_score("Accuracy", "pass_fail"),
@@ -315,23 +315,16 @@ describe("example code correctness", () => {
       const note = container.querySelector('[data-testid="score-key-note"]')
       expect(note?.textContent).toContain('"accuracy"')
       expect(note?.textContent).toContain('"depth"')
-      // Real keys are embedded (no placeholder), so the starter validates.
-      expect(component.validate()).toBeNull()
+      expect(note?.textContent).not.toContain("score_name_placeholder")
     })
 
-    it("fails validation when a required key is removed from the code", async () => {
-      const { container, component } = render(CodeEvalForm, {
-        props: { output_scores: [make_score("Accuracy", "pass_fail")] },
+    it("hides the note when there are no scores", () => {
+      const { container } = render(CodeEvalForm, {
+        props: { output_scores: [] },
       })
-      const editor = container.querySelector(
-        '[data-testid="code-editor-textarea"]',
-      ) as HTMLTextAreaElement
-      await fireEvent.input(editor, {
-        target: { value: 'def score(output):\n    return {"other": 1.0}' },
-      })
-      const error = component.validate()
-      expect(error).toContain('"accuracy"')
-      expect(error).not.toContain("placeholder")
+      expect(
+        container.querySelector('[data-testid="score-key-note"]'),
+      ).toBeNull()
     })
   })
 
@@ -351,8 +344,8 @@ describe("example code correctness", () => {
       expect(example_code).not.toContain('{"":')
     })
 
-    it("seeds a static score_name_placeholder starter that ignores output score changes", async () => {
-      const { container, component } = render(CodeEvalForm, {
+    it("seeds a static score_name_placeholder starter and notes the real key", () => {
+      const { container } = render(CodeEvalForm, {
         props: {
           output_scores: [make_score("My Eval", "pass_fail")],
           placeholder_score_key: true,
@@ -363,16 +356,9 @@ describe("example code correctness", () => {
       ) as HTMLTextAreaElement
       expect(editor.value).toContain('"score_name_placeholder"')
       expect(editor.value).not.toContain('"my_eval"')
-      const error = component.validate()
-      expect(error).toContain('"my_eval"')
-      expect(error).toContain('"score_name_placeholder"')
-
-      await fireEvent.input(editor, {
-        target: {
-          value: editor.value.replaceAll("score_name_placeholder", "my_eval"),
-        },
-      })
-      expect(component.validate()).toBeNull()
+      const note = container.querySelector('[data-testid="score-key-note"]')
+      expect(note?.textContent).toContain('Replace "score_name_placeholder"')
+      expect(note?.textContent).toContain('"my_eval"')
     })
   })
 })

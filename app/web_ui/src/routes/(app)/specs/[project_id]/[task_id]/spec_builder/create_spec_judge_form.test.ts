@@ -80,61 +80,30 @@ describe("CreateSpecJudgeForm", () => {
     const editor = container.querySelector(
       '[data-testid="code-editor-textarea"]',
     ) as HTMLTextAreaElement
-    const note = container.querySelector(
-      '[data-testid="score-key-note"]',
-    ) as HTMLElement
     const name_input = container.querySelector(
       'input[aria-label="Eval Name"]',
     ) as HTMLInputElement
     expect(name_input).not.toBeNull()
-    expect(note.textContent).toContain("Name your eval above")
+    // No note while the name is empty: there's no key to show yet.
+    expect(container.querySelector('[data-testid="score-key-note"]')).toBeNull()
 
     for (const partial of ["N", "No Hate", "No Hate Regex"]) {
       await fireEvent.input(name_input, { target: { value: partial } })
       await tick()
     }
+    const note = container.querySelector(
+      '[data-testid="score-key-note"]',
+    ) as HTMLElement
+    expect(note).not.toBeNull()
+    expect(note.textContent).toContain('Replace "score_name_placeholder"')
     expect(note.textContent).toContain('"no_hate_regex"')
     expect(editor.value).toContain('"score_name_placeholder"')
     expect(editor.value).not.toContain('"no_hate_regex"')
   })
 
-  it("validation blocks saving until the code returns the real score key", async () => {
-    const { container, component } = render_form("code_eval", "")
-    const form = component as unknown as {
-      validateJudge: () => string | null
-    }
-    const editor = container.querySelector(
-      '[data-testid="code-editor-textarea"]',
-    ) as HTMLTextAreaElement
-    const name_input = container.querySelector(
-      'input[aria-label="Eval Name"]',
-    ) as HTMLInputElement
-
-    await fireEvent.input(name_input, { target: { value: "No Hate Regex" } })
-    await tick()
-
-    // Untouched starter still carries the placeholder: blocked, with a hint.
-    const placeholder_error = form.validateJudge()
-    expect(placeholder_error).toContain('"no_hate_regex"')
-    expect(placeholder_error).toContain('"score_name_placeholder"')
-
-    // Renaming the key in the code satisfies validation.
-    await fireEvent.input(editor, {
-      target: {
-        value: editor.value.replaceAll(
-          "score_name_placeholder",
-          "no_hate_regex",
-        ),
-      },
-    })
-    await tick()
-    expect(form.validateJudge()).toBeNull()
-
-    // Renaming the eval afterwards re-blocks: the code no longer matches.
-    await fireEvent.input(name_input, { target: { value: "Renamed" } })
-    await tick()
-    const renamed_error = form.validateJudge()
-    expect(renamed_error).toContain('"renamed"')
-    expect(renamed_error).not.toContain("placeholder")
-  })
+  // Note: hiding the score-key note while the name field has a validation
+  // error (name_error -> no output_scores) isn't testable here — FormElement
+  // only starts validating after onMount, which jsdom/vitest doesn't run.
+  // The render-side behavior (no scores -> no note) is covered in
+  // code_eval_form.test.ts.
 })
