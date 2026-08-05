@@ -10,6 +10,7 @@ from pydantic import (
     Field,
     JsonValue,
     TypeAdapter,
+    ValidationInfo,
     model_validator,
 )
 from typing_extensions import Self
@@ -647,29 +648,44 @@ class EvalRun(KilnParentedModel):
         return self
 
     @model_validator(mode="after")
-    def validate_output_fields(self) -> Self:
+    def validate_output_fields(self, info: ValidationInfo) -> Self:
         parent_eval_config = self.parent_eval_config()
-        if parent_eval_config and parent_eval_config.config_type == EvalConfigType.v2:
-            return self
         parent_eval = parent_eval_config.parent_eval() if parent_eval_config else None
         if not parent_eval:
+            return self
+
+        evaluation_data_type = parent_eval.evaluation_data_type
+
+        # A full_trace eval scores the conversation trace, so a successful task
+        # run must carry it. Both V1 and V2 writers attach the trace for exactly
+        # this shape (a scored, non-skipped task-run eval of a full_trace eval),
+        # so demanding it back makes a writer that drops the trace fail loudly
+        # instead of persisting a record that can't be re-scored. Historical
+        # files predating this gate are exempt so they still load; new writes
+        # and rebuilds are held to it.
+        if (
+            not self.eval_config_eval
+            and self.skipped_reason is None
+            and evaluation_data_type == EvalDataType.full_trace
+            and self.task_run_trace is None
+            and not self.loaded_from_file(info)
+        ):
+            raise ValueError("full_trace task run eval runs should include trace")
+
+        # Remaining checks are V1-only. V2 deliberately relaxes them: skipped
+        # runs carry no output, and V2 writers never attach a trace to a
+        # final_answer run in the first place.
+        if parent_eval_config.config_type == EvalConfigType.v2:
             return self
 
         if self.output is None and self.skipped_reason is None:
             raise ValueError("V1 EvalRun requires output to be set")
 
-        evaluation_data_type = parent_eval.evaluation_data_type
         if (
             evaluation_data_type == EvalDataType.final_answer
             and self.task_run_trace is not None
         ):
             raise ValueError("final_answer runs should not set trace")
-        elif (
-            not self.eval_config_eval
-            and evaluation_data_type == EvalDataType.full_trace
-            and self.task_run_trace is None
-        ):
-            raise ValueError("full_trace task run eval runs should include trace")
 
         return self
 

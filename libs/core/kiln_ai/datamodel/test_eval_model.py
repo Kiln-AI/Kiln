@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -1805,6 +1807,142 @@ def test_validate_output_fields_parametrized(
     else:
         run = EvalRun(**run_data)
         assert run.task_run_trace == trace
+
+
+# ── V2 validate_output_fields: writer-shape matrix ─────────────────────────
+#
+# The V2 eval writers attach task_run_trace for exactly one shape: a scored
+# (non-skipped), non-eval-config task run of a full_trace eval. These pin the
+# datamodel gate to that shape so a writer dropping the trace is rejected, while
+# every shape the writer legitimately leaves trace-less continues to pass.
+
+V2_TRACE = '{"messages": [{"role": "user", "content": "test"}]}'
+
+
+def _v2_eval_and_config(mock_task, data_type=EvalDataType.full_trace):
+    """A V2 (typed-properties) config parented to an eval of the given type."""
+    eval = Eval(
+        name="V2 Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+        evaluation_data_type=data_type,
+    )
+    config = EvalConfig(
+        parent=eval,
+        name="V2 Config",
+        config_type=EvalConfigType.v2,
+        properties=LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="Evaluate: {{ final_message }}",
+        ),
+    )
+    return eval, config
+
+
+def test_v2_full_trace_task_run_eval_with_trace_passes(mock_task):
+    _, config = _v2_eval_and_config(mock_task)
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+        task_run_trace=V2_TRACE,
+    )
+    assert run.task_run_trace == V2_TRACE
+
+
+def test_v2_full_trace_task_run_eval_without_trace_rejected(mock_task):
+    _, config = _v2_eval_and_config(mock_task)
+    with pytest.raises(
+        ValueError, match="full_trace task run eval runs should include trace"
+    ):
+        EvalRun(
+            parent=config,
+            eval_input_id="ei1",
+            task_run_config_id="rc1",
+            input="in",
+            output="out",
+            scores={"accuracy": 1.0},
+        )
+
+
+def test_v2_full_trace_skipped_record_without_trace_passes(mock_task):
+    _, config = _v2_eval_and_config(mock_task)
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="in",
+        output=None,
+        scores={},
+        skipped_reason=SkippedReason.missing_trace.value,
+    )
+    assert run.task_run_trace is None
+
+
+def test_v2_full_trace_eval_config_eval_without_trace_passes(mock_task):
+    _, config = _v2_eval_and_config(mock_task)
+    run = EvalRun(
+        parent=config,
+        dataset_id="ds1",
+        eval_config_eval=True,
+        task_run_config_id=None,
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+    )
+    assert run.task_run_trace is None
+
+
+def test_v2_final_answer_record_without_trace_passes(mock_task):
+    _, config = _v2_eval_and_config(mock_task, data_type=EvalDataType.final_answer)
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+    )
+    assert run.task_run_trace is None
+
+
+def test_v2_full_trace_trace_less_record_loads_from_file(mock_task, tmp_path):
+    """Historical trace-less full_trace records must still load; the gate holds
+    only new writes and rebuilds, not files already on disk."""
+    mock_task.path = tmp_path / "task.kiln"
+    mock_task.save_to_file()
+    eval, config = _v2_eval_and_config(mock_task)
+    eval.save_to_file()
+    config.save_to_file()
+
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+        task_run_trace=V2_TRACE,
+    )
+    run.save_to_file()
+
+    # Rewrite the persisted record to the trace-less shape a pre-gate writer
+    # could have produced, then confirm it still loads rather than erroring.
+    assert run.path is not None
+    data = json.loads(run.path.read_text())
+    data["task_run_trace"] = None
+    run.path.write_text(json.dumps(data))
+
+    loaded = EvalRun.load_from_file(str(run.path))
+    assert loaded.task_run_trace is None
 
 
 @pytest.mark.parametrize(
