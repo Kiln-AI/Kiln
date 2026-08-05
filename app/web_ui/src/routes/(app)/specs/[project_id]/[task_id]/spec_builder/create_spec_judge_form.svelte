@@ -53,11 +53,13 @@
   // eval. The judge forms need that shape up front: the code judge shows the
   // score key it implies, live as the name is typed. Its starter code uses a
   // static "score_name_placeholder" key rather than chasing this field.
-  // While the name field is invalid, no scores are passed down: a key derived
-  // from a rejected name would be wrong, so the score-key note hides instead.
+  // While the name field is blank or invalid, no scores are passed down: a
+  // key derived from a rejected name would be wrong, so the score-key note
+  // hides and the test gate shows its friendly error instead. The blank check
+  // matters on first load, before the field validator has ever run.
   let name_error: string | null = null
   $: output_scores = (
-    name_error ? [] : [{ name, type: "pass_fail" }]
+    name_error || !name.trim() ? [] : [{ name, type: "pass_fail" }]
   ) as EvalOutputScore[]
 
   // The form arrives pre-filled (autofilled name, judge defaults), so "has
