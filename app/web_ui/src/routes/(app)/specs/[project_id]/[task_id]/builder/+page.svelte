@@ -1321,7 +1321,8 @@
             params: { path: { project_id, task_id } },
             body: {
               model_name: l.model_name,
-              // JudgeConfig carries the provider as a plain string; the
+              // l.model_provider is a plain string here; PreflightModelApiInput
+              // types model_provider as ModelProviderName, so we cast — the
               // route 422s on a value outside the enum.
               model_provider: l.model_provider as ModelProviderName,
             },

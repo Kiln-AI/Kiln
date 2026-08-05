@@ -999,6 +999,7 @@
                       run_config_component={multiturn_run_config_component}
                       prefill_text={fork_target.prefill}
                       forked_turn_index={fork_target.turn_index}
+                      {chain_broken}
                       on_success={handle_fork_success}
                       on_cancel={cancel_fork}
                       on_send_start={handle_fork_send_start}

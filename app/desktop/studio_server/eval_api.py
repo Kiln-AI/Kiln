@@ -562,9 +562,10 @@ def runs_in_filter(
 def multi_turn_item_count_in_filter(
     task: Task, filter_id: DatasetFilterId, readonly: bool
 ) -> int:
-    """Count eval-set items that are stored multi-turn conversations (TaskRun
-    chain leaves). The eval runner scores these from their saved conversation
-    rather than re-driving them, so their scores can't vary across run configs."""
+    """Count eval-set items that are stored multi-turn conversations (runs with
+    parent_task_run_id set). The eval runner scores these from their saved
+    conversation rather than re-driving them, so their scores can't vary across
+    run configs."""
     filter = dataset_filter_from_id(filter_id)
     return sum(
         1
