@@ -107,13 +107,24 @@ An eval created without a train or val split simply has none until something set
 
 ### 3.4 Naming
 
-`eval_input_filter_id` is renamed so it names the split it defines rather than the source. A
-temporary load-time shim carries the old value across, marked with a `TODO` to be removed before
-this ships — no public projects contain the key, only internal ones.
+A split's stored name identifies **the split it defines**, never the source that backs it.
+`eval_input_filter_id` violates this twice over: it names the source, and it silently means
+"test".
 
-The corresponding V1 field (`eval_set_filter_id`) is in shipped public projects and cannot be
-renamed casually; whether it survives, and in what form, is part of the storage-shape decision
-in §10.
+If the storage shape keeps a flat field per (split, source), the new name is
+**`test_eval_input_filter_id`** — split first, source second, matching `train_…` / `val_…`
+siblings. If the shape instead nests splits, the field disappears rather than being renamed, and
+the same principle is expressed structurally: the split is the key, the source is a property of
+its value. Either way `eval_input_filter_id` does not survive.
+
+A temporary load-time shim carries the old value across to whichever shape lands, marked with a
+`TODO` to be removed before this ships. Only internal projects contain the key, so the shim is a
+throwaway and needs no long-term compatibility story.
+
+The V1 field `eval_set_filter_id` has the same naming defect — it means "test" and says
+"eval set" — but it is in shipped public projects, so it cannot be renamed on the same terms.
+Whether it survives, is renamed with a permanent read-path, or is absorbed into a new shape is
+part of the storage-shape decision in §10, where file compatibility constrains the answer.
 
 ---
 
@@ -323,7 +334,33 @@ snap call:
 5. **Removing the train/val lazy migration** (§3.2) — where the removal lands relative to the
    storage shape, and confirming no reader treats an absent split as an error rather than a zero.
 
-## 11. Explicitly out of scope
+## 11. Deliverable: an alignment project overview for eb-v2
+
+This project ships first and the eb-v2 line aligns to it. That alignment is real work and it
+needs somewhere to live, so **the final phase of this project produces a `project_overview.md`
+for it** — a new project folder under `specs/projects/`, proposed name `eb_v2_splits_alignment`.
+
+The deliverable is the overview only: the *what*, in the same role this project's own
+`project_overview.md` plays. It is not a functional spec, not an architecture, and not a plan.
+Whoever picks that project up runs it through the normal speccing process from there.
+
+**It is deliberately not designed during this speccing.** The implementation agent for the final
+phase writes it, and writes it last, because it can only be accurate once the model has actually
+landed. The conflict surface between the shipped model and eb-v2's current code is not knowable
+from here — the two lines diverged 256 commits ago, eb-v2 is unreviewed and still moving, and the
+storage shape isn't chosen yet. Writing it now would mean guessing at all three.
+
+What that phase's agent has to do is read the merged tree and eb-v2's current state and record
+what alignment actually requires, in enough detail that the follow-on project can be spec'd
+without re-deriving it. Things that will plainly be in the picture — eb-v2's hand-rolled
+per-call-site source branching, which the accessor supersedes; its eval-creation path, which
+writes splits with mixed backings and predates the renamed field; and the removed lazy migration
+— are starting points for that reading, not a scope.
+
+That project is where alignment gets designed. This project's job is to hand it an honest,
+current description of the problem rather than a stale one.
+
+## 12. Explicitly out of scope
 
 - **Golden sets and judge/human alignment.** Unchanged, TaskRun-only, expected unpopulated in V2.
 - **Data-creation paths.** Populating `EvalInput`s and tagging items into splits at creation time
