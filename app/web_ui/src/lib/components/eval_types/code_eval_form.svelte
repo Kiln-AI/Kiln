@@ -4,6 +4,7 @@
   import type { InlineAction } from "$lib/utils/form_element.svelte"
   import CodeEditor from "$lib/components/code_editor.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import Warning from "$lib/ui/warning.svelte"
   import type { EvalOutputScore } from "$lib/types"
   import { generate_default_code, generate_examples } from "./code_eval_helpers"
   import { SHOW_REFERENCE_DATA_UI } from "$lib/utils/eval_types/reference_data_ui"
@@ -69,6 +70,17 @@
   $: expected_score_keys = (output_scores ?? [])
     .map((score) => string_to_json_key(score.name))
     .filter((key) => key.length > 0)
+
+  $: score_key_note =
+    expected_score_keys.length > 0
+      ? `Your function must return the score key${
+          expected_score_keys.length > 1 ? "s" : ""
+        } ${expected_score_keys.map((key) => `"${key}"`).join(", ")}${
+          placeholder_score_key
+            ? '. Replace "score_name_placeholder" below.'
+            : "."
+        }`
+      : "Your function must return the score key derived from the eval name (in snake case). Name your eval above to see it."
 
   function escape_regex(s: string): string {
     return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -158,20 +170,12 @@
     inline_action={examples_inline_action}
     value=""
   />
-  <div class="text-xs text-gray-500" data-testid="score-key-note">
-    {#if expected_score_keys.length > 0}
-      Your function must return the score key{expected_score_keys.length > 1
-        ? "s"
-        : ""}
-      {#each expected_score_keys as key, i}{i > 0 ? ", " : ""}<span
-          class="font-mono font-bold">"{key}"</span
-        >{/each}{placeholder_score_key
-        ? '. Replace "score_name_placeholder" below.'
-        : "."}
-    {:else}
-      Your function must return the score key derived from the eval name (in
-      snake case). Name your eval above to see it.
-    {/if}
+  <div data-testid="score-key-note">
+    <Warning
+      warning_message={score_key_note}
+      warning_color="primary"
+      warning_icon="info"
+    />
   </div>
   <CodeEditor
     bind:this={code_editor}
