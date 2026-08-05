@@ -39,8 +39,8 @@
   // The eval will be created with a single pass/fail score named after the
   // eval. The judge forms need that shape up front: the code judge shows the
   // score key it implies (live, as the name is typed) and refuses to save
-  // until the code returns it — its starter code uses a static "score_name"
-  // placeholder rather than chasing this field.
+  // until the code returns it. Its starter code uses a static
+  // "score_name_placeholder" key rather than chasing this field.
   $: output_scores = [{ name, type: "pass_fail" }] as EvalOutputScore[]
 
   // The form arrives pre-filled (autofilled name, judge defaults), so "has

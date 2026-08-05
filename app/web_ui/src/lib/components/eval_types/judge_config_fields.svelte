@@ -22,7 +22,7 @@
   export let output_scores: EvalOutputScore[] | undefined = undefined
   export let reference_candidate_keys: string[] = []
   // Creation flow only: the code judge seeds its starter code with a static
-  // "score_name" placeholder instead of chasing the still-being-typed eval name.
+  // "score_name_placeholder" instead of chasing the still-being-typed eval name.
   export let code_placeholder_score_key: boolean = false
 
   // Bound out to callers that gate on the current draft (e.g. the save-after-test

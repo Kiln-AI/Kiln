@@ -13,9 +13,9 @@
 
   // Creation flow: the score is named after the eval, which the user is still
   // typing. Rather than chasing the name field with regeneration, the starter
-  // code uses a static "score_name" placeholder, the note above the editor
-  // shows the real key live, and validate() blocks saving until the code
-  // returns it.
+  // code uses a static "score_name_placeholder" key, the note above the
+  // editor shows the real key live, and validate() blocks saving until the
+  // code returns it.
   export let placeholder_score_key: boolean = false
 
   function initial_code(): string {
@@ -30,7 +30,7 @@
   ): EvalOutputScore[] {
     return [
       {
-        name: "score_name",
+        name: "score_name_placeholder",
         type: scores?.[0]?.type ?? "pass_fail",
       } as EvalOutputScore,
     ]
@@ -81,8 +81,8 @@
     }
     for (const key of expected_score_keys) {
       if (!new RegExp(`\\b${escape_regex(key)}\\b`).test(code)) {
-        const placeholder_hint = /\bscore_name\b/.test(code)
-          ? ' Replace the "score_name" placeholder in your code with it.'
+        const placeholder_hint = /\bscore_name_placeholder\b/.test(code)
+          ? ' Replace "score_name_placeholder" in your code with it.'
           : ""
         return `The score function must return the score key "${key}".${placeholder_hint}`
       }
@@ -110,7 +110,12 @@
   let examples_dialog: Dialog
   let active_example_tab: number = 0
 
-  $: examples = generate_examples(output_scores)
+  // In placeholder mode the examples use the placeholder key too: the real
+  // key comes from the still-being-typed eval name (and would be an empty
+  // string before the user names the eval).
+  $: examples = generate_examples(
+    placeholder_score_key ? placeholder_scores(output_scores) : output_scores,
+  )
 
   function show_examples() {
     active_example_tab = 0
@@ -161,11 +166,11 @@
       {#each expected_score_keys as key, i}{i > 0 ? ", " : ""}<span
           class="font-mono font-bold">"{key}"</span
         >{/each}{placeholder_score_key
-        ? ' — replace the "score_name" placeholder below.'
+        ? '. Replace "score_name_placeholder" below.'
         : "."}
     {:else}
       Your function must return the score key derived from the eval name (in
-      snake case) — name your eval above to see it.
+      snake case). Name your eval above to see it.
     {/if}
   </div>
   <CodeEditor

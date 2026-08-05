@@ -52,7 +52,7 @@ function render_form(judge_type: "code_eval" | "pattern_match", name: string) {
 }
 
 describe("CreateSpecJudgeForm", () => {
-  it("seeds the code judge with the score_name placeholder, never the quality fallback", () => {
+  it("seeds the code judge with the score_name_placeholder key, never the quality fallback", () => {
     // The starter code is static by design: the score key note and save-time
     // validation carry the real key, so the code never has to chase the
     // still-being-typed eval name.
@@ -62,7 +62,7 @@ describe("CreateSpecJudgeForm", () => {
       '[data-testid="code-editor-textarea"]',
     ) as HTMLTextAreaElement
     expect(editor).not.toBeNull()
-    expect(editor.value).toContain('"score_name"')
+    expect(editor.value).toContain('"score_name_placeholder"')
     expect(editor.value).not.toContain('"quality"')
   })
 
@@ -87,14 +87,14 @@ describe("CreateSpecJudgeForm", () => {
       'input[aria-label="Eval Name"]',
     ) as HTMLInputElement
     expect(name_input).not.toBeNull()
-    expect(note.textContent).toContain("name your eval above")
+    expect(note.textContent).toContain("Name your eval above")
 
     for (const partial of ["N", "No Hate", "No Hate Regex"]) {
       await fireEvent.input(name_input, { target: { value: partial } })
       await tick()
     }
     expect(note.textContent).toContain('"no_hate_regex"')
-    expect(editor.value).toContain('"score_name"')
+    expect(editor.value).toContain('"score_name_placeholder"')
     expect(editor.value).not.toContain('"no_hate_regex"')
   })
 
@@ -116,11 +116,16 @@ describe("CreateSpecJudgeForm", () => {
     // Untouched starter still carries the placeholder: blocked, with a hint.
     const placeholder_error = form.validateJudge()
     expect(placeholder_error).toContain('"no_hate_regex"')
-    expect(placeholder_error).toContain('"score_name" placeholder')
+    expect(placeholder_error).toContain('"score_name_placeholder"')
 
     // Renaming the key in the code satisfies validation.
     await fireEvent.input(editor, {
-      target: { value: editor.value.replaceAll("score_name", "no_hate_regex") },
+      target: {
+        value: editor.value.replaceAll(
+          "score_name_placeholder",
+          "no_hate_regex",
+        ),
+      },
     })
     await tick()
     expect(form.validateJudge()).toBeNull()

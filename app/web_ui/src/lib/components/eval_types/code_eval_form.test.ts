@@ -336,7 +336,22 @@ describe("example code correctness", () => {
   })
 
   describe("placeholder mode (creation flow)", () => {
-    it("seeds a static score_name starter that ignores output score changes", async () => {
+    it("the Examples dialog uses the placeholder key, not the live (possibly empty) name", () => {
+      const { container } = render(CodeEvalForm, {
+        props: {
+          output_scores: [make_score("", "pass_fail")],
+          placeholder_score_key: true,
+        },
+      })
+      const example_code =
+        container.querySelector(".whitespace-pre")?.textContent ?? ""
+      // The example may legitimately contain empty strings (defaults etc.);
+      // what must not appear is an empty score key.
+      expect(example_code).toContain('"score_name_placeholder"')
+      expect(example_code).not.toContain('{"":')
+    })
+
+    it("seeds a static score_name_placeholder starter that ignores output score changes", async () => {
       const { container, component } = render(CodeEvalForm, {
         props: {
           output_scores: [make_score("My Eval", "pass_fail")],
@@ -346,14 +361,16 @@ describe("example code correctness", () => {
       const editor = container.querySelector(
         '[data-testid="code-editor-textarea"]',
       ) as HTMLTextAreaElement
-      expect(editor.value).toContain('"score_name"')
+      expect(editor.value).toContain('"score_name_placeholder"')
       expect(editor.value).not.toContain('"my_eval"')
       const error = component.validate()
       expect(error).toContain('"my_eval"')
-      expect(error).toContain('"score_name" placeholder')
+      expect(error).toContain('"score_name_placeholder"')
 
       await fireEvent.input(editor, {
-        target: { value: editor.value.replaceAll("score_name", "my_eval") },
+        target: {
+          value: editor.value.replaceAll("score_name_placeholder", "my_eval"),
+        },
       })
       expect(component.validate()).toBeNull()
     })
