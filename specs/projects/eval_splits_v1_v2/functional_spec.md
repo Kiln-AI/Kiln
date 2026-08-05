@@ -170,48 +170,63 @@ auto-research and programmatic callers, which use the jobs API.
 
 ## 5. Reading results by split
 
-`GET .../eval_config/{eval_config_id}/run_config/{run_config_id}/results` takes an optional
-`split` query parameter with the same values.
+`GET .../eval_config/{eval_config_id}/run_config/{run_config_id}/results` takes a **required**
+`split` query parameter.
 
 | `split` | Behavior |
 |---|---|
-| `null` (omitted) | All results for the run config, across every split. Today's behavior, unchanged. |
-| set | Only results whose scored item is a member of that split. |
+| `"test"` / `"train"` / `"val"` | Only results whose scored item is a member of that split. |
+| omitted | 422. There is no default, and no way to request a mixed set. |
 
 Filtering happens at query time against stored `EvalRun`s. There is no `EvalRun` schema change,
 so it works retroactively on results recorded before this project.
 
-### 5.1 Why `null` means "all" here and "test" on the run API
+The existing "Eval Results" page passes `test`, which is exactly what it renders today.
 
-The two endpoints do differ, deliberately. Omitting `split` when **running** picks a set of work
-to do, and there is no useful meaning for "run all three splits at once" — so it defaults to the
-test split, which is what running an eval has always meant. Omitting `split` when **reading**
-asks for stored records, and "everything recorded" is both meaningful and what the endpoint
-returns today.
+### 5.1 Why `split` is required here but optional on the run API
 
-This is safe here specifically because the endpoint returns **raw, per-item `EvalRun` records
-with no aggregation**. A mixed-split response is a list the caller can inspect, filter, or ignore
-— their choice — not a number that quietly averaged val items into a test score.
+Making it required is a deliberate breaking change, and the reason is that the current default is
+only *accidentally* correct.
 
-That safety is a property of this endpoint, not a general one, so it is stated as a rule:
+Today every stored `EvalRun` is a test-set run, because the test set is the only thing that has
+ever been runnable. So "all results" and "test results" are the same list, and the page that
+renders them is right by coincidence. The moment this project makes val runnable, that same
+request returns a mixed table with no indication that it did — and the endpoint is agent-exposed,
+so an agent asking for "the results" silently gets a mixture too. Keeping the parameter optional
+would preserve the *syntax* of today's behavior while silently changing its *meaning*, which is
+worse than breaking it visibly.
 
-> **Any endpoint that aggregates across items must be scoped to a single split. Only endpoints
-> returning raw per-item results may return a mixed-split set.**
+A mixed set is not requestable at all. There is no caller that wants results from more than one
+split at once: every consumer is either rendering a split or scoring a split. Offering an "all"
+value would just re-introduce the mixed response as an option, and the first thing any honest
+consumer would do with it is filter it back down.
+
+The **run** API keeps its optional `split` defaulting to test (§4.1), and that asymmetry is
+intended rather than an oversight. Omitting `split` when running picks a set of work to do, and
+there is one obvious default — the test split, which is what running an eval has always meant.
+Reading has three equally meaningful answers and no obvious default, so silence is ambiguous and
+is rejected rather than guessed at.
+
+That gives the general rule this project holds to:
+
+> **Every response about eval results is scoped to exactly one split — whether it returns
+> per-item records or an aggregate. No endpoint returns a mixed-split set.**
 
 The existing summary endpoints already satisfy this: they aggregate only over items in the eval's
-test split and ignore runs outside it. Nothing in this project may introduce an aggregate computed
-over an unscoped mixture — that is the bug this rule exists to prevent, and it would be invisible
-in the response.
+test split and ignore runs outside it. Nothing in this project may introduce a response computed
+over an unscoped mixture. In an aggregate it would be invisible — a val item quietly averaged
+into a test score — and in a per-item list it would be indistinguishable from a correct one, since
+results carry no split marking (§5.2).
 
 ### 5.2 No per-result split label
 
-A caller that asks for everything cannot tell from a result which split it came from, and this
-project does not add a label to say so.
+Results are not labelled with the split they came from, and don't need to be: the caller named
+the split in the request, and the whole response is that split.
 
-Splits are disjoint by convention only (§3.1) — nothing enforces it, and an item may legitimately
-match two splits' filters. A single split field per result would therefore be ambiguous or wrong
-exactly when it mattered. A caller that wants a specific split asks for that split; that request
-is unambiguous by construction.
+A label would also be the wrong thing to add. Splits are disjoint by convention only (§3.1) —
+nothing enforces it, and an item may legitimately match two splits' filters — so a single split
+field per result would be ambiguous or wrong exactly when it mattered. Scoping the request is
+unambiguous by construction; labelling the response isn't.
 
 ### 5.3 Membership is source-aware
 
@@ -305,9 +320,16 @@ See §5.
 
 ## 8. Compatibility requirements
 
-1. **The no-split path does not move.** Omitting `split` on either endpoint produces exactly
-   today's behavior for TaskRun-backed evals: same items run, same results returned, same
-   progress totals. The parameter is opt-in and existing callers are unaffected.
+1. **The run path does not move.** Omitting `split` on the run API produces exactly today's
+   behavior for TaskRun-backed evals: same items run, same progress totals. The parameter is
+   opt-in there and existing callers are unaffected.
+
+   The **results** endpoint is the deliberate exception: `split` is required (§5.1), which breaks
+   callers that omitted it. This is intentional — that default is only accidentally correct today
+   and becomes silently wrong as soon as a non-test split is run. A caller that omitted it was
+   getting test results; passing `test` reproduces exactly what they had. In-repo the change is
+   one page and a regenerated schema; the endpoint has not shipped in a release carrying runnable
+   non-test splits, so there is no correct external caller to break.
 2. **Stored results stay readable.** No `EvalRun` schema change. Results recorded before this
    project filter correctly by split afterwards.
 3. **Existing project files keep working.** TaskRun-backed evals in shipped public projects load,
@@ -340,6 +362,7 @@ Errors name the split, the eval, and the actual reason. In particular:
 |---|---|
 | `split` names a split the eval doesn't have | 422, naming the split and the eval |
 | `split` value isn't one of train/val/test | 422 from request validation |
+| `split` omitted on the results endpoint | 422 from request validation — no default (§5.1) |
 | Eval or task not found | 404 |
 | Judge evaluation requested over an EvalInput-backed set | 4xx, naming operation and reason; nothing written |
 | Prompt optimization against an EvalInput-backed train split | 4xx, naming the reason |
@@ -401,5 +424,6 @@ current description of the problem rather than a stale one.
   belongs to the incoming copilot project. Nothing here builds it, and nothing here is designed
   around a guess at what it will do.
 - **EvalInput support in the remote prompt-optimization service** (§6.3) — different repo.
-- **UI work** beyond adding the val count to eval progress. Train and val stay unsurfaced as run
-  targets by design.
+- **UI work** beyond two required changes: adding the val count to eval progress, and the "Eval
+  Results" page passing `split=test` for the endpoint that now requires it (§5). Train and val
+  stay unsurfaced as run targets by design — no split picker, no new views.
