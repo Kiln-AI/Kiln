@@ -277,19 +277,29 @@ covers:
 - `GET .../evals/{eval_id}/progress` — test-split size, train size, val size
 - `GET .../eval_config/{eval_config_id}/score_summary`
 - `GET .../eval_results_summary`
-- `GET .../run_config/{run_config_id}/results` (with or without `split`)
+- `GET .../run_config/{run_config_id}/results`
 - run-config comparison / the compare page
 
-> **Revision flagged for sign-off.** An earlier round settled on "4xx for now" for these
-> endpoints when an eval is EvalInput-backed, deferring real support to the downstream branch.
-> That call was made against the current code, where each endpoint hard-codes the TaskRun store.
-> Once the accessor exists, supporting both backings on these endpoints is *less* code than
-> refusing — the refusal needs a guard the accessor otherwise makes unnecessary. Their existing
-> 400s are triggered by the **test split being EvalInput-backed**, which has nothing to do with
-> golden; golden counts simply come out zero when `eval_configs_filter_id` is unset, which is the
-> expected V2 state anyway. Recommendation: drop those guards rather than restate them. If you'd
-> rather hold the line and 4xx here, say so and I'll spec the guards instead — but it is the more
-> expensive option and it regresses behavior the downstream branch will want back.
+Each field returns its true value, which for an EvalInput-backed eval means:
+
+| Field | Value |
+|---|---|
+| Test / train / val split sizes | The real count, resolved in that split's own store |
+| Score summaries and aggregates | Computed over that split's real items |
+| Golden counts | **0** — golden is unset, and zero is the correct answer |
+
+**Zero where zero is true, real numbers everywhere else.** Golden counts are zero because there is
+no golden set, which is the expected V2 state (§1) and not an error. Split sizes are never
+reported as zero when the split has items — that would be worse than an error, since it tells a
+user their test set is empty when it isn't.
+
+These endpoints currently 400 for EvalInput-backed evals. That guard is not a policy decision
+about golden — it fires because the code can only count `TaskRun`s and has nothing to say when
+the test split lives elsewhere. Once the accessor can count either store, there is nothing left
+to refuse, and keeping the guard would take *more* code than deleting it. So the guards go.
+
+The 4xx from the earlier round still stands — it just belongs to §6.2, on the one operation that
+genuinely cannot be performed, rather than to these endpoints, which can now answer honestly.
 
 ### 6.2 Things that genuinely cannot work, and must fail loudly
 
