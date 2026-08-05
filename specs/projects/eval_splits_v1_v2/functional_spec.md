@@ -61,16 +61,51 @@ to prevent.
 - Splits are disjoint by convention (tagging discipline), not enforced. Nothing in this project
   validates or requires disjointness.
 
-### 3.2 Default behavior for existing evals
+### 3.2 Unconfigured splits stay unconfigured
 
-TaskRun-backed evals keep the lazy migration they have today: an eval loaded without a train or
-val filter gets `tag::train_{name_slug}` / `tag::val_{name_slug}`, TaskRun-backed. These resolve
-against the task's runs and are commonly empty. That behavior is correct and stays.
+An eval with no train or val split **has no train or val split**. Nothing mints one on load.
 
-The migration mints **TaskRun-backed** splits. It must not mint a split for a source that
-doesn't apply, and it must not overwrite a split that already exists with either backing.
+Today a lazy migration stamps `tag::train_{name_slug}` (and, on the superseded branch,
+`tag::val_{name_slug}`) onto any eval loaded without one. That is removed. It cannot survive the
+model in §3.1: minting a split requires choosing a backing, and choosing TaskRun by default
+silently locks the legacy source onto a split nobody configured — including on evals whose other
+splits are EvalInput-backed. A split's backing is a real decision and belongs to whoever creates
+the data, who knows which store the items live in.
 
-### 3.3 Naming
+It also manufactured a split that never had items. Both real creation paths — spec eval creation
+and the copilot — set the train split explicitly at creation. The migration only ever applied to
+legacy evals predating the field, and nothing ever tagged those runs `train_{name_slug}`, so the
+minted filter resolved to the empty set. It converted "this eval has no train set" into "this
+eval has an empty train set", which reads as configured and isn't.
+
+Consequences, all intended:
+
+- Eval progress reports **0** for an absent train or val split (§6.1). Absent and empty both read
+  as zero; the run API is where the distinction is stated precisely.
+- `split=train` or `split=val` against an eval with no such split returns 422 (§9). This now fires
+  for most pre-existing evals rather than almost none — correctly, since those splits have no
+  items.
+- Prompt optimization reports no usable train set for legacy evals that previously relied on the
+  minted filter (§6.3). Those runs would have optimized against an empty set; they now say so
+  instead of proceeding.
+
+Evals whose minted value was already persisted by an earlier save keep it. It is an explicitly
+set, TaskRun-backed train split from that point on, and nothing rewrites it.
+
+### 3.3 Where splits come from instead
+
+Splits are set explicitly by whoever creates the eval's data, with the backing they intend:
+
+- **Spec eval creation** mints the tags and filter ids for its splits at creation time. It gains a
+  val split alongside the existing test and train ones, TaskRun-backed like its siblings.
+- **The copilot** sets its splits explicitly today and continues to.
+- **The incoming EvalInput tooling** sets EvalInput-backed splits when it creates the items. That
+  work belongs to that project, not this one — this project only has to make the field it writes
+  exist and mean something.
+
+An eval created without a train or val split simply has none until something sets one.
+
+### 3.4 Naming
 
 `eval_input_filter_id` is renamed so it names the split it defines rather than the source. A
 temporary load-time shim carries the old value across, marked with a `TODO` to be removed before
@@ -231,8 +266,13 @@ See §5.
 2. **Stored results stay readable.** No `EvalRun` schema change. Results recorded before this
    project filter correctly by split afterwards.
 3. **Existing project files keep working.** TaskRun-backed evals in shipped public projects load,
-   run, and save without user-visible change. A load/save round trip neither drops a field nor
-   invents one.
+   run, and save correctly. A load/save round trip neither drops a field nor **invents** one —
+   which is why the train/val lazy migration goes (§3.2).
+
+   The one intended user-visible change: a legacy eval that never had a train split explicitly set
+   now reports as having none, where it previously reported an auto-minted filter that matched no
+   items. Nothing that ran before stops running; something that silently did nothing now says it
+   has nothing to do.
 4. **The internal-only rename is a throwaway.** The `eval_input_filter_id` shim exists to carry
    internal projects across and is removed before ship, tracked by a `TODO`.
 5. Whether new-format files remain readable by **older Kiln builds** is an open constraint that
@@ -280,8 +320,8 @@ snap call:
    place. This is the anti-if-branch requirement from §1 made concrete.
 4. **How the judge-evaluation refusal is implemented** (§6.2) — where the check lives so it can't
    be reached with items already partially processed.
-5. **Lazy-migration behavior** for train/val across backings (§3.2): what runs, when, and what it
-   must not overwrite.
+5. **Removing the train/val lazy migration** (§3.2) — where the removal lands relative to the
+   storage shape, and confirming no reader treats an absent split as an error rather than a zero.
 
 ## 11. Explicitly out of scope
 
