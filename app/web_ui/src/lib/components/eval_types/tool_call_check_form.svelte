@@ -6,7 +6,10 @@
   import CloseIcon from "$lib/ui/icons/close_icon.svelte"
   import { onMount } from "svelte"
   import { available_tools, load_available_tools } from "$lib/stores"
-  import { tool_id_to_function_name } from "$lib/stores/tools_store"
+  import {
+    tool_id_to_function_name,
+    CODE_EVAL_ONLY_TOOL_IDS,
+  } from "$lib/stores/tools_store"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
   import type { ToolSetApiDescription } from "$lib/types"
 
@@ -51,8 +54,13 @@
     const groups: OptionGroup[] = []
     const fn_names = new Set<string>()
     for (const tool_set of tool_sets) {
+      // tool_call_check is never a code-eval context, so code-eval-only tools
+      // (e.g. llm_judge) can never appear in a real trace — exclude them.
+      const selectable_tools = tool_set.tools.filter(
+        (tool) => !CODE_EVAL_ONLY_TOOL_IDS.includes(tool.id),
+      )
       const resolved = await Promise.all(
-        tool_set.tools.map(async (tool): Promise<Option | null> => {
+        selectable_tools.map(async (tool): Promise<Option | null> => {
           try {
             const function_name = await tool_id_to_function_name(
               tool.id,

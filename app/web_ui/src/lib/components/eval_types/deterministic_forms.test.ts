@@ -2,10 +2,26 @@
 import { describe, it, expect, vi, beforeAll } from "vitest"
 import { render, fireEvent } from "@testing-library/svelte"
 import { tick } from "svelte"
+import { available_tools } from "$lib/stores"
+import type { ToolSetApiDescription } from "$lib/types"
 
 vi.mock("$lib/utils/form_element.svelte", async () => {
   const { default: Stub } = await import("./__tests__/form_element_stub.svelte")
   return { default: Stub }
+})
+
+// Keep the real CODE_EVAL_ONLY_TOOL_IDS; only stub the async function-name
+// resolver so build_tool_options runs without hitting the API.
+vi.mock("$lib/stores/tools_store", async () => {
+  const actual = await vi.importActual<
+    typeof import("$lib/stores/tools_store")
+  >("$lib/stores/tools_store")
+  return {
+    ...actual,
+    tool_id_to_function_name: vi.fn(
+      async (tool_id: string) => tool_id.split("::").pop() ?? tool_id,
+    ),
+  }
 })
 
 vi.mock("$lib/utils/form_list.svelte", async () => {
@@ -2915,5 +2931,56 @@ describe("required_reference_fields computation", () => {
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((component as any).required_reference_fields).toEqual([])
+  })
+})
+
+describe("ToolCallCheckForm tool option filtering", () => {
+  const ai_models_set: ToolSetApiDescription = {
+    type: "builtin",
+    set_name: "AI Models",
+    tools: [
+      {
+        id: "kiln_tool::llm",
+        name: "LLM",
+        description: "Call a model",
+        function_name: "llm",
+      },
+      {
+        id: "kiln_tool::llm_judge",
+        name: "LLM Judge",
+        description: "Judge with the eval schema",
+        function_name: "llm_judge",
+      },
+    ],
+  }
+
+  it("excludes code-eval-only tools (llm_judge) but keeps llm", async () => {
+    available_tools.set({ proj_tcc: [ai_models_set] })
+
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        project_id: "proj_tcc",
+        task_id: "task_tcc",
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "", expected_args: null }],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+
+    // Let the async build_tool_options resolve, then flush reactivity.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await tick()
+
+    // llm is general-purpose and stays selectable.
+    expect(
+      container.querySelector('[data-testid="fancy-option-llm"]'),
+    ).not.toBeNull()
+    // llm_judge is code-eval-only and can never appear in a real trace.
+    expect(
+      container.querySelector('[data-testid="fancy-option-llm_judge"]'),
+    ).toBeNull()
   })
 })

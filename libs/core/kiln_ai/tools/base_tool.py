@@ -41,6 +41,13 @@ class ToolCallContext:
     (e.g. per-input datasets)."""
     eval_input_id: str | None = None
 
+    """The code-eval judge score schema (allow_float_scores=False) as a JSON string.
+
+    Set only by the code-eval pump so the llm_judge tool can resolve through the
+    generic tool path yet still see the eval's schema at call time. Ignored by every
+    other caller and tool."""
+    eval_output_schema: str | None = None
+
 
 class ToolCallResult(BaseModel):
     output: str

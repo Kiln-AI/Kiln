@@ -4,7 +4,11 @@
   import { available_tools, load_available_tools } from "$lib/stores"
   import { onMount } from "svelte"
   import type { ToolSetApiDescription, ToolSetType } from "$lib/types"
-  import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
+  import {
+    tools_store,
+    tools_store_initialized,
+    CODE_EVAL_ONLY_TOOL_IDS,
+  } from "$lib/stores/tools_store"
   import { goto } from "$app/navigation"
   import type { ToolsSelectorSettings } from "./tools_selector_settings"
 
@@ -29,6 +33,7 @@
     empty_label: "None",
     single_select: false,
     optional: true,
+    code_eval_context: false,
   }
   $: tools_selector_settings = {
     ...default_tools_selector_settings,
@@ -164,6 +169,7 @@
 
   function get_tool_options(
     available_tool_sets: ToolSetApiDescription[] | undefined,
+    code_eval_context: boolean,
   ): OptionGroup[] {
     if (!available_tool_sets || available_tool_sets.length === 0) {
       // When there are no available tools, we'll show the empty state "Add tools" button
@@ -193,7 +199,14 @@
 
       if (tool_sets.length > 0) {
         for (const tool_set of tool_sets) {
-          let tools = tool_set.tools
+          let tools = tool_set.tools.filter(
+            (tool) =>
+              code_eval_context || !CODE_EVAL_ONLY_TOOL_IDS.includes(tool.id),
+          )
+
+          if (tools.length === 0) {
+            continue
+          }
 
           let options = tools.map((tool) => ({
             value: tool.id,
@@ -232,7 +245,10 @@
     info_description: tools_selector_settings.hide_info_description
       ? undefined
       : tools_selector_settings.info_description,
-    fancy_select_options: get_tool_options($available_tools[project_id]),
+    fancy_select_options: get_tool_options(
+      $available_tools[project_id],
+      tools_selector_settings.code_eval_context,
+    ),
     empty_label:
       tools_selector_settings.empty_label ??
       default_tools_selector_settings.empty_label,
