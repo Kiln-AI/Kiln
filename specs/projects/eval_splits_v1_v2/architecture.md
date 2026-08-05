@@ -405,18 +405,94 @@ then dropped" is not expressible.
 
 ### 4.3 Judge evaluation over EvalInput becomes unexpressible
 
-Functional spec §6.2 requires that judge evaluation over `EvalInput` items fail loudly and write
-nothing. Under this design it cannot be requested at all: `eval_config_eval` scopes by
-`eval_configs_filter_id`, which is `DatasetFilterId`-typed, so its items are always `TaskRun`s.
+#### What exists today
 
-The code on evals_v2 that manufactures a skipped `EvalRun` per `EvalInput` item
-(`skipped_reason=incompatible_input_shape`, "eval_config_eval over EvalInput is deferred") is
-**deleted along with `collect_tasks_for_eval_input`**. It is not replaced with a refusal, because
-there is no longer a path that reaches it.
+`eval_config_eval` is judge calibration: it scores a *judge* by re-using a dataset item's stored
+output and correlating the judge's score against a human rating. Its item scope is
+`eval_configs_filter_id` — the golden set.
 
-The remaining honest failure is unchanged from today: `eval_config_eval` with no
-`eval_configs_filter_id` raises, surfacing as a 4xx. This satisfies §6.2 more completely than a
-guard would — nothing to refuse, and no junk records to clean up.
+On evals_v2 the runner dispatches on an **eval-level** source mode:
+
+```python
+def collect_tasks(self):
+    if self._source_mode == "eval_input":       # set from eval.eval_input_filter_id
+        return self.collect_tasks_for_eval_input()
+    elif self.eval_run_type == "eval_config_eval":
+        ...
+```
+
+The source-mode check comes first, so an EvalInput-backed eval routes **every** run type through
+`collect_tasks_for_eval_input()` — including calibration, which has nothing to do with the eval's
+test-set backing. Calibration then collects `EvalInput` items as `eval_config_eval` jobs.
+
+`EvalInput` has no stored output and no rating storage, so there is nothing for those jobs to
+score. `run_job` handles that by writing a persisted, deliberately-empty record per item:
+
+```python
+if isinstance(job.item, EvalInput):
+    if job.type == "eval_config_eval":
+        eval_run = EvalRun(
+            ..., eval_input_id=job.item.id, dataset_id=None,
+            eval_config_eval=True, scores={}, output=None,
+            skipped_reason=SkippedReason.incompatible_input_shape.value,
+            skipped_detail="EvalInput source has no stored output; eval_config_eval "
+                           "over EvalInput is deferred in V2.0 ...",
+        )
+        eval_run.save_to_file()
+    return True
+```
+
+The net effect of running calibration on an EvalInput-backed eval today: a **successful** run
+(200, no error) that scored nothing and left one junk record per item on disk.
+
+#### What we delete, and why
+
+Both halves: `collect_tasks_for_eval_input()` and the `EvalInput`/`eval_config_eval` branch of
+`run_job`.
+
+The reason is that they only exist to paper over the mis-routing. The skipped-record writing is
+not a feature — it is the handler for jobs that should never have been collected. Once source is
+a property of a split rather than of the eval (§2), there is no eval-level source mode, and
+`collect_tasks` becomes:
+
+- `eval_config_eval` → scoped by `eval_configs_filter_id`, which is `DatasetFilterId`-typed, so
+  its items are **always** `TaskRun`s.
+- `task_run_eval` → the resolved split, either backing.
+
+Calibration can no longer reach an `EvalInput`, so the branch that handled reaching one has
+nothing left to handle. Deleting it is removing dead code, not removing behavior.
+
+#### Why not a guard instead
+
+Functional spec §6.2 asked for a loud refusal. A guard would be new code checking for a state and
+raising — something to maintain, and something a later edit could route around. Making the state
+unreachable is strictly stronger: there is no combination of inputs that expresses "calibrate a
+judge over EvalInput items", so there is nothing to refuse.
+
+The honest failure that remains is the pre-existing one: `eval_config_eval` with no
+`eval_configs_filter_id` raises, surfacing as a 4xx. An EvalInput-backed eval that never had a
+golden set gets exactly that — "no golden set configured" — which is accurate, and better than
+today's fake-success.
+
+#### Records already written
+
+Deleting the code does not delete records it already wrote. Any that exist are `EvalRun`s with
+`eval_config_eval=True`, `eval_input_id` set, `dataset_id=None`, `scores={}`, `output=None`,
+`task_run_config_id=None`, and `skipped_reason=incompatible_input_shape`.
+
+They are inert under every reader, checked rather than assumed:
+
+- **Judge comparison** looks items up with `expected_dataset_items.get(eval_run.dataset_id)`.
+  `dataset_id` is `None`, so the lookup misses and the run is skipped by the existing
+  already-handled "removed from the filter" branch.
+- **Run-config summaries** filter on `task_run_config_id == run_config_id`. These carry `None`, so
+  they never match a run config.
+- **Calibration dedupe** builds a set of `run.dataset_id`, adding `None`. Harmless: no `TaskRun`
+  has a `None` id.
+
+So no cleanup or data migration is specified. The residual cost is cosmetic — they inflate
+`eval_config.runs()` counts and would appear in any UI that lists calibration runs raw. If that
+proves visible, deleting them is a one-off script, not a schema concern.
 
 ---
 
@@ -661,6 +737,19 @@ being substantially rewritten here anyway: `eval_set_filter_id: DatasetFilterId 
 `EvalInput` model, and the V2 judge types are all keepers, while `filter_id_for_split`,
 `split_filter_id_from_eval`, `val_set_filter_id` and `eval_set_filter_id_override` are all deleted
 by this design.
+
+### The `agi-anyting_goes_into` merge backs out #1621
+
+That branch already contains `45dd7b0` (#1621) and does **not** contain evals_v2. So the merge is
+not additive: it backs #1621's split implementation out and puts this one in. Everything #1621
+added to the split surface — `val_set_filter_id`, `filter_id_for_split`,
+`split_filter_id_from_eval`, `eval_set_filter_id_override`, the `migrate_val_set_filter_id`
+migration — is deleted by this design and replaced by `splits`, `resolve_split` and
+`ResolvedSplit`.
+
+Expect that merge to read as a large deletion of code already sitting on the integration branch.
+That is correct, not lost work. Reviewers should compare against this document rather than against
+#1621.
 
 ---
 
