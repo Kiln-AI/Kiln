@@ -128,10 +128,12 @@ describe("quality_axis_help", () => {
         "Refetched Schema",
         "Nova — Refetches the same schema",
         "The assistant fetched a type it had already fetched.",
+        "higher_is_better",
       ),
     ).toEqual({
       title: "Refetched Schema",
       subtitle: "Nova — Refetches the same schema",
+      direction: "higher",
       description: "The assistant fetched a type it had already fetched.",
     })
   })
@@ -142,22 +144,65 @@ describe("quality_axis_help", () => {
         "Refetched Schema",
         "Nova — Refetches the same schema",
         null,
+        "higher_is_better",
       ),
     ).toEqual({
       title: "Refetched Schema",
       subtitle: "Nova — Refetches the same schema",
+      direction: "higher",
       description: null,
     })
   })
 
   it("drops an eval name that only repeats the axis label", () => {
     expect(
-      quality_axis_help("Overall Rating", " Overall Rating ", "Graded 1-5."),
+      quality_axis_help(
+        "Overall Rating",
+        " Overall Rating ",
+        "Graded 1-5.",
+        "higher_is_better",
+      ),
     ).toEqual({
       title: "Overall Rating",
       subtitle: null,
+      direction: "higher",
       description: "Graded 1-5.",
     })
+  })
+
+  it("reports a lower-is-better score as one", () => {
+    expect(
+      quality_axis_help("Cost", "Nova — Cost", "Dollars.", "lower_is_better")
+        ?.direction,
+    ).toBe("lower")
+  })
+
+  it("reports no direction for an informational score, which has none", () => {
+    expect(
+      quality_axis_help(
+        "Turn 1 Latency",
+        "Nova — Latency",
+        "ms.",
+        "informational",
+      )?.direction,
+    ).toBeNull()
+  })
+
+  it("reports the higher-is-better default the chart already plots", () => {
+    // A key with no entry in the directions map is drawn as higher-is-better,
+    // so saying so is the geometry rather than a guess about the score
+    expect(
+      quality_axis_help("Mentions The Key Facts", "Nova — Facts", "Prose.")
+        ?.direction,
+    ).toBe("higher")
+    expect(
+      quality_axis_help(
+        "Mentions The Key Facts",
+        "Nova — Facts",
+        "Prose.",
+        null,
+      )?.direction,
+    ).toBe("higher")
   })
 
   it("is null when the popup would only repeat the label back", () => {
@@ -166,6 +211,15 @@ describe("quality_axis_help", () => {
     ).toBeNull()
     expect(quality_axis_help("Overall Rating", null, "  ")).toBeNull()
     expect(quality_axis_help("Overall Rating", undefined, undefined)).toBeNull()
+    // A direction alone is not a reason to open a box: every axis has one
+    expect(
+      quality_axis_help(
+        "Overall Rating",
+        "Overall Rating",
+        null,
+        "lower_is_better",
+      ),
+    ).toBeNull()
   })
 })
 
@@ -187,8 +241,16 @@ describe("metric_axis_help", () => {
     expect(metric_axis_help(axis({}))).toEqual({
       title: "Narration Consistency",
       subtitle: "Longest Silent Run · Nova — Efficiency",
+      direction: "lower",
       description: "Lower longest silent run scores further from the centre.",
     })
+  })
+
+  it("takes the direction the axis is plotted with", () => {
+    expect(metric_axis_help(axis({ better: "higher" })).direction).toBe(
+      "higher",
+    )
+    expect(metric_axis_help(axis({ better: "lower" })).direction).toBe("lower")
   })
 
   it("says the usage rollup when no eval computed it", () => {
@@ -225,6 +287,7 @@ describe("axis_help_html", () => {
     const html = axis_help_html({
       title: "Refetched Schema",
       subtitle: "Nova — Refetches the same schema",
+      direction: "higher",
       description: "Fetched a type it already had.",
     })
     expect(html).toContain("white-space: normal")
@@ -234,21 +297,51 @@ describe("axis_help_html", () => {
     expect(html).toContain("Fetched a type it already had.")
   })
 
+  it("states the direction in caps, under the eval and over the criterion", () => {
+    const html = axis_help_html({
+      title: "Writes One Record At A Time",
+      subtitle: "Nova — Writes one record at a time (code)",
+      direction: "higher",
+      description: "One mutation per id where a batch was available.",
+    })
+    expect(html).toContain("HIGHER IS BETTER")
+    expect(
+      html.indexOf("Nova — Writes one record at a time (code)"),
+    ).toBeLessThan(html.indexOf("HIGHER IS BETTER"))
+    expect(html.indexOf("HIGHER IS BETTER")).toBeLessThan(
+      html.indexOf("One mutation per id where a batch was available."),
+    )
+  })
+
+  it("says the other direction when that is the good end", () => {
+    const html = axis_help_html({
+      title: "Token Economy",
+      subtitle: "Total Tokens · usage rollup",
+      direction: "lower",
+      description: "Lower total tokens scores further from the centre.",
+    })
+    expect(html).toContain("LOWER IS BETTER")
+    expect(html).not.toContain("HIGHER IS BETTER")
+  })
+
   it("leaves out the lines it has nothing for", () => {
     const html = axis_help_html({
       title: "Speed",
       subtitle: null,
+      direction: null,
       description: null,
     })
     expect(html).toContain("Speed")
     expect(html).not.toContain("color: #888")
     expect(html).not.toContain("padding-top")
+    expect(html).not.toContain("IS BETTER")
   })
 
   it("escapes prose, which is the one place a person wrote the text", () => {
     const html = axis_help_html({
       title: "Emits raw chart markup",
       subtitle: null,
+      direction: "higher",
       description: 'A <chart> tag & a "quote".',
     })
     expect(html).toContain("&lt;chart&gt; tag &amp; a &quot;quote&quot;")

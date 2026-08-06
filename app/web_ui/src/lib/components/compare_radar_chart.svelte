@@ -361,6 +361,11 @@ Related criteria sit together: the axes are grouped into the families the task's
       getKeyLabel(dataKey),
       feature?.category,
       feature ? specDescriptions[feature.eval_id] : null,
+      // The score's own direction, so the popup states which way the axis
+      // reads. A key with no entry is drawn as higher-is-better here, and
+      // quality_axis_direction reports that same default rather than a second
+      // opinion about it.
+      scoreDirections[dataKey],
     )
     return help ? axis_help_html(help) : null
   }

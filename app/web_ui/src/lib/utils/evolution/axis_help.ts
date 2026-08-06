@@ -39,12 +39,37 @@ import type { SpecType } from "$lib/types"
 
 type Spec = components["schemas"]["Spec"]
 
+/** Which end of a score's own scale is the good one */
+export type AxisDirection = "higher" | "lower"
+
 /** One axis's popup, before it is turned into HTML */
 export interface AxisHelp {
   /** The axis's full name - not the wrapped, possibly ellipsized drawn one */
   title: string
   /** Where the number comes from: the eval, or the quantity behind the virtue */
   subtitle: string | null
+  /**
+   * Which way the score reads, or null when no direction is in force.
+   *
+   * One rule on both rings, and it is the one that cannot contradict the
+   * picture: this states the direction the axis is PLOTTED with. Both radars
+   * draw "further from the centre is better", so every axis on either of them
+   * has resolved a direction before it was drawn - the quality ring by taking
+   * the score's declared one (and higher-is-better for a key nobody declared,
+   * which is what every rating scale is), the metrics ring by pointing the
+   * catalog's quantity. Null is therefore not the ordinary case: it is for a
+   * popup built for an axis that was never plotted, where there is no
+   * direction to report and inventing one would be the only way to get it
+   * wrong.
+   *
+   * A consequence worth stating: an INFORMATIONAL score that the metric
+   * catalog can point does reach the metrics ring, and this line reports the
+   * direction it is drawn with - the same fact the sentence under it already
+   * spells out. One the catalog cannot point never reaches either chart (see
+   * `directionless_key_count`), and an informational quality score is left off
+   * the quality ring entirely, so neither gets a line here.
+   */
+  direction: AxisDirection | null
   /** What the axis measures, in prose */
   description: string | null
 }
@@ -64,6 +89,20 @@ export const MAX_DESCRIPTION_CHARS = 600
 
 /** How wide the popup is allowed to get. Narrow enough to read as a tooltip. */
 const POPUP_WIDTH_PX = 320
+
+/**
+ * The direction line, as the reader sees it.
+ *
+ * Capitals and letter-spacing rather than a sentence: this is the one line in
+ * the box that is a PROPERTY of the axis rather than prose about it, and it has
+ * to survive being read at a glance while the pointer is still moving. Small
+ * and grey keeps it a label - it sits between the eval's name and the
+ * criterion, and it must not compete with either.
+ */
+const DIRECTION_LABELS: Record<AxisDirection, string> = {
+  higher: "HIGHER IS BETTER",
+  lower: "LOWER IS BETTER",
+}
 
 /**
  * The spec's human description.
@@ -131,11 +170,17 @@ export function clamp_description(
  * Null is a real answer and the reason this returns one: an axis whose eval has
  * no spec AND whose eval is named the same thing the axis already says would
  * pop up a box that repeats the label back. Nothing is better than that.
+ *
+ * The direction does not change that test, and deliberately: every quality axis
+ * has one, so counting it as something-to-say would give a popup to exactly the
+ * axes the rule above exists to spare. It rides along on a box that had its own
+ * reason to open.
  */
 export function quality_axis_help(
   label: string,
   evalName: string | null | undefined,
   description: string | null | undefined,
+  direction?: string | null,
 ): AxisHelp | null {
   const title = label.trim()
   const name = evalName?.trim() ?? ""
@@ -144,7 +189,31 @@ export function quality_axis_help(
   const subtitle = name && name !== title ? name : null
   const body = description?.trim() || null
   if (!subtitle && !body) return null
-  return { title, subtitle, description: body }
+  return {
+    title,
+    subtitle,
+    direction: quality_axis_direction(direction),
+    description: body,
+  }
+}
+
+/**
+ * A `ScoreDirection` off the wire as the direction its axis is drawn with.
+ *
+ * The two defaults are the chart's, not this module's, and they are why the
+ * mapping is a function rather than a lookup: the quality radar treats a key it
+ * has no direction for as higher-is-better (a rating scale is higher-is-better
+ * by definition, and that is how the axis is then plotted), and it leaves an
+ * informational score off the ring altogether rather than drawing a score with
+ * no better end. So an unknown direction reports "higher" - the same thing the
+ * geometry is already saying - and an informational one reports nothing.
+ */
+function quality_axis_direction(
+  direction: string | null | undefined,
+): AxisDirection | null {
+  if (direction === "informational") return null
+  if (direction === "lower_is_better") return "lower"
+  return "higher"
 }
 
 /**
@@ -169,6 +238,9 @@ export function metric_axis_help(axis: MetricAxis): AxisHelp {
   return {
     title: axis.label,
     subtitle: `${axis.valueLabel} · ${source}`,
+    // Never null here: an axis on this ring has been pointed, or it would not
+    // have been built - see plottable_score_axes
+    direction: axis.better,
     description: `${
       axis.better === "higher" ? "Higher" : "Lower"
     } ${mid_sentence(axis.valueLabel)} scores further from the centre.`,
@@ -207,6 +279,12 @@ function escape_html(value: string): string {
  * grey line under it - so hovering a label and hovering a point feel like two
  * views of the same object rather than two features.
  *
+ * Four lines at most, in the order a reader needs them: what the axis is called,
+ * where its number comes from, WHICH WAY IT READS, and then the criterion in
+ * prose. The direction goes above the description rather than below it because
+ * it is the shortest answer to the question a radar axis raises first - is a
+ * long spoke here good news? - and a reader who has that can stop.
+ *
  * The width and `white-space` are set here rather than left to the tooltip,
  * whose container is `white-space: nowrap` and unbounded: a 600-character
  * paragraph would otherwise be laid out as one line several thousand pixels
@@ -222,6 +300,11 @@ export function axis_help_html(help: AxisHelp): string {
   html += `<div style="font-weight: bold;">${escape_html(help.title)}</div>`
   if (help.subtitle) {
     html += `<div style="color: #888;">${escape_html(help.subtitle)}</div>`
+  }
+  if (help.direction) {
+    html += `<div style="color: #888; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; padding-top: 5px;">${
+      DIRECTION_LABELS[help.direction]
+    }</div>`
   }
   if (help.description) {
     html += `<div style="padding-top: 6px;">${escape_html(
