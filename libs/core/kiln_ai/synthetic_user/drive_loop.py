@@ -3,7 +3,10 @@
 `drive_case` alternates the target task adapter with the local
 `SyntheticUserDriver`, producing a chain of `TaskRun`s on the target side.
 The loop runs for a fixed `turns` count — no early termination, no
-`<DONE>` / `<CANCEL>` sentinels — by design (see spec).
+`<DONE>` / `<CANCEL>` sentinels — by design (see spec). The seed prompt is
+the first user message, so `turns` assistant turns consume exactly
+`turns - 1` synthetic-user replies; the SU is not called after the final
+assistant turn.
 
 Persistence is fully delegated to `target_invoker(...)`: the batch runner's
 invoker writes each TaskRun to disk (with `parent_task_run_id` chaining),
@@ -46,6 +49,11 @@ class TurnHook(Protocol):
     without coupling drive_case to the event shape. The hook fires after
     both the assistant turn is persisted AND the SU's next message is
     produced, so callers have all per-turn signal in one place.
+
+    Fires once per assistant turn INCLUDING the last — consumers use it to
+    track every persisted run and to emit per-turn progress, so skipping it
+    on the final turn would strand the leaf. On that final turn there is no
+    next user message (see `_drive_case_turns`) and `su_message` is `""`.
     """
 
     async def __call__(self, *, run: TaskRun, su_message: str) -> None: ...
@@ -113,9 +121,13 @@ async def drive_case(
             layer, not here).
         turns: exact number of assistant turns to produce. The loop runs
             `range(turns)` and always completes all iterations — no early
-            stop.
-        on_turn: optional async hook called once per turn after `su_driver.respond`
-            returns. The runner plugs in here to emit TurnCompletedEvent.
+            stop. `su_driver.respond` is called `turns - 1` times: the seed
+            prompt supplies the first user message and the last assistant
+            turn needs no follow-up.
+        on_turn: optional async hook called once per assistant turn, after
+            `su_driver.respond` where there is one. The runner plugs in here
+            to emit TurnCompletedEvent. On the final turn `su_message` is
+            `""` — no SU reply is generated.
 
     Returns:
         DriveCaseResult with the chain of TaskRuns produced (leaf last).
@@ -166,7 +178,8 @@ async def _drive_case_turns(
     turns: int,
     on_turn: TurnHook | None,
 ) -> DriveCaseResult:
-    for _ in range(turns):
+    last_turn = turns - 1
+    for turn_index in range(turns):
         new_run = await target_invoker(
             input=user_msg,
             prior_trace=prev_trace,
@@ -174,12 +187,31 @@ async def _drive_case_turns(
         )
         chain.append(new_run)
 
-        # The SU driver does the role filtering / role swap / invariant
-        # checks itself. We pass the new run's cumulative trace as-is.
-        su_message, turn_usage = await su_driver.respond(new_run.trace or [])
-        if turn_usage is not None:
-            su_usage = su_usage + turn_usage
+        # No SU call after the final assistant turn. The seed prompt is the
+        # first user message, so `turns` assistant turns need only
+        # `turns - 1` SU replies — a reply produced here would be assigned
+        # to `user_msg` and thrown away as the loop exits. That discarded
+        # call is not free:
+        #   - it carries the largest context of the case (the whole
+        #     conversation), and measures at 45.5% of ALL synthetic-user
+        #     input tokens across a drive (KIL-778);
+        #   - asked to reply to a conversation that has visibly finished,
+        #     driver models routinely return an EMPTY assistant message,
+        #     which the adapter rejects ("Model returned an assistant
+        #     message, but no content or tool calls"). That exception
+        #     propagates out of drive_case and destroys a conversation that
+        #     had already completed successfully — no EvalRun is persisted.
+        su_message = ""
+        if turn_index < last_turn:
+            # The SU driver does the role filtering / role swap / invariant
+            # checks itself. We pass the new run's cumulative trace as-is.
+            su_message, turn_usage = await su_driver.respond(new_run.trace or [])
+            if turn_usage is not None:
+                su_usage = su_usage + turn_usage
 
+        # Still fires on the final turn (with an empty su_message): callers
+        # track persisted runs and per-turn progress here, so the leaf must
+        # not be skipped.
         if on_turn is not None:
             await on_turn(run=new_run, su_message=su_message)
 

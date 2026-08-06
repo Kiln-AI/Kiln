@@ -247,10 +247,18 @@ async def test_total_cost_sums_target_and_su_driver_spend(
     leaf_b = _fake_run("b-leaf", cost=0.05)
     _patch_adapter_for_task(
         monkeypatch,
-        [_fake_run("a-1"), leaf_a, _fake_run("b-1"), leaf_b],
+        [
+            _fake_run("a-1"),
+            _fake_run("a-2"),
+            leaf_a,
+            _fake_run("b-1"),
+            _fake_run("b-2"),
+            leaf_b,
+        ],
     )
 
-    # Each case's driver gets two replies at $0.01 each → $0.02 SU per case.
+    # Three turns → two SU replies (the last turn gets none) at $0.01
+    # each → $0.02 SU per case.
     def _ctor(info, config):
         instance = Mock(spec=SyntheticUserDriver)
         instance.respond = AsyncMock(
@@ -266,7 +274,7 @@ async def test_total_cost_sums_target_and_su_driver_spend(
             target_task=fake_task,
             target_run_config=_target_run_config(),
             su_driver_config=_su_driver_config(),
-            turns=2,
+            turns=3,
             concurrency=1,
         )
     )
@@ -283,7 +291,9 @@ async def test_total_cost_sums_target_and_su_driver_spend(
 async def test_turn_completed_event_carries_su_message_and_trace(
     fake_task: Mock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _patch_adapter_for_task(monkeypatch, [_fake_run("r0", cost=0.01)])
+    _patch_adapter_for_task(
+        monkeypatch, [_fake_run("r0", cost=0.01), _fake_run("r1", cost=0.02)]
+    )
     _patch_su_driver(monkeypatch, replies_per_case=["the SU's reply"])
 
     events = await _collect(
@@ -292,7 +302,7 @@ async def test_turn_completed_event_carries_su_message_and_trace(
             target_task=fake_task,
             target_run_config=_target_run_config(),
             su_driver_config=_su_driver_config(),
-            turns=1,
+            turns=2,
         )
     )
 
@@ -301,6 +311,35 @@ async def test_turn_completed_event_carries_su_message_and_trace(
     assert turn.cumulative_cost == pytest.approx(0.01)
     # Trace is whatever the fake run carried.
     assert any(m.get("role") == "assistant" for m in turn.trace)
+
+
+@pytest.mark.asyncio
+async def test_final_turn_event_carries_empty_su_message(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The last turn still emits a TurnCompletedEvent — the runner tracks
+    persisted runs and per-turn progress through it — but with an empty
+    su_next_message: the drive loop skips the SU call there, so no next
+    user message exists.
+    """
+    _patch_adapter_for_task(
+        monkeypatch, [_fake_run("r0", cost=0.01), _fake_run("r1", cost=0.02)]
+    )
+    _patch_su_driver(monkeypatch, replies_per_case=["the SU's reply"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+        )
+    )
+
+    turn_events = [e for e in events if isinstance(e, TurnCompletedEvent)]
+    assert len(turn_events) == 2
+    assert [e.su_next_message for e in turn_events] == ["the SU's reply", ""]
 
 
 @pytest.mark.asyncio
