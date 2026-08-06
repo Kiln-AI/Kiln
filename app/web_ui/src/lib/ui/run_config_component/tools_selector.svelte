@@ -3,7 +3,11 @@
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import { available_tools, load_available_tools } from "$lib/stores"
   import { onMount } from "svelte"
-  import type { ToolSetApiDescription, ToolSetType } from "$lib/types"
+  import type {
+    ToolApiDescription,
+    ToolSetApiDescription,
+    ToolSetType,
+  } from "$lib/types"
   import {
     tools_store,
     tools_store_initialized,
@@ -167,6 +171,24 @@
     "demo",
   ]
 
+  // Show the function name alongside the description when it differs from the
+  // display name. Multiple tools (code tools especially) can share a function
+  // name while having distinct display names, so both are needed to tell them
+  // apart. Also makes the function name searchable in the dropdown.
+  function tool_option_description(
+    tool: ToolApiDescription,
+  ): string | undefined {
+    const description = tool.description ? tool.description.trim() : undefined
+    const function_name =
+      tool.function_name && tool.function_name !== tool.name
+        ? tool.function_name
+        : undefined
+    if (!function_name) {
+      return description
+    }
+    return description ? `${function_name}\n${description}` : function_name
+  }
+
   function get_tool_options(
     available_tool_sets: ToolSetApiDescription[] | undefined,
     code_eval_context: boolean,
@@ -211,7 +233,7 @@
           let options = tools.map((tool) => ({
             value: tool.id,
             label: tool.name,
-            description: tool.description ? tool.description.trim() : undefined,
+            description: tool_option_description(tool),
             disabled: tools_selector_settings.mandatory_tools
               ? tools_selector_settings.mandatory_tools.includes(tool.id)
               : false,
