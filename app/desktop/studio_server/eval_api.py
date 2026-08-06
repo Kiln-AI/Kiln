@@ -5,7 +5,7 @@ from typing import Annotated, Any, Dict, List, Set, Tuple
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from pydantic import ValidationError
 from fastapi.responses import StreamingResponse
-from kiln_ai.adapters.eval.eval_runner import EvalRunner
+from kiln_ai.adapters.eval.eval_runner import EvalRunner, no_golden_set_message
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_ai.adapters.fine_tune.finetune_run_config_id import (
     finetune_from_finetune_run_config_id,
@@ -36,6 +36,7 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalRun,
     EvalScores,
+    EvalSplitName,
     EvalTaskInput,
     EvalTemplateId,
     SkippedReason,
@@ -43,6 +44,7 @@ from kiln_ai.datamodel.eval import (
     V2EvalConfigProperties,
     validate_scores_against_output_scores,
 )
+from kiln_ai.datamodel.eval_splits import ResolvedSplit, resolve_split
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
 from kiln_ai.datamodel.prompt_type import generator_label
@@ -548,6 +550,45 @@ def runs_in_filter(
     # Fetch all the dataset items IDs in a filter
     filter = dataset_filter_from_id(filter_id)
     return [run for run in task.runs(readonly=readonly) if filter(run)]
+
+
+def resolved_split_or_422(
+    task: Task, eval: Eval, split: EvalSplitName
+) -> ResolvedSplit:
+    """The items of one of the eval's splits, or a 422 naming the split and the eval.
+
+    An eval without the split asked for is a client error, not a server one: the caller
+    named a split this eval doesn't have.
+
+    Resolving before the StreamingResponse is what makes the 422 reachable at all — see
+    require_golden_set_or_422, including the caveat about what the web UI does with it.
+    """
+    resolved = resolve_split(task, eval, split)
+    if resolved is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Eval '{eval.id}' has no '{split}' split.",
+        )
+    return resolved
+
+
+def require_golden_set_or_422(eval: Eval) -> None:
+    """422 unless the eval has a golden set, which judge comparison scores against.
+
+    Checked here rather than left to EvalRunner because these are SSE endpoints: the
+    response is a StreamingResponse over a generator, so anything raised once the
+    generator is running is emitted after a 200 status and an empty body, and the
+    refusal never appears in the response at all. Refusing before the response is built
+    is what makes the status code and detail part of the HTTP contract.
+
+    That is the contract, not yet the user's screen: the web UI reads these endpoints
+    with a browser EventSource, which cannot see the status or body of a non-200
+    response — it fires `onerror` with a bare Event, which `createKilnError` renders as
+    "Unknown error". Closing that needs an EventSource replacement, which is phase 6's
+    web-UI work; the same caveat applies to resolved_split_or_422 on the run endpoint.
+    """
+    if eval.eval_configs_filter_id is None:
+        raise HTTPException(status_code=422, detail=no_golden_set_message(eval))
 
 
 def build_score_key_to_task_requirement_id(task: Task) -> Dict[str, ID_TYPE]:
@@ -1280,10 +1321,14 @@ def connect_evals_api(app: FastAPI):
                 for run_config_id in run_config_ids
             ]
 
+        eval = eval_from_id(project_id, task_id, eval_id)
+        task = task_from_id(project_id, task_id)
+
         eval_runner = EvalRunner(
             eval_configs=[eval_config],
             run_configs=run_configs,
             eval_run_type="task_run_eval",
+            split=resolved_split_or_422(task, eval, "test"),
             save_context=build_save_context(request),
         )
 
@@ -1357,6 +1402,7 @@ def connect_evals_api(app: FastAPI):
     ) -> StreamingResponse:
         """Run all eval configs against each other for calibration and stream progress via SSE. Used to check that eval configs produce consistent scores."""
         eval = eval_from_id(project_id, task_id, eval_id)
+        require_golden_set_or_422(eval)
         eval_configs = eval.configs()
         eval_runner = EvalRunner(
             eval_configs=eval_configs,

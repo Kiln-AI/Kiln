@@ -11,6 +11,7 @@ from kiln_ai.adapters.eval.eval_runner import (
 )
 from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
 from kiln_ai.datamodel.eval import Eval, EvalConfig
+from kiln_ai.datamodel.eval_splits import resolve_split
 from kiln_ai.datamodel.prompt_type import generator_label
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task, TaskRunConfig
@@ -357,10 +358,15 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
             params.project_id,
             context=f"eval job {params.eval_id}/{params.run_config_id}",
         )
+        eval, task = self._eval_and_task(eval_config)
+        split = resolve_split(task, eval, "test")
+        if split is None:
+            raise ValueError(f"Eval '{eval.id}' has no 'test' split")
         return EvalRunner(
             eval_configs=[eval_config],
             run_configs=[run_config],
             eval_run_type="task_run_eval",
+            split=split,
             save_context=save_context,
         )
 

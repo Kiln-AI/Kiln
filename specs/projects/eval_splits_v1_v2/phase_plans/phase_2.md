@@ -206,7 +206,17 @@ vacuous assignments in `test_eval_runner.py`, two docstrings claiming coverage t
 and `test_set_split_survives_exclude_unset` passing against a fixture that pre-set the field. So
 the claims above are not asserted, they are measured: 32 mutations — one per behavior this phase
 claims — were applied to the source, the named tests run, and the source restored. **All 32 are
-killed.** The harness ships with the specs —
+killed.**
+
+> **Since phase 4: the artifact holds 30, and a re-run reports 30/30.** Phase 4 deleted the lines
+> the two runner mutations targeted — the runner no longer has an eval-level source mode and no
+> longer resolves a filter, it is handed a `ResolvedSplit` — so both entries could only report
+> `PATTERN-MISS`, which reads as a regression. They were replaced in the script by a comment
+> pointing at `phase4_mutation_sweep.py`, whose entries cover the same two behaviors in the shape
+> the code now has. Nothing about the counts below is wrong for the tree this phase landed on; they
+> are just no longer what a re-run prints.
+
+The harness ships with the specs —
 `specs/projects/eval_splits_v1_v2/phase2_mutation_sweep.py` — because re-running it is the cheapest
 way for a later phase to check that this phase's tests still bite:
 `uv run python specs/projects/eval_splits_v1_v2/phase2_mutation_sweep.py`.

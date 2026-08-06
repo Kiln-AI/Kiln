@@ -1,11 +1,11 @@
 """Resolving an eval's splits to their items, from whichever store backs them.
 
 This is meant to be the one seam that knows a split can be backed by either `TaskRun`s
-or `EvalInput`s: callers ask for a split by name and get a `ResolvedSplit`. That is not
-yet true of the codebase — `eval_runner.py` still branches on the source, and the API
-layer still resolves filters itself. Migrating those readers here is the rest of this
-project (architecture 3.4); until then, read this module as the destination rather than
-as an invariant that already holds.
+or `EvalInput`s: callers ask for a split by name and get a `ResolvedSplit`. `EvalRunner`
+and the eval job worker now go through it; the rest of the API layer still resolves
+filters itself. Migrating those readers here is the rest of this project (architecture
+3.4); until then, read this module as the destination rather than as an invariant that
+already holds.
 """
 
 from dataclasses import dataclass, field
@@ -43,6 +43,10 @@ class ResolvedSplit:
     name: str
     source: ItemSource
     items: List[TaskRun] | List[EvalInput]
+    eval_id: ID_TYPE
+    """The eval this was resolved from. Carried so a consumer handed a split can check it
+    belongs to the eval it is working on: once a split is a value passed between layers,
+    nothing else ties the items to the eval whose judges are about to score them."""
     _item_keys: Set[ItemKey] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -77,6 +81,7 @@ def resolve_split(task: Task, eval: Eval, split: EvalSplitName) -> ResolvedSplit
                 name=split,
                 source="task_run",
                 items=[run for run in task.runs(readonly=True) if task_run_filter(run)],
+                eval_id=eval.id,
             )
         case EvalInputSplit():
             eval_input_filter = eval_input_filter_from_id(split_ref.filter_id)
@@ -88,6 +93,7 @@ def resolve_split(task: Task, eval: Eval, split: EvalSplitName) -> ResolvedSplit
                     for eval_input in task.eval_inputs(readonly=True)
                     if eval_input_filter(eval_input)
                 ],
+                eval_id=eval.id,
             )
         case _:
             raise_exhaustive_enum_error(split_ref)

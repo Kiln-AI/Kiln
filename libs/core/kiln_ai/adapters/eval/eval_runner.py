@@ -14,22 +14,21 @@ from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import (
     DatasetFilterId,
     dataset_filter_from_id,
-    eval_input_filter_from_id,
 )
 from kiln_ai.datamodel.eval import (
+    Eval,
     EvalConfig,
     EvalConfigType,
     EvalDataType,
     EvalInput,
-    EvalInputSplit,
     EvalRun,
     EvalScores,
     EvalTaskInput,
     MultiTurnSyntheticEvalInputData,
     SingleTurnEvalInputData,
     SkippedReason,
-    TaskRunSplit,
 )
+from kiln_ai.datamodel.eval_splits import ItemKey, ResolvedSplit, eval_run_item_key
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
 from kiln_ai.utils.async_job_runner import (
@@ -54,13 +53,29 @@ class EvalJob:
     task_run_config: TaskRunConfig | None = None
 
 
+def no_golden_set_message(eval: Eval) -> str:
+    """Why judge comparison can't run without a golden set. One wording, two raisers.
+
+    Shared with the API layer so the 4xx a user sees and the ValueError a library caller
+    sees say the same thing (functional spec 9, architecture 4.3).
+    """
+    return (
+        f"Eval '{eval.id}' has no golden set configured. Comparing judges scores them "
+        "against a set of human-rated dataset items, so the eval needs one before a "
+        "comparison can run."
+    )
+
+
 class EvalRunner:
     """
     Runs an eval. Async execution is supported to make it faster when using remote/fast model providers.
 
     Can run an eval in 2 modes:
-    1) eval_config_eval: evaluate an eval config using existing dataset items.
-    2) task_run_eval: evaluate a range of task run configs, generating new run output using existing dataset item input.
+    1) eval_config_eval: evaluate an eval config using existing dataset items. Scoped by the
+       eval's golden filter, so its items are always TaskRuns.
+    2) task_run_eval: evaluate a range of task run configs, generating new run output using
+       existing dataset item input. Scoped by the `split` it is given, whose items may come
+       from either store.
     """
 
     def __init__(
@@ -68,6 +83,7 @@ class EvalRunner:
         eval_configs: List[EvalConfig],
         run_configs: List[TaskRunConfig] | None,
         eval_run_type: Literal["eval_config_eval", "task_run_eval"],
+        split: ResolvedSplit | None = None,
         save_context: SaveContext | None = None,
     ):
         if len(eval_configs) == 0:
@@ -86,7 +102,14 @@ class EvalRunner:
         if target_task is None:
             raise ValueError("Eval config requires a (grand)parent task")
 
-        # Check that run_configs is compatible
+        # Both modes settle *what defines* their item scope here rather than at collect
+        # time, but to different depths, and the difference is deliberate. task_run_eval
+        # takes a ResolvedSplit: the items themselves, fixed now, so a split cannot be
+        # accepted and then quietly re-resolved to something else. eval_config_eval takes
+        # the golden filter id and still applies it to self.task.runs() at collect time,
+        # so items added after construction are picked up — golden is TaskRun-only by
+        # definition, so there is no source ambiguity for that to hide.
+        self.golden_filter_id: DatasetFilterId | None = None
         if eval_run_type == "task_run_eval":
             if run_configs is None or len(run_configs) == 0:
                 raise ValueError("Task run eval requires run configs")
@@ -98,36 +121,39 @@ class EvalRunner:
                     raise ValueError(
                         "Run config is not for the same task as the eval configs"
                     )
+            if split is None:
+                raise ValueError("Task run eval requires a resolved split")
+            if split.eval_id != target_eval.id:
+                raise ValueError(
+                    f"Split '{split.name}' was resolved from eval '{split.eval_id}', not from "
+                    f"eval '{target_eval.id}' whose configs are being run"
+                )
         else:
             if run_configs is not None:
                 raise ValueError("Mode 'eval_config_eval' does not support run configs")
-
-        self._source_mode: Literal["task_run", "eval_input"] = "task_run"
-        if isinstance(target_eval.splits.get("test"), EvalInputSplit):
-            self._source_mode = "eval_input"
+            if split is not None:
+                raise ValueError(
+                    "Mode 'eval_config_eval' does not support a split: it is scoped by the eval's golden filter"
+                )
+            if target_eval.eval_configs_filter_id is None:
+                raise ValueError(no_golden_set_message(target_eval))
+            self.golden_filter_id = target_eval.eval_configs_filter_id
 
         self.eval_run_type = eval_run_type
         self.eval_configs = eval_configs
         self.run_configs = run_configs
+        self.split = split
         self.task = target_task
         self.eval = target_eval
         self._skills: SkillsDict = self._preload_skills()
         self._save_context: SaveContext = save_context or default_save_context
 
     def collect_tasks(self) -> List[EvalJob]:
-        if self._source_mode == "eval_input":
-            return self.collect_tasks_for_eval_input()
-        elif self.eval_run_type == "eval_config_eval":
-            if self.eval.eval_configs_filter_id is not None:
-                return self.collect_tasks_for_eval_config_eval(
-                    self.eval.eval_configs_filter_id
-                )
-            else:
-                raise ValueError(
-                    "Eval configs filter ID is required for eval runs of type 'eval_config_eval'"
-                )
-        else:
-            return self.collect_tasks_for_task_run_eval()
+        if self.eval_run_type == "eval_config_eval":
+            if self.golden_filter_id is None:
+                raise ValueError(no_golden_set_message(self.eval))
+            return self.collect_tasks_for_eval_config_eval(self.golden_filter_id)
+        return self.collect_tasks_for_task_run_eval()
 
     def collect_tasks_for_eval_config_eval(
         self, eval_configs_filter_id: DatasetFilterId
@@ -162,72 +188,6 @@ class EvalRunner:
             if task_run.id not in already_run[eval_config.id]
         ]
 
-    def collect_tasks_for_eval_input(self) -> List[EvalJob]:
-        """Collect jobs from EvalInput items under the task."""
-        test_split = self.eval.splits.get("test")
-        if not isinstance(test_split, EvalInputSplit):
-            raise ValueError(
-                "An EvalInput-backed test split is required for eval_input source mode"
-            )
-        input_filter = eval_input_filter_from_id(test_split.filter_id)
-
-        if self.eval_run_type == "task_run_eval":
-            already_run: Dict[ID_TYPE, Dict[ID_TYPE, Set[ID_TYPE]]] = {}
-            for eval_config in self.eval_configs:
-                already_run[eval_config.id] = {}
-                for run_config in self.run_configs or []:
-                    already_run[eval_config.id][run_config.id] = set()
-                for run in eval_config.runs(readonly=True):
-                    if (
-                        run.eval_input_id is not None
-                        and run.task_run_config_id is not None
-                        and run.task_run_config_id in already_run[eval_config.id]
-                    ):
-                        already_run[eval_config.id][run.task_run_config_id].add(
-                            run.eval_input_id
-                        )
-
-            jobs: List[EvalJob] = []
-            for eval_input in self.task.eval_inputs(readonly=True):
-                if not input_filter(eval_input):
-                    continue
-                for eval_config in self.eval_configs:
-                    for run_config in self.run_configs or []:
-                        if eval_input.id in already_run[eval_config.id][run_config.id]:
-                            continue
-                        jobs.append(
-                            EvalJob(
-                                item=eval_input,
-                                eval_config=eval_config,
-                                type="task_run_eval",
-                                task_run_config=run_config,
-                            )
-                        )
-            return jobs
-        else:
-            already_run_ec: Dict[ID_TYPE, Set[ID_TYPE]] = {}
-            for eval_config in self.eval_configs:
-                already_run_ec[eval_config.id] = set()
-                for run in eval_config.runs(readonly=True):
-                    if run.eval_input_id is not None:
-                        already_run_ec[eval_config.id].add(run.eval_input_id)
-
-            jobs_ec: List[EvalJob] = []
-            for eval_input in self.task.eval_inputs(readonly=True):
-                if not input_filter(eval_input):
-                    continue
-                for eval_config in self.eval_configs:
-                    if eval_input.id in already_run_ec[eval_config.id]:
-                        continue
-                    jobs_ec.append(
-                        EvalJob(
-                            item=eval_input,
-                            eval_config=eval_config,
-                            type=self.eval_run_type,
-                        )
-                    )
-            return jobs_ec
-
     def collect_tasks_for_task_run_eval(self) -> List[EvalJob]:
         """
         Collect all jobs for this run, excluding any that have already been run.
@@ -235,43 +195,44 @@ class EvalRunner:
         This variant is used for mode "task_run_eval", generating new run output using existing dataset item input.
 
         The tasks:
-        - should be in the eval's test split
+        - are the items of the split this runner was given, from whichever store backs it
         - should not have already been run for this eval config + run config + dataset item
         """
-        test_split = self.eval.splits.get("test")
-        if not isinstance(test_split, TaskRunSplit):
-            raise ValueError(
-                "A TaskRun-backed test split is required for task_run_eval mode"
-            )
-        filter = dataset_filter_from_id(test_split.filter_id)
+        if self.split is None:
+            raise ValueError("Task run eval requires a resolved split")
 
-        # already_run[eval_config_id][run_config_id][dataset_id]
-        already_run: Dict[ID_TYPE, Dict[ID_TYPE, Set[ID_TYPE]]] = {}
+        # already_run[eval_config_id][run_config_id][item_key]
+        already_run: Dict[ID_TYPE, Dict[ID_TYPE, Set[ItemKey]]] = {}
         for eval_config in self.eval_configs:
-            already_run[eval_config.id] = {}
-            for run_config in self.run_configs or []:
-                already_run[eval_config.id][run_config.id] = set()
+            already_run[eval_config.id] = {
+                run_config.id: set() for run_config in self.run_configs or []
+            }
             for run in eval_config.runs(readonly=True):
+                # Scopes the dedupe to the run configs actually being evaluated: an eval
+                # config accumulates runs for every run config ever compared against it.
+                # The `is not None` is not redundant with the membership test — ID_TYPE is
+                # `str | None`, so a run config whose file carries a null id would make
+                # None a real key and fold every calibration record into its set.
                 if (
                     run.task_run_config_id is not None
                     and run.task_run_config_id in already_run[eval_config.id]
                 ):
                     already_run[eval_config.id][run.task_run_config_id].add(
-                        run.dataset_id
+                        eval_run_item_key(run)
                     )
 
         return [
             EvalJob(
-                item=task_run,
+                item=item,
                 task_run_config=run_config,
                 type="task_run_eval",
                 eval_config=eval_config,
             )
-            for task_run in self.task.runs(readonly=True)
-            if filter(task_run)
+            for item in self.split.items
             for eval_config in self.eval_configs
             for run_config in self.run_configs or []
-            if task_run.id not in already_run[eval_config.id][run_config.id]
+            if (self.split.source, item.id)
+            not in already_run[eval_config.id][run_config.id]
         ]
 
     def _preload_skills(self) -> SkillsDict:
@@ -478,25 +439,8 @@ class EvalRunner:
             return True
 
         if isinstance(job.item, EvalInput):
-            if job.type == "eval_config_eval":
-                async with self._save_context():
-                    eval_run = EvalRun(
-                        parent=job.eval_config,
-                        task_run_config_id=job.task_run_config.id
-                        if job.task_run_config
-                        else None,
-                        dataset_id=None,
-                        eval_input_id=job.item.id,
-                        eval_config_eval=True,
-                        scores={},
-                        input=early_input_str,
-                        output=None,
-                        skipped_reason=SkippedReason.incompatible_input_shape.value,
-                        skipped_detail="EvalInput source has no stored output; eval_config_eval over EvalInput is deferred in V2.0 (golden subsets use TaskRun sources)",
-                    )
-                    eval_run.save_to_file()
-                return True
-
+            # Always task_run_eval: eval_config_eval is scoped by the eval's golden filter,
+            # which is DatasetFilterId-typed, so it can only ever yield TaskRuns.
             run_output = await evaluator.run_task(job.item)
             eval_task_input = EvalTaskInput.from_eval_input(job.item, run_output)
             result = await evaluator.evaluate(eval_task_input)

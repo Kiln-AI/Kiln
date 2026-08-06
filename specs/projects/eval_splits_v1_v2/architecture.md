@@ -424,6 +424,7 @@ class ResolvedSplit:
     name: str
     source: ItemSource
     items: List[TaskRun] | List[EvalInput]
+    eval_id: ID_TYPE          # added in phase 4; see below
 
     def item_keys(self) -> Set[ItemKey]: ...
     def __contains__(self, key: ItemKey) -> bool: ...
@@ -444,6 +445,14 @@ union: `TaskRunSplit` → `dataset_filter_from_id` over `task.runs(readonly=True
 
 Returning `None` rather than raising is deliberate: the three callers want three different things
 from an absent split (422, `0`, skip), and an exception would force each to catch it.
+
+**`eval_id` was added in phase 4**, when the runner started taking a `ResolvedSplit` instead of
+deriving its items from the eval. Once a split is a value passed between layers, nothing else ties
+those items to the eval whose judges are about to score them — `EvalRunner(eval_configs=[a_config],
+split=resolve_split(task, other_eval, "test"))` was accepted in silence. Consumers compare it
+against the eval they are working on; §4.2's standard is "impossible by construction", and without
+it that had become convention. It identifies the split's origin only, so it is not part of item
+identity: `ItemKey` and the membership tests are unchanged.
 
 ### 3.3 Identifying what an `EvalRun` scored
 

@@ -89,7 +89,7 @@ See `functional_spec.md` for behavior and `architecture.md` for design. This is 
       `train_set_filter_id` (functional spec §6.3). A train split written only to `splits` is
       invisible to it permanently. This is the reason `set_split` exists.
 
-- [ ] **Phase 4: `EvalRunner`.** Collapse the two collection paths into one, take a `ResolvedSplit`
+- [x] **Phase 4: `EvalRunner`.** Collapse the two collection paths into one, take a `ResolvedSplit`
       instead of a filter-id override, and delete `collect_tasks_for_eval_input` together with the
       `EvalInput`/`eval_config_eval` branch of `run_job`. (architecture §4)
 

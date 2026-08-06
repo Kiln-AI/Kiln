@@ -32,9 +32,12 @@ from kiln_ai.datamodel import (
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
+    EvalInput,
     EvalInputSplit,
     EvalOutputScore,
     EvalRun,
+    SingleTurnEvalInputData,
+    UserMessage,
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
@@ -1052,6 +1055,75 @@ def test_build_eval_runner_defaults_to_noop_when_not_git_sync(
     mock_helper.assert_called_once()
     # EvalRunner coalesces None to the no-op default_save_context.
     assert runner._save_context is default_save_context
+
+
+# -- split resolution --------------------------------------------------------
+
+
+def test_build_eval_runner_passes_the_evals_resolved_test_split(
+    resolve_project, task, eval_config, run_config, data_source, params
+):
+    """The runner is handed items, so the worker is what decides which split runs."""
+    in_split = _make_task_run(task, data_source, "eval_set")
+    _make_task_run(task, data_source, "golden")
+
+    runner = EvalJobWorker()._build_eval_runner(params)
+
+    assert runner.split is not None
+    assert runner.split.name == "test"
+    assert runner.split.source == "task_run"
+    assert [item.id for item in runner.split.items] == [in_split.id]
+
+
+def test_build_eval_runner_resolves_an_eval_input_backed_test_split(
+    resolve_project, task, project, run_config, data_source
+):
+    """An EvalInput-backed eval reaches the runner with its EvalInputs, not an empty set —
+    the item source is the split's, not the eval's."""
+    input_backed_eval = Eval(
+        id="eval_v2_runner",
+        name="EvalInput Backed",
+        description="test",
+        splits={"test": EvalInputSplit(filter_id="tag::inputs")},
+        eval_configs_filter_id="tag::golden",
+        output_scores=[
+            EvalOutputScore(
+                name="Accuracy",
+                instruction="Check accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        parent=task,
+    )
+    input_backed_eval.save_to_file()
+    EvalConfig(
+        id="eval_config_v2_runner",
+        name="Test Eval Config",
+        model_name="gpt-4",
+        model_provider="openai",
+        properties={"eval_steps": ["step1"]},
+        parent=input_backed_eval,
+    ).save_to_file()
+    eval_input = EvalInput(
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+        tags=["inputs"],
+        parent=task,
+    )
+    eval_input.save_to_file()
+
+    runner = EvalJobWorker()._build_eval_runner(
+        EvalJobParams(
+            project_id="project1",
+            task_id="task1",
+            eval_id="eval_v2_runner",
+            eval_config_id="eval_config_v2_runner",
+            run_config_id="run_config1",
+        )
+    )
+
+    assert runner.split is not None
+    assert runner.split.source == "eval_input"
+    assert [item.id for item in runner.split.items] == [eval_input.id]
 
 
 # -- end-to-end via registry -------------------------------------------------
