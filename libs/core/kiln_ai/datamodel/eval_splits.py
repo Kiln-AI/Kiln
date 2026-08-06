@@ -1,11 +1,17 @@
 """Resolving an eval's splits to their items, from whichever store backs them.
 
-This is meant to be the one seam that knows a split can be backed by either `TaskRun`s
-or `EvalInput`s: callers ask for a split by name and get a `ResolvedSplit`. `EvalRunner`
-and the eval job worker now go through it; the rest of the API layer still resolves
-filters itself. Migrating those readers here is the rest of this project (architecture
-3.4); until then, read this module as the destination rather than as an invariant that
-already holds.
+This is the one seam that knows a split can be backed by either `TaskRun`s or
+`EvalInput`s: callers ask for a split by name and get a `ResolvedSplit`. That is now an
+invariant rather than a destination — `eval_runner.py`, the eval job worker, and every
+split read in `eval_api.py` resolve here, so nothing outside this module decides which
+store an eval's items come from (architecture 3.4).
+
+The one deliberate exception is the **golden set** (`eval_configs_filter_id`), which
+`eval_api` (`runs_in_filter`, and `get_eval_configs_score_summary` inline) and
+`EvalRunner.collect_tasks_for_eval_config_eval` still resolve directly with
+`dataset_filter_from_id`. Golden is TaskRun-only by definition, and
+routing it through here would imply it could be EvalInput-backed, which is precisely what
+this project says it cannot be.
 """
 
 from dataclasses import dataclass, field
@@ -61,7 +67,21 @@ class ResolvedSplit:
         return key in self._item_keys
 
     def __len__(self) -> int:
-        return len(self.items)
+        """How many distinct items the split holds.
+
+        Deliberately the key count, not `len(self.items)`: every consumer that *measures
+        progress against* a split builds its numerator by intersecting item keys, so a
+        denominator taken from the item list is one its own numerator could never reach —
+        a percent_complete stuck below 100, or an is_complete that never fires.
+
+        This is not a global claim about every size derived from a split. Consumers that
+        *iterate* the items — `EvalRunner.collect_tasks_for_task_run_eval`, and therefore
+        the total `AsyncJobRunner` streams while a job runs — still count items, because
+        that is the amount of work they will do. Those two totals differ only if one store
+        ever yields two items with the same id, the same precondition that makes this
+        choice free.
+        """
+        return len(self._item_keys)
 
 
 def resolve_split(task: Task, eval: Eval, split: EvalSplitName) -> ResolvedSplit | None:

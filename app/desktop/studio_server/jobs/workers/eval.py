@@ -63,6 +63,17 @@ def _error_detail(error: Exception) -> str:
     return _safe_str(error)
 
 
+def _item_source(item: TaskRun | EvalInput) -> ItemSource:
+    """Which store a job's item came from, for the error log.
+
+    An isinstance test rather than the split's own `source`, which is what the runner
+    uses: this is a log label on a per-item callback that is handed only the item, and
+    threading the split down to it would add plumbing whose sole consumer is a string in
+    a JSONL file. The union is closed, so the two agree by construction.
+    """
+    return "eval_input" if isinstance(item, EvalInput) else "task_run"
+
+
 class _EvalErrorLogObserver(AsyncJobRunnerObserver[EvalJob]):
     """Writes each failed dataset item's exception to the job's error log.
 
@@ -87,17 +98,6 @@ class _EvalErrorLogObserver(AsyncJobRunnerObserver[EvalJob]):
             item_source=_item_source(job.item),
             run_config_id=job.task_run_config.id if job.task_run_config else None,
         )
-
-
-def _item_source(item: TaskRun | EvalInput) -> ItemSource:
-    """Which store a job's item came from, for the error log.
-
-    An isinstance test rather than the split's own `source`, which is what the runner
-    uses: this is a log label on a per-item callback that is handed only the item, and
-    threading the split down to it would add plumbing whose sole consumer is a string in
-    a JSONL file. The union is closed, so the two agree by construction.
-    """
-    return "eval_input" if isinstance(item, EvalInput) else "task_run"
 
 
 class EvalJobParams(BaseModel):
@@ -351,8 +351,11 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
         EvalInput-backed split, so such a job reported a zero total and a resume
         short-circuited to "complete" with nothing done.
 
-        Raising here is a contract, not a reachable state: jobs/api.py resolves a named
-        split before creating the job, and Eval requires a test split to validate at all.
+        Raising here is a contract rather than a reachable state *at request time*:
+        jobs/api.py resolves a named split before creating the job, and Eval requires a
+        test split to validate at all. It is genuinely reachable later — a split deleted
+        between job creation and execution lands here, and must, since the resume path
+        would otherwise measure progress against a universe the eval no longer has.
         """
         name: EvalSplitName = params.split or "test"
         split = resolve_split(task, eval, name)

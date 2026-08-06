@@ -243,6 +243,26 @@ def test_resolved_split_len_and_contains(task, data_source):
     assert ("eval_input", runs[0].id) not in split
 
 
+def test_resolved_split_len_matches_its_item_key_count(task, data_source):
+    """len(split) is the denominator every progress calculation divides by, and every
+    numerator is built by intersecting item keys. If the two could disagree, a split
+    could never report 100% complete."""
+    runs = [make_task_run(task, data_source, ["test_x"]) for _ in range(3)]
+    split = ResolvedSplit(name="test", source="task_run", items=runs, eval_id="e1")
+
+    assert len(split) == len(split.item_keys())
+
+
+def test_resolved_split_len_counts_distinct_items(task, data_source):
+    run = make_task_run(task, data_source, ["test_x"])
+    split = ResolvedSplit(
+        name="test", source="task_run", items=[run, run], eval_id="e1"
+    )
+
+    assert len(split) == 1
+    assert len(split.item_keys()) == 1
+
+
 def test_item_keys_returns_a_copy(task, data_source):
     run = make_task_run(task, data_source, ["test_x"])
     split = ResolvedSplit(name="test", source="task_run", items=[run], eval_id="e1")

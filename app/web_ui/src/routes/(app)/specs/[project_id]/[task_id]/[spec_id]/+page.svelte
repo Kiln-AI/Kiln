@@ -41,6 +41,7 @@
     updateSpecStatus as updateSpecStatusUtil,
     linkFromFilterId,
   } from "../spec_utils"
+  import { task_run_split_filter_id } from "$lib/utils/eval_splits"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { goto } from "$app/navigation"
   import SpecPropertiesDisplay from "../spec_properties_display.svelte"
@@ -631,7 +632,7 @@
                   ? linkFromFilterId(
                       project_id,
                       task_id,
-                      evaluator?.eval_set_filter_id,
+                      task_run_split_filter_id(evaluator, "test"),
                     )
                   : undefined,
               },

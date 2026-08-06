@@ -137,6 +137,21 @@ MUTATIONS = [
         ],
         TWORKER,
     ),
+    (
+        # The error log's only way to say which store a failed item came from: the
+        # dataset_id key is named for TaskRuns and carries EvalInput ids too.
+        # Added in phase 6 — this phase verified the coverage by hand but left the
+        # sweep without the entry, which its own docstring says it has.
+        "_item_source: every failed item is logged as a task_run",
+        [
+            (
+                WORKER,
+                '    return "eval_input" if isinstance(item, EvalInput) else "task_run"',
+                '    return "task_run"',
+            )
+        ],
+        TWORKER,
+    ),
     # -- a bad split 422s at request time (architecture 5.2, spec 9) ----------
     (
         "jobs/api: the pre-check is dropped, so a bad split becomes a doomed job",

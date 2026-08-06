@@ -201,7 +201,7 @@ def stub_eval_worker(monkeypatch):
 
 
 @pytest.fixture
-def split_eval(tmp_path, monkeypatch):
+def split_eval(tmp_path):
     """A real on-disk eval with a test and a train split, but no val split, plus the
     eval config and run config `_split_eval_params` names.
 

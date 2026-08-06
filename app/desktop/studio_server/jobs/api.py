@@ -203,6 +203,11 @@ def connect_jobs_api(app: FastAPI) -> None:
         # checking anyway would enumerate the whole dataset off disk on every job
         # creation, moments before the worker enumerates it again.
         #
+        # The consequence, deliberately accepted: entity existence is checked here only
+        # on the split-named path. A typo'd eval_id 404s when a split was named, and 201s
+        # into a job that dies at run time when it wasn't — which is exactly the
+        # pre-splits behavior for the pre-splits request shape.
+        #
         # Entity loads are blocking IO, so run them off the event loop.
         if params.split is not None:
             await asyncio.to_thread(
