@@ -149,8 +149,9 @@ test.describe("Synthetic data generation", () => {
   ## Goals
   On a fresh task with no saved data guide, the synth page first shows the
   "Create a Data Guide" intro (KIL-485). Clicking "Continue Without Data
-  Guide" falls through to the DataGenIntro with "Add Topics" and "Generate
-  Model Inputs" buttons.
+  Guide" advances to the batch chooser; picking "Create Manually" then falls
+  through to the DataGenIntro with "Add Topics" and "Generate Model Inputs"
+  buttons.
 
   ## Fixtures
   - registeredUser
@@ -159,13 +160,14 @@ test.describe("Synthetic data generation", () => {
   ## Hints
   - Route is /generate/{project_id}/{task_id}/synth?reason=fine_tune&template_id=fine_tuning&splits=fine_tune_data%3A1
   - First-time users see the "Create a Data Guide" intro card. Clicking
-    "Continue Without Data Guide" sets skip_data_guide=true and reveals the
-    underlying DataGenIntro.
+    "Continue Without Data Guide" sets skip_data_guide=true and advances to the
+    SynthBatchChooser (manual vs Kiln Pro). Clicking "Create Manually" sets
+    batch_mode=manual and reveals the underlying DataGenIntro.
 
   ## Assertions
   - Page heading "Synthetic Data Generation" is visible.
-  - After clicking "Continue Without Data Guide", "Add Topics" and "Generate
-    Model Inputs" buttons are visible.
+  - After clicking "Continue Without Data Guide" then "Create Manually", the
+    "Add Topics" and "Generate Model Inputs" buttons are visible.
   */
   test("synth page shows intro with add topics and generate inputs buttons", async ({
     page,
@@ -186,6 +188,10 @@ test.describe("Synthetic data generation", () => {
     await page
       .getByRole("button", { name: "Continue Without Data Guide" })
       .click()
+
+    // Skipping the data guide advances to the batch chooser; pick manual
+    // generation to reach the DataGenIntro.
+    await page.getByRole("button", { name: "Create Manually" }).click()
 
     await expect(page.getByRole("button", { name: "Add Topics" })).toBeVisible()
 

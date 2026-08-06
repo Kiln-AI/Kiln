@@ -128,6 +128,7 @@ All changes go in `libs/core/kiln_ai/adapters/ml_model_list.py`.
 | `together_ai` | Vendor path format | Verify via Together docs |
 | `vertex` | Usually same as gemini_api | Verify via Vertex docs |
 | `siliconflow_cn` | Vendor/model format | Verify via SiliconFlow docs |
+| `featherless_ai` | HuggingFace repo id, case-sensitive (`zai-org/GLM-5.2`) | Verify via their `/v1/models` — see [Featherless](#featherless-ai) |
 
 **Every single `model_id` must be verified from an authoritative source. No exceptions.**
 
@@ -219,18 +220,26 @@ Workaround to build the venv for testing (the `together` fork isn't exercised by
 
 Note: the PyPI `together` may pull slightly different transitive deps (e.g. a newer `starlette`), which can cause unrelated collection ImportErrors in desktop/server/rag/vector-store modules — scope your `-k` filters to the model files and ignore those.
 
-### 4a. Enable parallel testing
+### 4a. Parallel testing + API keys
 
-Before running paid tests, enable parallel testing in `pytest.ini`:
+**Parallel testing is already on.** There is no `pytest.ini` — pytest config lives in `[tool.pytest.ini_options]` in the root `pyproject.toml`, and `addopts = "-n auto"` is active. No edit and no revert are needed. (Only override to `-n 8` if a provider rate-limits you.)
 
-```ini
-# Change this line:
-# addopts = -n auto
-# To:
-addopts = -n 8
+**Paid tests read API keys from the ENVIRONMENT, not from the Kiln app's settings.** `conftest.py` has an autouse `use_temp_settings_dir` fixture that points `Config.settings_path` at a temp dir, so `~/.kiln_ai/settings.yaml` is deliberately ignored during tests. A key the user added through the app's provider page **will not be seen** — the test fails with "Attempted to use X without an API key set", which looks like a config bug but isn't.
+
+Bridge the key from the user's settings into the test environment without ever printing it:
+
+```bash
+export FEATHERLESS_AI_API_KEY="$(uv run python -c \
+  "from kiln_ai.utils.config import Config; print(Config.shared().featherless_ai_api_key)" 2>/dev/null | tail -1)"
 ```
 
-**Important:** Revert this change after all tests complete (re-comment the line).
+Use the provider's `env_var` name from `libs/core/kiln_ai/utils/config.py`. To check which keys are available before running, print booleans only — never the values:
+
+```bash
+uv run python -c "from kiln_ai.utils.config import Config; c=Config.shared(); print(bool(c.fireworks_api_key))"
+```
+
+**Many paid tests also carry the `ollama` marker**, so `--runpaid` alone silently skips them. Always pass `--runpaid --ollama` together, and use `-rs` to see skip reasons when a test you expected to run reports as skipped.
 
 ### 4b. Smoke test — verify slug works
 
@@ -274,13 +283,17 @@ uv run pytest --runpaid --ollama libs/core/kiln_ai/adapters/extractors/test_lite
 
 If a provider rejects a data type (400 error), remove that `KilnMimeType` and re-run.
 
-### 4e. Revert parallel testing
+### 4e. Confirm failures are actually yours
 
-After all tests complete, **revert `pytest.ini`** back to the commented-out state:
+Before treating a failure as a problem with your change, check whether the same test already fails for an **existing** provider of that model. Several assertions are provider-independent and fail regardless.
 
-```ini
-# addopts = -n auto
+Known example: `test_structured_input_cot_prompt_builder` asserts `len(trace) == 5` unconditionally, which is incompatible with any provider setting `reasoning_capable=True` (that selects the single-call strategy, producing 3 messages). It fails for `gpt_oss_120b` on `fireworks_ai` on a clean tree.
+
+```bash
+uv run pytest --runpaid --ollama -q "path::test_name[MODEL-OTHER_PROVIDER]"
 ```
+
+If it fails there too, it's pre-existing — report it as such rather than contorting the config to work around it.
 
 ### 4f. Test output format
 
@@ -322,7 +335,7 @@ Do NOT commit, push, or create a branch if any of the following are true:
 
 If any of the above apply, **stop and ask the user** what to do. Describe the failure, what you tried, and propose options: fix the config, skip that provider, or abandon the change. Only proceed to 5a once the user explicitly confirms.
 
-After all tests pass and `pytest.ini` is reverted, commit the changes and open a PR against `main`.
+After all tests pass, commit the changes and open a PR against `main`.
 
 ### 5a. Commit and push
 
@@ -392,10 +405,10 @@ Use `gh pr create` against `main`. The PR body must follow this exact format:
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
 - [ ] RAG config templates updated if the new model replaces one used in `app/web_ui/src/routes/(app)/docs/rag_configs/[project_id]/add_search_tool/rag_config_templates.ts`
-- [ ] Parallel testing enabled in `pytest.ini` (`addopts = -n 8`)
+- [ ] API keys bridged into the test env (see 4a — settings.yaml is NOT used by tests)
 - [ ] Smoke test passed
 - [ ] Full test suite passed
-- [ ] Parallel testing reverted in `pytest.ini` (re-commented)
+- [ ] Failures cross-checked against an existing provider before being called regressions (see 4e)
 - [ ] PR created against `main` with test results in the body
 
 ---
@@ -450,6 +463,16 @@ What you give up with `reasoning_capable=False`:
 - Some models: `openrouter_skip_required_parameters=True`
 - Logprobs: `logprobs_openrouter_options=True` if supported
 - Always `multimodal_requires_pdf_as_image=True` (OpenRouter's PDF routing breaks LiteLLM)
+
+### Featherless AI
+
+Serverless host for HuggingFace-hosted open weights. Several hard constraints — read before adding any model:
+
+- **`json_instructions` is the only usable structured output mode.** LiteLLM's `featherless_ai` provider rejects `response_format` outright (`UnsupportedParamsError`), so `json_schema`, `json_mode`, and `json_instruction_and_object` are all unavailable. Routing it as a custom `openai` provider bypasses that gate, but was tested and is *not* reliable: GLM 5.2 accepts `json_schema` and silently ignores it (returns unstructured text), while DeepSeek V4 Pro and Kimi K2.6 return an APIError. Don't use it.
+- **Gated models return HTTP 403 `model_gated_needs_oauth`** and cannot work for arbitrary Kiln users — they require each user to link a HuggingFace org to their Featherless account. **Always filter `is_gated` before adding.** Note all 20 official `meta-llama/*` repos are gated, so no Llama variant is usable.
+- **No cost reporting.** Featherless models aren't in LiteLLM's price map (only two legacy `Qwerky` entries, on `main` too — not a version issue), and Featherless doesn't return cost in the `usage` object. Runs record tokens with `cost: null`.
+- **Not in models.dev or the LiteLLM catalog**, so their `/v1/models` endpoint is the only authoritative source. See [Lagging Providers](#lagging-providers).
+- Quality varies per deployment — verify with a paid run. Qwen 3.5 397B, for example, returns degenerate output (rambles to the token cap) and was excluded for that reason.
 
 ### Qwen3 / Thinking Models
 - Thinking variants: `reasoning_capable=True`, `parser=ModelParserID.r1_thinking`
@@ -576,6 +599,41 @@ curl -s https://api.together.xyz/v1/models \
   -H "Authorization: Bearer $TOGETHERAI_API_KEY" | jq '.[] | select(.id == "SLUG")'
 ```
 If `TOGETHERAI_API_KEY` isn't set, ask the user before prompting them to export it — don't fail silently onto models.dev.
+
+**Featherless AI** — appears in **neither** models.dev nor the LiteLLM catalog (the catalog has only two stale `Qwerky` entries), so `/v1/models` is the sole authoritative source. It needs **no API key** to enumerate.
+
+**The response is enormous — ~22,000 models, the vast majority community fine-tunes. Never WebFetch it and never dump it raw.** Save it once, then filter with `jq`:
+
+```bash
+curl -s https://api.featherless.ai/v1/models -o /tmp/feath.json
+jq '.data | length' /tmp/feath.json
+```
+
+Restrict to official vendor orgs, or you'll drown in forks like `DavidAU/Gemma3-27B-it-vl-GLM-4.7-Uncensored-Heretic`:
+
+```bash
+# newest official models, excluding gated ones (gated = unusable, see Provider Quirks)
+jq -r '.data[]
+  | select(.is_gated | not)
+  | select(.id | test("^(deepseek-ai|zai-org|Qwen|moonshotai|MiniMaxAI|mistralai|openai|google|microsoft)/"))
+  | "\(.id)\tctx=\(.context_length)\t$\(.pricing.input)/\(.pricing.output)\ttools=\(.features.tool_use // false)\timg=\(.features.image_input // false)"' \
+  /tmp/feath.json | sort
+```
+
+Look up one model, including its capability flags and exact pricing:
+
+```bash
+jq '.data[] | select(.id == "zai-org/GLM-5.2")' /tmp/feath.json
+```
+
+**The highest-precision way to find backfill candidates** is to check whether a slug Kiln *already ships* for `together_ai` / `siliconflow_cn` exists verbatim here — those providers use the same HuggingFace repo-id convention, so a hit needs no guessing:
+
+```bash
+jq -r '.data[] | select(.is_gated | not) | .id' /tmp/feath.json | sort > /tmp/feath_ids.txt
+grep -Fx "zai-org/GLM-5.2" /tmp/feath_ids.txt   # exit 0 = safe to add
+```
+
+Slugs are **case-sensitive** (`google/gemma-4-31B-it`, not `-31b-it`). Always confirm `is_gated` is false and cross-check `features.tool_use` / `features.image_input` against the flags you set — don't claim capabilities the endpoint doesn't advertise.
 
 **SiliconFlow** — WebFetch the public model catalog page, or a specific model page if you have the vendor/model path:
 ```
