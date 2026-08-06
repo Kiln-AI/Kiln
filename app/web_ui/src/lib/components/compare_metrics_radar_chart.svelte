@@ -46,6 +46,7 @@
     metric_family_bands,
     metric_radar_empty_state,
     fit_radar,
+    nearest_axis_index,
     MIN_METRIC_AXES,
     MIN_METRIC_CONFIGS,
     type MetricAxis,
@@ -203,13 +204,18 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
     return coordSys
   }
 
+  // The pointer's own ray outranks the hovered symbol's __dimIdx, for the
+  // reason set out on nearest_axis_index and in compare_radar_chart: stacked
+  // low-score symbols make the tag name an arbitrary axis, while the ray
+  // always names the one the reader is aiming along. The tag survives only as
+  // the degraded path for an echarts whose internals cannot be read.
   function axisIndexFromPointer(event: {
     target?: { __dimIdx?: number }
     offsetX?: number
     offsetY?: number
   }): number | null {
-    const dimIdx = event.target?.__dimIdx
-    if (typeof dimIdx === "number") return dimIdx
+    const tagged = event.target?.__dimIdx
+    const taggedIndex = typeof tagged === "number" ? tagged : null
 
     const coordSys = radarCoordSys()
     if (
@@ -217,27 +223,16 @@ Because it is a comparison, at least two run configs are needed. Raw values are 
       event.offsetX === undefined ||
       event.offsetY === undefined
     ) {
-      return null
+      return taggedIndex
     }
     const axisList = coordSys.getIndicatorAxes()
-    if (!axisList?.length) return null
+    if (!axisList?.length) return taggedIndex
 
-    // Same convention as the radar's dataToPoint: y grows downward, angles don't
-    const pointerAngle = Math.atan2(
-      coordSys.cy - event.offsetY,
-      event.offsetX - coordSys.cx,
+    return nearest_axis_index(
+      { x: event.offsetX, y: event.offsetY },
+      { x: coordSys.cx, y: coordSys.cy },
+      axisList.map((axis) => axis.angle),
     )
-    let best = 0
-    let bestDelta = Infinity
-    axisList.forEach((axis, index) => {
-      let delta = Math.abs(pointerAngle - axis.angle) % (Math.PI * 2)
-      if (delta > Math.PI) delta = Math.PI * 2 - delta
-      if (delta < bestDelta) {
-        bestDelta = delta
-        best = index
-      }
-    })
-    return best
   }
 
   function getSeriesDisplayName(config: TaskRunConfig): string {

@@ -37,6 +37,7 @@
   } from "$lib/utils/evolution/family_bands"
   import {
     fit_radar,
+    nearest_axis_index,
     type RadarAxisLabel,
   } from "$lib/utils/evolution/metric_axes"
   import {
@@ -188,16 +189,24 @@ Related criteria sit together: the axes are grouped into the families the task's
     return coordSys
   }
 
-  // Prefer the symbol under the pointer, which echarts tags with the axis it belongs
-  // to. Falls back to the nearest axis by angle, so hovering the line or the filled
-  // area still resolves to one metric.
+  // Which axis the pointer is on, from the pointer's own angle around the
+  // radar centre - see nearest_axis_index. The hovered symbol's __dimIdx is
+  // deliberately NOT preferred any more: every zero score draws its symbol AT
+  // the centre and a near-zero one within a symbol's width of it, so the dot
+  // under the pointer there is whichever of the stacked dots was drawn last,
+  // and its axis can be anywhere on the ring - hovering a bottom-left point
+  // could pop the tooltip of an axis whose name sits on the right. The
+  // pointer's ray cannot fail that way: a symbol always sits ON its own axis,
+  // so wherever the dots are readable the two agree. The tag is kept only for
+  // the case where echarts' internals have changed shape and the geometry
+  // cannot be read at all.
   function axisIndexFromPointer(event: {
     target?: { __dimIdx?: number }
     offsetX?: number
     offsetY?: number
   }): number | null {
-    const dimIdx = event.target?.__dimIdx
-    if (typeof dimIdx === "number") return dimIdx
+    const tagged = event.target?.__dimIdx
+    const taggedIndex = typeof tagged === "number" ? tagged : null
 
     const coordSys = radarCoordSys()
     if (
@@ -205,27 +214,16 @@ Related criteria sit together: the axes are grouped into the families the task's
       event.offsetX === undefined ||
       event.offsetY === undefined
     ) {
-      return null
+      return taggedIndex
     }
     const axes = coordSys.getIndicatorAxes()
-    if (!axes?.length) return null
+    if (!axes?.length) return taggedIndex
 
-    // Same convention as the radar's dataToPoint: y grows downward, angles don't
-    const pointerAngle = Math.atan2(
-      coordSys.cy - event.offsetY,
-      event.offsetX - coordSys.cx,
+    return nearest_axis_index(
+      { x: event.offsetX, y: event.offsetY },
+      { x: coordSys.cx, y: coordSys.cy },
+      axes.map((axis) => axis.angle),
     )
-    let best = 0
-    let bestDelta = Infinity
-    axes.forEach((axis, index) => {
-      let delta = Math.abs(pointerAngle - axis.angle) % (Math.PI * 2)
-      if (delta > Math.PI) delta = Math.PI * 2 - delta
-      if (delta < bestDelta) {
-        bestDelta = delta
-        best = index
-      }
-    })
-    return best
   }
 
   // Indicator 0 sits at the top and the ring is read clockwise from there, the

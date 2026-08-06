@@ -1230,3 +1230,39 @@ export function format_metric_value(
       return value.toLocaleString(undefined, { maximumFractionDigits: 2 })
   }
 }
+
+/**
+ * Which indicator axis a pointer position is on, by angle around the radar
+ * centre. Pointer and centre are screen px (y grows downward); axis angles are
+ * radians, y up - the convention echarts' radar coordinate system and its
+ * dataToPoint share. echarts normalises indicator angles to (-PI, PI]; the
+ * comparison folds the difference so the wrap at +-PI cannot split the axis
+ * that sits there.
+ *
+ * This is the whole hover resolution for both radars, not a fallback. The
+ * hovered symbol's own dimension tag (__dimIdx) is not consulted for geometry,
+ * on purpose: a radar symbol always sits ON its axis ray, so over a readable
+ * symbol the nearest ray IS that symbol's axis - and where symbols are
+ * ambiguous they are stacked at or near the centre (every zero score draws its
+ * dot AT the centre), where the topmost symbol's tag names an arbitrary axis
+ * but the pointer's ray still names the one the reader is aiming along.
+ */
+export function nearest_axis_index(
+  pointer: { x: number; y: number },
+  centre: { x: number; y: number },
+  angles: number[],
+): number | null {
+  if (angles.length === 0) return null
+  const pointerAngle = Math.atan2(centre.y - pointer.y, pointer.x - centre.x)
+  let best = 0
+  let bestDelta = Infinity
+  angles.forEach((angle, index) => {
+    let delta = Math.abs(pointerAngle - angle) % (Math.PI * 2)
+    if (delta > Math.PI) delta = Math.PI * 2 - delta
+    if (delta < bestDelta) {
+      bestDelta = delta
+      best = index
+    }
+  })
+  return best
+}

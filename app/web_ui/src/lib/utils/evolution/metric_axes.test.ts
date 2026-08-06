@@ -30,6 +30,7 @@ import {
   score_row_label,
   usage_row_family,
   fit_radar,
+  nearest_axis_index,
   MIN_METRIC_AXES,
   MIN_RADAR_RADIUS,
   type MetricAxis,
@@ -1254,5 +1255,46 @@ describe("usage_row_family", () => {
 
   it("files an unknown rollup field under Other rather than throwing", () => {
     expect(usage_row_family("cost::mean_nonsense")).toBe("other")
+  })
+})
+
+describe("nearest_axis_index", () => {
+  // 8 axes clockwise from the top, normalised the way echarts normalises its
+  // indicator angles (atan2(sin, cos) folds into (-PI, PI])
+  const ring = Array.from({ length: 8 }, (_, i) => {
+    const angle = Math.PI / 2 - (i * Math.PI * 2) / 8
+    return Math.atan2(Math.sin(angle), Math.cos(angle))
+  })
+  const centre = { x: 200, y: 300 }
+
+  it("resolves a point on each axis ray to that axis (screen y grows downward)", () => {
+    ring.forEach((angle, index) => {
+      const pointer = {
+        x: centre.x + 50 * Math.cos(angle),
+        y: centre.y - 50 * Math.sin(angle),
+      }
+      expect(nearest_axis_index(pointer, centre, ring)).toBe(index)
+    })
+  })
+
+  it("folds the wrap at +-PI instead of splitting the axis that sits there", () => {
+    // A pointer just above the negative x axis is at ~+179deg; the axis it is
+    // on lives at the other side of the wrap, normalised to about -PI.
+    expect(
+      nearest_axis_index({ x: centre.x - 50, y: centre.y - 1 }, centre, ring),
+    ).toBe(6)
+  })
+
+  it("a pointer nudged off the centre names the ray it is on - the stacked-zero-dot case", () => {
+    // Every zero score draws its dot AT the centre, so the symbol under the
+    // pointer there can carry any axis's tag. Down-left of centre is -135deg,
+    // which is axis 5 on this ring, whatever was drawn on top.
+    expect(
+      nearest_axis_index({ x: centre.x - 3, y: centre.y + 3 }, centre, ring),
+    ).toBe(5)
+  })
+
+  it("returns null with no axes", () => {
+    expect(nearest_axis_index({ x: 0, y: 0 }, centre, [])).toBeNull()
   })
 })
