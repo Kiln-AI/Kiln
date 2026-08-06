@@ -16,6 +16,7 @@ from app.desktop.studio_server.utils.copilot_utils import DatasetTaskRuns
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.eval import TaskRunSplit
 from kiln_ai.datamodel.spec_properties import SpecType
 from kiln_server.custom_errors import connect_custom_errors
 
@@ -450,10 +451,25 @@ class TestCreateSpecWithCopilot:
         assert evals[0].name == "Test Spec"
         assert evals[0].current_config_id is not None
 
-        # Check the raw saved eval file: the lazy train migration runs on load and
-        # would synthesize this same value, masking missing wiring in the create path
+        assert evals[0].splits == {
+            "test": TaskRunSplit(filter_id="tag::eval_test_spec"),
+            "train": TaskRunSplit(filter_id="tag::train_test_spec"),
+            "val": TaskRunSplit(filter_id="tag::val_test_spec"),
+        }
+        # Golden is not a split, so nothing above covers it: if it pointed at the test
+        # tag, eval-config comparison would score against test items instead of golden.
+        assert evals[0].eval_configs_filter_id == "tag::eval_golden_test_spec"
+
+        # Check the raw saved eval file, not the loaded model: where each split is
+        # stored is invisible in eval.splits and visible only in the bytes. Test and
+        # train belong in their legacy fields, where older Kiln builds and the
+        # prompt-optimization zip reader look for them; val belongs in splits.
         saved_eval = json.loads(evals[0].path.read_text())
+        assert saved_eval["eval_set_filter_id"] == "tag::eval_test_spec"
         assert saved_eval["train_set_filter_id"] == "tag::train_test_spec"
+        assert saved_eval["splits"] == {
+            "val": {"source": "task_run", "filter_id": "tag::val_test_spec"}
+        }
 
         specs = task.specs()
         assert len(specs) == 1

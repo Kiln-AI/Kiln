@@ -7,7 +7,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import Priority
-from kiln_ai.datamodel.eval import Eval, EvalOutputScore, TaskOutputRatingType
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalOutputScore,
+    TaskOutputRatingType,
+    TaskRunSplit,
+)
 from kiln_ai.datamodel.spec import Spec, SpecStatus, TaskSample
 from kiln_ai.datamodel.spec_properties import (
     DesiredBehaviourProperties,
@@ -176,14 +181,23 @@ def test_create_spec_success(client, project_and_task):
     assert len(evals) == 1
     assert evals[0].name == "Test Spec"
     assert evals[0].id == res["eval_id"]
-    assert evals[0].eval_set_filter_id == "tag::eval_test_spec"
-    assert evals[0].train_set_filter_id == "tag::train_test_spec"
     assert evals[0].eval_configs_filter_id == "tag::eval_golden_test_spec"
+    assert evals[0].splits == {
+        "test": TaskRunSplit(filter_id="tag::eval_test_spec"),
+        "train": TaskRunSplit(filter_id="tag::train_test_spec"),
+        "val": TaskRunSplit(filter_id="tag::val_test_spec"),
+    }
 
-    # Check the raw saved file: the lazy train migration runs on load and would
-    # synthesize this same value, masking missing wiring in the create path
+    # Check the raw saved file, not the loaded model: where each split is stored is
+    # invisible in eval.splits and visible only in the bytes. Test and train belong in
+    # their legacy fields, where older Kiln builds and the prompt-optimization zip
+    # reader look for them; val has no legacy field and belongs in splits.
     saved_eval = json.loads(evals[0].path.read_text())
+    assert saved_eval["eval_set_filter_id"] == "tag::eval_test_spec"
     assert saved_eval["train_set_filter_id"] == "tag::train_test_spec"
+    assert saved_eval["splits"] == {
+        "val": {"source": "task_run", "filter_id": "tag::val_test_spec"}
+    }
 
 
 def test_create_spec_minimal(client, project_and_task):
