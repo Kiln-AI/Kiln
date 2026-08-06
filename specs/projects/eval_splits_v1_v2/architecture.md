@@ -889,18 +889,16 @@ being substantially rewritten here anyway: `eval_set_filter_id: DatasetFilterId 
 `split_filter_id_from_eval`, `val_set_filter_id` and `eval_set_filter_id_override` are all deleted
 by this design.
 
-### The `agi-anyting_goes_into` merge backs out #1621
+### This branch replaces #1621 rather than extending it
 
-That branch already contains `45dd7b0` (#1621) and does **not** contain evals_v2. So the merge is
-not additive: it backs #1621's split implementation out and puts this one in. Everything #1621
-added to the split surface — `val_set_filter_id`, `filter_id_for_split`,
+Everything #1621 added to the split surface — `val_set_filter_id`, `filter_id_for_split`,
 `split_filter_id_from_eval`, `eval_set_filter_id_override`, the `migrate_val_set_filter_id`
 migration — is deleted by this design and replaced by `splits`, `resolve_split` and
 `ResolvedSplit`.
 
-Expect that merge to read as a large deletion of code already sitting on the integration branch.
-That is correct, not lost work. Reviewers should compare against this document rather than against
-#1621.
+Anywhere this branch meets a tree that already carries #1621, expect the diff to read as a large
+deletion of code that is already there. That is correct, not lost work. Reviewers should compare
+against this document rather than against #1621.
 
 ---
 

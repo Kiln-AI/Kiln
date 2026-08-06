@@ -37,6 +37,7 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalRun,
     SingleTurnEvalInputData,
+    TaskRunSplit,
     UserMessage,
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
@@ -86,6 +87,47 @@ def eval(task):
     )
     eval.save_to_file()
     return eval
+
+
+@pytest.fixture
+def input_backed_eval(task):
+    """An eval whose test split is EvalInput-backed, with a config, ready to run."""
+    input_backed_eval = Eval(
+        id="eval_v2",
+        name="EvalInput Backed",
+        description="test",
+        splits={"test": EvalInputSplit(filter_id="tag::inputs")},
+        eval_configs_filter_id="tag::golden",
+        output_scores=[
+            EvalOutputScore(
+                name="Accuracy",
+                instruction="Check accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        parent=task,
+    )
+    input_backed_eval.save_to_file()
+    EvalConfig(
+        id="eval_config_v2",
+        name="Test Eval Config",
+        model_name="gpt-4",
+        model_provider="openai",
+        properties={"eval_steps": ["step1"]},
+        parent=input_backed_eval,
+    ).save_to_file()
+    return input_backed_eval
+
+
+def _input_backed_params(**overrides) -> EvalJobParams:
+    return EvalJobParams(
+        project_id="project1",
+        task_id="task1",
+        eval_id="eval_v2",
+        eval_config_id="eval_config_v2",
+        run_config_id="run_config1",
+        **overrides,
+    )
 
 
 @pytest.fixture
@@ -170,6 +212,30 @@ def _make_eval_run(eval_config, dataset_id, run_config_id) -> EvalRun:
     eval_run = EvalRun(
         parent=eval_config,
         dataset_id=dataset_id,
+        task_run_config_id=run_config_id,
+        input="test",
+        output="test",
+        scores={"accuracy": 1.0},
+    )
+    eval_run.save_to_file()
+    return eval_run
+
+
+def _make_eval_input(task, tag: str, **overrides) -> EvalInput:
+    eval_input = EvalInput(
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+        tags=[tag],
+        parent=task,
+        **overrides,
+    )
+    eval_input.save_to_file()
+    return eval_input
+
+
+def _make_eval_input_run(eval_config, eval_input_id, run_config_id) -> EvalRun:
+    eval_run = EvalRun(
+        parent=eval_config,
+        eval_input_id=eval_input_id,
         task_run_config_id=run_config_id,
         input="test",
         output="test",
@@ -318,47 +384,110 @@ async def test_compute_state_missing_eval_config_raises(
         await EvalJobWorker().compute_state(bad_params)
 
 
-async def test_compute_state_without_eval_set_filter_raises(
-    resolve_project, task, run_config, data_source
+async def test_compute_state_counts_an_eval_input_backed_split(
+    resolve_project, task, run_config, data_source, input_backed_eval
 ):
-    # An EvalInput-backed eval has no eval_set_filter_id, and this worker only
-    # knows how to count TaskRuns. Raise rather than report a zero total, which
-    # would let a resume short-circuit to "complete" with no work done.
-    input_backed_eval = Eval(
-        id="eval_v2",
-        name="EvalInput Backed",
-        description="test",
-        splits={"test": EvalInputSplit(filter_id="tag::inputs")},
-        eval_configs_filter_id="tag::golden",
-        output_scores=[
-            EvalOutputScore(
-                name="Accuracy",
-                instruction="Check accuracy",
-                type=TaskOutputRatingType.pass_fail,
-            ),
-        ],
+    # Progress is measured in the split's own store. Counting TaskRuns here would
+    # report a zero total and let a resume short-circuit to "complete" with no work
+    # done — which is what this worker did before the split resolution was shared.
+    for _ in range(3):
+        _make_eval_input(task, "inputs")
+    # An EvalInput outside the split's filter must not be counted.
+    _make_eval_input(task, "other")
+    # Nor must TaskRuns, which are a different store entirely.
+    _make_task_run(task, data_source, "inputs")
+
+    state = await EvalJobWorker().compute_state(_input_backed_params())
+
+    assert state.total == 3
+    assert state.success == 0
+    assert state.is_complete is False
+
+
+async def test_compute_state_counts_scored_eval_inputs(
+    resolve_project, task, run_config, data_source, input_backed_eval
+):
+    eval_inputs = [_make_eval_input(task, "inputs") for _ in range(3)]
+    eval_config = input_backed_eval.configs()[0]
+    _make_eval_input_run(eval_config, eval_inputs[0].id, run_config.id)
+    _make_eval_input_run(eval_config, eval_inputs[1].id, run_config.id)
+
+    state = await EvalJobWorker().compute_state(_input_backed_params())
+
+    assert state.total == 3
+    assert state.success == 2
+    assert state.is_complete is False
+
+
+async def test_compute_state_does_not_credit_a_task_run_scored_under_an_eval_inputs_id(
+    resolve_project, task, run_config, data_source, input_backed_eval
+):
+    # Ids come from one generator shared by every model type, so a TaskRun and an
+    # EvalInput can carry the same id. Membership keyed on the bare id would count
+    # this TaskRun's result as the EvalInput's, reporting the split complete when
+    # nothing in it has been scored.
+    colliding_id = "111222333444"
+    _make_eval_input(task, "inputs", id=colliding_id)
+    task_run = TaskRun(
+        id=colliding_id,
         parent=task,
+        input="test",
+        input_source=data_source,
+        tags=["inputs"],
+        output=TaskOutput(output="test"),
     )
-    input_backed_eval.save_to_file()
-    EvalConfig(
-        id="eval_config_v2",
-        name="Test Eval Config",
-        model_name="gpt-4",
-        model_provider="openai",
-        properties={"eval_steps": ["step1"]},
-        parent=input_backed_eval,
-    ).save_to_file()
+    task_run.save_to_file()
+    _make_eval_run(input_backed_eval.configs()[0], colliding_id, run_config.id)
 
-    params = EvalJobParams(
-        project_id="project1",
-        task_id="task1",
-        eval_id="eval_v2",
-        eval_config_id="eval_config_v2",
-        run_config_id="run_config1",
+    state = await EvalJobWorker().compute_state(_input_backed_params())
+
+    assert state.total == 1
+    assert state.success == 0
+    assert state.is_complete is False
+
+
+async def test_compute_state_measures_the_requested_split(
+    resolve_project, task, eval, eval_config, run_config, data_source, params
+):
+    eval.set_split("train", TaskRunSplit(filter_id="tag::train_set"))
+    eval.save_to_file()
+    for _ in range(2):
+        _make_task_run(task, data_source, "eval_set")
+    train_runs = [_make_task_run(task, data_source, "train_set") for _ in range(4)]
+    # Scored train items count; the test split's items are irrelevant to this job.
+    _make_eval_run(eval_config, train_runs[0].id, run_config.id)
+
+    state = await EvalJobWorker().compute_state(
+        params.model_copy(update={"split": "train"})
     )
 
-    with pytest.raises(ValueError, match="has no eval_set_filter_id"):
-        await EvalJobWorker().compute_state(params)
+    assert state.total == 4
+    assert state.success == 1
+    assert state.is_complete is False
+
+
+async def test_compute_state_defaults_to_the_test_split(
+    resolve_project, task, eval_config, run_config, data_source, params
+):
+    for _ in range(3):
+        _make_task_run(task, data_source, "eval_set")
+
+    omitted = await EvalJobWorker().compute_state(params)
+    explicit = await EvalJobWorker().compute_state(
+        params.model_copy(update={"split": "test"})
+    )
+
+    assert omitted == explicit
+    assert omitted.total == 3
+
+
+async def test_compute_state_missing_split_raises(
+    resolve_project, task, eval_config, run_config, data_source, params
+):
+    # The eval has no val split. The message names the split as the caller spelled
+    # it and the eval, not an internal field name.
+    with pytest.raises(ValueError, match="Eval 'eval1' has no 'val' split"):
+        await EvalJobWorker().compute_state(params.model_copy(update={"split": "val"}))
 
 
 # -- describe ----------------------------------------------------------------
@@ -878,6 +1007,85 @@ async def test_run_reports_full_set_totals_on_partial_resume(
     assert result == EvalJobResult(total=5, success=5, error=0)
 
 
+async def test_run_reports_totals_against_the_requested_split(
+    resolve_project, task, eval, eval_config, run_config, data_source, params
+):
+    # Functional spec 4.3: a partial run of one split, resumed, must not
+    # short-circuit against a different split's item count. The runner's work and
+    # the baseline it is offset by both come from the requested split, so the two
+    # numbers describe the same universe.
+    eval.set_split("train", TaskRunSplit(filter_id="tag::train_set"))
+    eval.save_to_file()
+    # A bigger test split, fully scored — a baseline read from it would report this
+    # train job as already complete.
+    for _ in range(9):
+        scored = _make_task_run(task, data_source, "eval_set")
+        _make_eval_run(eval_config, scored.id, run_config.id)
+    train_runs = [_make_task_run(task, data_source, "train_set") for _ in range(3)]
+    _make_eval_run(eval_config, train_runs[0].id, run_config.id)
+
+    reported: list[tuple[int, int, int | None]] = []
+
+    class FakeCtx:
+        job_id = "j_test"
+        run_id = "run_test"
+
+        async def report_progress(self, success, error=0, total=None, message=None):
+            reported.append((success, error, total))
+
+        async def report_error(self, error_message, **extra):
+            pass
+
+    # The runner sees the 2 unscored train items.
+    with _stub_eval_runner_run(
+        [
+            Progress(complete=0, total=2, errors=0),
+            Progress(complete=1, total=2, errors=0),
+            Progress(complete=2, total=2, errors=0),
+        ]
+    ):
+        result = await EvalJobWorker().run(
+            params.model_copy(update={"split": "train"}), FakeCtx()
+        )
+
+    assert reported == [(1, 0, 3), (2, 0, 3), (3, 0, 3)]
+    assert result == EvalJobResult(total=3, success=3, error=0)
+
+
+async def test_run_over_an_eval_input_backed_split_works_its_items(
+    resolve_project, task, run_config, data_source, input_backed_eval
+):
+    # End to end with a real EvalRunner: an EvalInput-backed eval must report its
+    # own store's universe and actually work its items. Progress measured over
+    # TaskRuns would report 0/0 here, and the job would succeed having done nothing.
+    eval_inputs = [_make_eval_input(task, "inputs") for _ in range(3)]
+
+    processed_item_ids: list = []
+
+    async def fake_run_job(self, job) -> bool:
+        processed_item_ids.append(job.item.id)
+        return True
+
+    class FakeCtx:
+        job_id = "j_test"
+        run_id = "run_test"
+
+        async def report_progress(self, success, error=0, total=None, message=None):
+            pass
+
+        async def report_error(self, error_message, **extra):
+            pass
+
+    with patch(
+        "kiln_ai.adapters.eval.eval_runner.EvalRunner.run_job",
+        new=fake_run_job,
+    ):
+        result = await EvalJobWorker().run(_input_backed_params(), FakeCtx())
+
+    assert sorted(processed_item_ids) == sorted(item.id for item in eval_inputs)
+    assert result == EvalJobResult(total=3, success=3, error=0)
+
+
 async def test_run_logs_failed_items_to_error_log(
     resolve_project, task, eval_config, run_config, data_source, params
 ):
@@ -912,7 +1120,42 @@ async def test_run_logs_failed_items_to_error_log(
     message, extra = logged[0]
     assert "scoring exploded" in message
     assert extra["dataset_id"] == task_run.id
+    assert extra["item_source"] == "task_run"
     assert extra["run_config_id"] == run_config.id
+
+
+async def test_run_logs_the_item_source_for_an_eval_input_backed_split(
+    resolve_project, task, run_config, data_source, input_backed_eval
+):
+    # dataset_id is named for TaskRuns but carries an EvalInput id here, and ids
+    # collide across the two stores — so the log says which store it came from.
+    eval_input = _make_eval_input(task, "inputs")
+
+    async def failing_run_job(self, job) -> bool:
+        raise ValueError("scoring exploded")
+
+    logged: list[tuple[str, dict]] = []
+
+    class FakeCtx:
+        job_id = "j_test"
+        run_id = "run_test"
+
+        async def report_progress(self, success, error=0, total=None, message=None):
+            pass
+
+        async def report_error(self, error_message, **extra):
+            logged.append((error_message, extra))
+
+    with patch(
+        "kiln_ai.adapters.eval.eval_runner.EvalRunner.run_job",
+        new=failing_run_job,
+    ):
+        result = await EvalJobWorker().run(_input_backed_params(), FakeCtx())
+
+    assert result.error == 1
+    message, extra = logged[0]
+    assert extra["dataset_id"] == eval_input.id
+    assert extra["item_source"] == "eval_input"
 
 
 @pytest.mark.asyncio
@@ -1076,54 +1319,44 @@ def test_build_eval_runner_passes_the_evals_resolved_test_split(
 
 
 def test_build_eval_runner_resolves_an_eval_input_backed_test_split(
-    resolve_project, task, project, run_config, data_source
+    resolve_project, task, run_config, data_source, input_backed_eval
 ):
     """An EvalInput-backed eval reaches the runner with its EvalInputs, not an empty set —
     the item source is the split's, not the eval's."""
-    input_backed_eval = Eval(
-        id="eval_v2_runner",
-        name="EvalInput Backed",
-        description="test",
-        splits={"test": EvalInputSplit(filter_id="tag::inputs")},
-        eval_configs_filter_id="tag::golden",
-        output_scores=[
-            EvalOutputScore(
-                name="Accuracy",
-                instruction="Check accuracy",
-                type=TaskOutputRatingType.pass_fail,
-            ),
-        ],
-        parent=task,
-    )
-    input_backed_eval.save_to_file()
-    EvalConfig(
-        id="eval_config_v2_runner",
-        name="Test Eval Config",
-        model_name="gpt-4",
-        model_provider="openai",
-        properties={"eval_steps": ["step1"]},
-        parent=input_backed_eval,
-    ).save_to_file()
-    eval_input = EvalInput(
-        data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
-        tags=["inputs"],
-        parent=task,
-    )
-    eval_input.save_to_file()
+    eval_input = _make_eval_input(task, "inputs")
 
-    runner = EvalJobWorker()._build_eval_runner(
-        EvalJobParams(
-            project_id="project1",
-            task_id="task1",
-            eval_id="eval_v2_runner",
-            eval_config_id="eval_config_v2_runner",
-            run_config_id="run_config1",
-        )
-    )
+    runner = EvalJobWorker()._build_eval_runner(_input_backed_params())
 
     assert runner.split is not None
     assert runner.split.source == "eval_input"
     assert [item.id for item in runner.split.items] == [eval_input.id]
+
+
+def test_build_eval_runner_passes_the_requested_split(
+    resolve_project, task, eval, eval_config, run_config, data_source, params
+):
+    """A requested split reaches the runner as its items. Functional spec 4.2: a split
+    request that is accepted and then dropped is the worst outcome in this project, so
+    the runner is handed the val items themselves rather than a filter to re-resolve."""
+    eval.set_split("val", TaskRunSplit(filter_id="tag::val_set"))
+    eval.save_to_file()
+    _make_task_run(task, data_source, "eval_set")
+    in_val = _make_task_run(task, data_source, "val_set")
+
+    runner = EvalJobWorker()._build_eval_runner(
+        params.model_copy(update={"split": "val"})
+    )
+
+    assert runner.split is not None
+    assert runner.split.name == "val"
+    assert [item.id for item in runner.split.items] == [in_val.id]
+
+
+def test_build_eval_runner_missing_split_raises(
+    resolve_project, task, eval_config, run_config, data_source, params
+):
+    with pytest.raises(ValueError, match="Eval 'eval1' has no 'val' split"):
+        EvalJobWorker()._build_eval_runner(params.model_copy(update={"split": "val"}))
 
 
 # -- end-to-end via registry -------------------------------------------------

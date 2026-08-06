@@ -283,7 +283,11 @@ mutation that passes vacuously. The entry restores the mis-routing *and* the bra
 is exactly the pair architecture §4.3 claims is gone, and is killed by
 `test_writes_no_skipped_runs_for_an_eval_input_backed_eval`.
 
-**20 mutations, all killed** (14 before review, 6 added with the review fixes). One survived the
+**20 mutations, all killed** (14 before review, 6 added with the review fixes). *Phase 5 note: one
+of the 20 — "worker: builds the runner over an empty split" — targeted the worker's inline
+`resolve_split` call, which phase 5 replaced with the shared `_resolve_split` this plan said it
+would become. It is now a comment in `phase4_mutation_sweep.py` pointing at phase 5's equivalent, so
+a re-run reports **19/19 killed** rather than a false alarm.* One survived the
 first run and was fixed rather than explained away: *dedupe: includes runs from other run configs* —
 dropping the `task_run_config_id in already_run` membership test. Every dedupe test used only run
 configs the runner was given, so nothing covered the common real case: an eval config accumulates

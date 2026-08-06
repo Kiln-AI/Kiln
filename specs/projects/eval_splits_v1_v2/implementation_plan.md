@@ -93,13 +93,30 @@ See `functional_spec.md` for behavior and `architecture.md` for design. This is 
       instead of a filter-id override, and delete `collect_tasks_for_eval_input` together with the
       `EvalInput`/`eval_config_eval` branch of `run_job`. (architecture §4)
 
-- [ ] **Phase 5: Jobs.** Worker resolves the split once for both the runner and the progress
+- [x] **Phase 5: Jobs.** Worker resolves the split once for both the runner and the progress
       universe; `jobs/api.py` pre-resolves so a bad split 422s at request time. (architecture §5)
 
 - [ ] **Phase 6: API endpoints and web UI.** Required `split` on the results endpoint, val count on
       progress, drop the EvalInput guards, `compute_score_summary` over a `ResolvedSplit`,
       source-aware summary cache; then the two UI changes and the regenerated schema.
       (architecture §6, functional spec §5, §6.1)
+
+      **Also fold in phase 5's five deferred cosmetic items**, all sanctioned by its review as
+      non-blocking:
+
+      - `jobs/test_api.py`'s `split_eval` fixture takes an unused `monkeypatch` parameter.
+      - `jobs/workers/eval.py`'s `_item_source` is defined below its only caller, unlike the
+        module's other private helpers.
+      - `phase5_mutation_sweep.py` has no `item_source` entry, so the artifact contradicts its own
+        "every behavior this phase claims" docstring. Coverage was verified by hand; only the
+        committed evidence is missing.
+      - `jobs/api.py`'s endpoint comment sells the guard as "so a split this eval doesn't have is a
+        422" without noting that entity existence is checked *only* on the split-named path — a
+        typo'd `eval_id` 404s if a split was named and 201s into a doomed job if not. Behavior is
+        deliberate (judgment call #2); the comment just under-describes it.
+      - `_resolve_split`'s "Raising here is a contract, not a reachable state" is exact only at
+        request time. A split deleted between job creation and execution does reach that raise —
+        correctly, and load-bearing for the resume path.
 
 - [ ] **Phase 7: eb-v2 alignment project overview.** Write
       `specs/projects/eb_v2_splits_alignment/project_overview.md` — overview only, from the merged
@@ -120,3 +137,22 @@ vacuously.
 
 **Phase 7 runs last for a reason.** It records the real conflict surface against the model as
 shipped, which isn't knowable earlier.
+
+**Two `eval_runner.py` fixes are homeless, and need an owner outside phases 5 and 6.** Phase 4
+raised both and deferred them to "whichever of phases 5 and 6 next edits `run_job` /
+`collect_tasks_for_eval_config_eval`". Neither does: phase 5 is `jobs/`, and architecture §6 scopes
+phase 6 to `eval_api.py` and two Svelte pages. Phase 7 is overview-only. So unless someone claims
+them, they ship as-is:
+
+- **`EvalJob` does not express which item types each run type can carry.**
+  `EvalJob(item=some_eval_input, type="eval_config_eval")` still type-checks. Phase 4 made it
+  unreachable but not unrepresentable.
+- **Calibration dedupe ignores what a run was *for*.** `collect_tasks_for_eval_config_eval` builds
+  `already_run` from every run on the eval config, including `task_run_eval` ones, so a golden
+  `TaskRun` already scored for some run config is silently never calibrated. Pre-existing, not a
+  regression from this project.
+
+Full write-ups — including why each was declined and what the fix looks like — are in
+`phase_plans/phase_4.md`'s "Known limitations" and `phase_plans/phase_5.md`'s. Recorded here
+because phase plans are not part of a coding agent's context loading, so a note left only in them
+is a note the next agent never sees.

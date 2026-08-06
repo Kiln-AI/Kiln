@@ -269,17 +269,13 @@ MUTATIONS = [
         ],
         TEVAL_API,
     ),
-    (
-        "worker: builds the runner over an empty split",
-        [
-            (
-                WORKER,
-                '        split = resolve_split(task, eval, "test")',
-                '        split = __import__("kiln_ai.datamodel.eval_splits", fromlist=["ResolvedSplit"]).ResolvedSplit(name="test", source="task_run", items=[], eval_id=eval.id)',
-            )
-        ],
-        TWORKER,
-    ),
+    # One entry lived here — "worker: builds the runner over an empty split". Phase 5
+    # deleted its target line: the worker's inline resolve_split call became the shared
+    # _resolve_split method that also feeds compute_state, which is what this phase's
+    # plan said the inline version was written to become. Left as a note rather than
+    # deleted silently, because a PATTERN-MISS on a re-run would otherwise read as a
+    # regression. The equivalent behavior is covered by phase5_mutation_sweep.py's
+    # "_resolve_split: an absent split degrades to an empty one instead of raising".
 ]
 
 
