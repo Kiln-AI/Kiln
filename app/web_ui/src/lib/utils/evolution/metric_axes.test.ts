@@ -31,8 +31,11 @@ import {
   usage_row_family,
   fit_radar,
   nearest_axis_index,
+  place_labels_on_rays,
   MIN_METRIC_AXES,
   MIN_RADAR_RADIUS,
+  type RayLabelInput,
+  type RayLabelPlacement,
   type MetricAxis,
   type RadarAxisLabel,
   type MetricFamily,
@@ -1296,5 +1299,148 @@ describe("nearest_axis_index", () => {
 
   it("returns null with no axes", () => {
     expect(nearest_axis_index({ x: 0, y: 0 }, centre, [])).toBeNull()
+  })
+})
+
+describe("place_labels_on_rays", () => {
+  // The angles the quality radar feeds it: indicator 0 at the top, clockwise,
+  // NOT normalised (they run below -PI for large indices), matching axisAngles
+  const ringAngles = (count: number) =>
+    Array.from(
+      { length: count },
+      (_, index) => Math.PI / 2 - (index * Math.PI * 2) / count,
+    )
+  const labelsFor = (count: number, width = 78, height = 14): RayLabelInput[] =>
+    ringAngles(count).map((angle, index) => ({ index, angle, width, height }))
+  // The measured live geometry of the 30-axis quality ring (2026-08-06)
+  const geom = {
+    cx: 189.5,
+    cy: 332,
+    minRadius: 108,
+    keepOut: 0,
+    bandTop: 2,
+    bandBottom: 556,
+    width: 379,
+    edgePad: 8,
+    gap: 5,
+  }
+
+  function boxOf(p: RayLabelPlacement, input: RayLabelInput) {
+    const left =
+      p.align === "left"
+        ? p.x
+        : p.align === "right"
+          ? p.x - input.width
+          : p.x - input.width / 2
+    return {
+      left,
+      right: left + input.width,
+      top: p.y - input.height / 2,
+      bottom: p.y + input.height / 2,
+    }
+  }
+
+  function assertInvariants(
+    placed: RayLabelPlacement[],
+    inputs: RayLabelInput[],
+    keepOut = 0,
+  ) {
+    const byIndex = new Map(inputs.map((input) => [input.index, input]))
+    for (const p of placed) {
+      const input = byIndex.get(p.index)
+      if (!input) throw new Error(`placement for unknown index ${p.index}`)
+      // ON ITS OWN RAY - the invariant this layout exists for. The anchor's
+      // angle around the centre must be the axis's own angle.
+      const anchorAngle = Math.atan2(geom.cy - p.y, p.x - geom.cx)
+      let delta = Math.abs(anchorAngle - input.angle) % (Math.PI * 2)
+      if (delta > Math.PI) delta = Math.PI * 2 - delta
+      expect(delta).toBeLessThan(1e-6)
+      // never inside the ring circle
+      expect(p.radius).toBeGreaterThanOrEqual(geom.minRadius - 1e-6)
+      // inside the band
+      const box = boxOf(p, input)
+      expect(box.top).toBeGreaterThanOrEqual(geom.bandTop - 1e-6)
+      expect(box.bottom).toBeLessThanOrEqual(geom.bandBottom + 1e-6)
+      // outside the family tier: nearest box point to the centre clears it
+      const dyNear = Math.max(0, Math.abs(p.y - geom.cy) - input.height / 2)
+      const dxInner = p.align === "center" ? 0 : Math.abs(p.x - geom.cx)
+      expect(Math.hypot(dxInner, dyNear)).toBeGreaterThanOrEqual(keepOut - 1e-6)
+    }
+    // boxes pairwise disjoint
+    const boxes = placed.map((p) =>
+      boxOf(p, byIndex.get(p.index) as RayLabelInput),
+    )
+    for (let a = 0; a < boxes.length; a++) {
+      for (let b = a + 1; b < boxes.length; b++) {
+        const overlap =
+          boxes[a].left < boxes[b].right &&
+          boxes[b].left < boxes[a].right &&
+          boxes[a].top < boxes[b].bottom &&
+          boxes[b].top < boxes[a].bottom
+        expect(overlap).toBe(false)
+      }
+    }
+  }
+
+  it("an uncrowded ring keeps every name at the ring circle, on its ray", () => {
+    const inputs = labelsFor(8)
+    const placed = place_labels_on_rays(inputs, geom)
+    expect(placed.length).toBe(8)
+    assertInvariants(placed, inputs)
+    for (const p of placed) {
+      expect(p.radius).toBeCloseTo(geom.minRadius, 6)
+    }
+  })
+
+  it("a 30-axis ring - the size that drifted - stays on-ray everywhere", () => {
+    // The regression this layout replaces: mid-quadrant names drifted up to
+    // 0.88 of an axis step off their rays. Every drawn name must now be
+    // exactly on its ray, and the crowded ring must not solve the problem by
+    // hiding the mid-quadrant names that used to drift.
+    const inputs = labelsFor(30)
+    const placed = place_labels_on_rays(inputs, geom)
+    assertInvariants(placed, inputs)
+    expect(placed.length).toBeGreaterThanOrEqual(26)
+    const placedIndices = new Set(placed.map((p) => p.index))
+    for (const index of [4, 5, 6, 23, 24, 25]) {
+      expect(placedIndices.has(index)).toBe(true)
+    }
+  })
+
+  it("holds every name outside the family tier", () => {
+    // A card wide enough that the (soft) edge cap never binds, so the
+    // keep-out clearing is satisfiable everywhere and the invariant is exact.
+    // In a card too narrow to resolve it, the clearing is best-effort - the
+    // same trade the old layout made - so this is not asserted at every width.
+    const inputs = labelsFor(30)
+    const keepOut = 130
+    const placed = place_labels_on_rays(inputs, {
+      ...geom,
+      keepOut,
+      width: 600,
+    })
+    assertInvariants(placed, inputs, keepOut)
+    expect(placed.length).toBeGreaterThanOrEqual(24)
+  })
+
+  it("hides what cannot fit instead of drawing it misplaced", () => {
+    // A band too short for half the ring: names must drop, never drift
+    const inputs = labelsFor(30, 78, 14)
+    const tight = { ...geom, bandTop: 250, bandBottom: 420 }
+    const placed = place_labels_on_rays(inputs, tight)
+    expect(placed.length).toBeLessThan(30)
+    expect(placed.length).toBeGreaterThan(0)
+    const byIndex = new Map(inputs.map((input) => [input.index, input]))
+    for (const p of placed) {
+      const input = byIndex.get(p.index) as RayLabelInput
+      const anchorAngle = Math.atan2(geom.cy - p.y, p.x - geom.cx)
+      let delta = Math.abs(anchorAngle - input.angle) % (Math.PI * 2)
+      if (delta > Math.PI) delta = Math.PI * 2 - delta
+      expect(delta).toBeLessThan(1e-6)
+    }
+  })
+
+  it("returns nothing for an empty ring", () => {
+    expect(place_labels_on_rays([], geom)).toEqual([])
   })
 })

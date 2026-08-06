@@ -49,7 +49,11 @@
 // stays off and is counted in the note under the chart.
 
 import { formatLatency, score_key_label } from "$lib/utils/formatters"
-import { family_bands, type FamilyBand } from "./family_bands"
+import {
+  axis_label_clearing_radius,
+  family_bands,
+  type FamilyBand,
+} from "./family_bands"
 import type { ScoreKeyMeta } from "./score_lens"
 import { score_key_id } from "./score_lens"
 
@@ -1265,4 +1269,269 @@ export function nearest_axis_index(
     }
   })
   return best
+}
+
+// ---------------------------------------------------------------------------
+// On-ray axis-name placement for the quality radar's bottom mode.
+//
+// The old layout kept every name's anchor on the ring circle and packed the
+// names apart VERTICALLY (isotonic regression per side). Packing near a pole
+// slid a name up to a whole axis step around the ring - its anchor kept its
+// own ray's x at the ring radius while its y belonged somewhere else - and the
+// radial rescue that pulled a name back onto its ray only fired above 30
+// degrees of elevation and was capped by the card edge, so names between ~18
+// and ~42 degrees drifted worst (measured 0.88 of a step on a 30-axis ring).
+// A reader maps name to axis by proximity, so a drifted name reads as the
+// NEIGHBOURING axis's name - the label-vs-tooltip mismatch this replaces.
+//
+// This layout holds the invariant the reader assumes: EVERY drawn name sits on
+// its own axis ray. Crowding is resolved along the one direction that keeps
+// the invariant - outward along the ray - walking each side from the equator
+// toward the poles, since that is the direction in which pushing a name
+// further out also moves it away from its already-placed neighbour. A name
+// whose ray cannot give it clear room inside the card (the immediate
+// neighbours of a pole on a crowded ring, where rays separate by only a few
+// px per hundred px of radius) is HIDDEN rather than drawn misplaced - the
+// same trade the stride already makes, and the axis tooltip still carries it.
+// ---------------------------------------------------------------------------
+
+/** One axis name, as the placement solver sees it */
+export interface RayLabelInput {
+  /** The axis index this name belongs to - carried through, never reordered */
+  index: number
+  /** The indicator's angle: radians, y up, 0 due east (echarts' convention) */
+  angle: number
+  width: number
+  height: number
+}
+
+/** Where a name goes: anchored ON its own ray, or absent (hidden) */
+export interface RayLabelPlacement {
+  index: number
+  /** The anchor edge's x: left edge on the right half, right edge on the left half, centre at a pole */
+  x: number
+  /** Vertical centre of the text block */
+  y: number
+  align: "left" | "right" | "center"
+  /** Distance from the chart centre to the anchor, along the ray */
+  radius: number
+}
+
+export interface RayLabelGeometry {
+  cx: number
+  cy: number
+  /** Ring to the anchor of a name - the radius every uncrowded name sits at */
+  minRadius: number
+  /** No name's box may come inside this circle - the family tier. 0 when ungrouped */
+  keepOut: number
+  bandTop: number
+  bandBottom: number
+  /** The chart box's width; names must keep edgePad off both edges */
+  width: number
+  edgePad: number
+  /** Clear vertical space required between two names' boxes */
+  gap: number
+}
+
+// echarts' own tolerance for "this axis is vertical"
+const RAY_VERTICAL_EPS = 1e-4
+
+type PlacedBox = { left: number; right: number; top: number; bottom: number }
+
+function boxesOverlap(a: PlacedBox, b: PlacedBox, gap: number): boolean {
+  return (
+    a.left < b.right &&
+    b.left < a.right &&
+    a.top - gap < b.bottom &&
+    b.top - gap < a.bottom
+  )
+}
+
+function boxFor(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  align: "left" | "right" | "center",
+): PlacedBox {
+  const left =
+    align === "left" ? x : align === "right" ? x - width : x - width / 2
+  return {
+    left,
+    right: left + width,
+    top: y - height / 2,
+    bottom: y + height / 2,
+  }
+}
+
+/**
+ * Place every axis name ON its own ray, pushing outward along the ray to
+ * resolve crowding and hiding what cannot fit - see the block comment above.
+ *
+ * Returns placements for the names that are drawn; a missing index is a
+ * hidden name. Order of the result follows processing order, not index order:
+ * callers key by `index`.
+ */
+export function place_labels_on_rays(
+  labels: RayLabelInput[],
+  geom: RayLabelGeometry,
+): RayLabelPlacement[] {
+  if (labels.length === 0) return []
+  const band = Math.max(geom.bandBottom - geom.bandTop, 1)
+
+  // The stride the old layout kept: past the point where even one line per
+  // name fits a side of the band, show every stride-th name per side. Sides
+  // are split the way the names are anchored - rightward on the right half,
+  // leftward on the left - and ordered by where their tips sit vertically.
+  const tipY = (label: RayLabelInput) =>
+    geom.cy - geom.minRadius * Math.sin(label.angle)
+  const sides: RayLabelInput[][] = [[], []]
+  for (const label of labels) {
+    sides[Math.cos(label.angle) >= 0 ? 0 : 1].push(label)
+  }
+  for (const side of sides) {
+    side.sort((first, second) => tipY(first) - tipY(second))
+  }
+  const spanOf = (side: RayLabelInput[]) =>
+    side.reduce((total, label) => total + label.height + geom.gap, -geom.gap)
+  const worstSpan = Math.max(spanOf(sides[0]), spanOf(sides[1]))
+  const stride = Math.max(1, Math.ceil(worstSpan / band))
+
+  const placements: RayLabelPlacement[] = []
+  const sideBoxes: PlacedBox[][] = [[], []]
+  const verticals: { label: RayLabelInput; sideIndex: number }[] = []
+
+  sides.forEach((side, sideIndex) => {
+    const shown = side.filter((_, position) => position % stride === 0)
+    // Equator outward: each name is placed after every name nearer the
+    // horizontal on its side, so pushing it poleward along its ray can only
+    // move it away from the boxes already placed - placement never has to
+    // revisit a solved name.
+    const ordered = [...shown].sort(
+      (first, second) =>
+        Math.abs(Math.sin(first.angle)) - Math.abs(Math.sin(second.angle)),
+    )
+    for (const label of ordered) {
+      const sin = Math.sin(label.angle)
+      const cos = Math.cos(label.angle)
+      if (Math.abs(cos) < RAY_VERTICAL_EPS) {
+        // A pole name must clear BOTH sides' names, so it goes last
+        verticals.push({ label, sideIndex })
+        continue
+      }
+      const align: "left" | "right" = cos > 0 ? "left" : "right"
+      // How far out the card lets this name's box reach. A SOFT cap, floored
+      // at the ring circle exactly as the old layout floored it: a name at the
+      // ring may brush the edge pad, and the keep-out push below is capped
+      // here rather than allowed to shove a name off the card. Only the hard
+      // constraints - the band (the legend's room) and another name's box -
+      // can hide a name.
+      const reach = geom.width / 2 - geom.edgePad - label.width
+      const radiusCap = Math.max(reach / Math.abs(cos), geom.minRadius)
+      const bandCap =
+        Math.abs(sin) < RAY_VERTICAL_EPS
+          ? Infinity
+          : sin > 0
+            ? (geom.cy - (geom.bandTop + label.height / 2)) / sin
+            : (geom.bandBottom - label.height / 2 - geom.cy) / -sin
+
+      let radius = geom.minRadius
+      let y = geom.cy - radius * sin
+      // Two forces push a name outward - the family tier's keep-out circle and
+      // the boxes already placed - and both shrink as the radius grows, so a
+      // few passes settle. Every push is along the name's OWN ray.
+      for (let pass = 0; pass < labels.length + 2; pass++) {
+        let pushed = radius
+        const dyNear = Math.max(0, Math.abs(y - geom.cy) - label.height / 2)
+        pushed = Math.max(
+          pushed,
+          // Best effort, like the old layout: a tier overlap the card has no
+          // room to resolve is drawn, not hidden
+          Math.min(
+            axis_label_clearing_radius(geom.keepOut, cos, dyNear),
+            radiusCap,
+          ),
+        )
+        const candidate = boxFor(
+          geom.cx + pushed * cos,
+          geom.cy - pushed * sin,
+          label.width,
+          label.height,
+          align,
+        )
+        for (const other of sideBoxes[sideIndex]) {
+          if (!boxesOverlap(candidate, other, geom.gap)) continue
+          // Poleward past the blocking box, staying on the ray. sin of 0 has
+          // no poleward direction; that name can only be hidden below.
+          if (Math.abs(sin) < RAY_VERTICAL_EPS) {
+            pushed = Infinity
+            break
+          }
+          const clearedY =
+            sin > 0
+              ? other.top - geom.gap - label.height / 2
+              : other.bottom + geom.gap + label.height / 2
+          pushed = Math.max(pushed, (geom.cy - clearedY) / sin)
+        }
+        if (pushed <= radius) break
+        radius = pushed
+        y = geom.cy - radius * sin
+      }
+
+      if (radius > radiusCap || radius > bandCap || !Number.isFinite(radius)) {
+        // Its ray has no clear room inside the card: hidden, not misplaced
+        continue
+      }
+      const x = geom.cx + radius * cos
+      sideBoxes[sideIndex].push(boxFor(x, y, label.width, label.height, align))
+      placements.push({ index: label.index, x, y, align, radius })
+    }
+  })
+
+  // Pole names: centred over their tips, pushed poleward past whatever either
+  // side placed near the pole, hidden when the band runs out.
+  for (const { label } of verticals) {
+    const sin = Math.sin(label.angle) > 0 ? 1 : -1
+    let radius = Math.max(geom.minRadius, geom.keepOut + label.height / 2)
+    let y = geom.cy - radius * sin
+    const everyBox = [...sideBoxes[0], ...sideBoxes[1]]
+    for (let pass = 0; pass < labels.length + 2; pass++) {
+      let pushed = radius
+      const candidate = boxFor(
+        geom.cx,
+        geom.cy - pushed * sin,
+        label.width,
+        label.height,
+        "center",
+      )
+      for (const other of everyBox) {
+        if (!boxesOverlap(candidate, other, geom.gap)) continue
+        const clearedY =
+          sin > 0
+            ? other.top - geom.gap - label.height / 2
+            : other.bottom + geom.gap + label.height / 2
+        pushed = Math.max(pushed, (geom.cy - clearedY) / sin)
+      }
+      if (pushed <= radius) break
+      radius = pushed
+      y = geom.cy - radius * sin
+    }
+    const bandCap =
+      sin > 0
+        ? (geom.cy - (geom.bandTop + label.height / 2)) / sin
+        : (geom.bandBottom - label.height / 2 - geom.cy) / -sin
+    if (radius > bandCap) continue
+    y = geom.cy - radius * sin
+    const box = boxFor(geom.cx, y, label.width, label.height, "center")
+    sideBoxes[0].push(box)
+    placements.push({
+      index: label.index,
+      x: geom.cx,
+      y,
+      align: "center",
+      radius,
+    })
+  }
+
+  return placements
 }
