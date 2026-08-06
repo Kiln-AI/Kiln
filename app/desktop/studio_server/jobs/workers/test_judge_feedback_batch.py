@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -25,7 +25,13 @@ from kiln_ai.datamodel import (
     Task,
     TaskOutputRatingType,
 )
-from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalOutputScore
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalOutputScore,
+    LlmJudgeProperties,
+)
 from kiln_ai.datamodel.judge_feedback_batch import JudgeFeedbackBatch
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
@@ -299,6 +305,47 @@ def test_concurrency_below_one_rejected(concurrency):
             judge_feedback_batch_id="batch1",
             concurrency=concurrency,
         )
+
+
+async def test_run_rejects_v2_judge(resolve_project, task, eval, run_config):
+    """The background job goes through the same guard as the three HTTP entry points.
+
+    JudgeFeedbackBatchRunner has no V2 dispatch arm, so a batch naming a V2 judge must be
+    refused before any item is judged rather than failing partway through.
+    """
+    EvalConfig(
+        id="v2cfg",
+        name="v2 judge",
+        config_type=EvalConfigType.v2,
+        properties=LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="Evaluate: {{ final_message }}",
+        ),
+        parent=eval,
+    ).save_to_file()
+    JudgeFeedbackBatch(
+        id="v2batch",
+        name="v2 batch",
+        target_tags=["train_set"],
+        eval_config_id="v2cfg",
+        parent=task,
+    ).save_to_file()
+    params = JudgeFeedbackBatchJobParams(
+        project_id="project1",
+        task_id="task1",
+        judge_feedback_batch_id="v2batch",
+    )
+
+    with patch(
+        "app.desktop.studio_server.jobs.workers.judge_feedback_batch.JudgeFeedbackBatchRunner",
+        Mock(side_effect=AssertionError("runner must not be reached")),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await JudgeFeedbackBatchJobWorker().run(params, _FakeCtx())
+
+    assert exc_info.value.status_code == 422
+    assert "V2 judges" in exc_info.value.detail
 
 
 async def test_run_missing_batch_raises(resolve_project, task, eval_config):

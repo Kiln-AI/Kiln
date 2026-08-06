@@ -29,6 +29,7 @@ from kiln_ai.datamodel.eval import (
     EvalConfigType,
     EvalDataType,
     EvalInput,
+    EvalInputSplit,
     EvalOutputScore,
     EvalRun,
     EvalScores,
@@ -36,6 +37,7 @@ from kiln_ai.datamodel.eval import (
     MultiTurnSyntheticEvalInputData,
     SingleTurnEvalInputData,
     SkippedReason,
+    TaskRunSplit,
     UserMessage,
     V2EvalResult,
 )
@@ -190,7 +192,7 @@ def test_collect_tasks_filtering(
         task_run.save_to_file()
         task_runs.append(task_run)
 
-    mock_eval.eval_set_filter_id = "tag::tag1"
+    mock_eval.splits["test"] = TaskRunSplit(filter_id="tag::tag1")
     mock_eval.eval_configs_filter_id = "tag::tag2"
 
     # Create a new runner of type task run eval
@@ -360,14 +362,27 @@ def test_collect_tasks_excludes_already_run_task_run_eval(
         scores={"accuracy": 1.0},
     ).save_to_file()
 
-    # Set filter to match the task
-    mock_eval_runner.eval.eval_set_filter_id = "tag::tag1"
+    # Narrow the test split to the tag the run carries, so "no jobs" below can only mean
+    # "already run" — with a filter that matched nothing it would be zero either way.
+    mock_eval_runner.eval.splits["test"] = TaskRunSplit(filter_id="tag::tag1")
     mock_eval_runner.eval.eval_configs_filter_id = "tag::nonexistent"
 
     jobs = mock_eval_runner.collect_tasks()
 
     # Should get no jobs since the task was already run
     assert len(jobs) == 0
+
+    # Same split, a second item that has not been run: the split is really being read.
+    second_run = TaskRun(
+        parent=mock_task,
+        input="test2",
+        input_source=data_source,
+        tags=["tag1"],
+        output=TaskOutput(output="test2"),
+    )
+    second_run.save_to_file()
+    jobs = mock_eval_runner.collect_tasks()
+    assert [job.item.id for job in jobs] == [second_run.id]
 
 
 def test_collect_tasks_excludes_already_run_eval_config_eval(
@@ -386,7 +401,9 @@ def test_collect_tasks_excludes_already_run_eval_config_eval(
     )
     task_run.save_to_file()
 
-    mock_eval.eval_set_filter_id = "tag::nonexistent"
+    # eval_config_eval scopes by the golden filter, never by the test split — the split
+    # below matches nothing precisely to show the golden filter is what selects the item.
+    mock_eval.splits["test"] = TaskRunSplit(filter_id="tag::nonexistent")
     mock_eval.eval_configs_filter_id = "tag::tag1"
     mock_eval.save_to_file()
 
@@ -453,7 +470,7 @@ def test_collect_tasks_multiple_run_configs(
     mock_eval_runner.run_configs.append(second_config)
 
     # Set filter to match the task
-    mock_eval_runner.eval.eval_set_filter_id = "tag::tag1"
+    mock_eval_runner.eval.splits["test"] = TaskRunSplit(filter_id="tag::tag1")
 
     jobs = mock_eval_runner.collect_tasks()
 
@@ -468,7 +485,7 @@ def test_collect_tasks_multiple_run_configs(
 def test_collect_tasks_empty_cases(mock_eval_runner, mock_task, data_source):
     """Test empty cases - no matching tasks or no tasks at all"""
     # Set filter that won't match anything
-    mock_eval_runner.eval.eval_set_filter_id = "tag::nonexistent"
+    mock_eval_runner.eval.splits["test"] = TaskRunSplit(filter_id="tag::nonexistent")
     mock_eval_runner.eval.eval_configs_filter_id = "tag::nonexistent"
 
     jobs = mock_eval_runner.collect_tasks()
@@ -1227,12 +1244,12 @@ async def test_other_jobs_unaffected_by_save_context_rollback(
 
 @pytest.fixture
 def mock_v2_eval(mock_task):
-    """Eval with eval_input_filter_id set (V2 source mode)."""
+    """Eval whose test split is EvalInput-backed (V2 source mode)."""
     eval = Eval(
         id="v2_eval",
         name="v2 test eval",
         description="v2 eval desc",
-        eval_input_filter_id="all",
+        splits={"test": EvalInputSplit(filter_id="all")},
         eval_configs_filter_id="all",
         output_scores=[
             EvalOutputScore(
@@ -1337,7 +1354,7 @@ class TestCollectTasksForEvalInput:
             id="tag_eval",
             name="tag eval",
             description="tag eval desc",
-            eval_input_filter_id="tag::math",
+            splits={"test": EvalInputSplit(filter_id="tag::math")},
             eval_configs_filter_id="all",
             output_scores=[
                 EvalOutputScore(
@@ -1886,7 +1903,7 @@ def mock_v2_eval_input_task_run_eval(mock_task):
         id="v2_ei_tr_eval",
         name="v2 eval input task_run_eval",
         description="v2 eval for EvalInput + task_run_eval mode",
-        eval_input_filter_id="all",
+        splits={"test": EvalInputSplit(filter_id="all")},
         eval_configs_filter_id="all",
         output_scores=[
             EvalOutputScore(
@@ -2266,7 +2283,7 @@ class TestRunTaskFromEvalInput:
             id="v2_json_eval",
             name="json eval",
             description="json eval desc",
-            eval_input_filter_id="all",
+            splits={"test": EvalInputSplit(filter_id="all")},
             eval_configs_filter_id="all",
             output_scores=[
                 EvalOutputScore(

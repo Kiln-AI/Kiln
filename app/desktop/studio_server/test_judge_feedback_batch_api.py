@@ -268,10 +268,8 @@ def test_create_reference_answer_eval_requires_generate(
     assert resp.status_code == 422
 
 
-def test_create_rejects_v2_judge(client, mock_task, mock_task_from_id):
-    # JudgeFeedbackBatchRunner dispatches through legacy_eval_adapter_from_type, which has no
-    # V2 arm. Refuse at the boundary so the caller gets a 422 naming the reason rather than an
-    # internal NotImplementedError partway through a run.
+@pytest.fixture
+def v2_eval_config(mock_task):
     eval = Eval(
         id="v2eval",
         name="v2",
@@ -283,7 +281,7 @@ def test_create_rejects_v2_judge(client, mock_task, mock_task_from_id):
         parent=mock_task,
     )
     eval.save_to_file()
-    EvalConfig(
+    eval_config = EvalConfig(
         id="v2cfg",
         name="c",
         config_type=EvalConfigType.v2,
@@ -293,12 +291,50 @@ def test_create_rejects_v2_judge(client, mock_task, mock_task_from_id):
             prompt_template="Evaluate: {{ final_message }}",
         ),
         parent=eval,
-    ).save_to_file()
+    )
+    eval_config.save_to_file()
+    return eval_config
 
-    resp = client.post(BASE, json={"target_tags": ["train"], "eval_config_id": "v2cfg"})
+
+@pytest.fixture
+def saved_v2_batch(mock_task, v2_eval_config):
+    """A batch naming a V2 judge, as one created before the guard existed would be."""
+    batch = JudgeFeedbackBatch(
+        id="v2batch",
+        name="scan",
+        target_tags=["train"],
+        eval_config_id=v2_eval_config.id,
+        parent=mock_task,
+    )
+    batch.save_to_file()
+    return batch
+
+
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        (BASE, {"target_tags": ["train"], "eval_config_id": "v2cfg"}),
+        (f"{BASE}/v2batch/run", None),
+        (f"{BASE}/run", {"target_tags": ["train"], "eval_config_id": "v2cfg"}),
+    ],
+)
+def test_endpoints_reject_v2_judge(
+    client, mock_task, mock_task_from_id, saved_v2_batch, path, body
+):
+    # JudgeFeedbackBatchRunner dispatches through legacy_eval_adapter_from_type, which has no
+    # V2 arm. Every entry point refuses at the boundary, so the caller gets a 422 naming the
+    # reason rather than an internal NotImplementedError partway through a run.
+    unreachable_runner = Mock(side_effect=AssertionError("runner must not be reached"))
+    with patch(
+        "app.desktop.studio_server.judge_feedback_batch_api.JudgeFeedbackBatchRunner",
+        unreachable_runner,
+    ):
+        resp = client.post(path, json=body)
+
     assert resp.status_code == 422
     assert "V2 judges" in resp.json()["message"]
-    assert mock_task.judge_feedback_batches() == []
+    # No batch created, and the pre-existing one is untouched.
+    assert [batch.id for batch in mock_task.judge_feedback_batches()] == ["v2batch"]
 
 
 def test_create_and_run_generate(

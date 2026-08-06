@@ -43,9 +43,11 @@ from kiln_ai.datamodel.eval import (
     EvalConfig,
     EvalConfigType,
     EvalDataType,
+    EvalInputSplit,
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
+    TaskRunSplit,
 )
 from kiln_ai.datamodel.prompt import BasePrompt
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
@@ -1802,9 +1804,8 @@ def test_update_eval_name_and_description(
 def test_update_eval_train_set_filter_id_when_none(
     client, mock_task_from_id, mock_eval, mock_task
 ):
-    """Test that update_eval successfully sets train_set_filter_id when it's None."""
-    # Ensure train_set_filter_id is None
-    mock_eval.train_set_filter_id = None
+    """update_eval sets a train split on an eval that has none."""
+    assert "train" not in mock_eval.splits
 
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
@@ -1820,19 +1821,24 @@ def test_update_eval_train_set_filter_id_when_none(
 
     assert response.status_code == 200
     updated_eval = response.json()
+    # Created through set_split, so it lands in the legacy field: this split exists for
+    # prompt optimization, which reads it out of the packaged project file.
     assert updated_eval["train_set_filter_id"] == "tag::train_my_eval"
+    assert "splits" not in updated_eval
 
-    # Verify the eval was saved
+    # Verify the eval was saved, and that `splits` is the model's read surface either way
     eval_from_disk = mock_task.evals()[0]
+    assert eval_from_disk.splits["train"] == TaskRunSplit(
+        filter_id="tag::train_my_eval"
+    )
     assert eval_from_disk.train_set_filter_id == "tag::train_my_eval"
 
 
 def test_update_eval_train_set_filter_id_when_already_set(
     client, mock_task_from_id, mock_eval
 ):
-    """Test that update_eval raises error when trying to change existing train_set_filter_id."""
-    # Set an existing train_set_filter_id
-    mock_eval.train_set_filter_id = "tag::existing_train_set"
+    """Test that update_eval raises error when trying to change an existing train split."""
+    mock_eval.splits["train"] = TaskRunSplit(filter_id="tag::existing_train_set")
 
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
@@ -1857,7 +1863,7 @@ def test_update_eval_partial_update(client, mock_task_from_id, mock_eval, mock_t
     """Test that update_eval only updates provided fields."""
     original_name = mock_eval.name
     original_description = mock_eval.description
-    mock_eval.train_set_filter_id = None
+    assert "train" not in mock_eval.splits
 
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
@@ -1878,7 +1884,7 @@ def test_update_eval_partial_update(client, mock_task_from_id, mock_eval, mock_t
     # Name and description should remain unchanged
     assert updated_eval["name"] == original_name
     assert updated_eval["description"] == original_description
-    # train_set_filter_id should be updated
+    # the train split should be updated, in the format older builds can read
     assert updated_eval["train_set_filter_id"] == "tag::train_set"
 
 
@@ -3847,7 +3853,7 @@ def mock_v2_eval(mock_task):
                 type=TaskOutputRatingType.pass_fail,
             ),
         ],
-        eval_input_filter_id="tag::v2_eval_set",
+        splits={"test": EvalInputSplit(filter_id="tag::v2_eval_set")},
         evaluation_data_type=None,
         parent=mock_task,
     )

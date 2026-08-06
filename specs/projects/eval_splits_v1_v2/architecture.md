@@ -131,6 +131,8 @@ _legacy_homed_splits: Set[str] | None = PrivateAttr(default=None)
 
 @model_validator(mode="after")
 def fold_legacy_filter_fields(self) -> Self:
+    if self._legacy_homed_splits is not None:
+        return self          # already folded; see "runs once" below
     homed: Set[str] = set()
     if self.eval_set_filter_id is not None:
         self.splits["test"] = TaskRunSplit(filter_id=self.eval_set_filter_id)
@@ -142,12 +144,26 @@ def fold_legacy_filter_fields(self) -> Self:
     return self
 ```
 
+**The fold runs once — on the first validation, and never again.** `KilnBaseModel` sets
+`validate_assignment=True`, so every attribute assignment re-runs the `mode="after"` validators.
+Without the early return above, each pass would re-derive `splits` from the legacy fields, which
+means a split the caller had written is silently reverted by the next assignment — including
+`self.path = path` at the end of `save_to_file`, so the change would also be undone on disk at the
+following save. The early return is what makes §2.4's "their in-memory values are not
+authoritative" true rather than aspirational: the legacy fields are read exactly once, when the
+eval is first materialized.
+
 **Precedence: a populated legacy field wins over a `splits` entry for the same split.** At most one
 of the two is ever written for a given split (§2.6), so a conflict means a hand-edited file.
 Preferring the legacy field keeps every Kiln client — old and new — agreeing on what the eval's
-test and train splits are, which is the property worth protecting.
+test and train splits are, which is the property worth protecting. The losing `splits` entry is
+dropped from the file on the next save.
 
-The third legacy input, `eval_input_filter_id`, is handled differently — see §2.6.1.
+The third legacy input, `eval_input_filter_id`, is handled differently — see §2.6.1. Because a
+single split cannot have two backings, an input carrying **both** `eval_set_filter_id` and
+`eval_input_filter_id` is rejected rather than folded: this is the one conflict the `splits` shape
+cannot make unrepresentable, since it is between two *inputs*, not two states of the model. It is
+the surviving half of `validate_filter_fields` (§2.8), and it retires with the shim.
 
 ### 2.6 Saving: the format an eval arrived in is the format it leaves in
 
@@ -155,13 +171,71 @@ Serialization is provenance-preserving, per split:
 
 - A split that **arrived in a legacy field** is written back to that legacy field, and omitted
   from the serialized `splits` dict.
-- A split that **arrived in `splits`** — or was created new — is written to `splits`, and its
-  legacy field is written as null.
+- A split that **arrived in `splits`** is written to `splits`, and its legacy field is written as
+  null.
+- A split **created through `Eval.set_split()`** is written to its legacy field when one can hold
+  it — TaskRun-backed, and named in `LEGACY_SPLIT_FIELDS` — and to `splits` otherwise. See
+  "creating a split" below.
 
 An untouched existing eval therefore round-trips **byte-identically**: no `splits` key appears, and
 old clients keep reading it exactly as they do now. A brand-new eval created purely through
 `splits` writes only `splits`. An existing eval that gains a val split keeps its legacy test and
 train fields and gains a `splits` key containing only val.
+
+#### Creating a split: `Eval.set_split()`
+
+**Amended during phase 2** — the original rule said flatly that a newly created split is written to
+`splits`, and that turned out to be wrong for splits created *on behalf of a user*.
+
+```python
+def set_split(self, name: str, split: SplitRef) -> None: ...
+```
+
+`eval.splits[name] = ref` and `eval.set_split(name, ref)` set the same value and differ only in
+where it is stored. The first authors in the new format. The second stores it where the most
+readers can see it: `_legacy_homed_splits` gains the name when the ref is TaskRun-backed and the
+name has a legacy field, so the split serializes to `eval_set_filter_id` / `train_set_filter_id`
+and everything that reads those keeps working.
+
+The reason the distinction has to exist is that the legacy fields are read by more than old Kiln
+builds. `package_project_for_training` copies `eval.kiln` verbatim into the zip handed to the
+closed-source remote prompt-optimization service, which resolves the train filter out of
+`train_set_filter_id` (functional spec §6.3). That reader is in another repo and is not migrating
+to `splits` in this project or any phase of it, so a train split written only to `splits` is
+invisible to it permanently — not until a later phase, but for good. §6.4's local `has_train_set`
+change does not touch it.
+
+Which one a call site wants follows from whose split it is:
+
+| Call site | Which | Why |
+|---|---|---|
+| Eval-update endpoint's train split (§2.6.2) | `set_split` | Exists so prompt optimization can use it; the zip reader needs the legacy field. |
+| Spec / copilot eval creation (§8) | phase 3's call | TaskRun-backed test and train splits *can* be legacy-homed; see the note in `implementation_plan.md`. |
+| A val split, or any EvalInput-backed split | either — same result | No legacy field can hold it, so both write `splits`. |
+| Tests and tooling authoring the new format | direct assignment | The point is to exercise the new format. |
+
+Precisely what this does to the provenance rule: **construction** with `splits=` never acquires
+legacy fields, and that is still true. `set_split` is the one way an eval **can** acquire a legacy
+field after the fact, and that is its whole purpose — an eval constructed
+`splits={"test": TaskRunSplit(...)}` and then given `set_split("train", TaskRunSplit(...))`
+serializes with `eval_set_filter_id: null` and a populated `train_set_filter_id`. Mixed, and
+correct: each split is stored where it was asked to be. Phase 3 is explicitly asked to consider
+exactly this shape for new spec evals, so it is not a corner case.
+
+**Picking the wrong one of the two fails silently, in both directions.** This is the second sharp
+edge in the design (§2.6.2 has the first), and the table above is only a useful decision aid to
+someone who knows what misreading it costs:
+
+- Direct assignment where `set_split` was needed: the split is invisible to the prompt-optimization
+  zip reader, to four `eval_api.py` readers and to nine web-UI readers. No error, and
+  `eval.splits[name]` reads back exactly what was written.
+- `set_split` where new-format authoring was intended: the split lands in a legacy field, and a
+  test asserting on `eval.splits` still passes, because both forms produce the same in-memory
+  model. Only the serialized bytes differ.
+
+Neither shows up in the model's read surface, which is the point of the read surface — so the only
+thing that catches a wrong pick is a test that asserts on **serialized output**. Tests for code
+that sets a split should assert on `model_dump()` or the saved file, not on `eval.splits`.
 
 This is implemented as a wrap-mode `model_serializer` rather than a hook on `save_to_file`:
 
@@ -174,13 +248,19 @@ The distinction matters. `KilnParentedModel` has more than one persistence path,
 that lives on one save method can be bypassed by another — silently, and only visibly to users on
 older clients. A serializer is part of serializing the model, so no persistence path can miss it.
 
-**Unknown provenance degrades to the compatible choice.** `_legacy_homed_splits` is a private
-attribute, so it does not survive `model_copy()` or `Eval(**eval.model_dump())`. When it is `None`
-— fresh construction, a copy, a round trip through a dict — serialization falls back to
-*content*-determined behavior: any TaskRun-backed test or train split is written to its legacy
-field. The fragile case degrades to **more** old-client compatibility, never to a silent format
-flip. This is the one place the provenance rule is deliberately not honored, because honoring it
-would mean guessing.
+**Unknown provenance degrades to the compatible choice.** When `_legacy_homed_splits` is `None`,
+serialization falls back to *content*-determined behavior: any TaskRun-backed test or train split
+is written to its legacy field. The fragile case degrades to **more** old-client compatibility,
+never to a silent format flip. This is the one place the provenance rule is deliberately not
+honored, because honoring it would mean guessing.
+
+Provenance turns out to be **harder to lose than an earlier draft of this section assumed**, which
+is why the fallback is a safety net rather than a common path. Pydantic copies private attributes,
+so `model_copy()`, `model_copy(deep=True)`, `copy.deepcopy` and `pickle` all carry it. And
+`Eval(**eval.model_dump())` re-derives it correctly: the dump of a legacy eval has no `splits` key,
+so the fold re-runs over the legacy fields exactly as a file load would. The fallback is reached
+only by `model_construct`, which skips validation and therefore never records provenance in the
+first place.
 
 **Backing changes force a format change.** If a legacy-homed test split is changed from
 TaskRun-backed to EvalInput-backed, its legacy field cannot hold the new value. It is written as
@@ -220,16 +300,22 @@ their in-memory values are not authoritative, writing to them no longer changes 
 
 - **Construction.** `spec_api.py` and `copilot_api.py` construct `splits=` rather than passing
   legacy kwargs — which §8 already requires of them for the val split.
-- **Assignment.** One non-test site: `eval_api.py:834`,
-  `eval.train_set_filter_id = request.train_set_filter_id` in the eval-update endpoint. It writes
-  `eval.splits["train"] = TaskRunSplit(...)` instead.
+- **Assignment.** One non-test site: the eval-update endpoint's
+  `eval.train_set_filter_id = request.train_set_filter_id`. It calls
+  `eval.set_split("train", TaskRunSplit(...))` instead — `set_split` rather than a direct `splits`
+  write, because that split is created for prompt optimization, which reads it out of the packaged
+  project file (§2.6, "creating a split").
 
-This is the one sharp edge in the design: assigning a legacy field silently does nothing rather
-than failing. Mitigations, in order of importance — (1) the fields' descriptions state they are
-storage-format artifacts and must not be read or written, (2) §9.1 covers the update endpoint
-explicitly, (3) a grep for reads and writes of both names is part of the phase's definition of
-done. If a stronger guarantee is wanted later, the fields can be renamed with a leading underscore
-alias or made `init=False`, at the cost of touching every construction site.
+This is one of the two sharp edges in the design: assigning a legacy field silently does nothing
+rather than failing. (The other is choosing between `set_split` and direct assignment, which is
+also silent — see §2.6.) Mitigations, in order of importance — (1) the fields' descriptions state
+that `splits` is authoritative, (2) §9.1 covers the update endpoint explicitly, (3) a grep for
+reads and writes of both names is part of the phase's definition of done. If a stronger guarantee
+is wanted later, the fields can be renamed with a leading underscore alias or made `init=False`, at
+the cost of touching every construction site.
+
+Both edges share a shape: the wrong choice is invisible in `eval.splits` and visible only in the
+serialized bytes. Tests over code that writes a split need to assert on the dump or the file.
 
 ### 2.7 Why the fold is not gated on `_loaded_from_file`
 
@@ -244,6 +330,13 @@ get the same model. Note the provenance consequence: an eval *constructed* with 
 recorded as legacy-homed and will serialize that way, which is the same answer content-determined
 fallback would give.
 
+There is a second reason the gate would not have worked, found while building §2.5's run-once rule:
+`_loaded_from_file` is set by the loader **after** `model_validate` returns, so a validator gated on
+it can only fire on a *later* validation pass — in practice the `self.path = path` assignment at the
+end of `load_from_file`, via `validate_assignment`. That is how the existing lazy migrations fire at
+all. A run-once validator gets no second pass, so `_loaded_from_file` inside the fold would be
+permanently false rather than merely wrong.
+
 ### 2.8 Validation
 
 Replaces `validate_filter_fields`:
@@ -256,10 +349,15 @@ def validate_splits(self) -> Self:
     return self
 ```
 
-The old "exactly one of `eval_set_filter_id` / `eval_input_filter_id`" invariant **disappears
-rather than being reimplemented**: `splits["test"]` is a single value, so two backings for one
-split is not a state the model can be in. That is functional spec §1's "exactly one backing per
-split" made structural.
+The old "exactly one of `eval_set_filter_id` / `eval_input_filter_id`" invariant **disappears from
+the model rather than being reimplemented**: `splits["test"]` is a single value, so two backings
+for one split is not a state the model can be in. That is functional spec §1's "exactly one backing
+per split" made structural.
+
+What that argument does not cover is the *input* side, where two legacy keys can still name the
+same split. An input carrying both is rejected in the `eval_input_filter_id` shim (§2.5, §2.6.1) —
+the alternative is folding both and silently discarding one. That check is the only surviving piece
+of `validate_filter_fields`, it lives with the shim, and it retires with it.
 
 Both this and §2.5's fold are `mode="after"` validators, so **declaration order matters**: the
 fold must be declared first. This is the one ordering convention in the design that isn't enforced
@@ -632,8 +730,13 @@ whose positions must be memorized is exactly the shape this project is replacing
 Spec eval creation gains a TaskRun-backed val split, per functional spec §3.3.
 
 Both callers must construct `splits=` rather than passing legacy kwargs, since §2.4 makes those
-computed and therefore not `__init__` arguments. The eval-update endpoint's one assignment
-(`eval_api.py:834`) moves to `eval.splits["train"] = TaskRunSplit(...)` for the same reason.
+computed and therefore not `__init__` arguments. Whether their TaskRun-backed test and train splits
+should then be moved into their legacy homes with `set_split` — so a new spec eval stays readable
+by older builds and by the prompt-optimization zip reader — is a decision phase 3 has to make
+explicitly; see §2.6 and the note in `implementation_plan.md`.
+
+The eval-update endpoint's one assignment moved to `set_split` in phase 2, ahead of this phase,
+because the run-once fold (§2.5) made the old line silently discard its input.
 
 The two lazy migrations — `migrate_train_set_filter_id` and #1621's `migrate_val_set_filter_id` —
 are **deleted**, per functional spec §3.2.
@@ -655,7 +758,10 @@ Python: `pytest`, alongside the existing `test_eval_model.py`, `test_eval_runner
 - An eval with an EvalInput-backed val split round-trips through the dict, and its
   `val_set_filter_id`-shaped legacy field is absent.
 - Changing `splits["test"]` from `TaskRunSplit` to `EvalInputSplit` clears `eval_set_filter_id` on
-  save and vice versa.
+  save and vice versa — asserted after **two** saves, and against the in-memory model as well as
+  the file, since `save_to_file` is itself an assignment and §12.1's failure mode only shows up on
+  the second write. An unrelated edit (a rename) must not revert a split either.
+- An input carrying both `eval_set_filter_id` and `eval_input_filter_id` raises (§2.8).
 - The `eval_input_filter_id` shim maps an old-format file to `splits["test"]` as an
   `EvalInputSplit`, and the key is not re-serialized.
 - Legacy-wins precedence when a hand-edited file has both.
@@ -672,9 +778,11 @@ Provenance (§2.6), which is where the subtle failures live:
   both legacy fields null — it does not acquire them.
 - An existing legacy-format eval that gains a val split keeps its legacy test and train fields and
   gains a `splits` key containing **only** val.
-- `Eval(**eval.model_dump())` on a legacy-format eval still serializes to legacy format — the
-  unknown-provenance fallback (§2.6) degrades toward compatibility, not away from it.
-- `model_copy()` of a legacy-format eval likewise.
+- `Eval(**eval.model_dump())` on a legacy-format eval still serializes to legacy format (by
+  re-deriving provenance), and `model_copy()` likewise (by carrying it).
+- The unknown-provenance fallback itself, which only `model_construct` reaches: a TaskRun-backed
+  test split goes to `eval_set_filter_id`, and a split whose legacy field is excluded from the dump
+  stays in `splits` rather than being written nowhere.
 - The eval-update endpoint's train-split write (§2.6.2) is reflected in `splits` **and** in the
   serialized output, in whichever format the eval arrived in.
 
@@ -796,19 +904,28 @@ split name.
 
 ## 12. Open risks
 
-1. **Assigning a legacy field silently does nothing** (§2.6.2). The fields remain declared and
-   assignable, but are no longer authoritative, so `eval.train_set_filter_id = x` is a no-op
-   rather than an error. One non-test site exists today and is being changed; the risk is a
-   *future* author reaching for the familiar name. Mitigated by field descriptions, a test, and a
-   grep in the phase's definition of done — but it is the sharpest edge in this design and worth
-   revisiting if it bites.
+1. **The fold must never run twice, and `validate_assignment` makes that easy to break.** Every
+   attribute assignment on a `KilnBaseModel` re-runs the `mode="after"` validators, so anything
+   that re-enables the fold on a second pass — removing §2.5's early return, resetting
+   `_legacy_homed_splits`, or adding another validator that derives `splits` from the legacy
+   fields — makes writes to `splits` **unstable on exactly the legacy evals this design exists to
+   protect**: the edit is reverted by the next assignment, and `save_to_file` ends with
+   `self.path = path`, so it is also undone on disk at the following save. The failure is silent
+   in the worst way, because the first save writes the correct file.
+
+   Its milder twin is the original form of this risk: assigning a legacy field is a no-op rather
+   than an error, so a future author reaching for the familiar name changes nothing. Mitigated by
+   field descriptions, a grep in the phase's definition of done, and tests that save twice and
+   compare the in-memory model against the file it just wrote (§9.1).
 2. **`model_serializer` interaction with `KilnParentedModel`.** The wrap serializer must be
    invoked by whatever dump path `save_to_file` uses, and must compose with the parent/child
    machinery. Standard pydantic behavior, but this datamodel has custom save code, so the
    byte-identical round-trip test (§9.1) is the guard rather than an assumption.
-3. **Provenance is a private attribute** and does not survive copies or dict round trips. §2.6
-   defines the fallback so this degrades toward compatibility, and §9.1 tests it — but it is
-   invisible state, and invisible state is where format bugs hide.
+3. **Provenance is a private attribute**, which makes it invisible state, and invisible state is
+   where format bugs hide. It is more durable than this document first claimed — copies, deep
+   copies and pickles all carry it, and a dict round trip re-derives it (§2.6) — so the
+   content-determined fallback is reached only via `model_construct`. The residual risk is not
+   losing it but *mis-setting* it: nothing outside the fold may write it.
 4. **Old builds dropping the dict** (§2.9). Accepted, bounded, documented.
 5. **`compute_score_summary` signature change** ripples into the compare page's data path; the
    change is mechanical but touches more call sites than the other endpoint edits.

@@ -32,6 +32,7 @@ from kiln_ai.datamodel import (
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
+    EvalInputSplit,
     EvalOutputScore,
     EvalRun,
 )
@@ -324,7 +325,7 @@ async def test_compute_state_without_eval_set_filter_raises(
         id="eval_v2",
         name="EvalInput Backed",
         description="test",
-        eval_input_filter_id="tag::inputs",
+        splits={"test": EvalInputSplit(filter_id="tag::inputs")},
         eval_configs_filter_id="tag::golden",
         output_scores=[
             EvalOutputScore(

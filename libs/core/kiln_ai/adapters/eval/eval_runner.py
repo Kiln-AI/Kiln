@@ -21,12 +21,14 @@ from kiln_ai.datamodel.eval import (
     EvalConfigType,
     EvalDataType,
     EvalInput,
+    EvalInputSplit,
     EvalRun,
     EvalScores,
     EvalTaskInput,
     MultiTurnSyntheticEvalInputData,
     SingleTurnEvalInputData,
     SkippedReason,
+    TaskRunSplit,
 )
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
@@ -101,7 +103,7 @@ class EvalRunner:
                 raise ValueError("Mode 'eval_config_eval' does not support run configs")
 
         self._source_mode: Literal["task_run", "eval_input"] = "task_run"
-        if target_eval.eval_input_filter_id is not None:
+        if isinstance(target_eval.splits.get("test"), EvalInputSplit):
             self._source_mode = "eval_input"
 
         self.eval_run_type = eval_run_type
@@ -162,12 +164,12 @@ class EvalRunner:
 
     def collect_tasks_for_eval_input(self) -> List[EvalJob]:
         """Collect jobs from EvalInput items under the task."""
-        filter_id = self.eval.eval_input_filter_id
-        if filter_id is None:
+        test_split = self.eval.splits.get("test")
+        if not isinstance(test_split, EvalInputSplit):
             raise ValueError(
-                "eval_input_filter_id is required for eval_input source mode"
+                "An EvalInput-backed test split is required for eval_input source mode"
             )
-        input_filter = eval_input_filter_from_id(filter_id)
+        input_filter = eval_input_filter_from_id(test_split.filter_id)
 
         if self.eval_run_type == "task_run_eval":
             already_run: Dict[ID_TYPE, Dict[ID_TYPE, Set[ID_TYPE]]] = {}
@@ -233,12 +235,15 @@ class EvalRunner:
         This variant is used for mode "task_run_eval", generating new run output using existing dataset item input.
 
         The tasks:
-        - should be in the eval set filter
+        - should be in the eval's test split
         - should not have already been run for this eval config + run config + dataset item
         """
-        if self.eval.eval_set_filter_id is None:
-            raise ValueError("eval_set_filter_id is required for task_run_eval mode")
-        filter = dataset_filter_from_id(self.eval.eval_set_filter_id)
+        test_split = self.eval.splits.get("test")
+        if not isinstance(test_split, TaskRunSplit):
+            raise ValueError(
+                "A TaskRun-backed test split is required for task_run_eval mode"
+            )
+        filter = dataset_filter_from_id(test_split.filter_id)
 
         # already_run[eval_config_id][run_config_id][dataset_id]
         already_run: Dict[ID_TYPE, Dict[ID_TYPE, Set[ID_TYPE]]] = {}
