@@ -66,6 +66,75 @@ async function option_values(
   return JSON.parse(el?.getAttribute("data-option-values") ?? "[]")
 }
 
+async function options_for(
+  tool_sets: ToolSetApiDescription[],
+  project_id: string,
+): Promise<{ label: string; description?: string }[]> {
+  available_tools.set({ [project_id]: tool_sets })
+  const { container } = render(ToolsSelector, { props: { project_id } })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await tick()
+  const el = container.querySelector('[data-testid="form-element-options"]')
+  return JSON.parse(el?.getAttribute("data-options") ?? "[]")
+}
+
+describe("ToolsSelector option labels", () => {
+  it("shows the display name, with the function name when it differs", async () => {
+    const options = await options_for(
+      [
+        {
+          type: "code",
+          set_name: "Code Tools",
+          tools: [
+            {
+              id: "kiln_tool::code::a",
+              name: "Doc Search V1",
+              description: "Search the docs",
+              function_name: "search_docs",
+            },
+            {
+              id: "kiln_tool::code::b",
+              name: "Doc Search V2",
+              description: "Search the docs",
+              function_name: "search_docs",
+            },
+          ],
+        },
+      ],
+      "proj_ts_labels",
+    )
+
+    expect(options.map((option) => option.label)).toEqual([
+      "Doc Search V1",
+      "Doc Search V2",
+    ])
+    for (const option of options) {
+      expect(option.description).toBe("search_docs\nSearch the docs")
+    }
+  })
+
+  it("does not repeat the function name when it matches the display name", async () => {
+    const options = await options_for(
+      [
+        {
+          type: "mcp",
+          set_name: "MCP Server: Docs",
+          tools: [
+            {
+              id: "kiln_tool::mcp::remote::docs::search",
+              name: "search",
+              description: "Search",
+              function_name: "search",
+            },
+          ],
+        },
+      ],
+      "proj_ts_labels_same",
+    )
+    expect(options.map((option) => option.description)).toEqual(["Search"])
+  })
+})
+
 describe("ToolsSelector code-eval-only tool filtering", () => {
   it("hides llm_judge outside a code-eval context (keeps llm)", async () => {
     const values = await option_values(false, "proj_ts_off")

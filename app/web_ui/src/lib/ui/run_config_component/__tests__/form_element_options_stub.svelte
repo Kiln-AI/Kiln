@@ -12,5 +12,8 @@
       group.options.map((option) => option.value),
     ),
   )}
+  data-options={JSON.stringify(
+    fancy_select_options.flatMap((group) => group.options),
+  )}
   data-value={JSON.stringify(value)}
 ></div>
