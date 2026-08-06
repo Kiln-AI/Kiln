@@ -906,6 +906,8 @@ def connect_provider_api(app: FastAPI):
                 return await connect_siliconflow(parse_api_key(key_data))
             case ModelProviderName.cerebras:
                 return await connect_cerebras(parse_api_key(key_data))
+            case ModelProviderName.featherless_ai:
+                return await connect_featherless(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -979,6 +981,8 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().siliconflow_cn_api_key = None
                 case ModelProviderName.cerebras:
                     Config.shared().cerebras_api_key = None
+                case ModelProviderName.featherless_ai:
+                    Config.shared().featherless_ai_api_key = None
                 case (
                     ModelProviderName.kiln_custom_registry
                     | ModelProviderName.kiln_fine_tune
@@ -1009,6 +1013,44 @@ def connect_provider_api(app: FastAPI):
         payload: CreateKilnCopilotApiKeyRequest,
     ) -> JSONResponse:
         return await _create_kiln_copilot_api_key(payload.access_token)
+
+    @app.get(
+        "/api/provider/verify_kiln_copilot_api_key",
+        summary="Verify Kiln Copilot API Key",
+        tags=["Providers & Models"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def verify_kiln_copilot_api_key() -> JSONResponse:
+        """Verify the stored Kiln Copilot API key against the Kiln server.
+
+        Returns `{is_valid: bool}`. A stale key the server rejects with
+        401/403 is cleared from local config so subsequent flows fall back to
+        the connect screen instead of silently using a dead key. Network
+        failures leave the key in place and report `false` for this check
+        only — they shouldn't punish the user for a transient blip.
+        """
+        key = Config.shared().kiln_copilot_api_key
+        if not key:
+            return JSONResponse(status_code=200, content={"is_valid": False})
+
+        base_url = os.environ.get("KILN_SERVER_BASE_URL", "https://api.kiln.tech")
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{base_url}/v1/verify_api_key",
+                    headers={"Authorization": f"Bearer {key}"},
+                    timeout=10,
+                )
+        except httpx.RequestError:
+            return JSONResponse(status_code=200, content={"is_valid": False})
+
+        if response.status_code == 200:
+            return JSONResponse(status_code=200, content={"is_valid": True})
+
+        if response.status_code in (401, 403):
+            Config.shared().kiln_copilot_api_key = None
+
+        return JSONResponse(status_code=200, content={"is_valid": False})
 
 
 async def _create_kiln_copilot_api_key(access_token: str) -> JSONResponse:
@@ -1509,6 +1551,58 @@ async def connect_cerebras(key: str):
         return JSONResponse(
             status_code=400,
             content={"message": f"Failed to connect to Cerebras. Error: {e!s}"},
+        )
+
+
+async def connect_featherless(key: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        # Featherless has no authenticated GET endpoint we can ping: /v1/models is
+        # public (returns 200 without a key), so it can't validate anything.
+        #
+        # Instead we POST to chat/completions with a model slug that intentionally
+        # doesn't exist. Featherless checks auth *before* resolving the model, so a
+        # bad key returns 401 while a good key falls through to a model error. That
+        # validates the key without spending tokens, and without depending on any
+        # real model slug staying available.
+        response = requests.post(
+            "https://api.featherless.ai/v1/chat/completions",
+            headers=headers,
+            json={
+                "model": "kiln-ai/__connection_test__",
+                "messages": [{"role": "user", "content": "."}],
+                "max_tokens": 1,
+            },
+        )
+
+        if response.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Failed to connect to Featherless AI. Invalid API key."
+                },
+            )
+        elif response.status_code >= 500:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to Featherless AI. Error: [{response.status_code}]"
+                },
+            )
+        else:
+            # Any non-auth response means the key was accepted.
+            Config.shared().featherless_ai_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to Featherless AI"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to Featherless AI. Error: {e!s}"},
         )
 
 

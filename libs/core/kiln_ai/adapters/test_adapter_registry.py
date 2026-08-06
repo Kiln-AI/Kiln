@@ -48,6 +48,7 @@ def mock_config():
             "https://test-azure-openai-endpoint.com/v1"
         )
         mock.shared.return_value.siliconflow_cn_api_key = "test-siliconflow-key"
+        mock.shared.return_value.featherless_ai_api_key = "test-featherless-key"
         mock.shared.return_value.docker_model_runner_base_url = (
             "http://localhost:12434/engines/llama.cpp"
         )
@@ -185,6 +186,32 @@ def test_siliconflow_adapter_creation(mock_config, basic_task):
         "HTTP-Referer": "https://kiln.tech/siliconflow",
         "X-Title": "KilnAI",
     }
+
+
+def test_featherless_adapter_creation(mock_config, basic_task):
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="zai-org/GLM-5.2",
+            model_provider_name=ModelProviderName.featherless_ai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_instructions",
+        ),
+    )
+
+    assert isinstance(adapter, LiteLlmAdapter)
+    assert adapter.config.run_config_properties.model_name == "zai-org/GLM-5.2"
+    assert adapter.config.additional_body_options == {"api_key": "test-featherless-key"}
+    assert (
+        adapter.config.run_config_properties.model_provider_name
+        == ModelProviderName.featherless_ai
+    )
+    assert adapter.config.default_headers == {
+        "HTTP-Referer": "https://kiln.tech/featherless",
+        "X-Title": "KilnAI",
+    }
+    # Featherless uses LiteLLM's native provider, not a custom base URL
+    assert adapter.config.base_url is None
 
 
 @pytest.mark.parametrize(

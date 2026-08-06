@@ -160,7 +160,7 @@
       disabled={submitting}
       on:click={handle_secondary_click}
     >
-      Create manually
+      Create Manually
     </button>
   </div>
 {/if}
