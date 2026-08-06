@@ -275,6 +275,53 @@ async def test_run_eval_job_unknown_split_422(client, registry):
     assert registry._jobs == {}
 
 
+def _v2_eval_with_splits(train_set_filter_id: str | None) -> Eval:
+    """An EvalInput-backed (V2) eval — the shape AR2 measures Nova with."""
+    return Eval(
+        id="e1",
+        name="V2 Eval",
+        eval_input_filter_id="tag::v2_test",
+        eval_configs_filter_id="tag::golden",
+        train_set_filter_id=train_set_filter_id,
+        output_scores=[
+            EvalOutputScore(
+                name="Accuracy",
+                instruction="Check accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_v2_split_creates_job(client, registry, stub_eval_worker):
+    # A V2 eval with a train tag resolves at creation time rather than 422ing.
+    with patch.object(
+        jobs_api, "eval_from_id", return_value=_v2_eval_with_splits("tag::v2_train")
+    ):
+        resp = await client.post(
+            _EVAL_RUN_PATH, json={**_EVAL_PARAMS, "split": "train"}
+        )
+
+    assert resp.status_code == 201, resp.text
+    job = registry._jobs[resp.json()["job_id"]]
+    assert job.params == {**_EVAL_PARAMS, "split": "train"}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_v2_split_unset_on_eval_422(client, registry):
+    with patch.object(
+        jobs_api, "eval_from_id", return_value=_v2_eval_with_splits(None)
+    ):
+        resp = await client.post(
+            _EVAL_RUN_PATH, json={**_EVAL_PARAMS, "split": "train"}
+        )
+
+    assert resp.status_code == 422
+    assert "no train split configured" in resp.json()["detail"]
+    assert registry._jobs == {}
+
+
 @pytest.mark.asyncio
 async def test_run_eval_job_without_split_skips_resolution(
     client, registry, stub_eval_worker

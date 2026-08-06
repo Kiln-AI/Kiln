@@ -7345,7 +7345,7 @@ export interface components {
             concurrency?: number | null;
             /**
              * Split
-             * @description Which of the eval's dataset splits to run: train, val, or test. Fails with 422 if the eval has no filter configured for the split. Leave null to run the eval set (the test set — today's default behavior).
+             * @description Which of the eval's splits to run: train, val, or test. Resolved in the eval's own item source: a dataset filter over TaskRuns, or an EvalInput filter for EvalInput-backed (V2) evals. Fails with 422 if the eval has no filter configured for the split. Leave null to run the eval's own filter (the test set — today's default behavior).
              */
             split?: ("train" | "val" | "test") | null;
         };
@@ -19540,7 +19540,7 @@ export interface operations {
     get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get: {
         parameters: {
             query?: {
-                /** @description Only return results for dataset items in this split of the eval (train, val, or test). 422 if the eval has no filter configured for the split. Omit to return all results (no split filtering). */
+                /** @description Only return results for items in this split of the eval (train, val, or test). Resolved in the eval's own item source: a dataset filter over TaskRuns, or an EvalInput filter for EvalInput-backed (V2) evals. 422 if the eval has no filter configured for the split. Omit to return all results (no split filtering). */
                 split?: ("train" | "val" | "test") | null;
             };
             header?: never;

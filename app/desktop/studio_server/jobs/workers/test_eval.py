@@ -33,8 +33,12 @@ from kiln_ai.datamodel import (
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
+    EvalInput,
     EvalOutputScore,
     EvalRun,
+    MultiTurnSyntheticEvalInputData,
+    SyntheticUserInfo,
+    UserMessage,
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
@@ -1118,6 +1122,173 @@ async def test_compute_state_follows_split_filter(
 def test_split_rejects_unknown_value():
     with pytest.raises(ValidationError):
         _params_with_split("golden")
+
+
+# -- EvalInput-backed (V2) splits --------------------------------------------
+
+
+@pytest.fixture
+def v2_eval(task):
+    """An EvalInput-backed eval: its own filter is the test universe, with
+    train/val tags reinterpreted as EvalInput filters."""
+    eval = Eval(
+        id="eval1",
+        name="V2 Eval",
+        description="test",
+        eval_input_filter_id="tag::v2_test",
+        eval_configs_filter_id="tag::golden",
+        train_set_filter_id="tag::v2_train",
+        val_set_filter_id="tag::v2_val",
+        output_scores=[
+            EvalOutputScore(
+                name="Accuracy",
+                instruction="Check accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    return eval
+
+
+@pytest.fixture
+def v2_eval_config(v2_eval):
+    eval_config = EvalConfig(
+        id="eval_config1",
+        name="Test Eval Config",
+        model_name="gpt-4",
+        model_provider="openai",
+        properties={"eval_steps": ["step1", "step2"]},
+        parent=v2_eval,
+    )
+    eval_config.save_to_file()
+    return eval_config
+
+
+def _make_eval_input(task, tag: str) -> EvalInput:
+    eval_input = EvalInput(
+        data=MultiTurnSyntheticEvalInputData(
+            first_message=UserMessage(text=f"seed {tag}"),
+            synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+        ),
+        tags=[tag],
+        parent=task,
+    )
+    eval_input.save_to_file()
+    return eval_input
+
+
+def _make_v2_eval_run(eval_config, eval_input_id, run_config_id) -> EvalRun:
+    eval_run = EvalRun(
+        parent=eval_config,
+        eval_input_id=eval_input_id,
+        task_run_config_id=run_config_id,
+        input="test",
+        output="test",
+        scores={"accuracy": 1.0},
+    )
+    eval_run.save_to_file()
+    return eval_run
+
+
+@pytest.mark.parametrize(
+    "split,expected_filter",
+    [
+        # "test" is the eval's own filter, so it matches the no-split default.
+        ("test", "tag::v2_test"),
+        ("train", "tag::v2_train"),
+        ("val", "tag::v2_val"),
+    ],
+)
+def test_build_eval_runner_v2_split_sets_eval_input_override(
+    resolve_project, task, v2_eval, v2_eval_config, run_config, split, expected_filter
+):
+    runner = EvalJobWorker()._build_eval_runner(_params_with_split(split))
+
+    assert runner.eval_input_filter_id_override == expected_filter
+    # The TaskRun-side override stays unset: a split never crosses item sources.
+    assert runner.eval_set_filter_id_override is None
+
+
+def test_build_eval_runner_v2_no_split_no_override(
+    resolve_project, task, v2_eval, v2_eval_config, run_config, params
+):
+    runner = EvalJobWorker()._build_eval_runner(params)
+
+    assert runner.eval_input_filter_id_override is None
+    assert runner.eval_set_filter_id_override is None
+
+
+def test_build_eval_runner_v2_split_unset_raises(
+    resolve_project, task, run_config, params
+):
+    # Same defense-in-depth as the V1 case: an in-memory V2 eval with no train
+    # filter must fail rather than silently fall back to the test universe.
+    unsplit_eval = Eval(
+        id="eval1",
+        name="V2 Eval",
+        description="test",
+        eval_input_filter_id="tag::v2_test",
+        eval_configs_filter_id="tag::golden",
+        output_scores=[
+            EvalOutputScore(
+                name="Accuracy",
+                instruction="Check accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        parent=task,
+    )
+    unsplit_config = EvalConfig(
+        id="eval_config1",
+        name="Test Eval Config",
+        model_name="gpt-4",
+        model_provider="openai",
+        properties={"eval_steps": ["step1", "step2"]},
+        parent=unsplit_eval,
+    )
+
+    with patch(
+        "app.desktop.studio_server.jobs.workers.eval.eval_config_from_id",
+        return_value=unsplit_config,
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            EvalJobWorker()._build_eval_runner(_params_with_split("train"))
+
+    assert exc_info.value.status_code == 422
+    assert "no train split configured" in exc_info.value.detail
+
+
+async def test_compute_state_v2_follows_split_filter(
+    resolve_project, task, v2_eval, v2_eval_config, run_config
+):
+    """Progress for a V2 split job is measured over EvalInputs in the split,
+    scored by eval_input_id — not over TaskRuns."""
+    train_inputs = [_make_eval_input(task, "v2_train") for _ in range(3)]
+    # In the test universe but not the train split: must not count.
+    _make_eval_input(task, "v2_test")
+    _make_v2_eval_run(v2_eval_config, train_inputs[0].id, run_config.id)
+
+    state = await EvalJobWorker().compute_state(_params_with_split("train"))
+
+    assert state.total == 3
+    assert state.success == 1
+    assert state.is_complete is False
+
+
+async def test_compute_state_v2_no_split_uses_eval_input_filter(
+    resolve_project, task, v2_eval, v2_eval_config, run_config, params
+):
+    """No split: the universe is still the eval's own eval_input_filter_id."""
+    _make_eval_input(task, "v2_train")
+    test_inputs = [_make_eval_input(task, "v2_test") for _ in range(2)]
+    _make_v2_eval_run(v2_eval_config, test_inputs[0].id, run_config.id)
+
+    state = await EvalJobWorker().compute_state(params)
+
+    assert state.total == 2
+    assert state.success == 1
 
 
 # -- end-to-end via registry -------------------------------------------------

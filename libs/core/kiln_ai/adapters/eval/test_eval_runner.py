@@ -483,6 +483,46 @@ def test_v2_eval_rejects_filter_override(mock_v2_eval_config, mock_run_config):
         )
 
 
+def test_v1_eval_rejects_eval_input_filter_override(mock_eval_config, mock_run_config):
+    # Mirror image: an EvalInput filter cannot scope a TaskRun-backed eval.
+    with pytest.raises(
+        ValueError,
+        match="only supported for EvalInput-backed",
+    ):
+        EvalRunner(
+            eval_configs=[mock_eval_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+            eval_input_filter_id_override="tag::train_tag",
+        )
+
+
+def test_eval_config_eval_rejects_eval_input_filter_override(mock_v2_eval_config):
+    with pytest.raises(
+        ValueError,
+        match="Mode 'eval_config_eval' does not support an eval set filter override",
+    ):
+        EvalRunner(
+            eval_configs=[mock_v2_eval_config],
+            run_configs=None,
+            eval_run_type="eval_config_eval",
+            eval_input_filter_id_override="tag::train_tag",
+        )
+
+
+def test_rejects_both_filter_overrides(mock_v2_eval_config, mock_run_config):
+    # An eval has exactly one item source, so two overrides means the caller
+    # resolved the split twice.
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        EvalRunner(
+            eval_configs=[mock_v2_eval_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+            eval_set_filter_id_override="tag::train_tag",
+            eval_input_filter_id_override="tag::train_tag",
+        )
+
+
 def test_collect_tasks_excludes_already_run_eval_config_eval(
     mock_task, data_source, mock_eval_config, mock_eval, mock_run_config
 ):
@@ -1522,6 +1562,48 @@ class TestCollectTasksForEvalInput:
             assert isinstance(job.item, EvalInput)
             assert job.type == "task_run_eval"
             assert job.task_run_config is mock_run_config
+
+    def test_eval_input_filter_id_override_replaces_universe(
+        self, mock_v2_eval_config, mock_run_config, mock_eval_inputs
+    ):
+        """The override replaces eval_input_filter_id — it does not intersect
+        with it. mock_v2_eval's own filter is "all", so an override that
+        selects one item must yield exactly that item."""
+        runner = EvalRunner(
+            eval_configs=[mock_v2_eval_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+            eval_input_filter_id_override="tag::greeting",
+        )
+        jobs = runner.collect_tasks()
+
+        assert len(jobs) == 1
+        assert jobs[0].item.id == "ei_2"
+
+    def test_eval_input_override_still_excludes_already_run(
+        self, mock_v2_eval_config, mock_run_config, mock_eval_inputs
+    ):
+        """The already-run exclusion is item-grained and unaffected by the
+        override: re-running a split skips items it has already scored."""
+        EvalRun(
+            parent=mock_v2_eval_config,
+            eval_input_id="ei_1",
+            task_run_config_id=mock_run_config.id,
+            eval_config_eval=False,
+            scores={"accuracy": 1.0},
+            input="What is 2+2?",
+            output="4",
+        ).save_to_file()
+
+        runner = EvalRunner(
+            eval_configs=[mock_v2_eval_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+            eval_input_filter_id_override="tag::math",
+        )
+        jobs = runner.collect_tasks()
+
+        assert len(jobs) == 0
 
     def test_tag_filter(self, mock_task, mock_run_config, mock_eval_inputs):
         eval = Eval(
