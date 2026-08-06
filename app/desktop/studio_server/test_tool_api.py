@@ -12,6 +12,7 @@ from app.desktop.studio_server.tool_api import (
 )
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
@@ -951,6 +952,44 @@ def test_get_available_tools_builtin_ai_models_always_present(client, test_proje
         assert by_id["kiln_tool::llm"]["function_name"] == "llm"
         assert by_id["kiln_tool::llm_judge"]["name"] == "LLM Judge"
         assert by_id["kiln_tool::llm_judge"]["function_name"] == "llm_judge"
+
+
+def test_get_available_tools_code_tools_use_display_name(client, test_project):
+    """Code tools expose their display name (not the function name), since several
+    code tools can share a function name. The function name is returned separately."""
+    for display_name in ["Doc Search V1", "Doc Search V2"]:
+        CodeTool(
+            parent=test_project,
+            name=display_name,
+            tool_function_name="search_docs",
+            tool_description="Search the docs",
+            parameters_schema={"type": "object", "properties": {}},
+            code="def run():\n    return 1\n",
+        ).save_to_file()
+
+    with (
+        patch(
+            "app.desktop.studio_server.tool_api.project_from_id"
+        ) as mock_project_from_id,
+        patch("app.desktop.studio_server.tool_api.Config.shared") as mock_config,
+    ):
+        mock_project_from_id.return_value = test_project
+        mock_config_instance = Mock()
+        mock_config_instance.enable_demo_tools = False
+        mock_config_instance.user_id = "test_user"
+        mock_config.return_value = mock_config_instance
+
+        response = client.get(f"/api/projects/{test_project.id}/available_tools")
+
+    assert response.status_code == 200
+    code_tool_sets = [s for s in response.json() if s["type"] == "code"]
+    assert len(code_tool_sets) == 1
+    tools = code_tool_sets[0]["tools"]
+    assert sorted(tool["name"] for tool in tools) == [
+        "Doc Search V1",
+        "Doc Search V2",
+    ]
+    assert {tool["function_name"] for tool in tools} == {"search_docs"}
 
 
 async def test_create_tool_server_whitespace_handling(
@@ -3578,11 +3617,12 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
             rag_set = next(s for s in result if s["set_name"] == "Search Tools (RAG)")
             assert len(rag_set["tools"]) == 2
 
-            # Verify RAG tool details
+            # Verify RAG tool details: the user-facing config name is the tool
+            # name, and the model-facing tool name is the function name.
             tool_names = [tool["name"] for tool in rag_set["tools"]]
 
-            assert "test_rag_config_1" in tool_names
-            assert "test_rag_config_2" in tool_names
+            assert "Test RAG Config 1" in tool_names
+            assert "Test RAG Config 2" in tool_names
 
             # Verify tool IDs are properly formatted
             for tool in rag_set["tools"]:
@@ -3590,20 +3630,16 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
 
             # Find specific tools and check their descriptions
             config1_tool = next(
-                t for t in rag_set["tools"] if t["name"] == "test_rag_config_1"
+                t for t in rag_set["tools"] if t["name"] == "Test RAG Config 1"
             )
-            assert (
-                config1_tool["description"]
-                == "Test RAG Config 1: First test RAG configuration"
-            )
+            assert config1_tool["function_name"] == "test_rag_config_1"
+            assert config1_tool["description"] == "First test RAG configuration"
 
             config2_tool = next(
-                t for t in rag_set["tools"] if t["name"] == "test_rag_config_2"
+                t for t in rag_set["tools"] if t["name"] == "Test RAG Config 2"
             )
-            assert (
-                config2_tool["description"]
-                == "Test RAG Config 2: Second test RAG configuration"
-            )
+            assert config2_tool["function_name"] == "test_rag_config_2"
+            assert config2_tool["description"] == "Second test RAG configuration"
 
 
 async def test_get_available_tools_with_rag_and_mcp(client, test_project):
@@ -3813,7 +3849,8 @@ async def test_available_tools_excludes_archived_rag_and_kiln_task_tools(
 
         # Only the active RAG config should be present
         assert len(rag_set["tools"]) == 1
-        assert rag_set["tools"][0]["name"] == "active_rag"
+        assert rag_set["tools"][0]["name"] == "Active RAG"
+        assert rag_set["tools"][0]["function_name"] == "active_rag"
 
         # Only the active kiln task tool should be present
         assert len(kiln_task_set["tools"]) == 1

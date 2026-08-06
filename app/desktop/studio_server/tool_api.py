@@ -324,9 +324,12 @@ def connect_tool_servers_api(app: FastAPI):
         if rag_configs:
             tools = [
                 ToolApiDescription(
+                    # Use the user-facing config name, not the model-facing tool
+                    # name: tool pickers show the name and the function name
+                    # separately, so the name doesn't need to be in description.
                     id=build_rag_tool_id(rag_config.id),
-                    name=rag_config.tool_name,
-                    description=f"{rag_config.name}: {rag_config.tool_description}",
+                    name=rag_config.name,
+                    description=rag_config.tool_description,
                     function_name=rag_config.tool_name,
                 )
                 for rag_config in rag_configs
@@ -453,8 +456,11 @@ def connect_tool_servers_api(app: FastAPI):
         if code_tools:
             code_tool_items = [
                 ToolApiDescription(
+                    # Use the user-facing display name (like the tools list page).
+                    # Several code tools can share a function name, so the display
+                    # name is what tells them apart in tool pickers.
                     id=build_code_tool_id(ct.id),
-                    name=ct.tool_function_name,
+                    name=ct.name,
                     description=ct.tool_description,
                     function_name=ct.tool_function_name,
                 )
