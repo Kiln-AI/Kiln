@@ -15,6 +15,7 @@ from kiln_ai.datamodel.eval import (
     EvalConfig,
     EvalScores,
     EvalTaskInput,
+    SkippedReason,
     V2EvalResult,
 )
 from kiln_ai.run_context import get_eval_input_id
@@ -23,6 +24,12 @@ from kiln_ai.tools.sandbox_bridge import NestedToolServer, run_bridged_child
 
 _trust_lock = Lock()
 _trusted_projects: set[str] = set()
+
+# A scorer may return exactly {SKIP_SENTINEL_KEY: "<reason>"} instead of scores
+# to record the run as skipped (not applicable). Skipped runs count as complete
+# but are excluded from score aggregates, so a self-gating eval's mean becomes
+# its rate over applicable runs rather than being diluted by clean-or-NA 1.0s.
+SKIP_SENTINEL_KEY = "__skipped__"
 
 
 def add_code_trust(project_path: str) -> None:
@@ -110,6 +117,18 @@ class CodeEvalAdapter(BaseV2EvalBridge):
         if not isinstance(raw_scores, dict):
             raise RuntimeError(
                 f"Scorer must return a dict, got {type(raw_scores).__name__}"
+            )
+
+        if set(raw_scores.keys()) == {SKIP_SENTINEL_KEY}:
+            detail = raw_scores[SKIP_SENTINEL_KEY]
+            if not isinstance(detail, str) or not detail:
+                raise RuntimeError(
+                    f"{SKIP_SENTINEL_KEY} must carry a non-empty reason string, "
+                    f"got {detail!r}"
+                )
+            return V2EvalResult(
+                skipped_reason=SkippedReason.not_applicable,
+                skipped_detail=detail,
             )
 
         scores = self._validate_scores(raw_scores)

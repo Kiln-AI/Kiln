@@ -17,6 +17,7 @@ from kiln_ai.datamodel.eval import (
     EvalConfigType,
     EvalOutputScore,
     EvalTaskInput,
+    SkippedReason,
 )
 from kiln_ai.tools.sandbox_bridge import BridgeResult
 
@@ -123,6 +124,51 @@ class TestCodeEvalAdapterEvaluate:
         assert result.scores == {"accuracy": 0.95}
         assert result.skipped_reason is None
         assert result.skipped_detail is None
+
+    @pytest.mark.asyncio
+    async def test_skip_sentinel_returns_not_applicable(self):
+        cfg = _make_config()
+        adapter = CodeEvalAdapter(cfg)
+
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(
+                result_msg={
+                    "type": "result",
+                    "ok": {"__skipped__": "no mutation in trace"},
+                }
+            )
+            result = await adapter.evaluate(_inp())
+
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.not_applicable
+        assert result.skipped_detail == "no mutation in trace"
+
+    @pytest.mark.asyncio
+    async def test_skip_sentinel_requires_reason_string(self):
+        cfg = _make_config()
+        adapter = CodeEvalAdapter(cfg)
+
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(
+                result_msg={"type": "result", "ok": {"__skipped__": ""}}
+            )
+            with pytest.raises(RuntimeError, match="non-empty reason string"):
+                await adapter.evaluate(_inp())
+
+    @pytest.mark.asyncio
+    async def test_skip_sentinel_beside_scores_is_a_key_mismatch(self):
+        cfg = _make_config()
+        adapter = CodeEvalAdapter(cfg)
+
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(
+                result_msg={
+                    "type": "result",
+                    "ok": {"accuracy": 1.0, "__skipped__": "half-skip"},
+                }
+            )
+            with pytest.raises(RuntimeError, match="Score key mismatch"):
+                await adapter.evaluate(_inp())
 
     @pytest.mark.asyncio
     async def test_timeout_raises_runtime_error(self):
