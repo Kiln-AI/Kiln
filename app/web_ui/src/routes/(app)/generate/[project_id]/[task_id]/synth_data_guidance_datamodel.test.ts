@@ -244,6 +244,62 @@ describe("SynthDataGuidanceDataModel", () => {
       )
     })
 
+    it("should keep the custom template for tool_call evals with no resolvable tool", async () => {
+      const mockEval = {
+        id: "eval1",
+        name: "Tool Eval",
+        template: "tool_call",
+        template_properties: null,
+      } as unknown as Eval
+
+      mockClient.GET.mockResolvedValue({
+        data: mockEval,
+        error: null,
+      })
+
+      await model.load(
+        null,
+        "proj1::task1::eval1",
+        "proj1",
+        "task1",
+        "eval",
+        mockTask,
+        {},
+      )
+
+      expect(get(model.selected_template)).toBe("custom")
+      expect(get(model.loading_error)).toBe(null)
+    })
+
+    it("should select the tool use template for tool_call evals with a legacy tool property", async () => {
+      const mockEval = {
+        id: "eval1",
+        name: "Tool Eval",
+        template: "tool_call",
+        template_properties: { tool: "search_tool" },
+      } as unknown as Eval
+
+      mockClient.GET.mockResolvedValue({
+        data: mockEval,
+        error: null,
+      })
+
+      await model.load(
+        null,
+        "proj1::task1::eval1",
+        "proj1",
+        "task1",
+        "eval",
+        mockTask,
+        {},
+      )
+
+      expect(get(model.selected_template)).toBe(
+        "appropriate_tool_use_eval_template",
+      )
+      expect(get(model.topic_guidance)).toContain("search_tool")
+    })
+
     it("should handle API errors gracefully", async () => {
       mockClient.GET.mockResolvedValue({
         data: null,
@@ -499,6 +555,50 @@ describe("SynthDataGuidanceDataModel", () => {
       expect(guidance).toContain("Good example")
       expect(guidance).toContain("Bad example")
       expect(guidance).toContain("fail to exhibit")
+    })
+
+    it("should apply appropriate_tool_use eval template when the tool name is available", () => {
+      const mockEval = {
+        id: "eval1",
+        name: "Tool Eval",
+        template: "tool_call",
+        template_properties: { tool: "search_tool" },
+      } as unknown as Eval
+
+      model["evaluator"] = mockEval
+      model["apply_selected_template"]("appropriate_tool_use_eval_template")
+
+      const guidance = get(model.topic_guidance)
+      expect(guidance).toContain("search_tool")
+      expect(get(model.loading_error)).toBe(null)
+    })
+
+    it("should set loading_error instead of throwing when the tool name is missing", () => {
+      const mockEval = {
+        id: "eval1",
+        name: "Tool Eval",
+        template: "tool_call",
+        template_properties: null,
+      } as unknown as Eval
+
+      model["evaluator"] = mockEval
+
+      // Applied via the selected_template subscription, exactly like the real
+      // flow. A throw escaping a store subscriber permanently breaks every
+      // svelte store subscription in the app, so it must be caught inside.
+      expect(() =>
+        model.selected_template.set("appropriate_tool_use_eval_template"),
+      ).not.toThrow()
+
+      expect(get(model.loading_error)).toBeTruthy()
+      expect(get(model.topic_guidance)).toBe(null)
+
+      // Store subscriptions must keep working after the failed template apply
+      let observed: string | null = null
+      const unsub = model.selected_template.subscribe((v) => (observed = v))
+      model.selected_template.set("custom")
+      expect(observed).toBe("custom")
+      unsub()
     })
   })
 

@@ -136,7 +136,12 @@ export class SynthDataGuidanceDataModel {
         this.selected_template.set("desired_behaviour_eval_template")
       } else if (this.evaluator.template === "kiln_requirements") {
         this.selected_template.set("requirements_eval_template")
-      } else if (this.evaluator.template === "tool_call") {
+      } else if (
+        this.evaluator.template === "tool_call" &&
+        this.resolved_tool_name(this.evaluator)
+      ) {
+        // Only auto-select when the tool name is resolvable — the template
+        // can't be built without it (fall back to custom guidance instead).
         this.selected_template.set("appropriate_tool_use_eval_template")
       }
     } catch (error) {
@@ -326,6 +331,18 @@ ${numbered}
   }
 
   private apply_selected_template(template: string) {
+    // This runs as a selected_template store subscriber. A throw here would
+    // propagate into Svelte's store flush loop and permanently break every
+    // store subscription in the app (svelte/store's shared subscriber_queue
+    // is never cleared if a subscriber throws), so surface errors instead.
+    try {
+      this.apply_selected_template_inner(template)
+    } catch (error) {
+      this.loading_error.set(createKilnError(error))
+    }
+  }
+
+  private apply_selected_template_inner(template: string) {
     if (template == "custom") {
       this.topic_guidance.set(null)
       this.input_guidance.set(null)
@@ -814,19 +831,22 @@ When generating model inputs, generate inputs that are likely to cause the model
     return template
   }
 
+  // Spec uses different keys than legacy eval template_properties
+  // Spec: tool_function_name, Legacy: tool
+  private resolved_tool_name(tool_call: Eval | null): string | undefined {
+    const spec_properties = this.spec?.properties
+    if (spec_properties?.spec_type === "appropriate_tool_use") {
+      return spec_properties?.tool_function_name
+    }
+    return tool_call?.template_properties?.tool as string | undefined
+  }
+
   private appropriate_tool_use_eval_template(
     tool_call: Eval,
     task_type: "topics" | "inputs" | "outputs",
   ): string {
-    // Spec uses different keys than legacy eval template_properties
-    // Spec: tool_function_name, Legacy: tool
     const spec_properties = this.spec?.properties
-    let tool: string | undefined = undefined
-    if (spec_properties?.spec_type === "appropriate_tool_use") {
-      tool = spec_properties?.tool_function_name
-    } else {
-      tool = tool_call.template_properties?.tool as string
-    }
+    const tool = this.resolved_tool_name(tool_call)
     if (!tool) {
       throw new Error("Tool is required for tool call template")
     }
