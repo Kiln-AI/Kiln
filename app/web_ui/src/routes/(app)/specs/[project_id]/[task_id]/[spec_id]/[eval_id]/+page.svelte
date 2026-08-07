@@ -29,6 +29,7 @@
   } from "$lib/utils/eval_types/eval_type_display"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { tagFromFilterId, linkFromFilterId } from "../../spec_utils"
+  import { available_tools, load_available_tools } from "$lib/stores"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -69,6 +70,9 @@
     await tick()
     load_model_info()
     load_available_models()
+    // Used to map a tool_call_check judge's tool names to a tool id when
+    // launching the add-data flow.
+    load_available_tools(req_project_id)
     await Promise.all([
       get_spec(req_project_id, req_task_id, req_spec_id),
       get_eval(req_project_id, req_task_id, req_eval_id),
@@ -571,25 +575,63 @@
       }
     }
 
-    // Add tool_id for tool call evals
-    // Spec uses different keys than legacy eval template_properties
-    // Spec: tool_function_name, Legacy: tool
+    // Add tool_id for tool call evals so generation can enable the tool.
+    // Each era keeps it somewhere different: appropriate_tool_use specs store
+    // tool_id, legacy tool_call-template evals store it in
+    // template_properties, and new-style tool evals (template-less, scored by
+    // the tool_call_check judge) list tool function names on the judge.
+    let tool_id: string | undefined = undefined
     if (evaluator.template === "tool_call") {
       const spec_properties = spec?.properties
-      let tool_id: string | undefined = undefined
       if (spec_properties?.spec_type === "appropriate_tool_use") {
         tool_id = spec_properties?.tool_id
       } else {
         tool_id = evaluator.template_properties?.tool_id as string | undefined
       }
-      if (tool_id) {
-        params.set("tool_id", String(tool_id))
-      }
+    } else {
+      tool_id = tool_id_from_judge()
+    }
+    if (tool_id) {
+      params.set("tool_id", String(tool_id))
     }
 
     const url = `/dataset/${project_id}/${task_id}/add_data?${params.toString()}`
     show_progress_ui("When you're done adding data, ", 2)
     goto(url)
+  }
+
+  // The tool id for the first expected tool of a tool_call_check default
+  // judge, resolved by function name from the project's available tools.
+  // Undefined for other judge types, unknown tools, or before tools load —
+  // the add-data flow works without it, the tool just isn't pre-enabled.
+  function tool_id_from_judge(): string | undefined {
+    const judge_properties = eval_progress?.current_eval_method?.properties as
+      | Record<string, unknown>
+      | null
+      | undefined
+    if (judge_properties?.["type"] !== "tool_call_check") {
+      return undefined
+    }
+    const expected_tools = judge_properties["expected_tools"]
+    if (!Array.isArray(expected_tools) || expected_tools.length === 0) {
+      return undefined
+    }
+    const first = expected_tools[0]
+    const function_name =
+      first && typeof first === "object"
+        ? (first as { tool_name?: unknown }).tool_name
+        : undefined
+    if (typeof function_name !== "string" || !function_name) {
+      return undefined
+    }
+    for (const tool_set of $available_tools[project_id] ?? []) {
+      for (const tool of tool_set.tools) {
+        if ((tool.function_name ?? tool.name) === function_name) {
+          return tool.id
+        }
+      }
+    }
+    return undefined
   }
 
   function show_progress_ui(body: string, step: number) {

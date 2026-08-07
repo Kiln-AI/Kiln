@@ -271,6 +271,55 @@ describe("SynthDataGuidanceDataModel", () => {
       expect(get(model.loading_error)).toBe(null)
     })
 
+    it("should select the tool use template for template-less evals with a tool_call_check judge", async () => {
+      const mockEval = {
+        id: "eval1",
+        name: "Tool Eval",
+        template: null,
+        template_properties: null,
+        current_config_id: "config1",
+      } as unknown as Eval
+
+      ;(client.GET as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+        (url: string) => {
+          if (url.includes("eval_configs")) {
+            return Promise.resolve({
+              data: [
+                {
+                  id: "config1",
+                  config_type: "v2",
+                  properties: {
+                    type: "tool_call_check",
+                    expected_tools: [
+                      { tool_name: "search_tool" },
+                      { tool_name: "lookup_tool" },
+                    ],
+                  },
+                },
+              ],
+              error: null,
+            })
+          }
+          return Promise.resolve({ data: mockEval, error: null })
+        },
+      )
+
+      await model.load(
+        null,
+        "proj1::task1::eval1",
+        "proj1",
+        "task1",
+        "eval",
+        mockTask,
+        {},
+      )
+
+      expect(get(model.selected_template)).toBe(
+        "appropriate_tool_use_eval_template",
+      )
+      expect(get(model.topic_guidance)).toContain("search_tool, lookup_tool")
+    })
+
     it("should select the tool use template for tool_call evals with a legacy tool property", async () => {
       const mockEval = {
         id: "eval1",

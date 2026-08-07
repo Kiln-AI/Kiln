@@ -42,10 +42,10 @@
   }
 
   // The programmatic checks section: judges chosen directly, without a
-  // template. Tool Call Check routes through its template so the eval records
-  // template: "tool_call" (no spec is created — the judge form collects the
-  // tool list); the rest create template-less evals via the spec builder's
-  // judge-only mode.
+  // template. All of them create spec-less, template-less evals via the spec
+  // builder's judge-only mode — the judge form collects any config it needs
+  // (e.g. the tool list for Tool Call Check). The legacy "tool_call" template
+  // is reserved for pre-spec LLM tool evals and is never recorded on new ones.
   const programmatic_judge_types: V2EvalType[] = [
     "code_eval",
     "tool_call_check",
@@ -70,9 +70,8 @@
   const all_templates = spec_categories.flatMap(
     (category) => category.templates,
   )
-  const tool_call_template = all_templates.find(
-    (t) => t.spec_type === "appropriate_tool_use",
-  )
+  // Tool use is offered as the Tool Call Check programmatic judge, not an LLM
+  // template.
   const llm_templates = all_templates.filter(
     (t) => t.spec_type !== "appropriate_tool_use",
   )
@@ -105,10 +104,6 @@
   }
 
   function select_programmatic_option(id: string) {
-    if (id === "tool_call_check" && tool_call_template) {
-      select_template(tool_call_template)
-      return
-    }
     goto(judge_only_builder_url(project_id, task_id, id as V2EvalType))
   }
 </script>

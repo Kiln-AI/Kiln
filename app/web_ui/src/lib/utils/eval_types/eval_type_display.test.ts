@@ -52,6 +52,11 @@ describe("eval_type_display", () => {
     expect(eval_type_display(null, make_eval("toxicity"), "g_eval")).toBe(
       "Legacy LLM (Toxicity)",
     )
+    // Legacy tool evals keep their V1 name — "Tool Call Check" is reserved
+    // for the new programmatic judge.
+    expect(eval_type_display(null, make_eval("tool_call"), "g_eval")).toBe(
+      "Legacy LLM (Appropriate Tool Use)",
+    )
     // Legacy custom-goal evals: no template, V1 judge.
     expect(eval_type_display(null, make_eval(null), "g_eval")).toBe(
       "Legacy LLM",

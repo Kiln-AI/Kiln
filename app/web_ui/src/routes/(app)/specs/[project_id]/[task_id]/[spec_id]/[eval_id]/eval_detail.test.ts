@@ -101,6 +101,13 @@ vi.mock("$lib/stores", () => ({
   load_model_info: vi.fn(),
   model_name: () => "",
   load_available_models: vi.fn(),
+  available_tools: {
+    subscribe: (fn: (v: Record<string, never>) => void) => {
+      fn({})
+      return () => {}
+    },
+  },
+  load_available_tools: vi.fn(),
 }))
 
 vi.mock("$lib/stores/progress_ui_store", () => ({

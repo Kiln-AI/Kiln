@@ -16,7 +16,9 @@ const LEGACY_JUDGE_TYPES = new Set(["g_eval", "llm_as_judge"])
 const TEMPLATE_FLAVORS: Record<string, string> = {
   desired_behaviour: "Desired Behaviour",
   kiln_issue: "Issue",
-  tool_call: "Tool Call",
+  // The V1 name for the tool_call template; only legacy evals carry it (new
+  // tool evals are the template-less Tool Call Check programmatic judge).
+  tool_call: "Appropriate Tool Use",
   toxicity: "Toxicity",
   bias: "Bias",
   maliciousness: "Maliciousness",

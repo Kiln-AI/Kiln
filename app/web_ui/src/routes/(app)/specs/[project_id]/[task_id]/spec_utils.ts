@@ -53,10 +53,12 @@ export function implied_judge_for_spec_type(spec_type: SpecType): V2EvalType {
 }
 
 /**
- * The EvalTemplateId recorded on evals created without a spec. Tool call is
- * the only template that still creates spec-less evals; the open-ended
+ * The EvalTemplateId recorded on evals created without a spec. The open-ended
  * behaviour mappings are kept for flows that record a template after the fact.
- * Mirrors the server's spec_eval_template.
+ * Tool use deliberately maps to none: the legacy "tool_call" template means a
+ * pre-spec LLM judge over the trace, while new tool evals are the Tool Call
+ * Check programmatic judge — recording the legacy template on them would
+ * conflate the two. Mirrors the server's spec_eval_template.
  */
 export function eval_template_for_spec_type(
   spec_type: SpecType,
@@ -66,8 +68,6 @@ export function eval_template_for_spec_type(
       return "desired_behaviour"
     case "issue":
       return "kiln_issue"
-    case "appropriate_tool_use":
-      return "tool_call"
     default:
       return null
   }

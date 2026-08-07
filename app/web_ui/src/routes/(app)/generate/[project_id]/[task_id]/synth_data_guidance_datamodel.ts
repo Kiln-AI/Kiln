@@ -137,11 +137,14 @@ export class SynthDataGuidanceDataModel {
       } else if (this.evaluator.template === "kiln_requirements") {
         this.selected_template.set("requirements_eval_template")
       } else if (
-        this.evaluator.template === "tool_call" &&
+        (this.evaluator.template === "tool_call" ||
+          this.judge_expected_tool_names() !== undefined) &&
         this.resolved_tool_name(this.evaluator)
       ) {
-        // Only auto-select when the tool name is resolvable — the template
-        // can't be built without it (fall back to custom guidance instead).
+        // Tool evals in either era: the legacy tool_call template, or a
+        // template-less eval scored by the tool_call_check judge. Only
+        // auto-select when the tool name is resolvable — the template can't
+        // be built without it (fall back to custom guidance instead).
         this.selected_template.set("appropriate_tool_use_eval_template")
       }
     } catch (error) {
@@ -831,14 +834,46 @@ When generating model inputs, generate inputs that are likely to cause the model
     return template
   }
 
-  // Spec uses different keys than legacy eval template_properties
-  // Spec: tool_function_name, Legacy: tool
+  // The tool being evaluated, wherever this eval keeps it: appropriate_tool_use
+  // specs store tool_function_name, legacy tool_call-template evals store a
+  // tool property, and new-style tool evals (template-less, scored by the
+  // tool_call_check judge) list expected tools on the judge config.
   private resolved_tool_name(tool_call: Eval | null): string | undefined {
     const spec_properties = this.spec?.properties
     if (spec_properties?.spec_type === "appropriate_tool_use") {
       return spec_properties?.tool_function_name
     }
-    return tool_call?.template_properties?.tool as string | undefined
+    const legacy_tool = tool_call?.template_properties?.tool as
+      | string
+      | undefined
+    if (legacy_tool) {
+      return legacy_tool
+    }
+    return this.judge_expected_tool_names()
+  }
+
+  // Tool names from a tool_call_check default judge, joined for display when
+  // the judge checks more than one tool. Undefined for any other judge type.
+  private judge_expected_tool_names(): string | undefined {
+    const judge_properties = this.default_judge?.properties as
+      | Record<string, unknown>
+      | null
+      | undefined
+    if (judge_properties?.["type"] !== "tool_call_check") {
+      return undefined
+    }
+    const expected_tools = judge_properties["expected_tools"]
+    if (!Array.isArray(expected_tools)) {
+      return undefined
+    }
+    const names = expected_tools
+      .map((t) =>
+        t && typeof t === "object"
+          ? (t as { tool_name?: unknown }).tool_name
+          : undefined,
+      )
+      .filter((n): n is string => typeof n === "string" && n.length > 0)
+    return names.length > 0 ? names.join(", ") : undefined
   }
 
   private appropriate_tool_use_eval_template(
@@ -1054,7 +1089,12 @@ When generating ${task_type}, use these guidelines to create test cases that are
           description:
             "Generate data expected to trigger the requirements of a specific eval.",
         })
-      } else if (evaluator.template === "tool_call") {
+      } else if (
+        evaluator.template === "tool_call" ||
+        this.judge_expected_tool_names() !== undefined
+      ) {
+        // Legacy tool_call-template evals and new tool_call_check-judge evals
+        // share the same generation guidance.
         eval_options.push({
           label: "Appropriate Tool Use",
           value: "appropriate_tool_use_eval_template",

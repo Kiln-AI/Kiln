@@ -91,22 +91,18 @@ describe("implied_judge_for_spec_type", () => {
 })
 
 describe("eval_template_for_spec_type", () => {
-  // Spec-less evals record their origin template. Every template that can
-  // reach a non-LLM judge (and so save without a spec) must have a mapping.
-  it("maps every template that can reach a non-LLM judge", () => {
-    const non_llm_reachable = ALL_SPEC_TYPES.filter(
-      (spec_type) => implied_judge_for_spec_type(spec_type) !== "llm_judge",
-    )
-    for (const spec_type of non_llm_reachable) {
-      expect(eval_template_for_spec_type(spec_type)).not.toBeNull()
-    }
+  it("maps the open behaviour templates", () => {
     expect(eval_template_for_spec_type("issue")).toBe("kiln_issue")
     expect(eval_template_for_spec_type("desired_behaviour")).toBe(
       "desired_behaviour",
     )
-    expect(eval_template_for_spec_type("appropriate_tool_use")).toBe(
-      "tool_call",
-    )
+  })
+
+  // The legacy "tool_call" template means a pre-spec LLM judge over the
+  // trace; new tool evals are the template-less Tool Call Check judge, so
+  // recording that template on them would conflate the two.
+  it("never records the legacy tool_call template on new tool evals", () => {
+    expect(eval_template_for_spec_type("appropriate_tool_use")).toBe(null)
   })
 })
 

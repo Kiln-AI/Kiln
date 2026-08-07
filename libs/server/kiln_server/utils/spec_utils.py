@@ -46,10 +46,16 @@ def spec_eval_data_type(
 
 
 def spec_eval_template(spec_type: SpecType) -> EvalTemplateId | None:
-    """Get the eval template for a spec type."""
+    """Get the eval template for a spec type.
+
+    Tool use deliberately maps to None: the legacy "tool_call" template means a
+    pre-spec LLM judge over the full trace, while new tool evals are scored by
+    the tool_call_check programmatic judge. Recording the legacy template on
+    them would conflate the two.
+    """
     match spec_type:
         case SpecType.appropriate_tool_use:
-            return EvalTemplateId.tool_call
+            return None
         case SpecType.reference_answer_accuracy:
             return EvalTemplateId.rag
         case SpecType.factual_correctness:

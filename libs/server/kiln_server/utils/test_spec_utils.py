@@ -66,7 +66,9 @@ class TestSpecEvalTemplate:
     @pytest.mark.parametrize(
         "spec_type,expected_template",
         [
-            (SpecType.appropriate_tool_use, EvalTemplateId.tool_call),
+            # The legacy tool_call template is reserved for pre-spec LLM tool
+            # evals; new tool evals are scored by the tool_call_check judge.
+            (SpecType.appropriate_tool_use, None),
             (SpecType.reference_answer_accuracy, EvalTemplateId.rag),
             (SpecType.factual_correctness, EvalTemplateId.factual_correctness),
             (SpecType.toxicity, EvalTemplateId.toxicity),
