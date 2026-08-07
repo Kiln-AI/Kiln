@@ -556,17 +556,6 @@
     }
   }
 
-  function skipped_step_tooltip(step: number): string {
-    switch (step) {
-      case 2:
-        return `Skipped: your datasets are below the recommended minimum of ${MIN_DATASET_SIZE} items. You can still run the eval, but results may not be representative.`
-      case 3:
-        return "Skipped: your golden dataset isn't fully rated by humans. Rate it anytime to check how well your judge matches human preferences."
-      default:
-        return "Skipped: without complete human ratings, judge accuracy can't be validated. You can still run the eval with the judge you picked."
-    }
-  }
-
   function add_eval_data() {
     if (!evaluator) {
       alert("Unable to add eval data. Please try again later.")
@@ -782,17 +771,6 @@
                 >
                   <div class="font-medium">
                     {step_title}
-                    {#if skipped_steps.has(step)}
-                      <span
-                        class="badge badge-warning badge-outline badge-sm ml-1 align-middle cursor-default tooltip {step <
-                        4
-                          ? 'tooltip-bottom'
-                          : 'tooltip-top'}"
-                        data-tip={skipped_step_tooltip(step)}
-                      >
-                        Skipped
-                      </span>
-                    {/if}
                     {#if step_tooltips(evaluator)[step]}
                       <InfoTooltip
                         tooltip_text={step_tooltips(evaluator)[step]}
