@@ -38,7 +38,8 @@ from kiln_ai.cli.commands.package_project import (
     PackageForTrainingConfig,
     package_project_for_training,
 )
-from kiln_ai.datamodel import Prompt, PromptOptimizationJob
+from kiln_ai.datamodel import Prompt, PromptOptimizationJob, Task
+from kiln_ai.datamodel.eval import Eval, TaskRunSplit
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.utils.config import Config
@@ -52,6 +53,51 @@ from kiln_server.utils.agent_checks.policy import (
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
+
+
+def has_task_run_train_split(eval: Eval) -> bool:
+    """Whether this eval has a train split prompt optimization can actually use.
+
+    The remote optimization service resolves the train filter against the project zip's
+    `runs/` directory, which contains TaskRuns and nothing else, so an EvalInput-backed
+    train split is not usable and reports False rather than an empty set.
+    """
+    return isinstance(eval.splits.get("train"), TaskRunSplit)
+
+
+def reject_unusable_train_splits(task: Task, eval_ids: list[str]) -> None:
+    """Refuse a job whose evals train on items the remote service cannot read.
+
+    Phrased as "present but not usable" rather than "is an EvalInputSplit" so a new
+    SplitRef variant is refused by default instead of silently slipping through. The two
+    are equivalent while EvalInputSplit is the only other variant, but the failure mode of
+    the narrower phrasing — optimizing against an empty set — is what the check exists to
+    prevent, and nothing would flag it when the union grows.
+
+    "Usable" is deferred to has_task_run_train_split rather than re-tested here, so this
+    guard and the has_train_set that check_eval reports cannot drift apart.
+
+    A missing train split is not refused: the UI already gates start on has_train_set, and
+    refusing it here would be a wider behavior change than asked for.
+
+    Ids that name no eval on the task are left alone: this endpoint does not validate eval
+    ids, and this guard is not the place to start.
+    """
+    evals_by_id = {eval.id: eval for eval in task.evals(readonly=True)}
+    for eval_id in eval_ids:
+        eval = evals_by_id.get(eval_id)
+        if eval is None:
+            continue
+        has_train_split = eval.splits.get("train") is not None
+        if has_train_split and not has_task_run_train_split(eval):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Eval '{eval.name}' has a train split that isn't backed by dataset "
+                    "runs. Prompt optimization can only train on dataset runs, so this "
+                    "eval can't be used for prompt optimization."
+                ),
+            )
 
 
 def is_job_status_final(status: str) -> bool:
@@ -433,7 +479,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             if not eval.current_config_id:
                 return CheckEvalResponse(
                     has_default_config=False,
-                    has_train_set=bool(eval.train_set_filter_id),
+                    has_train_set=has_task_run_train_split(eval),
                     model_is_supported=False,
                 )
 
@@ -445,7 +491,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             except HTTPException:
                 return CheckEvalResponse(
                     has_default_config=False,
-                    has_train_set=bool(eval.train_set_filter_id),
+                    has_train_set=has_task_run_train_split(eval),
                     model_is_supported=False,
                 )
 
@@ -456,7 +502,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             if not model_name or not model_provider:
                 return CheckEvalResponse(
                     has_default_config=True,
-                    has_train_set=bool(eval.train_set_filter_id),
+                    has_train_set=has_task_run_train_split(eval),
                     model_is_supported=False,
                 )
 
@@ -476,7 +522,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
 
             return CheckEvalResponse(
                 has_default_config=True,
-                has_train_set=bool(eval.train_set_filter_id),
+                has_train_set=has_task_run_train_split(eval),
                 model_is_supported=response.is_model_supported,
             )
 
@@ -513,6 +559,8 @@ def connect_prompt_optimization_job_api(app: FastAPI):
         project = task.parent_project()
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
+
+        reject_unusable_train_splits(task, request.eval_ids)
 
         try:
             # Validate the run config doesn't use tools

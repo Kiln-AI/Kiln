@@ -1,3 +1,4 @@
+import json
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -39,6 +40,7 @@ from app.desktop.studio_server.utils.copilot_utils import DatasetTaskRuns
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.eval import TaskRunSplit
 from kiln_ai.datamodel.spec_properties import SpecType
 from kiln_server.custom_errors import connect_custom_errors
 
@@ -443,7 +445,7 @@ class TestCreateSpecWithCopilot:
             patch(
                 "app.desktop.studio_server.copilot_api.create_dataset_task_runs",
                 return_value=DatasetTaskRuns(),
-            ),
+            ) as mock_create_dataset_task_runs,
             patch(
                 "app.desktop.studio_server.copilot_api.generate_memorable_name",
                 return_value="test-config-name",
@@ -460,11 +462,40 @@ class TestCreateSpecWithCopilot:
         assert res["definition"] == "The system should respond politely"
         assert res["eval_id"] is not None
 
+        # Verify the dataset runs were tagged with the spec's split tags. The factory
+        # returns these so the copilot can tag the runs it generates; a mix-up here puts
+        # generated items in the wrong split's dataset, which nothing downstream notices.
+        dataset_run_kwargs = mock_create_dataset_task_runs.call_args.kwargs
+        assert dataset_run_kwargs["eval_tag"] == "eval_test_spec"
+        assert dataset_run_kwargs["train_tag"] == "train_test_spec"
+        assert dataset_run_kwargs["val_tag"] == "val_test_spec"
+        assert dataset_run_kwargs["golden_tag"] == "eval_golden_test_spec"
+
         # Verify models were saved
         evals = task.evals()
         assert len(evals) == 1
         assert evals[0].name == "Test Spec"
         assert evals[0].current_config_id is not None
+
+        assert evals[0].splits == {
+            "test": TaskRunSplit(filter_id="tag::eval_test_spec"),
+            "train": TaskRunSplit(filter_id="tag::train_test_spec"),
+            "val": TaskRunSplit(filter_id="tag::val_test_spec"),
+        }
+        # Golden is not a split, so nothing above covers it: if it pointed at the test
+        # tag, eval-config comparison would score against test items instead of golden.
+        assert evals[0].eval_configs_filter_id == "tag::eval_golden_test_spec"
+
+        # Check the raw saved eval file, not the loaded model: where each split is
+        # stored is invisible in eval.splits and visible only in the bytes. Test and
+        # train belong in their legacy fields, where older Kiln builds and the
+        # prompt-optimization zip reader look for them; val belongs in splits.
+        saved_eval = json.loads(evals[0].path.read_text())
+        assert saved_eval["eval_set_filter_id"] == "tag::eval_test_spec"
+        assert saved_eval["train_set_filter_id"] == "tag::train_test_spec"
+        assert saved_eval["splits"] == {
+            "val": {"source": "task_run", "filter_id": "tag::val_test_spec"}
+        }
 
         specs = task.specs()
         assert len(specs) == 1

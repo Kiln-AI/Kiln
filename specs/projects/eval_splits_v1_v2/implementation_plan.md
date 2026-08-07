@@ -21,7 +21,7 @@ See `functional_spec.md` for behavior and `architecture.md` for design. This is 
       `migrate_train_set_filter_id`. Plus `eval_splits.py` — `ItemKey`, `ResolvedSplit`,
       `resolve_split`, `eval_run_item_key`. (architecture §2, §3)
 
-- [ ] **Phase 3: Creation paths and prompt optimization.** `spec_utils` returns splits rather than
+- [x] **Phase 3: Creation paths and prompt optimization.** `spec_utils` returns splits rather than
       a widening tuple; `spec_api` and `copilot_api` construct `splits=` including a val split;
       prompt optimization gates on a TaskRun-backed train split and refuses an EvalInput-backed one.
       (architecture §6.4, §8) The eval-update endpoint's `splits` write landed early — phase 2 had

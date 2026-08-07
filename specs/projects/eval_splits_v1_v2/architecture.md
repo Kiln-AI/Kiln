@@ -210,7 +210,7 @@ Which one a call site wants follows from whose split it is:
 | Call site | Which | Why |
 |---|---|---|
 | Eval-update endpoint's train split (§2.6.2) | `set_split` | Exists so prompt optimization can use it; the zip reader needs the legacy field. |
-| Spec / copilot eval creation (§8) | phase 3's call | TaskRun-backed test and train splits *can* be legacy-homed; see the note in `implementation_plan.md`. |
+| Spec / copilot eval creation (§8) | `set_split` | Decided in phase 3: test and train are legacy-homed so the zip reader and older builds still see them; val stays in `splits`. See §8 and `phase_plans/phase_3.md`. |
 | A val split, or any EvalInput-backed split | either — same result | No legacy field can hold it, so both write `splits`. |
 | Tests and tooling authoring the new format | direct assignment | The point is to exercise the new format. |
 
@@ -319,8 +319,9 @@ serialized bytes. Tests over code that writes a split need to assert on the dump
 
 ### 2.7 Why the fold is not gated on `_loaded_from_file`
 
-The existing migrations gate on `self._loaded_from_file`, because they *invent* data and should
-only do so for files. The §2.5 fold invents nothing — it relocates values that are already set.
+The existing lazy migration (`Eval.upgrade_old_reference_answer_eval_config`) gates on
+`self._loaded_from_file`, because it *invents* data and should only do so for files. The §2.5
+fold invents nothing — it relocates values that are already set.
 Gating it on file loads would mean `Eval(eval_set_filter_id="tag::x")` has an empty `splits` while
 the same eval loaded from disk has a test split, which is exactly the split-brain this design
 exists to eliminate.
@@ -331,11 +332,29 @@ recorded as legacy-homed and will serialize that way, which is the same answer c
 fallback would give.
 
 There is a second reason the gate would not have worked, found while building §2.5's run-once rule:
-`_loaded_from_file` is set by the loader **after** `model_validate` returns, so a validator gated on
-it can only fire on a *later* validation pass — in practice the `self.path = path` assignment at the
-end of `load_from_file`, via `validate_assignment`. That is how the existing lazy migrations fire at
-all. A run-once validator gets no second pass, so `_loaded_from_file` inside the fold would be
-permanently false rather than merely wrong.
+the **private attribute** `_loaded_from_file` is set by the loader **after** `model_validate`
+returns, so a validator reading it directly can only fire on a *later* validation pass — in
+practice the `self.path = path` assignment at the end of `load_from_file`, via
+`validate_assignment`. A run-once validator gets no second pass, so `self._loaded_from_file` inside
+the fold would be permanently false rather than merely wrong.
+
+**That is a fact about the raw attribute, not about detecting a file load.** Corrected during phase
+3, because an earlier wording of this paragraph ("that is how the existing lazy migrations fire at
+all") could be read as *no* run-once validator can ever tell it is loading a file, which is false.
+`upgrade_old_reference_answer_eval_config` is the only validator in this repo that reads
+`self._loaded_from_file` directly, and so the only one that depends on the second pass. The working
+idiom is `self.loaded_from_file(info)` (`basemodel.py`), which checks the
+`{"loading_from_file": True}` context that `load_from_file` passes to `model_validate` *before*
+falling back to the private attribute — so it is true on the **first** validation pass, during the
+load itself. `task_run.py:226` (`validate_input_source`) and `task_output.py:377`
+(`validate_output_source`) use it that way; both are strict-mode relaxations rather than
+data-inventing migrations, which is why they are not covered by the paragraph above. A run-once
+validator **can** therefore detect a file load in this repo — it just cannot do so via the raw
+private attribute.
+
+This does not change §2.7's conclusion: the fold is ungated because it invents nothing and must
+behave identically for a loaded and a constructed eval, not because a working gate was
+unavailable.
 
 ### 2.8 Validation
 
@@ -722,18 +741,33 @@ to 422 at the API boundary via the existing handling.
 ## 8. Creation paths
 
 `spec_utils.generate_spec_eval_tags` / `generate_spec_eval_filter_ids` were widened to 4-tuples by
-#1621 (adding val). That widening is kept, but the callers (`spec_api.py`, `copilot_api.py`)
-construct `splits` entries rather than assigning four flat fields. Returning a
-`dict[str, SplitRef]` from a single helper is preferable to a growing tuple — a 4-tuple of strings
-whose positions must be memorized is exactly the shape this project is replacing elsewhere.
+#1621 (adding val). `generate_spec_eval_tags` keeps its four values — those are dataset tags the
+copilot passes to `create_dataset_task_runs`, and golden is one of them — but
+`generate_spec_eval_filter_ids` is **deleted** in phase 3, replaced by a `spec_eval_splits` helper
+returning `dict[EvalSplitName, SplitRef]`. A 4-tuple of strings whose positions must be memorized
+is exactly the shape this project is replacing elsewhere.
 
 Spec eval creation gains a TaskRun-backed val split, per functional spec §3.3.
 
 Both callers must construct `splits=` rather than passing legacy kwargs, since §2.4 makes those
-computed and therefore not `__init__` arguments. Whether their TaskRun-backed test and train splits
-should then be moved into their legacy homes with `set_split` — so a new spec eval stays readable
-by older builds and by the prompt-optimization zip reader — is a decision phase 3 has to make
-explicitly; see §2.6 and the note in `implementation_plan.md`.
+computed and therefore not `__init__` arguments.
+
+**Decided in phase 3: a new spec eval's TaskRun-backed test and train splits ARE moved into their
+legacy homes with `set_split`; its val split has no legacy field and stays in `splits`.** So a new
+spec eval is §2.6's mixed shape — legacy test and train fields plus a `splits` key holding only
+val. The alternative (constructing with `splits=` alone) would have made a brand-new spec eval's
+**test** split invisible to `package_project_for_training`'s zip reader, which is in another repo
+and never migrates — permanently, not until a later phase. Full reasoning, and what the decision
+does and does not guarantee, in `phase_plans/phase_3.md`.
+
+Note the guarantee's exact scope: `set_split` records where a split will be *written*, so the
+in-memory instance the creation path holds still has `eval_set_filter_id is None`. Every reader
+that **loads the eval from disk** sees both legacy fields; an `Eval` handed to a later phase
+in-process and unsaved does not. Phases 5 and 6 must not read the broader claim into this.
+
+Phase 3 also collapsed both creation paths into one `spec_utils.build_spec_eval` factory, so
+construction and the `set_split` homing cannot be separated by a caller that forgets the second
+step.
 
 The eval-update endpoint's one assignment moved to `set_split` in phase 2, ahead of this phase,
 because the run-once fold (§2.5) made the old line silently discard its input.

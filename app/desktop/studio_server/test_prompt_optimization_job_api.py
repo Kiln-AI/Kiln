@@ -40,8 +40,46 @@ from kiln_server.custom_errors import connect_custom_errors
 from kiln_ai.cli.commands.package_project import PackageForTrainingConfig
 from kiln_ai.datamodel import Project, PromptOptimizationJob, Task
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalInputSplit,
+    EvalOutputScore,
+    SplitRef,
+    TaskRunSplit,
+)
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
+
+
+# Every check_eval return site reports has_train_set, so each is parametrized over the
+# same cases: absent, usable, and present-but-unusable. A site left reading the legacy
+# train_set_filter_id reports False for all three (these evals carry their splits in
+# `splits`, so the legacy field is None in memory), which the True case catches.
+TRAIN_SPLIT_CASES = [
+    (None, False),
+    (TaskRunSplit(filter_id="tag::train"), True),
+    (EvalInputSplit(filter_id="tag::train"), False),
+]
+
+
+def _eval_with_train_split(
+    train_split: SplitRef | None,
+    current_config_id: str | None = "config-123",
+    parent: Task | None = None,
+) -> Eval:
+    """An eval whose train split is the thing under test."""
+    splits: dict[str, SplitRef] = {"test": TaskRunSplit(filter_id="tag::eval_set")}
+    if train_split is not None:
+        splits["train"] = train_split
+    return Eval(
+        name="Test Eval",
+        current_config_id=current_config_id,
+        splits=splits,
+        output_scores=[
+            EvalOutputScore(name="score", type="pass_fail", instruction="Score it.")
+        ],
+        parent=parent,
+    )
 
 
 def _mock_package_project_for_training(**kwargs):
@@ -1484,8 +1522,11 @@ def test_check_run_config_exception(client, mock_api_key, tmp_path):
         assert "Failed to check run config" in response.json()["message"]
 
 
-def test_check_eval_no_current_config(client, mock_api_key, tmp_path):
-    """Test that check_eval returns False when eval has no current_config_id."""
+@pytest.mark.parametrize("train_split,expected_has_train_set", TRAIN_SPLIT_CASES)
+def test_check_eval_no_current_config(
+    client, mock_api_key, tmp_path, train_split, expected_has_train_set
+):
+    """check_eval reports the eval's real train state even when it has no default config."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -1496,9 +1537,7 @@ def test_check_eval_no_current_config(client, mock_api_key, tmp_path):
     )
     task.save_to_file()
 
-    mock_eval = MagicMock()
-    mock_eval.current_config_id = None
-    mock_eval.train_set_filter_id = None
+    mock_eval = _eval_with_train_split(train_split, current_config_id=None)
 
     project_id = project.id
     task_id = task.id
@@ -1516,12 +1555,15 @@ def test_check_eval_no_current_config(client, mock_api_key, tmp_path):
         assert response.status_code == 200
         result = response.json()
         assert result["has_default_config"] is False
-        assert result["has_train_set"] is False
+        assert result["has_train_set"] is expected_has_train_set
         assert result["model_is_supported"] is False
 
 
-def test_check_eval_config_not_found(client, mock_api_key, tmp_path):
-    """Test that check_eval handles HTTPException when loading config."""
+@pytest.mark.parametrize("train_split,expected_has_train_set", TRAIN_SPLIT_CASES)
+def test_check_eval_config_not_found(
+    client, mock_api_key, tmp_path, train_split, expected_has_train_set
+):
+    """check_eval reports the eval's real train state when the config fails to load."""
 
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
@@ -1533,9 +1575,7 @@ def test_check_eval_config_not_found(client, mock_api_key, tmp_path):
     )
     task.save_to_file()
 
-    mock_eval = MagicMock()
-    mock_eval.current_config_id = "config-123"
-    mock_eval.train_set_filter_id = None
+    mock_eval = _eval_with_train_split(train_split)
 
     project_id = project.id
     task_id = task.id
@@ -1559,7 +1599,7 @@ def test_check_eval_config_not_found(client, mock_api_key, tmp_path):
         assert response.status_code == 200
         result = response.json()
         assert result["has_default_config"] is False
-        assert result["has_train_set"] is False
+        assert result["has_train_set"] is expected_has_train_set
         assert result["model_is_supported"] is False
 
 
@@ -1575,9 +1615,7 @@ def test_check_eval_missing_model_name(client, mock_api_key, tmp_path):
     )
     task.save_to_file()
 
-    mock_eval = MagicMock()
-    mock_eval.current_config_id = "config-123"
-    mock_eval.train_set_filter_id = None
+    mock_eval = _eval_with_train_split(TaskRunSplit(filter_id="tag::train"))
 
     mock_config = MagicMock()
     mock_config.model_name = None
@@ -1605,12 +1643,17 @@ def test_check_eval_missing_model_name(client, mock_api_key, tmp_path):
         assert response.status_code == 200
         result = response.json()
         assert result["has_default_config"] is True
-        assert result["has_train_set"] is False
+        assert result["has_train_set"] is True
         assert result["model_is_supported"] is False
 
 
 def test_check_eval_missing_model_provider(client, mock_api_key, tmp_path):
-    """Test that check_eval returns False when model_provider is missing."""
+    """Test that check_eval returns False when model_provider is missing.
+
+    The has_train_set False half of the missing-model return site; its missing-model-name
+    sibling above carries the True half. Neither is redundant: with only this one, that
+    return site could report a constant False and still pass.
+    """
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -1621,9 +1664,7 @@ def test_check_eval_missing_model_provider(client, mock_api_key, tmp_path):
     )
     task.save_to_file()
 
-    mock_eval = MagicMock()
-    mock_eval.current_config_id = "config-123"
-    mock_eval.train_set_filter_id = None
+    mock_eval = _eval_with_train_split(None)
 
     mock_config = MagicMock()
     mock_config.model_name = "gpt-4"
@@ -1667,9 +1708,7 @@ def test_check_eval_server_validation_error(client, mock_api_key, tmp_path):
     )
     task.save_to_file()
 
-    mock_eval = MagicMock()
-    mock_eval.current_config_id = "config-123"
-    mock_eval.train_set_filter_id = None
+    mock_eval = _eval_with_train_split(TaskRunSplit(filter_id="tag::train"))
 
     mock_config = MagicMock()
     mock_config.model_name = "gpt-4"
@@ -1717,9 +1756,7 @@ def test_check_eval_server_none_response(client, mock_api_key, tmp_path):
     )
     task.save_to_file()
 
-    mock_eval = MagicMock()
-    mock_eval.current_config_id = "config-123"
-    mock_eval.train_set_filter_id = None
+    mock_eval = _eval_with_train_split(TaskRunSplit(filter_id="tag::train"))
 
     mock_config = MagicMock()
     mock_config.model_name = "gpt-4"
@@ -1782,14 +1819,13 @@ def test_check_eval_exception(client, mock_api_key, tmp_path):
         assert "Failed to check eval" in response.json()["message"]
 
 
-@pytest.mark.parametrize(
-    "train_set_filter_id,expected_has_train_set",
-    [("tag::train", True), (None, False)],
-)
-def test_check_eval_success_train_set(
-    client, mock_api_key, tmp_path, train_set_filter_id, expected_has_train_set
+# Prompt optimization resolves the train filter against the project zip's runs directory,
+# which has no eval inputs in it, so an EvalInput-backed train split is not a train set.
+@pytest.mark.parametrize("train_split,expected_has_train_set", TRAIN_SPLIT_CASES)
+def test_check_eval_has_train_set_by_split_backing(
+    client, mock_api_key, tmp_path, train_split, expected_has_train_set
 ):
-    """Test that check_eval returns correct has_train_set from eval.train_set_filter_id."""
+    """check_eval reports a train set only when one exists and is TaskRun-backed."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -1800,9 +1836,7 @@ def test_check_eval_success_train_set(
     )
     task.save_to_file()
 
-    mock_eval = MagicMock()
-    mock_eval.current_config_id = "config-123"
-    mock_eval.train_set_filter_id = train_set_filter_id
+    mock_eval = _eval_with_train_split(train_split)
 
     mock_config = MagicMock()
     mock_config.model_name = "gpt-4"
@@ -1840,6 +1874,135 @@ def test_check_eval_success_train_set(
         assert result["has_default_config"] is True
         assert result["has_train_set"] is expected_has_train_set
         assert result["model_is_supported"] is True
+
+
+@pytest.mark.parametrize(
+    "train_split,expected_status",
+    [
+        (EvalInputSplit(filter_id="tag::train"), 400),
+        (TaskRunSplit(filter_id="tag::train"), 200),
+        # Unchanged behavior: an eval with no train split is not this guard's business.
+        (None, 200),
+    ],
+)
+def test_start_prompt_optimization_job_refuses_unusable_train_splits(
+    client, mock_api_key, tmp_path, train_split, expected_status
+):
+    """Only a present, non-TaskRun train split is refused, and before any work happens."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    eval = _eval_with_train_split(train_split, parent=task)
+    eval.save_to_file()
+
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
+    mock_run_config.run_config_properties.tools_config = None
+
+    with (
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
+            return_value=mock_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.package_project_for_training",
+            side_effect=_mock_package_project_for_training,
+        ) as mock_package,
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=_make_sdk_response(
+                parsed=JobStartResponse(job_id="remote-job-123")
+            ),
+        ),
+    ):
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompt_optimization_jobs/start",
+            json={
+                "target_run_config_id": "test-run-config-id",
+                "eval_ids": [eval.id],
+            },
+        )
+
+    assert response.status_code == expected_status
+    if expected_status == 400:
+        message = response.json()["message"]
+        assert "Test Eval" in message
+        assert "train split that isn't backed by dataset runs" in message
+        # Nothing was packaged, uploaded or recorded before the refusal
+        mock_package.assert_not_called()
+        assert task.prompt_optimization_jobs() == []
+    else:
+        assert len(task.prompt_optimization_jobs()) == 1
+
+
+def test_start_prompt_optimization_job_ignores_unrequested_evals(
+    client, mock_api_key, tmp_path
+):
+    """The guard looks at the evals the request named, and only those.
+
+    The task holds an eval the guard would refuse, and the request names an id that
+    matches no eval at all: neither the unknown id nor the refusable eval may end up
+    being checked.
+    """
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    refusable_eval = _eval_with_train_split(
+        EvalInputSplit(filter_id="tag::train"), parent=task
+    )
+    refusable_eval.save_to_file()
+
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
+    mock_run_config.run_config_properties.tools_config = None
+
+    with (
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
+            return_value=mock_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.package_project_for_training",
+            side_effect=_mock_package_project_for_training,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=_make_sdk_response(
+                parsed=JobStartResponse(job_id="remote-job-123")
+            ),
+        ),
+    ):
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompt_optimization_jobs/start",
+            json={
+                "target_run_config_id": "test-run-config-id",
+                "eval_ids": ["no-such-eval"],
+            },
+        )
+
+    assert response.status_code == 200
 
 
 def test_start_prompt_optimization_job_no_parent_project(
