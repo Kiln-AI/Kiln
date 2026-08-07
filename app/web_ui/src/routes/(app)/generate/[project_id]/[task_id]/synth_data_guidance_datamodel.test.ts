@@ -320,6 +320,55 @@ describe("SynthDataGuidanceDataModel", () => {
       expect(get(model.topic_guidance)).toContain("search_tool, lookup_tool")
     })
 
+    it("should derive guidance from the judge check for judge-only programmatic evals", async () => {
+      const mockEval = {
+        id: "eval1",
+        name: "Exact Answer",
+        template: null,
+        template_properties: null,
+        current_config_id: "config1",
+      } as unknown as Eval
+
+      ;(client.GET as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+        (url: string) => {
+          if (url.includes("eval_configs")) {
+            return Promise.resolve({
+              data: [
+                {
+                  id: "config1",
+                  config_type: "v2",
+                  properties: {
+                    type: "exact_match",
+                    expected_value: "XYZ",
+                    case_sensitive: true,
+                  },
+                },
+              ],
+              error: null,
+            })
+          }
+          return Promise.resolve({ data: mockEval, error: null })
+        },
+      )
+
+      await model.load(
+        null,
+        "proj1::task1::eval1",
+        "proj1",
+        "task1",
+        "eval",
+        mockTask,
+        {},
+      )
+
+      expect(get(model.selected_template)).toBe("programmatic_eval_template")
+      expect(get(model.topic_guidance)).toContain('exactly matches "XYZ"')
+      expect(get(model.input_guidance)).toContain("deterministic check")
+      expect(get(model.output_guidance)).toContain(
+        "without any additional instructions",
+      )
+    })
+
     it("should select the tool use template for tool_call evals with a legacy tool property", async () => {
       const mockEval = {
         id: "eval1",
@@ -910,6 +959,48 @@ describe("SynthDataGuidanceDataModel", () => {
       // the two differently. Both mark the batch as an eval batch.
       expect(prefill).toContain("<judge_instructions>")
       expect(prefill).not.toContain("<eval_definition>")
+    })
+
+    it("uses a v2 LLM judge's judge_instructions when there are no legacy steps", () => {
+      model.gen_type = "eval"
+      model["evaluator"] = { id: "eval1", name: "Politeness" } as Eval
+      model["default_judge"] = {
+        id: "cfg1",
+        config_type: "v2",
+        properties: {
+          type: "llm_judge",
+          judge_instructions: ["Is the reply polite?"],
+        },
+      } as unknown as EvalConfig
+
+      const prefill = model.kiln_pro_batch_plan_prefill()
+
+      expect(prefill).toContain('run the eval "Politeness" on')
+      expect(prefill).toContain("1. Is the reply polite?")
+      expect(prefill).toContain("<judge_instructions>")
+    })
+
+    it("describes a programmatic judge's check for judge-only evals", () => {
+      // Judge-only evals have no spec, template, or written steps — the
+      // judge's own config is the eval's entire definition.
+      model.gen_type = "eval"
+      model["evaluator"] = { id: "eval1", name: "Exact Answer" } as Eval
+      model["default_judge"] = {
+        id: "cfg1",
+        config_type: "v2",
+        properties: {
+          type: "exact_match",
+          expected_value: "XYZ",
+          case_sensitive: true,
+        },
+      } as unknown as EvalConfig
+
+      const prefill = model.kiln_pro_batch_plan_prefill()
+
+      expect(prefill).toContain('run the eval "Exact Answer" on')
+      expect(prefill).toContain("<judge_check>")
+      expect(prefill).toContain('exactly matches "XYZ"')
+      expect(prefill).not.toContain("<judge_instructions>")
     })
 
     it("reconstructs eval steps from the template when there is no default judge", () => {
