@@ -471,21 +471,20 @@
       // (common for non-LLM judges, which are set as the default judge at
       // creation time).
       const skipped = new Set<number>()
+      // Computed for the step description only: the dataset minimum is a
+      // recommendation, and with at least one item the step was genuinely
+      // done, so it never renders as skipped.
       required_more_eval_data = progress.dataset_size < MIN_DATASET_SIZE
       required_more_golden_data =
         evaluator?.template !== "rag" &&
         progress.golden_dataset_size < MIN_DATASET_SIZE
-      if (required_more_eval_data || required_more_golden_data) {
-        skipped.add(2)
-      }
       if (evaluator?.template === "rag") {
         current_step = 3
       } else {
         if (golden_dataset_explanation) {
-          // Human ratings are incomplete — and without them, "find the best
-          // judge" was never meaningfully done either.
+          // Human ratings are incomplete. The judge step still shows as done:
+          // a default judge is set, which is what that step establishes.
           skipped.add(3)
-          skipped.add(4)
         }
         current_step = 5
       }
