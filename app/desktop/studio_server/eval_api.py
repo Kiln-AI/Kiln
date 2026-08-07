@@ -39,6 +39,7 @@ from kiln_ai.datamodel.eval import (
     EvalTaskInput,
     EvalTemplateId,
     SkippedReason,
+    TaskRunSplit,
     V2EvalConfigProperties,
     validate_scores_against_output_scores,
 )
@@ -821,17 +822,20 @@ def connect_evals_api(app: FastAPI):
         if request.description is not None:
             eval.description = request.description
 
-        # legacy evals (not created with Specs) do not have a train set filter, but we need one
+        # legacy evals (not created with Specs) do not have a train split, but we need one
         # for some features such as prompt optimization
         if request.train_set_filter_id is not None:
-            # if the eval already has a train set filter, we do not allow changing it because it
+            # if the eval already has a train split, we do not allow changing it because it
             # would make comparing results before and after the change very confusing
-            if eval.train_set_filter_id is not None:
+            if eval.splits.get("train") is not None:
                 raise HTTPException(
                     status_code=400,
                     detail="Train set filter is already set and cannot be changed. Please create a new eval if you need a different train set.",
                 )
-            eval.train_set_filter_id = request.train_set_filter_id
+            # set_split, not a direct splits write: this train split is being created on
+            # behalf of a user whose eval predates `splits`, and prompt optimization reads
+            # it out of the packaged project file, so it has to land in the legacy field.
+            eval.set_split("train", TaskRunSplit(filter_id=request.train_set_filter_id))
 
         eval.save_to_file()
         return eval

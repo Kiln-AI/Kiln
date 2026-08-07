@@ -6231,7 +6231,7 @@ export interface components {
             current_config_id?: string | null;
             /**
              * Eval Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included when running this eval (V1 TaskRun-typed).
+             * @description Legacy storage for a TaskRun-backed test split, kept so older Kiln builds can still read this eval. It is written from the eval's splits, and is null when the test split has no legacy representation. The eval's splits are the authoritative source: see `splits`.
              */
             eval_set_filter_id?: string | null;
             /**
@@ -6241,14 +6241,16 @@ export interface components {
             eval_configs_filter_id?: string | null;
             /**
              * Train Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning.
+             * @description Legacy storage for a TaskRun-backed train split, kept so older Kiln builds can still read this eval. It is written from the eval's splits, and is null when the train split has no legacy representation. The eval's splits are the authoritative source: see `splits`.
              */
             train_set_filter_id?: string | null;
             /**
-             * Eval Input Filter Id
-             * @description Filter ID for EvalInput-backed datasets (V2). Mutually exclusive with eval_set_filter_id.
+             * Splits
+             * @description The eval's dataset splits, keyed by split name ('test', 'train', 'val'). Each split names the store its items come from and the filter that selects them. Keys this build doesn't know are preserved but not exposed. In Python, prefer Eval.set_split() to assigning into this dict: it stores a split where older Kiln builds can still read it, and marks the field as set so exclude_unset dumps keep it.
              */
-            eval_input_filter_id?: string | null;
+            splits?: {
+                [key: string]: components["schemas"]["TaskRunSplit"] | components["schemas"]["EvalInputSplit"];
+            };
             /**
              * Output Scores
              * @description The scores this evaluator should produce.
@@ -6422,6 +6424,21 @@ export interface components {
          * @enum {string}
          */
         EvalDataType: "final_answer" | "full_trace" | "reference_answer";
+        /**
+         * EvalInputSplit
+         * @description A split whose items are EvalInputs, selected by an eval-input filter.
+         */
+        EvalInputSplit: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            source: "eval_input";
+            /** Filter Id */
+            filter_id: string;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * EvalOutputScore
          * @description A definition of a score that an evaluator will produce.
@@ -11432,6 +11449,21 @@ export interface components {
         TaskRunSnapshot: {
             /** Trace */
             trace?: components["schemas"]["TraceMessage"][] | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * TaskRunSplit
+         * @description A split whose items are TaskRuns, selected by a dataset filter.
+         */
+        TaskRunSplit: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            source: "task_run";
+            /** Filter Id */
+            filter_id: string;
         } & {
             [key: string]: unknown;
         };
