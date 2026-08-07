@@ -32,8 +32,10 @@
   // if needed. Also the retry hook for a failed build.
   export let on_open_trace: (index: number) => void = () => {}
   export let on_save: () => void = () => {}
+  // The review gate, computed by the parent (enough traces reviewed). Drives
+  // the Save button's VISIBILITY (not just its enabled state): Save is hidden
+  // until the gate is met, then takes the Next slot on the last conversation.
   export let save_disabled = true
-  export let save_disabled_tooltip: string | null = null
   // What the judge judged, for the verdict card's headline: "conversation"
   // for multi-turn, "example" for single-turn.
   export let judged_noun = "example"
@@ -87,58 +89,19 @@
   }
   $: has_prev = selected.some((i) => i < current_index)
   $: has_next = selected.some((i) => i > current_index)
+
+  // Next is gated on the CURRENT conversation being fully answered — the same
+  // per-trace completeness the old progress dots colored. Save takes the Next
+  // slot on the last conversation, but only once the overall gate is met.
+  $: current_reviewed = is_trace_reviewed(current, current_verdicts)
 </script>
 
 <div>
-  <!-- Jump-to dots: one per selected trace, colored by review state.
-       Numbered 1..N in review order — the trace's position in the driven
-       batch is sampling mechanics the reviewer doesn't need. -->
-  <div class="flex items-center mb-10 px-12">
-    {#each selected as trace_index, position}
-      {@const done = is_trace_reviewed(
-        traces[trace_index],
-        verdicts[trace_index],
-      )}
-      {#if position > 0}
-        <div class="flex-1 h-0.5 bg-base-300 mx-1"></div>
-      {/if}
-      <div class="relative flex-none">
-        <button
-          type="button"
-          class="block rounded-full transition-all {trace_index ===
-          current_index
-            ? 'w-3.5 h-3.5 ring-2 ring-primary ring-offset-1'
-            : 'w-2.5 h-2.5'} {done
-            ? 'bg-success'
-            : 'bg-base-300 hover:bg-base-content/40'}"
-          on:click={() => (current_index = trace_index)}
-          aria-label={`Jump to trace ${position + 1}`}
-          title={`Trace ${position + 1}`}
-        ></button>
-        <span
-          class="absolute top-full left-1/2 -translate-x-1/2 mt-2 text-xs {trace_index ===
-          current_index
-            ? 'text-base-content font-medium'
-            : 'text-gray-400'}"
-        >
-          {position + 1}
-        </span>
-      </div>
-    {/each}
-  </div>
-
   {#if current && current_verdicts}
-    <!-- Trace header: position eyebrow (review-order numbering, matching
-         the dots) + the escape hatch to the full trace. The verdict label
-         stays out of THIS row — the overall card carries it, pinned last. -->
-    <div class="flex items-center justify-between mb-4">
-      <!-- Same typography as the wizard's "Step 4 of 6" indicator — this is
-           the same kind of positional chrome, one level down. -->
-      <span class="text-sm text-gray-500">
-        {judged_noun.charAt(0).toUpperCase() + judged_noun.slice(1)}
-        <span class="font-medium">{selected.indexOf(current_index) + 1}</span>
-        of {selected.length}
-      </span>
+    <!-- Trace header: just the quiet escape hatch to the full trace. The
+         verdict label stays off this row — the overall card carries it,
+         pinned last — and review-order position now lives under the nav. -->
+    <div class="flex items-center justify-end mb-4">
       <button
         class="btn btn-xs btn-ghost"
         on:click={() => current && trace_modal?.open_trace(current)}
@@ -206,31 +169,38 @@
     {/if}
   {/if}
 
-  <!-- Bottom bar: intra-step trace nav (Prev/Next) at left, the save action
-       at right. Wizard-step navigation is the browser's Back/Forward. -->
-  <div class="flex items-center justify-between mt-8 gap-2 flex-wrap">
-    <div class="flex gap-2">
+  <!-- Bottom nav: the review-order count inline beside a right-aligned
+       [Previous][Next] cluster. Wizard-step navigation is the browser's
+       Back/Forward. Previous walks back whenever there's an earlier trace;
+       Next is gated on finishing the current one. On the last conversation
+       the Next slot becomes Save once the overall gate is met. -->
+  <div class="flex flex-col items-end gap-1 mt-8">
+    <div class="flex items-center gap-2">
+      <!-- Count inline beside the controls — the run-control pattern
+           (see docs/extractors' "Completed N of M"). -->
+      <span class="text-sm font-light text-gray-500 mr-2">
+        {selected.indexOf(current_index) + 1} of {selected.length}
+      </span>
       <button
         class="btn btn-sm btn-ghost"
         on:click={go_prev}
-        disabled={!has_prev}>← Prev</button
+        disabled={!has_prev}>← Previous</button
       >
-      <button
-        class="btn btn-sm btn-ghost"
-        on:click={go_next}
-        disabled={!has_next}>Next →</button
-      >
-    </div>
-    <!-- tooltip-left: the button sits at the viewport's bottom-right, where
-         a top-centered tooltip this long clips off the right edge on small
-         screens; leftward it grows into the content area (the v1 review
-         sibling's exact pattern for its long right-edge tooltip). -->
-    <div class="tooltip tooltip-left" data-tip={save_disabled_tooltip}>
-      <button
-        class="btn btn-primary"
-        on:click={on_save}
-        disabled={save_disabled}>Save →</button
-      >
+      {#if has_next}
+        <button
+          class="btn btn-sm btn-primary"
+          on:click={go_next}
+          disabled={!current_reviewed}>Next →</button
+        >
+      {:else if !save_disabled}
+        <!-- Last conversation, gate met: Save replaces Next. -->
+        <button class="btn btn-sm btn-primary" on:click={on_save}>Save →</button
+        >
+      {:else}
+        <!-- Last conversation, not yet answered: no destination and no Save
+             until the gate is met. -->
+        <button class="btn btn-sm btn-primary" disabled>Next →</button>
+      {/if}
     </div>
   </div>
 </div>

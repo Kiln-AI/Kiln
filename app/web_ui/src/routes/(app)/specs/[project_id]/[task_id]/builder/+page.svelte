@@ -2587,7 +2587,7 @@
         // passes by design (balanced plan + stratified sample), so the
         // per-conversation surface stays verdict-neutral.
         return is_multi_turn
-          ? `A judge reviewed each conversation and flagged possible mistakes. Keep the real ones, dismiss the false alarms — you're reviewing ${multi_turn_review_target} of ${trace_claims.length} conversations. Open a [n] citation to see the moment it happened.`
+          ? `A judge reviewed each test conversation in your eval data and flagged possible mistakes. Keep the real ones, dismiss the false alarms — you're reviewing ${multi_turn_review_target} of ${trace_claims.length}. Open a [n] citation to see the moment it happened.`
           : "A judge flagged possible mistakes. Keep the real ones, dismiss the false alarms. Open a [n] citation to see the moment it happened."
       case "save":
         return "Persisting the spec, eval, and dataset."
@@ -3102,15 +3102,6 @@
               {on_open_trace}
               on_save={on_advance_to_save}
               save_disabled={!save_gate_met}
-              save_disabled_tooltip={save_gate_met
-                ? null
-                : is_multi_turn
-                  ? `Review ${
-                      multi_turn_review_target === 1
-                        ? "the conversation"
-                        : `all ${multi_turn_review_target} conversations`
-                    } to continue. Your answers teach the eval what correct looks like, and your reasons for marking something incorrect help it improve.`
-                  : "Review every example to continue. If you mark something incorrect, add a short reason so we can improve the eval."}
             />
           {/if}
         {:else if current_step === "save"}
