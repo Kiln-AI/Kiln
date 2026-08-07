@@ -31,7 +31,6 @@
   // Called with the trace index being shown — the parent builds its claims
   // if needed. Also the retry hook for a failed build.
   export let on_open_trace: (index: number) => void = () => {}
-  export let on_back: () => void = () => {}
   export let on_save: () => void = () => {}
   export let save_disabled = true
   export let save_disabled_tooltip: string | null = null
@@ -207,9 +206,9 @@
     {/if}
   {/if}
 
-  <!-- Bottom bar: step actions outside, intra-step nav in the middle. -->
+  <!-- Bottom bar: intra-step trace nav (Prev/Next) at left, the save action
+       at right. Wizard-step navigation is the browser's Back/Forward. -->
   <div class="flex items-center justify-between mt-8 gap-2 flex-wrap">
-    <button class="btn btn-sm btn-ghost" on:click={on_back}>← Back</button>
     <div class="flex gap-2">
       <button
         class="btn btn-sm btn-ghost"

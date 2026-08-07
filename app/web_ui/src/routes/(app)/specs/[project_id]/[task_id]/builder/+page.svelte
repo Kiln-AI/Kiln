@@ -171,9 +171,9 @@
 
   // AbortController for in-flight Copilot requests. Mirrors v1 spec_builder:
   // starting a new request implicitly cancels any prior one (no stale
-  // responses overwriting newer state), and Back buttons call
-  // abort_copilot_request() so cancelling out of a loading step also kills
-  // the request instead of leaving it running in the background.
+  // responses overwriting newer state), and browser Back (via popstate)
+  // calls abort_copilot_request() so stepping out of a loading step also
+  // kills the request instead of leaving it running in the background.
   let copilot_abort_controller: AbortController | null = null
 
   function abort_copilot_request() {
@@ -230,7 +230,7 @@
     // Navigating away also cancels the preparing-review gate's ownership of
     // the advance: in-flight claim builds keep running (they belong to the
     // traces, not the screen), but the gate must not push the user into
-    // review from another step. Continue re-enters it, resolving instantly
+    // review from another step. Next re-enters it, resolving instantly
     // when everything already built.
     preparing_review = false
     claims_gate_error = null
@@ -590,12 +590,16 @@
   // refine step, but they should know their answers weren't incorporated.
   let refine_warning: string | null = null
 
-  // Called by Questions component on Continue. Fires the refinement call and
+  // Called by Questions component on Next. Fires the refinement call and
   // populates the state shape consumed by RefineSpec. Matches v1's flow:
   //   answer Qs → refining spinner → refine screen with editable suggestions.
   async function on_continue_from_clarify(
     questions_and_answers: QuestionWithAnswer[],
   ) {
+    // FormContainer flips submitting=true on submit and leaves the reset to
+    // us — clear it before advancing so browser Back to the clarify step
+    // doesn't find a permanently spinning Next button.
+    questions_submitting = false
     goto_step("refine")
     refined_preview_loading = true
     refine_warning = null
@@ -701,8 +705,8 @@
   // The summary isn't regenerated when the user edits/deletes prompts — flag
   // that it may no longer match (mirrors the /generate route's plan UI).
   let batch_plan_edited = false
-  // Snapshot of the prompts a drive actually ran — gates "Continue to Review"
-  // so results are never presented for a plan edited after the drive.
+  // Snapshot of the prompts a drive actually ran — gates the Next-to-review
+  // action so results are never presented for a plan edited after the drive.
   let driven_prompts_json: string | null = null
   // The plan's generated synthetic users, reused on a re-drive while the
   // plan and spec are byte-unchanged: SU cases don't depend on the run
@@ -770,9 +774,9 @@
   // Unified stop screen: set when a drive ends short of the approved plan
   // (post-retry case failures or upstream salvage drops). The plan screen
   // stops ONCE with an informational banner and the recovery actions —
-  // Continue with the survivors (iff any) or Drive again. No failure is
-  // shown without an action, and no failure silently shrinks the batch;
-  // all-failed is the same screen with Continue naturally absent.
+  // continue with the survivors via Next (iff any) or Drive again. No
+  // failure is shown without an action, and no failure silently shrinks the
+  // batch; all-failed is the same screen with Next naturally absent.
   let drive_stop: DriveStop | null = null
   // Per-case failure messages from the last drive's case_failed frames —
   // aggregated into the stop banner's "most common" diagnosis.
@@ -1234,10 +1238,9 @@
     trace_claims.length > 0 &&
     batch_plan !== null &&
     driven_prompts_json === JSON.stringify(batch_plan.prompts)
-  // Accepted has-data state (clean drive, or survivors accepted via
-  // Continue): Drive is hidden — Continue to Review is the only forward
-  // action. On the stop screen Drive stays visible as the re-drive
-  // recovery.
+  // Accepted has-data state (clean drive, or survivors accepted via Next):
+  // Drive is hidden — Next (to review) is the only forward action. On the
+  // stop screen Drive stays visible as the re-drive recovery.
   $: has_data_accepted = has_driven_results && drive_stop === null
   // How many cases the last drive was asked to run — the denominator for
   // the has-data notice (survivors vs. the approved plan at drive time).
@@ -2660,7 +2663,7 @@
                 <span class="loading loading-dots loading-sm"></span>
                 Classifying…
               {:else}
-                Continue →
+                Next →
               {/if}
             </button>
           </div>
@@ -2693,6 +2696,7 @@
               bind:error={questions_form_error}
               bind:submitting={questions_submitting}
               warn_before_unload={false}
+              submit_label="Next →"
             />
           {/if}
         {:else if current_step === "refine"}
@@ -2757,7 +2761,7 @@
                   disabled={!name.trim() ||
                     !(refined_property_values.issue_description ?? "").trim()}
                 >
-                  Generate conversations →
+                  Next →
                 </button>
               </div>
             {:else}
@@ -2945,21 +2949,14 @@
                 batch_plan.prompts.length === 1 ? "" : "s"
               }`}
             />
-            <!-- Wizard chrome stays outside the shared component: it has
-                 no slots, and /generate has no back/continue concept.
-                 Back never confirms — confirms live on destructive actions,
-                 not navigation (review state embeds human grading work). -->
-            <div class="flex flex-row justify-between mt-4">
-              <button
-                class="btn btn-ghost btn-sm"
-                on:click={() => history.back()}
-              >
-                ← Back
-              </button>
-              {#if has_driven_results}
-                <!-- Conversations were already driven from this exact plan —
-                     returning to the results doesn't re-spend model calls.
-                     Also the survivors path from the stop banner. -->
+            <!-- Wizard chrome stays outside the shared component (it has no
+                 slots): once this exact plan has driven results, offer the
+                 way forward to review. Stepping back is the browser's Back. -->
+            {#if has_driven_results}
+              <!-- Conversations were already driven from this exact plan —
+                   returning to the results doesn't re-spend model calls.
+                   Also the survivors path from the stop banner. -->
+              <div class="flex flex-row justify-end mt-4">
                 <div class="flex flex-row items-center gap-3">
                   <span class="font-light text-xs text-gray-500">
                     {#if trace_claims.length < driven_plan_size}
@@ -2972,11 +2969,11 @@
                     class="btn btn-sm btn-primary"
                     on:click={on_continue_with_survivors}
                   >
-                    Continue to Review →
+                    Next →
                   </button>
                 </div>
-              {/if}
-            </div>
+              </div>
+            {/if}
           {:else if !generation_loading && !generation_error && !preparing_review && !claims_gate_error}
             <div class="flex justify-end mt-8">
               {#if single_turn_examples.length > 0 || trace_claims.length > 0}
@@ -2984,7 +2981,7 @@
                      continue to the existing results instead of re-running,
                      matching the browser Forward path. -->
                 <button class="btn btn-primary" on:click={continue_to_review}>
-                  Continue to review →
+                  Next →
                 </button>
               {:else}
                 <!-- No results (a Back aborted generation) — offer to start
@@ -3018,17 +3015,12 @@
             <Warning warning_color="error" warning_message={claims_error} />
           {:else if trace_claims.length === 0}
             <!-- Browser Forward can land here after results were cleared
-                 (plan regenerated / drive restarted) — offer the way back
-                 instead of an empty review. -->
+                 (plan regenerated / drive restarted). Browser Back returns to
+                 generation rather than showing an empty review. -->
             <Warning
               warning_color="warning"
               warning_message="There are no reviewed conversations — generate them first."
             />
-            <div class="text-center py-4">
-              <button class="btn btn-primary" on:click={() => history.back()}>
-                ← Back
-              </button>
-            </div>
           {:else}
             <ClaimEvidenceReview
               traces={trace_claims}
@@ -3036,7 +3028,6 @@
               selected_indices={selected_trace_indices}
               judged_noun={is_multi_turn ? "conversation" : "example"}
               {on_open_trace}
-              on_back={() => history.back()}
               on_save={on_advance_to_save}
               save_disabled={!save_gate_met}
               save_disabled_tooltip={save_gate_met

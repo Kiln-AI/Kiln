@@ -19,6 +19,9 @@
   export let error: KilnError | null
   export let submitting: boolean
   export let warn_before_unload: boolean
+  // Overridable so consumers can match their flow's advance-button wording
+  // (v2 builder uses "Next →"); default preserves v1's label.
+  export let submit_label = "Continue"
 
   // Track the selected option for each question (bound to parent to survive remounts)
   // "other" means the user selected the "Other" option
@@ -76,6 +79,10 @@
       submitting = false
       return
     }
+    // Clear any earlier validation error once validation passes — error is
+    // bound to the parent to survive remounts, so a stale message would
+    // otherwise reappear if the user navigates back to this form.
+    error = null
 
     const questions_and_answers = build_question_answers()
     await on_submit(questions_and_answers)
@@ -99,7 +106,7 @@
 
 <div class="max-w-4xl">
   <FormContainer
-    submit_label="Continue"
+    {submit_label}
     compact_button={true}
     on:submit={handle_submit}
     bind:error
