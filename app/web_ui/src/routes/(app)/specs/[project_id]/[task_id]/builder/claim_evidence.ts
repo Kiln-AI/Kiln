@@ -10,6 +10,7 @@
 // no id.
 
 import type { components } from "$lib/api_schema"
+import type { TraceMessage } from "$lib/types"
 
 export type CitationSource = "input" | "output"
 
@@ -83,6 +84,11 @@ export type TraceClaims = {
   final_judgement: FinalJudgement | null
   claims_state: ClaimsBuildState
   claims_error: string | null
+  // The structured conversation the judge saw (multi-turn only). raw_output is
+  // its lossy flattening; the trace modal renders THIS in the house chat UI and
+  // remaps output-source citation spans back onto it. Absent/null for
+  // single-turn traces and legacy data — the modal then keeps the raw view.
+  trace?: TraceMessage[] | null
 }
 
 // ── Human review (UI output) ─────────────────────────────────────────────
@@ -121,6 +127,242 @@ export function resolve_citation_span(
   const to_at = text.indexOf(citation.to, start)
   if (to_at < 0) return null
   return { start, end: to_at + citation.to.length }
+}
+
+// ── Structured-trace span mapping ────────────────────────────────────────
+//
+// The trace modal renders the structured conversation (TraceMessage[]) in the
+// house chat UI, but citations resolve against raw_output — the server's
+// FLATTENED rendering of that trace. This maps a resolved [start, end) span in
+// raw_output back onto the trace: which message, which block kind, and the
+// offset within that block's text, so the chat UI can highlight the exact node.
+//
+// It works by re-computing the server flattener's block layout in TS. The port
+// mirrors libs/core .../eval_trace_formatter.py EXACTLY — the same per-message
+// block precedence (its lossy rule: content overwrites reasoning/tool blocks so
+// only ONE block is emitted per message), the same tool-call formatting, the
+// same tool-result .output unwrapping, and the same "\n\n" join keyed on the
+// raw trace index. Any drift would shift offsets, so the mapper verifies the
+// recomputed block against raw_output before trusting it (see below).
+
+export type TraceHighlightKind =
+  | "content"
+  | "reasoning"
+  | "tool_calls"
+  | "tool_result"
+
+export type TraceHighlight = {
+  trace_index: number
+  kind: TraceHighlightKind
+  start: number
+  end: number
+}
+
+// One emitted flattener block with its absolute span in the recomputed string.
+type FlattenedBlock = {
+  trace_index: number
+  kind: TraceHighlightKind
+  content_start: number
+  content_end: number
+  content: string
+}
+
+// Empty strings are falsy in Python's `if content:`, so a message whose block
+// text is empty emits nothing — mirror that with JS truthiness throughout.
+function trace_role(message: TraceMessage): string {
+  return "role" in message && typeof message.role === "string"
+    ? message.role
+    : ""
+}
+
+// Mirror EvalTraceFormatter.content_from_message: string content only, and for
+// tool messages unwrap the Kiln task-tool JSON to just its `output` field.
+function flattener_content(message: TraceMessage): string | null {
+  if (
+    !("content" in message) ||
+    typeof message.content !== "string" ||
+    message.content.length === 0
+  ) {
+    return null
+  }
+  if (trace_role(message) === "tool") {
+    try {
+      const parsed = JSON.parse(message.content)
+      if (parsed && typeof parsed === "object" && "output" in parsed) {
+        // The server returns parsed["output"] verbatim; only a string output
+        // reproduces its bytes here. A non-string output would need Python's
+        // repr, which we can't match — leave it and let the byte-guard in the
+        // mapper reject the block rather than highlight the wrong span.
+        return typeof parsed.output === "string" ? parsed.output : null
+      }
+    } catch {
+      // Not JSON — the formatter returns the content as-is.
+    }
+  }
+  return message.content
+}
+
+function flattener_reasoning(message: TraceMessage): string | null {
+  if (
+    "reasoning_content" in message &&
+    typeof message.reasoning_content === "string" &&
+    message.reasoning_content.length > 0
+  ) {
+    return message.reasoning_content
+  }
+  return null
+}
+
+// Mirror EvalTraceFormatter.formatted_tool_calls_from_message: one
+// "- Tool Name: …\n- Arguments: …" per call, concatenated with NO separator.
+function flattener_tool_calls(message: TraceMessage): string | null {
+  if (!("tool_calls" in message) || !message.tool_calls) return null
+  const calls = message.tool_calls
+  if (!Array.isArray(calls) || calls.length === 0) return null
+  let out = ""
+  for (const call of calls) {
+    const fn = "function" in call ? call.function : undefined
+    const name = fn && typeof fn.name === "string" ? fn.name : ""
+    const args = fn && typeof fn.arguments === "string" ? fn.arguments : ""
+    out += `- Tool Name: ${name}\n- Arguments: ${args}`
+  }
+  return out.length > 0 ? out : null
+}
+
+// The name of the tool call a tool message answers (matched by tool_call_id),
+// searched across the whole trace — mirrors origin_tool_call_name_from_message.
+// Its presence is what lets a tool message emit a block at all.
+function has_origin_tool_call(
+  message: TraceMessage,
+  trace: TraceMessage[],
+): boolean {
+  const id =
+    "tool_call_id" in message && typeof message.tool_call_id === "string"
+      ? message.tool_call_id
+      : null
+  if (!id) return false
+  for (const m of trace) {
+    if (!("tool_calls" in m) || !Array.isArray(m.tool_calls)) continue
+    for (const call of m.tool_calls) {
+      if ("id" in call && call.id === id) return true
+    }
+  }
+  return false
+}
+
+type EmittedBlock = {
+  role_label: string
+  tag: string
+  content: string
+  kind: TraceHighlightKind
+}
+
+// The single block one message flattens to (or null). Precedence mirrors the
+// formatter: a tool message emits its result ONLY when its origin call is
+// found; otherwise reasoning → tool_calls → content, where each present block
+// OVERWRITES the prior (the lossy rule — content wins when a message carries
+// both reasoning/tool calls and content).
+function emitted_block(
+  message: TraceMessage,
+  trace: TraceMessage[],
+): EmittedBlock | null {
+  const role = trace_role(message)
+  const content = flattener_content(message)
+
+  if (role === "tool" && content) {
+    if (!has_origin_tool_call(message, trace)) return null
+    return {
+      role_label: role,
+      tag: `${role}_tool_message`,
+      content,
+      kind: "tool_result",
+    }
+  }
+
+  let block: EmittedBlock | null = null
+  const reasoning = flattener_reasoning(message)
+  if (reasoning) {
+    block = {
+      role_label: `${role} reasoning`,
+      tag: `${role}_reasoning_message`,
+      content: reasoning,
+      kind: "reasoning",
+    }
+  }
+  const tool_calls = flattener_tool_calls(message)
+  if (tool_calls) {
+    block = {
+      role_label: `${role} requested tool calls`,
+      tag: `${role}_requested_tool_calls`,
+      content: tool_calls,
+      kind: "tool_calls",
+    }
+  }
+  if (content) {
+    block = {
+      role_label: role,
+      tag: `${role}_message`,
+      content,
+      kind: "content",
+    }
+  }
+  return block
+}
+
+// Recompute the flattener's output string and record each block's absolute
+// span. The "\n\n" separator is keyed on the RAW trace index (matching the
+// formatter's `if index > 0`), not on emit order.
+function flatten_output_blocks(trace: TraceMessage[]): FlattenedBlock[] {
+  const blocks: FlattenedBlock[] = []
+  let length = 0
+  trace.forEach((message, index) => {
+    const block = emitted_block(message, trace)
+    if (!block) return
+    if (index > 0) length += 2 // "\n\n"
+    const header = `${block.role_label}:\n<${block.tag}>\n`
+    const content_start = length + header.length
+    const content_end = content_start + block.content.length
+    blocks.push({
+      trace_index: index,
+      kind: block.kind,
+      content_start,
+      content_end,
+      content: block.content,
+    })
+    // header + content + `\n</${tag}>`
+    length = content_end + `\n</${block.tag}>`.length
+  })
+  return blocks
+}
+
+// Map a resolved [start, end) span in raw_output to the trace node it came
+// from. Returns null when the span doesn't sit cleanly inside one block's text
+// (e.g. it straddles the tag chrome or two messages), or when the recomputed
+// layout doesn't match raw_output byte-for-byte at that offset — a mismatch
+// means our port drifted from the server, so we surface NO highlight rather
+// than a wrong one.
+export function map_output_span_to_trace(
+  trace: TraceMessage[],
+  raw_output: string,
+  span: { start: number; end: number },
+): TraceHighlight | null {
+  for (const block of flatten_output_blocks(trace)) {
+    if (span.start >= block.content_start && span.end <= block.content_end) {
+      if (
+        raw_output.slice(block.content_start, block.content_end) !==
+        block.content
+      ) {
+        return null
+      }
+      return {
+        trace_index: block.trace_index,
+        kind: block.kind,
+        start: span.start - block.content_start,
+        end: span.end - block.content_start,
+      }
+    }
+  }
+  return null
 }
 
 // ── Review-state helpers ─────────────────────────────────────────────────

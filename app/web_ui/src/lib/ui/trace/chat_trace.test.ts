@@ -640,6 +640,66 @@ describe("ChatTrace component — fork affordance", () => {
   })
 })
 
+describe("ChatTrace component — citation highlight", () => {
+  it("renders unchanged (markdown, no <mark>) when highlight is null", () => {
+    const trace: TraceType = [assistantMsg("**bold answer**")]
+    const { container } = render(ChatTrace, {
+      props: { trace, highlight: null },
+    })
+    // The dataset run page shares this component with no highlight: markdown
+    // still renders and nothing is marked.
+    expect(container.querySelector("strong")?.textContent).toBe("bold answer")
+    expect(container.querySelector("mark")).toBeNull()
+    expect(container.querySelector("[data-highlight-target]")).toBeNull()
+  })
+
+  it("wraps the cited span in <mark> in the matching content node", () => {
+    const trace: TraceType = [
+      userMsg("What is the return window?"),
+      assistantMsg("Our return window is 30 days."),
+    ]
+    // Offsets index the raw content "Our return window is 30 days." — mark
+    // "return window".
+    const content = "Our return window is 30 days."
+    const start = content.indexOf("return window")
+    const end = start + "return window".length
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 1, kind: "content", start, end },
+      },
+    })
+    const contentNode = container.querySelector(
+      "[data-testid='chat-msg-content']",
+    ) as HTMLElement
+    const mark = contentNode.querySelector("mark")
+    expect(mark).not.toBeNull()
+    expect(mark?.textContent).toBe("return window")
+    // The marked node is the scroll target.
+    expect(mark?.hasAttribute("data-highlight-target")).toBe(true)
+  })
+
+  it("auto-expands and marks a reasoning highlight", () => {
+    const reasoning = "Let me think about policy."
+    const trace: TraceType = [
+      assistantMsg(null, { reasoning_content: reasoning }),
+    ]
+    const start = reasoning.indexOf("think")
+    const end = start + "think about policy".length
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 0, kind: "reasoning", start, end },
+      },
+    })
+    // The thinking bubble expands itself so the cited moment is visible.
+    const mark = container.querySelector(
+      "[data-testid='chat-msg-thinking'] mark",
+    )
+    expect(mark?.textContent).toBe("think about policy")
+  })
+})
+
 describe("ChatTrace component — usage info row", () => {
   it("renders a usage info button when show_per_message_usage and message has usage", () => {
     const trace: TraceType = [

@@ -1198,6 +1198,10 @@ class TestReviewPipeline:
             assert e["raw_input"] == f"question {e['case_index']}"
             # No claims on the stream: they're built lazily via build_claims.
             assert "claims" not in e and "final_judgement" not in e
+            # The structured trace rides along (additive): the same real
+            # trace the judge saw, so the client can render the chat UI and
+            # remap citation spans instead of parsing the flattened string.
+            assert e["trace"] == _real_trace(e["case_index"])
 
         completed = _events_of(events, "batch_completed")
         assert completed == [

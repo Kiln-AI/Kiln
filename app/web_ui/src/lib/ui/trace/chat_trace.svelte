@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte"
   import type { Trace, TraceMessage, ToolCallMessageParam } from "$lib/types"
   import Output from "$lib/ui/output.svelte"
   import ChatMarkdown from "$lib/ui/chat/chat_markdown.svelte"
@@ -20,6 +21,96 @@
     | undefined = undefined
   // Show the per-message usage info button.
   export let show_per_message_usage: boolean = false
+  // Optional citation highlight: a resolved span pointing at one block of one
+  // message. When set, that node renders the span wrapped in <mark>, the
+  // component scrolls to it, and any collapsed thinking/tool bubble it lives in
+  // auto-expands. When null (the default — e.g. the dataset run page), the
+  // render is unchanged. `start`/`end` index the block's RAW text, matching the
+  // flattener the citation resolved against; content and reasoning nodes render
+  // that raw text (markdown is dropped for the marked node only) so the offsets
+  // line up, while tool blocks just expand + scroll to the cited bubble.
+  export let highlight: {
+    trace_index: number
+    kind: "content" | "reasoning" | "tool_calls" | "tool_result"
+    start: number
+    end: number
+  } | null = null
+
+  let root_el: HTMLElement | null = null
+
+  // Split a block's raw text around the highlight span for <mark> rendering.
+  function highlight_segments(
+    text: string,
+    h: { start: number; end: number },
+  ): { before: string; mark: string; after: string } {
+    const start = Math.max(0, Math.min(h.start, text.length))
+    const end = Math.max(start, Math.min(h.end, text.length))
+    return {
+      before: text.slice(0, start),
+      mark: text.slice(start, end),
+      after: text.slice(end),
+    }
+  }
+
+  // A tool-RESULT citation's trace_index is the tool message; find the
+  // assistant turn + tool-call slot that renders it, so we can expand it.
+  function owner_of_tool_result(
+    tool_index: number,
+  ): { index: number; tcIdx: number } | null {
+    const m = trace[tool_index]
+    const tid =
+      m && "tool_call_id" in m && typeof m.tool_call_id === "string"
+        ? m.tool_call_id
+        : null
+    if (!tid) return null
+    for (let i = 0; i < trace.length; i++) {
+      const tcs = tool_calls_from_message(trace[i])
+      if (!tcs) continue
+      for (let tcIdx = 0; tcIdx < tcs.length; tcIdx++) {
+        if (tcs[tcIdx].id === tid) return { index: i, tcIdx }
+      }
+    }
+    return null
+  }
+
+  // Expand whatever collapsible bubble the highlight lives in, so the cited
+  // moment is visible before we scroll to it.
+  $: apply_highlight_expansion(highlight)
+  function apply_highlight_expansion(h: typeof highlight): void {
+    if (!h) return
+    if (h.kind === "reasoning") {
+      thinkingExpanded[h.trace_index] = true
+      thinkingExpanded = thinkingExpanded
+    } else if (h.kind === "tool_calls") {
+      const tcs = tool_calls_from_message(trace[h.trace_index]) ?? []
+      tcs.forEach(
+        (_, tcIdx) => (toolCallExpanded[`${h.trace_index}-${tcIdx}`] = true),
+      )
+      toolCallExpanded = toolCallExpanded
+    } else if (h.kind === "tool_result") {
+      const owner = owner_of_tool_result(h.trace_index)
+      if (owner) toolCallExpanded[`${owner.index}-${owner.tcIdx}`] = true
+      toolCallExpanded = toolCallExpanded
+    }
+  }
+
+  // Bring the marked node (or the expanded target bubble) into view whenever
+  // the highlight changes — the modal reuses one component across citations.
+  $: scroll_to_highlight(highlight)
+  async function scroll_to_highlight(h: typeof highlight): Promise<void> {
+    if (!h || typeof document === "undefined") return
+    await tick()
+    const el = root_el?.querySelector("[data-highlight-target]")
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "center", behavior: "smooth" })
+    }
+  }
+
+  // The assistant turn + tool-call slot a tool-result highlight targets.
+  $: tool_result_owner =
+    highlight && highlight.kind === "tool_result"
+      ? owner_of_tool_result(highlight.trace_index)
+      : null
 
   let thinkingExpanded: Record<number, boolean> = {}
   // Keyed by `${trace_index}-${tool_call_index}` so each tool call within an
@@ -167,7 +258,7 @@
   }
 </script>
 
-<div class="flex flex-col gap-3 w-full">
+<div class="flex flex-col gap-3 w-full" bind:this={root_el}>
   {#each trace as message, index}
     {#if (truncate_at_trace_index === null || index < truncate_at_trace_index) && message.role !== "tool" && message.role !== "system" && message.role !== "developer"}
       {@const fork_run_id = forkable_run_ids?.[index] ?? null}
@@ -245,7 +336,23 @@
                     </button>
                     {#if thinkingExpanded[index]}
                       <div class="mt-2">
-                        <ChatMarkdown text={reasoning} />
+                        {#if highlight && highlight.kind === "reasoning" && highlight.trace_index === index && reasoning}
+                          {@const seg = highlight_segments(
+                            reasoning,
+                            highlight,
+                          )}
+                          <!-- Marked node renders as plain text: the offsets
+                               index the raw reasoning, not rendered markdown. -->
+                          <div class="whitespace-pre-wrap">
+                            {seg.before}<mark
+                              data-highlight-target
+                              class="bg-warning/40 rounded px-0.5"
+                              >{seg.mark}</mark
+                            >{seg.after}
+                          </div>
+                        {:else}
+                          <ChatMarkdown text={reasoning} />
+                        {/if}
                       </div>
                     {/if}
                   </div>
@@ -263,7 +370,19 @@
                   class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm flex flex-col gap-2"
                 >
                   <div data-testid="chat-msg-content">
-                    <ChatMarkdown text={content} />
+                    {#if highlight && highlight.kind === "content" && highlight.trace_index === index && content}
+                      {@const seg = highlight_segments(content, highlight)}
+                      <!-- Marked node renders as plain text: the offsets index
+                           the raw content, not rendered markdown. -->
+                      <div class="whitespace-pre-wrap">
+                        {seg.before}<mark
+                          data-highlight-target
+                          class="bg-warning/40 rounded px-0.5">{seg.mark}</mark
+                        >{seg.after}
+                      </div>
+                    {:else}
+                      <ChatMarkdown text={content} />
+                    {/if}
                   </div>
                 </div>
               </div>
@@ -284,6 +403,20 @@
                 {@const tool_error = result
                   ? is_tool_error(result.message)
                   : false}
+                <!-- A tool citation lands on the whole bubble (its call and
+                     result render via dedicated components, not plain text):
+                     mark the bubble as the scroll target and let the reactive
+                     expansion open it. -->
+                {@const is_tc_target = !!(
+                  highlight &&
+                  ((highlight.kind === "tool_calls" &&
+                    highlight.trace_index === index &&
+                    tcIdx === 0) ||
+                    (highlight.kind === "tool_result" &&
+                      tool_result_owner &&
+                      tool_result_owner.index === index &&
+                      tool_result_owner.tcIdx === tcIdx))
+                )}
                 <div
                   class="flex flex-col items-start"
                   data-testid="chat-msg-assistant"
@@ -291,6 +424,7 @@
                   <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
                   <div
                     class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm flex flex-col gap-2"
+                    data-highlight-target={is_tc_target ? "" : undefined}
                     class:cursor-pointer={!toolCallExpanded[tc_key]}
                     on:click={() => {
                       if (!toolCallExpanded[tc_key])

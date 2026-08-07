@@ -8,6 +8,7 @@ import {
   disagreement_feedback,
   final_judgement_reason,
   is_trace_reviewed,
+  map_output_span_to_trace,
   MAX_JUDGE_PROMPT_CHARS,
   resolve_citation_span,
   review_target,
@@ -416,5 +417,85 @@ describe("final_judgement_reason — the verdict card's reason line", () => {
     expect(final_judgement_reason("Eval passes per the judge's verdict.")).toBe(
       "Eval passes per the judge's verdict.",
     )
+  })
+})
+
+describe("map_output_span_to_trace — flattener block layout port", () => {
+  // A trace exercising every block kind the formatter emits: a plain user
+  // turn, a reasoning-only assistant turn, a tool-call turn, its tool result,
+  // and a final content turn.
+  const trace = [
+    { role: "user", content: "What is the return window?" },
+    { role: "assistant", reasoning_content: "Let me think about policy." },
+    {
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        {
+          id: "call_1",
+          type: "function",
+          function: { name: "lookup_policy", arguments: '{"q":1}' },
+        },
+      ],
+    },
+    { role: "tool", tool_call_id: "call_1", content: "30 day window" },
+    { role: "assistant", content: "Our return window is 30 days." },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ] as any[]
+
+  // Build raw_output exactly the way the server flattener does: one block per
+  // emitted message, joined by a blank line.
+  const raw_output = [
+    "user:\n<user_message>\nWhat is the return window?\n</user_message>",
+    "assistant reasoning:\n<assistant_reasoning_message>\nLet me think about policy.\n</assistant_reasoning_message>",
+    'assistant requested tool calls:\n<assistant_requested_tool_calls>\n- Tool Name: lookup_policy\n- Arguments: {"q":1}\n</assistant_requested_tool_calls>',
+    "tool:\n<tool_tool_message>\n30 day window\n</tool_tool_message>",
+    "assistant:\n<assistant_message>\nOur return window is 30 days.\n</assistant_message>",
+  ].join("\n\n")
+
+  function map(from: string, to: string) {
+    const span = resolve_citation_span(raw_output, { from, to })
+    expect(span).not.toBeNull()
+    return map_output_span_to_trace(trace, raw_output, span!)
+  }
+
+  it("maps a span in a chat (content) turn", () => {
+    // `from` unique to the final turn — "return window" also appears in the
+    // user turn, and resolve_citation_span anchors on the FIRST occurrence.
+    const h = map("Our return", "30 days")
+    expect(h).not.toBeNull()
+    expect(h!.trace_index).toBe(4)
+    expect(h!.kind).toBe("content")
+    expect("Our return window is 30 days.".slice(h!.start, h!.end)).toBe(
+      "Our return window is 30 days",
+    )
+  })
+
+  it("maps a span in a reasoning block", () => {
+    const h = map("think", "policy")
+    expect(h).not.toBeNull()
+    expect(h!.trace_index).toBe(1)
+    expect(h!.kind).toBe("reasoning")
+    expect("Let me think about policy.".slice(h!.start, h!.end)).toBe(
+      "think about policy",
+    )
+  })
+
+  it("maps a span in a tool-call block", () => {
+    const h = map("Tool Name", "lookup_policy")
+    expect(h).not.toBeNull()
+    expect(h!.trace_index).toBe(2)
+    expect(h!.kind).toBe("tool_calls")
+  })
+
+  it("returns null when the span straddles two blocks", () => {
+    // from lands in the user turn, to in the reasoning turn — no single block
+    // contains the span, so there is no honest highlight.
+    const span = resolve_citation_span(raw_output, {
+      from: "What is the return",
+      to: "think about",
+    })
+    expect(span).not.toBeNull()
+    expect(map_output_span_to_trace(trace, raw_output, span!)).toBeNull()
   })
 })

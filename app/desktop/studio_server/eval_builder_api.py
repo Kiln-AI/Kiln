@@ -484,6 +484,10 @@ class ReviewPipelineRun:
                         judge_score=verdict.judge_score,
                         judge_reasoning=verdict.judge_reasoning,
                         total_cost=drive_cost,
+                        # Echo the structured trace alongside its flattened
+                        # raw_output so the client can render the real chat UI
+                        # and map citation spans back onto it.
+                        trace=trace,
                     )
                 )
             except Exception as e:  # noqa: BLE001 — isolate to this case

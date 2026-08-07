@@ -7,7 +7,7 @@ orchestrator maps between these UI-facing models and the SDK internally.
 No SDK types leak to the UI.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from kiln_ai.datamodel.basemodel import FilenameStringShort
 from kiln_ai.datamodel.claim_review import GradedClaim
@@ -336,6 +336,12 @@ class PipelineCaseJudgedEvent(BaseModel):
     judge_score: JudgeScoreLiteral
     judge_reasoning: str
     total_cost: float
+    # The structured conversation the judge saw, as raw chat-completion
+    # message dicts. raw_output is the lossy flattening of this; the client
+    # renders the trace in the house chat UI and maps citation spans back onto
+    # it. Multi-turn only (single-turn has no structure to show), hence
+    # nullable — an additive echo of the trace already in hand at emit time.
+    trace: list[dict[str, Any]] | None = None
 
 
 class PipelineCaseFailedEvent(BaseModel):

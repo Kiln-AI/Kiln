@@ -1173,6 +1173,9 @@
         judge_score: TraceClaims["judge_score"]
         judge_reasoning: string
         total_cost: number
+        // The structured conversation behind raw_output (multi-turn); the
+        // trace modal renders it in the chat UI. Absent on legacy streams.
+        trace?: TraceClaims["trace"]
       }
     | {
         type: "case_failed"
@@ -1688,6 +1691,9 @@
             final_judgement: null,
             claims_state: "unbuilt",
             claims_error: null,
+            // The structured trace powers the modal's chat rendering; null
+            // when the stream didn't carry it (legacy / single-turn).
+            trace: event.trace ?? null,
           }
           judged_case_count += 1
         } else if (event.type === "case_failed") {
