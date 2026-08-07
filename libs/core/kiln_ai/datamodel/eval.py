@@ -7,10 +7,16 @@ from pydantic import (
     BaseModel,
     Discriminator,
     Field,
+    GetJsonSchemaHandler,
     JsonValue,
+    SerializationInfo,
+    SerializerFunctionWrapHandler,
     ValidationInfo,
+    model_serializer,
     model_validator,
 )
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import CoreSchema
 from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import (
@@ -19,6 +25,10 @@ from kiln_ai.datamodel.basemodel import (
     FilenameStringShort,
     KilnParentedModel,
     KilnParentModel,
+)
+from kiln_ai.datamodel.code_file_storage import (
+    read_code_from_sibling_file,
+    write_code_to_sibling_file,
 )
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, EvalInputFilterId
@@ -37,6 +47,10 @@ EvalScores = Dict[str, float]
 # Protected by _migration_lock to ensure thread-safe access
 _migration_lock = Lock()
 _currently_migrating_eval_ids: set[ID_TYPE] = set()
+
+# Fixed name of the sibling file that holds a code judge's Python source, stored
+# beside its eval_config.kiln. Fixed so authored tests can `from scorer import score`.
+SCORER_CODE_FILENAME = "scorer.py"
 
 
 class EvalTemplateId(str, Enum):
@@ -206,6 +220,110 @@ class CodeEvalProperties(BaseModel):
     reference_keys: list[str] = []
     timeout_seconds: int = Field(default=30, ge=1, le=300)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _read_code_file(cls, data: Any, info: ValidationInfo) -> Any:
+        """When loading from disk, inject `code` from the sibling scorer.py.
+
+        The source is stored in scorer.py beside eval_config.kiln, not inline in
+        the JSON. CodeEvalProperties is a nested member of the
+        V2EvalConfigProperties discriminated union in EvalConfig.properties, so
+        the load context set on the parent EvalConfig (`source_dir`) propagates
+        down to this validator. The shared helper reads the file here, before
+        field validation, so the existing validate_code trio runs against the
+        loaded string unchanged.
+        """
+        # Explicit type-gate (defense-in-depth): this validator only ever runs
+        # for code_eval properties — it lives on CodeEvalProperties, and both the
+        # discriminated union and the eager parse route only code_eval dicts
+        # here. Assert that gate so a future refactor can't quietly read
+        # scorer.py for another eval type. None (type omitted, field defaults)
+        # and the enum form both pass; only a present, mismatched type is
+        # rejected, so valid-input behavior is unchanged.
+        if isinstance(data, dict) and data.get("type") not in (
+            None,
+            V2EvalType.code_eval.value,
+        ):
+            raise ValueError(
+                "CodeEvalProperties can only load code_eval properties, "
+                f"got type: {data.get('type')!r}"
+            )
+        return read_code_from_sibling_file(
+            data,
+            info.context or {},
+            filename=SCORER_CODE_FILENAME,
+            kiln_filename="eval_config.kiln",
+            model_label="CodeEvalProperties",
+        )
+
+    @model_serializer(mode="wrap")
+    def _serialize(
+        self, handler: SerializerFunctionWrapHandler, info: SerializationInfo
+    ) -> dict[str, Any]:
+        """On disk-save, write `code` to scorer.py and omit it from the .kiln JSON.
+
+        Delegates to the shared sibling-file helper, which uses the same save
+        context attachments use (`save_attachments` + `dest_path`); it propagates
+        from the parent EvalConfig's save_to_file() down to this nested union
+        member. Without that context — normal model_dump / API responses —
+        `code` is left in the output and no file is written, so the API contract
+        is unchanged. The default handler preserves `type` (needed by the
+        discriminator), `reference_keys`, and `timeout_seconds`.
+
+        Schema note: a custom model_serializer would otherwise collapse the
+        *serialization-mode* JSON schema to an untyped object
+        (`model_json_schema(mode="serialization")` loses per-field typing).
+        Unlike CodeTool — which is never a FastAPI response_model — this model is
+        nested in EvalConfig, and EvalConfig IS the declared `response_model` on
+        several endpoints (eval_api.py). FastAPI generates response schemas in
+        serialization mode, so a collapsed schema here would split
+        CodeEvalProperties into an untyped `-Output` component and drift the
+        checked-in api_schema.d.ts (breaking check_schema.sh and the web types
+        that key off `components["schemas"]["CodeEvalProperties"]`). The
+        `__get_pydantic_json_schema__` override below is therefore REQUIRED (not
+        optional): it keeps the serialization-mode schema identical to
+        validation mode. Do not remove either the serializer (runtime file
+        storage) or the override (schema stability).
+        """
+        return write_code_to_sibling_file(
+            handler(self),
+            info.context or {},
+            filename=SCORER_CODE_FILENAME,
+            code=self.code,
+        )
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        """Keep the serialization-mode JSON schema identical to validation mode.
+
+        The wrap serializer above returns an untyped `dict`, which would collapse
+        this model's serialization-mode JSON schema to `{additionalProperties:
+        true, type: object}` (dropping `code`, `type`, etc.). Because EvalConfig
+        (which nests this model) is a FastAPI response_model, that collapse would
+        drift the committed OpenAPI/api_schema.d.ts. Dropping the `serialization`
+        core-schema entries makes JSON-schema generation use the field-based
+        (validation) representation in both modes, so `code` stays present and
+        typed and there is no `-Input`/`-Output` split. The custom serializer
+        lives on the inner `model` core schema (the before/after validators wrap
+        it in function schemas), so the strip must be recursive. This affects
+        only schema generation, never runtime (de)serialization.
+        """
+
+        def strip_serialization(schema: Any) -> Any:
+            if isinstance(schema, dict):
+                return {
+                    key: strip_serialization(value)
+                    for key, value in schema.items()
+                    if key != "serialization"
+                }
+            if isinstance(schema, list):
+                return [strip_serialization(item) for item in schema]
+            return schema
+
+        return handler(strip_serialization(core_schema))
+
     @model_validator(mode="after")
     def validate_code(self) -> Self:
         code_bytes = self.code.encode("utf-8")
@@ -290,6 +408,35 @@ def reference_data_keys(props: V2EvalConfigProperties) -> list[str]:
             return []
         case _:
             raise_exhaustive_enum_error(props)
+
+
+def _eager_parse_code_eval_on_load(
+    data: dict[str, Any], ctx: dict[str, Any]
+) -> dict[str, Any]:
+    """Eagerly parse a code_eval EvalConfig's `properties` on file load.
+
+    V2 code judges store their score() source in a sibling scorer.py, not inline
+    in the JSON. On load, parse a code_eval properties dict through
+    CodeEvalProperties (which reads scorer.py via the propagated load context) so
+    any error surfaces directly. Without this, the outer
+    `V2EvalConfigProperties | dict | None` union would recover from the nested
+    member's error by falling back to the dict branch, masking the real cause
+    (e.g. a missing scorer.py or a bad score() function) behind a generic
+    "V2 config requires typed properties". See functional spec §2.2 / §4.
+
+    Only touches code_eval properties during a file load, gated explicitly on
+    `type == code_eval`; every other input passes through unchanged. Lifted
+    verbatim from EvalConfig.dispatch_properties_parsing so the code-eval load
+    path is a clearly-named, code-eval-local step rather than smeared into the
+    generic dispatcher.
+    """
+    if not ctx.get("loading_from_file"):
+        return data
+    props = data.get("properties")
+    if isinstance(props, dict) and props.get("type") == V2EvalType.code_eval.value:
+        data = dict(data)
+        data["properties"] = CodeEvalProperties.model_validate(props, context=ctx)
+    return data
 
 
 def validate_scores_against_output_scores(
@@ -709,7 +856,13 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
             if props is not None and isinstance(props, dict):
                 data = dict(data)
                 data["properties"] = props
-        return data
+            return data
+
+        # V2: the only load-time special-case is code_eval, whose score() source
+        # lives in a sibling scorer.py. Delegate to the code-eval-local helper,
+        # which is explicitly type-gated (`type == code_eval`); all other V2
+        # properties pass through unchanged.
+        return _eager_parse_code_eval_on_load(data, info.context or {})
 
     def parent_eval(self) -> Union["Eval", None]:
         if self.parent is not None and self.parent.__class__.__name__ != "Eval":

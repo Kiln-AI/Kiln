@@ -431,7 +431,10 @@ class KilnBaseModel(BaseModel):
             mtime_ns = os.fstat(file.fileno()).st_mtime_ns
             file_data = file.read()
             parsed_json = json.loads(file_data)
-            m = cls.model_validate(parsed_json, context={"loading_from_file": True})
+            m = cls.model_validate(
+                parsed_json,
+                context={"loading_from_file": True, "source_dir": path.parent},
+            )
             if not isinstance(m, cls):
                 raise ValueError(f"Loaded model is not of type {cls.__name__}")
             m._loaded_from_file = True
