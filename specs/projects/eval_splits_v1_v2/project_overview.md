@@ -70,14 +70,23 @@ scrutiny.
    `df0fd56`, so this is wide. Note #1621 is **already `dirty` against `main`** independently of
    evals_v2 — expect conflicts from more than one direction.
 3. **Implement** the split support.
-4. **Merge into `agi-anyting_goes_into`** (currently `89a8d1f`). No review required — temp
-   integration branch. An intermediate branch to resolve conflicts is fine and expected; don't
-   force-push over anyone else's work there.
-5. **Close PR #1621** (`scosman/eval-api-improvements` → `main`), pointing at the replacement.
-6. **Close PR #1620** (`scosman/val-set` → `main`) — superseded; its single `val_set_filter_id`
+4. **Close PR #1621** (`scosman/eval-api-improvements` → `main`), pointing at the replacement.
+5. **Close PR #1620** (`scosman/val-set` → `main`) — superseded; its single `val_set_filter_id`
    commit is carried by this branch.
-7. **Open a new PR: `scosman/eval-splits-v1-v2` → `scosman/evals_v2`.** This one gets a real
+6. **Open a new PR: `scosman/eval-splits-v1-v2` → `scosman/evals_v2`.** This one gets a real
    review.
+
+*(A merge into `agi-anyting_goes_into` was originally step 4 here. Dropped — this branch goes
+straight to its PR against `scosman/evals_v2`.)*
+
+**Steps 1–2 were superseded after the work was built.** Branching from
+`scosman/eval-api-improvements` meant carrying PR #1517 (`leonard/kil-686-eval-job`), which is
+draft, unmerged, and contains explicit merge blockers — none of which may reach a main-destined
+branch. The project was rebuilt on `origin/scosman/evals_v2` directly as
+`claude/eval-splits-evals-v2`, which makes step 2's merge unnecessary rather than resolved. The
+cost is phase 5: its code targets #1517's eval job worker and does not come along. See
+`implementation_plan.md`'s phase 1 and phase 5 entries. The original branch,
+`claude/eval-splits-v1-v2-q38412`, is kept as the record.
 
 Nothing here needs to reach `main` on its own schedule; it lands on `main` when evals_v2 does.
 
@@ -254,5 +263,5 @@ Areas that looked most likely to break quietly:
 1. **Model shape** — §1, including option (d). Drives most of the rest.
 2. **Which endpoints get taught the EvalInput path** vs. fail explicitly, given golden is out of
    scope — §6.
-3. **Intermediate branch** for the `agi-anyting_goes_into` merge — needed, or does it go clean?
-   (Assume needed; #1621 is already `dirty` against `main`.)
+3. ~~**Intermediate branch** for the `agi-anyting_goes_into` merge~~ — moot; that merge was
+   dropped from the workflow above.

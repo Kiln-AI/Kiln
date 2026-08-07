@@ -478,7 +478,7 @@ Every source branch in the project resolves to one of these two functions:
 | `eval_api.py` `get_eval_results_summary` | skips EvalInput evals | `resolve_split`, cached by `(source, filter_id)` |
 | `eval_api.py` `get_eval_run_results` | no split filtering | `resolve_split` + `eval_run_item_key` |
 | `eval_api.py` `compute_score_summary` | `expected_dataset_ids: set[ID_TYPE]` | `ResolvedSplit` |
-| `jobs/workers/eval.py` | `dataset_filter_from_id` over `task.runs()` | `resolve_split` |
+| `jobs/workers/eval.py` | `dataset_filter_from_id` over `task.runs()` | `resolve_split` (ships with §5) |
 
 `runs_in_filter` stays TaskRun-typed and is used only for the golden set, which is TaskRun-only by
 definition. It is not generalized — generalizing it would imply golden can be EvalInput-backed,
@@ -624,6 +624,19 @@ proves visible, deleting them is a one-off script, not a schema concern.
 
 ## 5. Job worker and jobs API
 
+**This whole section ships separately from `claude/eval-splits-evals-v2`.** Both files it
+describes — `app/desktop/studio_server/jobs/workers/eval.py` and the eval route in
+`jobs/api.py` — belong to the still-draft PR #1517 and are not on `scosman/evals_v2`, which this
+branch is based on. The section is left as written because it is still the design: it was built
+against it (phase 5, commit `369a32ef8`), reviewed, and recorded in `phase_plans/phase_5.md`; it
+just has no code to attach to here and re-lands on a tree that has the worker. Read it as
+specification, not as a description of this tree. `implementation_plan.md`'s phase 5 entry has the
+consequences, and functional spec §4.1 notes the missing `split` request parameter.
+
+Nothing else in this project waits on it. §4.2's constructor guards mean a runner built without a
+split raises rather than defaulting, so the worker cannot be re-added in a form that silently drops
+an override, and §6's readers resolve their own splits.
+
 ### 5.1 `jobs/workers/eval.py`
 
 `EvalJobParams.split: EvalSplitName | None` is kept from #1621. `_dataset_filter_id` and
@@ -733,8 +746,8 @@ intended, per functional spec §3.2.
 
 | Caller | `None` means |
 |---|---|
-| `jobs/api.py` pre-check | 422, naming the split and the eval |
-| `jobs/workers/eval.py` | job-creation error (unreachable — the pre-check fires first) |
+| `jobs/api.py` pre-check | 422, naming the split and the eval (ships with §5) |
+| `jobs/workers/eval.py` | job-creation error, unreachable — the pre-check fires first (ships with §5) |
 | `get_eval_run_results` | 422 |
 | `get_eval_progress` | `0` for train and val; **422 for test** (see below) |
 | `get_eval_config_score_summary` | 422 (test is required, so this is a corrupt-file case) |
@@ -805,7 +818,8 @@ are **deleted**, per functional spec §3.2.
 ## 9. Testing strategy
 
 Python: `pytest`, alongside the existing `test_eval_model.py`, `test_eval_runner.py`,
-`test_eval_api.py`, `jobs/test_api.py`. Web: `npm run test_run` for the one page change.
+`test_eval_api.py`, and — with §5 — `jobs/test_api.py`. Web: `npm run test_run` for the one page
+change.
 
 ### 9.1 Datamodel round-trip — the highest-risk area
 
@@ -870,6 +884,8 @@ Provenance (§2.6), which is where the subtle failures live:
 
 ### 9.4 Job worker and jobs API
 
+*Ships with §5; not in this tree — see §5's note.*
+
 - Progress totals match the requested split's size, per backing — the §5.1 regression test.
 - A resume against a partially-run split does not short-circuit against the wrong universe.
 - A bad split 422s at job creation, both backings.
@@ -889,11 +905,18 @@ Provenance (§2.6), which is where the subtle failures live:
 ### 9.6 Regression: the no-split path
 
 The run API with `split` omitted runs the same items and reports the same totals as before this
-change, for a TaskRun-backed eval. Functional spec §8.1.
+change, for a TaskRun-backed eval. Functional spec §8.1. *Also ships with §5 — the run API is the
+jobs route. The SSE run endpoints, which are in this tree, carry the equivalent regression.*
 
 ---
 
 ## 10. Sequencing
+
+**Superseded by the rebuild.** `claude/eval-splits-evals-v2` is cut from `scosman/evals_v2`
+directly, so there is no merge to sequence and none of #1621's split surface to back out — the
+conflicts described below did not happen because the branch never carried the other side. Kept
+because the paragraphs after it still say the right thing about any tree that *does* carry #1621,
+which is what the eb-v2 alignment project meets. See `implementation_plan.md`'s phase 1 entry.
 
 The merge (`scosman/evals_v2` into this branch) lands before any of this. Conflicts are expected
 in `eval.py`, `eval_runner.py`, `eval_api.py` and `spec_utils.py` from two directions — #1621 is
@@ -905,18 +928,16 @@ being substantially rewritten here anyway: `eval_set_filter_id: DatasetFilterId 
 `split_filter_id_from_eval`, `val_set_filter_id` and `eval_set_filter_id_override` are all deleted
 by this design.
 
-### The `agi-anyting_goes_into` merge backs out #1621
+### This branch replaces #1621 rather than extending it
 
-That branch already contains `45dd7b0` (#1621) and does **not** contain evals_v2. So the merge is
-not additive: it backs #1621's split implementation out and puts this one in. Everything #1621
-added to the split surface — `val_set_filter_id`, `filter_id_for_split`,
+Everything #1621 added to the split surface — `val_set_filter_id`, `filter_id_for_split`,
 `split_filter_id_from_eval`, `eval_set_filter_id_override`, the `migrate_val_set_filter_id`
 migration — is deleted by this design and replaced by `splits`, `resolve_split` and
 `ResolvedSplit`.
 
-Expect that merge to read as a large deletion of code already sitting on the integration branch.
-That is correct, not lost work. Reviewers should compare against this document rather than against
-#1621.
+Anywhere this branch meets a tree that already carries #1621, expect the diff to read as a large
+deletion of code that is already there. That is correct, not lost work. Reviewers should compare
+against this document rather than against #1621.
 
 ---
 

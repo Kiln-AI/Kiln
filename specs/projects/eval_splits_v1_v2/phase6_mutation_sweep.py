@@ -1,6 +1,6 @@
 """Mutation-test every behavior phase 6 of the eval-splits project claims to cover.
 
-Same harness as phase2/phase3/phase4/phase5_mutation_sweep.py: each mutation applies one
+Same harness as phase2/phase3/phase4_mutation_sweep.py: each mutation applies one
 or more textual edits to the tree, runs a test file, and expects it to fail. Run from
 anywhere:
 

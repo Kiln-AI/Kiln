@@ -283,7 +283,11 @@ mutation that passes vacuously. The entry restores the mis-routing *and* the bra
 is exactly the pair architecture §4.3 claims is gone, and is killed by
 `test_writes_no_skipped_runs_for_an_eval_input_backed_eval`.
 
-**20 mutations, all killed** (14 before review, 6 added with the review fixes). One survived the
+**20 mutations, all killed** (14 before review, 6 added with the review fixes). *Rebuild note: one
+of the 20 — "worker: builds the runner over an empty split" — targeted `jobs/workers/eval.py`, which
+does not exist on `scosman/evals_v2`. It is removed, with the reason recorded in
+`phase4_mutation_sweep.py`'s docstring, so a re-run reports **19/19 killed** rather than a
+PATTERN-MISS that reads as a regression.* One survived the
 first run and was fixed rather than explained away: *dedupe: includes runs from other run configs* —
 dropping the `task_run_config_id in already_run` membership test. Every dedupe test used only run
 configs the runner was given, so nothing covered the common real case: an eval config accumulates
@@ -298,7 +302,8 @@ eval_input` and `runner: task_run_eval ignores the split's filter` — which rep
 rather than `killed`. They are replaced in `phase2_mutation_sweep.py` by a comment saying so and
 pointing at this phase's equivalents, so a re-run is **30/30 killed** instead of two false alarms in
 a committed artifact. `phase_2.md`'s own "all 32 killed" claim now carries a note saying the same
-thing, since that is where a reader meets the number.
+thing, since that is where a reader meets the number. *(On the evals_v2 rebuild two further entries
+go for the same reason, so phase 2's sweep holds 28 and re-runs **28/28**.)*
 
 ### Check status
 

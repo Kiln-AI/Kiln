@@ -143,6 +143,21 @@ part of the storage-shape decision in §10, where file compatibility constrains 
 The split's backing determines which store is iterated. A caller does not know or care: the same
 request shape runs a TaskRun-backed val set and an EvalInput-backed one.
 
+**This endpoint ships separately, and is not on `claude/eval-splits-evals-v2`.**
+`POST /api/jobs/evals/run` is served by the eval job worker in
+`app/desktop/studio_server/jobs/`, which does not exist on `scosman/evals_v2` — it belongs to the
+still-draft PR #1517. So on this branch the route is absent, and with it the `split` parameter:
+nothing in the generated `api_schema.d.ts` mentions it. The work that adds `split` to it is
+built, reviewed and complete (phase 5, commit `369a32ef8`), and re-lands on a tree that has the
+worker. See `implementation_plan.md`'s phase 5 entry.
+
+The note covers §4.3 as well, since a *job's* progress total is the worker's to compute. What is
+on this branch is everything below the request layer: the runner takes a resolved split rather than
+a filter id, §4.2's guarantee is structural — so re-adding the endpoint cannot reintroduce a
+dropped override — and `len(ResolvedSplit)` is the correct universe for either backing, which is
+what §4.3's progress total is measured against. §4.4 is unaffected: the SSE endpoints are here and
+still do not take a `split`.
+
 ### 4.2 The split must actually reach the runner
 
 The requested split replaces the eval's default item selection **for both backings**. A split
@@ -389,7 +404,8 @@ Errors name the split, the eval, and the actual reason. In particular:
   existed under that name. Diagnostics are written in terms the caller used (`train`, `val`,
   `test`), not internal field names.
 - A bad split on a run request fails at request time, not as a background job that starts and
-  then dies.
+  then dies. This one is about the jobs API and ships with it (§4.1) — the requirement stands, and
+  the pre-resolution that satisfies it is written and reviewed, just not in this tree.
 - Unsupported operations (§6.2) fail before any work is done or any record is written.
 
 | Condition | Result |

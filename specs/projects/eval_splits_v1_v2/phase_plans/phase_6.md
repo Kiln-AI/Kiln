@@ -185,6 +185,10 @@ domain-neutral, so the one message it composes itself — a body that ends early
 
 ### 11. Phase 5's five deferred cosmetic items
 
+> **Not on `claude/eval-splits-evals-v2`.** All five touch files that belong to phase 5 and to the
+> still-draft PR #1517, so they re-land with phase 5 rather than here. Kept as written, since this
+> list is the record of what was deferred.
+
 - `jobs/test_api.py`'s `split_eval` fixture drops its unused `monkeypatch` parameter.
 - `jobs/workers/eval.py`'s `_item_source` moves above `_EvalErrorLogObserver`, its only caller.
 - `phase5_mutation_sweep.py` gains an `item_source` mutation.
@@ -293,8 +297,11 @@ SURVIVED on the first run, and the test that kills it was written in response.
 
 Web-side behavior is covered by vitest rather than pytest, so it is not in this harness.
 
-Phases 2–5's sweeps re-run clean against this tree: **30/30**, **23/23**, **19/19**, and — with
-this phase's added `item_source` entry — **14/14**.
+Phases 2–4's sweeps re-run clean against this tree: **28/28**, **23/23** and **19/19**. Phase 5's
+sweep is not in this tree — every mutation in it edits `jobs/workers/eval.py` or `jobs/api.py`,
+neither of which is here. On the original branch the counts were **30/30**, **23/23**, **19/19** and,
+with this phase's added `item_source` entry, **14/14**; phase 2 loses the two judge-feedback-batch
+mutations, whose target files are #1517's.
 
 ---
 

@@ -215,6 +215,13 @@ killed.**
 > pointing at `phase4_mutation_sweep.py`, whose entries cover the same two behaviors in the shape
 > the code now has. Nothing about the counts below is wrong for the tree this phase landed on; they
 > are just no longer what a re-run prints.
+>
+> **On the evals_v2 rebuild: the artifact holds 28, and a re-run reports 28/28.** Two more entries
+> — `judge guard: v2 rejection removed` and `judge worker: guard call removed` — mutated
+> `judge_feedback_batch_api.py` and `jobs/workers/judge_feedback_batch.py`, which belong to the
+> draft PR #1517 and are not on `scosman/evals_v2`. They pinned this phase's carried-over phase-1
+> review follow-up, which is not in that tree either. Replaced by a comment in the script for the
+> same reason as the two above.
 
 The harness ships with the specs —
 `specs/projects/eval_splits_v1_v2/phase2_mutation_sweep.py` — because re-running it is the cheapest

@@ -336,7 +336,8 @@ they now restore the pre-phase `bool(eval.train_set_filter_id)`, which is the pl
 one site left un-migrated — and is strictly stronger, since these test evals carry their splits in
 `splits` and so read `None` from the legacy field.
 
-Phase 2's sweep was re-run unchanged against this tree: **32/32 still killed.**
+Phase 2's sweep was re-run unchanged against this tree: **32/32 still killed.** *(On the
+evals_v2 rebuild the sweep holds 28 entries — see `phase_2.md` — and re-runs **28/28**.)*
 
 The sweep script is kept as a committed project artifact next to `phase2_mutation_sweep.py`, for
 the same reason: it is the executable record of what the phase's tests actually discriminate, and a
