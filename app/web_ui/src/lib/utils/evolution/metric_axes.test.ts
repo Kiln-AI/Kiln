@@ -25,7 +25,7 @@ import {
   visible_metric_axes,
   wrap_axis_label,
   metric_family_bands,
-  metric_radar_empty_state,
+  metric_chart_empty_state,
   metric_row_info,
   score_row_label,
   usage_row_family,
@@ -1059,14 +1059,14 @@ describe("metric_row_info", () => {
     })
   })
 
-  it("agrees with the radar about which family a metric is in", () => {
+  it("agrees with the chart about which family a metric is in", () => {
     for (const axis of build_metric_axes([])) {
       expect(metric_row_info(axis.quantity).family).toBe(axis.family)
     }
   })
 })
 
-describe("metric_radar_empty_state", () => {
+describe("metric_chart_empty_state", () => {
   // A task with a full metric set: eleven axes plotted out of sixteen offered,
   // three run configs, nothing hidden.
   const full = {
@@ -1082,7 +1082,7 @@ describe("metric_radar_empty_state", () => {
   // question - "Nothing to Compare Against / Select run configs with results" -
   // to a reader whose configs were pinned and did have results.
   it("blames the hidden rows, not the run configs, when everything is hidden", () => {
-    const state = metric_radar_empty_state({
+    const state = metric_chart_empty_state({
       ...full,
       selected: 0,
       plotted: 0,
@@ -1099,7 +1099,7 @@ describe("metric_radar_empty_state", () => {
   // tokens: those two axes have no table row, so hiding every row still leaves
   // them offerable. Both controls are named because both are in play.
   it("names both controls when some axes are hidden and the rest are off", () => {
-    const state = metric_radar_empty_state({
+    const state = metric_chart_empty_state({
       ...full,
       selected: 0,
       plotted: 0,
@@ -1109,69 +1109,69 @@ describe("metric_radar_empty_state", () => {
     })
     expect(state.title).toBe("No Metrics On The Chart")
     expect(state.message).toContain("Hidden")
-    expect(state.message).toContain("Axes menu")
+    expect(state.message).toContain("Metrics menu")
   })
 
-  it("names only the Axes menu when nothing was hidden", () => {
-    const state = metric_radar_empty_state({
+  it("names only the Metrics menu when nothing was hidden", () => {
+    const state = metric_chart_empty_state({
       ...full,
       selected: 0,
       plotted: 0,
       configs: 0,
     })
     expect(state.title).toBe("No Metrics On The Chart")
-    expect(state.message).toContain("Axes menu")
+    expect(state.message).toContain("Metrics menu")
     expect(state.message).not.toContain("Hidden")
   })
 
   it("keeps the run config states it always had", () => {
     expect(
-      metric_radar_empty_state({ ...full, plotted: 11, configs: 0 }),
+      metric_chart_empty_state({ ...full, plotted: 11, configs: 0 }),
     ).toEqual({
       title: "Nothing to Compare Against",
       message:
         "Select run configs with results to compare their cost, speed and usage.",
     })
-    const one = metric_radar_empty_state({ ...full, configs: 1 })
+    const one = metric_chart_empty_state({ ...full, configs: 1 })
     expect(one.title).toBe("Nothing to Compare Against")
     expect(one.message).toContain("at least two")
   })
 
   it("still says when the configs share too few metrics with results", () => {
-    const state = metric_radar_empty_state({ ...full, plotted: 1 })
+    const state = metric_chart_empty_state({ ...full, plotted: 1 })
     expect(state.title).toBe("Not Enough Shared Metrics")
     expect(state.message).toContain(`fewer than ${MIN_METRIC_AXES} metrics`)
   })
 
-  it("offers the Axes menu only when the menu has more to offer", () => {
-    const state = metric_radar_empty_state({
+  it("offers the Metrics menu only when the menu has more to offer", () => {
+    const state = metric_chart_empty_state({
       ...full,
       selected: 2,
       plotted: 2,
     })
-    expect(state.title).toBe("Not Enough Axes")
-    expect(state.message).toContain("Axes menu")
+    expect(state.title).toBe("Not Enough Metrics")
+    expect(state.message).toContain("Metrics menu")
   })
 
   // The remedy is the table's Hidden control, not a menu that will not list
   // the axes in question.
   it("points at Hidden when the axes that would help are hidden", () => {
-    const state = metric_radar_empty_state({
+    const state = metric_chart_empty_state({
       ...full,
       selected: 2,
       plotted: 2,
       available: 2,
       hidden: 14,
     })
-    expect(state.title).toBe("Not Enough Axes")
+    expect(state.title).toBe("Not Enough Metrics")
     expect(state.message).toContain("Hidden")
-    expect(state.message).not.toContain("Axes menu")
+    expect(state.message).not.toContain("Metrics menu")
   })
 
   // Nothing the reader can do, so nothing is suggested - a task with two
   // metrics used to be told to turn more on.
   it("names no control when the task simply has too few metrics", () => {
-    const state = metric_radar_empty_state({
+    const state = metric_chart_empty_state({
       selected: 2,
       plotted: 2,
       available: 2,
@@ -1180,13 +1180,13 @@ describe("metric_radar_empty_state", () => {
     })
     expect(state.title).toBe("Not Enough Metrics")
     expect(state.message).toContain("this task has 2")
-    expect(state.message).not.toContain("Axes menu")
+    expect(state.message).not.toContain("Metrics menu")
     expect(state.message).not.toContain("Hidden")
   })
 
   it("has nothing to blame on a task with no metrics at all", () => {
     expect(
-      metric_radar_empty_state({
+      metric_chart_empty_state({
         selected: 0,
         plotted: 0,
         available: 0,

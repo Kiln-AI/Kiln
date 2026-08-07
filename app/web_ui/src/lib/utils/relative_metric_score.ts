@@ -3,7 +3,8 @@
 // better the smaller they get; a few (cache reuse) are the other way round, and
 // `higherIsBetter` is the only thing that differs.
 //
-// A radar axis needs a bounded scale where further from the centre is better.
+// A chart axis needs a bounded scale where one end is better - further from
+// the centre on the quality radar, a longer bar on the metrics chart.
 // A pass rate already has one (0-1). Cost does not: there is no "maximum cost"
 // to normalize against, and the useful question is never "how close to zero is
 // this config" but "how does it compare to the others on the chart". So these
@@ -18,8 +19,8 @@
 //   - it is relative in every axis mode. There is no "full scale" version of
 //     "cheaper than the alternatives".
 //
-// Extracted from compare_radar_chart.svelte so the metrics radar scores its
-// axes exactly the way the usage axes on the eval-score radar are scored,
+// Extracted from compare_radar_chart.svelte so the metrics chart scores its
+// rows exactly the way the usage axes on the eval-score radar are scored,
 // rather than growing a second, subtly different definition of "better".
 
 export interface RelativeMetricScoreOptions {

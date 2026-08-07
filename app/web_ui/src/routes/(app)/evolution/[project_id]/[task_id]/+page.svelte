@@ -57,7 +57,7 @@
   import CompareRadarChart, {
     type ComparisonFeature,
   } from "$lib/components/compare_radar_chart.svelte"
-  import CompareMetricsRadarChart from "$lib/components/compare_metrics_radar_chart.svelte"
+  import CompareMetricsBarChart from "$lib/components/compare_metrics_bar_chart.svelte"
   import {
     build_metric_axes,
     criterion_key_metas,
@@ -831,8 +831,8 @@
     metric_axis_keys = null
   }
 
-  // Grouped under the same family headings the chart lays the axes out by, so
-  // the menu reads in the same order as the ring. The heading counts what is ON
+  // Grouped under the same family headings the chart lays the metrics out by,
+  // so the menu reads down in the chart's own order. The heading counts what is ON
   // out of what exists, which is the number the chart's own family key shows -
   // "Tokens 3" under the title is these three ticks.
   $: metric_menu_items = (() => {
@@ -872,7 +872,7 @@
   // What is left off, stated rather than silent. Informational score keys are
   // plotted here whenever the chart knows which end of their scale is the good
   // one - being a metric is the point of this chart - but one it cannot point
-  // has no better end at all, and a radar can only say "further is better".
+  // has no better end at all, and a bar can only say "longer is better".
   $: metrics_not_shown_note = (() => {
     const parts: string[] = []
     // Against the visible axes, not the catalog: a hidden row was not "not
@@ -1401,16 +1401,17 @@
       {/if}
     </div>
 
-    <!-- Section 2: the two radars, side by side - quality on the left, what it
+    <!-- Section 2: the two charts, side by side - quality on the left, what it
          cost to get it on the right. They only pair up once there is room for
-         two rings plus their axis names (each needs roughly 540px before the
-         plot starts losing to the labels), so below xl they stack and each one
-         is page-width again.
+         the radar's ring plus its axis names and the bars plus their gutter
+         (each needs roughly 540px before the plot starts losing to the
+         labels), so below xl they stack and each one is page-width again.
 
-         Height is the only thing a radar can grow into, so the floor is
-         generous: the chart's own 640px box plus its card header and padding.
-         Tall enough for wrapped axis names all the way round the outer ring
-         plus the scrolling legend underneath.
+         Height is what both charts grow into - a radius for one, a row per
+         metric for the other - so the floor is generous: the chart's own 640px
+         box plus its card header and padding. Tall enough for wrapped axis
+         names all the way round the outer ring, eleven readable metric rows,
+         and the scrolling legend underneath either.
 
          The two cards are the same height, which is what makes the row read as
          a pair rather than two things that happen to be adjacent. Grid rows
@@ -1471,7 +1472,7 @@
       </div>
 
       <div class="min-w-0 min-h-[800px] flex flex-col">
-        <CompareMetricsRadarChart
+        <CompareMetricsBarChart
           axes={shown_metric_axes}
           getMetricValue={get_metric_value}
           run_configs={run_configs ?? []}
@@ -1489,10 +1490,10 @@
               class="btn btn-sm font-normal"
               title="Choose which metrics are plotted"
             >
-              Axes ({shown_metric_axes.length})
+              Metrics ({shown_metric_axes.length})
             </button>
           </FloatingMenu>
-        </CompareMetricsRadarChart>
+        </CompareMetricsBarChart>
       </div>
     </div>
 

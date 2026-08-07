@@ -242,7 +242,7 @@ describe("metric_axis_help", () => {
       title: "Narration Consistency",
       subtitle: "Longest Silent Run · Nova — Efficiency",
       direction: "lower",
-      description: "Lower longest silent run scores further from the centre.",
+      description: "Lower longest silent run draws a longer bar.",
     })
   })
 
@@ -270,7 +270,7 @@ describe("metric_axis_help", () => {
           better: "higher",
         }),
       ).description,
-    ).toBe("Higher cache hit rate scores further from the centre.")
+    ).toBe("Higher cache hit rate draws a longer bar.")
   })
 
   it("keeps an acronym capitalized mid-sentence", () => {
@@ -278,7 +278,7 @@ describe("metric_axis_help", () => {
       metric_axis_help(
         axis({ label: "LLM Call Economy", valueLabel: "LLM Calls" }),
       ).description,
-    ).toBe("Lower LLM calls scores further from the centre.")
+    ).toBe("Lower LLM calls draws a longer bar.")
   })
 })
 
@@ -318,7 +318,7 @@ describe("axis_help_html", () => {
       title: "Token Economy",
       subtitle: "Total Tokens · usage rollup",
       direction: "lower",
-      description: "Lower total tokens scores further from the centre.",
+      description: "Lower total tokens draws a longer bar.",
     })
     expect(html).toContain("LOWER IS BETTER")
     expect(html).not.toContain("HIGHER IS BETTER")

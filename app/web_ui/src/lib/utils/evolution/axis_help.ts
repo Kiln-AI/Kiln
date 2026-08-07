@@ -51,19 +51,20 @@ export interface AxisHelp {
   /**
    * Which way the score reads, or null when no direction is in force.
    *
-   * One rule on both rings, and it is the one that cannot contradict the
-   * picture: this states the direction the axis is PLOTTED with. Both radars
-   * draw "further from the centre is better", so every axis on either of them
-   * has resolved a direction before it was drawn - the quality ring by taking
-   * the score's declared one (and higher-is-better for a key nobody declared,
-   * which is what every rating scale is), the metrics ring by pointing the
-   * catalog's quantity. Null is therefore not the ordinary case: it is for a
+   * One rule on both charts, and it is the one that cannot contradict the
+   * picture: this states the direction the axis is PLOTTED with. The quality
+   * radar draws "further from the centre is better" and the metrics chart
+   * "longer is better", so every axis on either of them has resolved a
+   * direction before it was drawn - the quality ring by taking the score's
+   * declared one (and higher-is-better for a key nobody declared, which is
+   * what every rating scale is), the metrics chart by pointing the catalog's
+   * quantity. Null is therefore not the ordinary case: it is for a
    * popup built for an axis that was never plotted, where there is no
    * direction to report and inventing one would be the only way to get it
    * wrong.
    *
    * A consequence worth stating: an INFORMATIONAL score that the metric
-   * catalog can point does reach the metrics ring, and this line reports the
+   * catalog can point does reach the metrics chart, and this line reports the
    * direction it is drawn with - the same fact the sentence under it already
    * spells out. One the catalog cannot point never reaches either chart (see
    * `directionless_key_count`), and an informational quality score is left off
@@ -223,8 +224,8 @@ function quality_axis_direction(
  * purpose - so this is assembled from what `MetricAxis` already carries, and
  * nothing new is authored for it. That turns out to be exactly the question the
  * label raises: every axis is named for the VIRTUE ("Narration Consistency"),
- * which is what makes "further from the centre is better" true on all sixteen
- * of them, and the cost of that naming is that the raw quantity ("Longest
+ * which is what makes "a longer bar is better" true on all sixteen of them,
+ * and the cost of that naming is that the raw quantity ("Longest
  * Silent Run") is no longer on the chart at all. The subtitle is the same
  * `quantity · source` line the data-point tooltip already prints, so the two
  * boxes agree, and the sentence under it is the one fact the label inverts:
@@ -243,7 +244,7 @@ export function metric_axis_help(axis: MetricAxis): AxisHelp {
     direction: axis.better,
     description: `${
       axis.better === "higher" ? "Higher" : "Lower"
-    } ${mid_sentence(axis.valueLabel)} scores further from the centre.`,
+    } ${mid_sentence(axis.valueLabel)} draws a longer bar.`,
   }
 }
 
