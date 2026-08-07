@@ -5,7 +5,6 @@ import type {
 import { writable } from "svelte/store"
 import { tool_link } from "$lib/utils/link_builder"
 import { indexedDBStore } from "./index_db_store"
-import { client } from "$lib/api_client"
 
 type ToolsStore = {
   selected_tool_ids_by_task_id: Record<string, string[]>
@@ -88,30 +87,4 @@ export function split_tool_and_skill_ids(ids: string[]): {
     tool_ids: ids.filter((id) => !is_skill_tool_id(id)),
     skill_ids: ids.filter((id) => is_skill_tool_id(id)),
   }
-}
-
-// Fetches OpenAI-compatible tool definition's function name for a given tool ID
-export async function tool_id_to_function_name(
-  tool_id: string,
-  project_id: string,
-  task_id: string,
-): Promise<string> {
-  const { data, error } = await client.GET(
-    "/api/projects/{project_id}/tasks/{task_id}/tools/{tool_id}/definition",
-    {
-      params: {
-        path: {
-          project_id,
-          task_id,
-          tool_id,
-        },
-      },
-    },
-  )
-
-  if (error) {
-    throw error
-  }
-
-  return data.function_name
 }

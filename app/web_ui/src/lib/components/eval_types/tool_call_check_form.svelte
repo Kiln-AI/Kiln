@@ -6,7 +6,6 @@
   import CloseIcon from "$lib/ui/icons/close_icon.svelte"
   import { onMount } from "svelte"
   import { available_tools, load_available_tools } from "$lib/stores"
-  import { tool_id_to_function_name } from "$lib/stores/tools_store"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
   import type { ToolSetApiDescription } from "$lib/types"
 
@@ -19,8 +18,7 @@
     on_unexpected_tools: "ignore",
   }
 
-  // Project/task context, used to resolve the OpenAI-compatible tool-call
-  // function names for the tool dropdown.
+  // Project/task context, used to load the available tools for the dropdown.
   export let project_id: string = ""
   export let task_id: string = ""
 
@@ -47,33 +45,32 @@
     build_tool_options(tool_sets)
   }
 
-  async function build_tool_options(tool_sets: ToolSetApiDescription[]) {
+  function build_tool_options(tool_sets: ToolSetApiDescription[]) {
     const groups: OptionGroup[] = []
     const fn_names = new Set<string>()
     for (const tool_set of tool_sets) {
-      const resolved = await Promise.all(
-        tool_set.tools.map(async (tool): Promise<Option | null> => {
-          try {
-            const function_name = await tool_id_to_function_name(
-              tool.id,
-              project_id,
-              task_id,
-            )
-            return {
-              value: function_name,
-              label: tool.name,
-              description: function_name,
-            }
-          } catch {
-            // Skip tools we can't resolve a function name for (e.g. offline
-            // MCP server). They just won't appear in the dropdown.
-            return null
+      if (tool_set.type === "skill") {
+        if (tool_set.tools.length > 0) {
+          const option: Option = {
+            value: "skill",
+            label: "Skill",
+            description:
+              "Covers all skills; the specific skill is matched via the name argument.",
           }
-        }),
-      )
-      const options = resolved.filter((o): o is Option => o !== null)
-      for (const option of options) {
-        fn_names.add(option.value as string)
+          fn_names.add("skill")
+          groups.push({ label: tool_set.set_name, options: [option] })
+        }
+        continue
+      }
+      const options: Option[] = []
+      for (const tool of tool_set.tools) {
+        const function_name = tool.function_name ?? tool.name
+        options.push({
+          value: function_name,
+          label: tool.name,
+          description: function_name,
+        })
+        fn_names.add(function_name)
       }
       if (options.length > 0) {
         groups.push({ label: tool_set.set_name, options })
