@@ -127,12 +127,16 @@ describe("generate_default_code", () => {
   it("preserves the function signature and Args docstring", () => {
     const scores = [make_score("Test", "pass_fail")]
     const code = generate_default_code(scores)
-    expect(code).toContain(
-      "def score(output, trace, reference_data, task_input):",
-    )
+    expect(code).toContain("def score(output, trace, task_input):")
     expect(code).toContain("Args:")
     expect(code).toContain("output: The model's final output string.")
     expect(code).not.toContain("kiln:")
+  })
+
+  it("omits reference data from the signature and docstring", () => {
+    const code = generate_default_code([make_score("Test", "pass_fail")])
+    expect(code).not.toContain("reference_data")
+    expect(generate_default_code(undefined)).not.toContain("reference_data")
   })
 
   it("includes the optional-params docstring note in the default template", () => {
@@ -164,6 +168,18 @@ describe("generate_examples", () => {
     const examples = generate_examples(undefined)
     for (const ex of examples) {
       expect(ex.code).toContain('"quality"')
+    }
+  })
+
+  it("omits reference data from every example", () => {
+    const scores = [
+      make_score("Accuracy", "pass_fail"),
+      make_score("Overall Rating", "five_star"),
+    ]
+    for (const output_scores of [undefined, [], scores]) {
+      for (const ex of generate_examples(output_scores)) {
+        expect(ex.code).not.toContain("reference_data")
+      }
     }
   })
 
@@ -255,9 +271,13 @@ describe("generate_examples", () => {
   })
 
   describe("Domain-specific grading example", () => {
-    it("guards assert_contains with if expected else True", () => {
+    it("asserts against a literal marker instead of reference data", () => {
       const examples = generate_examples(undefined)
-      expect(examples[2].code).toContain("if expected else True")
+      expect(examples[2].code).toContain("def score(output):")
+      expect(examples[2].code).toContain(
+        'contains = KilnEvalHelpers.assert_contains(output, "Summary:")',
+      )
+      expect(examples[2].code).not.toContain("if expected else True")
     })
 
     it("uses contains as the bool expression", () => {

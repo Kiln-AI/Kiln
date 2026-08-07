@@ -11,6 +11,7 @@ from ..models.structured_output_mode import StructuredOutputMode
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.jinja_input_transform import JinjaInputTransform
     from ..models.tools_run_config import ToolsRunConfig
 
 
@@ -50,6 +51,8 @@ class KilnAgentRunConfigProperties:
             thinking_level (None | str | Unset): The thinking level to use for this run config. If None, defaults may apply.
             tools_config (None | ToolsRunConfig | Unset): The tools config to use for this run config, defining which tools
                 are available to the model.
+            input_transform (JinjaInputTransform | None | Unset): Optional transform applied to the task input at run time,
+                producing the first user message sent to the model. Default None preserves the identity path.
     """
 
     model_name: str
@@ -61,9 +64,11 @@ class KilnAgentRunConfigProperties:
     temperature: float | Unset = 1.0
     thinking_level: None | str | Unset = UNSET
     tools_config: None | ToolsRunConfig | Unset = UNSET
+    input_transform: JinjaInputTransform | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.jinja_input_transform import JinjaInputTransform
         from ..models.tools_run_config import ToolsRunConfig
 
         model_name = self.model_name
@@ -94,6 +99,14 @@ class KilnAgentRunConfigProperties:
         else:
             tools_config = self.tools_config
 
+        input_transform: dict[str, Any] | None | Unset
+        if isinstance(self.input_transform, Unset):
+            input_transform = UNSET
+        elif isinstance(self.input_transform, JinjaInputTransform):
+            input_transform = self.input_transform.to_dict()
+        else:
+            input_transform = self.input_transform
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -114,11 +127,14 @@ class KilnAgentRunConfigProperties:
             field_dict["thinking_level"] = thinking_level
         if tools_config is not UNSET:
             field_dict["tools_config"] = tools_config
+        if input_transform is not UNSET:
+            field_dict["input_transform"] = input_transform
 
         return field_dict
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.jinja_input_transform import JinjaInputTransform
         from ..models.tools_run_config import ToolsRunConfig
 
         d = dict(src_dict)
@@ -164,6 +180,23 @@ class KilnAgentRunConfigProperties:
 
         tools_config = _parse_tools_config(d.pop("tools_config", UNSET))
 
+        def _parse_input_transform(data: object) -> JinjaInputTransform | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                input_transform_type_0 = JinjaInputTransform.from_dict(data)
+
+                return input_transform_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(JinjaInputTransform | None | Unset, data)
+
+        input_transform = _parse_input_transform(d.pop("input_transform", UNSET))
+
         kiln_agent_run_config_properties = cls(
             model_name=model_name,
             model_provider_name=model_provider_name,
@@ -174,6 +207,7 @@ class KilnAgentRunConfigProperties:
             temperature=temperature,
             thinking_level=thinking_level,
             tools_config=tools_config,
+            input_transform=input_transform,
         )
 
         kiln_agent_run_config_properties.additional_properties = d

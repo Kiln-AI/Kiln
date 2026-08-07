@@ -7,7 +7,6 @@
   import IncrementUi from "$lib/ui/increment_ui.svelte"
   import GenerateSamplesModal from "./generate_samples_modal.svelte"
   import SynthDataGuidance from "./synth_data_guidance.svelte"
-  import SynthDataGuide from "./synth_data_guide.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
   import { get } from "svelte/store"
@@ -183,9 +182,6 @@
       }
       const existing_topics = data.sub_topics.map((t) => t.topic)
       const topic_guidance = get(guidance_data.topic_guidance)
-      const data_guide = get(guidance_data.use_data_guide)
-        ? get(guidance_data.data_guide)
-        : ""
       const { data: generate_response, error: generate_error } =
         await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/generate_categories",
@@ -196,7 +192,6 @@
               run_config_properties: run_config_properties,
               gen_type: guidance_data.gen_type,
               guidance: topic_guidance ? topic_guidance : null, // clear empty string
-              data_guide,
               existing_topics:
                 existing_topics.length > 0 ? existing_topics : null, // clear empty array
             },
@@ -343,9 +338,6 @@
       }
 
       const topic_guidance = get(guidance_data.topic_guidance)
-      const data_guide = get(guidance_data.use_data_guide)
-        ? get(guidance_data.data_guide)
-        : ""
 
       for (const leaf_topic of leaf_topics) {
         const existing_topics = leaf_topic.node.sub_topics.map((t) => t.topic)
@@ -359,7 +351,6 @@
                 run_config_properties: run_config_properties,
                 gen_type: guidance_data.gen_type,
                 guidance: topic_guidance ? topic_guidance : null,
-                data_guide,
                 existing_topics:
                   existing_topics.length > 0 ? existing_topics : null,
               },
@@ -677,9 +668,6 @@
           <div>
             <SynthDataGuidance guidance_type="topics" {guidance_data} />
           </div>
-          <div>
-            <SynthDataGuide {guidance_data} />
-          </div>
           <RunConfigComponent
             bind:this={run_config_component_modal}
             {project_id}
@@ -752,9 +740,6 @@
       </div>
       <div>
         <SynthDataGuidance guidance_type="topics" {guidance_data} />
-      </div>
-      <div>
-        <SynthDataGuide {guidance_data} />
       </div>
       {#if guidance_data.task}
         <RunConfigComponent

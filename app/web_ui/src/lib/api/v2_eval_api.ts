@@ -191,13 +191,13 @@ export async function fetchTaskRuns(
 }
 
 /**
- * Check whether the current session has granted code_eval trust for a project.
+ * Check whether the current session has code trust for a project.
  */
-export async function checkCodeEvalTrust(
+export async function checkAddCodeTrust(
   projectId: string,
 ): Promise<{ trusted: boolean }> {
   const { data, error } = await client.GET(
-    "/api/projects/{project_id}/code_eval_trust",
+    "/api/projects/{project_id}/add_code_trust",
     {
       params: {
         path: {
@@ -208,20 +208,20 @@ export async function checkCodeEvalTrust(
   )
   if (error) {
     throw new Error(
-      `code_eval_trust check failed: ${extractErrorMessage(error)}`,
+      `add_code_trust check failed: ${extractErrorMessage(error)}`,
     )
   }
   return data
 }
 
 /**
- * Grant code_eval trust for a project in the current session.
+ * Add code trust for a project in the current session.
  */
-export async function grantCodeEvalTrust(
+export async function addCodeTrust(
   projectId: string,
 ): Promise<{ trusted: boolean }> {
   const { data, error } = await client.POST(
-    "/api/projects/{project_id}/grant_code_eval_trust",
+    "/api/projects/{project_id}/add_code_trust",
     {
       params: {
         path: {
@@ -231,9 +231,7 @@ export async function grantCodeEvalTrust(
     },
   )
   if (error) {
-    throw new Error(
-      `grant_code_eval_trust failed: ${extractErrorMessage(error)}`,
-    )
+    throw new Error(`add_code_trust failed: ${extractErrorMessage(error)}`)
   }
   return data
 }

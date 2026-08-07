@@ -117,15 +117,6 @@ class PythonCodeTool(KilnToolInterface):
     async def run(
         self, context: ToolCallContext | None = None, **kwargs: Any
     ) -> ToolCallResult:
-        from kiln_ai.adapters.eval.v2_eval_code_eval import is_code_eval_trusted
-
-        if not is_code_eval_trusted(str(self._project.path)):
-            return ToolCallResult(
-                output="Code tools are disabled until the project is trusted in Kiln.",
-                is_error=True,
-                error_message="Project not trusted",
-            )
-
         outcome = await self._invoke(context, kwargs)
 
         tool_name = self._code_tool.tool_function_name

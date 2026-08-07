@@ -511,7 +511,7 @@
     create_new_run_config_dialog?.show()
   }
 
-  const MAX_COLUMNS = 6
+  const MAX_COLUMNS = 10
   function addColumn() {
     if (columns < MAX_COLUMNS) {
       columns++
