@@ -96,6 +96,10 @@
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
   import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
   import SavingAnimation from "$lib/ui/animations/saving_animation.svelte"
+  // Conversation-themed loading animation (chat bubbles building a thread) for
+  // the multi-turn generation and review-prep screens, which are all about
+  // building conversations rather than grading a flat list of examples.
+  import ConversationAnimation from "$lib/ui/animations/conversation_animation.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
   import type { SuggestedEdit } from "../spec_utils"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
@@ -343,7 +347,7 @@
             trace_claims.length,
             drive_stop === null,
           )
-        : "Are you sure you want to start over? Your draft (description, refined spec, and batch plan) will be discarded. This cannot be undone."
+        : "Are you sure you want to start over? Your draft (description, eval details, and scenarios) will be discarded. This cannot be undone."
     if (!confirm(msg)) return
     const carried = draft_store ? get(draft_store) : EMPTY_BUILDER_DRAFT
     draft_ready = false
@@ -750,6 +754,14 @@
     // The preparing-review gate owns the screen between drive and review.
     !preparing_review &&
     claims_gate_error === null
+  // Eager lane resolution when the plan surface becomes visible, so the
+  // primary run starts instantly and the models link opens a prefilled
+  // dialog. Fire-and-forget: prepopulate_lanes only fills null lanes (never
+  // overwrites a draft/user choice) and its own guard makes the drive's
+  // later call a no-op, so this never starts a drive nor races the run flow.
+  $: if (show_plan_approval && is_multi_turn && !lanes_prepopulated) {
+    void prepopulate_lanes()
+  }
   // Live pipeline counters, reset at each drive. Latest completed-turn count
   // per case (the stream's turns_completed is per-case cumulative, so a
   // re-delivered event can't double-count a turn); counting turns makes
@@ -878,12 +890,12 @@
   //
   const TURNS_PER_CASE = 5
 
-  // ── Drive Settings (SDG's Generation Settings pattern). The Drive /
-  // Generate click opens a dialog holding the model lanes — the synthetic
-  // user driver (multi-turn only) and the judge — and its submit is what
-  // starts the run, so the model choice is confirmed at the point of
-  // spend. The committed lanes ride the persisted draft; the builder has
-  // no hardcoded model or provider anywhere.
+  // ── Model lanes (SDG's Generation Settings pattern). The primary button
+  // runs immediately with these lanes resolved to their defaults; the
+  // "Advanced" dialog lets the user pick them first — the user simulator
+  // (multi-turn only) and the judge — and its submit starts the run the same
+  // way. The committed lanes ride the persisted draft; the builder has no
+  // hardcoded model or provider anywhere.
   let su_driver: ModelChoice | null = null
   let judge_model: ModelChoice | null = null
   let drive_settings_dialog: Dialog | null = null
@@ -1011,6 +1023,18 @@
       : judge_model_combined
   }
 
+  // Run-immediately (the plan-approval primary button): resolve the default
+  // model lanes (draft → last saved eval → registry suggestion) and start the
+  // drive without a settings detour — the common path is "just make my data".
+  // If a lane can't be resolved (no usable model anywhere), on_drive_multi_turn
+  // opens the dialog instead of running — fail-loud recovery, never a silent
+  // substitution of some other model. "Advanced" opens the same dialog up
+  // front for users who want to pick the models before spending.
+  async function start_multiturn_drive_with_defaults() {
+    await prepopulate_lanes()
+    on_drive_multi_turn()
+  }
+
   // The authored multi-turn judge prompt, cached against BOTH authoring
   // inputs — spec text and the task prompt (the task is re-fetched every
   // drive, so its instruction can change mid-session too): a re-drive with
@@ -1063,9 +1087,7 @@
       // authoritative discriminator either way.
       if (timed_out()) {
         posthog.capture("eval_v2_judge_author_failure", { reason: "timeout" })
-        throw new KilnError(
-          "Authoring your judge took too long. Try driving again.",
-        )
+        throw new KilnError("Authoring your judge took too long. Try again.")
       }
       if (is_abort_error(e)) throw e
       posthog.capture("eval_v2_judge_author_failure", {
@@ -1094,9 +1116,7 @@
       posthog.capture("eval_v2_judge_author_failure", {
         reason: "invalid_authored_prompt",
       })
-      throw new KilnError(
-        "The authored judge prompt wasn't usable. Try driving again.",
-      )
+      throw new KilnError("The authored judge prompt wasn't usable. Try again.")
     }
     authored_judge_cache = {
       spec_text: spec,
@@ -1114,7 +1134,7 @@
     const su_ok = !is_multi_turn || (su_model_id && su_provider_id)
     if (!su_ok || !judge_model_id || !judge_provider_id) {
       drive_settings_error = is_multi_turn
-        ? "Select a synthetic user and judge model to continue."
+        ? "Select a model to play the user and a judge model to continue."
         : "Select a judge model to continue."
       return
     }
@@ -1221,7 +1241,7 @@
         },
       )
       if (error || !data) {
-        generation_error = "Failed to plan the conversation batch."
+        generation_error = "Failed to draft scenarios."
         return
       }
       // Clamp: the planner is an LLM and can over-deliver or emit blanks;
@@ -1238,7 +1258,7 @@
     } catch (e) {
       if (is_abort_error(e)) return
       generation_error =
-        e instanceof Error ? e.message : "Batch planning failed."
+        e instanceof Error ? e.message : "Scenario drafting failed."
     } finally {
       generation_loading = false
     }
@@ -1282,7 +1302,7 @@
     // SDG's unconfirmed row deletes.
     if (has_driven_results) {
       const msg = driven_data_confirm(
-        "Editing the plan",
+        "Editing the scenarios",
         trace_claims.length,
         // Review progress exists only once the user accepted the results
         // (was in review) — on the stop screen no review exists yet.
@@ -1369,8 +1389,12 @@
   }
 
   async function on_drive_multi_turn() {
+    // The plan surface's primary button calls this directly (no FormContainer
+    // submit debounce anymore), so guard reentry: a double-click during lane
+    // resolution must not start a second concurrent pipeline.
+    if (generation_loading) return
     if (!batch_plan || batch_plan.prompts.length === 0) {
-      generation_error = "No approved plan — plan the batch first."
+      generation_error = "No approved scenarios — draft scenarios first."
       return
     }
     // Lanes uncommitted (internal re-drive path reached before any
@@ -1539,7 +1563,7 @@
           },
         )
         if (cases_resp.error || !cases_resp.data) {
-          generation_error = "Failed to generate synthetic-user cases."
+          generation_error = "Failed to create eval inputs from the scenarios."
           return
         }
         cases = cases_resp.data.cases as SyntheticUserCaseWire[]
@@ -2212,7 +2236,7 @@
         // Multi-turn results come from the merged pipeline (judge rides the
         // drive), so a stale review means re-driving the plan.
         generation_error =
-          "The eval's name or description changed since the review — drive the conversations again."
+          "The eval's name or description changed since the review — create your eval data again."
         return
       }
     }
@@ -2303,7 +2327,7 @@
         const saved_su_driver = su_driver
         if (saved_su_driver === null) {
           save_error =
-            "No synthetic-user model was recorded — go back to Step 4."
+            "No simulated-user model was recorded — go back to Step 4."
           return
         }
         // Carry the human's review through save: each reviewed trace maps to
@@ -2513,29 +2537,31 @@
     load_questions()
   }
 
-  // Title + subtitle per step. Lifted to AppPage so the heading lives in
-  // the standard page header, matching v1.
-  function page_title_for(step: BuilderStep): string {
+  // Human name for each authoring step. The AppPage title is a constant
+  // ("Eval Builder"); the position + this name are the first subtitle line
+  // ("Step N of TOTAL — <name>"), so the wizard's own chrome doesn't need a
+  // separate step-indicator row. The done screen keeps its own title instead.
+  function step_name_for(step: BuilderStep): string {
     switch (step) {
       case "describe":
-        return "Create Eval"
+        return "Describe your eval"
       case "clarify":
-        return "Clarify Eval"
+        return "A few questions"
       case "refine":
-        return "Refine Eval"
+        return "Check the details"
       case "generate":
-        return is_multi_turn ? "Generate Conversations" : "Generate Examples"
+        return "Create eval data"
       case "review":
-        // The reviewer is checking their AGENT, not grading a judge —
-        // calibration is an implementation detail the copy never mentions.
-        return "Where did your agent go wrong?"
+        return "Grade the results"
       case "save":
-        return "Creating Eval"
+        return "Save your eval"
       case "done":
         return "Eval Created"
     }
   }
 
+  // Per-step description, shown under the step line. Lifted to AppPage so the
+  // heading lives in the standard page header, matching v1.
   function page_subtitle_for(step: BuilderStep): string | undefined {
     switch (step) {
       case "describe":
@@ -2546,7 +2572,7 @@
         return "Review and edit the refined spec before generating examples."
       case "generate":
         return is_multi_turn
-          ? `Planning, then driving ${multi_turn_total} multi-turn conversations against your agent.`
+          ? "Kiln simulates a user talking to your agent to build your eval's test data."
           : "Generating sample inputs and outputs based on your spec."
       case "review":
         // The mistake framing lives at the STEP level, where it's true of
@@ -2576,7 +2602,17 @@
     return "max-w-[900px]"
   }
 
-  $: page_title = page_title_for(current_step)
+  // The title is constant across the wizard; the done screen is the one step
+  // that names its own outcome instead of a step position.
+  $: page_title = current_step === "done" ? "Eval Created" : "Eval Builder"
+  // First subtitle line carries the step position + name (empty on done, which
+  // has no step position). The per-step description renders under it.
+  $: page_step_line =
+    current_step === "done"
+      ? ""
+      : `Step ${STEP_INDEX[current_step]} of ${TOTAL_STEPS} — ${step_name_for(
+          current_step,
+        )}`
   $: page_subtitle = page_subtitle_for(current_step)
   $: page_max_w = page_max_w_for(current_step)
 
@@ -2590,12 +2626,12 @@
   // SU generation); the pipeline stage has its own progress screen below.
   $: generate_animation_description = is_multi_turn
     ? multi_turn_phase === "planning"
-      ? `Planning a balanced batch of ${NUM_CASES} synthetic-user scenarios…`
+      ? `Drafting a balanced set of ${NUM_CASES} scenarios for your eval…`
       : multi_turn_phase === "authoring_judge"
         ? "Authoring a judge rubric tailored to your eval…"
         : multi_turn_phase === "preflight"
-          ? "Checking that your run config, synthetic-user driver, and judge respond before driving…"
-          : `Creating ${multi_turn_total} synthetic users from the approved plan…`
+          ? "Checking that your run config, the model that plays the user, and the judge all respond before creating your eval data…"
+          : `Setting up ${multi_turn_total} simulated users from the approved scenarios…`
     : "Kiln is generating example data to review and creating a judge. Hold tight!"
 
   // Multi-turn save tags existing chains rather than generating a dataset, so
@@ -2616,7 +2652,8 @@
 <div class={page_max_w}>
   <AppPage
     title={page_title}
-    subtitle={page_subtitle}
+    subtitle={page_step_line}
+    sub_subtitle={page_subtitle ?? ""}
     no_y_padding
     action_buttons={reset_available
       ? [{ label: "Reset", handler: reset_draft_with_confirm }]
@@ -2637,16 +2674,6 @@
       />
     {:else}
       <div class="py-6">
-        <!-- Step indicator -->
-        <div class="text-sm text-gray-500 mb-6 flex items-center gap-2">
-          <span>Step</span>
-          <span class="font-medium">{STEP_INDEX[current_step]}</span>
-          <span>of {TOTAL_STEPS}</span>
-          {#if is_multi_turn}
-            <span class="badge badge-secondary badge-sm ml-2">multi-turn</span>
-          {/if}
-        </div>
-
         {#if task_loading}
           <div class="text-center text-gray-500 py-12">Loading task…</div>
         {:else if task_error}
@@ -2808,37 +2835,43 @@
           {#if generation_loading && !pipeline_running}
             <!-- Plan and SU generation are each one long request (minutes at
                  a 40-case batch) — the standard animation warning line sets
-                 the expectation, matching every other long wait in the app. -->
-            <AnalyzingAnimation
-              title={is_multi_turn
-                ? multi_turn_phase === "planning"
-                  ? "Planning Batch"
+                 the expectation, matching every other long wait in the app.
+                 Multi-turn is building conversations, so it uses the chat-
+                 bubble animation; single-turn keeps the example-grading one. -->
+            {#if is_multi_turn}
+              <ConversationAnimation
+                title={multi_turn_phase === "planning"
+                  ? "Drafting Scenarios"
                   : multi_turn_phase === "authoring_judge"
                     ? "Authoring Judge"
                     : multi_turn_phase === "preflight"
                       ? "Checking Configuration"
-                      : "Creating Synthetic Users"
-                : "Analyzing Eval"}
-              description={generate_animation_description}
-              warning={is_multi_turn &&
-              (multi_turn_phase === "planning" ||
-                multi_turn_phase === "generating_cases")
-                ? "This may take a while, depending on the number of scenarios"
-                : is_multi_turn
-                  ? null
-                  : "This may take a while"}
-            />
+                      : "Creating Simulated Users"}
+                description={generate_animation_description}
+                warning={multi_turn_phase === "planning" ||
+                multi_turn_phase === "generating_cases"
+                  ? "This may take a while, depending on the number of scenarios"
+                  : null}
+              />
+            {:else}
+              <AnalyzingAnimation
+                title="Analyzing Eval"
+                description={generate_animation_description}
+                warning="This may take a while"
+              />
+            {/if}
           {/if}
           {#if pipeline_running}
-            <!-- The drive stage: the standard loading animation plus the
+            <!-- The drive stage: the conversation-building animation plus the
                  house batch-progress readout (slim bar + tiny count line,
                  mirroring /generate's batch generation). The bar tracks
                  TURNS for smooth motion (cases complete in concurrency
                  waves), so the count line LEADS with turns — the number
-                 that moves with the bar — then the conversation outcome. -->
-            <AnalyzingAnimation
-              title="Driving Conversations"
-              description="Kiln is driving and judging each conversation against your agent. Hold tight!"
+                 that moves with the bar — then the conversation outcome. The
+                 title carries the live per-conversation count. -->
+            <ConversationAnimation
+              title={`Creating Eval Data ${judged_case_count} of ${pipeline_total_cases}…`}
+              description="Kiln is simulating conversations with your agent and judging each one. Hold tight!"
               warning={null}
             />
             <div class="flex flex-col items-center mt-2">
@@ -2847,9 +2880,10 @@
                 value={multi_turn_turns_done}
                 max={multi_turn_total_turns}
               ></progress>
+              <!-- Fine-grained progress only — the coarse case count already
+                   lives in the title above ("Creating Eval Data N of M"). -->
               <div class="font-light text-xs text-center mt-1">
-                {multi_turn_turns_done} of {multi_turn_total_turns} turns, {judged_case_count}
-                of {pipeline_total_cases} conversations complete{#if pipeline_failed_count > 0},
+                {multi_turn_turns_done} of {multi_turn_total_turns} turns complete{#if pipeline_failed_count > 0},
                   {pipeline_failed_count} failed{/if}
               </div>
             </div>
@@ -2858,7 +2892,7 @@
             <!-- The claims gate: the progress screen holds while the
                  selected traces' claims build, so review opens fully
                  loaded — no spinners behind any dot. -->
-            <AnalyzingAnimation
+            <ConversationAnimation
               title="Preparing Review"
               description="Kiln is flagging possible mistakes in each conversation for you to review. Hold tight!"
               warning={null}
@@ -2889,7 +2923,7 @@
                   claims_gate_error = null
                 }}
               >
-                ← Back to plan
+                Back to Scenarios
               </button>
               <button
                 class="btn btn-primary"
@@ -2912,7 +2946,7 @@
                     generation_error = null
                   }}
                 >
-                  ← Back to plan
+                  Back to Scenarios
                 </button>
               {/if}
               <button
@@ -2947,21 +2981,42 @@
                 />
               </div>
             {/if}
-            <!-- Plan approval: the batch runs only after the user approves
-                 the scenario prompts — the shared /generate batch-plan
-                 surface (delete rows or regenerate; per-row editing rides
-                 the shared component's affordances). -->
+            <!-- Plan approval: the run starts only after the user approves
+                 the scenarios — the shared /generate batch-plan surface,
+                 relabelled for the eval builder (scenarios, eval inputs).
+                 The primary button runs immediately with the default model
+                 lanes; the Advanced Settings trigger (slotted above the button)
+                 opens the same settings dialog to pick them first. -->
             <KilnProBatchPlan
               plan={batch_plan}
               summary_out_of_sync={batch_plan_edited}
-              on_generate_inputs={open_drive_settings}
+              header_label="Scenarios"
+              subheader="Each scenario becomes one eval input. Edit any before starting."
+              regenerate_label="New Scenarios"
+              on_generate_inputs={start_multiturn_drive_with_defaults}
               on_regenerate={on_new_plan_with_confirm}
               on_delete_prompt={on_delete_plan_prompt}
               hide_generate_button={has_data_accepted}
-              generate_button_label={`Drive ${batch_plan.prompts.length} Conversation${
+              generate_button_label={`Create ${batch_plan.prompts.length} Eval Input${
                 batch_plan.prompts.length === 1 ? "" : "s"
               }`}
-            />
+            >
+              <svelte:fragment slot="advanced">
+                {#if !has_data_accepted}
+                  <!-- v1 wizard idiom for a secondary action by the primary
+                       (see refine_spec's "or Save Refined Eval…" link). -->
+                  <div class="flex flex-row gap-1 items-baseline">
+                    <span class="text-sm text-gray-500">or</span>
+                    <button
+                      class="link underline text-sm text-gray-500"
+                      on:click={open_drive_settings}
+                    >
+                      choose which models to use
+                    </button>
+                  </div>
+                {/if}
+              </svelte:fragment>
+            </KilnProBatchPlan>
             <!-- Wizard chrome stays outside the shared component (it has no
                  slots): once this exact plan has driven results, offer the
                  way forward to review. Stepping back is the browser's Back. -->
@@ -2973,9 +3028,9 @@
                 <div class="flex flex-row items-center gap-3">
                   <span class="font-light text-xs text-gray-500">
                     {#if trace_claims.length < driven_plan_size}
-                      {trace_claims.length} of {driven_plan_size} conversations completed
+                      {trace_claims.length} of {driven_plan_size} eval inputs created
                     {:else}
-                      {trace_claims.length} conversations driven
+                      {trace_claims.length} eval inputs created
                     {/if}
                   </span>
                   <button
@@ -3009,9 +3064,7 @@
                       ? on_plan_multi_turn()
                       : open_drive_settings()}
                 >
-                  {is_multi_turn
-                    ? "Plan conversations →"
-                    : "Generate examples →"}
+                  {is_multi_turn ? "Draft Scenarios →" : "Generate examples →"}
                 </button>
               {/if}
             </div>
@@ -3019,8 +3072,8 @@
         {:else if current_step === "review"}
           <!-- ── Step 5 — Claim/Evidence review (trace hidden in a modal) ── -->
           {#if claims_loading}
-            <AnalyzingAnimation
-              title="Building claims"
+            <ConversationAnimation
+              title="Building Claims"
               description="Distilling each trace into claims for you to review."
               warning={null}
             />
@@ -3083,21 +3136,23 @@
   </AppPage>
 </div>
 
-<!-- Drive Settings (SDG's Generation Settings pattern): opened by the
-     Drive / Generate click, its submit starts the run. Model-only lanes —
-     the SU driver and judge are fixed-prompt internal roles, so no
-     run-config extras. Lane filters: SU wants a data-gen-capable chat
+<!-- Drive settings dialog (SDG's Generation Settings pattern): the primary
+     button runs immediately with the default lanes, so this opens only from
+     "Advanced" (pre-run model choice) or as fail-loud recovery when a default
+     lane can't be resolved. Its submit starts the run either way. Model-only
+     lanes — the user-simulator and judge are fixed-prompt internal roles, so
+     no run-config extras. Lane filters: the simulator wants a data-gen chat
      model (SDG's settings); judge needs structured output (v1 judge
      form's settings). With no usable model, the dropdowns' own empty
      state links to provider settings (same-tab, so the models list is
      fresh when the user returns) and submit refuses to start. -->
 <Dialog
   bind:this={drive_settings_dialog}
-  title={is_multi_turn ? "Drive Settings" : "Generation Settings"}
+  title={is_multi_turn ? "Advanced Settings" : "Generation Settings"}
 >
   <FormContainer
     submit_label={is_multi_turn
-      ? `Drive ${multi_turn_total} Conversation${
+      ? `Create ${multi_turn_total} Eval Input${
           multi_turn_total === 1 ? "" : "s"
         }`
       : "Generate Examples"}
@@ -3107,8 +3162,8 @@
   >
     {#if is_multi_turn}
       <AvailableModelsDropdown
-        label="Synthetic User Model"
-        description="Plays your agent's user in every driven conversation."
+        label="Model that plays the user"
+        description="Plays your agent's user in each test conversation."
         bind:model={su_model_combined}
         bind:model_name={su_model_id}
         bind:provider_name={su_provider_id}
@@ -3119,10 +3174,10 @@
       />
     {/if}
     <AvailableModelsDropdown
-      label="Judge Model"
+      label={is_multi_turn ? "Model that judges the results" : "Judge Model"}
       description={`Reviews each ${
         is_multi_turn ? "conversation" : "example"
-      } against your spec and decides pass or fail.`}
+      } against your eval's criteria and decides pass or fail.`}
       bind:model={judge_model_combined}
       bind:model_name={judge_model_id}
       bind:provider_name={judge_provider_id}

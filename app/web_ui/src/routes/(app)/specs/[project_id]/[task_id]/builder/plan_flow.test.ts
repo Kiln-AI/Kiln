@@ -124,20 +124,20 @@ describe("drive_stop_banner", () => {
 
 describe("driven_data_confirm", () => {
   it("has-data wording includes the review-progress clause", () => {
-    expect(driven_data_confirm("A new plan", 38, true)).toBe(
-      "You have 38 driven conversations and your review progress. A new plan will discard them. This cannot be undone.",
+    expect(driven_data_confirm("New scenarios", 38, true)).toBe(
+      "You have 38 completed eval inputs and your review progress. New scenarios will discard them. This cannot be undone.",
     )
   })
 
   it("stop-screen wording omits the review-progress clause", () => {
-    expect(driven_data_confirm("Editing the plan", 38, false)).toBe(
-      "You have 38 driven conversations. Editing the plan will discard them. This cannot be undone.",
+    expect(driven_data_confirm("Editing the scenarios", 38, false)).toBe(
+      "You have 38 completed eval inputs. Editing the scenarios will discard them. This cannot be undone.",
     )
   })
 
   it("singular survivor", () => {
-    expect(driven_data_confirm("A new plan", 1, false)).toContain(
-      "1 driven conversation.",
+    expect(driven_data_confirm("New scenarios", 1, false)).toContain(
+      "1 completed eval input.",
     )
   })
 })
@@ -152,7 +152,7 @@ describe("new_plan_confirm", () => {
         plan_edited: false,
       }),
     ).toBe(
-      "Are you sure you want to discard the current batch plan? This cannot be undone.",
+      "Are you sure you want to discard the current scenarios? This cannot be undone.",
     )
   })
 
@@ -165,7 +165,7 @@ describe("new_plan_confirm", () => {
         plan_edited: true,
       }),
     ).toBe(
-      "Are you sure you want to discard the current batch plan, including the dataset items you removed? This cannot be undone.",
+      "Are you sure you want to discard the current scenarios, including the ones you removed? This cannot be undone.",
     )
   })
 
@@ -178,7 +178,7 @@ describe("new_plan_confirm", () => {
         plan_edited: true,
       }),
     ).toBe(
-      "You have 40 driven conversations and your review progress. A new plan will discard them. This cannot be undone.",
+      "You have 40 completed eval inputs and your review progress. New scenarios will discard them. This cannot be undone.",
     )
   })
 })
@@ -258,7 +258,7 @@ describe("drive_stop_banner — preflight stop", () => {
       "gpt_5_5",
     )
     expect(banner).toContain(
-      "Could not generate conversations. Your run config failed a test call",
+      "Could not create your eval data. Your run config failed a test call",
     )
     expect(banner).toContain("AuthenticationError: invalid api key")
     expect(banner).toContain("(run config: Polite Hawk, gpt_5_5)")
@@ -294,7 +294,7 @@ describe("drive_stop_banner — preflight stop", () => {
       "The judge model failed a test call: NotFoundError: model retired (gpt_4o via openrouter).",
     )
     expect(banner).toContain(
-      "Generating conversations requires your OpenRouter API key.",
+      "Creating your eval data requires your OpenRouter API key.",
     )
     expect(banner).toContain(
       "You can [check your model providers](/settings/providers), then try again.",
@@ -319,7 +319,7 @@ describe("drive_stop_banner — preflight stop", () => {
       },
       "Polite Hawk",
     )
-    expect(banner).toContain("Could not generate conversations.")
+    expect(banner).toContain("Could not create your eval data.")
     expect(banner).not.toContain("12 of")
     expect(banner).not.toContain("old error")
     expect(banner).toContain("BudgetExceededError")

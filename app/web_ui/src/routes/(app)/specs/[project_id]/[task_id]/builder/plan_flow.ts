@@ -112,17 +112,17 @@ export function drive_stop_banner(
             run_config_model ? `, ${run_config_model}` : ""
           })`
         : ""
-      return `Could not generate conversations. Your run config failed a test call: ${f.message}${clause}.\n\nYou can [test your run config](/run), then start again.`
+      return `Could not create your eval data. Your run config failed a test call: ${f.message}${clause}.\n\nYou can [test your run config](/run), then start again.`
     }
     const subject =
       f.lane === "synthetic-user driver"
-        ? "The synthetic-user model"
+        ? "The model that plays the user"
         : "The judge model"
     const model_clause = f.model ? ` (${f.model})` : ""
     const requirement = f.provider
-      ? `Generating conversations requires your ${f.provider} API key. `
+      ? `Creating your eval data requires your ${f.provider} API key. `
       : ""
-    return `Could not generate conversations. ${subject} failed a test call: ${f.message}${model_clause}.\n\n${requirement}You can [check your model providers](/settings/providers), then try again.`
+    return `Could not create your eval data. ${subject} failed a test call: ${f.message}${model_clause}.\n\n${requirement}You can [check your model providers](/settings/providers), then try again.`
   }
   if (stop.aborted_error) {
     // A config-scoped failure aborted the batch mid-drive: the run config
@@ -166,12 +166,12 @@ export function driven_data_confirm(
   const progress_clause = include_review_progress
     ? " and your review progress"
     : ""
-  return `You have ${survivors} driven conversation${
+  return `You have ${survivors} completed eval input${
     survivors === 1 ? "" : "s"
   }${progress_clause}. ${action} will discard them. This cannot be undone.`
 }
 
-// New Batch Plan ALWAYS confirms — a plan alone costs minutes to make.
+// New Scenarios ALWAYS confirms — a plan alone costs minutes to make.
 // Three-tier wording: what you lose scales the message — plan only /
 // plan + row deletions / driven conversations. The first two tiers are
 // SDG's exact formulas.
@@ -183,14 +183,14 @@ export function new_plan_confirm(state: {
 }): string {
   if (state.has_driven_results) {
     return driven_data_confirm(
-      "A new plan",
+      "New scenarios",
       state.survivors,
       state.include_review_progress,
     )
   }
   return state.plan_edited
-    ? "Are you sure you want to discard the current batch plan, including the dataset items you removed? This cannot be undone."
-    : "Are you sure you want to discard the current batch plan? This cannot be undone."
+    ? "Are you sure you want to discard the current scenarios, including the ones you removed? This cannot be undone."
+    : "Are you sure you want to discard the current scenarios? This cannot be undone."
 }
 
 // ── The preparing-review gate ────────────────────────────────────────────

@@ -15,6 +15,13 @@
   // already has driven results — continuing to those results is the only
   // forward action there. Default keeps /generate unchanged.
   export let hide_generate_button = false
+  // Header, its sub-line, and the regenerate button label. Defaults equal the
+  // /generate strings so that surface renders unchanged; the eval builder
+  // overrides all three (it plans "scenarios", not a "batch").
+  export let header_label = "Batch Plan"
+  export let subheader =
+    "Review the plan for generating your synthetic data batch."
+  export let regenerate_label = "New Batch Plan"
 
   $: count = plan.prompts.length
 
@@ -25,13 +32,14 @@
 <div class="flex flex-col gap-4 mt-12">
   <div class="flex flex-col md:flex-row md:items-start gap-4">
     <div class="flex-grow">
-      <div class="text-2xl font-bold">Batch Plan</div>
+      <div class="text-2xl font-bold">{header_label}</div>
       <div class="text-sm font-light text-gray-500">
-        Review the plan for generating your synthetic data batch.
+        {subheader}
       </div>
     </div>
     <div class="flex flex-row gap-2 shrink-0">
-      <button class="btn btn-md" on:click={on_regenerate}>New Batch Plan</button
+      <button class="btn btn-md" on:click={on_regenerate}
+        >{regenerate_label}</button
       >
       {#if !hide_generate_button}
         <button
@@ -44,6 +52,15 @@
       {/if}
     </div>
   </div>
+  <!-- Optional per-consumer secondary action (the eval builder's
+  model-settings link), right-aligned under the primary-button cluster.
+  Guarded so with no consumer filling the slot NOTHING renders and
+  /generate's output stays byte-identical. -->
+  {#if $$slots.advanced}
+    <div class="flex justify-end -mt-3">
+      <slot name="advanced" />
+    </div>
+  {/if}
 
   <KilnProPlanSummary
     summary={plan.summary}
