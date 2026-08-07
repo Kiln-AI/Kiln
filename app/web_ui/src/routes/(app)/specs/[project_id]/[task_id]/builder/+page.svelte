@@ -636,6 +636,19 @@
           reason_for_edit?: string
         }[]
         not_incorporated_feedback?: string
+        suggested_name?: string
+      }
+
+      // Prefill the Eval Name from the model's suggestion, but only when the
+      // user hasn't typed one and the suggestion passes the same filename-safe
+      // validator the name field enforces. User input always wins; an invalid
+      // or absent suggestion leaves the field untouched.
+      if (
+        !name.trim() &&
+        refine_response.suggested_name &&
+        filename_string_short_validator(refine_response.suggested_name) === null
+      ) {
+        name = refine_response.suggested_name
       }
 
       // Start from current values, then apply each proposed edit. Mirrors v1's

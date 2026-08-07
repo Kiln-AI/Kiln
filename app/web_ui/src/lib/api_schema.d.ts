@@ -10441,6 +10441,8 @@ export interface components {
             new_proposed_spec_edits: components["schemas"]["NewProposedSpecEditApi"][];
             /** Not Incorporated Feedback */
             not_incorporated_feedback: string | null;
+            /** Suggested Name */
+            suggested_name?: string | null;
         };
         /** RemoteServerProperties */
         RemoteServerProperties: {
