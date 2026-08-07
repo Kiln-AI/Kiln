@@ -247,8 +247,15 @@
     loading_error = null
 
     try {
-      // Check if kiln-copilot is connected
-      has_kiln_copilot = await checkKilnCopilotAvailable()
+      // Check if kiln-copilot is connected. The check can throw (including a
+      // 10s timeout abort while the upstream verify hangs), and copilot is
+      // irrelevant to most flows here (judge-only, manual workflow) — so a
+      // failure degrades to the manual form instead of erroring the page.
+      try {
+        has_kiln_copilot = await checkKilnCopilotAvailable()
+      } catch {
+        has_kiln_copilot = false
+      }
 
       // Load available models for later API calls
       await load_available_models()

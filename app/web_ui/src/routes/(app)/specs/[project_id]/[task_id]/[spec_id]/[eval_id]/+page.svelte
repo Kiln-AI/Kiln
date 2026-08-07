@@ -369,6 +369,9 @@
     | "unknown" = "unknown"
   let required_more_eval_data = false
   let required_more_golden_data = false
+  // Steps jumped over by picking a default judge without completing them.
+  // Rendered distinctly in the stepper so they don't read as completed.
+  let skipped_steps: Set<number> = new Set()
   let goals: string[] = []
   let golden_dataset_explanation = ""
 
@@ -448,6 +451,7 @@
     update_golden_dataset_explanation(progress)
     current_step = 1
     current_step_id = "goals"
+    skipped_steps = new Set()
     if (!progress || !evaluator) {
       return
     }
@@ -459,13 +463,33 @@
     }
 
     if (has_default_eval_config && progress.dataset_size > 0) {
-      // Not everything is technically setup but the user bypassed recommended steps
-      // And selected a default judge. So we can just set to the final step.
-      // We don't block on the recommended dataset minimums here, but an empty
-      // eval set means there is nothing to run, so fall through to the
-      // eval-data step when the dataset is empty (common for non-LLM judges,
-      // which are set as the default judge at creation time).
-      current_step = 5
+      // The user bypassed the recommended steps by selecting a default judge,
+      // so the final step is available — but any bypassed step renders as
+      // "skipped", not completed, so it's clear the judge was never validated
+      // against human ratings. An empty eval set still means there is nothing
+      // to run, so that case falls through to the eval-data step instead
+      // (common for non-LLM judges, which are set as the default judge at
+      // creation time).
+      const skipped = new Set<number>()
+      required_more_eval_data = progress.dataset_size < MIN_DATASET_SIZE
+      required_more_golden_data =
+        evaluator?.template !== "rag" &&
+        progress.golden_dataset_size < MIN_DATASET_SIZE
+      if (required_more_eval_data || required_more_golden_data) {
+        skipped.add(2)
+      }
+      if (evaluator?.template === "rag") {
+        current_step = 3
+      } else {
+        if (golden_dataset_explanation) {
+          // Human ratings are incomplete — and without them, "find the best
+          // judge" was never meaningfully done either.
+          skipped.add(3)
+          skipped.add(4)
+        }
+        current_step = 5
+      }
+      skipped_steps = skipped
       current_step_id = "compare_run_configs"
       return
     }
@@ -529,6 +553,17 @@
       golden_dataset_explanation = `In your golden dataset ${golden_dataset_rating_issues.join(" and ")}. Fully rate all items to to get the best results from your eval.`
     } else {
       golden_dataset_explanation = ""
+    }
+  }
+
+  function skipped_step_tooltip(step: number): string {
+    switch (step) {
+      case 2:
+        return `Skipped: your datasets are below the recommended minimum of ${MIN_DATASET_SIZE} items. You can still run the eval, but results may not be representative.`
+      case 3:
+        return "Skipped: your golden dataset isn't fully rated by humans. Rate it anytime to check how well your judge matches human preferences."
+      default:
+        return "Skipped: without complete human ratings, judge accuracy can't be validated. You can still run the eval with the judge you picked."
     }
   }
 
@@ -729,18 +764,35 @@
               {@const step_title = step_titles(evaluator)[step - 1]}
               {@const step_id = step_id_from_title(step_title)}
               <li
-                class="step {current_step >= step ? 'step-primary' : ''}"
-                data-content={current_step == step
-                  ? "●"
-                  : current_step > step
-                    ? "✓"
-                    : ""}
+                class="step {skipped_steps.has(step)
+                  ? ''
+                  : current_step >= step
+                    ? 'step-primary'
+                    : ''}"
+                data-content={skipped_steps.has(step)
+                  ? "–"
+                  : current_step == step
+                    ? "●"
+                    : current_step > step
+                      ? "✓"
+                      : ""}
               >
                 <div
                   class="text-left py-3 min-h-[100px] flex flex-col place-content-center pl-4"
                 >
                   <div class="font-medium">
                     {step_title}
+                    {#if skipped_steps.has(step)}
+                      <span
+                        class="badge badge-warning badge-outline badge-sm ml-1 align-middle cursor-default tooltip {step <
+                        4
+                          ? 'tooltip-bottom'
+                          : 'tooltip-top'}"
+                        data-tip={skipped_step_tooltip(step)}
+                      >
+                        Skipped
+                      </span>
+                    {/if}
                     {#if step_tooltips(evaluator)[step]}
                       <InfoTooltip
                         tooltip_text={step_tooltips(evaluator)[step]}
