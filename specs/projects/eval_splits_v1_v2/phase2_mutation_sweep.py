@@ -17,12 +17,10 @@ REPO = Path(__file__).resolve().parents[3]
 
 EVAL = "libs/core/kiln_ai/datamodel/eval.py"
 SPLITS = "libs/core/kiln_ai/datamodel/eval_splits.py"
-RUNNER = "libs/core/kiln_ai/adapters/eval/eval_runner.py"
 API = "app/desktop/studio_server/eval_api.py"
 
 DM = "libs/core/kiln_ai/datamodel/test_eval_model.py"
 DS = "libs/core/kiln_ai/datamodel/test_eval_splits.py"
-TR = "libs/core/kiln_ai/adapters/eval/test_eval_runner.py"
 TAPI = "app/desktop/studio_server/test_eval_api.py"
 
 MUTATIONS = [
@@ -163,7 +161,7 @@ MUTATIONS = [
         "resolve_split: absent split returns empty instead of None",
         SPLITS,
         "        case None:\n            return None",
-        '        case None:\n            return ResolvedSplit(name=split, source="task_run", items=[])',
+        '        case None:\n            return ResolvedSplit(name=split, source="task_run", items=[], eval_id=eval.id)',
         DS,
     ),
     (
@@ -194,20 +192,13 @@ MUTATIONS = [
         '        return ("task_run", eval_run.eval_input_id)',
         DS,
     ),
-    (
-        "runner: source mode never eval_input",
-        RUNNER,
-        '        if isinstance(target_eval.splits.get("test"), EvalInputSplit):',
-        "        if False:",
-        TR,
-    ),
-    (
-        "runner: task_run_eval ignores the split's filter",
-        RUNNER,
-        "        filter = dataset_filter_from_id(test_split.filter_id)",
-        '        filter = dataset_filter_from_id("all")',
-        TR,
-    ),
+    # Two entries lived here — "runner: source mode never eval_input" and "runner:
+    # task_run_eval ignores the split's filter". Phase 4 deleted both target lines: the
+    # runner no longer has an eval-level source mode and no longer resolves a filter, it
+    # is handed a ResolvedSplit. Left as a note rather than deleted silently, because a
+    # PATTERN-MISS on a re-run would otherwise read as a regression. The equivalent
+    # behaviors are covered by phase4_mutation_sweep.py's "collect_tasks_for_task_run_eval:
+    # iterates the task's runs, not the split" and its dedupe-source entries.
     (
         "update endpoint: direct splits write instead of set_split",
         API,

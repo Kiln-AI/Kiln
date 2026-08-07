@@ -11,6 +11,7 @@ from app.desktop.studio_server.eval_api import (
     connect_evals_api,
     eval_config_from_id,
     get_all_run_configs,
+    resolved_split_or_422,
     reusable_frozen_prompt_id,
     task_run_config_from_id,
 )
@@ -156,6 +157,18 @@ def mock_run_config(mock_task):
     )
     run_config.save_to_file()
     return run_config
+
+
+@pytest.fixture
+def data_source():
+    return DataSource(
+        type=DataSourceType.synthetic,
+        properties={
+            "model_name": "gpt-4",
+            "model_provider": "openai",
+            "adapter_name": "test_adapter",
+        },
+    )
 
 
 @pytest.fixture
@@ -720,9 +733,31 @@ def test_get_eval_configs(
 
 @pytest.mark.asyncio
 async def test_run_eval_config(
-    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, mock_run_config
+    client,
+    mock_task_from_id,
+    mock_task,
+    mock_eval,
+    mock_eval_config,
+    mock_run_config,
+    data_source,
 ):
     mock_task_from_id.return_value = mock_task
+
+    in_test_split = TaskRun(
+        parent=mock_task,
+        input="in the test split",
+        input_source=data_source,
+        output=TaskOutput(output="out"),
+        tags=["eval_set"],
+    )
+    in_test_split.save_to_file()
+    TaskRun(
+        parent=mock_task,
+        input="golden only",
+        input_source=data_source,
+        output=TaskOutput(output="out"),
+        tags=["golden"],
+    ).save_to_file()
 
     # Mock progress updates
     progress_updates = [
@@ -754,6 +789,12 @@ async def test_run_eval_config(
         )
 
         assert response.status_code == 200
+
+        # The runner is handed the eval's resolved test split, not a filter it re-reads.
+        split = MockEvalRunner.call_args.kwargs["split"]
+        assert split.name == "test"
+        assert split.source == "task_run"
+        assert [item.id for item in split.items] == [in_test_split.id]
 
         # Parse SSE messages
         messages = [msg for msg in response.iter_lines() if msg]
@@ -794,6 +835,42 @@ async def test_run_eval_config_no_run_configs_error(
             response.json()["message"]
             == "No run config ids provided. At least one run config id is required."
         )
+
+
+class TestResolvedSplitOr422:
+    """The run endpoint's test split always exists (validate_splits enforces it at load),
+    so the failure path is exercised here rather than through that endpoint. Phase 6's
+    endpoints take a caller-supplied split name, where an absent split is reachable."""
+
+    def test_returns_the_splits_items(self, mock_task, mock_eval, data_source):
+        in_split = TaskRun(
+            parent=mock_task,
+            input="in the eval set",
+            input_source=data_source,
+            output=TaskOutput(output="out"),
+            tags=["eval_set"],
+        )
+        in_split.save_to_file()
+        TaskRun(
+            parent=mock_task,
+            input="out of the eval set",
+            input_source=data_source,
+            output=TaskOutput(output="out"),
+            tags=["other"],
+        ).save_to_file()
+
+        resolved = resolved_split_or_422(mock_task, mock_eval, "test")
+
+        assert resolved.name == "test"
+        assert [item.id for item in resolved.items] == [in_split.id]
+
+    def test_422s_naming_the_split_and_the_eval(self, mock_task, mock_eval):
+        with pytest.raises(HTTPException) as exc_info:
+            resolved_split_or_422(mock_task, mock_eval, "train")
+
+        assert exc_info.value.status_code == 422
+        assert "no 'train' split" in exc_info.value.detail
+        assert mock_eval.id in exc_info.value.detail
 
 
 @pytest.mark.asyncio
@@ -1659,6 +1736,43 @@ async def test_run_eval_config_eval(
         assert eval_runner.eval_configs[0].id == mock_eval_config.id
         assert eval_runner.run_configs is None
         assert eval_runner.eval_run_type == "eval_config_eval"
+
+
+@pytest.mark.asyncio
+async def test_run_eval_config_eval_422s_without_a_golden_set(
+    client, mock_task_from_id, mock_task, mock_eval_config
+):
+    """The refusal has to beat the StreamingResponse.
+
+    This is an SSE endpoint, so anything raised once the generator is running is emitted
+    after a 200 status and an empty body. Asserting the status alone would not be enough
+    either: this pins the whole HTTP contract functional spec 9 asks for, status and
+    reason. What the *web UI* shows is unchanged for now — its EventSource can't read a
+    non-200 response — so this is an API-contract test, not a UX one.
+    """
+    mock_task_from_id.return_value = mock_task
+    no_golden_eval = Eval(
+        id="eval_no_golden",
+        name="No Golden Set",
+        description="V2 eval that never had judges compared",
+        output_scores=[
+            EvalOutputScore(
+                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
+            ),
+        ],
+        splits={"test": EvalInputSplit(filter_id="tag::inputs")},
+        parent=mock_task,
+    )
+    no_golden_eval.save_to_file()
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/evals/eval_no_golden/run_calibration"
+    )
+
+    assert response.status_code == 422
+    message = response.json()["message"]
+    assert "eval_no_golden" in message
+    assert "no golden set configured" in message
 
 
 @pytest.mark.asyncio
