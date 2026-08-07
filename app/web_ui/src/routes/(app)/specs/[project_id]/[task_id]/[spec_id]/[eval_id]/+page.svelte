@@ -372,6 +372,10 @@
   // Steps jumped over by picking a default judge without completing them.
   // Rendered distinctly in the stepper so they don't read as completed.
   let skipped_steps: Set<number> = new Set()
+  // Steps done but below the recommended amount (e.g. some eval data, fewer
+  // than the suggested minimum). Rendered like the current step (dot instead
+  // of a check) to signal there's more worth doing.
+  let partial_steps: Set<number> = new Set()
   let goals: string[] = []
   let golden_dataset_explanation = ""
 
@@ -452,6 +456,7 @@
     current_step = 1
     current_step_id = "goals"
     skipped_steps = new Set()
+    partial_steps = new Set()
     if (!progress || !evaluator) {
       return
     }
@@ -471,13 +476,17 @@
       // (common for non-LLM judges, which are set as the default judge at
       // creation time).
       const skipped = new Set<number>()
-      // Computed for the step description only: the dataset minimum is a
-      // recommendation, and with at least one item the step was genuinely
-      // done, so it never renders as skipped.
+      const partial = new Set<number>()
+      // The dataset minimum is a recommendation: with at least one item the
+      // step was genuinely done, so below-minimum renders as partial (hollow
+      // circle), never skipped.
       required_more_eval_data = progress.dataset_size < MIN_DATASET_SIZE
       required_more_golden_data =
         evaluator?.template !== "rag" &&
         progress.golden_dataset_size < MIN_DATASET_SIZE
+      if (required_more_eval_data || required_more_golden_data) {
+        partial.add(2)
+      }
       if (evaluator?.template === "rag") {
         current_step = 3
       } else {
@@ -489,6 +498,7 @@
         current_step = 5
       }
       skipped_steps = skipped
+      partial_steps = partial
       current_step_id = "compare_run_configs"
       return
     }
@@ -759,7 +769,7 @@
                     : ''}"
                 data-content={skipped_steps.has(step)
                   ? "–"
-                  : current_step == step
+                  : partial_steps.has(step) || current_step == step
                     ? "●"
                     : current_step > step
                       ? "✓"
