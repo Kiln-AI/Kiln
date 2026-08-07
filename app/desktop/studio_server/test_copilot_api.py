@@ -31,6 +31,9 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.job_type 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_spec_api_output import (
     RefineSpecApiOutput,
 )
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_spec_from_answers_and_name_output import (
+    RefineSpecFromAnswersAndNameOutput,
+)
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
     Response as SdkResponse,
 )
@@ -103,6 +106,36 @@ def refine_spec_input():
                 "input": "test input",
                 "output": "test output",
                 "fails_specification": False,
+            }
+        ],
+    }
+
+
+@pytest.fixture
+def submit_answers_input():
+    return {
+        "task_prompt": "Test task prompt",
+        "specification": {
+            "spec_fields": {"tone": "The desired tone"},
+            "spec_field_current_values": {"tone": "friendly"},
+        },
+        "questions_and_answers": [
+            {
+                "question_title": "How formal?",
+                "question_body": "Should the tone be formal or casual?",
+                "answer_options": [
+                    {
+                        "answer_title": "Formal",
+                        "answer_description": "Use a formal tone",
+                        "selected": True,
+                    },
+                    {
+                        "answer_title": "Casual",
+                        "answer_description": "Use a casual tone",
+                        "selected": False,
+                    },
+                ],
+                "custom_answer": None,
             }
         ],
     }
@@ -308,6 +341,140 @@ class TestRefineSpec:
             response = client.post("/api/copilot/refine_spec", json=refine_spec_input)
             assert response.status_code == 422
             assert "Validation error from server" in response.json()["message"]
+
+
+NEW_ROUTE = (
+    "app.desktop.studio_server.copilot_api."
+    "refine_spec_with_answers_and_name_v1_copilot_"
+    "refine_spec_with_answers_and_name_post.asyncio_detailed"
+)
+OLD_ROUTE = (
+    "app.desktop.studio_server.copilot_api."
+    "refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post.asyncio_detailed"
+)
+
+
+class TestSubmitQuestionAnswers:
+    def test_no_api_key(self, client, submit_answers_input):
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+        ) as mock_config_shared:
+            mock_config = mock_config_shared.return_value
+            mock_config.kiln_copilot_api_key = None
+
+            response = client.post(
+                "/api/copilot/refine_spec_with_question_answers",
+                json=submit_answers_input,
+            )
+            assert response.status_code == 401
+            assert "API key not configured" in response.json()["message"]
+
+    def test_new_route_success_maps_name(
+        self, client, submit_answers_input, mock_api_key
+    ):
+        # The *_and_name route serves the suggested name; it must reach the caller.
+        new_output = MagicMock(spec=RefineSpecFromAnswersAndNameOutput)
+        new_output.to_dict.return_value = {
+            "new_proposed_spec_edits": [
+                {
+                    "spec_field_name": "tone",
+                    "proposed_edit": "Use a formal tone",
+                    "reason_for_edit": "User chose formal",
+                }
+            ],
+            "suggested_name": "headline_length",
+        }
+        new_response = MagicMock()
+        new_response.status_code = 200
+        new_response.parsed = new_output
+
+        with (
+            patch(NEW_ROUTE, new_callable=AsyncMock, return_value=new_response),
+            patch(OLD_ROUTE, new_callable=AsyncMock) as old_route,
+        ):
+            response = client.post(
+                "/api/copilot/refine_spec_with_question_answers",
+                json=submit_answers_input,
+            )
+            assert response.status_code == 200
+            result = response.json()
+            assert result["suggested_name"] == "headline_length"
+            assert result["not_incorporated_feedback"] is None
+            assert len(result["new_proposed_spec_edits"]) == 1
+            # The new route succeeded, so we never touch the fallback.
+            old_route.assert_not_awaited()
+
+    def test_missing_route_falls_back_without_name(
+        self, client, submit_answers_input, mock_api_key
+    ):
+        # A 404 means the *_and_name route isn't deployed yet: fall back to the
+        # older route, whose response carries no suggested_name.
+        new_response = MagicMock()
+        new_response.status_code = 404
+        new_response.content = b""
+
+        old_output = MagicMock(spec=RefineSpecApiOutput)
+        old_output.to_dict.return_value = {
+            "new_proposed_spec_edits": [],
+            "not_incorporated_feedback": None,
+        }
+        old_response = MagicMock()
+        old_response.status_code = 200
+        old_response.parsed = old_output
+
+        with (
+            patch(NEW_ROUTE, new_callable=AsyncMock, return_value=new_response),
+            patch(
+                OLD_ROUTE, new_callable=AsyncMock, return_value=old_response
+            ) as old_route,
+        ):
+            response = client.post(
+                "/api/copilot/refine_spec_with_question_answers",
+                json=submit_answers_input,
+            )
+            assert response.status_code == 200
+            result = response.json()
+            assert result["suggested_name"] is None
+            old_route.assert_awaited_once()
+
+    def test_other_error_propagates_without_fallback(
+        self, client, submit_answers_input, mock_api_key
+    ):
+        # Non-404 upstream errors propagate as-is; we do not fall back on them.
+        new_response = MagicMock()
+        new_response.status_code = 500
+        new_response.content = b'{"message": "Boom from server"}'
+
+        with (
+            patch(NEW_ROUTE, new_callable=AsyncMock, return_value=new_response),
+            patch(OLD_ROUTE, new_callable=AsyncMock) as old_route,
+        ):
+            response = client.post(
+                "/api/copilot/refine_spec_with_question_answers",
+                json=submit_answers_input,
+            )
+            assert response.status_code == 500
+            assert "Boom from server" in response.json()["message"]
+            old_route.assert_not_awaited()
+
+    def test_validation_error_propagates_without_fallback(
+        self, client, submit_answers_input, mock_api_key
+    ):
+        new_response = MagicMock()
+        new_response.status_code = 422
+        new_response.content = b'{"message": "Validation error from server"}'
+
+        with (
+            patch(NEW_ROUTE, new_callable=AsyncMock, return_value=new_response),
+            patch(OLD_ROUTE, new_callable=AsyncMock) as old_route,
+        ):
+            response = client.post(
+                "/api/copilot/refine_spec_with_question_answers",
+                json=submit_answers_input,
+            )
+            assert response.status_code == 422
+            assert "Validation error from server" in response.json()["message"]
+            old_route.assert_not_awaited()
 
 
 class TestGenerateBatch:

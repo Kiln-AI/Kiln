@@ -15,6 +15,7 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot impo
     generate_batch_v1_copilot_generate_batch_post,
     question_spec_v1_copilot_question_spec_post,
     refine_spec_v1_copilot_refine_spec_post,
+    refine_spec_with_answers_and_name_v1_copilot_refine_spec_with_answers_and_name_post,
     refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs import (
@@ -37,6 +38,9 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     RefineSpecApiOutput as RefineSpecApiOutputClient,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    RefineSpecFromAnswersAndNameOutput as RefineSpecFromAnswersAndNameOutputClient,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     SpecQuestionerApiInput as SpecQuestionerApiInputServerApi,
@@ -780,17 +784,57 @@ def connect_copilot_api(app: FastAPI):
 
         submit_input = SubmitAnswersRequestServerApi.from_dict(request.model_dump())
 
-        detailed_result = await refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post.asyncio_detailed(
+        # Prefer the newer route that also returns a model-suggested eval name.
+        detailed_result = await refine_spec_with_answers_and_name_v1_copilot_refine_spec_with_answers_and_name_post.asyncio_detailed(
             client=client,
             body=submit_input,
         )
+
+        # Transitional fallback: the deployed prod copilot won't serve the
+        # *_and_name route until the server ships it. This request names no
+        # resource, so a 404 can only mean the route isn't deployed (not a
+        # missing resource) — fall back to the older route, which never carries
+        # a suggested_name. Any other status (auth, 422, 500) still propagates
+        # via unwrap_response below, so we don't widen the error gate.
+        # Remove this fallback once the *_and_name route is universally deployed.
+        if detailed_result.status_code == HTTPStatus.NOT_FOUND:
+            logger.warning(
+                "kiln_server refine_spec_with_answers_and_name route missing "
+                "(404); falling back to refine_spec_with_answers without a "
+                "suggested name."
+            )
+            fallback_result = await refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post.asyncio_detailed(
+                client=client,
+                body=submit_input,
+            )
+            result = unwrap_response(
+                fallback_result,
+                none_detail="Failed to refine spec with question answers. Please try again.",
+            )
+            if isinstance(result, RefineSpecApiOutputClient):
+                return RefineSpecApiOutput.model_validate(result.to_dict())
+
+            raise HTTPException(
+                status_code=500,
+                detail="Unknown error.",
+            )
+
         result = unwrap_response(
             detailed_result,
             none_detail="Failed to refine spec with question answers. Please try again.",
         )
 
-        if isinstance(result, RefineSpecApiOutputClient):
-            return RefineSpecApiOutput.model_validate(result.to_dict())
+        if isinstance(result, RefineSpecFromAnswersAndNameOutputClient):
+            # The *_and_name output has no not_incorporated_feedback field; the
+            # studio response requires it, so set it to None and carry the name.
+            output = result.to_dict()
+            return RefineSpecApiOutput.model_validate(
+                {
+                    "new_proposed_spec_edits": output["new_proposed_spec_edits"],
+                    "not_incorporated_feedback": None,
+                    "suggested_name": output["suggested_name"],
+                }
+            )
 
         raise HTTPException(
             status_code=500,

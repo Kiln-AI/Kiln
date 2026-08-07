@@ -116,6 +116,7 @@ from .mcp_tool_reference_input_schema_type_0 import MCPToolReferenceInputSchemaT
 from .mcp_tool_reference_output_schema_type_0 import MCPToolReferenceOutputSchemaType0
 from .message_usage import MessageUsage
 from .model_provider_name import ModelProviderName
+from .new_proposed_spec_edit import NewProposedSpecEdit
 from .new_proposed_spec_edit_api import NewProposedSpecEditApi
 from .output_file_info import OutputFileInfo
 from .prompt_optimization_job_output import PromptOptimizationJobOutput
@@ -126,6 +127,7 @@ from .question_with_answer import QuestionWithAnswer
 from .refine_judge_prompt_input import RefineJudgePromptInput
 from .refine_judge_prompt_output import RefineJudgePromptOutput
 from .refine_spec_api_output import RefineSpecApiOutput
+from .refine_spec_from_answers_and_name_output import RefineSpecFromAnswersAndNameOutput
 from .refine_spec_input import RefineSpecInput
 from .requirement_rating import RequirementRating
 from .sample import Sample
@@ -262,6 +264,7 @@ __all__ = (
     "MCPToolReferenceOutputSchemaType0",
     "MessageUsage",
     "ModelProviderName",
+    "NewProposedSpecEdit",
     "NewProposedSpecEditApi",
     "OutputFileInfo",
     "PromptOptimizationJobOutput",
@@ -272,6 +275,7 @@ __all__ = (
     "RefineJudgePromptInput",
     "RefineJudgePromptOutput",
     "RefineSpecApiOutput",
+    "RefineSpecFromAnswersAndNameOutput",
     "RefineSpecInput",
     "RequirementRating",
     "Sample",
