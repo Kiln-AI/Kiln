@@ -2162,7 +2162,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Eval Run Results */
+        /**
+         * Get Eval Run Results
+         * @description Results for one run config, scoped to one of the eval's splits.
+         */
         get: operations["get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get"];
         put?: never;
         post?: never;
@@ -6491,9 +6494,14 @@ export interface components {
             golden_dataset_fully_rated_count: number;
             /**
              * Train Dataset Size
-             * @description The total size of the train dataset.
+             * @description The total size of the train split. 0 when the eval has no train split.
              */
             train_dataset_size: number;
+            /**
+             * Val Dataset Size
+             * @description The total size of the val split. 0 when the eval has no val split.
+             */
+            val_dataset_size: number;
             /** @description The currently selected eval config. */
             current_eval_method?: components["schemas"]["EvalConfig"] | null;
         };
@@ -17363,7 +17371,10 @@ export interface operations {
     };
     get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get: {
         parameters: {
-            query?: never;
+            query: {
+                /** @description Which of the eval's dataset splits to return results for. Required: every response about eval results is scoped to exactly one split, and reading has no obvious default the way running does. */
+                split: "train" | "val" | "test";
+            };
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */

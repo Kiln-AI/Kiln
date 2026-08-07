@@ -1,18 +1,20 @@
 import json
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, Iterable, List, Tuple
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from app.desktop.studio_server.eval_api import (
     CreateEvalConfigRequest,
     CreateEvaluatorRequest,
+    _cached_test_split,
     compute_score_summary,
     connect_evals_api,
     eval_config_from_id,
     get_all_run_configs,
     resolved_split_or_422,
     reusable_frozen_prompt_id,
+    split_size,
     task_run_config_from_id,
 )
 from fastapi import FastAPI, HTTPException
@@ -44,12 +46,16 @@ from kiln_ai.datamodel.eval import (
     EvalConfig,
     EvalConfigType,
     EvalDataType,
+    EvalInput,
     EvalInputSplit,
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
+    SingleTurnEvalInputData,
     TaskRunSplit,
+    UserMessage,
 )
+from kiln_ai.datamodel.eval_splits import ItemSource, ResolvedSplit
 from kiln_ai.datamodel.prompt import BasePrompt
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec, SpecStatus
@@ -57,6 +63,60 @@ from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecTy
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.task_run import Usage
+
+
+def stub_split(
+    ids: Iterable[ID_TYPE],
+    source: ItemSource = "task_run",
+    name: str = "test",
+    eval_id: ID_TYPE = "eval1",
+) -> ResolvedSplit:
+    """A ResolvedSplit over items with the given ids, for tests that patch resolve_split.
+
+    The API layer asks a split only for its length and its item keys, both of which are
+    derived from the items' ids, so stub items are enough — and building a real dataset
+    would put the test's subject behind a filter-matching setup that isn't what it is
+    testing.
+    """
+    spec = TaskRun if source == "task_run" else EvalInput
+    return ResolvedSplit(
+        name=name,
+        source=source,
+        items=[Mock(spec=spec, id=id) for id in ids],
+        eval_id=eval_id,
+    )
+
+
+def patch_resolve_split(**by_split_name: ResolvedSplit | None):
+    """Patch eval_api's resolve_split to answer per split name, None for anything else."""
+    return patch(
+        "app.desktop.studio_server.eval_api.resolve_split",
+        side_effect=lambda task, eval, split: by_split_name.get(split),
+    )
+
+
+def patch_resolve_split_by_ref(items_by_ref: Dict[Tuple[ItemSource, str], set]):
+    """Patch resolve_split to answer from each eval's own `splits`, per (source, filter).
+
+    Keyed on the pair that actually determines an item set, so a test can give the same
+    filter id different items in each store — which is the case source-aware caching
+    exists for.
+    """
+
+    def resolve(task, eval, split_name):
+        ref = eval.splits.get(split_name)
+        if ref is None:
+            return None
+        return stub_split(
+            items_by_ref.get((ref.source, ref.filter_id), set()),
+            source=ref.source,
+            name=split_name,
+            eval_id=eval.id,
+        )
+
+    return patch(
+        "app.desktop.studio_server.eval_api.resolve_split", side_effect=resolve
+    )
 
 
 @pytest.fixture
@@ -1207,9 +1267,9 @@ async def test_get_eval_config_score_summary(
 ):
     with (
         patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id,
-        patch(
-            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
-        ) as mock_dataset_ids_in_filter,
+        patch_resolve_split(
+            test=stub_split({"dataset_id_1", "dataset_id_2"})
+        ) as mock_resolve_split,
         patch(
             "app.desktop.studio_server.eval_api.eval_config_from_id"
         ) as mock_eval_config_from_id,
@@ -1217,10 +1277,6 @@ async def test_get_eval_config_score_summary(
     ):
         mock_eval_from_id.return_value = mock_eval_for_score_summary
         mock_eval_config_from_id.return_value = mock_eval_config_for_score_summary
-        mock_dataset_ids_in_filter.return_value = {
-            "dataset_id_1",
-            "dataset_id_2",
-        }
 
         mock_task = Mock(spec=Task)
         mock_task.run_configs.return_value = [
@@ -1286,8 +1342,8 @@ async def test_get_eval_config_score_summary(
             "project1", "task1", "eval1", "eval_config1"
         )
         mock_eval_config_for_score_summary.runs.assert_called_once_with(readonly=True)
-        mock_dataset_ids_in_filter.assert_called_once_with(
-            mock_task, "tag::eval_set", readonly=True
+        mock_resolve_split.assert_called_once_with(
+            mock_task, mock_eval_for_score_summary, "test"
         )
 
 
@@ -1323,9 +1379,9 @@ def test_score_summary_n_used_n_excluded(mock_eval_for_score_summary):
     config.runs.return_value = runs
 
     task_run_configs = [Mock(spec=TaskRunConfig, id="rc1")]
-    expected_dataset_ids: set[ID_TYPE] = {"ds1", "ds2", "ds3"}
+    split = stub_split({"ds1", "ds2", "ds3"})
 
-    result = compute_score_summary(eval, config, task_run_configs, expected_dataset_ids)
+    result = compute_score_summary(eval, config, task_run_configs, split)
 
     assert result.dataset_size == 3
     scores = result.results["rc1"]
@@ -1363,9 +1419,9 @@ def test_score_summary_all_skipped(mock_eval_for_score_summary):
     config.runs.return_value = runs
 
     task_run_configs = [Mock(spec=TaskRunConfig, id="rc1")]
-    expected_dataset_ids: set[ID_TYPE] = {"ds1", "ds2"}
+    split = stub_split({"ds1", "ds2"})
 
-    result = compute_score_summary(eval, config, task_run_configs, expected_dataset_ids)
+    result = compute_score_summary(eval, config, task_run_configs, split)
 
     assert result.dataset_size == 2
     scores = result.results["rc1"]
@@ -1379,6 +1435,48 @@ def test_score_summary_all_skipped(mock_eval_for_score_summary):
     assert result.run_config_percent_complete["rc1"] == 1.0
 
 
+RUN_RESULTS_PATH = (
+    "/api/projects/project1/tasks/task1/evals/eval1"
+    "/eval_config/eval_config1/run_config/run_config1/results"
+)
+
+
+def _tagged_task_run(task: Task, data_source: DataSource, *tags: str) -> TaskRun:
+    run = TaskRun(
+        parent=task,
+        input="in",
+        input_source=data_source,
+        output=TaskOutput(output="out"),
+        tags=list(tags),
+    )
+    run.save_to_file()
+    return run
+
+
+def _tagged_eval_input(task: Task, *tags: str, **overrides) -> EvalInput:
+    eval_input = EvalInput(
+        parent=task,
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="in")),
+        tags=list(tags),
+        **overrides,
+    )
+    eval_input.save_to_file()
+    return eval_input
+
+
+def _scored(eval_config: EvalConfig, **item) -> EvalRun:
+    run = EvalRun(
+        task_run_config_id="run_config1",
+        scores={"score1": 3.0, "overall_rating": 1.0},
+        input="input",
+        output="output",
+        parent=eval_config,
+        **item,
+    )
+    run.save_to_file()
+    return run
+
+
 @pytest.mark.asyncio
 async def test_get_eval_run_results(
     client,
@@ -1387,24 +1485,15 @@ async def test_get_eval_run_results(
     mock_eval,
     mock_eval_config,
     mock_run_config,
+    data_source,
 ):
     mock_task_from_id.return_value = mock_task
 
-    eval_run = EvalRun(
-        task_run_config_id="run_config1",
-        scores={"score1": 3.0, "overall_rating": 1.0},
-        input="input",
-        output="output",
-        dataset_id="dataset_id1",
-        parent=mock_eval_config,
-    )
-    eval_run.save_to_file()
+    in_split = _tagged_task_run(mock_task, data_source, "eval_set")
+    eval_run = _scored(mock_eval_config, dataset_id=in_split.id)
 
     # Test successful retrieval
-    response = client.get(
-        "/api/projects/project1/tasks/task1/evals/eval1"
-        "/eval_config/eval_config1/run_config/run_config1/results"
-    )
+    response = client.get(RUN_RESULTS_PATH, params={"split": "test"})
 
     assert response.status_code == 200
     data = response.json()
@@ -1424,23 +1513,132 @@ async def test_get_eval_run_results(
     # Test with invalid eval ID
     response = client.get(
         "/api/projects/project1/tasks/task1/evals/invalid_eval"
-        "/eval_config/eval_config1/run_config/run_config1/results"
+        "/eval_config/eval_config1/run_config/run_config1/results",
+        params={"split": "test"},
     )
     assert response.status_code == 404
 
     # Test with invalid eval config ID
     response = client.get(
         "/api/projects/project1/tasks/task1/evals/eval1"
-        "/eval_config/invalid_config/run_config/run_config1/results"
+        "/eval_config/invalid_config/run_config/run_config1/results",
+        params={"split": "test"},
     )
     assert response.status_code == 404
 
     # Test with invalid run config ID
     response = client.get(
         "/api/projects/project1/tasks/task1/evals/eval1"
-        "/eval_config/eval_config1/run_config/invalid_run_config/results"
+        "/eval_config/eval_config1/run_config/invalid_run_config/results",
+        params={"split": "test"},
     )
     assert response.status_code == 404
+
+
+class TestGetEvalRunResultsSplits:
+    """Every response about eval results is scoped to exactly one split (spec 5)."""
+
+    def test_requires_a_split(self, client, mock_task_from_id, mock_eval):
+        response = client.get(RUN_RESULTS_PATH)
+
+        assert response.status_code == 422
+        assert "split" in response.text
+
+    def test_unknown_split_name_is_rejected_before_anything_loads(
+        self, client, mock_task_from_id, mock_eval
+    ):
+        response = client.get(RUN_RESULTS_PATH, params={"split": "holdout"})
+
+        assert response.status_code == 422
+
+    def test_422s_for_a_split_this_eval_does_not_have(
+        self, client, mock_task_from_id, mock_eval, mock_eval_config, mock_run_config
+    ):
+        response = client.get(RUN_RESULTS_PATH, params={"split": "val"})
+
+        assert response.status_code == 422
+        assert "no 'val' split" in response.json()["message"]
+        assert mock_eval.id in response.json()["message"]
+
+    def test_returns_only_the_requested_splits_results(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        mock_eval.set_split("train", TaskRunSplit(filter_id="tag::train_set"))
+        mock_eval.save_to_file()
+
+        test_item = _tagged_task_run(mock_task, data_source, "eval_set")
+        train_item = _tagged_task_run(mock_task, data_source, "train_set")
+        untagged_item = _tagged_task_run(mock_task, data_source, "other")
+        test_run = _scored(mock_eval_config, dataset_id=test_item.id)
+        train_run = _scored(mock_eval_config, dataset_id=train_item.id)
+        _scored(mock_eval_config, dataset_id=untagged_item.id)
+
+        test_results = client.get(RUN_RESULTS_PATH, params={"split": "test"}).json()
+        train_results = client.get(RUN_RESULTS_PATH, params={"split": "train"}).json()
+
+        assert [r["id"] for r in test_results["results"]] == [test_run.id]
+        assert [r["id"] for r in train_results["results"]] == [train_run.id]
+
+    def test_returns_eval_input_backed_results(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+    ):
+        mock_eval.splits["test"] = EvalInputSplit(filter_id="tag::inputs")
+        mock_eval.eval_set_filter_id = None
+        mock_eval.save_to_file()
+        eval_input = _tagged_eval_input(mock_task, "inputs")
+        eval_run = _scored(mock_eval_config, eval_input_id=eval_input.id)
+
+        response = client.get(RUN_RESULTS_PATH, params={"split": "test"})
+
+        assert response.status_code == 200
+        assert [r["id"] for r in response.json()["results"]] == [eval_run.id]
+
+    def test_does_not_credit_a_task_run_to_an_eval_inputs_id(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        """Both stores draw ids from one 12-digit generator, so membership on a bare id
+        would silently admit one store's result into the other store's split."""
+        eval_input = _tagged_eval_input(mock_task, "inputs", id="500000000001")
+        colliding_task_run = TaskRun(
+            id=eval_input.id,
+            parent=mock_task,
+            input="in",
+            input_source=DataSource(
+                type=DataSourceType.human, properties={"created_by": "test"}
+            ),
+            output=TaskOutput(output="out"),
+            tags=["inputs"],
+        )
+        colliding_task_run.save_to_file()
+        mock_eval.splits["test"] = EvalInputSplit(filter_id="tag::inputs")
+        mock_eval.eval_set_filter_id = None
+        mock_eval.save_to_file()
+        _scored(mock_eval_config, dataset_id=colliding_task_run.id)
+
+        response = client.get(RUN_RESULTS_PATH, params={"split": "test"})
+
+        assert response.status_code == 200
+        assert response.json()["results"] == []
 
 
 @pytest.mark.asyncio
@@ -2182,9 +2380,9 @@ async def test_get_eval_progress(client, mock_task_from_id, mock_task, mock_eval
     # Mock the necessary functions
     with (
         patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id,
-        patch(
-            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
-        ) as mock_dataset_ids_in_filter,
+        patch_resolve_split(
+            test=stub_split({"run1", "run2", "run3", "run4"})
+        ) as mock_resolve_split,
         patch(
             "app.desktop.studio_server.eval_api.runs_in_filter"
         ) as mock_runs_in_filter,
@@ -2196,7 +2394,6 @@ async def test_get_eval_progress(client, mock_task_from_id, mock_task, mock_eval
         ) as mock_count_human_evals,
     ):
         mock_eval_from_id.return_value = mock_eval
-        mock_dataset_ids_in_filter.return_value = {"run1", "run2", "run3", "run4"}
         mock_runs_in_filter.return_value = [run1, run2, run3]
         mock_build_score_key.return_value = {"score1": "req_id"}
         mock_count_human_evals.return_value = (
@@ -2218,12 +2415,17 @@ async def test_get_eval_progress(client, mock_task_from_id, mock_task, mock_eval
         assert result["golden_dataset_partially_rated_count"] == 1
         assert result["golden_dataset_not_rated_count"] == 1
         assert result["current_eval_method"] is None
+        # No train or val split on this eval, so zero rather than an absent field.
+        assert result["train_dataset_size"] == 0
+        assert result["val_dataset_size"] == 0
 
         # Verify the function calls
         mock_eval_from_id.assert_called_once_with("project1", "task1", "eval1")
-        mock_dataset_ids_in_filter.assert_called_once_with(
-            mock_task, mock_eval.eval_set_filter_id, readonly=True
-        )
+        assert [c.args[2] for c in mock_resolve_split.call_args_list] == [
+            "test",
+            "train",
+            "val",
+        ]
         mock_runs_in_filter.assert_called_once_with(
             mock_task, mock_eval.eval_configs_filter_id, readonly=True
         )
@@ -2231,6 +2433,217 @@ async def test_get_eval_progress(client, mock_task_from_id, mock_task, mock_eval
         mock_count_human_evals.assert_called_once_with(
             [run1, run2, run3], mock_eval, {"score1": "req_id"}
         )
+
+
+PROGRESS_PATH = "/api/projects/project1/tasks/task1/evals/eval1/progress"
+
+
+class TestEvalProgressSplitSizes:
+    """Every split size is the real count in that split's own store (spec 6.1)."""
+
+    def test_reports_each_splits_own_size(
+        self, client, mock_task_from_id, mock_task, mock_eval, data_source
+    ):
+        mock_eval.set_split("train", TaskRunSplit(filter_id="tag::train_set"))
+        mock_eval.splits["val"] = TaskRunSplit(filter_id="tag::val_set")
+        mock_eval.save_to_file()
+        for tag in ("eval_set", "eval_set", "train_set", "train_set", "val_set"):
+            _tagged_task_run(mock_task, data_source, tag)
+
+        result = client.get(PROGRESS_PATH).json()
+
+        assert result["dataset_size"] == 2
+        assert result["train_dataset_size"] == 2
+        assert result["val_dataset_size"] == 1
+
+    def test_absent_splits_are_zero_not_absent(
+        self, client, mock_task_from_id, mock_task, mock_eval, data_source
+    ):
+        _tagged_task_run(mock_task, data_source, "eval_set")
+
+        result = client.get(PROGRESS_PATH).json()
+
+        assert result["dataset_size"] == 1
+        assert result["train_dataset_size"] == 0
+        assert result["val_dataset_size"] == 0
+
+    def test_counts_an_eval_input_backed_eval_rather_than_refusing_it(
+        self, client, mock_task_from_id, mock_task, mock_eval
+    ):
+        """The 400 that stood here was never about golden sets — it fired because this
+        endpoint could only count TaskRuns. Golden is legitimately 0 for a V2 eval."""
+        mock_eval.splits["test"] = EvalInputSplit(filter_id="tag::inputs")
+        mock_eval.eval_set_filter_id = None
+        # No golden set, the expected V2 state: template=None is what lets an eval
+        # validate without one.
+        mock_eval.template = None
+        mock_eval.eval_configs_filter_id = None
+        mock_eval.save_to_file()
+        _tagged_eval_input(mock_task, "inputs")
+        _tagged_eval_input(mock_task, "inputs")
+        _tagged_eval_input(mock_task, "other")
+
+        response = client.get(PROGRESS_PATH)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["dataset_size"] == 2
+        assert result["golden_dataset_size"] == 0
+
+
+class TestSplitSize:
+    def test_absent_split_is_zero(self):
+        assert split_size(None) == 0
+
+    def test_an_empty_split_is_also_zero(self):
+        """Both answer 0, but only because the absence check is `is None`:
+        ResolvedSplit defines __len__, so an empty split is falsy."""
+        assert split_size(stub_split(set())) == 0
+
+    def test_a_populated_split_is_its_length(self):
+        assert split_size(stub_split({"a", "b"})) == 2
+
+
+class TestScoreSummarySplits:
+    def test_summarizes_an_eval_input_backed_test_split(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+    ):
+        mock_eval.splits["test"] = EvalInputSplit(filter_id="tag::inputs")
+        mock_eval.eval_set_filter_id = None
+        mock_eval.save_to_file()
+        eval_input = _tagged_eval_input(mock_task, "inputs")
+        _scored(mock_eval_config, eval_input_id=eval_input.id)
+
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1"
+            "/eval_config/eval_config1/score_summary"
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["dataset_size"] == 1
+        assert body["results"]["run_config1"]["score1"]["n_used"] == 1
+
+    def test_400s_on_an_empty_test_split(
+        self, client, mock_task_from_id, mock_task, mock_eval, mock_eval_config
+    ):
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1"
+            "/eval_config/eval_config1/score_summary"
+        )
+
+        assert response.status_code == 400
+        assert "No dataset ids in eval set filter" in response.json()["message"]
+
+    def test_does_not_average_another_stores_score_into_a_split(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+    ):
+        eval_input = _tagged_eval_input(mock_task, "inputs", id="500000000002")
+        colliding_task_run = TaskRun(
+            id=eval_input.id,
+            parent=mock_task,
+            input="in",
+            input_source=DataSource(
+                type=DataSourceType.human, properties={"created_by": "test"}
+            ),
+            output=TaskOutput(output="out"),
+            tags=["inputs"],
+        )
+        colliding_task_run.save_to_file()
+        mock_eval.splits["test"] = EvalInputSplit(filter_id="tag::inputs")
+        mock_eval.eval_set_filter_id = None
+        mock_eval.save_to_file()
+        _scored(mock_eval_config, dataset_id=colliding_task_run.id)
+
+        body = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1"
+            "/eval_config/eval_config1/score_summary"
+        ).json()
+
+        assert body["dataset_size"] == 1
+        assert body["results"] == {}
+
+
+class TestRunConfigEvalScoresSplits:
+    def test_scores_an_eval_input_backed_eval(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+    ):
+        mock_eval.splits["test"] = EvalInputSplit(filter_id="tag::inputs")
+        mock_eval.eval_set_filter_id = None
+        mock_eval.current_config_id = mock_eval_config.id
+        mock_eval.save_to_file()
+        eval_input = _tagged_eval_input(mock_task, "inputs")
+        _tagged_eval_input(mock_task, "inputs")
+        _scored(mock_eval_config, eval_input_id=eval_input.id)
+
+        response = client.get(
+            "/api/projects/project1/tasks/task1/run_configs/run_config1/eval_scores"
+        )
+
+        assert response.status_code == 200
+        eval_result = response.json()["eval_results"][0]
+        assert eval_result["dataset_size"] == 2
+        assert eval_result["eval_config_result"]["percent_complete"] == pytest.approx(
+            0.5
+        )
+        assert eval_result["eval_config_result"]["results"]["score1"]["n_used"] == 1
+
+    def test_does_not_credit_a_task_run_to_an_eval_inputs_id(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+    ):
+        """A TaskRun-sourced result must not count toward an EvalInput-backed split's
+        progress just because the two items happen to share an id."""
+        eval_input = _tagged_eval_input(mock_task, "inputs", id="500000000003")
+        colliding_task_run = TaskRun(
+            id=eval_input.id,
+            parent=mock_task,
+            input="in",
+            input_source=DataSource(
+                type=DataSourceType.human, properties={"created_by": "test"}
+            ),
+            output=TaskOutput(output="out"),
+            tags=["inputs"],
+        )
+        colliding_task_run.save_to_file()
+        mock_eval.splits["test"] = EvalInputSplit(filter_id="tag::inputs")
+        mock_eval.eval_set_filter_id = None
+        mock_eval.current_config_id = mock_eval_config.id
+        mock_eval.save_to_file()
+        _scored(mock_eval_config, dataset_id=colliding_task_run.id)
+
+        response = client.get(
+            "/api/projects/project1/tasks/task1/run_configs/run_config1/eval_scores"
+        )
+
+        assert response.status_code == 200
+        eval_result = response.json()["eval_results"][0]
+        assert eval_result["dataset_size"] == 1
+        assert eval_result["eval_config_result"]["percent_complete"] == 0.0
+        assert eval_result["eval_config_result"]["results"]["score1"] is None
 
 
 @pytest.mark.asyncio
@@ -2644,15 +3057,9 @@ async def test_get_run_config_eval_scores_with_usage(
         mock_eval_from_id_patch.return_value = mock_eval_for_api
         mock_task_run_config_from_id_patch.return_value = mock_run_config
 
-        with patch(
-            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
-        ) as mock_dataset_ids_in_filter:
-            mock_dataset_ids_in_filter.return_value = {
-                task_run_1.id,
-                task_run_2.id,
-                task_run_3.id,
-            }
-
+        with patch_resolve_split(
+            test=stub_split({task_run_1.id, task_run_2.id, task_run_3.id})
+        ):
             response = client.get(
                 f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
             )
@@ -2825,15 +3232,9 @@ async def test_get_run_config_eval_scores_latency_below_threshold(
         mock_eval_from_id_patch.return_value = mock_eval_for_api
         mock_task_run_config_from_id_patch.return_value = mock_run_config
 
-        with patch(
-            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
-        ) as mock_dataset_ids_in_filter:
-            mock_dataset_ids_in_filter.return_value = {
-                task_run_1.id,
-                task_run_2.id,
-                task_run_3.id,
-            }
-
+        with patch_resolve_split(
+            test=stub_split({task_run_1.id, task_run_2.id, task_run_3.id})
+        ):
             response = client.get(
                 f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
             )
@@ -2917,12 +3318,11 @@ async def test_get_run_config_eval_scores_inline_aggregation(
         patch("app.desktop.studio_server.eval_api.task_from_id") as p_task,
         patch("app.desktop.studio_server.eval_api.eval_from_id") as p_eval,
         patch("app.desktop.studio_server.eval_api.task_run_config_from_id") as p_rc,
-        patch("app.desktop.studio_server.eval_api.dataset_ids_in_filter") as p_ds,
+        patch_resolve_split(test=stub_split({tr.id for tr in task_runs})),
     ):
         p_task.return_value = mock_task_api
         p_eval.return_value = mock_eval_api
         p_rc.return_value = mock_run_config
-        p_ds.return_value = {tr.id for tr in task_runs}
 
         response = client.get(
             f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
@@ -3005,12 +3405,11 @@ async def test_get_run_config_eval_scores_all_skipped(
         patch("app.desktop.studio_server.eval_api.task_from_id") as p_task,
         patch("app.desktop.studio_server.eval_api.eval_from_id") as p_eval,
         patch("app.desktop.studio_server.eval_api.task_run_config_from_id") as p_rc,
-        patch("app.desktop.studio_server.eval_api.dataset_ids_in_filter") as p_ds,
+        patch_resolve_split(test=stub_split({tr.id for tr in task_runs})),
     ):
         p_task.return_value = mock_task_api
         p_eval.return_value = mock_eval_api
         p_rc.return_value = mock_run_config
-        p_ds.return_value = {tr.id for tr in task_runs}
 
         response = client.get(
             f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
@@ -3161,13 +3560,10 @@ async def test_get_run_config_eval_scores_includes_spec_id(
         patch(
             "app.desktop.studio_server.eval_api.task_run_config_from_id"
         ) as mock_task_run_config_from_id_patch,
-        patch(
-            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
-        ) as mock_dataset_ids_in_filter,
+        patch_resolve_split(test=stub_split(set())),
     ):
         mock_task_from_id_patch.return_value = mock_task_for_api
         mock_task_run_config_from_id_patch.return_value = mock_run_config
-        mock_dataset_ids_in_filter.return_value = set()
 
         response = client.get(
             f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
@@ -3303,13 +3699,10 @@ async def test_get_run_config_eval_scores_excludes_archived_specs(
         patch(
             "app.desktop.studio_server.eval_api.task_run_config_from_id"
         ) as mock_task_run_config_from_id_patch,
-        patch(
-            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
-        ) as mock_dataset_ids_in_filter,
+        patch_resolve_split(test=stub_split(set())),
     ):
         mock_task_from_id_patch.return_value = mock_task_for_api
         mock_task_run_config_from_id_patch.return_value = mock_run_config
-        mock_dataset_ids_in_filter.return_value = set()
 
         response = client.get(
             f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
@@ -3447,15 +3840,15 @@ def _build_mock_eval(
     eval_id: str,
     name: str,
     current_config_id: str | None,
-    eval_set_filter_id: str,
     output_scores: list[EvalOutputScore],
     configs: list,
+    test_split: TaskRunSplit | EvalInputSplit | None,
 ) -> Mock:
     mock = Mock(spec=Eval)
     mock.id = eval_id
     mock.name = name
     mock.current_config_id = current_config_id
-    mock.eval_set_filter_id = eval_set_filter_id
+    mock.splits = {} if test_split is None else {"test": test_split}
     mock.output_scores = output_scores
     mock.configs.return_value = configs
     return mock
@@ -3536,17 +3929,17 @@ async def test_eval_results_summary_happy_path(client):
         eval_id="eval1",
         name="Eval One",
         current_config_id="ec1",
-        eval_set_filter_id="tag::eval_set_1",
         output_scores=output_scores_1,
         configs=[e1c1, e1c2],
+        test_split=TaskRunSplit(filter_id="tag::eval_set_1"),
     )
     eval2 = _build_mock_eval(
         eval_id="eval2",
         name="Eval Two",
         current_config_id="ec4",
-        eval_set_filter_id="tag::eval_set_2",
         output_scores=output_scores_2,
         configs=[e2c1, e2c2],
+        test_split=TaskRunSplit(filter_id="tag::eval_set_2"),
     )
 
     rc1_mock = Mock(spec=TaskRunConfig, id="rc1")
@@ -3561,18 +3954,13 @@ async def test_eval_results_summary_happy_path(client):
     mock_task.finetunes.return_value = []
     mock_task.evals.return_value = [eval1, eval2]
 
-    def ds_filter_side_effect(task, filter_id, readonly):
-        if filter_id == "tag::eval_set_1":
-            return {"ds1", "ds2"}
-        elif filter_id == "tag::eval_set_2":
-            return {"ds3"}
-        return set()
-
     with (
         patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
-        patch(
-            "app.desktop.studio_server.eval_api.dataset_ids_in_filter",
-            side_effect=ds_filter_side_effect,
+        patch_resolve_split_by_ref(
+            {
+                ("task_run", "tag::eval_set_1"): {"ds1", "ds2"},
+                ("task_run", "tag::eval_set_2"): {"ds3"},
+            }
         ),
     ):
         mock_task_from_id.return_value = mock_task
@@ -3662,9 +4050,9 @@ async def test_eval_results_summary_behavioral_equivalence(client):
         eval_id="eval1",
         name="Eval One",
         current_config_id="ec1",
-        eval_set_filter_id="tag::eval_set",
         output_scores=output_scores,
         configs=[ec1],
+        test_split=TaskRunSplit(filter_id="tag::eval_set"),
     )
 
     rc1_mock = Mock(spec=TaskRunConfig, id="rc1")
@@ -3677,16 +4065,13 @@ async def test_eval_results_summary_behavioral_equivalence(client):
 
     with (
         patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
-        patch(
-            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
-        ) as mock_ds_filter,
+        patch_resolve_split_by_ref({("task_run", "tag::eval_set"): {"ds1", "ds2"}}),
         patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id,
         patch(
             "app.desktop.studio_server.eval_api.eval_config_from_id"
         ) as mock_eval_config_from_id,
     ):
         mock_task_from_id.return_value = mock_task
-        mock_ds_filter.return_value = {"ds1", "ds2"}
         mock_eval_from_id.return_value = eval1
         mock_eval_config_from_id.return_value = ec1
 
@@ -3728,9 +4113,9 @@ async def test_eval_results_summary_empty_filter(client):
         eval_id="eval1",
         name="Eval One",
         current_config_id="ec1",
-        eval_set_filter_id="tag::empty",
         output_scores=output_scores,
         configs=[ec1],
+        test_split=TaskRunSplit(filter_id="tag::empty"),
     )
 
     mock_task = Mock(spec=Task)
@@ -3740,12 +4125,9 @@ async def test_eval_results_summary_empty_filter(client):
 
     with (
         patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
-        patch(
-            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
-        ) as mock_ds_filter,
+        patch_resolve_split_by_ref({}),
     ):
         mock_task_from_id.return_value = mock_task
-        mock_ds_filter.return_value = set()
 
         response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
 
@@ -3773,9 +4155,9 @@ async def test_eval_results_summary_no_default_judge(client):
         eval_id="eval1",
         name="Eval One",
         current_config_id=None,
-        eval_set_filter_id="tag::test",
         output_scores=output_scores,
         configs=[ec1],
+        test_split=TaskRunSplit(filter_id="tag::test"),
     )
 
     mock_task = Mock(spec=Task)
@@ -3785,12 +4167,9 @@ async def test_eval_results_summary_no_default_judge(client):
 
     with (
         patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
-        patch(
-            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
-        ) as mock_ds_filter,
+        patch_resolve_split_by_ref({("task_run", "tag::test"): {"ds1"}}),
     ):
         mock_task_from_id.return_value = mock_task
-        mock_ds_filter.return_value = {"ds1"}
 
         response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
 
@@ -3826,7 +4205,7 @@ async def test_eval_results_summary_no_evals(client):
 
 @pytest.mark.asyncio
 async def test_eval_results_summary_dataset_ids_cached_per_filter(client):
-    """dataset_ids_in_filter is called once per unique filter_id, not per eval."""
+    """A split is resolved once per unique (source, filter id), not once per eval."""
     output_scores = [
         EvalOutputScore(
             name="accuracy",
@@ -3852,17 +4231,17 @@ async def test_eval_results_summary_dataset_ids_cached_per_filter(client):
         eval_id="eval1",
         name="Eval One",
         current_config_id="ec1a",
-        eval_set_filter_id="tag::set1",
         output_scores=output_scores,
         configs=[ec1a],
+        test_split=TaskRunSplit(filter_id="tag::set1"),
     )
     eval2 = _build_mock_eval(
         eval_id="eval2",
         name="Eval Two",
         current_config_id="ec2a",
-        eval_set_filter_id="tag::set2",
         output_scores=output_scores,
         configs=[ec2a],
+        test_split=TaskRunSplit(filter_id="tag::set2"),
     )
 
     rc1_mock = Mock(spec=TaskRunConfig, id="rc1")
@@ -3873,44 +4252,135 @@ async def test_eval_results_summary_dataset_ids_cached_per_filter(client):
     mock_task.finetunes.return_value = []
     mock_task.evals.return_value = [eval1, eval2]
 
-    runs_call_count = 0
+    def resolutions(items_by_ref):
+        return patch_resolve_split_by_ref(items_by_ref)
 
-    def counting_dataset_ids_in_filter(task, filter_id, readonly):
-        nonlocal runs_call_count
-        runs_call_count += 1
-        return {"ds1"}
+    all_ds1 = {
+        ("task_run", "tag::set1"): {"ds1"},
+        ("task_run", "tag::set2"): {"ds1"},
+        ("eval_input", "tag::set1"): {"ds1"},
+    }
 
     with (
         patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
-        patch(
-            "app.desktop.studio_server.eval_api.dataset_ids_in_filter",
-            side_effect=counting_dataset_ids_in_filter,
-        ),
+        resolutions(all_ds1) as mock_resolve,
     ):
         mock_task_from_id.return_value = mock_task
 
         response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
 
     assert response.status_code == 200
-    assert runs_call_count == 2
+    assert mock_resolve.call_count == 2
 
-    # If they shared the same filter_id, it would be called once
-    eval2.eval_set_filter_id = "tag::set1"
-    runs_call_count = 0
+    # Same filter id over the same store: one resolution, reused.
+    eval2.splits = {"test": TaskRunSplit(filter_id="tag::set1")}
 
     with (
         patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
-        patch(
-            "app.desktop.studio_server.eval_api.dataset_ids_in_filter",
-            side_effect=counting_dataset_ids_in_filter,
-        ),
+        resolutions(all_ds1) as mock_resolve,
     ):
         mock_task_from_id.return_value = mock_task
 
         response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
 
     assert response.status_code == 200
-    assert runs_call_count == 1
+    assert mock_resolve.call_count == 1
+
+    # Same filter id over a DIFFERENT store is a different item set, so it must not
+    # share a resolution: the `tag::` grammar is identical in both (spec 5.3).
+    eval2.splits = {"test": EvalInputSplit(filter_id="tag::set1")}
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        resolutions(all_ds1) as mock_resolve,
+    ):
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+
+    assert response.status_code == 200
+    assert mock_resolve.call_count == 2
+
+
+class TestCachedTestSplit:
+    def _eval(self, eval_id: str, split) -> Mock:
+        return _build_mock_eval(
+            eval_id=eval_id,
+            name=eval_id,
+            current_config_id=None,
+            output_scores=[],
+            configs=[],
+            test_split=split,
+        )
+
+    def test_reuses_a_resolution_for_the_same_source_and_filter(self):
+        cache = {}
+        with patch_resolve_split_by_ref(
+            {("task_run", "tag::shared"): {"ds1"}}
+        ) as mock_resolve:
+            first = _cached_test_split(
+                Mock(spec=Task),
+                self._eval("eval1", TaskRunSplit(filter_id="tag::shared")),
+                cache,
+            )
+            second = _cached_test_split(
+                Mock(spec=Task),
+                self._eval("eval2", TaskRunSplit(filter_id="tag::shared")),
+                cache,
+            )
+
+        assert mock_resolve.call_count == 1
+        assert first.item_keys() == second.item_keys()
+
+    def test_a_cache_hit_names_the_eval_it_was_asked_about(self):
+        """ResolvedSplit carries the eval it came from so a consumer can check a split
+        belongs to the eval it is working on. A cached value handed on unchanged would
+        name whichever eval reached the filter first, quietly breaking that check."""
+        cache = {}
+        with patch_resolve_split_by_ref({("task_run", "tag::shared"): {"ds1"}}):
+            _cached_test_split(
+                Mock(spec=Task),
+                self._eval("eval1", TaskRunSplit(filter_id="tag::shared")),
+                cache,
+            )
+            second = _cached_test_split(
+                Mock(spec=Task),
+                self._eval("eval2", TaskRunSplit(filter_id="tag::shared")),
+                cache,
+            )
+
+        assert second.eval_id == "eval2"
+
+    def test_the_same_filter_over_a_different_store_is_a_different_entry(self):
+        cache = {}
+        with patch_resolve_split_by_ref(
+            {
+                ("task_run", "tag::shared"): {"ds1"},
+                ("eval_input", "tag::shared"): {"ei1"},
+            }
+        ) as mock_resolve:
+            task_run_backed = _cached_test_split(
+                Mock(spec=Task),
+                self._eval("eval1", TaskRunSplit(filter_id="tag::shared")),
+                cache,
+            )
+            input_backed = _cached_test_split(
+                Mock(spec=Task),
+                self._eval("eval2", EvalInputSplit(filter_id="tag::shared")),
+                cache,
+            )
+
+        assert mock_resolve.call_count == 2
+        assert task_run_backed.item_keys() == {("task_run", "ds1")}
+        assert input_backed.item_keys() == {("eval_input", "ei1")}
+
+    def test_none_when_the_eval_has_no_test_split(self):
+        with patch_resolve_split_by_ref({}) as mock_resolve:
+            assert (
+                _cached_test_split(Mock(spec=Task), self._eval("e", None), {}) is None
+            )
+
+        mock_resolve.assert_not_called()
 
 
 class TestCodeEvalTrustEndpoints:
@@ -4407,13 +4877,7 @@ class TestV1CoexistenceAPI:
         )
         run2.save_to_file()
 
-        with (
-            patch(
-                "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
-            ) as mock_ds_filter,
-        ):
-            mock_ds_filter.return_value = {"dataset_id1", "dataset_id2"}
-
+        with patch_resolve_split(test=stub_split({"dataset_id1", "dataset_id2"})):
             response = client.get(
                 "/api/projects/project1/tasks/task1/evals/eval1"
                 "/eval_config/eval_config1/score_summary"
@@ -4441,22 +4905,25 @@ class TestV1CoexistenceAPI:
         mock_eval,
         mock_eval_config,
         mock_run_config,
+        data_source,
     ):
         mock_task_from_id.return_value = mock_task
 
+        in_split = _tagged_task_run(mock_task, data_source, "eval_set")
         run = EvalRun(
             parent=mock_eval_config,
             task_run_config_id="run_config1",
             scores={"score1": 3.5, "overall_rating": 4.0},
             input="hello",
             output="world",
-            dataset_id="ds1",
+            dataset_id=in_split.id,
         )
         run.save_to_file()
 
         response = client.get(
             "/api/projects/project1/tasks/task1/evals/eval1"
-            "/eval_config/eval_config1/run_config/run_config1/results"
+            "/eval_config/eval_config1/run_config/run_config1/results",
+            params={"split": "test"},
         )
 
         assert response.status_code == 200
@@ -4469,7 +4936,7 @@ class TestV1CoexistenceAPI:
         assert len(data["results"]) == 1
         result = data["results"][0]
         assert result["scores"] == {"score1": 3.5, "overall_rating": 4.0}
-        assert result["dataset_id"] == "ds1"
+        assert result["dataset_id"] == in_split.id
         assert result["task_run_config_id"] == "run_config1"
         assert result["input"] == "hello"
         assert result["output"] == "world"
@@ -4534,10 +5001,12 @@ class TestV1CoexistenceAPI:
         config.runs.return_value = runs
 
         task_run_configs = [Mock(spec=TaskRunConfig, id="rc1")]
-        expected_dataset_ids: set[ID_TYPE] = {"ds1", "ds2"}
 
         result = compute_score_summary(
-            mock_eval_for_score_summary, config, task_run_configs, expected_dataset_ids
+            mock_eval_for_score_summary,
+            config,
+            task_run_configs,
+            stub_split({"ds1", "ds2"}),
         )
 
         assert result.dataset_size == 2

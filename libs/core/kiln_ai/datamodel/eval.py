@@ -876,7 +876,13 @@ LEGACY_SPLIT_FIELDS: Dict[str, str] = {
 }
 """Split name -> the flat `Eval` field that is its on-disk home for older Kiln builds.
 Only TaskRun-backed splits can live in these fields; every other split is stored in
-`Eval.splits`."""
+`Eval.splits`.
+
+MIRRORED IN TYPESCRIPT: `app/web_ui/src/lib/utils/eval_splits.ts` has its own copy of this
+map and of the fold below, because the serializer hands the web client the same two-homed
+format it writes to disk. Change one and the other must change with it — nothing enforces
+it, and a one-sided change fails silently in the UI (a dataset row rendering `undefined`,
+a `/dataset` link pointing at the wrong tag)."""
 
 
 class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}):
@@ -975,6 +981,12 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         one of the two is ever written for a given split, so a conflict means a
         hand-edited file, and preferring the legacy field keeps old and new Kiln builds
         agreeing on what the eval's test and train splits are.
+
+        MIRRORED IN TYPESCRIPT: `app/web_ui/src/lib/utils/eval_splits.ts`'s `eval_split`
+        is this fold, precedence included. The web client needs it because
+        serialize_preserving_split_format sends the same two-homed format over the API
+        that it writes to disk. Changes here have to be made there too — see
+        LEGACY_SPLIT_FIELDS.
         """
         if self._legacy_homed_splits is not None:
             return self

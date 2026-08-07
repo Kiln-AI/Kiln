@@ -96,7 +96,7 @@ See `functional_spec.md` for behavior and `architecture.md` for design. This is 
 - [ ] **Phase 5: Jobs.** Worker resolves the split once for both the runner and the progress
       universe; `jobs/api.py` pre-resolves so a bad split 422s at request time. (architecture §5)
 
-- [ ] **Phase 6: API endpoints and web UI.** Required `split` on the results endpoint, val count on
+- [x] **Phase 6: API endpoints and web UI.** Required `split` on the results endpoint, val count on
       progress, drop the EvalInput guards, `compute_score_summary` over a `ResolvedSplit`,
       source-aware summary cache; then the two UI changes and the regenerated schema.
       (architecture §6, functional spec §5, §6.1)

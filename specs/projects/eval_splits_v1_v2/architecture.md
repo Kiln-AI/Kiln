@@ -678,13 +678,14 @@ a runtime 422.
 
 ### 6.2 `get_eval_progress`
 
-`EvalProgress` gains `val_dataset_size: int`. All three split sizes come from `resolve_split`,
-with `None → 0`:
+`EvalProgress` gains `val_dataset_size: int`. All three split sizes come from `resolve_split`, but
+**`None` does not map the same way for all three** — train and val report `0`, test raises. See the
+amendment under §7, which this snippet reflects:
 
 ```python
-dataset_size=len(test_split),          # test; resolve_split never returns None for test
-train_dataset_size=_size(train_split), # 0 when absent
-val_dataset_size=_size(val_split),     # 0 when absent
+dataset_size=len(resolved_split_or_422(task, eval, "test")),  # 422, not 0
+train_dataset_size=split_size(train_split),                   # 0 when absent
+val_dataset_size=split_size(val_split),                       # 0 when absent
 ```
 
 The `if eval.eval_set_filter_id is None: raise HTTPException(400, ...)` guard is **deleted**, per
@@ -735,8 +736,23 @@ intended, per functional spec §3.2.
 | `jobs/api.py` pre-check | 422, naming the split and the eval |
 | `jobs/workers/eval.py` | job-creation error (unreachable — the pre-check fires first) |
 | `get_eval_run_results` | 422 |
-| `get_eval_progress` | `0` for that split's size |
+| `get_eval_progress` | `0` for train and val; **422 for test** (see below) |
 | `get_eval_config_score_summary` | 422 (test is required, so this is a corrupt-file case) |
+
+**Amended in phase 6.** This row originally read "`0` for that split's size" without qualification,
+which is right for train and val — an eval that has no val split has a val size, and it is zero —
+but wrong for test. Reporting `0` for a *missing* test split would tell a user their eval set is
+empty when the eval is actually malformed. So `get_eval_progress` resolves test through
+`resolved_split_or_422` like the other readers, and only train and val take the `None → 0` path.
+Unreachable either way while `Eval.validate_splits` holds; the divergence is recorded because the
+table is what a reader checks. §6.2's snippet is updated to match.
+
+The principle is **functional spec §6.1**'s "Split sizes are never reported as zero when the split
+has items — that would be worse than an error, since it tells a user their test set is empty when
+it isn't." Note this is an *extension* of it, not a direct application: the spec is about a split
+that has items being reported as zero, and this is about a split that does not exist at all. The
+same reasoning covers both — a zero that the user reads as "empty dataset" when the truth is
+"broken eval" — but the spec sentence does not literally reach this case.
 
 Messages name the split as the caller spelled it (`train`, `val`, `test`) and the eval id. The
 #1621 message *"no test_set_filter_id"* — naming a field that has never existed — is removed with
