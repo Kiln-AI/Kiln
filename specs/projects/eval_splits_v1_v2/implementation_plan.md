@@ -138,7 +138,7 @@ See `functional_spec.md` for behavior and `architecture.md` for design. This is 
       `item_source` entry in `phase5_mutation_sweep.py`. None of those files are in this tree.
       `phase_plans/phase_5.md` and its review are where the list survives.
 
-- [ ] **Phase 7: eb-v2 alignment project overview.** Write
+- [x] **Phase 7: eb-v2 alignment project overview.** Write
       `specs/projects/eb_v2_splits_alignment/project_overview.md` — overview only, from the merged
       tree as it actually landed. This phase's agent writes it; it is not designed here.
       (functional spec §11)
@@ -190,3 +190,13 @@ Full write-ups — including why each was declined and what the fix looks like �
 `phase_plans/phase_4.md`'s "Known limitations" and `phase_plans/phase_5.md`'s. Recorded here
 because phase plans are not part of a coding agent's context loading, so a note left only in them
 is a note the next agent never sees.
+
+**Both now have an owner, decided in phase 7** — see
+`specs/projects/eb_v2_splits_alignment/project_overview.md`, "Two items carried over from
+`eval_splits_v1_v2`". The `EvalJob` constraint goes to the eb-v2 alignment project, because eb-v2
+still has a live `run_job` branch handling the combination and adds a field to `EvalJob` anyway.
+The calibration dedupe bug is **in the alignment project's scope, with a standing invitation to land
+it earlier**: it has nothing to do with splits or data sources, so a small standalone change on
+`scosman/evals_v2` before alignment starts is cheaper and means neither line resolves it twice. But
+it has now been deferred by two phases running, so it is given an unconditional owner rather than
+left as a dependency to watch. The concrete one-paragraph task is written out in that overview.
