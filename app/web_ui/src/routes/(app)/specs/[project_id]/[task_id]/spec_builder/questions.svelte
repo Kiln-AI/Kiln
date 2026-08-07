@@ -117,10 +117,13 @@
     <div class="flex flex-col">
       <div class="font-medium">Answer Clarifying Questions</div>
       <div class="font-light text-gray-500 text-sm">
-        Your answers to these questions will help Kiln refine your eval: <button
-          class="link text-sm text-left text-gray-500 hover:text-gray-700"
-          on:click={open_details_dialog}>{name}</button
-        >.
+        <!-- The eval may be unnamed at this point (the v2 builder names it a
+             step later) — only render the details link when a name exists. -->
+        Your answers to these questions will help Kiln refine your eval{#if name.trim()}:
+          <button
+            class="link text-sm text-left text-gray-500 hover:text-gray-700"
+            on:click={open_details_dialog}>{name}</button
+          >{/if}.
       </div>
     </div>
     <div class="border-t" />

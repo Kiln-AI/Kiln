@@ -45,7 +45,7 @@ describe("drive_stop_banner", () => {
   it("partial failure: counts, dominant error, both recovery actions", () => {
     const msg = drive_stop_banner(partial, "Polite Hawk")
     expect(msg).toBe(
-      "38 of 40 conversations completed — 2 failed after retries (most common: RateLimitError from OpenRouter).\n\nContinue with the 38 that completed, or drive the batch again.",
+      "38 of 40 conversations completed. 2 failed after retries (most common: RateLimitError from OpenRouter).\n\nContinue with the 38 that completed, or run the batch again.",
     )
   })
 
@@ -68,7 +68,7 @@ describe("drive_stop_banner", () => {
       "Polite Hawk",
     )
     expect(msg).toBe(
-      "All conversations failed — NotFoundError: model gpt_5_5 is unavailable (run config: Polite Hawk).\n\nYou can [test your run config](/run), then drive again.",
+      "All conversations failed: NotFoundError: model gpt_5_5 is unavailable (run config: Polite Hawk).\n\nYou can [test your run config](/run), then run the batch again.",
     )
   })
 
@@ -93,7 +93,7 @@ describe("drive_stop_banner", () => {
       "gpt_5_5",
     )
     expect(msg).toBe(
-      "Drive aborted — AuthenticationError: invalid api key (run config: Polite Hawk, gpt_5_5).\n\n12 conversations completed before the abort — continue with those, or [test your run config](/run) and drive again.",
+      "The run was stopped: AuthenticationError: invalid api key (run config: Polite Hawk, gpt_5_5).\n\n12 conversations completed before the stop. Continue with those, or [test your run config](/run) and run the batch again.",
     )
   })
 
@@ -109,7 +109,7 @@ describe("drive_stop_banner", () => {
       "gpt_5_5",
     )
     expect(msg).toBe(
-      "Drive aborted — NotFoundError: model gpt_5_5 is deprecated (run config: Polite Hawk, gpt_5_5).\n\nYou can [test your run config](/run), then drive again.",
+      "The run was stopped: NotFoundError: model gpt_5_5 is deprecated (run config: Polite Hawk, gpt_5_5).\n\nYou can [test your run config](/run), then run the batch again.",
     )
   })
 
@@ -118,7 +118,7 @@ describe("drive_stop_banner", () => {
       { survivors: 0, failed: 3, dominant_error: "x", aborted_error: "boom" },
       null,
     )
-    expect(msg).toMatch(/^Drive aborted — boom\./)
+    expect(msg).toMatch(/^The run was stopped: boom\./)
   })
 })
 

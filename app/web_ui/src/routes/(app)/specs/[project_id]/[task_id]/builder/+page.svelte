@@ -162,15 +162,16 @@
       is_multi_turn,
     })
   }
-  const TOTAL_STEPS = 6
+  // The user makes five stops; saving is a transition, not a step.
+  const TOTAL_STEPS = 5
   const STEP_INDEX: Record<BuilderStep, number> = {
     describe: 1,
     clarify: 2,
     refine: 3,
     generate: 4,
     review: 5,
-    save: 6,
-    done: 6,
+    save: 5,
+    done: 5,
   }
 
   // AbortController for in-flight Copilot requests. Mirrors v1 spec_builder:
@@ -521,7 +522,7 @@
       )
       if (error || !data) {
         classify_error =
-          "Couldn't classify your description — continuing with default 'issue' type."
+          "Couldn't classify your description. Continuing with the default 'issue' type."
         goto_step("clarify")
         return
       }
@@ -629,7 +630,7 @@
       if (error || !data) {
         refine_warning = `Couldn't refine the spec from your answers (${createKilnError(
           error,
-        ).getMessage()}) — edit it directly below.`
+        ).getMessage()}). Edit it directly below.`
         return
       }
 
@@ -675,7 +676,7 @@
       // Refinement is optional — the user lands on an editable refine step
       // either way — but the failure must not be silent.
       refine_warning =
-        "Couldn't refine the spec from your answers — edit it directly below."
+        "Couldn't refine your eval from your answers. Edit it directly below."
     } finally {
       refined_preview_loading = false
     }
@@ -1254,7 +1255,7 @@
         .filter(Boolean)
         .slice(0, NUM_CASES)
       if (prompts.length === 0) {
-        generation_error = "The planner returned no usable scenarios — retry."
+        generation_error = "The planner returned no usable scenarios. Retry."
         return
       }
       batch_plan = { prompts, summary: data.summary }
@@ -1397,7 +1398,7 @@
     // resolution must not start a second concurrent pipeline.
     if (generation_loading) return
     if (!batch_plan || batch_plan.prompts.length === 0) {
-      generation_error = "No approved scenarios — draft scenarios first."
+      generation_error = "No approved scenarios. Draft scenarios first."
       return
     }
     // Lanes uncommitted (internal re-drive path reached before any
@@ -1438,7 +1439,7 @@
         ] ?? []
       if (run_configs.length === 0) {
         generation_error =
-          "Task has no run configs — create one before running multi-turn."
+          "Task has no run configs. Create one before running multi-turn."
         return
       }
       const default_match = run_configs.find(
@@ -2146,7 +2147,7 @@
       judge_info ??
       (judge_model ? build_default_judge_info(spec_text(), judge_model) : null)
     if (!judge) {
-      claims_error = "No judge model selected — start generation again."
+      claims_error = "No judge model selected. Start generation again."
       return
     }
     claims_loading = true
@@ -2242,7 +2243,7 @@
         // Multi-turn results come from the merged pipeline (judge rides the
         // drive), so a stale review means re-driving the plan.
         generation_error =
-          "The eval's name or description changed since the review — create your eval data again."
+          "The eval's name or description changed since the review. Create your eval data again."
         return
       }
     }
@@ -2277,7 +2278,7 @@
     try {
       if (reviewed_identity !== JSON.stringify({ name, spec: spec_text() })) {
         save_error =
-          "The eval's name or description changed since the review — go back and re-run the review."
+          "The eval's name or description changed since the review. Go back and re-run the review."
         return
       }
       // Source of truth for the saved spec is refined_property_values —
@@ -2308,7 +2309,7 @@
       // persisting a generic judge is the one thing save must never do.
       const review_judge_config = review_judge ?? judge_info
       if (!review_judge_config) {
-        save_error = "No judge was configured — go back and re-run the review."
+        save_error = "No judge was configured. Go back and re-run the review."
         return
       }
       // Under the hood: if the reviewer disagreed anywhere, refine the judge
@@ -2321,8 +2322,7 @@
       // eval slice is minted server-side as EvalInputs from the driven cases.
       if (is_multi_turn) {
         if (multi_turn_batch_tag === null || driven_cases.length === 0) {
-          save_error =
-            "No multi-turn chains were generated — go back to Step 4."
+          save_error = "No multi-turn chains were generated. Go back to Step 4."
           return
         }
         // The saved batch's own tag: its chains become the eval, so it must
@@ -2333,7 +2333,7 @@
         const saved_su_driver = su_driver
         if (saved_su_driver === null) {
           save_error =
-            "No simulated-user model was recorded — go back to Step 4."
+            "No simulated-user model was recorded. Go back to Step 4."
           return
         }
         // Carry the human's review through save: each reviewed trace maps to
@@ -2442,7 +2442,7 @@
 
       if (!sdg_session_config) {
         save_error =
-          "Missing generation config — go back to Step 4 and regenerate."
+          "Missing generation config. Go back to Step 4 and regenerate."
         return
       }
 
@@ -2558,6 +2558,9 @@
       case "generate":
         return "Create eval data"
       case "review":
+        // Verdict-neutral on purpose: half of every batch passes by design,
+        // so a fault-presuming headline would blame agents that behaved —
+        // and the reviewer grades the AGENT's work, never the judge.
         return "Grade the results"
       case "save":
         return "Save your eval"
@@ -2571,11 +2574,13 @@
   function page_subtitle_for(step: BuilderStep): string | undefined {
     switch (step) {
       case "describe":
-        return "Describe a behaviour to enforce or avoid for your task. We'll structure it into a spec."
+        return "Describe a behaviour to enforce or avoid for your task. We'll build your eval from it."
       case "clarify":
-        return "Answer a few questions to reduce ambiguity in your eval."
+        // The Questions component carries its own heading + explainer —
+        // a page-level subtitle here would say the same thing twice.
+        return undefined
       case "refine":
-        return "Review and edit the refined spec before generating examples."
+        return "We've drafted your eval from your answers. Edit anything that's off."
       case "generate":
         return is_multi_turn
           ? "Kiln simulates a user talking to your agent to build your eval's test data."
@@ -2587,10 +2592,10 @@
         // passes by design (balanced plan + stratified sample), so the
         // per-conversation surface stays verdict-neutral.
         return is_multi_turn
-          ? `A judge reviewed each test conversation in your eval data and flagged possible mistakes. Keep the real ones, dismiss the false alarms — you're reviewing ${multi_turn_review_target} of ${trace_claims.length}. Open a [n] citation to see the moment it happened.`
-          : "A judge flagged possible mistakes. Keep the real ones, dismiss the false alarms. Open a [n] citation to see the moment it happened."
+          ? `A judge reviewed each test conversation in your eval data and flagged possible mistakes. Keep the real ones, dismiss the false alarms. You're reviewing ${multi_turn_review_target} of ${trace_claims.length}. Click a citation number to see the moment it happened.`
+          : "A judge flagged possible mistakes. Keep the real ones, dismiss the false alarms. Click a citation number to see the moment it happened."
       case "save":
-        return "Persisting the spec, eval, and dataset."
+        return "Saving your eval and its test data."
       case "done":
         return undefined
     }
@@ -2608,15 +2613,17 @@
     return "max-w-[900px]"
   }
 
-  // The title is constant across the wizard; the done screen is the one step
-  // that names its own outcome instead of a step position.
-  $: page_title = current_step === "done" ? "Eval Created" : "Eval Builder"
-  // First subtitle line carries the step position + name (empty on done, which
-  // has no step position). The per-step description renders under it.
+  // The page header title stays "Eval Builder" across the whole wizard,
+  // including done: the completion card below owns the outcome heading, so a
+  // constant header never shows the outcome twice on the same screen.
+  const page_title = "Eval Builder"
+  // First subtitle line carries the step position + name. Empty on done AND
+  // on save: saving is a transition out of Step 5, not a stop of its own —
+  // the header shows just the saving description there.
   $: page_step_line =
-    current_step === "done"
+    current_step === "done" || current_step === "save"
       ? ""
-      : `Step ${STEP_INDEX[current_step]} of ${TOTAL_STEPS} — ${step_name_for(
+      : `Step ${STEP_INDEX[current_step]} of ${TOTAL_STEPS}: ${step_name_for(
           current_step,
         )}`
   $: page_subtitle = page_subtitle_for(current_step)
@@ -2731,8 +2738,11 @@
           {:else if questions_error}
             <Warning warning_color="error" warning_message={questions_error} />
           {:else if question_set}
+            <!-- name deliberately empty: hides the component's details link
+                 (the wizard manages the eval's details itself, and the name
+                 isn't user-chosen yet at this step). -->
             <Questions
-              {name}
+              name=""
               {spec_type}
               {property_values}
               {question_set}
@@ -2835,7 +2845,7 @@
             <Warning
               warning_color="primary"
               warning_icon="info"
-              warning_message={`Using run config ${multi_turn_fallback_run_config_name} — set a default in task settings to silence this notice.`}
+              warning_message={`Using run config ${multi_turn_fallback_run_config_name}. Set a default in task settings to silence this notice.`}
             />
           {/if}
           {#if generation_loading && !pipeline_running}
@@ -2910,7 +2920,7 @@
                 max={selected_trace_indices.length}
               ></progress>
               <div class="font-light text-xs text-center mt-1">
-                Preparing review — {selected_claims_resolved} of {selected_trace_indices.length}
+                Preparing review: {selected_claims_resolved} of {selected_trace_indices.length}
                 ready
               </div>
             </div>
@@ -3091,7 +3101,7 @@
                  generation rather than showing an empty review. -->
             <Warning
               warning_color="warning"
-              warning_message="There are no reviewed conversations — generate them first."
+              warning_message="There is nothing to review yet. Create your eval data first."
             />
           {:else}
             <ClaimEvidenceReview
@@ -3105,7 +3115,7 @@
             />
           {/if}
         {:else if current_step === "save"}
-          <!-- ── Step 6 — Save ── -->
+          <!-- ── Save (transition out of Step 5) ── -->
           {#if saving}
             <SavingAnimation
               title="Creating Eval"

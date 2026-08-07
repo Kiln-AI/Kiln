@@ -137,22 +137,22 @@ export function drive_stop_banner(
       stop.survivors > 0
         ? `${stop.survivors} conversation${
             stop.survivors === 1 ? "" : "s"
-          } completed before the abort — continue with those, or [test your run config](/run) and drive again.`
-        : `You can [test your run config](/run), then drive again.`
-    return `Drive aborted — ${stop.aborted_error}${abort_config}.\n\n${recovery}`
+          } completed before the stop. Continue with those, or [test your run config](/run) and run the batch again.`
+        : `You can [test your run config](/run), then run the batch again.`
+    return `The run was stopped: ${stop.aborted_error}${abort_config}.\n\n${recovery}`
   }
   if (stop.survivors === 0) {
     // Every case failed identically — a capability boundary of the run
     // config, not bad luck. Point at the one place it can be verified.
-    return `All conversations failed — ${
+    return `All conversations failed: ${
       stop.dominant_error ?? "no error details"
-    }${config_clause}.\n\nYou can [test your run config](/run), then drive again.`
+    }${config_clause}.\n\nYou can [test your run config](/run), then run the batch again.`
   }
   const total = stop.survivors + stop.failed
   const common_clause = stop.dominant_error
     ? ` (most common: ${stop.dominant_error})`
     : ""
-  return `${stop.survivors} of ${total} conversations completed — ${stop.failed} failed after retries${common_clause}.\n\nContinue with the ${stop.survivors} that completed, or drive the batch again.`
+  return `${stop.survivors} of ${total} conversations completed. ${stop.failed} failed after retries${common_clause}.\n\nContinue with the ${stop.survivors} that completed, or run the batch again.`
 }
 
 // SDG's confirm formula for the destructive tier that carries real work.
