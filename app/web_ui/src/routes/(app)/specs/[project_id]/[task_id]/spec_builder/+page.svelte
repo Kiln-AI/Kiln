@@ -221,11 +221,12 @@
     (m) => m.provider_id as ModelProviderName,
   )
 
-  // Advanced options
   $: is_tool_use_spec = spec_type === "appropriate_tool_use"
   $: is_reference_answer_spec = spec_type === "reference_answer_accuracy"
-  $: full_trace_disabled = is_tool_use_spec || judge_requires_full_trace
-  $: hide_full_trace_option = is_reference_answer_spec
+  // No UI toggles evaluation_data_type for v2 judges (their runtime input
+  // always carries the trace; deterministic judges pick their source via
+  // "Output to Check"). It's still recorded as full_trace for trace-reading
+  // judges so their eval runs store the trace snapshot.
   $: if (is_tool_use_spec || judge_requires_full_trace)
     evaluate_full_trace = true
 
@@ -1050,12 +1051,10 @@
       <CreateSpecJudgeForm
         bind:this={judge_form}
         bind:name
-        bind:evaluate_full_trace
         bind:priority
         {judge_type}
         {project_id}
         {task_id}
-        {full_trace_disabled}
         bind:error
         bind:submitting
         {warn_before_unload}
@@ -1066,12 +1065,9 @@
         bind:name
         bind:property_values
         {initial_property_values}
-        bind:evaluate_full_trace
         bind:priority
         {field_configs}
         {copilot_enabled}
-        {hide_full_trace_option}
-        {full_trace_disabled}
         bind:error
         bind:submitting
         {is_prompt_building}

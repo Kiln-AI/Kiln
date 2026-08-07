@@ -13,10 +13,10 @@
   export let output_scores: EvalOutputScore[] | undefined = undefined
 
   // Creation flow: the score is named after the eval, which the user is still
-  // typing. Rather than chasing the name field with regeneration, the starter
-  // code uses a static "score_name_placeholder" key and the note above the
-  // editor shows the real key live. Running the judge validates the returned
-  // keys against the eval's scores.
+  // typing. The starter code begins with a static "score_name_placeholder" key
+  // and regenerates with the real key live as the eval is named, until the
+  // user's first manual edit freezes it. Running the judge validates the
+  // returned keys against the eval's scores.
   export let placeholder_score_key: boolean = false
 
   function initial_code(): string {
@@ -57,19 +57,28 @@
   // regeneration.
   let last_generated_code = properties.code
 
-  // In placeholder mode the starter is static by design — never regenerate.
-  $: if (!placeholder_score_key && output_scores && !user_has_edited) {
-    const new_code = generate_default_code(output_scores)
-    last_generated_code = new_code
-    properties.code = new_code
-    code_string = new_code
-    code_editor?.setValue(new_code)
-  }
-
   // The keys the eval expects the score function to return.
   $: expected_score_keys = (output_scores ?? [])
     .map((score) => string_to_json_key(score.name))
     .filter((key) => key.length > 0)
+
+  // Until the user's first manual edit, the starter tracks the eval's scores:
+  // in placeholder mode the real score key replaces the placeholder live as
+  // the eval is named (falling back to the placeholder while there is no
+  // valid name). The first genuine edit freezes the code permanently.
+  $: if (output_scores && !user_has_edited) {
+    const scores =
+      placeholder_score_key && expected_score_keys.length === 0
+        ? placeholder_scores(output_scores)
+        : output_scores
+    const new_code = generate_default_code(scores)
+    if (new_code !== properties.code) {
+      last_generated_code = new_code
+      properties.code = new_code
+      code_string = new_code
+      code_editor?.setValue(new_code)
+    }
+  }
 
   // The starter was never edited if the generated placeholder key is still in
   // the code — a string this codebase generated, so blocking on its presence
@@ -94,9 +103,13 @@
   }
 
   // Hidden while the eval name is empty or invalid (no keys to show yet).
+  // The replace-the-placeholder wording only applies while the placeholder is
+  // actually in the code (the user edited before naming the eval); otherwise
+  // the note simply states the required key.
+  $: code_has_placeholder = /\bscore_name_placeholder\b/.test(code_string ?? "")
   $: score_key_note =
     expected_score_keys.length > 0
-      ? placeholder_score_key
+      ? code_has_placeholder
         ? `Replace "score_name_placeholder" in the code below with the eval score key ${expected_score_keys
             .map((key) => `"${key}"`)
             .join(", ")}.`
@@ -125,11 +138,12 @@
   let examples_dialog: Dialog
   let active_example_tab: number = 0
 
-  // In placeholder mode the examples use the placeholder key too: the real
-  // key comes from the still-being-typed eval name (and would be an empty
-  // string before the user names the eval).
+  // Examples follow the same rule as the starter: the real score key once the
+  // eval has a valid name, the placeholder before then.
   $: examples = generate_examples(
-    placeholder_score_key ? placeholder_scores(output_scores) : output_scores,
+    placeholder_score_key && expected_score_keys.length === 0
+      ? placeholder_scores(output_scores)
+      : output_scores,
   )
 
   function show_examples() {

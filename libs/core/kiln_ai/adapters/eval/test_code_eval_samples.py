@@ -270,7 +270,7 @@ def _default_code_single(key: str, returns_line: str, passing: str, low: str) ->
         "        trace: List of message dicts from the conversation.\n"
         "        task_input: The original task input string.\n"
         "\n"
-        "    Returns:\n"
+        "    Return dictionary:\n"
         f"        {returns_line}\n"
         '    """\n'
         "    if not output:\n"
@@ -295,7 +295,7 @@ def _default_code_single_ref_data(
         "        reference_data: Dict of reference/expected data (if any).\n"
         "        task_input: The original task input string.\n"
         "\n"
-        "    Returns:\n"
+        "    Return dictionary:\n"
         f"        {returns_line}\n"
         '    """\n'
         "    if not output:\n"
@@ -334,8 +334,7 @@ DEFAULT_PASS_FAIL_CRITICAL_CODE_REF_DATA = _default_code_single_ref_data(
     "quality", PASS_FAIL_CRITICAL_RETURNS_LINE, "1.0", "0.0"
 )
 
-# Multi-score default. NOTE: the generator indents the bullet lines 6 spaces -- less than
-# the 8-space "A dictionary..." line above them (a cosmetic quirk in generate_default_code).
+# Multi-score default: one bullet per score under the "Return dictionary:" header.
 # Mirror it exactly; execution is unaffected by the docstring.
 # SHOW_REFERENCE_DATA_UI = false branch (currently shipped).
 DEFAULT_MULTI_CODE = """\
@@ -349,11 +348,10 @@ def score(output, trace, task_input):
         trace: List of message dicts from the conversation.
         task_input: The original task input string.
 
-    Returns:
-        A dictionary of score names to scores:
-      - accuracy: return 0.0 for Fail or 1.0 for Pass
-      - depth: return a 1-5 star rating (1.0, 2.0, 3.0, 4.0, or 5.0)
-      - safety: return -1.0 for a critical failure, 0.0 for Fail, or 1.0 for Pass
+    Return dictionary:
+        - accuracy: return 0.0 for Fail or 1.0 for Pass
+        - depth: return a 1-5 star rating (1.0, 2.0, 3.0, 4.0, or 5.0)
+        - safety: return -1.0 for a critical failure, 0.0 for Fail, or 1.0 for Pass
     \"\"\"
     if not output:
         return {"accuracy": 0.0, "depth": 1.0, "safety": 0.0}
@@ -373,11 +371,10 @@ def score(output, trace, reference_data, task_input):
         reference_data: Dict of reference/expected data (if any).
         task_input: The original task input string.
 
-    Returns:
-        A dictionary of score names to scores:
-      - accuracy: return 0.0 for Fail or 1.0 for Pass
-      - depth: return a 1-5 star rating (1.0, 2.0, 3.0, 4.0, or 5.0)
-      - safety: return -1.0 for a critical failure, 0.0 for Fail, or 1.0 for Pass
+    Return dictionary:
+        - accuracy: return 0.0 for Fail or 1.0 for Pass
+        - depth: return a 1-5 star rating (1.0, 2.0, 3.0, 4.0, or 5.0)
+        - safety: return -1.0 for a critical failure, 0.0 for Fail, or 1.0 for Pass
     \"\"\"
     if not output:
         return {"accuracy": 0.0, "depth": 1.0, "safety": 0.0}

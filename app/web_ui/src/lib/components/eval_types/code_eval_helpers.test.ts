@@ -90,9 +90,9 @@ describe("generate_default_code", () => {
       make_score("Safety Check", "pass_fail_critical"),
     ]
 
-    it("builds a bulleted Returns docstring for multiple scores", () => {
+    it("builds a bulleted Return dictionary docstring for multiple scores", () => {
       const code = generate_default_code(scores)
-      expect(code).toContain("A dictionary of score names to scores:")
+      expect(code).toContain("Return dictionary:")
       expect(code).toContain("- accuracy: return 0.0 for Fail or 1.0 for Pass")
       expect(code).toContain(
         "- overall_rating: return a 1-5 star rating (1.0, 2.0, 3.0, 4.0, or 5.0)",

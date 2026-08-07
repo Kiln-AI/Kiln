@@ -53,8 +53,14 @@ function build_returns_docstring(
     const s = scores[0]
     return score_description(s.type, s.key)
   }
-  const lines = scores.map((s) => `      - ${score_description(s.type, s.key)}`)
-  return `A dictionary of score names to scores:\n${lines.join("\n")}`
+  // The first line inherits the template's 8-space indent; the rest indent
+  // themselves to match.
+  return scores
+    .map(
+      (s, i) =>
+        `${i === 0 ? "" : "        "}- ${score_description(s.type, s.key)}`,
+    )
+    .join("\n")
 }
 
 function build_return_dict(
@@ -153,7 +159,7 @@ export function generate_default_code(
         reference_data: Dict of reference/expected data (if any).
         task_input: The original task input string.
 
-    Returns:
+    Return dictionary:
         ${returns_doc}
     """
     if not output:
@@ -172,7 +178,7 @@ export function generate_default_code(
         trace: List of message dicts from the conversation.
         task_input: The original task input string.
 
-    Returns:
+    Return dictionary:
         ${returns_doc}
     """
     if not output:

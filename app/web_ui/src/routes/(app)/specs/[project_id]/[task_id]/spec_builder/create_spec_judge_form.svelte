@@ -2,7 +2,6 @@
   import { createEventDispatcher, onMount } from "svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
-  import Collapse from "$lib/ui/collapse.svelte"
   import JudgeConfigFields from "$lib/components/eval_types/judge_config_fields.svelte"
   import EvalTypeIntro from "$lib/components/eval_types/eval_type_intro.svelte"
   import EvalTestRunPane from "$lib/components/eval_types/test_run/eval_test_run_pane.svelte"
@@ -41,8 +40,6 @@
   export let project_id: string
   export let task_id: string
   export let priority: Priority = 1
-  export let evaluate_full_trace: boolean
-  export let full_trace_disabled: boolean
   export let error: KilnError | null
   export let submitting: boolean
   export let warn_before_unload: boolean
@@ -291,6 +288,24 @@
         validator={filename_string_short_validator}
       />
 
+      <!-- "contents" keeps the dirty-tracking wrapper out of the layout so
+    FormContainer's spacing still applies to the child. -->
+      <div class="contents" on:change={markDirty}>
+        <FormElement
+          label="Priority"
+          id="priority"
+          inputType="select"
+          bind:value={priority}
+          description="The priority level for this eval."
+          select_options={[
+            [0, "P0 - Critical"],
+            [1, "P1 - High"],
+            [2, "P2 - Medium"],
+            [3, "P3 - Low"],
+          ]}
+        />
+      </div>
+
       <!--
     on:input/on:change catch edits to the judge's own fields, which this component
     doesn't own values for. "contents" keeps the wrapper out of the layout so
@@ -314,37 +329,6 @@
           {project_id}
           {task_id}
         />
-      </div>
-
-      <!-- "contents" keeps this dirty-tracking wrapper out of the layout so
-    FormContainer's spacing still applies to the Collapse. -->
-      <div class="contents" on:input={markDirty} on:change={markDirty}>
-        <Collapse title="Advanced Options">
-          <FormElement
-            label="Priority"
-            id="priority"
-            inputType="select"
-            bind:value={priority}
-            description="The priority level for this eval."
-            select_options={[
-              [0, "P0 - Critical"],
-              [1, "P1 - High"],
-              [2, "P2 - Medium"],
-              [3, "P3 - Low"],
-            ]}
-          />
-          <FormElement
-            label="Evaluate Complete Agent History"
-            id="evaluate_full_trace"
-            inputType="checkbox"
-            bind:value={evaluate_full_trace}
-            disabled={full_trace_disabled}
-            description="When enabled, this will be evaluated on the full agent history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
-            info_description={full_trace_disabled
-              ? `The ${judge_metadata.label} judge reads the agent's execution trace, so this eval always runs on the full history.`
-              : "Enable this for evals that cover reasoning steps, tool usage, or intermediate outputs."}
-          />
-        </Collapse>
       </div>
     </FormContainer>
   </div>

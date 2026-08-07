@@ -352,7 +352,24 @@ describe("example code correctness", () => {
       expect(example_code).not.toContain('{"":')
     })
 
-    it("seeds a static score_name_placeholder starter and notes the real key", () => {
+    it("seeds the placeholder starter while the eval has no valid name", () => {
+      const { container } = render(CodeEvalForm, {
+        props: {
+          output_scores: [],
+          placeholder_score_key: true,
+        },
+      })
+      const editor = container.querySelector(
+        '[data-testid="code-editor-textarea"]',
+      ) as HTMLTextAreaElement
+      expect(editor.value).toContain('"score_name_placeholder"')
+      // No keys to show yet: the note stays hidden.
+      expect(
+        container.querySelector('[data-testid="score-key-note"]'),
+      ).toBeNull()
+    })
+
+    it("regenerates the starter with the real key once the eval is named", () => {
       const { container } = render(CodeEvalForm, {
         props: {
           output_scores: [make_score("My Eval", "pass_fail")],
@@ -362,27 +379,40 @@ describe("example code correctness", () => {
       const editor = container.querySelector(
         '[data-testid="code-editor-textarea"]',
       ) as HTMLTextAreaElement
-      expect(editor.value).toContain('"score_name_placeholder"')
-      expect(editor.value).not.toContain('"my_eval"')
+      expect(editor.value).toContain('"my_eval"')
+      expect(editor.value).not.toContain('"score_name_placeholder"')
       const note = container.querySelector('[data-testid="score-key-note"]')
-      expect(note?.textContent).toContain('Replace "score_name_placeholder"')
+      expect(note?.textContent).toContain("must return the score key")
       expect(note?.textContent).toContain('"my_eval"')
     })
 
-    it("blocks saving while the placeholder is still in the code", async () => {
+    it("freezes the code after a manual edit and blocks saving with the placeholder", async () => {
       const { container, component } = render(CodeEvalForm, {
         props: {
-          output_scores: [make_score("My Eval", "pass_fail")],
+          output_scores: [],
           placeholder_score_key: true,
         },
       })
+      const editor = container.querySelector(
+        '[data-testid="code-editor-textarea"]',
+      ) as HTMLTextAreaElement
+      // A manual edit while the placeholder starter is showing freezes it.
+      await fireEvent.input(editor, {
+        target: { value: editor.value + "\n# my tweak" },
+      })
+      // Naming the eval afterwards must not clobber the edited code...
+      await component.$set({
+        output_scores: [make_score("My Eval", "pass_fail")],
+      })
+      expect(editor.value).toContain('"score_name_placeholder"')
+      expect(editor.value).toContain("# my tweak")
+      // ...the note asks for the placeholder to be replaced, and saving blocks.
+      const note = container.querySelector('[data-testid="score-key-note"]')
+      expect(note?.textContent).toContain('Replace "score_name_placeholder"')
       const error = component.validate()
       expect(error).toContain('Replace "score_name_placeholder"')
       expect(error).toContain('"my_eval"')
 
-      const editor = container.querySelector(
-        '[data-testid="code-editor-textarea"]',
-      ) as HTMLTextAreaElement
       await fireEvent.input(editor, {
         target: {
           value: editor.value.replaceAll("score_name_placeholder", "my_eval"),

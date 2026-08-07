@@ -42,8 +42,6 @@ function render_form(judge_type: "code_eval" | "pattern_match", name: string) {
       project_id: "proj1",
       task_id: "task1",
       priority: 1 as const,
-      evaluate_full_trace: false,
-      full_trace_disabled: false,
       error: null,
       submitting: false,
       warn_before_unload: false,
@@ -52,18 +50,19 @@ function render_form(judge_type: "code_eval" | "pattern_match", name: string) {
 }
 
 describe("CreateSpecJudgeForm", () => {
-  it("seeds the code judge with the score_name_placeholder key, never the quality fallback", () => {
-    // The starter code is static by design: the score key note and save-time
-    // validation carry the real key, so the code never has to chase the
-    // still-being-typed eval name.
+  it("seeds the code judge with the real score key, never the quality fallback", () => {
+    // With a valid name the starter regenerates with the real key; the
+    // placeholder only appears while the name is empty or invalid. Neither
+    // state may fall back to the generic "quality" key.
     const { container } = render_form("code_eval", "No Hate Regex")
 
     const editor = container.querySelector(
       '[data-testid="code-editor-textarea"]',
     ) as HTMLTextAreaElement
     expect(editor).not.toBeNull()
-    expect(editor.value).toContain('"score_name_placeholder"')
+    expect(editor.value).toContain('"no_hate_regex"')
     expect(editor.value).not.toContain('"quality"')
+    expect(editor.value).not.toContain('"score_name_placeholder"')
   })
 
   it("renders name field and judge configuration for non-code judges", () => {
@@ -72,10 +71,10 @@ describe("CreateSpecJudgeForm", () => {
     expect(container.textContent).toContain("Judge Configuration")
   })
 
-  it("the score key note tracks the eval name; the code stays static", async () => {
+  it("the score key note and starter code track the eval name until edited", async () => {
     // Judge-only mode starts with an empty name; the real key comes from
-    // whatever the user types. The code is never regenerated — the live note
-    // and validation are the contract.
+    // whatever the user types. Until the code is manually edited, the starter
+    // regenerates live with the real key.
     const { container } = render_form("code_eval", "")
     const editor = container.querySelector(
       '[data-testid="code-editor-textarea"]',
@@ -86,6 +85,7 @@ describe("CreateSpecJudgeForm", () => {
     expect(name_input).not.toBeNull()
     // No note while the name is empty: there's no key to show yet.
     expect(container.querySelector('[data-testid="score-key-note"]')).toBeNull()
+    expect(editor.value).toContain('"score_name_placeholder"')
 
     for (const partial of ["N", "No Hate", "No Hate Regex"]) {
       await fireEvent.input(name_input, { target: { value: partial } })
@@ -95,10 +95,20 @@ describe("CreateSpecJudgeForm", () => {
       '[data-testid="score-key-note"]',
     ) as HTMLElement
     expect(note).not.toBeNull()
-    expect(note.textContent).toContain('Replace "score_name_placeholder"')
+    expect(note.textContent).toContain("must return the score key")
     expect(note.textContent).toContain('"no_hate_regex"')
-    expect(editor.value).toContain('"score_name_placeholder"')
-    expect(editor.value).not.toContain('"no_hate_regex"')
+    expect(editor.value).toContain('"no_hate_regex"')
+    expect(editor.value).not.toContain('"score_name_placeholder"')
+
+    // A manual edit freezes the code: renaming no longer regenerates it.
+    await fireEvent.input(editor, {
+      target: { value: editor.value + "\n# tweak" },
+    })
+    await fireEvent.input(name_input, { target: { value: "Renamed Eval" } })
+    await tick()
+    expect(editor.value).toContain('"no_hate_regex"')
+    expect(editor.value).toContain("# tweak")
+    expect(editor.value).not.toContain('"renamed_eval"')
   })
 
   it("renders the Test Judge pane beside the form", () => {
