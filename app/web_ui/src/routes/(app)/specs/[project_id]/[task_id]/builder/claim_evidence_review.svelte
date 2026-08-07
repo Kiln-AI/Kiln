@@ -126,9 +126,9 @@
             claim={current.final_judgement}
             bind:verdict={current_verdicts.final_judgement_verdict}
             on_cite={open_citation}
+            on_view_trace={() => current && trace_modal?.open_trace(current)}
             is_final_judgement
             {judged_noun}
-            sole_card={visible.length === 0}
           />
         {/if}
       </div>

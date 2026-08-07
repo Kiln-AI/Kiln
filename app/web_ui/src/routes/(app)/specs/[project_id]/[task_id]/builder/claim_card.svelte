@@ -15,23 +15,25 @@
   export let claim: Claim
   export let verdict: ClaimVerdict
   export let on_cite: (citation: Citation) => void = () => {}
+  // Escape hatch to the full trace, rendered only on the final judgement and
+  // only when its evidence carries no clickable [n] citation (legacy
+  // pre-guarantee data). Undefined for every other card, which renders no
+  // link — so non-final consumers are unaffected.
+  export let on_view_trace: (() => void) | undefined = undefined
   // The final-judgement variant: visibly the conclusion, not another claim.
   // The card leads with a plain deterministic statement ("Overall: this
   // conversation failed") built from expected_result, which the server pins
   // to the judge's real score — the verdict's direction never depends on
   // parsing model prose. The model's own conclusion text is demoted to the
-  // reason, and the evidence line is dropped: it re-summarizes the claims
-  // the reviewer just graded (except when the verdict is the WHOLE review —
-  // claims can be empty for simple evals — where its citations are the only
-  // receipts). The claims above stay verdict-blind in their text; the
-  // card's tint does telegraph the verdict, an accepted trade of the
-  // agent-not-judge framing.
+  // reason, and its evidence sentence renders below through the same
+  // tokenizer as the claims, so the server-guaranteed inline [n] citation is
+  // clickable into the trace. The claims above stay verdict-blind in their
+  // text; the card's tint does telegraph the verdict, an accepted trade of
+  // the agent-not-judge framing.
   export let is_final_judgement = false
   // What the judge judged, in the caller's vocabulary: "conversation" for
   // multi-turn, "example" for single-turn.
   export let judged_noun = "example"
-  // True when the verdict is the only card (empty claims list).
-  export let sole_card = false
 
   // The reason under the headline: the claim builder's contract makes this
   // the substantive reason-only line, "" when there is nothing beyond the
@@ -67,6 +69,26 @@
       out.push({ kind: "text", value: evidence.slice(last) })
     return out
   }
+
+  // Final card: show its evidence sentence whenever it has one (other cards
+  // always show theirs).
+  $: final_evidence_shown = is_final_judgement && claim.evidence.trim() !== ""
+  // Dedupe: when the demoted reason and the evidence sentence are the same
+  // text, render it once through the tokenizer (keeping its [n] chips) rather
+  // than printing the sentence twice.
+  $: final_evidence_is_reason =
+    is_final_judgement &&
+    final_reason !== "" &&
+    claim.evidence.trim() === final_reason
+  // Whether any inline [n] resolves to a citation the reviewer can click.
+  $: has_resolvable_citation = tokens.some(
+    (t) => t.kind === "cite" && t.citation,
+  )
+  // Legacy net: the final card's evidence has no clickable citation (no [n],
+  // or markers with no match), so offer the trace escape hatch instead — but
+  // only when the caller wired one.
+  $: show_trace_fallback =
+    is_final_judgement && !!on_view_trace && !has_resolvable_citation
 
   function set_agrees(value: boolean) {
     verdict.agrees = value
@@ -166,11 +188,12 @@
     </div>
   </div>
 
-  {#if is_final_judgement && final_reason}
-    <!-- The model's conclusion, demoted to the verdict's reason. -->
+  {#if is_final_judgement && final_reason && !final_evidence_is_reason}
+    <!-- The model's conclusion, demoted to the verdict's reason. Skipped when
+         it's identical to the evidence sentence (rendered once below). -->
     <p class="text-sm text-gray-600 mt-2 leading-relaxed">{final_reason}</p>
   {/if}
-  {#if !is_final_judgement || sole_card || !final_reason}
+  {#if !is_final_judgement || final_evidence_shown}
     <!-- Evidence: one sentence with inline [n] chips that open the trace modal. -->
     <p class="text-sm text-gray-600 mt-2 leading-relaxed">
       {#each tokens as token}
@@ -184,6 +207,15 @@
           >{/if}
       {/each}
     </p>
+  {/if}
+  {#if show_trace_fallback}
+    <!-- No clickable citation to reach the trace, so give a quiet link that
+         opens it directly. -->
+    <button
+      type="button"
+      class="text-xs text-primary hover:underline mt-2"
+      on:click={() => on_view_trace?.()}>View full trace</button
+    >
   {/if}
 
   {#if verdict.agrees === false}
