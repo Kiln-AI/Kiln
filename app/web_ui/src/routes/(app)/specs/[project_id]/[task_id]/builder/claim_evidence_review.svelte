@@ -36,6 +36,11 @@
   // the Save button's VISIBILITY (not just its enabled state): Save is hidden
   // until the gate is met, then takes the Next slot on the last conversation.
   export let save_disabled = true
+  // The primary action's label and optional tooltip, parent-owned so the
+  // button can say what the click actually does (multi-turn: a review with
+  // disagreements enters a judge-refine round instead of saving).
+  export let save_label = "Save →"
+  export let save_tooltip: string | null = null
   // What the judge judged, for the verdict card's headline: "conversation"
   // for multi-turn, "example" for single-turn.
   export let judged_noun = "example"
@@ -193,9 +198,20 @@
           disabled={!current_reviewed}>Next →</button
         >
       {:else if !save_disabled}
-        <!-- Last conversation, gate met: Save replaces Next. -->
-        <button class="btn btn-sm btn-primary" on:click={on_save}>Save →</button
-        >
+        <!-- Last conversation, gate met: the primary action replaces Next.
+             The label is parent-owned (Save vs Refine Judge) so it never
+             promises a save that a calibration round would intercept. -->
+        {#if save_tooltip}
+          <div class="tooltip tooltip-left" data-tip={save_tooltip}>
+            <button class="btn btn-sm btn-primary" on:click={on_save}
+              >{save_label}</button
+            >
+          </div>
+        {:else}
+          <button class="btn btn-sm btn-primary" on:click={on_save}
+            >{save_label}</button
+          >
+        {/if}
       {:else}
         <!-- Last conversation, not yet answered: no destination and no Save
              until the gate is met. -->

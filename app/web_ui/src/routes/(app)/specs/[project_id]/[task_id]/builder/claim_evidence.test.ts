@@ -1,22 +1,36 @@
 import { describe, expect, it } from "vitest"
 import {
   all_traces_reviewed,
+  apply_rejudge_results,
   blind_final_judgement,
   build_claim_review_payload,
   build_graded_traces,
   build_trace_reviews,
+  calibration_gate_target,
+  disagreed_trace_indices,
   disagreement_feedback,
+  escape_hatch_message,
   final_judgement_reason,
+  flipped_indices,
+  grade_disagreement_count,
+  has_grade_disagreement,
   is_trace_reviewed,
   map_output_span_to_trace,
   MAX_JUDGE_PROMPT_CHARS,
+  persistent_high_flips,
+  plan_save_action,
+  refine_judge_tooltip,
+  rejudge_shortfall_notice,
   resolve_citation_span,
   review_target,
   reviewed_trace_count,
+  select_calibration_subset,
   select_review_subset,
+  silent_refine_at_save,
   user_says_meets_spec,
   validate_refined_judge_prompt,
   type Claim,
+  type RejudgeCaseResult,
   type TraceClaims,
   type TraceReview,
 } from "./claim_evidence"
@@ -497,5 +511,490 @@ describe("map_output_span_to_trace — flattener block layout port", () => {
     })
     expect(span).not.toBeNull()
     expect(map_output_span_to_trace(trace, raw_output, span!)).toBeNull()
+  })
+})
+
+// ── Calibration loop ──────────────────────────────────────────────────────
+
+function score_traces(
+  scores: ("pass" | "fail")[],
+): Pick<TraceClaims, "judge_score">[] {
+  return scores.map((judge_score) => ({ judge_score }))
+}
+
+function rejudge_result(judge_score: "pass" | "fail"): RejudgeCaseResult {
+  return {
+    judge_score,
+    judge_reasoning: `Re-checked: ${judge_score}.`,
+    raw_input: "input",
+    raw_output: "output",
+    trace: null,
+  }
+}
+
+describe("select_calibration_subset", () => {
+  // 16 traces, alternating fail/pass → target floor(16/4) = 4.
+  const sixteen = score_traces(
+    Array.from({ length: 16 }, (_, i) => (i % 2 === 0 ? "fail" : "pass")),
+  )
+  const all_judged = sixteen.map((_, i) => i)
+
+  it("fills disagreed first, then flips, then a fresh top-up", () => {
+    const subset = select_calibration_subset(sixteen, {
+      disagreed: [10],
+      flipped: [12, 2],
+      reviewed: [10, 11, 12],
+      judged: all_judged,
+    })
+    expect(subset).toHaveLength(4)
+    expect(subset).toContain(10)
+    expect(subset).toContain(2)
+    expect(subset).toContain(12)
+    // The remaining slot is a fresh never-reviewed trace.
+    const fresh = subset.filter((i) => ![2, 10, 12].includes(i))
+    expect(fresh).toHaveLength(1)
+    expect([10, 11, 12]).not.toContain(fresh[0])
+  })
+
+  it("overflow: disagreed beat flips beat fresh, in stable plan order", () => {
+    // 8 traces → target 2; three disagreements overflow the target.
+    const eight = score_traces(Array.from({ length: 8 }, () => "pass"))
+    expect(
+      select_calibration_subset(eight, {
+        disagreed: [5, 1, 7],
+        flipped: [0, 2],
+        reviewed: [1, 5, 7],
+        judged: eight.map((_, i) => i),
+      }),
+    ).toEqual([1, 5])
+    // One disagreement + overflowing flips: the flip slot goes to the
+    // earliest flipped index.
+    expect(
+      select_calibration_subset(eight, {
+        disagreed: [3],
+        flipped: [6, 0, 4],
+        reviewed: [3],
+        judged: eight.map((_, i) => i),
+      }),
+    ).toEqual([0, 3])
+  })
+
+  it("excludes cases without a fresh verdict from every stratum", () => {
+    const eight = score_traces(Array.from({ length: 8 }, () => "pass"))
+    const judged = [0, 3, 4, 6, 7] // 1, 2, 5 failed to re-judge
+    const subset = select_calibration_subset(eight, {
+      disagreed: [1],
+      flipped: [2],
+      reviewed: [1, 2],
+      judged,
+    })
+    expect(subset).toHaveLength(2)
+    for (const i of subset) expect(judged).toContain(i)
+  })
+
+  it("tops up fresh picks stratified across pass and fail", () => {
+    const subset = select_calibration_subset(sixteen, {
+      disagreed: [],
+      flipped: [],
+      reviewed: [0, 1],
+      judged: all_judged,
+    })
+    expect(subset).toHaveLength(4)
+    // Never-reviewed only.
+    expect(subset).not.toContain(0)
+    expect(subset).not.toContain(1)
+    // Both verdict classes present (alternating scores make this checkable).
+    const scores = subset.map((i) => sixteen[i].judge_score)
+    expect(scores).toContain("fail")
+    expect(scores).toContain("pass")
+  })
+
+  it("uses the same target math as the first round (floor(N/4), min 1)", () => {
+    const three = score_traces(["pass", "fail", "pass"])
+    const subset = select_calibration_subset(three, {
+      disagreed: [],
+      flipped: [],
+      reviewed: [],
+      judged: [0, 1, 2],
+    })
+    expect(subset).toHaveLength(1)
+  })
+
+  it("returns fewer than target when the eligible pool is smaller", () => {
+    const subset = select_calibration_subset(sixteen, {
+      disagreed: [2],
+      flipped: [],
+      reviewed: all_judged,
+      judged: [2, 4],
+    })
+    // Target is 4 but only two traces re-judged, and every trace was
+    // already reviewed — no fresh candidates exist.
+    expect(subset).toEqual([2])
+  })
+
+  it("returns empty when no re-judged trace is eligible (the round-failure trigger)", () => {
+    // Disagreed/flipped traces failed to re-judge and every fresh verdict
+    // belongs to an already-reviewed trace. The wizard must treat this as a
+    // failed round on the retryable surface — a 0-of-0 review would wedge
+    // the save gate.
+    const eight = score_traces(Array.from({ length: 8 }, () => "pass"))
+    expect(
+      select_calibration_subset(eight, {
+        disagreed: [1],
+        flipped: [2],
+        reviewed: [0, 3, 4, 5, 6, 7],
+        judged: [0, 3, 4],
+      }),
+    ).toEqual([])
+  })
+})
+
+describe("calibration_gate_target — save gate during rounds", () => {
+  it("keeps the standard target when the round surfaced a full subset", () => {
+    expect(calibration_gate_target(40, 10)).toBe(10)
+  })
+
+  it("caps the demand at the subset size on a re-judge shortfall", () => {
+    // The gate must never demand reviews of traces the round didn't show —
+    // otherwise a large shortfall makes the Save CTA unreachable.
+    expect(calibration_gate_target(40, 3)).toBe(3)
+    expect(calibration_gate_target(40, 1)).toBe(1)
+  })
+
+  it("keeps the floor-1 target when the subset covers it", () => {
+    expect(calibration_gate_target(3, 3)).toBe(1)
+  })
+
+  it("is zero only for the empty subset the wizard never lets reach review", () => {
+    expect(calibration_gate_target(40, 0)).toBe(0)
+  })
+})
+
+describe("flipped_indices", () => {
+  it("reports only re-judged cases whose verdict changed", () => {
+    const traces = score_traces(["pass", "fail", "pass", "fail"])
+    const results = new Map([
+      [0, rejudge_result("fail")], // flip
+      [1, rejudge_result("fail")], // unchanged
+      [3, rejudge_result("pass")], // flip
+      // 2 failed to re-judge: unknown, not unchanged — never a flip.
+    ])
+    expect(flipped_indices(traces, results)).toEqual([0, 3])
+  })
+})
+
+describe("apply_rejudge_results", () => {
+  it("folds fresh verdicts in and resets claims for rebuild", () => {
+    const t = trace({ trace_id: "batch_case_0", leaf_run_id: "leaf_0" })
+    const applied = apply_rejudge_results(
+      [t],
+      new Map([[0, rejudge_result("pass")]]),
+      "batch_r1",
+    )
+    expect(applied[0].judge_score).toBe("pass")
+    expect(applied[0].judge_reasoning).toBe("Re-checked: pass.")
+    expect(applied[0].claims).toBeNull()
+    expect(applied[0].final_judgement).toBeNull()
+    expect(applied[0].claims_state).toBe("unbuilt")
+    // New per-round trace_id: an in-flight claim build from the previous
+    // round must miss the identity guard, not corrupt the fresh state.
+    expect(applied[0].trace_id).toBe("batch_r1_case_0")
+    expect(applied[0].leaf_run_id).toBe("leaf_0")
+  })
+
+  it("leaves cases that failed to re-judge untouched", () => {
+    const t = trace({ trace_id: "batch_case_0" })
+    const applied = apply_rejudge_results([t], new Map(), "batch_r1")
+    expect(applied[0]).toEqual(t)
+  })
+
+  it("grades reset: reviews rebuilt from the applied traces start empty", () => {
+    const t = trace()
+    const applied = apply_rejudge_results(
+      [t],
+      new Map([[0, rejudge_result("pass")]]),
+      "batch_r1",
+    )
+    const reviews = build_trace_reviews(applied)
+    expect(reviews[0].final_judgement_verdict.agrees).toBeNull()
+    expect(reviews[0].claim_verdicts).toHaveLength(0)
+  })
+})
+
+describe("plan_save_action — loop round and cap transitions", () => {
+  it("multi-turn with disagreement enters a calibration round", () => {
+    expect(
+      plan_save_action({
+        is_multi_turn: true,
+        has_disagreement: true,
+        rounds_completed: 0,
+        max_rounds: 2,
+      }),
+    ).toEqual({ action: "calibrate", round: 1 })
+    expect(
+      plan_save_action({
+        is_multi_turn: true,
+        has_disagreement: true,
+        rounds_completed: 1,
+        max_rounds: 2,
+      }),
+    ).toEqual({ action: "calibrate", round: 2 })
+  })
+
+  it("raises the escape hatch once the round cap is spent", () => {
+    expect(
+      plan_save_action({
+        is_multi_turn: true,
+        has_disagreement: true,
+        rounds_completed: 2,
+        max_rounds: 2,
+      }),
+    ).toEqual({ action: "escape_cap" })
+  })
+
+  it("converged reviews save (with the last refined judge), at any round", () => {
+    for (const rounds_completed of [0, 1, 2]) {
+      expect(
+        plan_save_action({
+          is_multi_turn: true,
+          has_disagreement: false,
+          rounds_completed,
+          max_rounds: 2,
+        }),
+      ).toEqual({ action: "save" })
+    }
+  })
+
+  it("single-turn always saves — the loop never runs there", () => {
+    expect(
+      plan_save_action({
+        is_multi_turn: false,
+        has_disagreement: true,
+        rounds_completed: 0,
+        max_rounds: 2,
+      }),
+    ).toEqual({ action: "save" })
+  })
+})
+
+describe("silent_refine_at_save", () => {
+  it("multi-turn save never silently refines; single-turn keeps it", () => {
+    // Multi-turn ships review_judge untouched: refinement already ran
+    // explicitly in the loop and the reviewer graded that judge's verdicts.
+    expect(silent_refine_at_save(true)).toBe(false)
+    expect(silent_refine_at_save(false)).toBe(true)
+  })
+})
+
+describe("has_grade_disagreement / disagreed_trace_indices", () => {
+  function graded(
+    final: "agree" | "disagree",
+    claims: ("agree" | "disagree")[] = [],
+  ) {
+    const graded_claim = (human_grade: "agree" | "disagree") => ({
+      claim: "c",
+      evidence: "e",
+      expected_result: "fail" as const,
+      human_grade,
+      human_feedback: null,
+    })
+    return {
+      final_judgement: graded_claim(final),
+      claims: claims.map(graded_claim),
+    }
+  }
+
+  it("flags a disagreement on the final judgement or any claim", () => {
+    expect(has_grade_disagreement([graded("agree")])).toBe(false)
+    expect(has_grade_disagreement([graded("disagree")])).toBe(true)
+    expect(
+      has_grade_disagreement([graded("agree", ["agree", "disagree"])]),
+    ).toBe(true)
+  })
+
+  it("finds trace indices carrying any explicit disagree verdict", () => {
+    const agree: TraceReview = {
+      trace_id: "t0",
+      claim_verdicts: [{ agrees: true, why: "" }],
+      final_judgement_verdict: { agrees: true, why: "" },
+    }
+    const final_disagree: TraceReview = {
+      trace_id: "t1",
+      claim_verdicts: [],
+      final_judgement_verdict: { agrees: false, why: "wrong" },
+    }
+    const claim_disagree: TraceReview = {
+      trace_id: "t2",
+      claim_verdicts: [{ agrees: false, why: "off" }],
+      final_judgement_verdict: { agrees: true, why: "" },
+    }
+    const unreviewed: TraceReview = {
+      trace_id: "t3",
+      claim_verdicts: [{ agrees: null, why: "" }],
+      final_judgement_verdict: { agrees: null, why: "" },
+    }
+    expect(
+      disagreed_trace_indices([
+        agree,
+        final_disagree,
+        claim_disagree,
+        unreviewed,
+      ]),
+    ).toEqual([1, 2])
+  })
+})
+
+describe("persistent_high_flips", () => {
+  it("no completed rounds is never high", () => {
+    expect(persistent_high_flips([], [])).toBe(false)
+  })
+
+  it("true only when every round churned at least a quarter of verdicts", () => {
+    expect(persistent_high_flips([10, 12], [40, 40])).toBe(true)
+    expect(persistent_high_flips([10, 2], [40, 40])).toBe(false)
+    expect(persistent_high_flips([2], [40])).toBe(false)
+  })
+})
+
+describe("escape_hatch_message", () => {
+  it("cap copy names the disagreements, rounds, and the way out", () => {
+    const msg = escape_hatch_message({
+      reason: "cap",
+      num_disagreements: 3,
+      rounds_completed: 2,
+      high_flips: false,
+      detail: null,
+    })
+    expect(msg).toContain("still disagree on 3 conversations")
+    expect(msg).toContain("2 rounds")
+    expect(msg).toContain("save your eval with the current judge")
+    expect(msg).not.toContain("ambiguous")
+  })
+
+  it("adds the spec-ambiguity hint only when flips stayed high", () => {
+    const msg = escape_hatch_message({
+      reason: "cap",
+      num_disagreements: 1,
+      rounds_completed: 2,
+      high_flips: true,
+      detail: null,
+    })
+    expect(msg).toContain("1 conversation after")
+    expect(msg).toContain("ambiguous")
+  })
+
+  it("refine failure explains what broke, with the same way out", () => {
+    const msg = escape_hatch_message({
+      reason: "refine_failed",
+      num_disagreements: 2,
+      rounds_completed: 1,
+      high_flips: false,
+      detail: "Improving the judge took too long.",
+    })
+    expect(msg).toContain("couldn't improve the judge")
+    expect(msg).toContain("Improving the judge took too long.")
+    expect(msg).toContain("save your eval with the current judge")
+  })
+
+  it("copy carries no em-dashes", () => {
+    for (const reason of ["cap", "refine_failed"] as const) {
+      const msg = escape_hatch_message({
+        reason,
+        num_disagreements: 2,
+        rounds_completed: 2,
+        high_flips: true,
+        detail: "detail",
+      })
+      expect(msg).not.toMatch(/—/)
+    }
+  })
+})
+
+describe("rejudge_shortfall_notice", () => {
+  it("silent when every case re-judged", () => {
+    expect(rejudge_shortfall_notice(0)).toBeNull()
+  })
+
+  it("counts the stale cases honestly, singular and plural", () => {
+    expect(rejudge_shortfall_notice(1)).toContain("1 conversation ")
+    expect(rejudge_shortfall_notice(3)).toContain("3 conversations ")
+    expect(rejudge_shortfall_notice(3)).toContain(
+      "left out of this review round",
+    )
+    expect(rejudge_shortfall_notice(3)).not.toMatch(/—/)
+  })
+})
+
+describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () => {
+  function graded(
+    final: "agree" | "disagree",
+    claims: ("agree" | "disagree")[] = [],
+  ) {
+    const graded_claim = (human_grade: "agree" | "disagree") => ({
+      claim: "c",
+      evidence: "e",
+      expected_result: "fail" as const,
+      human_grade,
+      human_feedback: null,
+    })
+    return {
+      final_judgement: graded_claim(final),
+      claims: claims.map(graded_claim),
+    }
+  }
+
+  it("counts traces carrying a disagreement, matching the loop's predicate", () => {
+    // The label flips to Refine Judge exactly when the count is non-zero —
+    // the same condition under which a save click starts a refine round.
+    expect(grade_disagreement_count([])).toBe(0)
+    expect(grade_disagreement_count([graded("agree")])).toBe(0)
+    const set = [
+      graded("agree"),
+      graded("disagree"),
+      graded("agree", ["agree", "disagree"]),
+    ]
+    expect(grade_disagreement_count(set)).toBe(2)
+    expect(has_grade_disagreement(set)).toBe(true)
+  })
+
+  it("flips back to zero the moment the last disagreement clears", () => {
+    // Convergence signal: an all-agree set counts zero, so the CTA returns
+    // to the save label reactively.
+    expect(
+      grade_disagreement_count([graded("agree"), graded("agree", ["agree"])]),
+    ).toBe(0)
+  })
+
+  it("banner and tooltip share the built-claims count: blind disagreements don't count", () => {
+    // A disagreement graded on the blind verdict of a claims-errored trace
+    // is excluded by build_graded_traces, so the escape banner, the CTA
+    // tooltip, and the loop-entry predicate all see the same number.
+    const errored = trace({
+      claims_state: "error",
+      claims: null,
+      final_judgement: null,
+      claims_error: "build failed",
+    })
+    const review: TraceReview = {
+      trace_id: "trace_0",
+      claim_verdicts: [],
+      final_judgement_verdict: { agrees: false, why: "wrong call" },
+    }
+    const graded_set = build_graded_traces([errored], [review])
+    expect(graded_set).toHaveLength(0)
+    expect(grade_disagreement_count(graded_set)).toBe(0)
+  })
+
+  it("tooltip names the count, singular and plural, without em-dashes", () => {
+    expect(refine_judge_tooltip(1)).toContain(
+      "disagreed with the judge on 1 conversation.",
+    )
+    expect(refine_judge_tooltip(3)).toContain(
+      "disagreed with the judge on 3 conversations.",
+    )
+    expect(refine_judge_tooltip(3)).toContain(
+      "improve the judge from your feedback and re-check your eval data, then you'll review once more.",
+    )
+    expect(refine_judge_tooltip(1)).not.toMatch(/—/)
   })
 })

@@ -438,42 +438,115 @@ export function review_target(total: number): number {
   return Math.max(1, Math.floor(total / 4))
 }
 
+// The reviews the save gate demands during a calibration round: the standard
+// target, capped by how many traces the round could actually surface. A
+// re-judge shortfall can shrink the round's subset below floor(N/4), and
+// demanding the full target then would deadlock the gate on traces the
+// reviewer was never shown. First-round subsets are sized to the target, so
+// this only ever bites mid-loop.
+export function calibration_gate_target(
+  total: number,
+  subset_size: number,
+): number {
+  return Math.min(review_target(total), subset_size)
+}
+
+// Stratified pick of k indices from a candidate pool: ~50/50
+// judge-pass/judge-fail so the answer key calibrates both classes (random or
+// take-first selection degenerates on an imbalanced batch), topped up from
+// the other bucket on shortfall, spread evenly across plan order within each
+// bucket. Shared by the first-round subset and the calibration top-up.
+function stratified_pick(
+  traces: Pick<TraceClaims, "judge_score">[],
+  candidates: number[],
+  k: number,
+): number[] {
+  if (k >= candidates.length) return [...candidates].sort((a, b) => a - b)
+  const fails: number[] = []
+  const passes: number[] = []
+  for (const i of candidates) {
+    ;(traces[i]?.judge_score === "fail" ? fails : passes).push(i)
+  }
+  // Evenly-spaced picks across a bucket's plan order (k <= bucket.length
+  // gives k distinct positions).
+  const spread = (bucket: number[], n: number): number[] =>
+    Array.from(
+      { length: n },
+      (_, j) => bucket[Math.floor((j * bucket.length) / n)],
+    )
+  // Fails get the odd slot: failure examples are usually the scarcer and
+  // more informative half of an answer key.
+  const want_fail = Math.min(fails.length, Math.ceil(k / 2))
+  const want_pass = Math.min(passes.length, k - want_fail)
+  const picked = new Set([
+    ...spread(fails, want_fail),
+    ...spread(passes, want_pass),
+  ])
+  // Shortfall top-up (one bucket smaller than its quota): fill from the
+  // unpicked candidates, keeping the even spread across plan order.
+  if (picked.size < k) {
+    const unpicked = candidates.filter((i) => !picked.has(i))
+    for (const i of spread(unpicked, k - picked.size)) picked.add(i)
+  }
+  return [...picked].sort((a, b) => a - b)
+}
+
 // Deterministic pick of which traces to put in front of the reviewer:
-// stratified ~50/50 judge-pass/judge-fail so the answer key calibrates both
-// classes (random or take-first selection degenerates on an imbalanced
-// batch), topped up from the other bucket on shortfall, spread evenly
-// across plan order within each bucket. Purely mechanical — no LLM in the
+// judge-stratified over the whole batch. Purely mechanical — no LLM in the
 // selection loop. This is the exact set the reviewer grades: unselected
 // traces are not surfaced in review (they fill the train split unrated).
 // Returns ascending indices into `traces`.
 export function select_review_subset(
   traces: Pick<TraceClaims, "judge_score">[],
 ): number[] {
+  return stratified_pick(
+    traces,
+    traces.map((_, i) => i),
+    review_target(traces.length),
+  )
+}
+
+// Which traces a calibration round asks the reviewer to re-grade, sized by
+// the same review_target math as the first round. Priority order: traces the
+// reviewer previously disagreed on (did the refine fix them?), then traces
+// whose verdict flipped under the refined judge (its behavior changed there),
+// then a fresh stratified top-up of never-reviewed traces (a held-out check
+// against overfitting the judge to one sample). Verdicts are binary, so
+// within each stratum stable plan order (ascending index) decides; on
+// overflow disagreed take precedence over flips over fresh. Only traces
+// holding a fresh verdict this round are eligible — a case that failed to
+// re-judge kept a stale result, and nothing stale may be re-presented for
+// grading. Returns ascending indices into `traces`.
+export function select_calibration_subset(
+  traces: Pick<TraceClaims, "judge_score">[],
+  round: {
+    // Indices the reviewer disagreed with last round.
+    disagreed: number[]
+    // Indices whose verdict flipped under the refined judge.
+    flipped: number[]
+    // Indices graded in any earlier round — excluded from the fresh top-up.
+    reviewed: number[]
+    // Indices that re-judged successfully this round (fresh verdicts).
+    judged: number[]
+  },
+): number[] {
   const target = review_target(traces.length)
-  if (target >= traces.length) return traces.map((_, i) => i)
-  const fails: number[] = []
-  const passes: number[] = []
-  traces.forEach((t, i) => (t.judge_score === "fail" ? fails : passes).push(i))
-  // Evenly-spaced picks across a bucket's plan order (k <= bucket.length
-  // gives k distinct positions).
-  const spread = (bucket: number[], k: number): number[] =>
-    Array.from(
-      { length: k },
-      (_, j) => bucket[Math.floor((j * bucket.length) / k)],
-    )
-  // Fails get the odd slot: failure examples are usually the scarcer and
-  // more informative half of an answer key.
-  const want_fail = Math.min(fails.length, Math.ceil(target / 2))
-  const want_pass = Math.min(passes.length, target - want_fail)
-  const picked = new Set([
-    ...spread(fails, want_fail),
-    ...spread(passes, want_pass),
-  ])
-  // Shortfall top-up (one bucket smaller than its quota): fill from the
-  // unpicked traces, keeping the even spread across plan order.
+  const judged = new Set(round.judged)
+  const reviewed = new Set(round.reviewed)
+  const picked = new Set<number>()
+  const take = (indices: number[]) => {
+    for (const i of [...indices].sort((a, b) => a - b)) {
+      if (picked.size >= target) return
+      if (judged.has(i)) picked.add(i)
+    }
+  }
+  take(round.disagreed)
+  take(round.flipped)
   if (picked.size < target) {
-    const unpicked = traces.map((_, i) => i).filter((i) => !picked.has(i))
-    for (const i of spread(unpicked, target - picked.size)) picked.add(i)
+    const fresh = round.judged.filter((i) => !picked.has(i) && !reviewed.has(i))
+    for (const i of stratified_pick(traces, fresh, target - picked.size)) {
+      picked.add(i)
+    }
   }
   return [...picked].sort((a, b) => a - b)
 }
@@ -581,6 +654,199 @@ export function build_graded_traces(
       trace_label: trace.leaf_run_id || trace.trace_id,
       ...build_claim_review_payload(trace, review),
     }))
+}
+
+// How many graded traces carry a disagreement (on any claim or the final
+// judgement). This is the loop's entry predicate as a count, so the review
+// CTA flips to its refine label precisely when a save click would start a
+// calibration round, and the tooltip can name the number honestly.
+export function grade_disagreement_count(
+  graded: Pick<ClaimReviewPayload, "claims" | "final_judgement">[],
+): number {
+  return graded.filter(
+    (t) =>
+      t.final_judgement.human_grade === "disagree" ||
+      t.claims.some((c) => c.human_grade === "disagree"),
+  ).length
+}
+
+// Whether the reviewer pushed back anywhere in the graded set — the signal
+// that the judge needs refining before it ships.
+export function has_grade_disagreement(
+  graded: Pick<ClaimReviewPayload, "claims" | "final_judgement">[],
+): boolean {
+  return grade_disagreement_count(graded) > 0
+}
+
+// The refine CTA's tooltip: says what the click actually starts (a refine
+// round, not a save) and what it costs the reviewer (one more review).
+export function refine_judge_tooltip(num_disagreements: number): string {
+  const conversations =
+    num_disagreements === 1 ? "conversation" : "conversations"
+  return `You disagreed with the judge on ${num_disagreements} ${conversations}. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more.`
+}
+
+// Indices of traces carrying any explicit disagreement (on a claim or the
+// final judgement) — the highest-priority stratum of the next round's subset.
+export function disagreed_trace_indices(reviews: TraceReview[]): number[] {
+  return reviews
+    .map((review, i) => ({ review, i }))
+    .filter(({ review }) =>
+      [...review.claim_verdicts, review.final_judgement_verdict].some(
+        (v) => v.agrees === false,
+      ),
+    )
+    .map(({ i }) => i)
+}
+
+// ── Calibration loop (multi-turn) ────────────────────────────────────────
+//
+// After a review with disagreements, the judge is refined from the grades
+// and re-scores every driven conversation; the reviewer then re-grades a
+// freshly picked subset. The helpers below are the loop's pure core — round
+// control, verdict flips, state rebuild — so the wizard component only wires
+// streams and screens around them.
+
+// One conversation's fresh verdict from a re-judge round. raw_input/
+// raw_output/trace are the stream's echoes of the reloaded conversation —
+// the same content as drive time, re-echoed so citations and the trace modal
+// stay anchored to exactly what this round's judge saw.
+export type RejudgeCaseResult = {
+  judge_score: ExpectedResult
+  judge_reasoning: string
+  raw_input: string
+  raw_output: string
+  trace?: TraceMessage[] | null
+}
+
+// Indices whose pass/fail changed under the refined judge. Only re-judged
+// cases can flip: a case with no fresh verdict is unknown, not unchanged.
+export function flipped_indices(
+  traces: Pick<TraceClaims, "judge_score">[],
+  results: Map<number, Pick<RejudgeCaseResult, "judge_score">>,
+): number[] {
+  return [...results.entries()]
+    .filter(([i, r]) => traces[i] && traces[i].judge_score !== r.judge_score)
+    .map(([i]) => i)
+    .sort((a, b) => a - b)
+}
+
+// Fold a re-judge round's verdicts into the trace list. Re-judged traces get
+// the fresh verdict and their claims reset to unbuilt — claims argue a
+// specific verdict, so they must be rebuilt against the new one. The new
+// trace_id (unique per round) makes any still-in-flight claim build from the
+// previous round miss the identity guard instead of corrupting the fresh
+// state. Cases absent from `results` failed to re-judge and stay untouched.
+export function apply_rejudge_results(
+  traces: TraceClaims[],
+  results: Map<number, RejudgeCaseResult>,
+  round_tag: string,
+): TraceClaims[] {
+  return traces.map((t, i) => {
+    const result = results.get(i)
+    if (!result) return t
+    return {
+      ...t,
+      trace_id: `${round_tag}_case_${i}`,
+      judge_score: result.judge_score,
+      judge_reasoning: result.judge_reasoning,
+      raw_input: result.raw_input,
+      raw_output: result.raw_output,
+      trace: result.trace ?? t.trace,
+      claims: null,
+      final_judgement: null,
+      claims_state: "unbuilt",
+      claims_error: null,
+    }
+  })
+}
+
+// What a save request should do next. Multi-turn saves with disagreement
+// enter a calibration round (or the escape hatch once the round cap is
+// spent); everything else saves. Single-turn always saves — it has no saved
+// conversations to re-judge, so no loop can run there.
+export type SaveAction =
+  | { action: "save" }
+  | { action: "calibrate"; round: number }
+  | { action: "escape_cap" }
+
+export function plan_save_action(args: {
+  is_multi_turn: boolean
+  has_disagreement: boolean
+  rounds_completed: number
+  max_rounds: number
+}): SaveAction {
+  if (!args.is_multi_turn || !args.has_disagreement) return { action: "save" }
+  if (args.rounds_completed >= args.max_rounds) return { action: "escape_cap" }
+  return { action: "calibrate", round: args.rounds_completed + 1 }
+}
+
+// Whether save may quietly refine the judge from the grades. Multi-turn must
+// not: its refinement runs explicitly in the calibration loop, and the judge
+// that ships is exactly the one whose verdicts the reviewer graded.
+// Single-turn keeps the quiet refine-with-fallback at save.
+export function silent_refine_at_save(is_multi_turn: boolean): boolean {
+  return !is_multi_turn
+}
+
+// True when every completed round churned at least a quarter of its
+// re-judged verdicts: refinement isn't converging on these conversations,
+// so the spec itself is the likelier culprit — the escape hatch surfaces
+// that as a plain-language hint.
+export function persistent_high_flips(
+  flips_by_round: number[],
+  judged_by_round: number[],
+): boolean {
+  if (flips_by_round.length === 0) return false
+  return flips_by_round.every(
+    (flips, r) =>
+      (judged_by_round[r] ?? 0) > 0 && flips * 4 >= judged_by_round[r],
+  )
+}
+
+// The escape-hatch banner: reached when the round cap is spent with
+// disagreement remaining, or when a refine attempt failed mid-loop. Honest
+// about the state and the way out — saving with the judge whose verdicts
+// the reviewer actually graded, grades carried as-is.
+export function escape_hatch_message(state: {
+  reason: "cap" | "refine_failed"
+  num_disagreements: number
+  rounds_completed: number
+  high_flips: boolean
+  detail?: string | null
+}): string {
+  const parts: string[] = []
+  if (state.reason === "cap") {
+    const conversations =
+      state.num_disagreements === 1 ? "conversation" : "conversations"
+    const rounds = state.rounds_completed === 1 ? "round" : "rounds"
+    parts.push(
+      `You and the judge still disagree on ${state.num_disagreements} ${conversations} after ${state.rounds_completed} ${rounds} of improvement.`,
+    )
+    if (state.high_flips) {
+      parts.push(
+        "The judge's verdicts kept changing between rounds, which often means the eval description itself is ambiguous for these conversations. Consider clarifying it.",
+      )
+    }
+  } else {
+    parts.push(
+      state.detail
+        ? `Kiln couldn't improve the judge from your feedback: ${state.detail}`
+        : "Kiln couldn't improve the judge from your feedback.",
+    )
+  }
+  parts.push(
+    "You can save your eval with the current judge. It keeps the results and grades you just reviewed.",
+  )
+  return parts.join(" ")
+}
+
+// The honest shortfall notice when some conversations couldn't be
+// re-checked: they kept stale verdicts, so they were left out of the round.
+export function rejudge_shortfall_notice(failed: number): string | null {
+  if (failed <= 0) return null
+  const conversations = failed === 1 ? "conversation" : "conversations"
+  return `${failed} ${conversations} couldn't be re-checked with the improved judge and kept their previous results. They were left out of this review round.`
 }
 
 // A judge prompt/rubric this long is almost certainly runaway model output,

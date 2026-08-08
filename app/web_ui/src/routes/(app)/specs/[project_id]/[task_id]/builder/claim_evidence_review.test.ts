@@ -132,4 +132,27 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
     expect(open.getByText("Save →")).toBeTruthy()
     expect(open.queryByText("Next →")).toBeNull()
   })
+
+  it("renders the parent-owned refine label and its tooltip", () => {
+    // The parent flips these props when graded disagreements exist (see
+    // review_cta_refines in the wizard); the component just renders them.
+    const traces = [built_trace("only")]
+    const tip =
+      "You disagreed with the judge on 1 conversation. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more."
+    const { getByText, queryByText, container } = render(ClaimEvidenceReview, {
+      props: {
+        traces,
+        verdicts: build_trace_reviews(traces),
+        selected_indices: [0],
+        judged_noun: "conversation",
+        save_disabled: false,
+        save_label: "Refine Judge",
+        save_tooltip: tip,
+      },
+    })
+    expect(getByText("Refine Judge")).toBeTruthy()
+    expect(queryByText("Save →")).toBeNull()
+    const tooltip = container.querySelector(".tooltip")
+    expect(tooltip?.getAttribute("data-tip")).toBe(tip)
+  })
 })
