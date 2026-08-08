@@ -29,7 +29,7 @@ from app.desktop.studio_server.utils.eval_builder_utils import (
     build_transient_judge_eval_config,
     run_judge_for_trace,
 )
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.datamodel import Project, Task
@@ -1714,6 +1714,326 @@ class TestReviewPipeline:
         pipeline_request["replace_batch_tag"] = "oldbatch123"
         resp = client.post(PIPELINE_URL, json=pipeline_request)
         assert resp.status_code == 422
+
+
+# ───────────────────────── judge_traces (SSE) ─────────────────────────
+
+JUDGE_TRACES_URL = "/api/projects/p1/tasks/t1/eval_builder/judge_traces"
+
+
+@pytest.fixture
+def judge_traces_request():
+    return {
+        "leaf_run_ids": ["leaf-0", "leaf-1"],
+        "spec_name": "Test Spec",
+        "judge": {
+            "prompt": "Judge whether the output fabricates policy.",
+            "model_name": "claude_sonnet_4_6",
+            "model_provider": "anthropic",
+        },
+    }
+
+
+def _leaf_run(i: int) -> Mock:
+    """A stored chain leaf as loaded from disk: the leaf TaskRun carries the
+    chain's full cumulative trace."""
+    leaf = Mock()
+    leaf.trace = _real_trace(i)
+    return leaf
+
+
+@pytest.fixture
+def judge_traces_seams():
+    """Patch the re-judge stream's seams: the copilot key, task resolution,
+    the disk loader, and the judge. Yields the mocks for assertions."""
+    task = _multiturn_task_mock()
+    # The reload scans the task's run directory; the loader is mocked, so
+    # any path value works.
+    task.path = "/fake/task/path"
+    with (
+        patch(
+            "app.desktop.studio_server.eval_builder_api.get_copilot_api_key",
+            return_value="test_api_key",
+        ),
+        patch(
+            "app.desktop.studio_server.eval_builder_api.task_from_id",
+            return_value=task,
+        ) as task_mock,
+        patch("app.desktop.studio_server.eval_builder_api.TaskRun") as task_run_mock,
+        patch(
+            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+            new=AsyncMock(return_value=JudgeVerdict("fail", "fabricated a policy")),
+        ) as judge_mock,
+    ):
+        task_run_mock.from_ids_and_parent_path = MagicMock(
+            return_value={"leaf-0": _leaf_run(0), "leaf-1": _leaf_run(1)}
+        )
+        yield {
+            "task": task_mock,
+            "loader": task_run_mock.from_ids_and_parent_path,
+            "judge": judge_mock,
+        }
+
+
+class TestJudgeTraces:
+    def test_happy_path_full_stream(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        events = _parse_sse(resp.text)
+
+        # Frame order: batch_started first, batch_completed last before the
+        # terminator; no drive-stage frames on this stream at all.
+        assert events[0] == {
+            "type": "batch_started",
+            "batch_tag": "",
+            "total_cases": 2,
+        }
+        assert _events_of(events, "turn_completed") == []
+        assert _events_of(events, "case_driven") == []
+
+        judged = _events_of(events, "case_judged")
+        assert len(judged) == 2
+        for e in judged:
+            assert e["judge_score"] == "fail"
+            # case_index = position in leaf_run_ids; leaf_run_id echoed.
+            assert e["leaf_run_id"] == f"leaf-{e['case_index']}"
+            # No new drive spend this round.
+            assert e["total_cost"] == 0.0
+            # Canonical transcript rendering of the STORED trace: tool calls
+            # and tool results present, same as the drive-time judge saw.
+            assert "<assistant_requested_tool_calls>" in e["raw_output"]
+            assert "<tool_tool_message>" in e["raw_output"]
+            assert e["raw_input"] == f"question {e['case_index']}"
+            # No claims on the stream: they're built lazily via build_claims.
+            assert "claims" not in e and "final_judgement" not in e
+            # The structured trace rides along for chat rendering/citations.
+            assert e["trace"] == _real_trace(e["case_index"])
+
+        completed = _events_of(events, "batch_completed")
+        assert completed == [
+            {
+                "type": "batch_completed",
+                "judged": 2,
+                "failed": 0,
+                "batch_tag": "",
+                "total_cost": 0.0,
+            }
+        ]
+        assert events[-2] == completed[0]
+        assert events[-1] == "complete"
+
+        # The judge received the stored structured trace, not a projection.
+        for call in judge_traces_seams["judge"].call_args_list:
+            trace = call.kwargs["trace"]
+            assert any(m.get("role") == "system" for m in trace)
+            assert any(m.get("role") == "tool" for m in trace)
+        # One bulk disk scan serves the whole batch.
+        judge_traces_seams["loader"].assert_called_once()
+        assert judge_traces_seams["loader"].call_args.args[0] == {"leaf-0", "leaf-1"}
+
+    def test_case_index_follows_request_order(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        """case_index is the position in the REQUEST list, not disk order —
+        the client keys its review state on it."""
+        judge_traces_request["leaf_run_ids"] = ["leaf-1", "leaf-0"]
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+
+        judged = _events_of(_parse_sse(resp.text), "case_judged")
+        by_index = {e["case_index"]: e["leaf_run_id"] for e in judged}
+        assert by_index == {0: "leaf-1", 1: "leaf-0"}
+
+    def test_missing_chain_fails_case_and_batch_continues(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        """A leaf_run_id that no longer resolves (deleted or replaced chain)
+        fails THAT case; the other cases still get judged."""
+        judge_traces_seams["loader"].return_value = {"leaf-1": _leaf_run(1)}
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+
+        events = _parse_sse(resp.text)
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 1
+        assert failed[0]["case_index"] == 0
+        assert failed[0]["stage"] == "judge"
+        assert failed[0]["code"] == "trace_not_found"
+        assert "leaf-0" in failed[0]["message"]
+        judged = _events_of(events, "case_judged")
+        assert [e["case_index"] for e in judged] == [1]
+        completed = _events_of(events, "batch_completed")[0]
+        assert completed["judged"] == 1
+        assert completed["failed"] == 1
+        assert events[-1] == "complete"
+
+    def test_traceless_chain_fails_case(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        """A leaf that loads but has no stored trace cannot be judged —
+        honest per-case failure, never a fabricated empty transcript."""
+        bare_leaf = Mock()
+        bare_leaf.trace = None
+        judge_traces_seams["loader"].return_value = {
+            "leaf-0": bare_leaf,
+            "leaf-1": _leaf_run(1),
+        }
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+
+        events = _parse_sse(resp.text)
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 1
+        assert failed[0]["case_index"] == 0
+        assert failed[0]["code"] == "missing_trace"
+        assert [e["case_index"] for e in _events_of(events, "case_judged")] == [1]
+
+    def test_judge_failure_is_isolated(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        async def judge(
+            _project_id, _task_id, _raw_input, _raw_output, _judge, **kwargs
+        ):
+            if kwargs["trace"][1]["content"] == "question 0":
+                raise ValueError("judge exploded")
+            return JudgeVerdict("pass", "fine")
+
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+            new=AsyncMock(side_effect=judge),
+        ):
+            resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+
+        events = _parse_sse(resp.text)
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 1
+        assert failed[0]["case_index"] == 0
+        assert failed[0]["stage"] == "judge"
+        assert failed[0]["code"] == "judge_failed"
+        assert "judge exploded" in failed[0]["message"]
+        assert [e["case_index"] for e in _events_of(events, "case_judged")] == [1]
+        assert events[-1] == "complete"
+
+    def test_judge_transient_failure_retries_then_succeeds(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        """The re-judge stream runs the SAME judge unit as the pipeline:
+        transient failures retry in place under the shared classifier."""
+        calls = {"case_0": 0}
+
+        async def flaky_judge(
+            _project_id, _task_id, _raw_input, _raw_output, _judge, **kwargs
+        ):
+            if kwargs["trace"][1]["content"] == "question 0":
+                calls["case_0"] += 1
+                if calls["case_0"] == 1:
+                    raise _rate_limit_error()
+            return JudgeVerdict("pass", "fine")
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+                new=AsyncMock(side_effect=flaky_judge),
+            ),
+            patch(
+                "app.desktop.studio_server.eval_builder_api.JUDGE_RETRY_DELAY_SECONDS",
+                0,
+            ),
+        ):
+            resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+
+        events = _parse_sse(resp.text)
+        assert _events_of(events, "case_failed") == []
+        judged = _events_of(events, "case_judged")
+        assert sorted(e["case_index"] for e in judged) == [0, 1]
+        assert calls["case_0"] == 2  # first attempt + one retry
+
+    def test_judge_batch_fatal_failure_aborts_batch(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        """A config-scoped judge failure (dead key, deprecated model) aborts
+        the WHOLE batch: one batch_aborted frame in place of batch_completed,
+        no per-case failure spam, stream still terminates cleanly."""
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+            new=AsyncMock(side_effect=_auth_error()),
+        ):
+            resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+
+        events = _parse_sse(resp.text)
+        aborted = _events_of(events, "batch_aborted")
+        assert len(aborted) == 1  # first batch-fatal error wins, exactly once
+        assert aborted[0]["stage"] == "judge"
+        assert "AuthenticationError" in aborted[0]["error"]
+        assert _events_of(events, "batch_completed") == []
+        assert _events_of(events, "case_failed") == []
+        assert events[-1] == "complete"
+
+    def test_rejects_empty_leaf_run_ids(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        judge_traces_request["leaf_run_ids"] = []
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+        assert resp.status_code == 422
+
+    def test_rejects_blank_leaf_run_id(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        judge_traces_request["leaf_run_ids"] = ["leaf-0", "   "]
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+        assert resp.status_code == 422
+
+    def test_rejects_oversized_batch(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        judge_traces_request["leaf_run_ids"] = [
+            f"leaf-{i}" for i in range(NUM_CASES_MAX + 1)
+        ]
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+        assert resp.status_code == 422
+
+    def test_rejects_unkeyable_spec_name(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        judge_traces_request["spec_name"] = "!!!"
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+        assert resp.status_code == 422
+
+    def test_rejects_unknown_request_fields(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        """A retired or misspelled field must 422 — silently dropping it can
+        change what gets judged with no signal."""
+        judge_traces_request["batch_tag"] = "tag123"
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+        assert resp.status_code == 422
+
+    def test_rejects_single_turn_task(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        from kiln_ai.datamodel.datamodel_enums import TurnMode
+
+        judge_traces_seams["task"].return_value.turn_mode = TurnMode.single_turn
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+        assert resp.status_code == 400
+        assert resp.json()["message"]["code"] == "task_not_multiturn"
+
+    def test_missing_copilot_key_is_401_before_any_load(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        """Same fail-fast posture as review_pipeline: without a copilot key
+        the claims stage that follows can never succeed, so the request must
+        4xx before the user spends on judging every case."""
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.get_copilot_api_key",
+            side_effect=HTTPException(status_code=401, detail="API key not configured"),
+        ):
+            resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+
+        assert resp.status_code == 401
+        assert "API key not configured" in resp.json()["message"]
+        judge_traces_seams["loader"].assert_not_called()
 
 
 # ───────────────────────── preflight_model ─────────────────────────

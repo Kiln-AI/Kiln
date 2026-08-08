@@ -1,6 +1,6 @@
 """Eval Builder review-pipeline API (studio side).
 
-Two streams, one frame contract (see api_models/eval_builder_models.py):
+Three streams, one frame contract (see api_models/eval_builder_models.py):
 
   review_pipeline (multi-turn) — runs [drive → judge] as one unit of work
   per case. The await order inside each case's coroutine IS the stage
@@ -12,6 +12,12 @@ Two streams, one frame contract (see api_models/eval_builder_models.py):
   transcript, which is echoed on each case_judged frame. Claims are NOT
   built here: the client builds them lazily via build_claims for the
   traces a reviewer actually opens — under subset review most never are.
+
+  judge_traces (multi-turn) — re-judge previously driven conversations:
+  the same judge unit and frames as review_pipeline, with the drive
+  replaced by a disk reload of each chain's stored trace by leaf run id.
+  Nothing is driven or written; the judge input is identical to drive
+  time and to what the saved eval will judge.
 
   review_traces (single-turn) — judge + claims over already-generated I/O
   pairs, fanned out per trace.
@@ -80,8 +86,10 @@ from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.basemodel import FilenameStringShort
 from kiln_ai.datamodel.task import Task
+from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.synthetic_user.case import SyntheticUserCase as RunnerCase
 from kiln_ai.synthetic_user.runner import (
+    NUM_CASES_MAX,
     BatchStartedEvent,
     CaseCompletedEvent,
     CaseFailedEvent,
@@ -203,6 +211,47 @@ class ReviewPipelineRequest(RunCasesBatchApiInput):
     )
 
 
+class JudgeTracesRequest(BaseModel):
+    """The re-judge request: score previously driven conversations with a
+    (typically refined) judge. No drive fields — the conversations already
+    exist on disk, identified by the leaf run ids the pipeline stream echoed
+    on its case_driven/case_judged frames.
+    """
+
+    leaf_run_ids: list[str] = Field(
+        min_length=1,
+        max_length=NUM_CASES_MAX,
+        description=(
+            "Leaf TaskRun ids of the driven chains to judge. Frames "
+            "reference each case by its position in this list (case_index)."
+        ),
+    )
+    spec_name: FilenameStringShort = Field(
+        description="The spec's name. The review judge scores under the same "
+        "output-score identity the saved eval will use, so the prompt the "
+        "user calibrates here is byte-identical to the one that ships."
+    )
+    judge: JudgeConfig
+
+    # forbid: a retired or misspelled field on this request must 422, not be
+    # silently dropped.
+    model_config = ConfigDict(extra="forbid")
+
+    _spec_name_has_json_key = field_validator("spec_name")(
+        spec_name_must_have_a_json_key
+    )
+
+    @field_validator("leaf_run_ids")
+    @classmethod
+    def leaf_run_ids_must_be_non_blank(cls, value: list[str]) -> list[str]:
+        # A blank id can never match a stored run; reject the request up
+        # front instead of streaming a guaranteed per-case failure.
+        for run_id in value:
+            if not run_id.strip():
+                raise ValueError("leaf_run_ids must not contain empty ids.")
+        return value
+
+
 async def review_one_trace(
     project_id: str,
     task_id: str,
@@ -241,15 +290,163 @@ async def review_one_trace(
     )
 
 
-class ReviewPipelineRun:
+class JudgeStreamBase:
+    """The judge unit + frame plumbing shared by the two multi-turn streams
+    (review_pipeline and judge_traces).
+
+    Subclasses own the producer that feeds cases in (live drive vs disk
+    reload) and the `events()` drain loop; everything from the judge
+    semaphore down — retries, per-case failure isolation, batch-fatal
+    abort — lives here so the two streams cannot drift.
+    """
+
+    # Set by subclasses: the route name used in log lines.
+    _stream_name: str
+
+    def __init__(
+        self,
+        *,
+        project_id: str,
+        task_id: str,
+        judge: JudgeConfig,
+        spec_name: str,
+    ) -> None:
+        self._project_id = project_id
+        self._task_id = task_id
+        self._judge = judge
+        self._spec_name = spec_name
+        # `None` is the end-of-stream sentinel.
+        self._queue: asyncio.Queue[str | None] = asyncio.Queue()
+        self._review_sem = asyncio.Semaphore(REVIEW_CONCURRENCY)
+        self._review_tasks: list[asyncio.Task] = []
+        self._judged_count = 0
+        self._failed_count = 0
+        # Set by the first batch-fatal failure; events() then skips
+        # batch_completed and its finally tears everything down.
+        self._aborted = False
+
+    async def _judge_case(
+        self,
+        case_index: int,
+        leaf_run_id: str,
+        trace: list[dict[str, Any]],
+        drive_cost: float,
+    ) -> None:
+        """Judge one case's trace (local). Claims are not built here — the
+        client requests them per opened trace via build_claims."""
+        async with self._review_sem:
+            try:
+                raw_input, raw_output = transcript_io_for_trace(trace)
+                verdict = await run_judge_with_retry(
+                    self._project_id,
+                    self._task_id,
+                    raw_input,
+                    raw_output,
+                    self._judge,
+                    spec_name=self._spec_name,
+                    trace=trace,
+                )
+                # Frame construction/serialization is inside the try: a
+                # failure here must surface as case_failed too, or the batch
+                # totals would claim a verdict the client never received.
+                frame = _sse(
+                    PipelineCaseJudgedEvent(
+                        case_index=case_index,
+                        leaf_run_id=leaf_run_id,
+                        raw_input=raw_input,
+                        raw_output=raw_output,
+                        judge_score=verdict.judge_score,
+                        judge_reasoning=verdict.judge_reasoning,
+                        total_cost=drive_cost,
+                        # Echo the structured trace alongside its flattened
+                        # raw_output so the client can render the real chat UI
+                        # and map citation spans back onto it.
+                        trace=trace,
+                    )
+                )
+            except Exception as e:  # noqa: BLE001 — isolate to this case
+                # A config-scoped failure (bad key, deprecated model) will
+                # kill every judgment identically — abort the whole batch on
+                # the first one instead of failing every case one by one
+                # (on the pipeline stream the drives would keep BILLING).
+                if is_batch_fatal_error(e):
+                    await self._abort_batch("judge", e)
+                    return
+                # The adapter's KilnRunError wrapper carries a genericized
+                # message — surface the root provider error, like the abort path.
+                root = unwrap_kiln_run_error(e)
+                await self._fail_case(
+                    case_index,
+                    "judge",
+                    "judge_failed",
+                    f"{type(root).__name__}: {root}",
+                )
+                return
+            self._judged_count += 1
+            await self._queue.put(frame)
+
+    async def _abort_batch(
+        self, stage: Literal["drive", "judge"], error: BaseException
+    ) -> None:
+        """First batch-fatal failure wins: emit ONE batch_aborted frame and
+        close the queue — events()' finally then runs the consumer-disconnect
+        teardown (producer and in-flight judges cancelled). On the pipeline
+        stream each cancelled case deletes its own partial chain as it
+        unwinds (runner-side cleanup), so an abort leaves no orphan runs
+        behind; the disk-reload stream has nothing to clean."""
+        if self._aborted:
+            return
+        self._aborted = True
+        root = unwrap_kiln_run_error(error)
+        logger.error(
+            "%s: batch-fatal %s failure, aborting the batch: %s",
+            self._stream_name,
+            stage,
+            root,
+        )
+        await self._emit(
+            PipelineBatchAbortedEvent(
+                error=f"{type(root).__name__}: {root}", stage=stage
+            )
+        )
+        await self._queue.put(None)
+
+    async def _fail_case(
+        self,
+        case_index: int,
+        stage: Literal["drive", "judge"],
+        code: str,
+        message: str,
+    ) -> None:
+        """One case died at `stage`; the batch continues without it."""
+        logger.exception(
+            "%s: %s failed for case %d", self._stream_name, stage, case_index
+        )
+        self._failed_count += 1
+        await self._emit(
+            PipelineCaseFailedEvent(
+                case_index=case_index,
+                stage=stage,
+                code=code,
+                message=message,
+            )
+        )
+
+    async def _emit(self, payload: dict | BaseModel) -> None:
+        await self._queue.put(_sse(payload))
+
+
+class ReviewPipelineRun(JudgeStreamBase):
     """One merged-pipeline execution: [drive → judge] per case.
 
     Frames from the concurrently-running stages funnel through one queue and
     come out of `events()`, the SSE stream body. Each stage is a method and
     shared state lives in instance attributes, so the pipeline reads top to
-    bottom: `events()` drains, `_run_drive()` produces, `_judge_case()`
-    scores, `_fail_case()` isolates.
+    bottom: `events()` drains, `_run_drive()` produces, and the inherited
+    judge unit scores and isolates failures.
     """
+
+    _stream_name = "review_pipeline"
 
     def __init__(
         self,
@@ -261,8 +458,12 @@ class ReviewPipelineRun:
         input: ReviewPipelineRequest,
         save_context: SaveContext | None,
     ) -> None:
-        self._project_id = project_id
-        self._task_id = task_id
+        super().__init__(
+            project_id=project_id,
+            task_id=task_id,
+            judge=input.judge,
+            spec_name=input.spec_name,
+        )
         self._task = task
         self._cases = cases
         self._input = input
@@ -275,23 +476,14 @@ class ReviewPipelineRun:
         # build_save_context returns None outside a git-synced request; fall
         # back the same way the runner does.
         self._save_context = save_context or default_save_context
-        # `None` is the end-of-stream sentinel.
-        self._queue: asyncio.Queue[str | None] = asyncio.Queue()
-        self._review_sem = asyncio.Semaphore(REVIEW_CONCURRENCY)
-        self._review_tasks: list[asyncio.Task] = []
         # Latest cumulative trace per case, captured from the runner's
         # in-process turn events — the REAL trace (tool calls, system turns),
         # not a wire projection. Popped when the case's review starts.
         self._latest_trace: dict[int, list[dict[str, Any]]] = {}
-        self._judged_count = 0
-        self._failed_count = 0
         # Actual drive billing for the batch — includes failed cases and
         # discarded retry attempts, not just surviving conversations.
         self._total_cost = 0.0
         self._batch_tag = input.batch_tag or ""
-        # Set by the first batch-fatal failure; events() then skips
-        # batch_completed and its finally tears everything down.
-        self._aborted = False
 
     async def events(self) -> AsyncIterator[str]:
         """The SSE stream: drain frames until every stage finished, then
@@ -451,109 +643,6 @@ class ReviewPipelineRun:
             # can go. A drive that produced nothing keeps them untouched.
             await self._delete_superseded_batches()
 
-    async def _judge_case(
-        self,
-        case_index: int,
-        leaf_run_id: str,
-        trace: list[dict[str, Any]],
-        drive_cost: float,
-    ) -> None:
-        """Judge one driven case (local). Claims are not built here — the
-        client requests them per opened trace via build_claims."""
-        async with self._review_sem:
-            try:
-                raw_input, raw_output = transcript_io_for_trace(trace)
-                verdict = await run_judge_with_retry(
-                    self._project_id,
-                    self._task_id,
-                    raw_input,
-                    raw_output,
-                    self._input.judge,
-                    spec_name=self._input.spec_name,
-                    trace=trace,
-                )
-                # Frame construction/serialization is inside the try: a
-                # failure here must surface as case_failed too, or the batch
-                # totals would claim a verdict the client never received.
-                frame = _sse(
-                    PipelineCaseJudgedEvent(
-                        case_index=case_index,
-                        leaf_run_id=leaf_run_id,
-                        raw_input=raw_input,
-                        raw_output=raw_output,
-                        judge_score=verdict.judge_score,
-                        judge_reasoning=verdict.judge_reasoning,
-                        total_cost=drive_cost,
-                        # Echo the structured trace alongside its flattened
-                        # raw_output so the client can render the real chat UI
-                        # and map citation spans back onto it.
-                        trace=trace,
-                    )
-                )
-            except Exception as e:  # noqa: BLE001 — isolate to this case
-                # A config-scoped failure (bad key, deprecated model) will
-                # kill every judgment identically while the drives keep
-                # BILLING — abort the whole pipeline on the first one
-                # instead of failing 40 cases one by one.
-                if is_batch_fatal_error(e):
-                    await self._abort_batch("judge", e)
-                    return
-                # The adapter's KilnRunError wrapper carries a genericized
-                # message — surface the root provider error, like the abort path.
-                root = unwrap_kiln_run_error(e)
-                await self._fail_case(
-                    case_index,
-                    "judge",
-                    "judge_failed",
-                    f"{type(root).__name__}: {root}",
-                )
-                return
-            self._judged_count += 1
-            await self._queue.put(frame)
-
-    async def _abort_batch(
-        self, stage: Literal["drive", "judge"], error: BaseException
-    ) -> None:
-        """First batch-fatal failure wins: emit ONE batch_aborted frame and
-        close the queue — events()' finally then runs the consumer-disconnect
-        teardown (drive + in-flight judges cancelled). Each cancelled case
-        deletes its own partial chain as it unwinds (runner-side cleanup),
-        so an abort leaves no orphan runs behind."""
-        if self._aborted:
-            return
-        self._aborted = True
-        root = unwrap_kiln_run_error(error)
-        logger.error(
-            "review_pipeline: batch-fatal %s failure, aborting the batch: %s",
-            stage,
-            root,
-        )
-        await self._emit(
-            PipelineBatchAbortedEvent(
-                error=f"{type(root).__name__}: {root}", stage=stage
-            )
-        )
-        await self._queue.put(None)
-
-    async def _fail_case(
-        self,
-        case_index: int,
-        stage: Literal["drive", "judge"],
-        code: str,
-        message: str,
-    ) -> None:
-        """One case died at `stage`; the batch continues without it."""
-        logger.exception("review_pipeline: %s failed for case %d", stage, case_index)
-        self._failed_count += 1
-        await self._emit(
-            PipelineCaseFailedEvent(
-                case_index=case_index,
-                stage=stage,
-                code=code,
-                message=message,
-            )
-        )
-
     async def _delete_superseded_batches(self) -> None:
         """Delete-on-redrive, AFTER the drive produced replacement chains —
         deleting up front could leave the user with neither batch when a
@@ -579,8 +668,157 @@ class ReviewPipelineRun:
                     "review_pipeline: failed to delete superseded batch %s", tag
                 )
 
-    async def _emit(self, payload: dict | BaseModel) -> None:
-        await self._queue.put(_sse(payload))
+
+class JudgeTracesRun(JudgeStreamBase):
+    """One judge_traces execution: [reload → judge] per case.
+
+    The calibration loop's re-judge stream: the same judge unit and frame
+    contract as ReviewPipelineRun, with the drive replaced by a disk reload.
+    Each chain's leaf TaskRun already stores the full cumulative trace, so
+    the judge scores exactly the conversation the drive-time judge saw and
+    the saved eval will judge. Nothing is driven and nothing is written.
+    """
+
+    _stream_name = "judge_traces"
+
+    def __init__(
+        self,
+        *,
+        project_id: str,
+        task_id: str,
+        task: Task,
+        input: JudgeTracesRequest,
+    ) -> None:
+        super().__init__(
+            project_id=project_id,
+            task_id=task_id,
+            judge=input.judge,
+            spec_name=input.spec_name,
+        )
+        self._task = task
+        self._leaf_run_ids = input.leaf_run_ids
+
+    async def events(self) -> AsyncIterator[str]:
+        """The SSE stream: drain frames until the reload and every judge
+        task finished, then emit batch_completed (or batch_failed) and the
+        terminator."""
+        load_task = asyncio.create_task(
+            self._load_and_judge(), name="judge_traces_load"
+        )
+
+        async def close_when_done() -> None:
+            # _review_tasks only grows while load_task runs, so once the
+            # reload is done the list is final and the gather is complete.
+            try:
+                await load_task
+            finally:
+                if self._review_tasks:
+                    await asyncio.gather(*self._review_tasks, return_exceptions=True)
+                await self._queue.put(None)
+
+        closer = asyncio.create_task(close_when_done(), name="judge_traces_closer")
+
+        try:
+            while True:
+                frame = await self._queue.get()
+                if frame is None:
+                    break
+                yield frame
+            # A batch-fatal abort already emitted batch_aborted in place of
+            # batch_completed — fall through to the finally, which cancels
+            # the reload and in-flight judges so a doomed batch stops
+            # spending.
+            if not self._aborted:
+                # The closer swallows a reload-level crash (its finally still
+                # closes the queue) — re-raise it here so the client sees
+                # batch_failed, not a clean-looking batch_completed.
+                if load_task.cancelled():
+                    raise RuntimeError("The trace reload was cancelled unexpectedly.")
+                load_error = load_task.exception() if load_task.done() else None
+                if load_error is not None:
+                    raise load_error
+                yield _sse(
+                    PipelineBatchCompletedEvent(
+                        judged=self._judged_count,
+                        failed=self._failed_count,
+                        # No drive ran: there is no new batch tag and no new
+                        # drive spend to report.
+                        batch_tag="",
+                        total_cost=0.0,
+                    )
+                )
+        except Exception as e:  # noqa: BLE001 — last-resort surface for developer bugs
+            # Per-case failures never reach here (they become case_failed
+            # frames); this catches orchestration bugs only.
+            logger.exception("judge_traces failed mid-stream")
+            yield _sse(
+                {
+                    "type": "batch_failed",
+                    "code": "internal_error",
+                    "message": f"{type(e).__name__}: {e}",
+                }
+            )
+        finally:
+            # Consumer disconnect (or any exit): stop the reload and any
+            # in-flight judges so abandoned LLM calls stop spending.
+            load_task.cancel()
+            for t in self._review_tasks:
+                t.cancel()
+            closer.cancel()
+            await asyncio.gather(
+                load_task, closer, *self._review_tasks, return_exceptions=True
+            )
+        yield SSE_TERMINATOR
+
+    async def _load_and_judge(self) -> None:
+        """The producer: reload each chain's stored trace from disk and feed
+        it straight into its own judge task — the drive stage of the merged
+        pipeline, swapped for a disk read."""
+        await self._emit(
+            PipelineBatchStartedEvent(
+                # No drive, no new batch: the chains keep their original tags.
+                batch_tag="",
+                total_cases=len(self._leaf_run_ids),
+            )
+        )
+        # Bulk load: one pass over the run corpus instead of a per-id scan.
+        # Sync file I/O, so off the event loop.
+        leaves = await asyncio.to_thread(
+            TaskRun.from_ids_and_parent_path,
+            set(self._leaf_run_ids),
+            self._task.path,
+        )
+        for case_index, leaf_run_id in enumerate(self._leaf_run_ids):
+            leaf = leaves.get(leaf_run_id)
+            if leaf is None:
+                # Chains can vanish between rounds (delete-on-redrive, manual
+                # dataset edits) — fail the case, keep the batch.
+                await self._fail_case(
+                    case_index,
+                    "judge",
+                    "trace_not_found",
+                    f"No saved conversation found for run id {leaf_run_id}.",
+                )
+                continue
+            if not leaf.trace:
+                await self._fail_case(
+                    case_index,
+                    "judge",
+                    "missing_trace",
+                    "The saved conversation has no stored trace to judge.",
+                )
+                continue
+            # The same projection the saved eval applies to a stored chain
+            # leaf (EvalTaskInput.from_task_run), so the judge input is
+            # identical to drive time and to eval time. drive_cost is 0.0:
+            # the original drive already reported this chain's spend.
+            trace = [dict(message) for message in leaf.trace]
+            self._review_tasks.append(
+                asyncio.create_task(
+                    self._judge_case(case_index, leaf_run_id, trace, 0.0),
+                    name=f"judge_case_{case_index}",
+                )
+            )
 
 
 def connect_eval_builder_api(app: FastAPI):
@@ -648,6 +886,70 @@ def connect_eval_builder_api(app: FastAPI):
             cases=runner_cases,
             input=input,
             save_context=build_save_context(request),
+        )
+        return CancellableStreamingResponse(
+            content=run.events(),
+            media_type="text/event-stream",
+        )
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/judge_traces",
+        tags=["Eval Builder"],
+        summary="Judge Saved Multi-Turn Conversations",
+        openapi_extra=agent_policy_require_approval(
+            "Re-judge saved multi-turn conversations with a judge prompt? "
+            "Invokes the judge model per conversation (cost)."
+        ),
+    )
+    @no_write_lock  # streaming route: lock would buffer the SSE and break cancel-on-disconnect
+    async def judge_traces(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[str, Path(description="The unique identifier of the task.")],
+        input: JudgeTracesRequest,
+    ) -> CancellableStreamingResponse:
+        """Re-judge previously driven conversations: [reload → judge] per case.
+
+        The judge calibration loop's re-score stream: after a refine produces
+        a new judge prompt, this scores the SAME saved conversations again.
+        Each chain's trace is reloaded from disk by leaf run id, so the judge
+        input is identical to drive time and to what the saved eval will
+        judge. Nothing is driven and nothing is written.
+
+        Emits (all frames `type`-discriminated; errors carry {code, message}):
+          - batch_started   { batch_tag: "", total_cases }
+          - case_judged     { case_index, leaf_run_id, raw_input, raw_output,
+                              judge_score, judge_reasoning, total_cost: 0,
+                              trace }
+          - case_failed     { case_index, stage: "judge", code, message }
+                              (batch continues; a chain that cannot be
+                              reloaded fails with code trace_not_found or
+                              missing_trace)
+          - batch_completed { judged, failed, batch_tag: "", total_cost: 0 }
+          - batch_aborted   { error, stage: "judge" }  (in place of
+                              batch_completed: a config-scoped judge failure
+                              aborted the whole batch; results already
+                              streamed remain valid)
+          - batch_failed    { code, message }  (in place of batch_completed:
+                              an orchestration-level crash ended the stream;
+                              results already streamed remain valid)
+        Terminated by `data: complete`. case_index is the position in
+        leaf_run_ids; no drive or turn frames appear on this stream. Claims
+        are built afterwards, per opened trace, via build_claims.
+        """
+        # Same fail-fast posture as review_pipeline: the judge runs on the
+        # user's keys, but the review that follows builds claims through the
+        # remote claim builder — surface a missing copilot key before the
+        # user spends on judging every case.
+        get_copilot_api_key()
+        task = task_from_id(project_id, task_id)
+        guard_multiturn(task)
+        run = JudgeTracesRun(
+            project_id=project_id,
+            task_id=task_id,
+            task=task,
+            input=input,
         )
         return CancellableStreamingResponse(
             content=run.events(),

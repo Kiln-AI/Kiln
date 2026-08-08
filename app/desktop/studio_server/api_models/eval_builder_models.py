@@ -292,6 +292,11 @@ class TraceErrorEvent(BaseModel):
 # cases' results. Claims are NOT built on this stream: the client builds
 # them lazily via the build_claims primitive for the traces a reviewer
 # actually opens — under subset review most traces are never opened.
+#
+# judge_traces (the re-judge stream) emits the SAME batch/case frames with
+# no drive or turn events, so one client consumer serves both streams.
+# Drive-only fields carry honest neutral values there (batch_tag "",
+# total_cost 0).
 
 
 class PipelineBatchStartedEvent(BaseModel):

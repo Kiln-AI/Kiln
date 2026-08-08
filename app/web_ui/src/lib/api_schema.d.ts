@@ -3210,6 +3210,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_builder/judge_traces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Judge Saved Multi-Turn Conversations
+         * @description Re-judge previously driven conversations: [reload → judge] per case.
+         *
+         *     The judge calibration loop's re-score stream: after a refine produces
+         *     a new judge prompt, this scores the SAME saved conversations again.
+         *     Each chain's trace is reloaded from disk by leaf run id, so the judge
+         *     input is identical to drive time and to what the saved eval will
+         *     judge. Nothing is driven and nothing is written.
+         *
+         *     Emits (all frames `type`-discriminated; errors carry {code, message}):
+         *       - batch_started   { batch_tag: "", total_cases }
+         *       - case_judged     { case_index, leaf_run_id, raw_input, raw_output,
+         *                           judge_score, judge_reasoning, total_cost: 0,
+         *                           trace }
+         *       - case_failed     { case_index, stage: "judge", code, message }
+         *                           (batch continues; a chain that cannot be
+         *                           reloaded fails with code trace_not_found or
+         *                           missing_trace)
+         *       - batch_completed { judged, failed, batch_tag: "", total_cost: 0 }
+         *       - batch_aborted   { error, stage: "judge" }  (in place of
+         *                           batch_completed: a config-scoped judge failure
+         *                           aborted the whole batch; results already
+         *                           streamed remain valid)
+         *       - batch_failed    { code, message }  (in place of batch_completed:
+         *                           an orchestration-level crash ended the stream;
+         *                           results already streamed remain valid)
+         *     Terminated by `data: complete`. case_index is the position in
+         *     leaf_run_ids; no drive or turn frames appear on this stream. Claims
+         *     are built afterwards, per opened trace, via build_claims.
+         */
+        post: operations["judge_traces_api_projects__project_id__tasks__task_id__eval_builder_judge_traces_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/eval_builder/review_traces": {
         parameters: {
             query?: never;
@@ -8637,6 +8684,26 @@ export interface components {
             /** Model Name */
             model_name: string;
             model_provider: components["schemas"]["ModelProviderName"];
+        };
+        /**
+         * JudgeTracesRequest
+         * @description The re-judge request: score previously driven conversations with a
+         *     (typically refined) judge. No drive fields — the conversations already
+         *     exist on disk, identified by the leaf run ids the pipeline stream echoed
+         *     on its case_driven/case_judged frames.
+         */
+        JudgeTracesRequest: {
+            /**
+             * Leaf Run Ids
+             * @description Leaf TaskRun ids of the driven chains to judge. Frames reference each case by its position in this list (case_index).
+             */
+            leaf_run_ids: string[];
+            /**
+             * Spec Name
+             * @description The spec's name. The review judge scores under the same output-score identity the saved eval will use, so the prompt the user calibrates here is byte-identical to the one that ships.
+             */
+            spec_name: string;
+            judge: components["schemas"]["JudgeConfig"];
         };
         /**
          * KilnAgentRunConfigProperties
@@ -20428,6 +20495,44 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ReviewPipelineRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    judge_traces_api_projects__project_id__tasks__task_id__eval_builder_judge_traces_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JudgeTracesRequest"];
             };
         };
         responses: {
