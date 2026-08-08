@@ -3129,13 +3129,35 @@
             </div>
           {/if}
         {:else if current_step === "done"}
-          <!-- Fallback: save succeeded but no eval_id/spec_id to redirect to. -->
-          <div class="text-center py-12">
-            <div class="text-4xl mb-4">✓</div>
-            <h1 class="text-2xl font-bold mb-2">Spec saved</h1>
-            <button class="btn btn-primary" on:click={back_to_task}>
-              Back to evals
-            </button>
+          <!-- Fallback: save succeeded but no eval_id/spec_id to redirect to.
+               Centered completion card, same idiom as the git-import done
+               screen. -->
+          <div class="flex flex-col items-center py-8 gap-4">
+            <div class="text-success">
+              <svg
+                class="w-16 h-16"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M16 9L10 15.5L7.5 13M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </div>
+            <h2 class="text-xl font-medium">Eval Created</h2>
+            <p class="text-sm text-gray-500 text-center max-w-md">
+              Your eval is ready to run.
+            </p>
+            <div class="flex flex-row gap-4 mt-4">
+              <button class="btn btn-primary btn-wide" on:click={back_to_task}>
+                Back to evals
+              </button>
+            </div>
           </div>
         {/if}
       </div>
