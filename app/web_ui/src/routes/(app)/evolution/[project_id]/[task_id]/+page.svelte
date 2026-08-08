@@ -131,10 +131,43 @@
   // charts simply render ungrouped.
   let specs: Spec[] = []
 
-  // Lazy per-run-config eval scores (n_used + usage footer in detail panel)
+  // Lazy per-run-config eval scores (n_used + usage footer in detail panel).
+  // Keyed by run config id alone: the split scopes the whole page, so a change
+  // of split empties all three rather than growing a second dimension of keys
+  // that every consumer would have to know about.
   let eval_scores_cache: Record<string, RunConfigEvalScoresSummary> = {}
   let eval_scores_loading: Record<string, boolean> = {}
   let eval_scores_errors: Record<string, string> = {}
+
+  // Which dataset split the page is reading.
+  //
+  // A run config is iterated against TRAIN and only measured on TEST at the
+  // end, so until this existed the page compared configs on the one slice most
+  // of them had never been run against: every config whose work was done on
+  // train read as "no score", indistinguishable from one nobody ever ran. The
+  // scores, the metrics and the tables are all scoped by it together - a page
+  // showing test quality beside train cost would be a lie of composition.
+  //
+  // "test" is the default because it is what the page has always shown, and it
+  // is sent as an omitted parameter rather than split=test: the two mean the
+  // same thing to the API (each eval's own set), and omitting keeps the URL
+  // and the request identical to what every other caller sends.
+  const SPLIT_VIEWS = ["test", "train", "val", "all"] as const
+  type SplitView = (typeof SPLIT_VIEWS)[number]
+  const SPLIT_LABELS: Record<SplitView, string> = {
+    test: "Test",
+    train: "Train",
+    val: "Val",
+    all: "All runs",
+  }
+  let split_view: SplitView = "test"
+  // The split the loaded summary belongs to, so a change of split is a reload
+  // and the reload is not mistaken for a first load
+  let loaded_split: SplitView | null = null
+  // A split change refetches, but not behind the full-page spinner: the graph
+  // is the reader's place in the page and it should not vanish under them for
+  // a toggle.
+  let summary_refreshing = false
 
   // UI state (round-tripped through the URL)
   let lens_selected: unknown = "aggregate"
@@ -198,6 +231,10 @@
     const urlPins = urlParams.get("pins")
     if (urlPins) {
       pins = urlPins.split(",").filter((id) => id.length > 0)
+    }
+    const urlSplit = urlParams.get("split")
+    if (urlSplit && (SPLIT_VIEWS as readonly string[]).includes(urlSplit)) {
+      split_view = urlSplit as SplitView
     }
     starred_only = urlParams.get("starred") === "1"
     unlinked_expanded = urlParams.get("unlinked") === "1"
@@ -304,6 +341,11 @@
     } else {
       urlParams.delete("pins")
     }
+    if (split_view !== "test") {
+      urlParams.set("split", split_view)
+    } else {
+      urlParams.delete("split")
+    }
     if (starred_only) {
       urlParams.set("starred", "1")
     } else {
@@ -348,6 +390,7 @@
     isInitializing,
     lens_selected,
     selected_id,
+    split_view,
     starred_only,
     unlinked_expanded,
     pins,
@@ -436,26 +479,65 @@
     }
   }
 
-  async function get_summary() {
-    loading_summary = true
+  // The split as the API takes it: omitted for "test", which is what an
+  // unscoped request has always returned.
+  function split_query(split: SplitView): { split?: SplitView } {
+    return split === "test" ? {} : { split }
+  }
+
+  async function get_summary(refresh: boolean = false) {
+    const requested_split = split_view
+    loaded_split = requested_split
+    if (refresh) {
+      summary_refreshing = true
+    } else {
+      loading_summary = true
+    }
     try {
       const { data, error: fetch_error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/eval_results_summary",
         {
           params: {
             path: { project_id, task_id },
+            query: split_query(requested_split),
           },
         },
       )
       if (fetch_error) {
         throw fetch_error
       }
+      // A toggle while this was in flight makes the answer the wrong split's;
+      // the newer request owns the state.
+      if (requested_split !== split_view) {
+        return
+      }
       summary = data
     } catch (err) {
-      load_error = createKilnError(err)
+      if (requested_split === split_view) {
+        load_error = createKilnError(err)
+      }
     } finally {
-      loading_summary = false
+      if (refresh) {
+        summary_refreshing = false
+      } else {
+        loading_summary = false
+      }
     }
+  }
+
+  // A split change reloads everything the split scopes: the task-wide summary
+  // and every per-config score already fetched. The caches are emptied rather
+  // than re-keyed, and the pinned/selected reactive statements below refill
+  // them for whatever is on screen.
+  $: reload_for_split(isInitializing, split_view)
+  function reload_for_split(initializing: boolean, next: SplitView) {
+    if (initializing || loaded_split === null || loaded_split === next) {
+      return
+    }
+    eval_scores_cache = {}
+    eval_scores_loading = {}
+    eval_scores_errors = {}
+    get_summary(true)
   }
 
   async function fetch_eval_scores(run_config_id: string) {
@@ -466,6 +548,7 @@
     ) {
       return // Already cached, loading, or errored
     }
+    const requested_split = split_view
     try {
       eval_scores_loading[run_config_id] = true
       const { data, error: fetch_error } = await client.GET(
@@ -473,20 +556,31 @@
         {
           params: {
             path: { project_id, task_id, run_config_id },
+            query: split_query(requested_split),
           },
         },
       )
       if (fetch_error) {
         throw fetch_error
       }
+      // The caches were emptied by the split that superseded this request -
+      // writing into them now would file one split's numbers under another.
+      if (requested_split !== split_view) {
+        return
+      }
       eval_scores_cache[run_config_id] = data
       delete eval_scores_errors[run_config_id]
     } catch (err) {
+      if (requested_split !== split_view) {
+        return
+      }
       const kilnError = createKilnError(err)
       eval_scores_errors[run_config_id] =
         kilnError.getMessage() || "Failed to fetch eval scores"
     } finally {
-      eval_scores_loading[run_config_id] = false
+      if (requested_split === split_view) {
+        eval_scores_loading[run_config_id] = false
+      }
     }
   }
 
@@ -501,6 +595,34 @@
   $: forest = build_forest(run_configs || [])
   $: layout = layout_forest(forest)
   $: lens_data = build_lens_data(summary, evals)
+
+  // How much of the task the current split actually covers. An eval with no
+  // train filter contributes nothing to the train view, and a page that just
+  // showed fewer bars would read as "these configs were never run" rather than
+  // "this eval has no train set" - so the difference is stated rather than
+  // drawn. Only for a split view: each eval owns its test set by definition.
+  $: split_coverage = summarize_split_coverage(summary, split_view)
+  function summarize_split_coverage(
+    current: EvalResultsSummaryResponse | null,
+    split: SplitView,
+  ): { missing: number; total: number } | null {
+    if (!current || split === "test" || split === "all") {
+      return null
+    }
+    const infos = Object.values(current.evals_by_id)
+    const missing = infos.filter(
+      (info) => info.split_available === false,
+    ).length
+    if (missing === 0) {
+      return null
+    }
+    return { missing, total: infos.length }
+  }
+
+  // What the charts say they are showing. Null for the default view, which is
+  // the one the cards' own subtitles already describe.
+  $: split_scope_label =
+    split_view === "test" ? null : `${SPLIT_LABELS[split_view]} split`
 
   $: selected_node = selected_id ? forest.nodes.get(selected_id) ?? null : null
 
@@ -1298,6 +1420,37 @@
         />
         Starred only
       </label>
+      <!-- The dataset split every score and metric on this page is read over.
+           One control for the whole page, not one per card: quality from the
+           test set beside cost from train would be a number nobody could act
+           on. "All runs" is every eval run that exists, which is the only view
+           that includes runs against items that have since left their split. -->
+      <div class="flex flex-row items-center gap-2">
+        <div class="join" role="group" aria-label="Dataset split">
+          {#each SPLIT_VIEWS as split_option}
+            <button
+              type="button"
+              class="join-item btn btn-sm font-normal {split_view ===
+              split_option
+                ? 'btn-active'
+                : ''}"
+              aria-pressed={split_view === split_option}
+              on:click={() => (split_view = split_option)}
+            >
+              {SPLIT_LABELS[split_option]}
+            </button>
+          {/each}
+        </div>
+        {#if summary_refreshing}
+          <span class="loading loading-spinner loading-xs text-gray-400"></span>
+        {:else if split_coverage}
+          <span class="text-xs text-gray-500">
+            {split_coverage.missing} of {split_coverage.total} evals have no {SPLIT_LABELS[
+              split_view
+            ].toLowerCase()} set
+          </span>
+        {/if}
+      </div>
       <div class="flex-grow"></div>
       {#if forest.edges.length > 0}
         <div class="join">
@@ -1434,7 +1587,9 @@
             axisFamilies={quality_axis_families}
             specDescriptions={spec_descriptions}
             title="Quality Scores"
-            subtitle="Eval scores for the selected run configurations. Higher is better on every axis."
+            subtitle={`Eval scores for the selected run configurations.${
+              split_scope_label ? ` ${split_scope_label} only.` : ""
+            } Higher is better on every axis.`}
             table_location="below"
             legend_position="bottom"
           />
@@ -1473,6 +1628,7 @@
 
       <div class="min-w-0 min-h-[800px] flex flex-col">
         <CompareMetricsBarChart
+          scopeLabel={split_scope_label}
           axes={shown_metric_axes}
           getMetricValue={get_metric_value}
           run_configs={run_configs ?? []}

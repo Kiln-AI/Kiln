@@ -7456,7 +7456,7 @@ export interface components {
             default_judge_config_id: string | null;
             /**
              * Dataset Size
-             * @description Total size of the eval dataset.
+             * @description Number of items in the slice being summarized: the eval's own set, or the requested split's.
              */
             dataset_size: number;
             /**
@@ -7464,6 +7464,17 @@ export interface components {
              * @description The output score keys for this eval.
              */
             output_score_keys: string[];
+            /**
+             * Declared Splits
+             * @description Named dataset splits this eval has a filter for, of 'test', 'train', 'val'. An eval missing the split being viewed contributes no results to it.
+             */
+            declared_splits?: string[];
+            /**
+             * Split Available
+             * @description Whether the requested split resolved for this eval. False means its cells are absent because it has no such split, not because nothing has been run.
+             * @default true
+             */
+            split_available: boolean;
         };
         /**
          * EvalResultsSummaryResponse
@@ -7493,6 +7504,11 @@ export interface components {
                     [key: string]: components["schemas"]["EvalResultsSummaryResultCell"];
                 };
             };
+            /**
+             * Split
+             * @description The split these results were scoped to, echoed back. None means the request did not ask for one and got each eval's own set.
+             */
+            split?: string | null;
         };
         /**
          * EvalResultsSummaryResultCell
@@ -7511,6 +7527,13 @@ export interface components {
              * @description Percent of dataset processed for this run config.
              */
             percent_complete: number;
+            /**
+             * N Used By Score Key
+             * @description How many runs each mean is over, keyed by output_score_key. A mean over a 25-item train split and one over a 150-item test set are not the same claim, and the number is the only thing that says so.
+             */
+            n_used_by_score_key?: {
+                [key: string]: number;
+            };
         };
         /**
          * EvalResultsSummaryRunConfigInfo
@@ -11718,7 +11741,7 @@ export interface components {
             eval_name: string;
             /**
              * Dataset Size
-             * @description The dataset size for this eval.
+             * @description Number of items in the slice being reported: the eval's own set, or the requested split's.
              */
             dataset_size: number;
             /** @description The eval config results, if available. */
@@ -11733,6 +11756,17 @@ export interface components {
              * @description The associated spec ID, if any.
              */
             spec_id?: string | null;
+            /**
+             * Declared Splits
+             * @description Named dataset splits this eval has a filter for, of 'test', 'train', 'val'.
+             */
+            declared_splits?: string[];
+            /**
+             * Split Available
+             * @description Whether the requested split resolved for this eval. False means no results for it, because the eval has no such split.
+             * @default true
+             */
+            split_available: boolean;
         };
         /**
          * RunConfigEvalScoresSummary
@@ -11746,6 +11780,17 @@ export interface components {
             eval_results: components["schemas"]["RunConfigEvalResult"][];
             /** @description Average usage statistics across eval runs. */
             mean_usage?: components["schemas"]["MeanUsage"] | null;
+            /**
+             * Split
+             * @description The split these results were scoped to, echoed back. None means the request did not ask for one and got each eval's own set.
+             */
+            split?: string | null;
+            /**
+             * N Eval Runs
+             * @description How many eval runs the usage averages are over, after split scoping. Zero means the usage is absent, not zero.
+             * @default 0
+             */
+            n_eval_runs: number;
         };
         /**
          * RunSummary
@@ -19656,7 +19701,10 @@ export interface operations {
     };
     get_eval_results_summary_api_projects__project_id__tasks__task_id__eval_results_summary_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Scope the results to one dataset split: 'train', 'val', 'test', or 'all' (every run that exists, plus the eval's own set as the denominator). Omit for each eval's own set, which is what 'test' means. Never fails on an eval that has no such split: that eval reports split_available=false and contributes no cells. */
+                split?: ("train" | "val" | "test" | "all") | null;
+            };
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */
@@ -19726,7 +19774,10 @@ export interface operations {
     };
     get_run_config_eval_scores_api_projects__project_id__tasks__task_id__run_configs__run_config_id__eval_scores_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Scope the scores and the usage averages to one dataset split: 'train', 'val', 'test', or 'all' (every run that exists). Omit for each eval's own set, which is what 'test' means. An eval with no such split reports split_available=false rather than failing the request. */
+                split?: ("train" | "val" | "test" | "all") | null;
+            };
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */

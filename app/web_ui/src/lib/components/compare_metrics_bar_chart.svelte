@@ -88,6 +88,12 @@
   export let selectedRunConfigIds: string[] = []
   // Rendered under the subtitle - what the page left off and why
   export let notShownNote: string | null = null
+  // Which slice of the dataset these numbers are over, when it is not the
+  // whole of what the page normally shows. Named in the subtitle rather than
+  // left to a control elsewhere on the page: cost per run on a 25-item train
+  // split is a different claim from cost per run on the test set, and a chart
+  // that does not say which one it is inviting the wrong comparison.
+  export let scopeLabel: string | null = null
   // How many metrics the Metrics menu can offer, switched on or not. `axes` is
   // only the ones that are on, so without this the chart cannot tell "the
   // reader switched the rest off" from "there are no others", and an empty
@@ -849,8 +855,9 @@ Because it is a comparison, at least two run configs are needed.`
       <div
         class="text-sm text-gray-500 {shownNote || showFamilyKey ? '' : 'mb-4'}"
       >
-        Cost, speed and usage for the selected run configurations. A longer bar
-        is better on every metric.
+        Cost, speed and usage for the selected run configurations.{scopeLabel
+          ? ` ${scopeLabel} only.`
+          : ""} A longer bar is better on every metric.
       </div>
       {#if shownNote}
         <div class="text-xs text-gray-400 mt-1 {showFamilyKey ? '' : 'mb-4'}">
