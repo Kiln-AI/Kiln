@@ -3,9 +3,79 @@ import {
   axis_fraction,
   build_cell,
   build_parallel_rows,
+  reconcile_order,
+  reorder,
   widest_band_pp,
   type ParallelAxisSpec,
 } from "./parallel_bands"
+
+describe("reorder", () => {
+  const list = ["a", "b", "c", "d"]
+
+  it("moves an axis later, closing the gap behind it", () => {
+    expect(reorder(list, 0, 2)).toEqual(["b", "c", "a", "d"])
+  })
+
+  it("moves an axis earlier", () => {
+    expect(reorder(list, 3, 1)).toEqual(["a", "d", "b", "c"])
+  })
+
+  it("handles the ends", () => {
+    expect(reorder(list, 0, 3)).toEqual(["b", "c", "d", "a"])
+    expect(reorder(list, 3, 0)).toEqual(["d", "a", "b", "c"])
+  })
+
+  it("is a no-op when nothing moves, and never mutates the input", () => {
+    expect(reorder(list, 2, 2)).toEqual(list)
+    const copy = [...list]
+    reorder(list, 0, 3)
+    expect(list).toEqual(copy)
+  })
+
+  it("treats an out-of-range drop as a cancelled drag", () => {
+    expect(reorder(list, 0, 9)).toEqual(list)
+    expect(reorder(list, -1, 2)).toEqual(list)
+    expect(reorder(list, 9, 0)).toEqual(list)
+  })
+
+  it("keeps every axis exactly once, wherever it lands", () => {
+    for (let from = 0; from < list.length; from++) {
+      for (let to = 0; to < list.length; to++) {
+        expect([...reorder(list, from, to)].sort()).toEqual([...list].sort())
+      }
+    }
+  })
+})
+
+describe("reconcile_order", () => {
+  it("keeps the reader's arrangement when the axes are unchanged", () => {
+    expect(reconcile_order(["c", "a", "b"], ["a", "b", "c"])).toEqual([
+      "c",
+      "a",
+      "b",
+    ])
+  })
+
+  it("appends axes that appeared, without disturbing the arrangement", () => {
+    expect(reconcile_order(["c", "a"], ["a", "c", "d"])).toEqual([
+      "c",
+      "a",
+      "d",
+    ])
+  })
+
+  it("drops axes that are gone", () => {
+    expect(reconcile_order(["c", "a", "b"], ["a", "b"])).toEqual(["a", "b"])
+  })
+
+  it("starts from the given order when there is nothing arranged yet", () => {
+    expect(reconcile_order([], ["a", "b"])).toEqual(["a", "b"])
+  })
+
+  it("survives a full swap of the axis set", () => {
+    expect(reconcile_order(["a", "b"], ["x", "y"])).toEqual(["x", "y"])
+  })
+})
 
 describe("axis_fraction", () => {
   it("maps each score type onto its own full range", () => {

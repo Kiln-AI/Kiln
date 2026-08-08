@@ -130,6 +130,43 @@ export function build_parallel_rows(
 }
 
 /**
+ * Move one axis to a new position, the operation a drag performs.
+ *
+ * Axis ORDER is the reader's to choose on a parallel-coordinates chart: which
+ * axes sit next to each other decides which crossings are visible, and the
+ * order that tells the story is not the order the evals happen to be stored in.
+ * Out-of-range indices return the list untouched rather than throwing - a drag
+ * that ends outside the chart is a cancelled drag, not an error.
+ */
+export function reorder(list: string[], from: number, to: number): string[] {
+  if (from === to) return [...list]
+  if (from < 0 || from >= list.length) return [...list]
+  if (to < 0 || to >= list.length) return [...list]
+  const next = [...list]
+  const [moved] = next.splice(from, 1)
+  next.splice(to, 0, moved)
+  return next
+}
+
+/**
+ * Fold a new set of axis keys into an order the reader has already arranged:
+ * keep what they arranged, in their order, drop what is gone, and put anything
+ * new on the end. Pinning another config must not throw away a layout the
+ * reader built to make a point.
+ */
+export function reconcile_order(
+  previous: string[],
+  current: string[],
+): string[] {
+  const available = new Set(current)
+  const seen = new Set(previous)
+  return [
+    ...previous.filter((key) => available.has(key)),
+    ...current.filter((key) => !seen.has(key)),
+  ]
+}
+
+/**
  * Widest interval on the chart, in percentage points, or null when nothing is
  * banded. The header uses it to say up front how much of each axis the
  * uncertainty covers, which is the whole point of the chart.
