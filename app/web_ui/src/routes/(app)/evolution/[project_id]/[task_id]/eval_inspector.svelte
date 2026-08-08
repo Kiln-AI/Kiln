@@ -27,6 +27,10 @@
   export let run_config_id: string
   export let eval_name: string
   export let run_config_name: string | null = null
+  // Named splits this eval has a filter for, from the page's summary. Only
+  // these are offered: asking the API for one the eval does not have is a 422,
+  // and an option that can only fail is not an option.
+  export let declared_splits: string[] = []
 
   const dispatch = createEventDispatcher<{ close: undefined }>()
 
@@ -42,6 +46,28 @@
   let results_error: KilnError | null = null
   let results_loading = false
   let results_fetched = false
+
+  // Which split's runs the Runs tab lists.
+  //
+  // ALL by default, and deliberately not the page's split: the page is a
+  // comparison, where mixing slices would make the columns incomparable, while
+  // this is one config's own record and the question it answers is "what has
+  // this thing actually been run on". Starting it filtered would hide runs
+  // that exist behind a control the reader has no reason to look for.
+  const RUN_SPLITS = ["all", "test", "train", "val"] as const
+  type RunSplit = (typeof RUN_SPLITS)[number]
+  const RUN_SPLIT_LABELS: Record<RunSplit, string> = {
+    all: "All",
+    test: "Test",
+    train: "Train",
+    val: "Val",
+  }
+  let run_split: RunSplit = "all"
+  // "all" is the unfiltered request, so it is always offered; the rest have to
+  // be backed by a filter on the eval.
+  $: split_options = RUN_SPLITS.filter(
+    (split) => split === "all" || declared_splits.includes(split),
+  )
 
   // Inline run drill-down within the Runs tab
   let selected_run: EvalRun | null = null
@@ -75,11 +101,13 @@
 
   // The results payload embeds full traces, so it's only fetched when the
   // Runs tab is opened, not when the modal opens.
-  async function fetch_results() {
-    if (results_fetched || results_loading) {
+  async function fetch_results(force: boolean = false) {
+    if ((results_fetched && !force) || results_loading) {
       return
     }
+    const requested_split = run_split
     results_loading = true
+    results_error = null
     try {
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results",
@@ -92,19 +120,39 @@
               eval_config_id,
               run_config_id,
             },
+            // Omitted for "all", which is the unscoped request: every run this
+            // config has under this judge, whatever selected the item.
+            query: requested_split === "all" ? {} : { split: requested_split },
           },
         },
       )
       if (error) {
         throw error
       }
+      if (requested_split !== run_split) {
+        return
+      }
       results = data
       results_fetched = true
     } catch (err) {
-      results_error = createKilnError(err)
+      if (requested_split === run_split) {
+        results_error = createKilnError(err)
+      }
     } finally {
-      results_loading = false
+      if (requested_split === run_split) {
+        results_loading = false
+      }
     }
+  }
+
+  function select_split(split: RunSplit) {
+    if (split === run_split) {
+      return
+    }
+    run_split = split
+    // The open run belongs to the list that is going away
+    selected_run = null
+    fetch_results(true)
   }
 
   function open_runs_tab() {
@@ -259,9 +307,40 @@
           {results_error.getMessage() || "Failed to load eval runs"}
         </div>
       {:else if results}
+        <!-- Which slice of the dataset these runs came from. The count is next
+             to it because it is the answer to the question the control raises:
+             "all" against "train" is how a reader sees that a config was
+             iterated on train and measured on test. -->
+        {#if split_options.length > 1}
+          <div class="flex items-center gap-2 mb-3">
+            <div class="join" role="group" aria-label="Dataset split">
+              {#each split_options as split_option}
+                <button
+                  type="button"
+                  class="join-item btn btn-xs font-normal {run_split ===
+                  split_option
+                    ? 'btn-active'
+                    : ''}"
+                  aria-pressed={run_split === split_option}
+                  on:click={() => select_split(split_option)}
+                >
+                  {RUN_SPLIT_LABELS[split_option]}
+                </button>
+              {/each}
+            </div>
+            <span class="text-xs text-gray-500">
+              {results.results.length}
+              {results.results.length === 1 ? "run" : "runs"}
+            </span>
+          </div>
+        {/if}
         {#if results.results.length === 0}
           <div class="text-sm text-gray-500 py-4">
-            No eval runs recorded for this run config.
+            {run_split === "all"
+              ? "No eval runs recorded for this run config."
+              : `No eval runs on the ${RUN_SPLIT_LABELS[
+                  run_split
+                ].toLowerCase()} split for this run config.`}
           </div>
         {:else}
           <table class="table table-xs w-full">

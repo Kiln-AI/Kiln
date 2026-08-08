@@ -8,7 +8,18 @@ type EvalResultsSummaryResponse =
 type ScoreType = components["schemas"]["TaskOutputRatingType"]
 type ScoreDirection = components["schemas"]["ScoreDirection"]
 
+// What a node card puts its one number to.
+//
+// "none" is the default, and it is a position rather than an absence: a run
+// config has no single score, and the aggregate that used to sit here invented
+// one by averaging every eval's normalized mean at equal weight. Nothing about
+// a task says a destructive-write check and a tone judge are worth the same,
+// so that number moved with the eval set rather than with the work. The card
+// keeps what is actually true of a config without a choice being made for the
+// reader - how many runs are behind it, and which scores moved against its
+// parent - and a lens is picked when there is a question that needs one.
 export type Lens =
+  | { kind: "none" }
   | { kind: "aggregate" }
   | { kind: "single"; evalId: string; scoreKey: string }
 
@@ -64,6 +75,8 @@ export interface LensData {
 export interface NodeDisplay {
   lens_color: string
   lens_value: string | null
+  /** Eval runs behind this config under the current split - see run_count */
+  runs: number
   strip: StripCell[]
   subtitle: string
   best: boolean
@@ -92,18 +105,30 @@ export function score_key_id(evalId: string, scoreKey: string): string {
 }
 
 export function lens_key(lens: Lens): string {
-  return lens.kind === "aggregate"
-    ? "aggregate"
-    : score_key_id(lens.evalId, lens.scoreKey)
+  switch (lens.kind) {
+    case "none":
+      return "none"
+    case "aggregate":
+      return "aggregate"
+    default:
+      return score_key_id(lens.evalId, lens.scoreKey)
+  }
 }
 
+// An unset or unparseable key is the default lens, not the aggregate: a URL
+// written before "none" existed carried `lens=aggregate` explicitly whenever
+// the aggregate was what the reader chose, so falling back to "none" here
+// changes the default without overriding anybody's saved view.
 export function parse_lens_key(key: string | null): Lens {
-  if (!key || key === "aggregate") {
+  if (!key || key === "none") {
+    return { kind: "none" }
+  }
+  if (key === "aggregate") {
     return { kind: "aggregate" }
   }
   const separator = key.indexOf("::")
   if (separator <= 0 || separator + 2 >= key.length) {
-    return { kind: "aggregate" }
+    return { kind: "none" }
   }
   return {
     kind: "single",
@@ -232,6 +257,38 @@ export function sample_size(
   )
 }
 
+/**
+ * How many eval runs are behind a run config, across every eval on the page.
+ *
+ * Per eval it is the largest per-score-key count, not their sum: one run
+ * produces one value for each of its eval's score keys, so summing the keys
+ * would multiply a 25-run eval by however many things it scores. Summing
+ * ACROSS evals is right for the same reason - those are different runs of the
+ * task. Scoped by whatever split the page is reading, since that is what the
+ * summary behind it was scoped to.
+ *
+ * This is the number the graph shows on every card, whatever the lens: it is
+ * the one quantity about a run config that needs no weighting decision, and
+ * without it a mean over 3 runs and a mean over 300 look identical.
+ */
+export function run_count(data: LensData, runConfigId: string): number {
+  const counts = data.counts.get(runConfigId)
+  if (!counts || counts.size === 0) {
+    return 0
+  }
+  const per_eval = new Map<string, number>()
+  for (const [key, n] of counts) {
+    const separator = key.indexOf("::")
+    const evalId = separator > 0 ? key.slice(0, separator) : key
+    per_eval.set(evalId, Math.max(per_eval.get(evalId) ?? 0, n))
+  }
+  let total = 0
+  for (const n of per_eval.values()) {
+    total += n
+  }
+  return total
+}
+
 export function raw_score(
   data: LensData,
   runConfigId: string,
@@ -268,6 +325,9 @@ export function normalized_lens_value(
   runConfigId: string,
   lens: Lens,
 ): number | null {
+  if (lens.kind === "none") {
+    return null
+  }
   if (lens.kind === "single") {
     return normalized_score(data, runConfigId, lens.evalId, lens.scoreKey)
   }

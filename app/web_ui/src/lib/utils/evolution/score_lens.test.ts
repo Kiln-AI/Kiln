@@ -18,6 +18,7 @@ import {
   percent_complete,
   raw_lens_value,
   raw_score,
+  run_count,
   score_key_id,
   strip_cell_color,
   strip_cells,
@@ -91,8 +92,9 @@ function make_summary(
 }
 
 describe("lens keys", () => {
-  it("round-trips a single-score lens and defaults to aggregate", () => {
+  it("round-trips every lens kind", () => {
     expect(score_key_id("e1", "pass_fail")).toBe("e1::pass_fail")
+    expect(lens_key({ kind: "none" })).toBe("none")
     expect(lens_key({ kind: "aggregate" })).toBe("aggregate")
     expect(lens_key({ kind: "single", evalId: "e1", scoreKey: "acc" })).toBe(
       "e1::acc",
@@ -102,9 +104,89 @@ describe("lens keys", () => {
       evalId: "e1",
       scoreKey: "acc",
     })
-    for (const bad of [null, "", "aggregate", "::acc", "e1::", "nosep"]) {
-      expect(parse_lens_key(bad)).toEqual({ kind: "aggregate" })
+    expect(parse_lens_key("aggregate")).toEqual({ kind: "aggregate" })
+  })
+
+  // The default moved to "none". A saved view that wanted the aggregate says so
+  // in the key, so only the unset and malformed cases land on the new default.
+  it("defaults to no lens, and keeps an explicit aggregate", () => {
+    for (const bad of [null, "", "none", "::acc", "e1::", "nosep"]) {
+      expect(parse_lens_key(bad)).toEqual({ kind: "none" })
     }
+  })
+})
+
+describe("the no-lens default", () => {
+  const { summary, evals } = make_summary(
+    [
+      {
+        id: "e1",
+        name: "Eval One",
+        scores: [{ name: "Acc", type: "pass_fail" }],
+      },
+    ],
+    { rc1: { e1: { means: { acc: 1 } } } },
+  )
+  const data = build_lens_data(summary, evals)
+
+  it("has no value to show, under either accessor", () => {
+    expect(normalized_lens_value(data, "rc1", { kind: "none" })).toBeNull()
+    expect(raw_lens_value(data, "rc1", { kind: "none" })).toBeNull()
+  })
+})
+
+describe("run_count", () => {
+  // One run scores every key of its eval, so a run config's count for that
+  // eval is the largest per-key count and not their sum; different evals are
+  // different runs of the task, so those do add up.
+  function data_with_counts(counts: Record<string, Record<string, number>>) {
+    const { summary, evals } = make_summary(
+      [
+        {
+          id: "e1",
+          name: "Eval One",
+          scores: [
+            { name: "Acc", type: "pass_fail" },
+            { name: "Tone", type: "pass_fail" },
+          ],
+        },
+        {
+          id: "e2",
+          name: "Eval Two",
+          scores: [{ name: "Latency", type: "pass_fail" }],
+        },
+      ],
+      {
+        rc1: {
+          e1: { means: { acc: 1, tone: 1 } },
+          e2: { means: { latency: 1 } },
+        },
+      },
+    )
+    for (const [eval_id, keys] of Object.entries(counts)) {
+      const cell = summary.scores_by_run_config_by_eval["rc1"][eval_id]
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(cell as any).n_used_by_score_key = keys
+    }
+    return build_lens_data(summary, evals)
+  }
+
+  it("takes the largest count per eval and sums across evals", () => {
+    const data = data_with_counts({
+      e1: { acc: 25, tone: 24 },
+      e2: { latency: 40 },
+    })
+    expect(run_count(data, "rc1")).toBe(65)
+  })
+
+  it("is zero for a config with nothing behind it", () => {
+    expect(run_count(data_with_counts({}), "rc2")).toBe(0)
+  })
+
+  // A payload from a server that predates n_used_by_score_key carries scores
+  // and no counts; the card says 0 runs rather than inventing one.
+  it("is zero when the payload has no counts at all", () => {
+    expect(run_count(data_with_counts({}), "rc1")).toBe(0)
   })
 })
 

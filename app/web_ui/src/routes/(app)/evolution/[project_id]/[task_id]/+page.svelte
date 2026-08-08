@@ -47,6 +47,7 @@
     normalized_lens_value,
     parse_lens_key,
     raw_lens_value,
+    run_count,
     score_key_id,
     strip_cells,
   } from "$lib/utils/evolution/score_lens"
@@ -172,7 +173,9 @@
   let summary_refreshing = false
 
   // UI state (round-tripped through the URL)
-  let lens_selected: unknown = "aggregate"
+  // "none" by default: see the Lens type. The card's own facts - runs and the
+  // delta strip - carry it, and a lens is chosen when a question needs one.
+  let lens_selected: unknown = "none"
   let selected_id: string | null = null
   let starred_only = false
   let unlinked_expanded = false
@@ -317,7 +320,7 @@
           meta.scoreKey === lens.scoreKey,
       )
     ) {
-      lens_selected = "aggregate"
+      lens_selected = "none"
     }
   }
 
@@ -328,7 +331,7 @@
     const urlParams = new URLSearchParams($page.url.search)
 
     const serialized_lens = lens_key(lens)
-    if (serialized_lens !== "aggregate") {
+    if (serialized_lens !== "none") {
       urlParams.set("lens", serialized_lens)
     } else {
       urlParams.delete("lens")
@@ -1306,9 +1309,16 @@
       {
         options: [
           {
+            label: "No score",
+            value: "none",
+            description: "Run counts and per-eval deltas only",
+          },
+          {
             label: "Aggregate score",
             value: "aggregate",
-            description: "Mean of all normalized eval scores",
+            // Named as what it is. Every eval counts the same in it, which is
+            // a claim about the task that nothing in the task supports.
+            description: "Unweighted mean of all normalized eval scores",
           },
         ],
       },
@@ -1376,6 +1386,7 @@
       result[node.id] = {
         lens_color: lens_color(normalized),
         lens_value: raw === null ? null : raw.toFixed(2),
+        runs: node.ghost ? 0 : run_count(data, node.id),
         strip: cells,
         subtitle: node_subtitle(node, provider_models, task_prompts),
         best: node.id === best_id,
@@ -1816,6 +1827,8 @@
       run_config_id={inspector.run_config_id}
       eval_name={inspector.eval_name}
       run_config_name={inspector.run_config_name}
+      declared_splits={summary?.evals_by_id[inspector.eval_id]
+        ?.declared_splits ?? []}
       on:close={() => (inspector = null)}
     />
   {/key}
