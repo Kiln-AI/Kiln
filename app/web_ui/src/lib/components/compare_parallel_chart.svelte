@@ -57,6 +57,12 @@
 
   let chartInstance: echarts.ECharts | null = null
 
+  // Which configs the reader has left switched on, by series name. Kept here
+  // rather than read off the chart because the tooltip needs it, and because
+  // the option is rebuilt with notMerge on every redraw - echarts would forget
+  // the reader's selection each time the props change.
+  let legendSelected: Record<string, boolean> = {}
+
   function seriesName(config: TaskRunConfig): string {
     if (config.name) return config.name
     if (isMcpRunConfig(config.run_config_properties)) {
@@ -124,6 +130,10 @@ Intervals need a proportion to be exact, so only pass/fail scores carry a band. 
       if (!cell || cell.fraction === null) return
       const config = plottedConfigs.find((c) => c.id === row.runConfigId)
       const name = config ? seriesName(config) : "Unknown"
+      // This formatter builds the tooltip from our own rows rather than from
+      // what echarts hands it, so legend state has to be applied by hand -
+      // otherwise a config the reader switched off still reports its numbers.
+      if (legendSelected[name] === false) return
       const color = seriesColor(rowIndex)
       html += `<div style="margin-top:3px;">${tooltipMarker(color)}${name}: <b>${formatScore(cell.value)}</b>`
       if (cell.banded && cell.lower !== null && cell.upper !== null) {
@@ -145,37 +155,16 @@ Intervals need a proportion to be exact, so only pass/fail scores carry a band. 
       const name = config ? seriesName(config) : "Unknown"
       const color = seriesColor(index)
 
-      // The band is drawn the way echarts draws any band: an invisible series
-      // at the lower bound, and the band's own height stacked on top of it.
-      // Both are silent so only the estimate line answers the tooltip.
-      series.push({
-        name: `${name} __lower`,
-        type: "line",
-        stack: `band-${index}`,
-        silent: true,
-        symbol: "none",
-        lineStyle: { opacity: 0 },
-        itemStyle: { color: "transparent" },
-        tooltip: { show: false },
-        data: row.cells.map((cell) => cell.lower),
-        z: 1,
-      })
-      series.push({
-        name: `${name} __band`,
-        type: "line",
-        stack: `band-${index}`,
-        silent: true,
-        symbol: "none",
-        lineStyle: { opacity: 0 },
-        areaStyle: { color, opacity: 0.16 },
-        tooltip: { show: false },
-        data: row.cells.map((cell) =>
-          cell.upper === null || cell.lower === null
-            ? null
-            : cell.upper - cell.lower,
-        ),
-        z: 1,
-      })
+      // All three series share the config's name, which is what ties them to
+      // one legend entry: echarts toggles by NAME, so a band named separately
+      // from its line stays on screen after the reader switches the config off
+      // - four bands under two lines. They are one thing to the reader and have
+      // to be one thing to the legend.
+      //
+      // The estimate goes in FIRST because the legend takes its swatch colour
+      // from the first series of that name, and the band series are deliberately
+      // colourless outlines. Draw order is set by `z`, not by array order, so
+      // the bands still render behind the lines.
       series.push({
         name,
         type: "line",
@@ -183,9 +172,47 @@ Intervals need a proportion to be exact, so only pass/fail scores carry a band. 
         symbolSize: 7,
         lineStyle: { width: 2, color },
         itemStyle: { color, borderColor: "#fff", borderWidth: 1.5 },
-        emphasis: { focus: "series" },
+        // No focus-blur on hover. It dims every other series, and what it dims
+        // here is mostly translucent band - the chart washes out to nearly
+        // nothing the moment the pointer crosses the legend. Comparing bands IS
+        // the chart, so nothing may fade them. Neither sibling chart blurs
+        // either, and the tooltip is axis-wide rather than per series.
         data: row.cells.map((cell) => cell.fraction),
         z: 3,
+      })
+      // The band is drawn the way echarts draws any band: an invisible series
+      // at the lower bound, and the band's own height stacked on top of it.
+      // Both are silent so only the estimate line answers the tooltip. Each
+      // config gets its own stack group so one config's band cannot pile onto
+      // another's.
+      series.push({
+        name,
+        type: "line",
+        stack: `band-${index}`,
+        silent: true,
+        symbol: "none",
+        lineStyle: { opacity: 0 },
+        itemStyle: { color },
+        tooltip: { show: false },
+        data: row.cells.map((cell) => cell.lower),
+        z: 1,
+      })
+      series.push({
+        name,
+        type: "line",
+        stack: `band-${index}`,
+        silent: true,
+        symbol: "none",
+        lineStyle: { opacity: 0 },
+        areaStyle: { color, opacity: 0.16 },
+        itemStyle: { color },
+        tooltip: { show: false },
+        data: row.cells.map((cell) =>
+          cell.upper === null || cell.lower === null
+            ? null
+            : cell.upper - cell.lower,
+        ),
+        z: 1,
       })
     })
     return series
@@ -197,6 +224,14 @@ Intervals need a proportion to be exact, so only pass/fail scores carry a band. 
       const config = plottedConfigs.find((c) => c.id === row.runConfigId)
       return config ? seriesName(config) : "Unknown"
     })
+    // Drop remembered selections for configs that are no longer plotted, so an
+    // unpinned-then-repinned config comes back switched on rather than
+    // invisible for a reason nothing on screen explains.
+    legendSelected = Object.fromEntries(
+      legendNames
+        .filter((name) => legendSelected[name] === false)
+        .map((name) => [name, false]),
+    )
 
     chartInstance.setOption(
       {
@@ -213,6 +248,7 @@ Intervals need a proportion to be exact, so only pass/fail scores carry a band. 
         },
         legend: {
           data: legendNames,
+          selected: legendSelected,
           bottom: 0,
           type: "scroll",
           icon: "roundRect",
@@ -272,6 +308,14 @@ Intervals need a proportion to be exact, so only pass/fail scores carry a band. 
 
   function initChart(node: HTMLElement) {
     chartInstance = echarts.init(node)
+    // Remember what the reader switched off. echarts hides the series itself;
+    // this is for the tooltip, which is built from our rows, and to survive the
+    // next redraw.
+    chartInstance.on("legendselectchanged", (event: unknown) => {
+      const selected = (event as { selected?: Record<string, boolean> })
+        ?.selected
+      if (selected) legendSelected = { ...selected }
+    })
     const resizeObserver = new ResizeObserver(() => chartInstance?.resize())
     resizeObserver.observe(node)
     updateChart()
