@@ -4705,6 +4705,12 @@ async def test_eval_results_summary_behavioral_equivalence(client):
             assert mean_val == pytest.approx(
                 score_data["results"][rc_id][score_key]["mean_score"]
             )
+        # Every mean carries the sample size it was computed over: the UI puts a
+        # confidence interval on the mean, which is not possible without it.
+        for score_key in cell["mean_scores"]:
+            n_used = cell["n_used_by_score_key"][score_key]
+            assert n_used == score_data["results"][rc_id][score_key]["n_used"]
+            assert n_used > 0
         assert cell["percent_complete"] == pytest.approx(
             score_data["run_config_percent_complete"][rc_id]
         )

@@ -58,6 +58,8 @@
     type ComparisonFeature,
   } from "$lib/components/compare_radar_chart.svelte"
   import CompareMetricsBarChart from "$lib/components/compare_metrics_bar_chart.svelte"
+  import CompareParallelChart from "$lib/components/compare_parallel_chart.svelte"
+  import type { ParallelAxisSpec } from "$lib/utils/evolution/parallel_bands"
   import {
     build_metric_axes,
     criterion_key_metas,
@@ -882,11 +884,32 @@
   // Of the criterion scores, the radar still drops the lower-is-better and
   // informational ones (it reads "further from center is better"), so count
   // what's left to know whether it will draw anything at all.
-  $: radar_axis_count = criterion_metas.filter(
+  $: radar_metas = ordered_criterion_metas.filter(
     (meta) =>
       meta.direction !== "lower_is_better" &&
       meta.direction !== "informational",
-  ).length
+  )
+  $: radar_axis_count = radar_metas.length
+
+  // ---- Uncertainty view ---------------------------------------------------
+  // The same axes as the radar, in the same order, so the chart below it is
+  // the same comparison with its confidence intervals drawn rather than a
+  // second, subtly different one. It needs the sample size behind each mean,
+  // which the radar never asks for.
+  $: parallel_axes = radar_metas.map(
+    (meta): ParallelAxisSpec => ({
+      key: score_key_id(meta.evalId, meta.scoreKey),
+      label: score_key_label(meta.scoreKey),
+      evalName: meta.evalName,
+      type: meta.type,
+    }),
+  )
+  $: get_sample_size = make_sample_size_getter(lens_data)
+  function make_sample_size_getter(data: LensData) {
+    return (runConfigId: string, dataKey: string): number | null =>
+      data.counts.get(runConfigId)?.get(dataKey) ?? null
+  }
+  $: parallel_available = pinned_nodes.length > 0 && parallel_axes.length >= 2
   $: radar_available =
     pinned_nodes.length > 0 && radar_axis_count >= MIN_RADAR_AXES
   // Hiding every quality row is a different problem from a task with too few
@@ -1652,6 +1675,28 @@
         </CompareMetricsBarChart>
       </div>
     </div>
+
+    <!-- Section 2b: the quality scores once more, full width, with the
+         confidence interval behind each one drawn.
+
+         Under the radar rather than beside it, and full width, because it is
+         the same comparison seen a second way rather than a different subject:
+         a reader takes the shape off the radar, then comes here to find out
+         whether that shape survives its own error bars. Width is what the bands
+         need - they are vertical, and squeezing five axes into half the page
+         stacks them into mud. -->
+    {#if parallel_available}
+      <div class="mt-6">
+        <CompareParallelChart
+          axes={parallel_axes}
+          getValue={(runConfigId, key) => get_model_value_raw(runConfigId, key)}
+          getSampleSize={get_sample_size}
+          run_configs={run_configs ?? []}
+          model_info={$model_info}
+          selectedRunConfigIds={pinned_ids}
+        />
+      </div>
+    {/if}
 
     <!-- Section 3: the comparison tables - one per track, each full page
          width and stacked rather than paired into columns. There can be a

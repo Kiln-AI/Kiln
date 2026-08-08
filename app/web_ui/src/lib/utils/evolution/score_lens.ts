@@ -49,6 +49,12 @@ export interface LensData {
   raw: Map<string, Map<string, number>>
   /** Direction-corrected normalized (0..1) score, same keying as `raw` */
   normalized: Map<string, Map<string, number>>
+  /**
+   * Runs behind each mean, same keying as `raw`. What separates a score from an
+   * estimate of one: without it nothing downstream can put an interval on a
+   * mean. Absent for older payloads that predate the field.
+   */
+  counts: Map<string, Map<string, number>>
   /** percent_complete per run config id, keyed by eval id */
   percentComplete: Map<string, Map<string, number>>
 }
@@ -117,9 +123,10 @@ export function build_lens_data(
   const keyMetas: ScoreKeyMeta[] = []
   const raw = new Map<string, Map<string, number>>()
   const normalized = new Map<string, Map<string, number>>()
+  const counts = new Map<string, Map<string, number>>()
   const percentComplete = new Map<string, Map<string, number>>()
   if (!summary) {
-    return { keyMetas, raw, normalized, percentComplete }
+    return { keyMetas, raw, normalized, counts, percentComplete }
   }
 
   // Score key metadata: eval_results_summary reports JSON score keys; match
@@ -152,6 +159,7 @@ export function build_lens_data(
     summary.scores_by_run_config_by_eval,
   )) {
     const raw_scores = new Map<string, number>()
+    const sample_sizes = new Map<string, number>()
     const completion = new Map<string, number>()
     for (const [eval_id, cell] of Object.entries(cells)) {
       completion.set(eval_id, cell.percent_complete)
@@ -160,9 +168,17 @@ export function build_lens_data(
           raw_scores.set(score_key_id(eval_id, score_key), value)
         }
       }
+      for (const [score_key, n] of Object.entries(
+        cell.n_used_by_score_key ?? {},
+      )) {
+        if (typeof n === "number" && Number.isFinite(n) && n > 0) {
+          sample_sizes.set(score_key_id(eval_id, score_key), n)
+        }
+      }
     }
     raw.set(run_config_id, raw_scores)
     normalized.set(run_config_id, new Map())
+    counts.set(run_config_id, sample_sizes)
     percentComplete.set(run_config_id, completion)
   }
 
@@ -200,7 +216,20 @@ export function build_lens_data(
     }
   }
 
-  return { keyMetas, raw, normalized, percentComplete }
+  return { keyMetas, raw, normalized, counts, percentComplete }
+}
+
+/** Runs behind one config's mean for one score key; null when unknown. */
+export function sample_size(
+  lens_data: LensData,
+  runConfigId: string,
+  evalId: string,
+  scoreKey: string,
+): number | null {
+  return (
+    lens_data.counts.get(runConfigId)?.get(score_key_id(evalId, scoreKey)) ??
+    null
+  )
 }
 
 export function raw_score(
