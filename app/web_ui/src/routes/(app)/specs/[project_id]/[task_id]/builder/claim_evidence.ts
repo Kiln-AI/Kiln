@@ -781,6 +781,27 @@ export function plan_save_action(args: {
   return { action: "calibrate", round: args.rounds_completed + 1 }
 }
 
+// Which primary action the review CTA offers. Disagreements normally enter
+// a refine round; once the escape state is active (a refine attempt failed)
+// or the round cap is spent, the only honest offer left is saving with the
+// current judge (the escape dialog explains why). A review with zero
+// disagreements always saves — clearing the last disagreement reverts the
+// CTA even mid-escape, which doubles as the convergence signal.
+export type ReviewCta = "save" | "refine" | "escape"
+
+export function review_cta(args: {
+  num_disagreements: number
+  rounds_completed: number
+  max_rounds: number
+  escape_active: boolean
+}): ReviewCta {
+  if (args.num_disagreements === 0) return "save"
+  if (args.escape_active || args.rounds_completed >= args.max_rounds) {
+    return "escape"
+  }
+  return "refine"
+}
+
 // Whether save may quietly refine the judge from the grades. Multi-turn must
 // not: its refinement runs explicitly in the calibration loop, and the judge
 // that ships is exactly the one whose verdicts the reviewer graded.
@@ -789,56 +810,23 @@ export function silent_refine_at_save(is_multi_turn: boolean): boolean {
   return !is_multi_turn
 }
 
-// True when every completed round churned at least a quarter of its
-// re-judged verdicts: refinement isn't converging on these conversations,
-// so the spec itself is the likelier culprit — the escape hatch surfaces
-// that as a plain-language hint.
-export function persistent_high_flips(
-  flips_by_round: number[],
-  judged_by_round: number[],
-): boolean {
-  if (flips_by_round.length === 0) return false
-  return flips_by_round.every(
-    (flips, r) =>
-      (judged_by_round[r] ?? 0) > 0 && flips * 4 >= judged_by_round[r],
-  )
-}
-
-// The escape-hatch banner: reached when the round cap is spent with
+// The escape-hatch dialog's body: reached when the round cap is spent with
 // disagreement remaining, or when a refine attempt failed mid-loop. Honest
-// about the state and the way out — saving with the judge whose verdicts
-// the reviewer actually graded, grades carried as-is.
+// about the state and the ways out — retrying the refine (failure variant)
+// or saving with the judge whose verdicts the reviewer actually graded,
+// grades carried as-is. Failure specifics stay in telemetry, not copy.
 export function escape_hatch_message(state: {
   reason: "cap" | "refine_failed"
   num_disagreements: number
   rounds_completed: number
-  high_flips: boolean
-  detail?: string | null
 }): string {
-  const parts: string[] = []
-  if (state.reason === "cap") {
-    const conversations =
-      state.num_disagreements === 1 ? "conversation" : "conversations"
-    const rounds = state.rounds_completed === 1 ? "round" : "rounds"
-    parts.push(
-      `You and the judge still disagree on ${state.num_disagreements} ${conversations} after ${state.rounds_completed} ${rounds} of improvement.`,
-    )
-    if (state.high_flips) {
-      parts.push(
-        "The judge's verdicts kept changing between rounds, which often means the eval description itself is ambiguous for these conversations. Consider clarifying it.",
-      )
-    }
-  } else {
-    parts.push(
-      state.detail
-        ? `Kiln couldn't improve the judge from your feedback: ${state.detail}`
-        : "Kiln couldn't improve the judge from your feedback.",
-    )
+  if (state.reason === "refine_failed") {
+    return "Kiln couldn't improve your judge. Try again, or save with the current judge."
   }
-  parts.push(
-    "You can save your eval with the current judge. It keeps the results and grades you just reviewed.",
-  )
-  return parts.join(" ")
+  const conversations =
+    state.num_disagreements === 1 ? "conversation" : "conversations"
+  const rounds = state.rounds_completed === 1 ? "round" : "rounds"
+  return `You and the judge still disagree on ${state.num_disagreements} ${conversations} after ${state.rounds_completed} ${rounds} of improvement. You can save your eval with the current judge. It keeps the results and grades you just reviewed.`
 }
 
 // The honest shortfall notice when some conversations couldn't be

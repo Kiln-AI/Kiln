@@ -17,10 +17,10 @@ import {
   is_trace_reviewed,
   map_output_span_to_trace,
   MAX_JUDGE_PROMPT_CHARS,
-  persistent_high_flips,
   plan_save_action,
   refine_judge_tooltip,
   rejudge_shortfall_notice,
+  review_cta,
   resolve_citation_span,
   review_target,
   reviewed_trace_count,
@@ -844,56 +844,82 @@ describe("has_grade_disagreement / disagreed_trace_indices", () => {
   })
 })
 
-describe("persistent_high_flips", () => {
-  it("no completed rounds is never high", () => {
-    expect(persistent_high_flips([], [])).toBe(false)
+describe("review_cta — primary action in the escape state", () => {
+  const base = {
+    num_disagreements: 2,
+    rounds_completed: 0,
+    max_rounds: 2,
+    escape_active: false,
+  }
+
+  it("refines below the cap when disagreements exist", () => {
+    expect(review_cta(base)).toBe("refine")
+    expect(review_cta({ ...base, rounds_completed: 1 })).toBe("refine")
   })
 
-  it("true only when every round churned at least a quarter of verdicts", () => {
-    expect(persistent_high_flips([10, 12], [40, 40])).toBe(true)
-    expect(persistent_high_flips([10, 2], [40, 40])).toBe(false)
-    expect(persistent_high_flips([2], [40])).toBe(false)
+  it("offers the escape save at the cap, even before the state is entered", () => {
+    // The CTA must never promise a refine that a click would not start:
+    // at the cap the first click opens the escape dialog, so the label
+    // reads Save with current judge from the moment the cap is reached.
+    expect(review_cta({ ...base, rounds_completed: 2 })).toBe("escape")
+  })
+
+  it("offers the escape save whenever the escape state is active", () => {
+    // A refine failure enters the escape state below the cap; the CTA
+    // re-opens the dialog on demand from then on.
+    expect(review_cta({ ...base, escape_active: true })).toBe("escape")
+  })
+
+  it("reverts to the plain save the moment disagreements clear, even mid-escape", () => {
+    for (const escape_active of [false, true]) {
+      expect(
+        review_cta({
+          ...base,
+          num_disagreements: 0,
+          rounds_completed: 2,
+          escape_active,
+        }),
+      ).toBe("save")
+    }
   })
 })
 
+// The dialog body per variant: opened from the escape CTA (cap) or
+// immediately on a refine failure.
 describe("escape_hatch_message", () => {
   it("cap copy names the disagreements, rounds, and the way out", () => {
     const msg = escape_hatch_message({
       reason: "cap",
       num_disagreements: 3,
       rounds_completed: 2,
-      high_flips: false,
-      detail: null,
     })
     expect(msg).toContain("still disagree on 3 conversations")
     expect(msg).toContain("2 rounds")
     expect(msg).toContain("save your eval with the current judge")
-    expect(msg).not.toContain("ambiguous")
   })
 
-  it("adds the spec-ambiguity hint only when flips stayed high", () => {
-    const msg = escape_hatch_message({
-      reason: "cap",
-      num_disagreements: 1,
-      rounds_completed: 2,
-      high_flips: true,
-      detail: null,
-    })
-    expect(msg).toContain("1 conversation after")
-    expect(msg).toContain("ambiguous")
+  it("cap copy handles the singular disagreement", () => {
+    expect(
+      escape_hatch_message({
+        reason: "cap",
+        num_disagreements: 1,
+        rounds_completed: 2,
+      }),
+    ).toContain("1 conversation after")
   })
 
-  it("refine failure explains what broke, with the same way out", () => {
-    const msg = escape_hatch_message({
-      reason: "refine_failed",
-      num_disagreements: 2,
-      rounds_completed: 1,
-      high_flips: false,
-      detail: "Improving the judge took too long.",
-    })
-    expect(msg).toContain("couldn't improve the judge")
-    expect(msg).toContain("Improving the judge took too long.")
-    expect(msg).toContain("save your eval with the current judge")
+  it("refine failure is the plain retry-or-save line, no failure detail", () => {
+    // The dialog pairs this body with a real Try again action; failure
+    // specifics live in telemetry, not user-facing copy.
+    expect(
+      escape_hatch_message({
+        reason: "refine_failed",
+        num_disagreements: 2,
+        rounds_completed: 1,
+      }),
+    ).toBe(
+      "Kiln couldn't improve your judge. Try again, or save with the current judge.",
+    )
   })
 
   it("copy carries no em-dashes", () => {
@@ -902,11 +928,50 @@ describe("escape_hatch_message", () => {
         reason,
         num_disagreements: 2,
         rounds_completed: 2,
-        high_flips: true,
-        detail: "detail",
       })
       expect(msg).not.toMatch(/—/)
     }
+  })
+})
+
+describe("refine retry semantics", () => {
+  it("a failed refine attempt does not consume a round", () => {
+    // The round counter advances only when a round completes (re-judge
+    // applied), so after a refine failure the next attempt — the dialog's
+    // Try again — plans the SAME round rather than moving toward the cap.
+    const after_failed_attempt = {
+      is_multi_turn: true,
+      has_disagreement: true,
+      rounds_completed: 1,
+      max_rounds: 2,
+    }
+    expect(plan_save_action(after_failed_attempt)).toEqual({
+      action: "calibrate",
+      round: 2,
+    })
+  })
+
+  it("a failed retry re-enters the escape state; a successful one proceeds", () => {
+    // Failure keeps the escape CTA (dialog re-opens on demand)...
+    expect(
+      review_cta({
+        num_disagreements: 2,
+        rounds_completed: 1,
+        max_rounds: 2,
+        escape_active: true,
+      }),
+    ).toBe("escape")
+    // ...while a successful retry completes the round: grades reset (zero
+    // disagreements) and the escape state clears, so the CTA is back to
+    // the plain save until the re-review says otherwise.
+    expect(
+      review_cta({
+        num_disagreements: 0,
+        rounds_completed: 2,
+        max_rounds: 2,
+        escape_active: false,
+      }),
+    ).toBe("save")
   })
 })
 

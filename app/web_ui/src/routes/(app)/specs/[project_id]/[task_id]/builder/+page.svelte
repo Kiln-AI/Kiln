@@ -73,10 +73,10 @@
     grade_disagreement_count,
     has_grade_disagreement,
     is_trace_reviewed,
-    persistent_high_flips,
     plan_save_action,
     refine_judge_tooltip,
     rejudge_shortfall_notice,
+    review_cta,
     review_target,
     reviewed_trace_count,
     select_calibration_subset,
@@ -1870,6 +1870,13 @@
   function on_advance_to_save() {
     if (is_multi_turn) {
       const graded = build_graded_traces(trace_claims, trace_reviews)
+      // Escape state already entered with disagreements remaining: the CTA
+      // reads Save with current judge and re-opens the explanation dialog
+      // on demand (telemetry fired at entry, never per open).
+      if (calibration_escape && has_grade_disagreement(graded)) {
+        escape_dialog?.show()
+        return
+      }
       const decision = plan_save_action({
         is_multi_turn: true,
         has_disagreement: has_grade_disagreement(graded),
@@ -1881,22 +1888,20 @@
         return
       }
       if (decision.action === "escape_cap") {
-        // Same built-claims count the CTA tooltip and loop entry use, so the
-        // banner's number can never disagree with them.
+        // First arrival at the cap: enter the escape state (the branch
+        // above owns every later click, so this fires exactly once) and
+        // open the dialog. Same built-claims count the CTA tooltip and
+        // loop entry use, so the numbers can never disagree.
         const num_disagreements = grade_disagreement_count(graded)
-        // First arrival raises the banner; a repeat Save click with the
-        // banner already up shouldn't double-count the telemetry.
-        if (!calibration_escape) {
-          posthog.capture("eval_v2_judge_calibration_cap_hit", {
-            rounds: calibration_rounds_completed,
-            num_disagreements,
-          })
-        }
+        posthog.capture("eval_v2_judge_calibration_cap_hit", {
+          rounds: calibration_rounds_completed,
+          num_disagreements,
+        })
         calibration_escape = {
           reason: "cap",
           num_disagreements,
-          detail: null,
         }
+        escape_dialog?.show()
         return
       }
       // Converged: zero disagreement, so the judge whose verdicts were just
@@ -1944,14 +1949,23 @@
     : all_reviewed
   // The review CTA says what clicking it does: with any graded disagreement
   // a multi-turn save enters a refine round, so the button reads Refine
-  // Judge (with a tooltip naming the count) and flips back to Save the
-  // moment the last disagreement clears — the convergence signal. Uses the
-  // loop's exact entry predicate, so label and behavior can't drift apart.
+  // Judge (with a tooltip naming the count); once the loop can't continue
+  // (cap spent, or a refine failed) it reads Save with current judge and
+  // opens the escape dialog instead. It flips back to Save the moment the
+  // last disagreement clears — the convergence signal. Uses the loop's
+  // exact entry predicate, so label and behavior can't drift apart.
   // Single-turn saves directly and keeps the save label.
   $: review_disagreement_count = is_multi_turn
     ? grade_disagreement_count(build_graded_traces(trace_claims, trace_reviews))
     : 0
-  $: review_cta_refines = review_disagreement_count > 0
+  $: review_cta_state = is_multi_turn
+    ? review_cta({
+        num_disagreements: review_disagreement_count,
+        rounds_completed: calibration_rounds_completed,
+        max_rounds: MAX_CALIBRATION_ITERATIONS,
+        escape_active: calibration_escape !== null,
+      })
+    : "save"
 
   // ── Lazy claims (multi-turn). The pipeline stream stops at the judge;
   // only traces the review surfaces (the selected subset) or the user opens
@@ -2141,18 +2155,17 @@
   // re-judge without re-paying the refine call.
   let calibration_error: string | null = null
   // The loud way out: cap spent with disagreement remaining, or refine
-  // failed mid-loop. Offers saving with the judge the reviewer graded.
+  // failed mid-loop. While active, the review CTA offers saving with the
+  // judge the reviewer graded, explained through the escape dialog below
+  // (the failure variant also offers retrying the refine).
   let calibration_escape: {
     reason: "cap" | "refine_failed"
     num_disagreements: number
-    detail: string | null
   } | null = null
+  let escape_dialog: Dialog | null = null
   // Cases without a fresh verdict last round (failed re-judge) — surfaced
   // honestly above the review; they keep stale results and sit the round out.
   let calibration_failed_count = 0
-  // Per-round flip/judged counts, for the escape hatch's spec-ambiguity hint.
-  let calibration_flips_by_round: number[] = []
-  let calibration_judged_by_round: number[] = []
   // Durable ids (leaf run ids) of traces graded in ANY round — the fresh
   // top-up must never re-serve them as "never reviewed".
   let calibration_reviewed_keys = new Set<string>()
@@ -2172,8 +2185,6 @@
     calibration_error = null
     calibration_escape = null
     calibration_failed_count = 0
-    calibration_flips_by_round = []
-    calibration_judged_by_round = []
     calibration_reviewed_keys = new Set()
     calibration_pending_judge = null
     calibration_pending_disagreed = []
@@ -2413,14 +2424,6 @@
           "None of the re-checked conversations could be selected for review. Try again.",
         )
       }
-      calibration_flips_by_round = [
-        ...calibration_flips_by_round,
-        flipped.length,
-      ]
-      calibration_judged_by_round = [
-        ...calibration_judged_by_round,
-        results.size,
-      ]
       calibration_failed_count = trace_claims.length - results.size
       posthog.capture("eval_v2_judge_calibration_round_completed", {
         round,
@@ -2458,8 +2461,11 @@
           num_disagreements: grade_disagreement_count(
             build_graded_traces(trace_claims, trace_reviews),
           ),
-          detail: e.message,
         }
+        // The user just clicked and deserves a response: explain once,
+        // immediately. From here the CTA re-opens the dialog on demand,
+        // and its Try again action re-fires this same round.
+        escape_dialog?.show()
         return
       }
       calibration_error =
@@ -2484,6 +2490,17 @@
     calibration_escape = null
     goto_step("save")
     on_save()
+  }
+
+  // The failure variant's retry: re-fire the refine with the same grades
+  // (the entry the failed attempt used — grades are untouched until a
+  // re-judge succeeds). The round counter only advances on completion, so
+  // a retry never consumes a round; a failed retry re-enters the escape
+  // state and re-opens the dialog. Returns true so the dialog closes into
+  // the refining surface.
+  function retry_refine_from_escape(): boolean {
+    void run_calibration_round()
+    return true
   }
 
   // ── Under-the-hood judge refinement (SINGLE-TURN, at save). The reviewer
@@ -3626,34 +3643,6 @@
               warning_message="There is nothing to review yet. Create your eval data first."
             />
           {:else}
-            {#if calibration_escape}
-              <!-- The escape hatch: the loop can't converge (cap spent) or
-                   can't continue (refine failed). Loud, honest, and with an
-                   explicit way out — no confirm beyond the button itself. -->
-              <div class="mb-4">
-                <Warning
-                  warning_color="warning"
-                  warning_message={escape_hatch_message({
-                    reason: calibration_escape.reason,
-                    num_disagreements: calibration_escape.num_disagreements,
-                    rounds_completed: calibration_rounds_completed,
-                    high_flips: persistent_high_flips(
-                      calibration_flips_by_round,
-                      calibration_judged_by_round,
-                    ),
-                    detail: calibration_escape.detail,
-                  })}
-                />
-              </div>
-              <div class="flex justify-end mb-6">
-                <button
-                  class="btn btn-sm btn-warning"
-                  on:click={save_with_current_judge}
-                >
-                  Save with current judge
-                </button>
-              </div>
-            {/if}
             {#if calibration_rounds_completed > 0 && rejudge_shortfall_notice(calibration_failed_count)}
               <!-- Cases without a fresh verdict sat the round out — say so
                    instead of letting the smaller subset pass unremarked. -->
@@ -3679,8 +3668,12 @@
                 {on_open_trace}
                 on_save={on_advance_to_save}
                 save_disabled={!save_gate_met}
-                save_label={review_cta_refines ? "Refine Judge" : "Save →"}
-                save_tooltip={review_cta_refines
+                save_label={review_cta_state === "escape"
+                  ? "Save with current judge"
+                  : review_cta_state === "refine"
+                    ? "Refine Judge"
+                    : "Save →"}
+                save_tooltip={review_cta_state === "refine"
                   ? refine_judge_tooltip(review_disagreement_count)
                   : null}
               />
@@ -3791,4 +3784,48 @@
       <div class="text-error text-sm">{drive_settings_error}</div>
     {/if}
   </FormContainer>
+</Dialog>
+
+<!-- The calibration escape hatch: opened by the review CTA when the round
+     cap is spent with disagreements remaining, or immediately when a refine
+     attempt fails mid-loop. Explains the state (the loop's pure message
+     builder, live disagreement count) and offers the ways out. The failure
+     variant swaps Keep reviewing for Try again (two buttons keep the house
+     dialog row uncrowded; the close circle and backdrop still just close). -->
+<Dialog
+  bind:this={escape_dialog}
+  title="Save with the current judge?"
+  action_buttons={calibration_escape?.reason === "refine_failed"
+    ? [
+        { label: "Try again", action: retry_refine_from_escape },
+        {
+          label: "Save with current judge",
+          isPrimary: true,
+          action: () => {
+            save_with_current_judge()
+            return true
+          },
+        },
+      ]
+    : [
+        { label: "Keep reviewing", isCancel: true },
+        {
+          label: "Save with current judge",
+          isPrimary: true,
+          action: () => {
+            save_with_current_judge()
+            return true
+          },
+        },
+      ]}
+>
+  {#if calibration_escape}
+    <p class="text-sm">
+      {escape_hatch_message({
+        reason: calibration_escape.reason,
+        num_disagreements: review_disagreement_count,
+        rounds_completed: calibration_rounds_completed,
+      })}
+    </p>
+  {/if}
 </Dialog>
