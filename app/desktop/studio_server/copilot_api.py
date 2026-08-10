@@ -127,11 +127,11 @@ from kiln_ai.datamodel.task_output import TaskOutputRating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.spec_utils import (
-    generate_spec_eval_filter_ids,
     generate_spec_eval_tags,
     spec_eval_data_type,
     spec_eval_output_score,
     spec_eval_template,
+    tag_filter_id,
 )
 from libs.core.kiln_ai.datamodel.copilot_models.questions import (
     QuestionSet,
@@ -1043,11 +1043,17 @@ def connect_copilot_api(app: FastAPI):
                 "by case or spacing) already exists for this task.",
             )
 
-        # Generate tags and filter IDs
-        eval_tag, train_tag, golden_tag = generate_spec_eval_tags(request.name)
-        eval_set_filter_id, train_set_filter_id, eval_configs_filter_id = (
-            generate_spec_eval_filter_ids(eval_tag, train_tag, golden_tag)
+        # Generate tags and filter IDs. The shipped tag helper also mints a
+        # val tag; the wizard doesn't create a val split, so it goes unused.
+        tags = generate_spec_eval_tags(request.name)
+        eval_tag, train_tag, golden_tag = (
+            tags.eval_tag,
+            tags.train_tag,
+            tags.golden_tag,
         )
+        eval_set_filter_id = tag_filter_id(eval_tag)
+        train_set_filter_id = tag_filter_id(train_tag)
+        eval_configs_filter_id = tag_filter_id(golden_tag)
 
         # Extract spec_type from properties (discriminated union)
         spec_type = request.properties["spec_type"]
@@ -1145,7 +1151,9 @@ def connect_copilot_api(app: FastAPI):
             eval_set_filter_id=None
             if request.multi_turn is not None
             else eval_set_filter_id,
-            eval_input_filter_id=f"tag::{eval_tag}"
+            # Not a declared Eval field: the datamodel's migrate_eval_input_filter_id
+            # shim folds this key into an EvalInput-backed test split at construction.
+            eval_input_filter_id=f"tag::{eval_tag}"  # ty: ignore[unknown-argument]
             if request.multi_turn is not None
             else None,
             train_set_filter_id=train_set_filter_id,

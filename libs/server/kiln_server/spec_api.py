@@ -15,13 +15,7 @@ from kiln_server.utils.agent_checks.policy import (
     DENY_AGENT,
     agent_policy_require_approval,
 )
-from kiln_server.utils.spec_utils import (
-    generate_spec_eval_filter_ids,
-    generate_spec_eval_tags,
-    spec_eval_data_type,
-    spec_eval_output_score,
-    spec_eval_template,
-)
+from kiln_server.utils.spec_utils import build_spec_eval
 
 logger = logging.getLogger(__name__)
 
@@ -103,28 +97,11 @@ def connect_spec_api(app: FastAPI):
 
         spec_type = spec_data.properties["spec_type"]
 
-        eval_tag, train_tag, golden_tag = generate_spec_eval_tags(spec_data.name)
-        eval_set_filter_id, train_set_filter_id, eval_configs_filter_id = (
-            generate_spec_eval_filter_ids(eval_tag, train_tag, golden_tag)
-        )
-
-        template = spec_eval_template(spec_type)
-        output_scores = [spec_eval_output_score(spec_data.name)]
-        evaluation_data_type = spec_eval_data_type(
-            spec_type, spec_data.evaluate_full_trace
-        )
-
-        eval = Eval(
-            parent=task,
+        eval, _tags = build_spec_eval(
+            task=task,
             name=spec_data.name,
-            description=None,
-            template=template,
-            output_scores=output_scores,
-            eval_set_filter_id=eval_set_filter_id,
-            train_set_filter_id=train_set_filter_id,
-            eval_configs_filter_id=eval_configs_filter_id,
-            template_properties=None,
-            evaluation_data_type=evaluation_data_type,
+            spec_type=spec_type,
+            evaluate_full_trace=spec_data.evaluate_full_trace,
         )
 
         spec = Spec(

@@ -23,6 +23,7 @@
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
   import { encode_splits_for_url } from "$lib/utils/splits_util"
+  import { eval_split } from "$lib/utils/eval_splits"
   import { build_eval_options } from "./eval_options"
 
   export let generate_subtopics: () => void
@@ -114,19 +115,24 @@
       alert("This eval is not ready yet. Please configure its judge first.")
       return
     }
-    const eval_set_filter_id = evaluator.eval_set_filter_id
+    // Synthetic data generation writes TaskRuns into the dataset, so an
+    // EvalInput-backed test split has no tag for it to target. That is a different
+    // refusal from "the filter isn't tag-shaped", and gets its own message: telling
+    // someone to switch to tag filters would be useless advice here, since the store
+    // is the problem, not the filter's form. The message diagnoses and stops there —
+    // nothing in this app creates eval inputs, so there is no action to point at.
+    const test_split = eval_split(evaluator, "test")
+    if (test_split?.source === "eval_input") {
+      alert(
+        "This eval's data was created by the eval builder and can't be extended with this synthetic data flow. Select a different eval.",
+      )
+      return
+    }
+    const eval_set_filter_id = test_split?.filter_id
     if (!eval_set_filter_id) {
-      // EvalInput-typed slices ARE tag-defined, but this flow generates tagged
-      // TaskRuns, which such evals don't read — don't blame the tags.
-      if (evaluator.eval_input_filter_id) {
-        alert(
-          "This eval's data was created by the eval builder and can't be extended with this synthetic data flow. Select a different eval.",
-        )
-      } else {
-        alert(
-          "We can't generate synthetic data for this eval as its eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
-        )
-      }
+      alert(
+        "We can't generate synthetic data for this eval as its eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
+      )
       return
     }
     const eval_configs_filter_id = evaluator.eval_configs_filter_id ?? null

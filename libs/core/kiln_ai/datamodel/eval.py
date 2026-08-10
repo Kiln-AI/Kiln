@@ -1,18 +1,25 @@
 import json
 from enum import Enum
 from threading import Lock
-from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Union
+from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Set, Union
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Discriminator,
     Field,
+    GetJsonSchemaHandler,
     JsonValue,
+    PrivateAttr,
+    SerializationInfo,
+    SerializerFunctionWrapHandler,
     TypeAdapter,
     ValidationInfo,
+    model_serializer,
     model_validator,
 )
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import CoreSchema
 from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import (
@@ -21,6 +28,10 @@ from kiln_ai.datamodel.basemodel import (
     FilenameStringShort,
     KilnParentedModel,
     KilnParentModel,
+)
+from kiln_ai.datamodel.code_file_storage import (
+    read_code_from_sibling_file,
+    write_code_to_sibling_file,
 )
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, EvalInputFilterId
@@ -39,6 +50,10 @@ EvalScores = Dict[str, float]
 # Protected by _migration_lock to ensure thread-safe access
 _migration_lock = Lock()
 _currently_migrating_eval_ids: set[ID_TYPE] = set()
+
+# Fixed name of the sibling file that holds a code judge's Python source, stored
+# beside its eval_config.kiln. Fixed so authored tests can `from scorer import score`.
+SCORER_CODE_FILENAME = "scorer.py"
 
 
 class EvalTemplateId(str, Enum):
@@ -208,6 +223,110 @@ class CodeEvalProperties(BaseModel):
     reference_keys: list[str] = []
     timeout_seconds: int = Field(default=30, ge=1, le=300)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _read_code_file(cls, data: Any, info: ValidationInfo) -> Any:
+        """When loading from disk, inject `code` from the sibling scorer.py.
+
+        The source is stored in scorer.py beside eval_config.kiln, not inline in
+        the JSON. CodeEvalProperties is a nested member of the
+        V2EvalConfigProperties discriminated union in EvalConfig.properties, so
+        the load context set on the parent EvalConfig (`source_dir`) propagates
+        down to this validator. The shared helper reads the file here, before
+        field validation, so the existing validate_code trio runs against the
+        loaded string unchanged.
+        """
+        # Explicit type-gate (defense-in-depth): this validator only ever runs
+        # for code_eval properties — it lives on CodeEvalProperties, and both the
+        # discriminated union and the eager parse route only code_eval dicts
+        # here. Assert that gate so a future refactor can't quietly read
+        # scorer.py for another eval type. None (type omitted, field defaults)
+        # and the enum form both pass; only a present, mismatched type is
+        # rejected, so valid-input behavior is unchanged.
+        if isinstance(data, dict) and data.get("type") not in (
+            None,
+            V2EvalType.code_eval.value,
+        ):
+            raise ValueError(
+                "CodeEvalProperties can only load code_eval properties, "
+                f"got type: {data.get('type')!r}"
+            )
+        return read_code_from_sibling_file(
+            data,
+            info.context or {},
+            filename=SCORER_CODE_FILENAME,
+            kiln_filename="eval_config.kiln",
+            model_label="CodeEvalProperties",
+        )
+
+    @model_serializer(mode="wrap")
+    def _serialize(
+        self, handler: SerializerFunctionWrapHandler, info: SerializationInfo
+    ) -> dict[str, Any]:
+        """On disk-save, write `code` to scorer.py and omit it from the .kiln JSON.
+
+        Delegates to the shared sibling-file helper, which uses the same save
+        context attachments use (`save_attachments` + `dest_path`); it propagates
+        from the parent EvalConfig's save_to_file() down to this nested union
+        member. Without that context — normal model_dump / API responses —
+        `code` is left in the output and no file is written, so the API contract
+        is unchanged. The default handler preserves `type` (needed by the
+        discriminator), `reference_keys`, and `timeout_seconds`.
+
+        Schema note: a custom model_serializer would otherwise collapse the
+        *serialization-mode* JSON schema to an untyped object
+        (`model_json_schema(mode="serialization")` loses per-field typing).
+        Unlike CodeTool — which is never a FastAPI response_model — this model is
+        nested in EvalConfig, and EvalConfig IS the declared `response_model` on
+        several endpoints (eval_api.py). FastAPI generates response schemas in
+        serialization mode, so a collapsed schema here would split
+        CodeEvalProperties into an untyped `-Output` component and drift the
+        checked-in api_schema.d.ts (breaking check_schema.sh and the web types
+        that key off `components["schemas"]["CodeEvalProperties"]`). The
+        `__get_pydantic_json_schema__` override below is therefore REQUIRED (not
+        optional): it keeps the serialization-mode schema identical to
+        validation mode. Do not remove either the serializer (runtime file
+        storage) or the override (schema stability).
+        """
+        return write_code_to_sibling_file(
+            handler(self),
+            info.context or {},
+            filename=SCORER_CODE_FILENAME,
+            code=self.code,
+        )
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        """Keep the serialization-mode JSON schema identical to validation mode.
+
+        The wrap serializer above returns an untyped `dict`, which would collapse
+        this model's serialization-mode JSON schema to `{additionalProperties:
+        true, type: object}` (dropping `code`, `type`, etc.). Because EvalConfig
+        (which nests this model) is a FastAPI response_model, that collapse would
+        drift the committed OpenAPI/api_schema.d.ts. Dropping the `serialization`
+        core-schema entries makes JSON-schema generation use the field-based
+        (validation) representation in both modes, so `code` stays present and
+        typed and there is no `-Input`/`-Output` split. The custom serializer
+        lives on the inner `model` core schema (the before/after validators wrap
+        it in function schemas), so the strip must be recursive. This affects
+        only schema generation, never runtime (de)serialization.
+        """
+
+        def strip_serialization(schema: Any) -> Any:
+            if isinstance(schema, dict):
+                return {
+                    key: strip_serialization(value)
+                    for key, value in schema.items()
+                    if key != "serialization"
+                }
+            if isinstance(schema, list):
+                return [strip_serialization(item) for item in schema]
+            return schema
+
+        return handler(strip_serialization(core_schema))
+
     @model_validator(mode="after")
     def validate_code(self) -> Self:
         code_bytes = self.code.encode("utf-8")
@@ -295,6 +414,35 @@ def reference_data_keys(props: V2EvalConfigProperties) -> list[str]:
             return []
         case _:
             raise_exhaustive_enum_error(props)
+
+
+def _eager_parse_code_eval_on_load(
+    data: dict[str, Any], ctx: dict[str, Any]
+) -> dict[str, Any]:
+    """Eagerly parse a code_eval EvalConfig's `properties` on file load.
+
+    V2 code judges store their score() source in a sibling scorer.py, not inline
+    in the JSON. On load, parse a code_eval properties dict through
+    CodeEvalProperties (which reads scorer.py via the propagated load context) so
+    any error surfaces directly. Without this, the outer
+    `V2EvalConfigProperties | dict | None` union would recover from the nested
+    member's error by falling back to the dict branch, masking the real cause
+    (e.g. a missing scorer.py or a bad score() function) behind a generic
+    "V2 config requires typed properties". See functional spec §2.2 / §4.
+
+    Only touches code_eval properties during a file load, gated explicitly on
+    `type == code_eval`; every other input passes through unchanged. Lifted
+    verbatim from EvalConfig.dispatch_properties_parsing so the code-eval load
+    path is a clearly-named, code-eval-local step rather than smeared into the
+    generic dispatcher.
+    """
+    if not ctx.get("loading_from_file"):
+        return data
+    props = data.get("properties")
+    if isinstance(props, dict) and props.get("type") == V2EvalType.code_eval.value:
+        data = dict(data)
+        data["properties"] = CodeEvalProperties.model_validate(props, context=ctx)
+    return data
 
 
 def validate_scores_against_output_scores(
@@ -775,7 +923,7 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
 
     @model_validator(mode="before")
     @classmethod
-    def dispatch_properties_parsing(cls, data: Any) -> Any:
+    def dispatch_properties_parsing(cls, data: Any, info: ValidationInfo) -> Any:
         # The union lists dict first, so a raw dict always stays a plain dict —
         # even one whose keys happen to match a typed V2 shape (legacy configs
         # store arbitrary dicts). V2 configs persist properties as a dict too,
@@ -783,6 +931,12 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
         if not isinstance(data, dict):
             return data
         if data.get("config_type", EvalConfigType.g_eval) == EvalConfigType.v2:
+            # code_eval stores its score() source in a sibling scorer.py: on file
+            # load, the type-gated helper parses those props through
+            # CodeEvalProperties (reading the sibling via the load context) so a
+            # bad or missing scorer.py surfaces directly instead of being masked
+            # by a union fallback. Other property types pass through unchanged.
+            data = _eager_parse_code_eval_on_load(data, info.context or {})
             props = data.get("properties")
             if isinstance(props, dict):
                 data = dict(data)
@@ -894,6 +1048,69 @@ class EvalDataType(str, Enum):
     reference_answer = "reference_answer"
 
 
+def _without_model_serializer(schema: CoreSchema) -> CoreSchema:
+    """A copy of a model's core schema with its own model serializer removed.
+
+    The serializer sits on the innermost 'model' schema, under one wrapper per
+    model validator. Only that one is dropped: serializers on fields and on nested
+    models are left alone.
+    """
+    if schema.get("type") == "model":
+        return {key: value for key, value in schema.items() if key != "serialization"}  # type: ignore[return-value]
+    stripped = dict(schema)
+    stripped["schema"] = _without_model_serializer(schema["schema"])  # type: ignore[typeddict-item]
+    return stripped  # type: ignore[return-value]
+
+
+class TaskRunSplit(BaseModel):
+    """A split whose items are TaskRuns, selected by a dataset filter."""
+
+    # Fields a future build adds are preserved rather than dropped, for the same reason
+    # Eval.splits keeps unknown split names: these files sync between app versions. This
+    # only holds for splits stored in `splits` — a split projected into a legacy flat
+    # field becomes a bare filter-id string, which has no room for anything else.
+    model_config = ConfigDict(extra="allow")
+
+    source: Literal["task_run"] = "task_run"
+    filter_id: DatasetFilterId
+
+
+class EvalInputSplit(BaseModel):
+    """A split whose items are EvalInputs, selected by an eval-input filter."""
+
+    model_config = ConfigDict(extra="allow")
+
+    source: Literal["eval_input"] = "eval_input"
+    filter_id: EvalInputFilterId
+
+
+SplitRef = Annotated[
+    Union[TaskRunSplit, EvalInputSplit],
+    Discriminator("source"),
+]
+"""One of an eval's splits: which store its items come from, and which filter selects them.
+Discriminated on `source`, so a split's backing is part of its value rather than a
+convention a reader has to know."""
+
+EvalSplitName = Literal["train", "val", "test"]
+"""The split names the API exposes. `Eval.splits` is keyed by plain `str` so a file
+written by a build that knows a fourth split still loads here (see Eval.splits)."""
+
+LEGACY_SPLIT_FIELDS: Dict[str, str] = {
+    "test": "eval_set_filter_id",
+    "train": "train_set_filter_id",
+}
+"""Split name -> the flat `Eval` field that is its on-disk home for older Kiln builds.
+Only TaskRun-backed splits can live in these fields; every other split is stored in
+`Eval.splits`.
+
+MIRRORED IN TYPESCRIPT: `app/web_ui/src/lib/utils/eval_splits.ts` has its own copy of this
+map and of the fold below, because the serializer hands the web client the same two-homed
+format it writes to disk. Change one and the other must change with it — nothing enforces
+it, and a one-sided change fails silently in the UI (a dataset row rendering `undefined`,
+a `/dataset` link pointing at the wrong tag)."""
+
+
 class MultiTurnDriveConfig(BaseModel):
     """Per-eval settings for re-driving multi-turn synthetic inputs at eval time.
 
@@ -937,7 +1154,7 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     )
     eval_set_filter_id: DatasetFilterId | None = Field(
         default=None,
-        description="The id of the dataset filter which defines which dataset items are included when running this eval (V1 TaskRun-typed).",
+        description="Legacy storage for a TaskRun-backed test split, kept so older Kiln builds can still read this eval. It is written from the eval's splits, and is null when the test split has no legacy representation. The eval's splits are the authoritative source: see `splits`.",
     )
     eval_configs_filter_id: DatasetFilterId | None = Field(
         default=None,
@@ -945,11 +1162,11 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     )
     train_set_filter_id: DatasetFilterId | None = Field(
         default=None,
-        description="The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning.",
+        description="Legacy storage for a TaskRun-backed train split, kept so older Kiln builds can still read this eval. It is written from the eval's splits, and is null when the train split has no legacy representation. The eval's splits are the authoritative source: see `splits`.",
     )
-    eval_input_filter_id: EvalInputFilterId | None = Field(
-        default=None,
-        description="Filter ID for EvalInput-backed datasets (V2). Mutually exclusive with eval_set_filter_id.",
+    splits: Dict[str, SplitRef] = Field(
+        default_factory=dict,
+        description="The eval's dataset splits, keyed by split name ('test', 'train', 'val'). Each split names the store its items come from and the filter that selects them. Keys this build doesn't know are preserved but not exposed. In Python, prefer Eval.set_split() to assigning into this dict: it stores a split where older Kiln builds can still read it, and marks the field as set so exclude_unset dumps keep it.",
     )
     output_scores: List[EvalOutputScore] = Field(
         description="The scores this evaluator should produce."
@@ -972,6 +1189,188 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         "time (synthetic-user model + turn count). Required to execute "
         "multi-turn EvalInput items; None for single-turn and stored-trace evals.",
     )
+
+    # Which splits arrived in a legacy field, so serialization can put them back where
+    # they came from. None means "provenance unknown" (see serialize_preserving_split_format).
+    _legacy_homed_splits: Set[str] | None = PrivateAttr(default=None)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_eval_input_filter_id(cls, data: Any) -> Any:
+        """Fold the pre-`splits` `eval_input_filter_id` key into an EvalInput-backed test split.
+
+        TODO: Remove before shipping. Only internal projects contain this key; no public
+        project file has ever had it, so this never becomes a compatibility commitment.
+        """
+        if not isinstance(data, dict):
+            return data
+        filter_id = data.get("eval_input_filter_id")
+        if filter_id is None:
+            return data
+        if data.get("eval_set_filter_id") is not None:
+            # The invariant the deleted validate_filter_fields enforced, kept for as long
+            # as two legacy inputs can name the same split. Folding both would silently
+            # discard one of them.
+            raise ValueError(
+                "An eval cannot set both eval_set_filter_id and eval_input_filter_id: they are two backings for the same test split."
+            )
+        data = dict(data)
+        data.pop("eval_input_filter_id")
+        splits = dict(data.get("splits") or {})
+        splits["test"] = {"source": "eval_input", "filter_id": filter_id}
+        data["splits"] = splits
+        return data
+
+    @model_validator(mode="after")
+    def fold_legacy_filter_fields(self) -> Self:
+        """Copy the legacy flat fields into `splits`, recording that they came from there.
+
+        Runs once, when the eval is first validated — loaded, or constructed. It must not
+        run again: `validate_assignment` re-runs after-validators on every attribute set
+        (including `self.path = path` at the end of save_to_file), and a second pass would
+        re-derive `splits` from the legacy fields, reverting any split the caller had
+        written and undoing it on disk at the next save. Legacy fields are a storage
+        format, not state, so they get read exactly once.
+
+        Must stay declared before validate_splits, which requires a test split: an eval
+        that carries only legacy fields gets its test split from here.
+
+        A populated legacy field wins over a `splits` entry for the same split. At most
+        one of the two is ever written for a given split, so a conflict means a
+        hand-edited file, and preferring the legacy field keeps old and new Kiln builds
+        agreeing on what the eval's test and train splits are.
+
+        MIRRORED IN TYPESCRIPT: `app/web_ui/src/lib/utils/eval_splits.ts`'s `eval_split`
+        is this fold, precedence included. The web client needs it because
+        serialize_preserving_split_format sends the same two-homed format over the API
+        that it writes to disk. Changes here have to be made there too — see
+        LEGACY_SPLIT_FIELDS.
+        """
+        if self._legacy_homed_splits is not None:
+            return self
+
+        homed: Set[str] = set()
+        if self.eval_set_filter_id is not None:
+            self.splits["test"] = TaskRunSplit(filter_id=self.eval_set_filter_id)
+            homed.add("test")
+        if self.train_set_filter_id is not None:
+            self.splits["train"] = TaskRunSplit(filter_id=self.train_set_filter_id)
+            homed.add("train")
+        self._legacy_homed_splits = homed
+        return self
+
+    @model_validator(mode="after")
+    def validate_splits(self) -> Self:
+        if "test" not in self.splits:
+            raise ValueError(
+                "An eval must have a test split. Set splits['test'] (or the legacy eval_set_filter_id field)."
+            )
+        return self
+
+    def set_split(self, name: str, split: SplitRef) -> None:
+        """Set one of the eval's splits, storing it where the most Kiln builds can read it.
+
+        Use this rather than `eval.splits[name] = ...` when adding a split to an eval that
+        a user already has, and the split is one older builds understand: a TaskRun-backed
+        test or train split is written to its legacy flat field, so an older Kiln client —
+        and anything else reading the file directly, like the project zip handed to the
+        remote prompt-optimization service — still sees it.
+
+        Assigning `eval.splits[name]` directly is the way to author a split in the new
+        format only. Both are legitimate; this one is the compatible default for splits
+        created on behalf of a user.
+        """
+        # Dict and set mutation don't go through __setattr__, so the readonly check has to
+        # be explicit here: readonly instances are the cached ones, shared with every other
+        # holder of the same file.
+        self._ensure_not_readonly("splits")
+        self.splits[name] = split
+        # Item assignment leaves `splits` looking unset, which would hide the split from a
+        # model_dump(exclude_unset=True) that has no legacy field to fall back on.
+        self.__pydantic_fields_set__.add("splits")
+
+        homed = self._legacy_homed_splits
+        if homed is None:
+            # Provenance unknown (model_construct): serialization is content-determined
+            # and already writes TaskRun-backed test/train splits to their legacy fields.
+            return
+        if name in LEGACY_SPLIT_FIELDS and isinstance(split, TaskRunSplit):
+            homed.add(name)
+        else:
+            # No legacy field can hold this split; §2.6's "backing changes force a format
+            # change" case if it previously had one.
+            homed.discard(name)
+
+    @model_serializer(mode="wrap")
+    def serialize_preserving_split_format(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> Dict[str, Any]:
+        """Write each split back to the format it arrived in.
+
+        A split that arrived in a legacy field is written to that field and omitted from
+        the serialized `splits`, so an untouched legacy eval round-trips byte-identically
+        and older Kiln builds keep reading it. A split that arrived in (or was created
+        in) `splits` is written there, with its legacy field null.
+
+        When provenance is unknown — an instance built by `model_construct`, which skips
+        validation and so never records it — this falls back to content: any TaskRun-backed
+        test or train split is written to its legacy field. That degrades toward old-client
+        compatibility rather than toward a silent format flip.
+        """
+        data: Dict[str, Any] = handler(self)
+
+        # Additive multi-turn field: files that predate it carry no key, and
+        # writing a null would break the byte-identical round-trip guarantee
+        # for untouched legacy evals. Absent and None mean the same thing on
+        # load, so an unset config is simply omitted.
+        if data.get("multi_turn_drive_config") is None:
+            data.pop("multi_turn_drive_config", None)
+
+        homed = self._legacy_homed_splits
+        serialized_splits = data.get("splits") or {}
+        legacy_values: Dict[str, str | None] = {
+            name: None for name in LEGACY_SPLIT_FIELDS
+        }
+        splits_remainder: Dict[str, Any] = {}
+
+        for name, split in self.splits.items():
+            legacy_field = LEGACY_SPLIT_FIELDS.get(name)
+            # A field the caller excluded from this dump can't be the split's home, so
+            # the split stays in `splits` rather than being written nowhere at all.
+            legacy_homed = (
+                legacy_field is not None
+                and legacy_field in data
+                and isinstance(split, TaskRunSplit)
+                and (homed is None or name in homed)
+            )
+            if legacy_homed:
+                legacy_values[name] = split.filter_id
+            elif name in serialized_splits:
+                splits_remainder[name] = serialized_splits[name]
+
+        for name, field_name in LEGACY_SPLIT_FIELDS.items():
+            if field_name in data:
+                data[field_name] = legacy_values[name]
+        if "splits" in data:
+            if splits_remainder:
+                data["splits"] = splits_remainder
+            else:
+                del data["splits"]
+
+        return data
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        """Describe Eval by its fields, even in serialization mode.
+
+        A model serializer makes pydantic describe the serialized form as a bare object,
+        which would erase Eval from the generated OpenAPI client. The serializer only
+        chooses which of two homes each split is written to — every key it can emit is a
+        declared field — so the field-derived schema is the accurate one.
+        """
+        return handler(_without_model_serializer(core_schema))
 
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:
@@ -1062,27 +1461,6 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         return self
 
     @model_validator(mode="after")
-    def migrate_train_set_filter_id(self) -> Self:
-        """
-        Migration: Auto-create a train_set_filter_id for legacy evals that don't have one.
-
-        Generates a tag-based filter ID from the eval name following the convention
-        used by spec-based evals (e.g., "train_{name_slug}").
-        """
-        if self.id is None:
-            return self
-
-        if not self._loaded_from_file:
-            return self
-
-        if self.train_set_filter_id is not None:
-            return self
-
-        tag_suffix = self.name.lower().replace(" ", "_")
-        self.train_set_filter_id = f"tag::train_{tag_suffix}"
-        return self
-
-    @model_validator(mode="after")
     def validate_scores(self) -> Self:
         if self.output_scores is None or len(self.output_scores) == 0:
             raise ValueError(
@@ -1094,16 +1472,6 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         if len(output_score_keys) != len(set(output_score_keys)):
             raise ValueError(
                 f"output_scores must have unique names (once transformed to JSON keys). Got: [{', '.join(output_score_keys)}]"
-            )
-        return self
-
-    @model_validator(mode="after")
-    def validate_filter_fields(self) -> Self:
-        has_v1 = self.eval_set_filter_id is not None
-        has_v2 = self.eval_input_filter_id is not None
-        if has_v1 == has_v2:
-            raise ValueError(
-                "Exactly one of eval_set_filter_id or eval_input_filter_id must be set"
             )
         return self
 

@@ -43,7 +43,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task, TaskRun
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
-from kiln_ai.datamodel.eval import EvalConfigType, EvalDataType, LlmJudgeProperties
+from kiln_ai.datamodel.eval import (
+    EvalConfigType,
+    EvalDataType,
+    EvalInputSplit,
+    LlmJudgeProperties,
+)
 from kiln_ai.datamodel.spec_properties import SpecType
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_server.custom_errors import connect_custom_errors
@@ -837,7 +842,11 @@ class TestCreateSpecWithCopilotMultiTurn:
         eval_obj = evals[0]
         assert eval_obj.evaluation_data_type == EvalDataType.full_trace
         assert eval_obj.eval_set_filter_id is None
-        assert eval_obj.eval_input_filter_id == "tag::eval_multi_turn_spec"
+        # The save path still writes the pre-splits eval_input_filter_id kwarg;
+        # the datamodel shim folds it into an EvalInput-backed test split.
+        assert eval_obj.splits["test"] == EvalInputSplit(
+            filter_id="tag::eval_multi_turn_spec"
+        )
         assert eval_obj.train_set_filter_id == "tag::train_multi_turn_spec"
         assert eval_obj.current_config_id is not None
         assert eval_obj.multi_turn_drive_config is not None

@@ -25,6 +25,11 @@
   import { getDetailedModelNameFromParts } from "$lib/utils/run_config_formatters"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { tagFromFilterId, linkFromFilterId } from "../../spec_utils"
+  import {
+    eval_split,
+    eval_split_filter_id,
+    task_run_split_filter_id,
+  } from "$lib/utils/eval_splits"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -271,17 +276,21 @@
     if (eval_progress) {
       eval_set_size = " (" + eval_progress.dataset_size + " items)"
     }
-    // The eval slice is TaskRun-typed (eval_set_filter_id) or EvalInput-typed
-    // (eval_input_filter_id). Only the TaskRun kind links to the dataset view
-    // — EvalInput items don't appear there.
-    properties.push({
-      name: "Eval Dataset",
-      value:
-        (evaluator.eval_set_filter_id ??
-          evaluator.eval_input_filter_id ??
-          "unknown") + eval_set_size,
-      link: linkFromFilterId(project_id, task_id, evaluator.eval_set_filter_id),
-    })
+    // Guarded like the train and val rows below, even though an eval cannot validate
+    // without a test split: an unguarded concat renders "undefined (30 items)", which is
+    // the same shape as the "null (30 items)" this page used to show for V2 evals.
+    const test_filter_id = eval_split_filter_id(evaluator, "test")
+    if (test_filter_id) {
+      properties.push({
+        name: "Eval Dataset",
+        value: test_filter_id + eval_set_size,
+        link: linkFromFilterId(
+          project_id,
+          task_id,
+          task_run_split_filter_id(evaluator, "test"),
+        ),
+      })
+    }
     let golden_dataset_size = ""
     if (eval_progress) {
       golden_dataset_size = " (" + eval_progress.golden_dataset_size + " items)"
@@ -299,20 +308,39 @@
         ),
       })
     }
-    if (evaluator.train_set_filter_id) {
+    const train_filter_id = eval_split_filter_id(evaluator, "train")
+    if (train_filter_id) {
       let train_dataset_size = ""
       if (eval_progress) {
         train_dataset_size = " (" + eval_progress.train_dataset_size + " items)"
       }
       properties.push({
         name: "Training Dataset",
-        value: evaluator.train_set_filter_id + train_dataset_size,
+        value: train_filter_id + train_dataset_size,
         tooltip:
           "The dataset used as training examples during prompt optimization.",
         link: linkFromFilterId(
           project_id,
           task_id,
-          evaluator.train_set_filter_id,
+          task_run_split_filter_id(evaluator, "train"),
+        ),
+      })
+    }
+    const val_filter_id = eval_split_filter_id(evaluator, "val")
+    if (val_filter_id) {
+      let val_dataset_size = ""
+      if (eval_progress) {
+        val_dataset_size = " (" + eval_progress.val_dataset_size + " items)"
+      }
+      properties.push({
+        name: "Validation Dataset",
+        value: val_filter_id + val_dataset_size,
+        tooltip:
+          "The dataset held out for validation. Not scored by 'Run Eval', which runs the eval dataset.",
+        link: linkFromFilterId(
+          project_id,
+          task_id,
+          task_run_split_filter_id(evaluator, "val"),
         ),
       })
     }
@@ -528,8 +556,20 @@
       alert("Unable to add eval data. Please try again later.")
       return
     }
-    const eval_tag = evaluator?.eval_set_filter_id
-      ? tagFromFilterId(evaluator.eval_set_filter_id)
+    // Adding eval data writes TaskRuns, so only a TaskRun-backed test split has a tag
+    // it can add under. An EvalInput-backed one gets its own message: "use a tag filter
+    // instead" is not advice that helps when the store, not the filter's form, is what
+    // this flow can't reach. The message diagnoses and stops there — nothing in this app
+    // creates eval inputs, so there is no action to point at.
+    if (eval_split(evaluator, "test")?.source === "eval_input") {
+      alert(
+        "This eval's dataset is made of eval inputs, and this flow adds task runs to your dataset.",
+      )
+      return
+    }
+    const test_filter_id = task_run_split_filter_id(evaluator, "test")
+    const eval_tag = test_filter_id
+      ? tagFromFilterId(test_filter_id)
       : undefined
     let golden_tag: string | undefined = undefined
     if (evaluator?.eval_configs_filter_id) {
@@ -736,7 +776,7 @@
                             {/if}
                           {/if}
                         </div>
-                        {#if evaluator.eval_input_filter_id}
+                        {#if eval_split(evaluator, "test")?.source === "eval_input"}
                           <!-- EvalInput-typed slice: items are minted by the eval
                             builder at save; the add-data flow tags TaskRuns, which
                             doesn't apply, so offer no dead-end button. -->

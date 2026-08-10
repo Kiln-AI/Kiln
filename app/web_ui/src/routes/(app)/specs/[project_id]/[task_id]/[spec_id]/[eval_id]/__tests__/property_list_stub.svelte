@@ -4,4 +4,7 @@
   export let title: string = ""
 </script>
 
-<div data-testid="property-list-stub"></div>
+<div
+  data-testid="property-list-stub"
+  data-properties={JSON.stringify(properties)}
+></div>

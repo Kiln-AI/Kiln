@@ -45,6 +45,7 @@
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import posthog from "posthog-js"
   import { agentInfo } from "$lib/agent"
+  import { task_run_split_filter_id } from "$lib/utils/eval_splits"
 
   function tagFromFilterId(filter_id: string): string | undefined {
     if (filter_id.startsWith("tag::")) {
@@ -518,9 +519,13 @@
         evals_with_configs[index].has_train_set = data.has_train_set
         evals_with_configs[index].model_is_supported = data.model_is_supported
 
-        // If has train set, fetch the size
-        if (data.has_train_set && item.eval.train_set_filter_id) {
-          const train_tag = tagFromFilterId(item.eval.train_set_filter_id)
+        // If has train set, fetch the size. has_train_set is already
+        // TaskRun-backed-only (the remote optimizer resolves the train filter over the
+        // project zip's runs/), so the filter id read here has to be too, or the two
+        // disagree and the size fetch is silently skipped.
+        const train_filter_id = task_run_split_filter_id(item.eval, "train")
+        if (data.has_train_set && train_filter_id) {
+          const train_tag = tagFromFilterId(train_filter_id)
           if (train_tag) {
             try {
               const { data: tag_counts, error: tag_error } = await client.GET(
@@ -1080,7 +1085,8 @@
                             <td class="text-sm whitespace-nowrap">
                               {#if train_set_size !== null}
                                 {@const train_tag = tagFromFilterId(
-                                  evalItem.train_set_filter_id || "",
+                                  task_run_split_filter_id(evalItem, "train") ||
+                                    "",
                                 )}
                                 {@const dataset_link = train_tag
                                   ? `/dataset/${project_id}/${task_id}?tags=${train_tag}`
@@ -1117,7 +1123,8 @@
                               {:else if validation_status === "invalid"}
                                 {@const eval_configs_link = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}/eval_configs`}
                                 {@const train_tag = tagFromFilterId(
-                                  evalItem.train_set_filter_id || "",
+                                  task_run_split_filter_id(evalItem, "train") ||
+                                    "",
                                 )}
                                 {@const dataset_add_link =
                                   train_tag &&

@@ -38,6 +38,7 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import { tagFromFilterId } from "../spec_utils"
+  import { eval_split, task_run_split_filter_id } from "$lib/utils/eval_splits"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import RunEval from "$lib/components/run_eval.svelte"
@@ -672,6 +673,38 @@
     const evalData = eval_data_cache[eval_id]
     if (!evalData) return
 
+    // Same refusal the eval detail page and the data-gen dialog make: this flow adds
+    // TaskRuns, and an EvalInput-backed eval set can't receive them.
+    if (eval_split(evalData, "test")?.source === "eval_input") {
+      alert(
+        "This eval's dataset is made of eval inputs, and this flow adds task runs to your dataset.",
+      )
+      return
+    }
+
+    // Adding data means adding TaskRuns, so only a TaskRun-backed test split has a
+    // tag to add them under.
+    const test_filter_id = task_run_split_filter_id(evalData, "test")
+    const eval_tag = test_filter_id
+      ? tagFromFilterId(test_filter_id)
+      : undefined
+    const golden_tag = evalData.eval_configs_filter_id
+      ? tagFromFilterId(evalData.eval_configs_filter_id)
+      : undefined
+
+    // Refuse before navigating, matching the eval detail page's identical guard. Without
+    // it, a missing tag falls through to a navigation with no `splits` param at all, and
+    // the user adds rows that silently never join the eval's set. The golden half is
+    // reachable in ordinary use: a non-rag eval with no golden set is the expected V2
+    // state (functional spec 6.1), and this button appears precisely when the eval's
+    // test split is empty.
+    if (!eval_tag || (evalData.template !== "rag" && !golden_tag)) {
+      alert(
+        "No eval or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
+      )
+      return
+    }
+
     const params = new URLSearchParams()
     params.set("reason", "eval")
     if (evalData.template) {
@@ -686,20 +719,10 @@
       `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}`,
     )
 
-    const eval_tag = evalData.eval_set_filter_id
-      ? tagFromFilterId(evalData.eval_set_filter_id)
-      : undefined
     if (evalData.template === "rag") {
-      if (eval_tag) {
-        params.set("splits", `${eval_tag}:1.0`)
-      }
+      params.set("splits", `${eval_tag}:1.0`)
     } else {
-      const golden_tag = evalData.eval_configs_filter_id
-        ? tagFromFilterId(evalData.eval_configs_filter_id)
-        : undefined
-      if (eval_tag && golden_tag) {
-        params.set("splits", `${eval_tag}:0.8,${golden_tag}:0.2`)
-      }
+      params.set("splits", `${eval_tag}:0.8,${golden_tag}:0.2`)
     }
 
     if (evalData.template === "tool_call") {
@@ -1087,7 +1110,7 @@
                                 {/if}
                                 <div class="text-left">
                                   {#if getEvalDatasetSize(section.eval_id) === 0}
-                                    {#if eval_data_cache[section.eval_id]?.eval_input_filter_id}
+                                    {#if eval_split(eval_data_cache[section.eval_id], "test")?.source === "eval_input"}
                                       <!-- EvalInput-typed slice: data is minted by the
                                         eval builder; the add-data flow tags TaskRuns,
                                         which doesn't apply. -->
