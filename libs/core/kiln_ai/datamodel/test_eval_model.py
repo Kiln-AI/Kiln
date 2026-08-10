@@ -4678,3 +4678,21 @@ class TestEvalSplits:
         assert data["splits"] == {
             "train": {"source": "task_run", "filter_id": "tag::train_direct"}
         }
+
+
+def test_eval_config_eval_requires_a_dataset_item():
+    """Judge calibration compares against human ratings, which only dataset
+    items carry — a calibration record claiming an EvalInput is domain-invalid
+    and must be rejected, not silently persisted."""
+    with pytest.raises(
+        ValidationError, match="eval_config_eval records must score a dataset item"
+    ):
+        EvalRun(
+            eval_config_eval=True,
+            task_run_config_id=None,
+            dataset_id=None,
+            eval_input_id="ei_1",
+            input="in",
+            output="out",
+            scores={"accuracy": 1.0},
+        )

@@ -1643,13 +1643,17 @@ class TestRunV2Job:
 
     @pytest.mark.asyncio
     async def test_type_not_available_skip_eval_input(
-        self, mock_v2_runner, mock_v2_eval_config, mock_eval_inputs
+        self, mock_v2_runner, mock_v2_eval_config, mock_eval_inputs, mock_run_config
     ):
+        # task_run_eval shape: an eval_config_eval job over an EvalInput is no
+        # longer even recordable (EvalRun rejects it — calibration is
+        # TaskRun-only), so the skip-writer is exercised on the legit lane.
         ei = mock_eval_inputs[1]
         job = EvalJob(
             item=ei,
             eval_config=mock_v2_eval_config,
-            type="eval_config_eval",
+            type="task_run_eval",
+            task_run_config=mock_run_config,
         )
         with patch(
             "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
@@ -1662,6 +1666,8 @@ class TestRunV2Job:
         saved = runs[0]
         assert saved.eval_input_id == ei.id
         assert saved.dataset_id is None
+        assert saved.eval_config_eval is False
+        assert saved.task_run_config_id == mock_run_config.id
         assert saved.skipped_reason == SkippedReason.type_not_available.value
         assert saved.input == "Say hello"
 

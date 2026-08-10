@@ -402,7 +402,9 @@ class UpdateEvalRequest(BaseModel):
     description: str | None = Field(
         default=None, description="The updated description."
     )
-    train_set_filter_id: str | None = Field(
+    # Typed so an invalid filter id is a 422 at request validation, not a 500
+    # when TaskRunSplit rejects it inside the handler.
+    train_set_filter_id: DatasetFilterId | None = Field(
         default=None, description="The updated train set filter ID."
     )
 
@@ -1822,6 +1824,12 @@ def connect_evals_api(app: FastAPI):
 
         for eval_config in eval_configs:
             for eval_run in eval_config.runs(readonly=True):
+                # Only calibration records enter the judge-vs-human stats: the
+                # same eval config also accumulates task_run_eval records, and a
+                # golden item's fresh-generation score correlated against the
+                # stored item's human rating would be a category error.
+                if not eval_run.eval_config_eval:
+                    continue
                 dataset_item = expected_dataset_items.get(eval_run.dataset_id, None)
                 if dataset_item is None:
                     # A dataset_id can be removed from the dataset filter (ran previously, then removed the tag to remove it from the eval config set filter)

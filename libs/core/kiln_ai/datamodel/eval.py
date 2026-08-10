@@ -847,6 +847,12 @@ class EvalRun(KilnParentedModel):
             raise ValueError(
                 "task_run_config_id must be set if eval_config_eval is false"
             )
+        if self.eval_config_eval and self.dataset_id is None:
+            raise ValueError(
+                "eval_config_eval records must score a dataset item: judge "
+                "calibration compares against human ratings, which only "
+                "dataset items (TaskRuns) carry"
+            )
         return self
 
     @model_validator(mode="after")

@@ -1800,7 +1800,11 @@ async def test_get_eval_config_compare_summary(
             continue
 
         eval_run = EvalRun(
-            task_run_config_id="run_config1",
+            # Calibration records: the judge scored the stored golden output,
+            # to be compared against the item's human rating. task_run_eval
+            # records (fresh generations) are excluded from these stats.
+            eval_config_eval=True,
+            task_run_config_id=None,
             scores={
                 "score1": test_case.eval__score1_rating,
                 "overall_rating": test_case.eval_overall_rating,
@@ -1811,6 +1815,20 @@ async def test_get_eval_config_compare_summary(
             parent=eval_config,
         )
         eval_run.save_to_file()
+
+    # A task_run_eval record on a golden item (test/golden overlap is normal)
+    # must NOT enter the calibration stats: its score is about a fresh
+    # generation, not the stored output the human rated. Attached to test
+    # case 5's item — the golden item with no calibration record — so if it
+    # wrongly counted, ec5's percent-complete assertion below would fail.
+    EvalRun(
+        task_run_config_id="run_config1",
+        scores={"score1": 1.0, "overall_rating": 1.0},
+        input="stray input",
+        output="fresh generation output",
+        dataset_id=task_run.id,
+        parent=eval_config,
+    ).save_to_file()
 
     # Test successful retrieval
     response = client.get(
