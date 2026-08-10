@@ -2,7 +2,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
-  import { grantCodeEvalTrust } from "$lib/api/v2_eval_api"
+  import { addCodeTrust } from "$lib/api/v2_eval_api"
 
   export let project_id: string
   export let on_trust_granted: () => void
@@ -17,7 +17,7 @@
 
   async function grant_trust_and_proceed(): Promise<boolean> {
     try {
-      await grantCodeEvalTrust(project_id)
+      await addCodeTrust(project_id)
     } catch (e) {
       trust_error = createKilnError(e)
       return false

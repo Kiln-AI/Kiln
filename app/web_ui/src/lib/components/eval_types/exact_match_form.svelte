@@ -5,6 +5,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import OutputValueField from "./form_parts/output_value_field.svelte"
   import ReferenceFieldSelect from "./form_parts/reference_field_select.svelte"
+  import { SHOW_REFERENCE_DATA_UI } from "$lib/utils/eval_types/reference_data_ui"
 
   export let properties: components["schemas"]["ExactMatchProperties"] = {
     type: "exact_match",
@@ -23,7 +24,10 @@
   $: output_value_expression = properties.value_expression ?? null
 
   export function getProperties(): components["schemas"]["ExactMatchProperties"] {
-    return properties
+    if (source === "reference_key") {
+      return { ...properties, expected_value: null }
+    }
+    return { ...properties, reference_key: null }
   }
 
   export function validate(): string | null {
@@ -36,11 +40,13 @@
     return null
   }
 
-  let source: "expected_value" | "reference_key" = properties.expected_value
+  let source: "expected_value" | "reference_key" = !SHOW_REFERENCE_DATA_UI
     ? "expected_value"
-    : properties.reference_key
-      ? "reference_key"
-      : "expected_value"
+    : properties.expected_value
+      ? "expected_value"
+      : properties.reference_key
+        ? "reference_key"
+        : "expected_value"
 
   $: required_reference_fields =
     source === "reference_key" && properties.reference_key
@@ -58,45 +64,56 @@
 
 <div class="flex flex-col gap-6">
   <div class="flex flex-col gap-3">
-    <FormElement
-      id="exact_match_source"
-      label="Expected Value"
-      inputType="radio"
-      radio_options={[
-        {
-          value: "expected_value",
-          label: "Fixed value",
-          description: "Enter the exact value the output should match.",
-        },
-        {
-          value: "reference_key",
-          label: "From reference data",
-          description:
-            "Look up the expected value from your dataset's reference fields.",
-        },
-      ]}
-      bind:value={source}
-      on_radio_change={on_source_change}
-    />
+    {#if SHOW_REFERENCE_DATA_UI}
+      <FormElement
+        id="exact_match_source"
+        label="Expected Value"
+        inputType="radio"
+        radio_options={[
+          {
+            value: "expected_value",
+            label: "Fixed value",
+            description: "Enter the exact value the output should match.",
+          },
+          {
+            value: "reference_key",
+            label: "From reference data",
+            description:
+              "Look up the expected value from your dataset's reference fields.",
+          },
+        ]}
+        bind:value={source}
+        on_radio_change={on_source_change}
+      />
 
-    {#if source === "expected_value"}
-      <div class="ml-4 border-l border-base-300 pl-4">
-        <FormElement
-          id="exact_match_expected_value"
-          label="Value"
-          inputType="input"
-          placeholder="e.g. yes"
-          bind:value={properties.expected_value}
-        />
-      </div>
+      {#if source === "expected_value"}
+        <div class="ml-4 border-l border-base-300 pl-4">
+          <FormElement
+            id="exact_match_expected_value"
+            label="Value"
+            inputType="input"
+            placeholder="e.g. yes"
+            bind:value={properties.expected_value}
+          />
+        </div>
+      {:else}
+        <div class="ml-4 border-l border-base-300 pl-4">
+          <ReferenceFieldSelect
+            id_prefix="exact_match"
+            candidate_keys={reference_candidate_keys}
+            bind:value={properties.reference_key}
+          />
+        </div>
+      {/if}
     {:else}
-      <div class="ml-4 border-l border-base-300 pl-4">
-        <ReferenceFieldSelect
-          id_prefix="exact_match"
-          candidate_keys={reference_candidate_keys}
-          bind:value={properties.reference_key}
-        />
-      </div>
+      <FormElement
+        id="exact_match_expected_value"
+        label="Expected Value"
+        description="The exact value the output should match."
+        inputType="input"
+        placeholder="e.g. yes"
+        bind:value={properties.expected_value}
+      />
     {/if}
   </div>
 

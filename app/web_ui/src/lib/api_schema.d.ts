@@ -2274,34 +2274,18 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/grant_code_eval_trust": {
+    "/api/projects/{project_id}/add_code_trust": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Check code trust for a project */
+        get: operations["check_add_code_trust_endpoint_api_projects__project_id__add_code_trust_get"];
         put?: never;
-        /** Grant code eval trust for a project */
-        post: operations["grant_code_eval_trust_endpoint_api_projects__project_id__grant_code_eval_trust_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/code_eval_trust": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Check code eval trust for a project */
-        get: operations["check_code_eval_trust_endpoint_api_projects__project_id__code_eval_trust_get"];
-        put?: never;
-        post?: never;
+        /** Add code trust for a project */
+        post: operations["add_code_trust_endpoint_api_projects__project_id__add_code_trust_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4830,14 +4814,6 @@ export interface components {
              */
             timeout_seconds: number;
         };
-        /**
-         * CodeEvalTrustResponse
-         * @description Response indicating whether code eval is trusted for a project.
-         */
-        CodeEvalTrustResponse: {
-            /** Trusted */
-            trusted: boolean;
-        };
         /** CodeToolArchiveRequest */
         CodeToolArchiveRequest: {
             /**
@@ -4973,6 +4949,14 @@ export interface components {
              * @description User-facing notes shown in the UI.
              */
             description?: string | null;
+        };
+        /**
+         * CodeTrustResponse
+         * @description Response indicating whether code is trusted for a project in this session.
+         */
+        CodeTrustResponse: {
+            /** Trusted */
+            trusted: boolean;
         };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
@@ -8776,7 +8760,7 @@ export interface components {
          * @description Enumeration of supported AI model providers.
          * @enum {string}
          */
-        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
+        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner" | "featherless_ai";
         /**
          * NewProposedSpecEditApi
          * @description A proposed edit to a spec field.
@@ -17680,7 +17664,7 @@ export interface operations {
             };
         };
     };
-    grant_code_eval_trust_endpoint_api_projects__project_id__grant_code_eval_trust_post: {
+    check_add_code_trust_endpoint_api_projects__project_id__add_code_trust_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -17698,7 +17682,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CodeEvalTrustResponse"];
+                    "application/json": components["schemas"]["CodeTrustResponse"];
                 };
             };
             /** @description Validation Error */
@@ -17712,7 +17696,7 @@ export interface operations {
             };
         };
     };
-    check_code_eval_trust_endpoint_api_projects__project_id__code_eval_trust_get: {
+    add_code_trust_endpoint_api_projects__project_id__add_code_trust_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -17730,7 +17714,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CodeEvalTrustResponse"];
+                    "application/json": components["schemas"]["CodeTrustResponse"];
                 };
             };
             /** @description Validation Error */

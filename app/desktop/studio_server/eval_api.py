@@ -23,10 +23,12 @@ from kiln_ai.adapters.eval.base_eval import (
 )
 from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
 from kiln_ai.adapters.eval.v2_eval_code_eval import (
-    grant_code_eval_trust,
-    is_code_eval_trusted,
+    CodeEvalAdapter,
+    add_code_trust,
+    has_add_code_trust,
 )
 from kiln_ai.datamodel.eval import (
+    CodeEvalProperties,
     Eval,
     EvalConfig,
     EvalConfigType,
@@ -36,6 +38,7 @@ from kiln_ai.datamodel.eval import (
     EvalScores,
     EvalTaskInput,
     EvalTemplateId,
+    SkippedReason,
     V2EvalConfigProperties,
     validate_scores_against_output_scores,
 )
@@ -293,8 +296,8 @@ class TestV2EvalResponse(BaseModel):
     intermediate_outputs: dict[str, str] | None = None
 
 
-class CodeEvalTrustResponse(BaseModel):
-    """Response indicating whether code eval is trusted for a project."""
+class CodeTrustResponse(BaseModel):
+    """Response indicating whether code is trusted for a project in this session."""
 
     trusted: bool
 
@@ -1061,6 +1064,18 @@ def connect_evals_api(app: FastAPI):
                 status_code=400,
                 detail=str(e),
             )
+
+        # Trust-conferral gate: saving a code eval admits new code as
+        # trusted-forever, so it requires code trust for this session.
+        # (Defense-in-depth: the frontend pre-checks trust before calling.)
+        if isinstance(eval_config.properties, CodeEvalProperties):
+            project = project_from_id(project_id)
+            if not has_add_code_trust(str(project.path)):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Project not trusted to add code evals. Grant code trust and retry.",
+                )
+
         eval_config.save_to_file()
         return eval_config
 
@@ -1175,6 +1190,17 @@ def connect_evals_api(app: FastAPI):
                 parent=eval_obj,
             )
             adapter = v2_eval_adapter_from_config(transient_config)
+
+            # Trust-conferral gate: executing not-yet-saved code in the test pane
+            # requires code trust for this session. Saved code needs no gate.
+            if isinstance(adapter, CodeEvalAdapter):
+                project = project_from_id(project_id)
+                if not has_add_code_trust(str(project.path)):
+                    return TestV2EvalResponse(
+                        skipped_reason=SkippedReason.code_eval_not_trusted.value,
+                        skipped_detail="Project not trusted for code eval execution.",
+                    )
+
             result = await adapter.evaluate(request.eval_input)
 
             score_range_errors: list[str] | None = None
@@ -1934,30 +1960,30 @@ def connect_evals_api(app: FastAPI):
         )
 
     @app.post(
-        "/api/projects/{project_id}/grant_code_eval_trust",
-        summary="Grant code eval trust for a project",
+        "/api/projects/{project_id}/add_code_trust",
+        summary="Add code trust for a project",
         tags=["Evals"],
         openapi_extra=DENY_AGENT,
     )
-    async def grant_code_eval_trust_endpoint(
+    async def add_code_trust_endpoint(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
-    ) -> CodeEvalTrustResponse:
+    ) -> CodeTrustResponse:
         project = project_from_id(project_id)
-        grant_code_eval_trust(str(project.path))
-        return CodeEvalTrustResponse(trusted=True)
+        add_code_trust(str(project.path))
+        return CodeTrustResponse(trusted=True)
 
     @app.get(
-        "/api/projects/{project_id}/code_eval_trust",
-        summary="Check code eval trust for a project",
+        "/api/projects/{project_id}/add_code_trust",
+        summary="Check code trust for a project",
         tags=["Evals"],
         openapi_extra=DENY_AGENT,
     )
-    async def check_code_eval_trust_endpoint(
+    async def check_add_code_trust_endpoint(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
-    ) -> CodeEvalTrustResponse:
+    ) -> CodeTrustResponse:
         project = project_from_id(project_id)
-        return CodeEvalTrustResponse(trusted=is_code_eval_trusted(str(project.path)))
+        return CodeTrustResponse(trusted=has_add_code_trust(str(project.path)))

@@ -203,11 +203,14 @@ export class SynthDataGuidanceDataModel {
   // are the eval's real definition. With no default judge, rebuild the steps the
   // same way the create-judge page would, from the eval's template.
   private judge_eval_steps(): string[] {
-    // properties is a discriminated union in the v2 schema; legacy judges keep
-    // eval_steps as a loose property, so read it the way the legacy helpers do.
-    const saved = (
-      this.default_judge?.properties as Record<string, unknown> | undefined
-    )?.["eval_steps"]
+    // Legacy (V1) judge configs store eval_steps in an untyped properties
+    // dict; V2 configs use typed properties with no eval_steps key. Read
+    // through a loose record so both shapes are handled.
+    const judge_properties = this.default_judge?.properties as
+      | Record<string, unknown>
+      | null
+      | undefined
+    const saved = judge_properties?.["eval_steps"]
     if (Array.isArray(saved) && saved.length > 0) {
       return saved.filter((step): step is string => typeof step === "string")
     }
