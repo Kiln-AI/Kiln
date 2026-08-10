@@ -1,3 +1,4 @@
+import json
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -44,6 +45,7 @@ from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task, TaskRun
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
+    Eval,
     EvalConfigType,
     EvalDataType,
     EvalInputSplit,
@@ -662,6 +664,14 @@ class TestCreateSpecWithCopilot:
         assert len(specs) == 1
         assert specs[0].eval_id == evals[0].id
 
+        # Single-turn on disk: both splits are TaskRun-backed and live in the
+        # legacy flat fields, so the `splits` key is omitted entirely — old
+        # clients read this eval unchanged.
+        on_disk = json.loads(evals[0].path.read_text())
+        assert "splits" not in on_disk
+        assert on_disk["eval_set_filter_id"] == "tag::eval_test_spec"
+        assert on_disk["train_set_filter_id"] == "tag::train_test_spec"
+
 
 class TestClassifySpecDescription:
     """Stub endpoint. Returns 501 until kiln_server ships the real classifier."""
@@ -842,8 +852,8 @@ class TestCreateSpecWithCopilotMultiTurn:
         eval_obj = evals[0]
         assert eval_obj.evaluation_data_type == EvalDataType.full_trace
         assert eval_obj.eval_set_filter_id is None
-        # The save path still writes the pre-splits eval_input_filter_id kwarg;
-        # the datamodel shim folds it into an EvalInput-backed test split.
+        # The save path writes the EvalInput-backed test split natively; the
+        # on-disk shape is covered by the saved-bytes test below.
         assert eval_obj.splits["test"] == EvalInputSplit(
             filter_id="tag::eval_multi_turn_spec"
         )
@@ -921,6 +931,65 @@ class TestCreateSpecWithCopilotMultiTurn:
         unreviewed = runs_by_id[synthetic_chain_leaves[2].id]
         assert unreviewed.output.rating is None
         assert unreviewed.claim_reviews() == []
+
+    def test_multi_turn_save_writes_splits_natively_to_disk(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        # Asserts on the SAVED BYTES, not the in-memory model: a train split
+        # homed by dict assignment instead of set_split would look identical
+        # in memory and only diverge in the serialized file.
+        project, task = project_and_task
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_memorable_name",
+                return_value="multi-turn-judge",
+            ),
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+        assert response.status_code == 200, response.text
+
+        eval_path = task.evals()[0].path
+        first_bytes = eval_path.read_text()
+        on_disk = json.loads(first_bytes)
+
+        # Test split: EvalInput-backed, expressible only in `splits`.
+        assert on_disk["splits"] == {
+            "test": {
+                "source": "eval_input",
+                "filter_id": "tag::eval_multi_turn_spec",
+            }
+        }
+        # Train split: TaskRun-backed, homed in the legacy flat field so old
+        # clients and the project zip still read it — NOT in `splits`.
+        assert on_disk["train_set_filter_id"] == "tag::train_multi_turn_spec"
+        assert on_disk["eval_set_filter_id"] is None
+        # Golden slice and drive config ride along unchanged.
+        assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_multi_turn_spec"
+        assert on_disk["multi_turn_drive_config"] == {
+            "model_name": "claude_4_5_haiku",
+            "model_provider": "openrouter",
+            "turns": 5,
+        }
+        # The retired pre-splits key never reaches disk.
+        assert "eval_input_filter_id" not in first_bytes
+
+        # Reload → save again is byte-stable: the split homing survives a
+        # round trip rather than living only in the freshly-built instance.
+        reloaded = Eval.load_from_file(eval_path)
+        reloaded.save_to_file()
+        assert eval_path.read_text() == first_bytes
 
     def test_multi_turn_save_unknown_leaf_fails_before_any_save(
         self,

@@ -111,8 +111,10 @@ from kiln_ai.datamodel.eval import (
     EvalConfigType,
     EvalDataType,
     EvalInput,
+    EvalInputSplit,
     LlmJudgeProperties,
     MultiTurnDriveConfig,
+    TaskRunSplit,
 )
 from kiln_ai.datamodel.json_schema import validate_schema
 from kiln_ai.datamodel.spec import (
@@ -1151,12 +1153,14 @@ def connect_copilot_api(app: FastAPI):
             eval_set_filter_id=None
             if request.multi_turn is not None
             else eval_set_filter_id,
-            # Not a declared Eval field: the datamodel's migrate_eval_input_filter_id
-            # shim folds this key into an EvalInput-backed test split at construction.
-            eval_input_filter_id=f"tag::{eval_tag}"  # ty: ignore[unknown-argument]
+            # Multi-turn's test split is EvalInput-backed, which only `splits`
+            # can express; its train split is homed via set_split below.
+            splits={"test": EvalInputSplit(filter_id=f"tag::{eval_tag}")}
             if request.multi_turn is not None
-            else None,
-            train_set_filter_id=train_set_filter_id,
+            else {},
+            train_set_filter_id=None
+            if request.multi_turn is not None
+            else train_set_filter_id,
             eval_configs_filter_id=eval_configs_filter_id,
             template_properties=None,
             evaluation_data_type=evaluation_data_type,
@@ -1164,6 +1168,11 @@ def connect_copilot_api(app: FastAPI):
             if request.multi_turn is not None
             else None,
         )
+        if request.multi_turn is not None:
+            # set_split (not dict assignment) so the TaskRun-backed train split
+            # is written to its legacy flat field, where older Kiln clients and
+            # the project zip still read it.
+            eval.set_split("train", TaskRunSplit(filter_id=train_set_filter_id))
 
         # 2. Create the judge eval config — V2 shape, the same judge the review
         # step ran transiently (one judge, persisted vs transient). V2 rails
