@@ -803,23 +803,34 @@
   // run and a group in the table contiguous. Informational keys sink within
   // their family rather than to the bottom of everything, so a family's rows
   // stay together.
-  $: ordered_criterion_metas = quality_grouped
-    ? [...criterion_metas].sort(
-        (a, b) =>
-          family_rank(
-            quality_families,
-            family_for_eval(score_families, a.evalId).id,
-          ) -
-            family_rank(
-              quality_families,
-              family_for_eval(score_families, b.evalId).id,
-            ) ||
-          (a.direction === "informational" ? 1 : 0) -
-            (b.direction === "informational" ? 1 : 0) ||
-          a.evalName.localeCompare(b.evalName) ||
-          a.scoreKey.localeCompare(b.scoreKey),
-      )
-    : criterion_metas
+  //
+  // ALWAYS sorted, including when there is only one family and the family rank
+  // contributes nothing. The unsorted branch this replaces fell back to the
+  // order the metas arrived in, and that order is the order the SERVER's evals
+  // dict was built in, which is the order `os.scandir` yielded the eval
+  // directories (basemodel.py: scandir, deliberately unsorted, for speed).
+  // Directory order is a property of one machine's local filesystem history -
+  // when each eval folder happened to be created or deleted - not of the data.
+  // So two people on the same commit, following the same shared link, could see
+  // the ring's axes in different positions, with no control on the page to
+  // explain the difference and nothing in the URL that could carry it. The
+  // trailing evalName/scoreKey tiebreak was already there and already total;
+  // it just was not reached when a task declared a single family.
+  $: ordered_criterion_metas = [...criterion_metas].sort(
+    (a, b) =>
+      family_rank(
+        quality_families,
+        family_for_eval(score_families, a.evalId).id,
+      ) -
+        family_rank(
+          quality_families,
+          family_for_eval(score_families, b.evalId).id,
+        ) ||
+      (a.direction === "informational" ? 1 : 0) -
+        (b.direction === "informational" ? 1 : 0) ||
+      a.evalName.localeCompare(b.evalName) ||
+      a.scoreKey.localeCompare(b.scoreKey),
+  )
 
   // Family per data key for the radar's bands. Empty when ungrouped, which the
   // chart reads as "draw no arcs and no key".
