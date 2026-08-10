@@ -59,6 +59,10 @@ class BatchStartedEvent:
 class TurnCompletedEvent:
     case_index: int
     assistant_run_id: str
+    # The SU's reply to this turn — `""` on the case's LAST turn, where the
+    # drive loop deliberately skips the SU call (there is no next user
+    # message to produce). Consumers must treat empty as "conversation over",
+    # not as a driver failure.
     su_next_message: str
     cumulative_cost: float
     # Cumulative OpenAI-format trace at this point (system + all turns so far).

@@ -395,6 +395,7 @@ class SkippedReason(str, Enum):
     incompatible_input_shape = "incompatible_input_shape"
     code_eval_not_trusted = "code_eval_not_trusted"
     type_not_available = "type_not_available"
+    not_applicable = "not_applicable"
 
 
 class V2EvalResult(BaseModel):

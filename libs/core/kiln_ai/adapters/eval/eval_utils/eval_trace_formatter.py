@@ -20,49 +20,61 @@ class EvalTraceFormatter:
     def trace_to_formatted_conversation_history(
         trace: list[ChatCompletionMessageParam],
     ) -> str:
-        """Convert a trace of chat completion messages to a formatted conversation history string."""
-        conversation_history = ""
-        for index, message in enumerate(trace):
+        """Convert a trace of chat completion messages to a formatted conversation history string.
+
+        One message can carry several things at once — an assistant commonly
+        replies with visible text AND requests tool calls in the same message.
+        Each is rendered as its own block, in the order the model produced them
+        (the text, then the calls it announced). Rendering only one of them
+        hides real behavior from everything that reads this transcript.
+
+        Reasoning content is deliberately not rendered: it is model-internal,
+        not part of the observable behavior a transcript is read to judge.
+        MessageDetails still parses it for callers that want it.
+        """
+        blocks: list[str] = []
+        for message in trace:
             message_details = EvalTraceFormatter.message_details_from_message(message)
+            role = message_details.role
 
-            role_label = None
-            tag = None
-            content = None
-
-            if message_details.role == "tool" and message_details.content:
+            if role == "tool" and message_details.content:
                 origin_tool_call_name = (
                     EvalTraceFormatter.origin_tool_call_name_from_message(
                         message, trace
                     )
                 )
 
+                # A tool result we can't trace back to its call is scaffolding
+                # without an author, so it is left out entirely.
                 if origin_tool_call_name:
-                    role_label = message_details.role
-                    tag = f"{message_details.role}_tool_message"
-                    content = message_details.content
+                    blocks.append(
+                        EvalTraceFormatter.format_message(
+                            role,
+                            f"{role}_tool_message",
+                            message_details.content,
+                        )
+                    )
 
             else:
-                if message_details.reasoning_content:
-                    role_label = f"{message_details.role} reasoning"
-                    tag = f"{message_details.role}_reasoning_message"
-                    content = message_details.reasoning_content
+                if message_details.content:
+                    blocks.append(
+                        EvalTraceFormatter.format_message(
+                            role,
+                            f"{role}_message",
+                            message_details.content,
+                        )
+                    )
 
                 if message_details.tool_calls:
-                    role_label = f"{message_details.role} requested tool calls"
-                    tag = f"{message_details.role}_requested_tool_calls"
-                    content = message_details.tool_calls
+                    blocks.append(
+                        EvalTraceFormatter.format_message(
+                            f"{role} requested tool calls",
+                            f"{role}_requested_tool_calls",
+                            message_details.tool_calls,
+                        )
+                    )
 
-                if message_details.content:
-                    role_label = message_details.role
-                    tag = f"{message_details.role}_message"
-                    content = message_details.content
-
-            if role_label and tag and content:
-                if index > 0:
-                    conversation_history += "\n\n"
-                conversation_history += f"{role_label}:\n<{tag}>\n{content}\n</{tag}>"
-
-        return conversation_history
+        return "\n\n".join(blocks)
 
     @staticmethod
     def format_message(role_label: str, tag: str, content: str) -> str:
@@ -135,15 +147,18 @@ class EvalTraceFormatter:
         if tool_calls is None:
             return None
 
-        tool_calls_description = ""
+        # Parallel tool calls each get their own line pair. Without the
+        # separator the last argument of one call runs straight into the name
+        # of the next, which reads as a single mangled call.
+        tool_call_descriptions: list[str] = []
         for tool_call in tool_calls:
             tool_call_function = tool_call["function"]
             tool_name = tool_call_function["name"]
             tool_call_arguments = tool_call_function["arguments"]
-            tool_calls_description += (
+            tool_call_descriptions.append(
                 f"- Tool Name: {tool_name}\n- Arguments: {tool_call_arguments}"
             )
-        return tool_calls_description
+        return "\n".join(tool_call_descriptions)
 
     @staticmethod
     def origin_tool_call_name_from_message(

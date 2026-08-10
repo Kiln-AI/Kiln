@@ -25,7 +25,6 @@
   import { formatLatency } from "$lib/utils/formatters"
   import { relative_metric_score } from "$lib/utils/relative_metric_score"
   import {
-    axis_label_clearing_radius,
     family_bands,
     family_band_arc,
     family_band_label,
@@ -37,6 +36,8 @@
   } from "$lib/utils/evolution/family_bands"
   import {
     fit_radar,
+    nearest_axis_index,
+    place_labels_on_rays,
     type RadarAxisLabel,
   } from "$lib/utils/evolution/metric_axes"
   import {
@@ -188,16 +189,24 @@ Related criteria sit together: the axes are grouped into the families the task's
     return coordSys
   }
 
-  // Prefer the symbol under the pointer, which echarts tags with the axis it belongs
-  // to. Falls back to the nearest axis by angle, so hovering the line or the filled
-  // area still resolves to one metric.
+  // Which axis the pointer is on, from the pointer's own angle around the
+  // radar centre - see nearest_axis_index. The hovered symbol's __dimIdx is
+  // deliberately NOT preferred any more: every zero score draws its symbol AT
+  // the centre and a near-zero one within a symbol's width of it, so the dot
+  // under the pointer there is whichever of the stacked dots was drawn last,
+  // and its axis can be anywhere on the ring - hovering a bottom-left point
+  // could pop the tooltip of an axis whose name sits on the right. The
+  // pointer's ray cannot fail that way: a symbol always sits ON its own axis,
+  // so wherever the dots are readable the two agree. The tag is kept only for
+  // the case where echarts' internals have changed shape and the geometry
+  // cannot be read at all.
   function axisIndexFromPointer(event: {
     target?: { __dimIdx?: number }
     offsetX?: number
     offsetY?: number
   }): number | null {
-    const dimIdx = event.target?.__dimIdx
-    if (typeof dimIdx === "number") return dimIdx
+    const tagged = event.target?.__dimIdx
+    const taggedIndex = typeof tagged === "number" ? tagged : null
 
     const coordSys = radarCoordSys()
     if (
@@ -205,27 +214,16 @@ Related criteria sit together: the axes are grouped into the families the task's
       event.offsetX === undefined ||
       event.offsetY === undefined
     ) {
-      return null
+      return taggedIndex
     }
     const axes = coordSys.getIndicatorAxes()
-    if (!axes?.length) return null
+    if (!axes?.length) return taggedIndex
 
-    // Same convention as the radar's dataToPoint: y grows downward, angles don't
-    const pointerAngle = Math.atan2(
-      coordSys.cy - event.offsetY,
-      event.offsetX - coordSys.cx,
+    return nearest_axis_index(
+      { x: event.offsetX, y: event.offsetY },
+      { x: coordSys.cx, y: coordSys.cy },
+      axes.map((axis) => axis.angle),
     )
-    let best = 0
-    let bestDelta = Infinity
-    axes.forEach((axis, index) => {
-      let delta = Math.abs(pointerAngle - axis.angle) % (Math.PI * 2)
-      if (delta > Math.PI) delta = Math.PI * 2 - delta
-      if (delta < bestDelta) {
-        bestDelta = delta
-        best = index
-      }
-    })
-    return best
   }
 
   // Indicator 0 sits at the top and the ring is read clockwise from there, the
@@ -363,6 +361,11 @@ Related criteria sit together: the axes are grouped into the families the task's
       getKeyLabel(dataKey),
       feature?.category,
       feature ? specDescriptions[feature.eval_id] : null,
+      // The score's own direction, so the popup states which way the axis
+      // reads. A key with no entry is drawn as higher-is-better here, and
+      // quality_axis_direction reports that same default rather than a second
+      // opinion about it.
+      scoreDirections[dataKey],
     )
     return help ? axis_help_html(help) : null
   }
@@ -387,22 +390,18 @@ Related criteria sit together: the axes are grouped into the families the task's
   // echarts' names off and draws them as `graphic` text, placed by
   // bottomAxisLabels().
   //
-  // Two labels cannot overlap, by construction:
-  //   - every label on the right half of the ring is anchored at its own axis
-  //     and runs rightwards, every label on the left half runs leftwards, and
-  //     an axis tip is always on its own side of the centre. So a left box and
-  //     a right box can never share an x.
-  //   - within a half, labels are packed with at least LABEL_GAP_Y of clear
-  //     vertical space, which makes their boxes disjoint in y.
-  // Only the second part takes any work, and it is a solved problem: least
-  // total movement subject to y_i + h_i + gap <= y_i+1 is isotonic regression,
-  // which pool-adjacent-violators solves exactly in one pass.
+  // The placement invariant is the one a reader assumes: every drawn name
+  // sits ON its own axis ray. Crowding near a pole is resolved by pushing a
+  // name OUTWARD along its ray - the one direction that keeps the invariant -
+  // and a name whose ray has no clear room inside the card is hidden rather
+  // than drawn beside an axis it does not belong to (the axis tooltip still
+  // carries it). The geometry lives in place_labels_on_rays in
+  // $lib/utils/evolution/metric_axes, where it is tested; the history of why
+  // vertical packing was abandoned is on its block comment.
   //
-  // A label cannot overlap a FAMILY name either, and that one is not free: the
-  // family tier is an annulus just inside these names, and packing moves a name
-  // off its own tip, so where the name ends up is not where the ring reserved
-  // room for it. Every box is held outside the tier's outer circle - see
-  // family_label_reach and axis_label_clearing_radius.
+  // A label cannot overlap a FAMILY name either: the family tier is an
+  // annulus just inside these names, and every box is held outside the tier's
+  // outer circle - see family_label_reach and axis_label_clearing_radius.
   // ---------------------------------------------------------------------
 
   const LABEL_FONT_SIZE = 11
@@ -430,10 +429,6 @@ Related criteria sit together: the axes are grouped into the families the task's
   const LABEL_EDGE_PAD = 8
   // ...and off the top of the box and the legend underneath
   const LABEL_BAND_PAD = 2
-  // Above this |sin| a label is near enough to a pole that packing moved it
-  // essentially along its own axis, so it is drawn further out along that axis
-  // instead of being left floating beside it
-  const LABEL_RADIAL_MIN_SIN = 0.5
 
   type BottomAxisLabel = {
     index: number
@@ -510,61 +505,6 @@ Related criteria sit together: the axes are grouped into the families the task's
     return lines.map((entry) => ellipsize(entry, budget))
   }
 
-  // Least total movement that leaves consecutive intervals disjoint and in
-  // order - t_i + size_i + gap <= t_i+1 - and inside [min, max]. Subtracting
-  // the room each interval's predecessors need turns "disjoint and in order"
-  // into "non-decreasing", which is isotonic regression: pool-adjacent-
-  // violators solves it exactly in one pass, and the band is then a constant
-  // box constraint on a monotone sequence, so clamping the answer into the box
-  // is still the answer (and still monotone, so still non-overlapping).
-  function packIntervals(
-    desired: number[],
-    sizes: number[],
-    gap: number,
-    min: number,
-    max: number,
-  ): number[] {
-    const count = desired.length
-    if (count === 0) return []
-    const offsets: number[] = []
-    let used = 0
-    for (let index = 0; index < count; index++) {
-      offsets.push(used)
-      used += sizes[index] + gap
-    }
-    const values: number[] = []
-    const weights: number[] = []
-    for (let index = 0; index < count; index++) {
-      let value = desired[index] - offsets[index]
-      let weight = 1
-      while (values.length > 0 && values[values.length - 1] > value) {
-        const pooledValue = values.pop() as number
-        const pooledWeight = weights.pop() as number
-        value =
-          (value * weight + pooledValue * pooledWeight) /
-          (weight + pooledWeight)
-        weight += pooledWeight
-      }
-      values.push(value)
-      weights.push(weight)
-    }
-    const tops: number[] = []
-    for (let block = 0; block < values.length; block++) {
-      for (let member = 0; member < weights[block]; member++) {
-        tops.push(values[block])
-      }
-    }
-    // The whole run needs `span` px, so the first interval can start no later
-    // than max - span. When even that is above `min` there isn't room at all,
-    // and the top edge wins: labels stay on screen rather than sliding under
-    // the legend.
-    const span = offsets[count - 1] + sizes[count - 1]
-    const latest = max - span
-    return tops.map(
-      (top, index) => Math.max(min, Math.min(top, latest)) + offsets[index],
-    )
-  }
-
   // echarts puts indicator 0 at startAngle and, with `clockwise` set on the
   // radar, walks the indicators the way the ring is read - so the angle
   // DECREASES with the index. Radians, y up, the convention radarCoordSys(),
@@ -585,10 +525,14 @@ Related criteria sit together: the axes are grouped into the families the task's
   // wrap width tied does not have to be tied at all. Two lines while there is
   // room for them, one when there is not, and past that the stride in
   // bottomAxisLabels starts hiding names.
-  function wrapAxisNames(names: string[], band: number): string[][] {
+  function wrapAxisNames(
+    names: string[],
+    band: number,
+    lineCap: number = LABEL_MAX_LINES,
+  ): string[][] {
     // Half the ring, rounded up: the crowded side is the one that has to fit
     const perSide = Math.ceil(names.length / 2)
-    for (let maxLines = LABEL_MAX_LINES; maxLines > 1; maxLines--) {
+    for (let maxLines = lineCap; maxLines > 1; maxLines--) {
       const wrapped = names.map((name) =>
         wrapToWidth(name, LABEL_WRAP_BUDGET_PX, maxLines),
       )
@@ -613,7 +557,10 @@ Related criteria sit together: the axes are grouped into the families the task's
 
   // Where each axis name goes in bottom mode, in canvas px. `y` is the vertical
   // centre of the text block and `x` the edge it is anchored by, which is what
-  // echarts' graphic text wants alongside align/verticalAlign.
+  // echarts' graphic text wants alongside align/verticalAlign. The geometry is
+  // place_labels_on_rays': every drawn name sits ON its own axis ray, crowding
+  // pushes a name outward along that ray, and a name whose ray has no clear
+  // room inside the card comes back absent - hidden, not misplaced.
   function bottomAxisLabels(
     wrapped: string[][],
     box: {
@@ -630,104 +577,39 @@ Related criteria sit together: the axes are grouped into the families the task's
   ): BottomAxisLabel[] {
     const count = wrapped.length
     if (count === 0) return []
-    const ringRadius = box.radius + box.labelGap
     const angles = axisAngles(count)
-    const tipY = (index: number) =>
-      box.cy - ringRadius * Math.sin(angles[index])
-
-    const bandTop = LABEL_BAND_PAD
-    const bandBottom = box.bandBottom - LABEL_BAND_PAD
-    const band = Math.max(bandBottom - bandTop, LABEL_LINE_HEIGHT)
-
-    // Right half of the ring first, then the left half, each in vertical order
-    const sides: number[][] = [[], []]
-    angles.forEach((angle, index) => {
-      sides[Math.cos(angle) >= 0 ? 0 : 1].push(index)
-    })
-    for (const side of sides) {
-      side.sort((first, second) => tipY(first) - tipY(second))
-    }
-
-    // Past the point where even one line each fits, show every stride-th label -
-    // the rest stay in the axis tooltip.
-    const spanOf = (side: number[]) =>
-      side.reduce(
-        (total, index) =>
-          total + wrapped[index].length * LABEL_LINE_HEIGHT + LABEL_GAP_Y,
-        -LABEL_GAP_Y,
-      )
-    const worstSpan = Math.max(spanOf(sides[0]), spanOf(sides[1]))
-    const stride = Math.max(1, Math.ceil(worstSpan / band))
-
-    const labels: BottomAxisLabel[] = []
-    for (const side of sides) {
-      const shown = side.filter((_, position) => position % stride === 0)
-      const heights = shown.map(
-        (index) => wrapped[index].length * LABEL_LINE_HEIGHT,
-      )
-      const tops = packIntervals(
-        shown.map((index, position) => tipY(index) - heights[position] / 2),
-        heights,
-        LABEL_GAP_Y,
-        bandTop,
-        bandBottom,
-      )
-      shown.forEach((index, position) => {
-        const angle = angles[index]
-        const sin = Math.sin(angle)
-        const cos = Math.cos(angle)
-        // echarts' own test for "this axis is vertical", to the same tolerance
-        // fit_radar uses: a name at a pole is centred over its tip rather than
-        // anchored to one side of it, so the box the radius was solved against
-        // is the box that gets drawn.
-        const vertical = Math.abs(cos) < 1e-4
-        const y = tops[position] + heights[position] / 2
-        const width = Math.max(
-          ...wrapped[index].map((line) => estimateTextWidth(line)),
-        )
-        // A label the packing pushed towards a pole is drawn further out along
-        // its own axis rather than left floating beside it - the one direction
-        // that can't be misread as belonging to a neighbour. Capped so that the
-        // anchor plus this label's own width still lands inside the box: the
-        // radius was solved for the name at its tip, and pushing it outwards
-        // must not spend room the solver never reserved.
-        const onAxis =
-          Math.abs(sin) >= LABEL_RADIAL_MIN_SIN
-            ? (box.cy - y) / sin
-            : ringRadius
-        // ...and one the packing pushed the other way is drawn further out
-        // too, because `labelGap` is a distance along the RAY and packing does
-        // not move a name along its ray. A name whose y was pulled back towards
-        // the centre keeps its anchor on the ring circle in x while sitting
-        // closer to the centre line in y, so its box ends up INSIDE the circle
-        // the gap was measured on - by 20px at thirty axes, which is what put
-        // the axis names on top of the family names however the family names
-        // were centred. So the clearance is enforced on the box rather than
-        // assumed from the anchor. `dyNear` is the box's own nearest edge to
-        // the centre line, zero when it straddles it.
-        const dyNear = Math.max(0, Math.abs(y - box.cy) - heights[position] / 2)
-        const clearing = vertical
-          ? 0
-          : axis_label_clearing_radius(box.keepOut, cos, dyNear)
-        const reach =
-          box.width / 2 - LABEL_EDGE_PAD - (vertical ? width / 2 : width)
-        const cap = Math.abs(cos) > 1e-6 ? reach / Math.abs(cos) : Infinity
-        const radius = Math.min(
-          Math.max(ringRadius, onAxis, clearing),
-          Math.max(cap, ringRadius),
-        )
-        labels.push({
-          index,
-          text: wrapped[index].join("\n"),
-          x: box.cx + radius * cos,
-          y,
-          align: vertical ? "center" : cos > 0 ? "left" : "right",
-          width,
-          height: heights[position],
-        })
-      })
-    }
-    return labels
+    const sizes = wrapped.map((lines) => ({
+      width: Math.max(...lines.map((line) => estimateTextWidth(line))),
+      height: lines.length * LABEL_LINE_HEIGHT,
+    }))
+    const placements = place_labels_on_rays(
+      wrapped.map((lines, index) => ({
+        index,
+        angle: angles[index],
+        width: sizes[index].width,
+        height: sizes[index].height,
+      })),
+      {
+        cx: box.cx,
+        cy: box.cy,
+        minRadius: box.radius + box.labelGap,
+        keepOut: box.keepOut,
+        bandTop: LABEL_BAND_PAD,
+        bandBottom: box.bandBottom - LABEL_BAND_PAD,
+        width: box.width,
+        edgePad: LABEL_EDGE_PAD,
+        gap: LABEL_GAP_Y,
+      },
+    )
+    return placements.map((placement) => ({
+      index: placement.index,
+      text: wrapped[placement.index].join("\n"),
+      x: placement.x,
+      y: placement.y,
+      align: placement.align,
+      width: sizes[placement.index].width,
+      height: sizes[placement.index].height,
+    }))
   }
 
   // The measured box, rounded and thresholded so dragging a window edge
@@ -1166,88 +1048,97 @@ Related criteria sit together: the axes are grouped into the families the task's
     // wait for the box to be measured; until then the ring falls back to
     // percentages, and there is nothing on screen to label anyway.
     const measured = forceBottomLegend && chartWidth > 0 && chartHeight > 0
-    const wrappedNames = measured
-      ? wrapAxisNames(
-          indicators.map((indicator) => indicator.name),
-          chartHeight - BOTTOM_LEGEND_PX - 2 * LABEL_BAND_PAD,
-        )
-      : []
-    const labelGap = axisLabelGapFor(wrappedNames)
-    // Solved rather than a percentage of min(width, height): this card is much
-    // taller than it is wide at every layout the page produces, so a percentage
-    // resolved against the width and left a small ring adrift in a tall card.
-    // Solved against where the names will actually LAND, too, rather than
-    // against the widest name as though every axis pointed due east - which is
-    // what this chart used to do, and what kept its ring a third smaller than
-    // the metrics ring beside it. See fit_radar.
-    const bottomFit = measured
-      ? fit_radar(
-          { width: chartWidth, height: chartHeight },
-          axisLabelBoxes(wrappedNames),
-          {
-            legendHeight: BOTTOM_LEGEND_PX,
-            labelGap,
-            pad: LABEL_EDGE_PAD,
-          },
-        )
-      : null
-
-    // One arc per family run plus the family's name, drawn as graphics rather
-    // than by the radar: echarts splits a radar's background into rings, never
-    // into sectors. Drawn OUTSIDE the plot, because the run configs are this
-    // chart's subject and a sector swept under them would sit beneath every
-    // polygon and change what the series look like from one wedge to the next.
-    // The glyph table above is for regular weight and a family name is set
-    // semibold, so the estimate is nudged up rather than left to run a few
-    // percent narrow into a budget it is meant to respect.
-    //
-    // Solved BEFORE the axis names, because how far this tier reaches is what
-    // the axis names have to stay clear of - see family_label_reach.
     const measureFamily = (value: string) =>
       estimateTextWidth(value, FAMILY_LABEL_FONT_SIZE) * FAMILY_LABEL_BOLD_WIDTH
-    const familyPlacements = bottomFit
-      ? familyBands.map((band) =>
-          family_band_label(band, keys.length, {
-            startAngleDegrees: RADAR_START_ANGLE,
-            cx: bottomFit.cx,
-            cy: bottomFit.cy,
-            radius: bottomFit.radius + FAMILY_LABEL_OFFSET,
-          }),
-        )
-      : []
-    // A name may spill into a neighbour's arc when the neighbour is not using
-    // it, which is what keeps a one-axis family's heading from coming out as
-    // "Data I…" beside a twelve-axis one with 600px of empty arc.
-    const familyBudgets = family_label_budgets(
-      familyBands.map((band) => measureFamily(band.label)),
-      familyPlacements.map((placement) => placement.sweep),
-      BAND_ARC_GAP,
-    )
-    const familyTexts = familyBands.map((band, index) =>
-      truncate_to_width(band.label, familyBudgets[index], measureFamily),
-    )
-    // The circle no axis name may come inside. Measured from the names as they
-    // will be DRAWN, so a heading cut down to its arc is priced at the width it
-    // ends up with rather than the one it asked for.
-    const familyKeepOut = bottomFit
-      ? family_label_reach(
+
+    // The whole bottom-mode solve - wrap, radius, family tier, axis names -
+    // for one wrap height, so it can be run again at another. The ring radius
+    // is solved rather than a percentage of min(width, height): this card is
+    // much taller than it is wide at every layout the page produces, and it is
+    // solved against where the names will actually LAND rather than against
+    // the widest name as though every axis pointed due east. See fit_radar.
+    //
+    // The family tier is solved BEFORE the axis names, because how far it
+    // reaches is what the axis names have to stay clear of - and it is drawn
+    // as graphics rather than by the radar: echarts splits a radar's
+    // background into rings, never into sectors, and the arcs belong OUTSIDE
+    // the plot where they cannot sit under the polygons. The glyph table
+    // above is for regular weight and a family name is set semibold, so the
+    // estimate is nudged up rather than left to run narrow into its budget.
+    const solveBottomLayout = (lineCap: number) => {
+      const wrappedNames = wrapAxisNames(
+        indicators.map((indicator) => indicator.name),
+        chartHeight - BOTTOM_LEGEND_PX - 2 * LABEL_BAND_PAD,
+        lineCap,
+      )
+      const labelGap = axisLabelGapFor(wrappedNames)
+      const bottomFit = fit_radar(
+        { width: chartWidth, height: chartHeight },
+        axisLabelBoxes(wrappedNames),
+        {
+          legendHeight: BOTTOM_LEGEND_PX,
+          labelGap,
+          pad: LABEL_EDGE_PAD,
+        },
+      )
+      const familyPlacements = familyBands.map((band) =>
+        family_band_label(band, keys.length, {
+          startAngleDegrees: RADAR_START_ANGLE,
+          cx: bottomFit.cx,
+          cy: bottomFit.cy,
+          radius: bottomFit.radius + FAMILY_LABEL_OFFSET,
+        }),
+      )
+      // A name may spill into a neighbour's arc when the neighbour is not
+      // using it, which is what keeps a one-axis family's heading from coming
+      // out as "Data I…" beside a twelve-axis one with 600px of empty arc.
+      const familyBudgets = family_label_budgets(
+        familyBands.map((band) => measureFamily(band.label)),
+        familyPlacements.map((placement) => placement.sweep),
+        BAND_ARC_GAP,
+      )
+      const familyTexts = familyBands.map((band, index) =>
+        truncate_to_width(band.label, familyBudgets[index], measureFamily),
+      )
+      // The circle no axis name may come inside. Measured from the names as
+      // they will be DRAWN, so a heading cut down to its arc is priced at the
+      // width it ends up with rather than the one it asked for.
+      const familyKeepOut =
+        family_label_reach(
           bottomFit.radius + FAMILY_LABEL_OFFSET,
           FAMILY_LABEL_LINE_HEIGHT,
           familyTexts.filter((text) => text.length > 0).map(measureFamily),
         ) + FAMILY_LABEL_TAIL_GAP
-      : 0
+      const axisLabels = bottomAxisLabels(wrappedNames, {
+        cx: bottomFit.cx,
+        cy: bottomFit.cy,
+        labelGap,
+        radius: bottomFit.radius,
+        width: chartWidth,
+        bandBottom: chartHeight - BOTTOM_LEGEND_PX,
+        keepOut: familyBands.length > 0 ? familyKeepOut : 0,
+      })
+      return { bottomFit, familyPlacements, familyTexts, axisLabels }
+    }
 
-    const axisLabels = bottomFit
-      ? bottomAxisLabels(wrappedNames, {
-          cx: bottomFit.cx,
-          cy: bottomFit.cy,
-          labelGap,
-          radius: bottomFit.radius,
-          width: chartWidth,
-          bandBottom: chartHeight - BOTTOM_LEGEND_PX,
-          keepOut: familyBands.length > 0 ? familyKeepOut : 0,
-        })
-      : []
+    // Prefer two-line names, but a name SHOWN beats a name unabridged: when
+    // the on-ray placement cannot give every two-line name clear room - near
+    // the horizontal, a tall name can only escape a neighbour by running off
+    // the card's edge - the one-line solve's shorter boxes usually can, since
+    // packing room is exactly what the second line was costing. Take the
+    // solve that draws the most names; two lines win ties, and what still
+    // cannot fit stays discoverable in the axis and data-point tooltips.
+    let bottomLayout = measured ? solveBottomLayout(LABEL_MAX_LINES) : null
+    if (bottomLayout && bottomLayout.axisLabels.length < indicators.length) {
+      const singleLine = solveBottomLayout(1)
+      if (singleLine.axisLabels.length > bottomLayout.axisLabels.length) {
+        bottomLayout = singleLine
+      }
+    }
+    const bottomFit = bottomLayout ? bottomLayout.bottomFit : null
+    const familyPlacements = bottomLayout ? bottomLayout.familyPlacements : []
+    const familyTexts = bottomLayout ? bottomLayout.familyTexts : []
+    const axisLabels = bottomLayout ? bottomLayout.axisLabels : []
 
     const bandGraphics =
       bottomFit && familyBands.length > 0

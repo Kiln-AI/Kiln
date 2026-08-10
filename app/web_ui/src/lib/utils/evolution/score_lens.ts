@@ -8,7 +8,18 @@ type EvalResultsSummaryResponse =
 type ScoreType = components["schemas"]["TaskOutputRatingType"]
 type ScoreDirection = components["schemas"]["ScoreDirection"]
 
+// What a node card puts its one number to.
+//
+// "none" is the default, and it is a position rather than an absence: a run
+// config has no single score, and the aggregate that used to sit here invented
+// one by averaging every eval's normalized mean at equal weight. Nothing about
+// a task says a destructive-write check and a tone judge are worth the same,
+// so that number moved with the eval set rather than with the work. The card
+// keeps what is actually true of a config without a choice being made for the
+// reader - how many runs are behind it, and which scores moved against its
+// parent - and a lens is picked when there is a question that needs one.
 export type Lens =
+  | { kind: "none" }
   | { kind: "aggregate" }
   | { kind: "single"; evalId: string; scoreKey: string }
 
@@ -49,6 +60,12 @@ export interface LensData {
   raw: Map<string, Map<string, number>>
   /** Direction-corrected normalized (0..1) score, same keying as `raw` */
   normalized: Map<string, Map<string, number>>
+  /**
+   * Runs behind each mean, same keying as `raw`. What separates a score from an
+   * estimate of one: without it nothing downstream can put an interval on a
+   * mean. Absent for older payloads that predate the field.
+   */
+  counts: Map<string, Map<string, number>>
   /** percent_complete per run config id, keyed by eval id */
   percentComplete: Map<string, Map<string, number>>
 }
@@ -58,6 +75,8 @@ export interface LensData {
 export interface NodeDisplay {
   lens_color: string
   lens_value: string | null
+  /** Eval runs behind this config under the current split - see run_count */
+  runs: number
   strip: StripCell[]
   subtitle: string
   best: boolean
@@ -86,18 +105,30 @@ export function score_key_id(evalId: string, scoreKey: string): string {
 }
 
 export function lens_key(lens: Lens): string {
-  return lens.kind === "aggregate"
-    ? "aggregate"
-    : score_key_id(lens.evalId, lens.scoreKey)
+  switch (lens.kind) {
+    case "none":
+      return "none"
+    case "aggregate":
+      return "aggregate"
+    default:
+      return score_key_id(lens.evalId, lens.scoreKey)
+  }
 }
 
+// An unset or unparseable key is the default lens, not the aggregate: a URL
+// written before "none" existed carried `lens=aggregate` explicitly whenever
+// the aggregate was what the reader chose, so falling back to "none" here
+// changes the default without overriding anybody's saved view.
 export function parse_lens_key(key: string | null): Lens {
-  if (!key || key === "aggregate") {
+  if (!key || key === "none") {
+    return { kind: "none" }
+  }
+  if (key === "aggregate") {
     return { kind: "aggregate" }
   }
   const separator = key.indexOf("::")
   if (separator <= 0 || separator + 2 >= key.length) {
-    return { kind: "aggregate" }
+    return { kind: "none" }
   }
   return {
     kind: "single",
@@ -117,9 +148,10 @@ export function build_lens_data(
   const keyMetas: ScoreKeyMeta[] = []
   const raw = new Map<string, Map<string, number>>()
   const normalized = new Map<string, Map<string, number>>()
+  const counts = new Map<string, Map<string, number>>()
   const percentComplete = new Map<string, Map<string, number>>()
   if (!summary) {
-    return { keyMetas, raw, normalized, percentComplete }
+    return { keyMetas, raw, normalized, counts, percentComplete }
   }
 
   // Score key metadata: eval_results_summary reports JSON score keys; match
@@ -152,6 +184,7 @@ export function build_lens_data(
     summary.scores_by_run_config_by_eval,
   )) {
     const raw_scores = new Map<string, number>()
+    const sample_sizes = new Map<string, number>()
     const completion = new Map<string, number>()
     for (const [eval_id, cell] of Object.entries(cells)) {
       completion.set(eval_id, cell.percent_complete)
@@ -160,9 +193,17 @@ export function build_lens_data(
           raw_scores.set(score_key_id(eval_id, score_key), value)
         }
       }
+      for (const [score_key, n] of Object.entries(
+        cell.n_used_by_score_key ?? {},
+      )) {
+        if (typeof n === "number" && Number.isFinite(n) && n > 0) {
+          sample_sizes.set(score_key_id(eval_id, score_key), n)
+        }
+      }
     }
     raw.set(run_config_id, raw_scores)
     normalized.set(run_config_id, new Map())
+    counts.set(run_config_id, sample_sizes)
     percentComplete.set(run_config_id, completion)
   }
 
@@ -200,7 +241,52 @@ export function build_lens_data(
     }
   }
 
-  return { keyMetas, raw, normalized, percentComplete }
+  return { keyMetas, raw, normalized, counts, percentComplete }
+}
+
+/** Runs behind one config's mean for one score key; null when unknown. */
+export function sample_size(
+  lens_data: LensData,
+  runConfigId: string,
+  evalId: string,
+  scoreKey: string,
+): number | null {
+  return (
+    lens_data.counts.get(runConfigId)?.get(score_key_id(evalId, scoreKey)) ??
+    null
+  )
+}
+
+/**
+ * How many eval runs are behind a run config, across every eval on the page.
+ *
+ * Per eval it is the largest per-score-key count, not their sum: one run
+ * produces one value for each of its eval's score keys, so summing the keys
+ * would multiply a 25-run eval by however many things it scores. Summing
+ * ACROSS evals is right for the same reason - those are different runs of the
+ * task. Scoped by whatever split the page is reading, since that is what the
+ * summary behind it was scoped to.
+ *
+ * This is the number the graph shows on every card, whatever the lens: it is
+ * the one quantity about a run config that needs no weighting decision, and
+ * without it a mean over 3 runs and a mean over 300 look identical.
+ */
+export function run_count(data: LensData, runConfigId: string): number {
+  const counts = data.counts.get(runConfigId)
+  if (!counts || counts.size === 0) {
+    return 0
+  }
+  const per_eval = new Map<string, number>()
+  for (const [key, n] of counts) {
+    const separator = key.indexOf("::")
+    const evalId = separator > 0 ? key.slice(0, separator) : key
+    per_eval.set(evalId, Math.max(per_eval.get(evalId) ?? 0, n))
+  }
+  let total = 0
+  for (const n of per_eval.values()) {
+    total += n
+  }
+  return total
 }
 
 export function raw_score(
@@ -239,6 +325,9 @@ export function normalized_lens_value(
   runConfigId: string,
   lens: Lens,
 ): number | null {
+  if (lens.kind === "none") {
+    return null
+  }
   if (lens.kind === "single") {
     return normalized_score(data, runConfigId, lens.evalId, lens.scoreKey)
   }

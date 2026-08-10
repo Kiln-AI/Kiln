@@ -1,4 +1,4 @@
-// The axis set for the performance-metrics radar.
+// The axis set for the performance-metrics chart.
 //
 // The eval-score radar plots quality. This module builds the complementary set:
 // the numbers about *how* a run config ran rather than how well it answered.
@@ -9,21 +9,22 @@
 //    the page from two places - the native usage rollup (MeanUsage on the run
 //    config summary) and an eval score key computed by a code eval reading the
 //    trace - so "Cost" and "Cost Usd", or two "Total Tokens", used to land on
-//    the ring side by side. Every candidate is resolved to a canonical quantity
+//    the chart as two rows of the same number. Every candidate is resolved to a
+//    canonical quantity
 //    id and each quantity gets exactly one axis. See `dedupe_by_quantity` for
 //    which source wins.
 //
-// 2. DIRECTION. A radar can only say "further from the centre is better", so
-//    every axis has to know which end of its raw scale is the good one. Nearly
-//    all of these are lower-is-better; the cache metrics are not, because cache
+// 2. DIRECTION. A bar can only say "longer is better", so every axis has to
+//    know which end of its raw scale is the good one. Nearly all of these are
+//    lower-is-better; the cache metrics are not, because cache
 //    reuse is the thing you want more of. The authored direction wins wherever
 //    the author gave one; the catalog supplies a direction only for keys
 //    authored `informational`, where nobody declared one. Direction never
 //    decides which chart a key is on - see the membership note below.
 //
-// 3. LABELS. Because the geometry already reads "further is better", the label
-//    has to agree with it. An axis called "Skill Reads Repeat" with a point far
-//    from the centre reads as "lots of repeats" when it means the opposite. So
+// 3. LABELS. Because the geometry already reads "longer is better", the label
+//    has to agree with it. A row called "Skill Reads Repeat" with a long bar
+//    reads as "lots of repeats" when it means the opposite. So
 //    every axis is named for the *virtue* being measured - "Skill Read
 //    Efficiency", "Cost Efficiency", "Speed" - never "Fewer X" or "Avoids X",
 //    which are the double negatives that make a glance ambiguous. The plain
@@ -45,11 +46,16 @@
 // of this chart, so an informational latency belongs on it - while the page's
 // aggregate ("overall quality") continues to skip every informational key,
 // which is why they were authored that way. An informational metric the catalog
-// cannot point has no better end at all and no honest place on a radar, so it
-// stays off and is counted in the note under the chart.
+// cannot point has no better end at all and no honest place on a chart whose
+// whole grammar is "longer is better", so it stays off and is counted in the
+// note under the chart.
 
 import { formatLatency, score_key_label } from "$lib/utils/formatters"
-import { family_bands, type FamilyBand } from "./family_bands"
+import {
+  axis_label_clearing_radius,
+  family_bands,
+  type FamilyBand,
+} from "./family_bands"
 import type { ScoreKeyMeta } from "./score_lens"
 import { score_key_id } from "./score_lens"
 
@@ -63,16 +69,17 @@ export type MetricAxisUnit = "usd" | "ms" | "tokens" | "count" | "ratio"
 export type MetricDirection = "lower" | "higher"
 
 /**
- * Axis families, in the order they are laid out around the ring. Grouping them
- * is what stops tokens from being scattered across three arcs: the reader can
- * take in "this config is cheap but slow" as two neighbourhoods rather than by
- * hunting matched labels around the circle.
+ * Axis families, in the order they are laid out down the chart. Grouping them
+ * is what stops tokens from being scattered across three parts of it: the
+ * reader can take in "this config is cheap but slow" as two neighbourhoods
+ * rather than by hunting matched labels up and down a list.
  *
  * The order is a chain: what it cost, what it spent to get there, how many
  * round trips that took, how long they took, and how it felt while waiting.
- * The chart draws the chain CLOCKWISE from the top, which is the direction a
- * ring is read; echarts lays indicators out counterclockwise unless told
- * otherwise, so the radar sets `clockwise` rather than reversing this list.
+ * The chart draws the chain DOWNWARD from the top, which is the direction a
+ * list is read; echarts puts category 0 at the bottom of a vertical axis
+ * unless told otherwise, so the chart sets `inverse` rather than reversing
+ * this list.
  */
 export const METRIC_FAMILIES = [
   "cost",
@@ -98,7 +105,7 @@ export const METRIC_FAMILY_LABELS: Record<MetricFamily, string> = {
 export interface MetricAxis {
   /** `cost::<field>` for the usage rollup, `<evalId>::<scoreKey>` for a score */
   key: string
-  /** Axis label: the virtue, phrased so further from the centre reads better */
+  /** Axis label: the virtue, phrased so a longer bar reads better */
   label: string
   /** Plain name of the raw quantity, for printing an actual value */
   valueLabel: string
@@ -123,8 +130,8 @@ interface MetricDefinition {
   unit: MetricAxisUnit
   better: MetricDirection
   /**
-   * Position around the ring. Families own contiguous blocks, so ordering by
-   * this number alone keeps every family in one arc.
+   * Position down the chart. Families own contiguous blocks, so ordering by
+   * this number alone keeps every family in one run of rows.
    */
   order: number
   /** Preference when trimming to the default axis count; lower is kept first */
@@ -155,7 +162,7 @@ const USAGE_QUANTITIES: { key: string; quantity: string }[] = [
 
 /**
  * Every quantity this chart knows how to name and point in the right
- * direction. Ordered by `order`, which is also the order around the ring.
+ * direction. Ordered by `order`, which is also the order down the chart.
  */
 const METRIC_CATALOG: MetricDefinition[] = [
   {
@@ -207,7 +214,7 @@ const METRIC_CATALOG: MetricDefinition[] = [
     better: "higher",
     order: 220,
     // Off by default: the hit rate below is the same fact normalized, and two
-    // axes for one story spend ring on nothing. Opt in from the Axes menu.
+    // rows for one story spend height on nothing. Opt in from the Metrics menu.
     defaultRank: 12,
     aliases: ["cached_tokens"],
   },
@@ -464,25 +471,28 @@ export const CORE_USAGE_KEYS: string[] = [
   LATENCY_KEY,
 ]
 
-// A radar with fewer axes than this has no shape to read, matching the
-// eval-score radar's own floor.
+// Fewer rows than this is a table with extra steps. The bars carry position
+// among the plotted configs, never the quantity itself, so on two metrics the
+// chart says strictly less than the two raw numbers already in the table below
+// it - and the eval-score radar beside it holds the same floor.
 export const MIN_METRIC_AXES = 3
 
-// A comparison needs two sides. These axes are scored by position among the
+// A comparison needs two sides. These metrics are scored by position among the
 // run configs on the chart, so one of them would sit at the midpoint of every
-// axis and draw a regular polygon that looks like a result but is an artefact.
+// row and draw a column of equal bars that looks like a result but is an
+// artefact.
 export const MIN_METRIC_CONFIGS = 2
 
 /**
  * How many axes are shown before the user opts into more.
  *
  * Fourteen fit without clipping, which is what set the previous ceiling, but
- * fitting is not reading. Past roughly a dozen axes a radar stops being a shape
- * and becomes a circle: the vertices are 20-odd degrees apart, every polygon
- * looks alike, and the ring of labels is long enough that finding the one you
- * want is a search. The families make that worse when they are lopsided - five
- * of the sixteen were per-turn latencies, so a third of the ring was Speed
- * saying the same thing five times.
+ * fitting is not reading. The card gives the plot about 600px of height, so
+ * past roughly a dozen rows each one is thinner than the group of bars in it:
+ * with a handful of run configs pinned the bars go from marks to hairlines,
+ * and a list that long is scanned rather than read. The families make that
+ * worse when they are lopsided - five of the sixteen were per-turn latencies,
+ * so a third of the chart was Speed saying the same thing five times.
  *
  * Eleven is the top of the ranking, and it lands one axis of Cost, three of
  * Tokens, three of Calls, two of Speed and two of Responsiveness: every family
@@ -513,7 +523,7 @@ export function infer_metric_unit(scoreKey: string): MetricAxisUnit {
  * Whether an eval's score keys are metrics rather than criteria.
  *
  * The test is the score TYPE, because that is the structural difference the two
- * radars are built on rather than a naming convention. A criterion is graded on
+ * charts are built on rather than a naming convention. A criterion is graded on
  * a bounded scale the type itself defines - pass/fail is 0..1, five star is
  * 1..5 - which is what lets the eval-score radar plot it against an absolute
  * axis and call one end "best". A metric is `custom`: unbounded, no maximum
@@ -634,7 +644,7 @@ function dedupe_by_quantity(
   return winners
 }
 
-/** Where an axis sits around the ring; families own contiguous blocks */
+/** Where an axis sits down the chart; families own contiguous blocks */
 function axis_order(axis: MetricAxis): number {
   return definition_for_quantity(axis.quantity)?.order ?? UNKNOWN_ORDER
 }
@@ -650,7 +660,7 @@ function compare_axes(a: MetricAxis, b: MetricAxis): number {
 /**
  * Every axis this chart could plot: the usage rollup plus the eval score keys
  * it can name and point, one per quantity, ordered so each family occupies a
- * single arc of the ring. The order is a pure function of the axis set, so it
+ * single run of rows. The order is a pure function of the axis set, so it
  * is stable across renders and reloads.
  */
 export function build_metric_axes(
@@ -675,7 +685,7 @@ export function build_metric_axes(
  *
  * The x on a comparison-table row means "take this out of the comparison", and
  * it means the same in both tracks: the row leaves its table and its axis
- * leaves the ring. `hiddenKeys` is that set of rows expressed as axis keys - a
+ * leaves the chart. `hiddenKeys` is that set of rows expressed as axis keys - a
  * hidden score row's key IS its axis key, and a hidden usage row contributes
  * the rollup field it prints.
  *
@@ -694,9 +704,9 @@ export function build_metric_axes(
  *     hiding one never promotes some other metric into the default set to
  *     backfill the freed slot.
  *
- * The Axes menu then picks which of THESE are plotted. The two controls
+ * The Metrics menu then picks which of THESE are plotted. The two controls
  * compose - one decides what is in the comparison, the other what is on the
- * ring - rather than overlapping.
+ * chart - rather than overlapping.
  */
 export function visible_metric_axes(
   axes: MetricAxis[],
@@ -713,7 +723,7 @@ export function visible_metric_axes(
  * dropping it here would quietly edit the selection as a side effect of an
  * unrelated click - so restoring the row would bring the row back without its
  * axis. Filtering rather than mapping the selected set also keeps the result in
- * ring order, so the axis order never depends on the order they were switched
+ * chart order, so the axis order never depends on the order they were switched
  * on in.
  */
 export function toggled_metric_axis_keys(
@@ -767,7 +777,7 @@ export function directionless_key_count(keyMetas: ScoreKeyMeta[]): number {
 
 /**
  * The axes shown before the user picks their own: the highest-ranked ones the
- * task has, capped for legibility, returned in ring order.
+ * task has, capped for legibility, returned in chart order.
  *
  * The ranking is what survives the cap. Cost, tokens and speed lead because
  * every task has them; then the counts a code eval had to read the trace to
@@ -783,12 +793,12 @@ export function default_metric_axis_keys(
   const kept = new Set(
     axes
       .map((axis, index) => ({ axis, index }))
-      // Ties fall back to ring order, so the set is a pure function of the axes
+      // Ties fall back to chart order, so the set is a pure function of the axes
       .sort((a, b) => rank(a.axis) - rank(b.axis) || a.index - b.index)
       .slice(0, Math.max(max, 0))
       .map((entry) => entry.axis.key),
   )
-  // Returned in ring order, so the selection reads the same way the chart does
+  // Returned in chart order, so the selection reads the way the chart does
   return axes.filter((axis) => kept.has(axis.key)).map((axis) => axis.key)
 }
 
@@ -796,14 +806,13 @@ export function default_metric_axis_keys(
  * An axis label broken onto two lines, on a word boundary.
  *
  * Naming an axis for its virtue costs characters - "Input Token Economy" where
- * the raw key said "Input Tokens" - and the two radars share a page, so each is
- * about 480px wide. echarts centres an axis name on its axis tip, which puts
- * the leftmost and rightmost labels half outside the canvas and clips them.
- * Its own `width`/`overflow` wrapping does not apply to radar axis names, so
- * the break is placed here: at the word boundary that leaves the two lines
- * closest in length, which keeps the block squarest around its tip. Ties go to
- * the later boundary, so "First Reply Speed" breaks after "Reply" rather than
- * stranding "First" on a line of its own.
+ * the raw key said "Input Tokens" - and the two charts share a page, so each is
+ * about 480px wide. A row name is drawn in the gutter beside the bars, and
+ * every pixel of the widest one comes out of the plot, so a name is broken
+ * rather than left to run: at the word boundary that leaves the two lines
+ * closest in length, which keeps the block squarest and the gutter narrowest.
+ * Ties go to the later boundary, so "First Reply Speed" breaks after "Reply"
+ * rather than stranding "First" on a line of its own.
  */
 export function wrap_axis_label(label: string, maxChars: number = 13): string {
   if (label.length <= maxChars) return label
@@ -829,11 +838,13 @@ export function wrap_axis_label(label: string, maxChars: number = 13): string {
  * The families were already contiguous - `compare_axes` sees to that - but
  * contiguity is a property of the DATA, and a reader looking at sixteen labels
  * in one weight of grey has no way to see it. These runs are what the chart
- * draws an arc for and what the key under the title names, so both are derived
+ * draws a band for and what the key under the title names, so both are derived
  * from the same list and cannot disagree about where a family ends.
  *
- * The geometry is shared with the quality radar - see `./family_bands`, which
- * is also where the single-family and empty cases are explained.
+ * The runs, and the tone and truncation of their labels, are shared with the
+ * quality radar - see `./family_bands`, which is also where the single-family
+ * and empty cases are explained. Only the geometry differs: an arc there, a
+ * bar down the gutter here (`./metric_bars`).
  */
 export function metric_family_bands(axes: MetricAxis[]): FamilyBand[] {
   return family_bands(
@@ -846,11 +857,11 @@ export function metric_family_bands(axes: MetricAxis[]): FamilyBand[] {
 
 /**
  * How a metric is named and grouped in a TABLE of raw values, as opposed to on
- * the ring.
+ * the chart.
  *
  * The two need different names and this is the whole reason the catalog carries
- * both. A radar can only say "further from the centre is better", so its axes
- * are named for the virtue - "Speed", "Cost Efficiency" - and the geometry then
+ * both. A bar can only say "longer is better", so the chart's rows are
+ * named for the virtue - "Speed", "Cost Efficiency" - and the geometry then
  * agrees with the label. A table prints the raw number, where higher is very
  * often worse, and "Total Latency 42,423.91 ms" under a heading that says
  * "Speed" would be telling the reader the opposite of what the row says. So the
@@ -1109,22 +1120,22 @@ export function fit_radar(
   }
 }
 
-/** What the metrics radar is working with when it has nothing to draw */
-export interface MetricRadarCounts {
-  /** Axes the chart was asked to plot */
+/** What the metrics chart is working with when it has nothing to draw */
+export interface MetricChartCounts {
+  /** Metrics the chart was asked to plot */
   selected: number
   /** Of those, the ones every plotted run config has a number for */
   plotted: number
-  /** Axes the Axes menu can offer, switched on or not */
+  /** Metrics the Metrics menu can offer, switched on or not */
   available: number
-  /** Axes the row-hide x took out of the comparison entirely */
+  /** Metrics the row-hide x took out of the comparison entirely */
   hidden: number
   /** Run configs with at least one number among the selected axes */
   configs: number
 }
 
 /**
- * Why the metrics radar is empty, and which control fixes it. Only asked when
+ * Why the metrics chart is empty, and which control fixes it. Only asked when
  * the chart has nothing to draw.
  *
  * The ORDER of the tests is the substance here, not an implementation detail.
@@ -1137,19 +1148,19 @@ export interface MetricRadarCounts {
  * and they do have results. The axis question is settled first because it is
  * the one the config count depends on.
  *
- * Past that, each branch names a control the reader actually has. The Axes menu
+ * Past that, each branch names a control the reader has. The Metrics menu
  * can only offer what is `available`; a row taken out with the x is not among
  * them and only the table's own Hidden control brings it back; and a task with
  * two metrics has neither remedy, which is worth saying plainly rather than
  * sending the reader to a menu with nothing more in it.
  */
-export function metric_radar_empty_state(counts: MetricRadarCounts): {
+export function metric_chart_empty_state(counts: MetricChartCounts): {
   title: string
   message: string
 } {
   const restore = "Use “Hidden” above the table below to restore them."
 
-  // Nothing on the ring at all. Two controls can do this and they have
+  // Nothing on the chart at all. Two controls can do this and they have
   // different remedies, so which one to name depends on what is left.
   if (counts.selected === 0) {
     if (counts.available === 0) {
@@ -1167,8 +1178,8 @@ export function metric_radar_empty_state(counts: MetricRadarCounts): {
       title: "No Metrics On The Chart",
       message:
         counts.hidden > 0
-          ? `Every metric is hidden or switched off. Restore rows with “Hidden” above the table below, or switch axes back on with the Axes menu.`
-          : "Every metric is switched off. Switch some back on with the Axes menu.",
+          ? `Every metric is hidden or switched off. Restore rows with “Hidden” above the table below, or switch metrics back on with the Metrics menu.`
+          : "Every metric is switched off. Switch some back on with the Metrics menu.",
     }
   }
 
@@ -1182,29 +1193,29 @@ export function metric_radar_empty_state(counts: MetricRadarCounts): {
     }
   }
 
-  // Axes on the chart, but too few of them survive. An axis dropped for having
+  // Metrics on the chart, but too few of them survive. One dropped for having
   // no number on some config is a different story from one nobody switched on.
   if (counts.plotted < counts.selected) {
     return {
       title: "Not Enough Shared Metrics",
-      message: `The selected run configs share fewer than ${MIN_METRIC_AXES} metrics with results. Add more metric axes, or compare run configs that have all been run.`,
+      message: `The selected run configs share fewer than ${MIN_METRIC_AXES} metrics with results. Add more metrics, or compare run configs that have all been run.`,
     }
   }
   if (counts.available > counts.selected) {
     return {
-      title: "Not Enough Axes",
-      message: `A metrics radar needs at least ${MIN_METRIC_AXES} axes. Turn more on with the Axes menu.`,
+      title: "Not Enough Metrics",
+      message: `This chart needs at least ${MIN_METRIC_AXES} metrics. Turn more on with the Metrics menu.`,
     }
   }
   if (counts.hidden > 0) {
     return {
-      title: "Not Enough Axes",
-      message: `A metrics radar needs at least ${MIN_METRIC_AXES} axes, and the rest are hidden. ${restore}`,
+      title: "Not Enough Metrics",
+      message: `This chart needs at least ${MIN_METRIC_AXES} metrics, and the rest are hidden. ${restore}`,
     }
   }
   return {
     title: "Not Enough Metrics",
-    message: `A metrics radar needs at least ${MIN_METRIC_AXES} axes, and this task has ${counts.available}.`,
+    message: `This chart needs at least ${MIN_METRIC_AXES} metrics, and this task has ${counts.available}.`,
   }
 }
 
@@ -1229,4 +1240,305 @@ export function format_metric_value(
     case "count":
       return value.toLocaleString(undefined, { maximumFractionDigits: 2 })
   }
+}
+
+/**
+ * Which indicator axis a pointer position is on, by angle around the radar
+ * centre. Pointer and centre are screen px (y grows downward); axis angles are
+ * radians, y up - the convention echarts' radar coordinate system and its
+ * dataToPoint share. echarts normalises indicator angles to (-PI, PI]; the
+ * comparison folds the difference so the wrap at +-PI cannot split the axis
+ * that sits there.
+ *
+ * This is the whole hover resolution for both radars, not a fallback. The
+ * hovered symbol's own dimension tag (__dimIdx) is not consulted for geometry,
+ * on purpose: a radar symbol always sits ON its axis ray, so over a readable
+ * symbol the nearest ray IS that symbol's axis - and where symbols are
+ * ambiguous they are stacked at or near the centre (every zero score draws its
+ * dot AT the centre), where the topmost symbol's tag names an arbitrary axis
+ * but the pointer's ray still names the one the reader is aiming along.
+ */
+export function nearest_axis_index(
+  pointer: { x: number; y: number },
+  centre: { x: number; y: number },
+  angles: number[],
+): number | null {
+  if (angles.length === 0) return null
+  const pointerAngle = Math.atan2(centre.y - pointer.y, pointer.x - centre.x)
+  let best = 0
+  let bestDelta = Infinity
+  angles.forEach((angle, index) => {
+    let delta = Math.abs(pointerAngle - angle) % (Math.PI * 2)
+    if (delta > Math.PI) delta = Math.PI * 2 - delta
+    if (delta < bestDelta) {
+      bestDelta = delta
+      best = index
+    }
+  })
+  return best
+}
+
+// ---------------------------------------------------------------------------
+// On-ray axis-name placement for the quality radar's bottom mode.
+//
+// The old layout kept every name's anchor on the ring circle and packed the
+// names apart VERTICALLY (isotonic regression per side). Packing near a pole
+// slid a name up to a whole axis step around the ring - its anchor kept its
+// own ray's x at the ring radius while its y belonged somewhere else - and the
+// radial rescue that pulled a name back onto its ray only fired above 30
+// degrees of elevation and was capped by the card edge, so names between ~18
+// and ~42 degrees drifted worst (measured 0.88 of a step on a 30-axis ring).
+// A reader maps name to axis by proximity, so a drifted name reads as the
+// NEIGHBOURING axis's name - the label-vs-tooltip mismatch this replaces.
+//
+// This layout holds the invariant the reader assumes: EVERY drawn name sits on
+// its own axis ray. Crowding is resolved along the one direction that keeps
+// the invariant - outward along the ray - walking each side from the equator
+// toward the poles, since that is the direction in which pushing a name
+// further out also moves it away from its already-placed neighbour. A name
+// whose ray cannot give it clear room inside the card (the immediate
+// neighbours of a pole on a crowded ring, where rays separate by only a few
+// px per hundred px of radius) is HIDDEN rather than drawn misplaced - the
+// same trade the stride already makes, and the axis tooltip still carries it.
+// ---------------------------------------------------------------------------
+
+/** One axis name, as the placement solver sees it */
+export interface RayLabelInput {
+  /** The axis index this name belongs to - carried through, never reordered */
+  index: number
+  /** The indicator's angle: radians, y up, 0 due east (echarts' convention) */
+  angle: number
+  width: number
+  height: number
+}
+
+/** Where a name goes: anchored ON its own ray, or absent (hidden) */
+export interface RayLabelPlacement {
+  index: number
+  /** The anchor edge's x: left edge on the right half, right edge on the left half, centre at a pole */
+  x: number
+  /** Vertical centre of the text block */
+  y: number
+  align: "left" | "right" | "center"
+  /** Distance from the chart centre to the anchor, along the ray */
+  radius: number
+}
+
+export interface RayLabelGeometry {
+  cx: number
+  cy: number
+  /** Ring to the anchor of a name - the radius every uncrowded name sits at */
+  minRadius: number
+  /** No name's box may come inside this circle - the family tier. 0 when ungrouped */
+  keepOut: number
+  bandTop: number
+  bandBottom: number
+  /** The chart box's width; names must keep edgePad off both edges */
+  width: number
+  edgePad: number
+  /** Clear vertical space required between two names' boxes */
+  gap: number
+}
+
+// echarts' own tolerance for "this axis is vertical"
+const RAY_VERTICAL_EPS = 1e-4
+
+type PlacedBox = { left: number; right: number; top: number; bottom: number }
+
+function boxesOverlap(a: PlacedBox, b: PlacedBox, gap: number): boolean {
+  return (
+    a.left < b.right &&
+    b.left < a.right &&
+    a.top - gap < b.bottom &&
+    b.top - gap < a.bottom
+  )
+}
+
+function boxFor(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  align: "left" | "right" | "center",
+): PlacedBox {
+  const left =
+    align === "left" ? x : align === "right" ? x - width : x - width / 2
+  return {
+    left,
+    right: left + width,
+    top: y - height / 2,
+    bottom: y + height / 2,
+  }
+}
+
+/**
+ * Place every axis name ON its own ray, pushing outward along the ray to
+ * resolve crowding and hiding what cannot fit - see the block comment above.
+ *
+ * Returns placements for the names that are drawn; a missing index is a
+ * hidden name. Order of the result follows processing order, not index order:
+ * callers key by `index`.
+ */
+export function place_labels_on_rays(
+  labels: RayLabelInput[],
+  geom: RayLabelGeometry,
+): RayLabelPlacement[] {
+  if (labels.length === 0) return []
+  const band = Math.max(geom.bandBottom - geom.bandTop, 1)
+
+  // The stride the old layout kept: past the point where even one line per
+  // name fits a side of the band, show every stride-th name per side. Sides
+  // are split the way the names are anchored - rightward on the right half,
+  // leftward on the left - and ordered by where their tips sit vertically.
+  const tipY = (label: RayLabelInput) =>
+    geom.cy - geom.minRadius * Math.sin(label.angle)
+  const sides: RayLabelInput[][] = [[], []]
+  for (const label of labels) {
+    sides[Math.cos(label.angle) >= 0 ? 0 : 1].push(label)
+  }
+  for (const side of sides) {
+    side.sort((first, second) => tipY(first) - tipY(second))
+  }
+  const spanOf = (side: RayLabelInput[]) =>
+    side.reduce((total, label) => total + label.height + geom.gap, -geom.gap)
+  const worstSpan = Math.max(spanOf(sides[0]), spanOf(sides[1]))
+  const stride = Math.max(1, Math.ceil(worstSpan / band))
+
+  const placements: RayLabelPlacement[] = []
+  const sideBoxes: PlacedBox[][] = [[], []]
+  const verticals: { label: RayLabelInput; sideIndex: number }[] = []
+
+  sides.forEach((side, sideIndex) => {
+    const shown = side.filter((_, position) => position % stride === 0)
+    // Equator outward: each name is placed after every name nearer the
+    // horizontal on its side, so pushing it poleward along its ray can only
+    // move it away from the boxes already placed - placement never has to
+    // revisit a solved name.
+    const ordered = [...shown].sort(
+      (first, second) =>
+        Math.abs(Math.sin(first.angle)) - Math.abs(Math.sin(second.angle)),
+    )
+    for (const label of ordered) {
+      const sin = Math.sin(label.angle)
+      const cos = Math.cos(label.angle)
+      if (Math.abs(cos) < RAY_VERTICAL_EPS) {
+        // A pole name must clear BOTH sides' names, so it goes last
+        verticals.push({ label, sideIndex })
+        continue
+      }
+      const align: "left" | "right" = cos > 0 ? "left" : "right"
+      // How far out the card lets this name's box reach. A SOFT cap, floored
+      // at the ring circle exactly as the old layout floored it: a name at the
+      // ring may brush the edge pad, and the keep-out push below is capped
+      // here rather than allowed to shove a name off the card. Only the hard
+      // constraints - the band (the legend's room) and another name's box -
+      // can hide a name.
+      const reach = geom.width / 2 - geom.edgePad - label.width
+      const radiusCap = Math.max(reach / Math.abs(cos), geom.minRadius)
+      const bandCap =
+        Math.abs(sin) < RAY_VERTICAL_EPS
+          ? Infinity
+          : sin > 0
+            ? (geom.cy - (geom.bandTop + label.height / 2)) / sin
+            : (geom.bandBottom - label.height / 2 - geom.cy) / -sin
+
+      let radius = geom.minRadius
+      let y = geom.cy - radius * sin
+      // Two forces push a name outward - the family tier's keep-out circle and
+      // the boxes already placed - and both shrink as the radius grows, so a
+      // few passes settle. Every push is along the name's OWN ray.
+      for (let pass = 0; pass < labels.length + 2; pass++) {
+        let pushed = radius
+        const dyNear = Math.max(0, Math.abs(y - geom.cy) - label.height / 2)
+        pushed = Math.max(
+          pushed,
+          // Best effort, like the old layout: a tier overlap the card has no
+          // room to resolve is drawn, not hidden
+          Math.min(
+            axis_label_clearing_radius(geom.keepOut, cos, dyNear),
+            radiusCap,
+          ),
+        )
+        const candidate = boxFor(
+          geom.cx + pushed * cos,
+          geom.cy - pushed * sin,
+          label.width,
+          label.height,
+          align,
+        )
+        for (const other of sideBoxes[sideIndex]) {
+          if (!boxesOverlap(candidate, other, geom.gap)) continue
+          // Poleward past the blocking box, staying on the ray. sin of 0 has
+          // no poleward direction; that name can only be hidden below.
+          if (Math.abs(sin) < RAY_VERTICAL_EPS) {
+            pushed = Infinity
+            break
+          }
+          const clearedY =
+            sin > 0
+              ? other.top - geom.gap - label.height / 2
+              : other.bottom + geom.gap + label.height / 2
+          pushed = Math.max(pushed, (geom.cy - clearedY) / sin)
+        }
+        if (pushed <= radius) break
+        radius = pushed
+        y = geom.cy - radius * sin
+      }
+
+      if (radius > radiusCap || radius > bandCap || !Number.isFinite(radius)) {
+        // Its ray has no clear room inside the card: hidden, not misplaced
+        continue
+      }
+      const x = geom.cx + radius * cos
+      sideBoxes[sideIndex].push(boxFor(x, y, label.width, label.height, align))
+      placements.push({ index: label.index, x, y, align, radius })
+    }
+  })
+
+  // Pole names: centred over their tips, pushed poleward past whatever either
+  // side placed near the pole, hidden when the band runs out.
+  for (const { label } of verticals) {
+    const sin = Math.sin(label.angle) > 0 ? 1 : -1
+    let radius = Math.max(geom.minRadius, geom.keepOut + label.height / 2)
+    let y = geom.cy - radius * sin
+    const everyBox = [...sideBoxes[0], ...sideBoxes[1]]
+    for (let pass = 0; pass < labels.length + 2; pass++) {
+      let pushed = radius
+      const candidate = boxFor(
+        geom.cx,
+        geom.cy - pushed * sin,
+        label.width,
+        label.height,
+        "center",
+      )
+      for (const other of everyBox) {
+        if (!boxesOverlap(candidate, other, geom.gap)) continue
+        const clearedY =
+          sin > 0
+            ? other.top - geom.gap - label.height / 2
+            : other.bottom + geom.gap + label.height / 2
+        pushed = Math.max(pushed, (geom.cy - clearedY) / sin)
+      }
+      if (pushed <= radius) break
+      radius = pushed
+      y = geom.cy - radius * sin
+    }
+    const bandCap =
+      sin > 0
+        ? (geom.cy - (geom.bandTop + label.height / 2)) / sin
+        : (geom.bandBottom - label.height / 2 - geom.cy) / -sin
+    if (radius > bandCap) continue
+    y = geom.cy - radius * sin
+    const box = boxFor(geom.cx, y, label.width, label.height, "center")
+    sideBoxes[0].push(box)
+    placements.push({
+      index: label.index,
+      x: geom.cx,
+      y,
+      align: "center",
+      radius,
+    })
+  }
+
+  return placements
 }

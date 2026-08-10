@@ -25,13 +25,17 @@ import {
   visible_metric_axes,
   wrap_axis_label,
   metric_family_bands,
-  metric_radar_empty_state,
+  metric_chart_empty_state,
   metric_row_info,
   score_row_label,
   usage_row_family,
   fit_radar,
+  nearest_axis_index,
+  place_labels_on_rays,
   MIN_METRIC_AXES,
   MIN_RADAR_RADIUS,
+  type RayLabelInput,
+  type RayLabelPlacement,
   type MetricAxis,
   type RadarAxisLabel,
   type MetricFamily,
@@ -1055,14 +1059,14 @@ describe("metric_row_info", () => {
     })
   })
 
-  it("agrees with the radar about which family a metric is in", () => {
+  it("agrees with the chart about which family a metric is in", () => {
     for (const axis of build_metric_axes([])) {
       expect(metric_row_info(axis.quantity).family).toBe(axis.family)
     }
   })
 })
 
-describe("metric_radar_empty_state", () => {
+describe("metric_chart_empty_state", () => {
   // A task with a full metric set: eleven axes plotted out of sixteen offered,
   // three run configs, nothing hidden.
   const full = {
@@ -1078,7 +1082,7 @@ describe("metric_radar_empty_state", () => {
   // question - "Nothing to Compare Against / Select run configs with results" -
   // to a reader whose configs were pinned and did have results.
   it("blames the hidden rows, not the run configs, when everything is hidden", () => {
-    const state = metric_radar_empty_state({
+    const state = metric_chart_empty_state({
       ...full,
       selected: 0,
       plotted: 0,
@@ -1095,7 +1099,7 @@ describe("metric_radar_empty_state", () => {
   // tokens: those two axes have no table row, so hiding every row still leaves
   // them offerable. Both controls are named because both are in play.
   it("names both controls when some axes are hidden and the rest are off", () => {
-    const state = metric_radar_empty_state({
+    const state = metric_chart_empty_state({
       ...full,
       selected: 0,
       plotted: 0,
@@ -1105,69 +1109,69 @@ describe("metric_radar_empty_state", () => {
     })
     expect(state.title).toBe("No Metrics On The Chart")
     expect(state.message).toContain("Hidden")
-    expect(state.message).toContain("Axes menu")
+    expect(state.message).toContain("Metrics menu")
   })
 
-  it("names only the Axes menu when nothing was hidden", () => {
-    const state = metric_radar_empty_state({
+  it("names only the Metrics menu when nothing was hidden", () => {
+    const state = metric_chart_empty_state({
       ...full,
       selected: 0,
       plotted: 0,
       configs: 0,
     })
     expect(state.title).toBe("No Metrics On The Chart")
-    expect(state.message).toContain("Axes menu")
+    expect(state.message).toContain("Metrics menu")
     expect(state.message).not.toContain("Hidden")
   })
 
   it("keeps the run config states it always had", () => {
     expect(
-      metric_radar_empty_state({ ...full, plotted: 11, configs: 0 }),
+      metric_chart_empty_state({ ...full, plotted: 11, configs: 0 }),
     ).toEqual({
       title: "Nothing to Compare Against",
       message:
         "Select run configs with results to compare their cost, speed and usage.",
     })
-    const one = metric_radar_empty_state({ ...full, configs: 1 })
+    const one = metric_chart_empty_state({ ...full, configs: 1 })
     expect(one.title).toBe("Nothing to Compare Against")
     expect(one.message).toContain("at least two")
   })
 
   it("still says when the configs share too few metrics with results", () => {
-    const state = metric_radar_empty_state({ ...full, plotted: 1 })
+    const state = metric_chart_empty_state({ ...full, plotted: 1 })
     expect(state.title).toBe("Not Enough Shared Metrics")
     expect(state.message).toContain(`fewer than ${MIN_METRIC_AXES} metrics`)
   })
 
-  it("offers the Axes menu only when the menu has more to offer", () => {
-    const state = metric_radar_empty_state({
+  it("offers the Metrics menu only when the menu has more to offer", () => {
+    const state = metric_chart_empty_state({
       ...full,
       selected: 2,
       plotted: 2,
     })
-    expect(state.title).toBe("Not Enough Axes")
-    expect(state.message).toContain("Axes menu")
+    expect(state.title).toBe("Not Enough Metrics")
+    expect(state.message).toContain("Metrics menu")
   })
 
   // The remedy is the table's Hidden control, not a menu that will not list
   // the axes in question.
   it("points at Hidden when the axes that would help are hidden", () => {
-    const state = metric_radar_empty_state({
+    const state = metric_chart_empty_state({
       ...full,
       selected: 2,
       plotted: 2,
       available: 2,
       hidden: 14,
     })
-    expect(state.title).toBe("Not Enough Axes")
+    expect(state.title).toBe("Not Enough Metrics")
     expect(state.message).toContain("Hidden")
-    expect(state.message).not.toContain("Axes menu")
+    expect(state.message).not.toContain("Metrics menu")
   })
 
   // Nothing the reader can do, so nothing is suggested - a task with two
   // metrics used to be told to turn more on.
   it("names no control when the task simply has too few metrics", () => {
-    const state = metric_radar_empty_state({
+    const state = metric_chart_empty_state({
       selected: 2,
       plotted: 2,
       available: 2,
@@ -1176,13 +1180,13 @@ describe("metric_radar_empty_state", () => {
     })
     expect(state.title).toBe("Not Enough Metrics")
     expect(state.message).toContain("this task has 2")
-    expect(state.message).not.toContain("Axes menu")
+    expect(state.message).not.toContain("Metrics menu")
     expect(state.message).not.toContain("Hidden")
   })
 
   it("has nothing to blame on a task with no metrics at all", () => {
     expect(
-      metric_radar_empty_state({
+      metric_chart_empty_state({
         selected: 0,
         plotted: 0,
         available: 0,
@@ -1254,5 +1258,189 @@ describe("usage_row_family", () => {
 
   it("files an unknown rollup field under Other rather than throwing", () => {
     expect(usage_row_family("cost::mean_nonsense")).toBe("other")
+  })
+})
+
+describe("nearest_axis_index", () => {
+  // 8 axes clockwise from the top, normalised the way echarts normalises its
+  // indicator angles (atan2(sin, cos) folds into (-PI, PI])
+  const ring = Array.from({ length: 8 }, (_, i) => {
+    const angle = Math.PI / 2 - (i * Math.PI * 2) / 8
+    return Math.atan2(Math.sin(angle), Math.cos(angle))
+  })
+  const centre = { x: 200, y: 300 }
+
+  it("resolves a point on each axis ray to that axis (screen y grows downward)", () => {
+    ring.forEach((angle, index) => {
+      const pointer = {
+        x: centre.x + 50 * Math.cos(angle),
+        y: centre.y - 50 * Math.sin(angle),
+      }
+      expect(nearest_axis_index(pointer, centre, ring)).toBe(index)
+    })
+  })
+
+  it("folds the wrap at +-PI instead of splitting the axis that sits there", () => {
+    // A pointer just above the negative x axis is at ~+179deg; the axis it is
+    // on lives at the other side of the wrap, normalised to about -PI.
+    expect(
+      nearest_axis_index({ x: centre.x - 50, y: centre.y - 1 }, centre, ring),
+    ).toBe(6)
+  })
+
+  it("a pointer nudged off the centre names the ray it is on - the stacked-zero-dot case", () => {
+    // Every zero score draws its dot AT the centre, so the symbol under the
+    // pointer there can carry any axis's tag. Down-left of centre is -135deg,
+    // which is axis 5 on this ring, whatever was drawn on top.
+    expect(
+      nearest_axis_index({ x: centre.x - 3, y: centre.y + 3 }, centre, ring),
+    ).toBe(5)
+  })
+
+  it("returns null with no axes", () => {
+    expect(nearest_axis_index({ x: 0, y: 0 }, centre, [])).toBeNull()
+  })
+})
+
+describe("place_labels_on_rays", () => {
+  // The angles the quality radar feeds it: indicator 0 at the top, clockwise,
+  // NOT normalised (they run below -PI for large indices), matching axisAngles
+  const ringAngles = (count: number) =>
+    Array.from(
+      { length: count },
+      (_, index) => Math.PI / 2 - (index * Math.PI * 2) / count,
+    )
+  const labelsFor = (count: number, width = 78, height = 14): RayLabelInput[] =>
+    ringAngles(count).map((angle, index) => ({ index, angle, width, height }))
+  // The measured live geometry of the 30-axis quality ring (2026-08-06)
+  const geom = {
+    cx: 189.5,
+    cy: 332,
+    minRadius: 108,
+    keepOut: 0,
+    bandTop: 2,
+    bandBottom: 556,
+    width: 379,
+    edgePad: 8,
+    gap: 5,
+  }
+
+  function boxOf(p: RayLabelPlacement, input: RayLabelInput) {
+    const left =
+      p.align === "left"
+        ? p.x
+        : p.align === "right"
+          ? p.x - input.width
+          : p.x - input.width / 2
+    return {
+      left,
+      right: left + input.width,
+      top: p.y - input.height / 2,
+      bottom: p.y + input.height / 2,
+    }
+  }
+
+  function assertInvariants(
+    placed: RayLabelPlacement[],
+    inputs: RayLabelInput[],
+    keepOut = 0,
+  ) {
+    const byIndex = new Map(inputs.map((input) => [input.index, input]))
+    for (const p of placed) {
+      const input = byIndex.get(p.index)
+      if (!input) throw new Error(`placement for unknown index ${p.index}`)
+      // ON ITS OWN RAY - the invariant this layout exists for. The anchor's
+      // angle around the centre must be the axis's own angle.
+      const anchorAngle = Math.atan2(geom.cy - p.y, p.x - geom.cx)
+      let delta = Math.abs(anchorAngle - input.angle) % (Math.PI * 2)
+      if (delta > Math.PI) delta = Math.PI * 2 - delta
+      expect(delta).toBeLessThan(1e-6)
+      // never inside the ring circle
+      expect(p.radius).toBeGreaterThanOrEqual(geom.minRadius - 1e-6)
+      // inside the band
+      const box = boxOf(p, input)
+      expect(box.top).toBeGreaterThanOrEqual(geom.bandTop - 1e-6)
+      expect(box.bottom).toBeLessThanOrEqual(geom.bandBottom + 1e-6)
+      // outside the family tier: nearest box point to the centre clears it
+      const dyNear = Math.max(0, Math.abs(p.y - geom.cy) - input.height / 2)
+      const dxInner = p.align === "center" ? 0 : Math.abs(p.x - geom.cx)
+      expect(Math.hypot(dxInner, dyNear)).toBeGreaterThanOrEqual(keepOut - 1e-6)
+    }
+    // boxes pairwise disjoint
+    const boxes = placed.map((p) =>
+      boxOf(p, byIndex.get(p.index) as RayLabelInput),
+    )
+    for (let a = 0; a < boxes.length; a++) {
+      for (let b = a + 1; b < boxes.length; b++) {
+        const overlap =
+          boxes[a].left < boxes[b].right &&
+          boxes[b].left < boxes[a].right &&
+          boxes[a].top < boxes[b].bottom &&
+          boxes[b].top < boxes[a].bottom
+        expect(overlap).toBe(false)
+      }
+    }
+  }
+
+  it("an uncrowded ring keeps every name at the ring circle, on its ray", () => {
+    const inputs = labelsFor(8)
+    const placed = place_labels_on_rays(inputs, geom)
+    expect(placed.length).toBe(8)
+    assertInvariants(placed, inputs)
+    for (const p of placed) {
+      expect(p.radius).toBeCloseTo(geom.minRadius, 6)
+    }
+  })
+
+  it("a 30-axis ring - the size that drifted - stays on-ray everywhere", () => {
+    // The regression this layout replaces: mid-quadrant names drifted up to
+    // 0.88 of an axis step off their rays. Every drawn name must now be
+    // exactly on its ray, and the crowded ring must not solve the problem by
+    // hiding the mid-quadrant names that used to drift.
+    const inputs = labelsFor(30)
+    const placed = place_labels_on_rays(inputs, geom)
+    assertInvariants(placed, inputs)
+    expect(placed.length).toBeGreaterThanOrEqual(26)
+    const placedIndices = new Set(placed.map((p) => p.index))
+    for (const index of [4, 5, 6, 23, 24, 25]) {
+      expect(placedIndices.has(index)).toBe(true)
+    }
+  })
+
+  it("holds every name outside the family tier", () => {
+    // A card wide enough that the (soft) edge cap never binds, so the
+    // keep-out clearing is satisfiable everywhere and the invariant is exact.
+    // In a card too narrow to resolve it, the clearing is best-effort - the
+    // same trade the old layout made - so this is not asserted at every width.
+    const inputs = labelsFor(30)
+    const keepOut = 130
+    const placed = place_labels_on_rays(inputs, {
+      ...geom,
+      keepOut,
+      width: 600,
+    })
+    assertInvariants(placed, inputs, keepOut)
+    expect(placed.length).toBeGreaterThanOrEqual(24)
+  })
+
+  it("hides what cannot fit instead of drawing it misplaced", () => {
+    // A band too short for half the ring: names must drop, never drift
+    const inputs = labelsFor(30, 78, 14)
+    const tight = { ...geom, bandTop: 250, bandBottom: 420 }
+    const placed = place_labels_on_rays(inputs, tight)
+    expect(placed.length).toBeLessThan(30)
+    expect(placed.length).toBeGreaterThan(0)
+    const byIndex = new Map(inputs.map((input) => [input.index, input]))
+    for (const p of placed) {
+      const input = byIndex.get(p.index) as RayLabelInput
+      const anchorAngle = Math.atan2(geom.cy - p.y, p.x - geom.cx)
+      let delta = Math.abs(anchorAngle - input.angle) % (Math.PI * 2)
+      if (delta > Math.PI) delta = Math.PI * 2 - delta
+      expect(delta).toBeLessThan(1e-6)
+    }
+  })
+
+  it("returns nothing for an empty ring", () => {
+    expect(place_labels_on_rays([], geom)).toEqual([])
   })
 })

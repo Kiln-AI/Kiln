@@ -47,6 +47,7 @@
     normalized_lens_value,
     parse_lens_key,
     raw_lens_value,
+    run_count,
     score_key_id,
     strip_cells,
   } from "$lib/utils/evolution/score_lens"
@@ -57,7 +58,9 @@
   import CompareRadarChart, {
     type ComparisonFeature,
   } from "$lib/components/compare_radar_chart.svelte"
-  import CompareMetricsRadarChart from "$lib/components/compare_metrics_radar_chart.svelte"
+  import CompareMetricsBarChart from "$lib/components/compare_metrics_bar_chart.svelte"
+  import CompareParallelChart from "$lib/components/compare_parallel_chart.svelte"
+  import type { ParallelAxisSpec } from "$lib/utils/evolution/parallel_bands"
   import {
     build_metric_axes,
     criterion_key_metas,
@@ -131,13 +134,48 @@
   // charts simply render ungrouped.
   let specs: Spec[] = []
 
-  // Lazy per-run-config eval scores (n_used + usage footer in detail panel)
+  // Lazy per-run-config eval scores (n_used + usage footer in detail panel).
+  // Keyed by run config id alone: the split scopes the whole page, so a change
+  // of split empties all three rather than growing a second dimension of keys
+  // that every consumer would have to know about.
   let eval_scores_cache: Record<string, RunConfigEvalScoresSummary> = {}
   let eval_scores_loading: Record<string, boolean> = {}
   let eval_scores_errors: Record<string, string> = {}
 
+  // Which dataset split the page is reading.
+  //
+  // A run config is iterated against TRAIN and only measured on TEST at the
+  // end, so until this existed the page compared configs on the one slice most
+  // of them had never been run against: every config whose work was done on
+  // train read as "no score", indistinguishable from one nobody ever ran. The
+  // scores, the metrics and the tables are all scoped by it together - a page
+  // showing test quality beside train cost would be a lie of composition.
+  //
+  // "test" is the default because it is what the page has always shown, and it
+  // is sent as an omitted parameter rather than split=test: the two mean the
+  // same thing to the API (each eval's own set), and omitting keeps the URL
+  // and the request identical to what every other caller sends.
+  const SPLIT_VIEWS = ["test", "train", "val", "all"] as const
+  type SplitView = (typeof SPLIT_VIEWS)[number]
+  const SPLIT_LABELS: Record<SplitView, string> = {
+    test: "Test",
+    train: "Train",
+    val: "Val",
+    all: "All runs",
+  }
+  let split_view: SplitView = "test"
+  // The split the loaded summary belongs to, so a change of split is a reload
+  // and the reload is not mistaken for a first load
+  let loaded_split: SplitView | null = null
+  // A split change refetches, but not behind the full-page spinner: the graph
+  // is the reader's place in the page and it should not vanish under them for
+  // a toggle.
+  let summary_refreshing = false
+
   // UI state (round-tripped through the URL)
-  let lens_selected: unknown = "aggregate"
+  // "none" by default: see the Lens type. The card's own facts - runs and the
+  // delta strip - carry it, and a lens is chosen when a question needs one.
+  let lens_selected: unknown = "none"
   let selected_id: string | null = null
   let starred_only = false
   let unlinked_expanded = false
@@ -198,6 +236,10 @@
     const urlPins = urlParams.get("pins")
     if (urlPins) {
       pins = urlPins.split(",").filter((id) => id.length > 0)
+    }
+    const urlSplit = urlParams.get("split")
+    if (urlSplit && (SPLIT_VIEWS as readonly string[]).includes(urlSplit)) {
+      split_view = urlSplit as SplitView
     }
     starred_only = urlParams.get("starred") === "1"
     unlinked_expanded = urlParams.get("unlinked") === "1"
@@ -278,7 +320,7 @@
           meta.scoreKey === lens.scoreKey,
       )
     ) {
-      lens_selected = "aggregate"
+      lens_selected = "none"
     }
   }
 
@@ -289,7 +331,7 @@
     const urlParams = new URLSearchParams($page.url.search)
 
     const serialized_lens = lens_key(lens)
-    if (serialized_lens !== "aggregate") {
+    if (serialized_lens !== "none") {
       urlParams.set("lens", serialized_lens)
     } else {
       urlParams.delete("lens")
@@ -303,6 +345,11 @@
       urlParams.set("pins", pins.join(","))
     } else {
       urlParams.delete("pins")
+    }
+    if (split_view !== "test") {
+      urlParams.set("split", split_view)
+    } else {
+      urlParams.delete("split")
     }
     if (starred_only) {
       urlParams.set("starred", "1")
@@ -348,6 +395,7 @@
     isInitializing,
     lens_selected,
     selected_id,
+    split_view,
     starred_only,
     unlinked_expanded,
     pins,
@@ -436,26 +484,65 @@
     }
   }
 
-  async function get_summary() {
-    loading_summary = true
+  // The split as the API takes it: omitted for "test", which is what an
+  // unscoped request has always returned.
+  function split_query(split: SplitView): { split?: SplitView } {
+    return split === "test" ? {} : { split }
+  }
+
+  async function get_summary(refresh: boolean = false) {
+    const requested_split = split_view
+    loaded_split = requested_split
+    if (refresh) {
+      summary_refreshing = true
+    } else {
+      loading_summary = true
+    }
     try {
       const { data, error: fetch_error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/eval_results_summary",
         {
           params: {
             path: { project_id, task_id },
+            query: split_query(requested_split),
           },
         },
       )
       if (fetch_error) {
         throw fetch_error
       }
+      // A toggle while this was in flight makes the answer the wrong split's;
+      // the newer request owns the state.
+      if (requested_split !== split_view) {
+        return
+      }
       summary = data
     } catch (err) {
-      load_error = createKilnError(err)
+      if (requested_split === split_view) {
+        load_error = createKilnError(err)
+      }
     } finally {
-      loading_summary = false
+      if (refresh) {
+        summary_refreshing = false
+      } else {
+        loading_summary = false
+      }
     }
+  }
+
+  // A split change reloads everything the split scopes: the task-wide summary
+  // and every per-config score already fetched. The caches are emptied rather
+  // than re-keyed, and the pinned/selected reactive statements below refill
+  // them for whatever is on screen.
+  $: reload_for_split(isInitializing, split_view)
+  function reload_for_split(initializing: boolean, next: SplitView) {
+    if (initializing || loaded_split === null || loaded_split === next) {
+      return
+    }
+    eval_scores_cache = {}
+    eval_scores_loading = {}
+    eval_scores_errors = {}
+    get_summary(true)
   }
 
   async function fetch_eval_scores(run_config_id: string) {
@@ -466,6 +553,7 @@
     ) {
       return // Already cached, loading, or errored
     }
+    const requested_split = split_view
     try {
       eval_scores_loading[run_config_id] = true
       const { data, error: fetch_error } = await client.GET(
@@ -473,20 +561,31 @@
         {
           params: {
             path: { project_id, task_id, run_config_id },
+            query: split_query(requested_split),
           },
         },
       )
       if (fetch_error) {
         throw fetch_error
       }
+      // The caches were emptied by the split that superseded this request -
+      // writing into them now would file one split's numbers under another.
+      if (requested_split !== split_view) {
+        return
+      }
       eval_scores_cache[run_config_id] = data
       delete eval_scores_errors[run_config_id]
     } catch (err) {
+      if (requested_split !== split_view) {
+        return
+      }
       const kilnError = createKilnError(err)
       eval_scores_errors[run_config_id] =
         kilnError.getMessage() || "Failed to fetch eval scores"
     } finally {
-      eval_scores_loading[run_config_id] = false
+      if (requested_split === split_view) {
+        eval_scores_loading[run_config_id] = false
+      }
     }
   }
 
@@ -501,6 +600,34 @@
   $: forest = build_forest(run_configs || [])
   $: layout = layout_forest(forest)
   $: lens_data = build_lens_data(summary, evals)
+
+  // How much of the task the current split actually covers. An eval with no
+  // train filter contributes nothing to the train view, and a page that just
+  // showed fewer bars would read as "these configs were never run" rather than
+  // "this eval has no train set" - so the difference is stated rather than
+  // drawn. Only for a split view: each eval owns its test set by definition.
+  $: split_coverage = summarize_split_coverage(summary, split_view)
+  function summarize_split_coverage(
+    current: EvalResultsSummaryResponse | null,
+    split: SplitView,
+  ): { missing: number; total: number } | null {
+    if (!current || split === "test" || split === "all") {
+      return null
+    }
+    const infos = Object.values(current.evals_by_id)
+    const missing = infos.filter(
+      (info) => info.split_available === false,
+    ).length
+    if (missing === 0) {
+      return null
+    }
+    return { missing, total: infos.length }
+  }
+
+  // What the charts say they are showing. Null for the default view, which is
+  // the one the cards' own subtitles already describe.
+  $: split_scope_label =
+    split_view === "test" ? null : `${SPLIT_LABELS[split_view]} split`
 
   $: selected_node = selected_id ? forest.nodes.get(selected_id) ?? null : null
 
@@ -676,23 +803,34 @@
   // run and a group in the table contiguous. Informational keys sink within
   // their family rather than to the bottom of everything, so a family's rows
   // stay together.
-  $: ordered_criterion_metas = quality_grouped
-    ? [...criterion_metas].sort(
-        (a, b) =>
-          family_rank(
-            quality_families,
-            family_for_eval(score_families, a.evalId).id,
-          ) -
-            family_rank(
-              quality_families,
-              family_for_eval(score_families, b.evalId).id,
-            ) ||
-          (a.direction === "informational" ? 1 : 0) -
-            (b.direction === "informational" ? 1 : 0) ||
-          a.evalName.localeCompare(b.evalName) ||
-          a.scoreKey.localeCompare(b.scoreKey),
-      )
-    : criterion_metas
+  //
+  // ALWAYS sorted, including when there is only one family and the family rank
+  // contributes nothing. The unsorted branch this replaces fell back to the
+  // order the metas arrived in, and that order is the order the SERVER's evals
+  // dict was built in, which is the order `os.scandir` yielded the eval
+  // directories (basemodel.py: scandir, deliberately unsorted, for speed).
+  // Directory order is a property of one machine's local filesystem history -
+  // when each eval folder happened to be created or deleted - not of the data.
+  // So two people on the same commit, following the same shared link, could see
+  // the ring's axes in different positions, with no control on the page to
+  // explain the difference and nothing in the URL that could carry it. The
+  // trailing evalName/scoreKey tiebreak was already there and already total;
+  // it just was not reached when a task declared a single family.
+  $: ordered_criterion_metas = [...criterion_metas].sort(
+    (a, b) =>
+      family_rank(
+        quality_families,
+        family_for_eval(score_families, a.evalId).id,
+      ) -
+        family_rank(
+          quality_families,
+          family_for_eval(score_families, b.evalId).id,
+        ) ||
+      (a.direction === "informational" ? 1 : 0) -
+        (b.direction === "informational" ? 1 : 0) ||
+      a.evalName.localeCompare(b.evalName) ||
+      a.scoreKey.localeCompare(b.scoreKey),
+  )
 
   // Family per data key for the radar's bands. Empty when ungrouped, which the
   // chart reads as "draw no arcs and no key".
@@ -760,11 +898,32 @@
   // Of the criterion scores, the radar still drops the lower-is-better and
   // informational ones (it reads "further from center is better"), so count
   // what's left to know whether it will draw anything at all.
-  $: radar_axis_count = criterion_metas.filter(
+  $: radar_metas = ordered_criterion_metas.filter(
     (meta) =>
       meta.direction !== "lower_is_better" &&
       meta.direction !== "informational",
-  ).length
+  )
+  $: radar_axis_count = radar_metas.length
+
+  // ---- Uncertainty view ---------------------------------------------------
+  // The same axes as the radar, in the same order, so the chart below it is
+  // the same comparison with its confidence intervals drawn rather than a
+  // second, subtly different one. It needs the sample size behind each mean,
+  // which the radar never asks for.
+  $: parallel_axes = radar_metas.map(
+    (meta): ParallelAxisSpec => ({
+      key: score_key_id(meta.evalId, meta.scoreKey),
+      label: score_key_label(meta.scoreKey),
+      evalName: meta.evalName,
+      type: meta.type,
+    }),
+  )
+  $: get_sample_size = make_sample_size_getter(lens_data)
+  function make_sample_size_getter(data: LensData) {
+    return (runConfigId: string, dataKey: string): number | null =>
+      data.counts.get(runConfigId)?.get(dataKey) ?? null
+  }
+  $: parallel_available = pinned_nodes.length > 0 && parallel_axes.length >= 2
   $: radar_available =
     pinned_nodes.length > 0 && radar_axis_count >= MIN_RADAR_AXES
   // Hiding every quality row is a different problem from a task with too few
@@ -831,8 +990,8 @@
     metric_axis_keys = null
   }
 
-  // Grouped under the same family headings the chart lays the axes out by, so
-  // the menu reads in the same order as the ring. The heading counts what is ON
+  // Grouped under the same family headings the chart lays the metrics out by,
+  // so the menu reads down in the chart's own order. The heading counts what is ON
   // out of what exists, which is the number the chart's own family key shows -
   // "Tokens 3" under the title is these three ticks.
   $: metric_menu_items = (() => {
@@ -872,7 +1031,7 @@
   // What is left off, stated rather than silent. Informational score keys are
   // plotted here whenever the chart knows which end of their scale is the good
   // one - being a metric is the point of this chart - but one it cannot point
-  // has no better end at all, and a radar can only say "further is better".
+  // has no better end at all, and a bar can only say "longer is better".
   $: metrics_not_shown_note = (() => {
     const parts: string[] = []
     // Against the visible axes, not the catalog: a hidden row was not "not
@@ -1161,9 +1320,16 @@
       {
         options: [
           {
+            label: "No score",
+            value: "none",
+            description: "Run counts and per-eval deltas only",
+          },
+          {
             label: "Aggregate score",
             value: "aggregate",
-            description: "Mean of all normalized eval scores",
+            // Named as what it is. Every eval counts the same in it, which is
+            // a claim about the task that nothing in the task supports.
+            description: "Unweighted mean of all normalized eval scores",
           },
         ],
       },
@@ -1231,6 +1397,7 @@
       result[node.id] = {
         lens_color: lens_color(normalized),
         lens_value: raw === null ? null : raw.toFixed(2),
+        runs: node.ghost ? 0 : run_count(data, node.id),
         strip: cells,
         subtitle: node_subtitle(node, provider_models, task_prompts),
         best: node.id === best_id,
@@ -1298,6 +1465,37 @@
         />
         Starred only
       </label>
+      <!-- The dataset split every score and metric on this page is read over.
+           One control for the whole page, not one per card: quality from the
+           test set beside cost from train would be a number nobody could act
+           on. "All runs" is every eval run that exists, which is the only view
+           that includes runs against items that have since left their split. -->
+      <div class="flex flex-row items-center gap-2">
+        <div class="join" role="group" aria-label="Dataset split">
+          {#each SPLIT_VIEWS as split_option}
+            <button
+              type="button"
+              class="join-item btn btn-sm font-normal {split_view ===
+              split_option
+                ? 'btn-active'
+                : ''}"
+              aria-pressed={split_view === split_option}
+              on:click={() => (split_view = split_option)}
+            >
+              {SPLIT_LABELS[split_option]}
+            </button>
+          {/each}
+        </div>
+        {#if summary_refreshing}
+          <span class="loading loading-spinner loading-xs text-gray-400"></span>
+        {:else if split_coverage}
+          <span class="text-xs text-gray-500">
+            {split_coverage.missing} of {split_coverage.total} evals have no {SPLIT_LABELS[
+              split_view
+            ].toLowerCase()} set
+          </span>
+        {/if}
+      </div>
       <div class="flex-grow"></div>
       {#if forest.edges.length > 0}
         <div class="join">
@@ -1401,16 +1599,17 @@
       {/if}
     </div>
 
-    <!-- Section 2: the two radars, side by side - quality on the left, what it
+    <!-- Section 2: the two charts, side by side - quality on the left, what it
          cost to get it on the right. They only pair up once there is room for
-         two rings plus their axis names (each needs roughly 540px before the
-         plot starts losing to the labels), so below xl they stack and each one
-         is page-width again.
+         the radar's ring plus its axis names and the bars plus their gutter
+         (each needs roughly 540px before the plot starts losing to the
+         labels), so below xl they stack and each one is page-width again.
 
-         Height is the only thing a radar can grow into, so the floor is
-         generous: the chart's own 640px box plus its card header and padding.
-         Tall enough for wrapped axis names all the way round the outer ring
-         plus the scrolling legend underneath.
+         Height is what both charts grow into - a radius for one, a row per
+         metric for the other - so the floor is generous: the chart's own 640px
+         box plus its card header and padding. Tall enough for wrapped axis
+         names all the way round the outer ring, eleven readable metric rows,
+         and the scrolling legend underneath either.
 
          The two cards are the same height, which is what makes the row read as
          a pair rather than two things that happen to be adjacent. Grid rows
@@ -1433,7 +1632,9 @@
             axisFamilies={quality_axis_families}
             specDescriptions={spec_descriptions}
             title="Quality Scores"
-            subtitle="Eval scores for the selected run configurations. Higher is better on every axis."
+            subtitle={`Eval scores for the selected run configurations.${
+              split_scope_label ? ` ${split_scope_label} only.` : ""
+            } Higher is better on every axis.`}
             table_location="below"
             legend_position="bottom"
           />
@@ -1471,7 +1672,8 @@
       </div>
 
       <div class="min-w-0 min-h-[800px] flex flex-col">
-        <CompareMetricsRadarChart
+        <CompareMetricsBarChart
+          scopeLabel={split_scope_label}
           axes={shown_metric_axes}
           getMetricValue={get_metric_value}
           run_configs={run_configs ?? []}
@@ -1489,12 +1691,34 @@
               class="btn btn-sm font-normal"
               title="Choose which metrics are plotted"
             >
-              Axes ({shown_metric_axes.length})
+              Metrics ({shown_metric_axes.length})
             </button>
           </FloatingMenu>
-        </CompareMetricsRadarChart>
+        </CompareMetricsBarChart>
       </div>
     </div>
+
+    <!-- Section 2b: the quality scores once more, full width, with the
+         confidence interval behind each one drawn.
+
+         Under the radar rather than beside it, and full width, because it is
+         the same comparison seen a second way rather than a different subject:
+         a reader takes the shape off the radar, then comes here to find out
+         whether that shape survives its own error bars. Width is what the bands
+         need - they are vertical, and squeezing five axes into half the page
+         stacks them into mud. -->
+    {#if parallel_available}
+      <div class="mt-6">
+        <CompareParallelChart
+          axes={parallel_axes}
+          getValue={(runConfigId, key) => get_model_value_raw(runConfigId, key)}
+          getSampleSize={get_sample_size}
+          run_configs={run_configs ?? []}
+          model_info={$model_info}
+          selectedRunConfigIds={pinned_ids}
+        />
+      </div>
+    {/if}
 
     <!-- Section 3: the comparison tables - one per track, each full page
          width and stacked rather than paired into columns. There can be a
@@ -1614,6 +1838,8 @@
       run_config_id={inspector.run_config_id}
       eval_name={inspector.eval_name}
       run_config_name={inspector.run_config_name}
+      declared_splits={summary?.evals_by_id[inspector.eval_id]
+        ?.declared_splits ?? []}
       on:close={() => (inspector = null)}
     />
   {/key}

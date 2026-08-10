@@ -1,7 +1,7 @@
 import json
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Annotated, Any, Dict, List, Set, Tuple
+from typing import Annotated, Any, Dict, List, Literal, Set, Tuple
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from pydantic import ValidationError
@@ -552,9 +552,24 @@ class EvalResultsSummaryEvalInfo(BaseModel):
     default_judge_config_id: ID_TYPE | None = Field(
         description="The default judge config ID for this eval, if any."
     )
-    dataset_size: int = Field(description="Total size of the eval dataset.")
+    dataset_size: int = Field(
+        description="Number of items in the slice being summarized: the eval's "
+        "own set, or the requested split's."
+    )
     output_score_keys: list[str] = Field(
         description="The output score keys for this eval."
+    )
+    declared_splits: list[str] = Field(
+        default_factory=list,
+        description="Named dataset splits this eval has a filter for, of "
+        "'test', 'train', 'val'. An eval missing the split being viewed "
+        "contributes no results to it.",
+    )
+    split_available: bool = Field(
+        default=True,
+        description="Whether the requested split resolved for this eval. False "
+        "means its cells are absent because it has no such split, not because "
+        "nothing has been run.",
     )
 
 
@@ -573,6 +588,13 @@ class EvalResultsSummaryResultCell(BaseModel):
     percent_complete: float = Field(
         description="Percent of dataset processed for this run config."
     )
+    n_used_by_score_key: Dict[str, int] = Field(
+        default_factory=dict,
+        description="How many runs each mean is over, keyed by "
+        "output_score_key. A mean over a 25-item train split and one over a "
+        "150-item test set are not the same claim, and the number is the only "
+        "thing that says so.",
+    )
 
 
 class EvalResultsSummaryResponse(BaseModel):
@@ -587,6 +609,11 @@ class EvalResultsSummaryResponse(BaseModel):
     scores_by_run_config_by_eval: Dict[
         ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]
     ] = Field(description="Results keyed by run config ID then eval ID.")
+    split: str | None = Field(
+        default=None,
+        description="The split these results were scoped to, echoed back. None "
+        "means the request did not ask for one and got each eval's own set.",
+    )
 
 
 class EvalConfigCompareSummary(BaseModel):
@@ -627,7 +654,10 @@ class RunConfigEvalResult(BaseModel):
 
     eval_id: ID_TYPE = Field(description="The unique identifier of the eval.")
     eval_name: str = Field(description="The human-readable name of the eval.")
-    dataset_size: int = Field(description="The dataset size for this eval.")
+    dataset_size: int = Field(
+        description="Number of items in the slice being reported: the eval's "
+        "own set, or the requested split's."
+    )
     eval_config_result: EvalConfigResult | None = Field(
         default=None, description="The eval config results, if available."
     )
@@ -636,6 +666,16 @@ class RunConfigEvalResult(BaseModel):
     )
     spec_id: ID_TYPE | None = Field(
         default=None, description="The associated spec ID, if any."
+    )
+    declared_splits: list[str] = Field(
+        default_factory=list,
+        description="Named dataset splits this eval has a filter for, of "
+        "'test', 'train', 'val'.",
+    )
+    split_available: bool = Field(
+        default=True,
+        description="Whether the requested split resolved for this eval. False "
+        "means no results for it, because the eval has no such split.",
     )
 
 
@@ -647,6 +687,16 @@ class RunConfigEvalScoresSummary(BaseModel):
     )
     mean_usage: MeanUsage | None = Field(
         default=None, description="Average usage statistics across eval runs."
+    )
+    split: str | None = Field(
+        default=None,
+        description="The split these results were scoped to, echoed back. None "
+        "means the request did not ask for one and got each eval's own set.",
+    )
+    n_eval_runs: int = Field(
+        default=0,
+        description="How many eval runs the usage averages are over, after "
+        "split scoping. Zero means the usage is absent, not zero.",
     )
 
 
@@ -703,6 +753,160 @@ def eval_run_item_id(eval_run: EvalRun) -> ID_TYPE:
         if eval_run.dataset_id is not None
         else eval_run.eval_input_id
     )
+
+
+# ---------------------------------------------------------------------------
+# Reading a run config's results one dataset split at a time.
+#
+# An eval's own filter (eval_set_filter_id, or eval_input_filter_id on V2) is
+# its TEST set, and until now it was the only slice the compare views could
+# read: every summary scoped its runs to expected_item_ids_for_eval and dropped
+# the rest. But a run config is usually iterated against the TRAIN split and
+# only measured on test at the end, so the work that produced a config was
+# invisible on the page that compares configs - a config with 25 train runs and
+# no test runs rendered as "no score", indistinguishable from one nobody ever
+# ran.
+#
+# The splits are already in the datamodel: train_set_filter_id and
+# val_set_filter_id sit beside the test filter on every Eval. What is NOT in
+# the datamodel is which split an EvalRun belongs to - it records the item it
+# scored, not the slice that selected it - so a split is resolved the same way
+# it is at run time: by asking which items the split's filter selects, and
+# keeping the runs that scored one of them.
+#
+# This is a READ-side vocabulary and deliberately not EvalSplitName, the one
+# EvalJobParams uses to run an eval. "all" is meaningful here (show every run
+# that exists, whatever selected it) and meaningless there (you cannot run
+# "all" - EvalRunner needs one filter), and V2 evals answer here (their splits
+# are EvalInput tag filters) where they 422 there (EvalRunner cannot run a
+# TaskRun filter against an EvalInput dataset - see split_filter_id_from_eval).
+# ---------------------------------------------------------------------------
+
+EvalSplitQuery = Literal["train", "val", "test", "all"]
+
+
+def eval_uses_eval_inputs(eval: Eval) -> bool:
+    """Whether an eval's items are EvalInputs (V2) rather than TaskRuns (V1).
+
+    Same precedence as expected_item_ids_for_eval: the TaskRun filter wins if
+    both are somehow set, so the two can never disagree about which store an
+    eval's item ids come from."""
+    return eval.eval_set_filter_id is None and eval.eval_input_filter_id is not None
+
+
+def split_item_ids_for_eval(
+    task: Task, eval: Eval, split: EvalSplitName, readonly: bool
+) -> Set[ID_TYPE] | None:
+    """The items in one of an eval's named splits, or None when the eval has no
+    usable filter for it.
+
+    "test" is the eval's own slice, so it goes through expected_item_ids_for_eval
+    unchanged - that is what an omitted split has always meant.
+
+    train/val come from the eval's own fields, resolved against the store the
+    eval's items live in. The fields are shared between V1 and V2 (a tag filter
+    reads the same either way) but the STORE is not, so the same id is resolved
+    against EvalInputs for a V2 eval and TaskRuns for a V1 one. Filters that
+    only the TaskRun grammar accepts (high_rating, multi_filter::, ...) raise
+    on the EvalInput side; that is "no such split", not an error, because a
+    train filter nobody set for this eval's source is exactly the case the
+    caller has to degrade over."""
+    if split == "test":
+        return expected_item_ids_for_eval(task, eval, readonly=readonly)
+
+    filter_id = eval.filter_id_for_split(split)
+    if filter_id is None:
+        return None
+    try:
+        if eval_uses_eval_inputs(eval):
+            return eval_input_ids_in_filter(task, filter_id, readonly=readonly)
+        return dataset_ids_in_filter(task, filter_id, readonly=readonly)
+    except ValueError:
+        return None
+
+
+def scored_item_ids(eval_config: EvalConfig) -> Set[ID_TYPE]:
+    """Every item any run config has scored under this judge config."""
+    return {
+        eval_run_item_id(eval_run)
+        for eval_run in eval_config.runs(readonly=True)
+        if eval_run.task_run_config_id is not None
+    }
+
+
+class SplitItemResolver:
+    """One request's answer to "which items are in split S of eval E".
+
+    Memoized per (source, filter id): the eval_set and eval_input filters share
+    the tag:: grammar but select different stores, so the filter id alone is
+    not a safe cache key. Worth having because a task's evals routinely share a
+    filter, and each resolution walks every TaskRun or EvalInput in the task.
+
+    Resolution goes through the module-level dataset_ids_in_filter /
+    eval_input_ids_in_filter rather than reimplementing them, so a caller that
+    patches those (tests do) still sees every call."""
+
+    def __init__(self, task: Task, readonly: bool = True):
+        self.task = task
+        self.readonly = readonly
+        self._cache: Dict[Tuple[str, str], Set[ID_TYPE] | None] = {}
+
+    def items_for_split(self, eval: Eval, split: EvalSplitName) -> Set[ID_TYPE] | None:
+        source = "eval_input" if eval_uses_eval_inputs(eval) else "task_run"
+        if split == "test":
+            filter_id = eval.eval_set_filter_id or eval.eval_input_filter_id
+        else:
+            filter_id = eval.filter_id_for_split(split)
+        key = (source, str(filter_id))
+        if key not in self._cache:
+            self._cache[key] = split_item_ids_for_eval(
+                self.task, eval, split, readonly=self.readonly
+            )
+        return self._cache[key]
+
+    def items_for_query(
+        self, eval: Eval, eval_config: EvalConfig | None, split: EvalSplitQuery | None
+    ) -> Set[ID_TYPE] | None:
+        """The item set a split query scopes an eval to, or None when this eval
+        has no such split.
+
+        None and "test" are the same request - the eval's own slice - so an
+        omitted parameter is byte-identical to what every caller got before
+        splits existed.
+
+        "all" is every item that has been scored under this judge config, plus
+        the eval's own slice. Not the union of the three splits: runs exist
+        against items that are in none of them (an item can drift out of a
+        filter, or have been scored under a filter since changed), and an "all"
+        that hid those would be smaller than the sum of its parts. Including
+        the test slice keeps the denominator the declared universe, so a config
+        that only ever ran train reads as partially complete rather than 100%."""
+        if split is None or split == "test":
+            return self.items_for_split(eval, "test")
+        if split == "all":
+            expected = self.items_for_split(eval, "test") or set()
+            if eval_config is None:
+                return expected
+            return expected | scored_item_ids(eval_config)
+        return self.items_for_split(eval, split)
+
+    def declared_splits(self, eval: Eval) -> List[str]:
+        """The named splits this eval declares a filter for, in reading order.
+
+        Declared, not resolved: a filter is one field read, where resolving it
+        is a walk of the task's items, and this is reported for every eval on
+        every request whatever split is being viewed. A declared split can
+        still come back empty (nothing tagged into it yet) or unusable (a
+        TaskRun-only filter on a V2 eval); both then show as a split with no
+        results rather than as an absent one, which is the same thing the
+        reader can act on - there is nothing to see either way."""
+        splits: List[str] = []
+        if eval.eval_set_filter_id is not None or eval.eval_input_filter_id is not None:
+            splits.append("test")
+        for split in ("train", "val"):
+            if eval.filter_id_for_split(split) is not None:
+                splits.append(split)
+        return splits
 
 
 def build_score_key_to_task_requirement_id(task: Task) -> Dict[str, ID_TYPE]:
@@ -1765,6 +1969,17 @@ def connect_evals_api(app: FastAPI):
             str,
             Path(description="The unique identifier of the task within the project."),
         ],
+        split: Annotated[
+            EvalSplitQuery | None,
+            Query(
+                description="Scope the results to one dataset split: 'train', "
+                "'val', 'test', or 'all' (every run that exists, plus the "
+                "eval's own set as the denominator). Omit for each eval's own "
+                "set, which is what 'test' means. Never fails on an eval that "
+                "has no such split: that eval reports split_available=false "
+                "and contributes no cells."
+            ),
+        ] = None,
     ) -> EvalResultsSummaryResponse:
         task = task_from_id(project_id, task_id)
         task_run_configs = get_all_run_configs(project_id, task_id)
@@ -1774,44 +1989,35 @@ def connect_evals_api(app: FastAPI):
             for rc in task_run_configs
         }
 
-        # Cache keyed by (source, filter_id): eval_set and eval_input filters
-        # share the tag:: grammar but select different stores, so the filter id
-        # alone isn't a safe cache key.
-        item_ids_cache: Dict[Tuple[str, str], Set[ID_TYPE]] = {}
+        resolver = SplitItemResolver(task)
         evals_out: Dict[ID_TYPE, EvalResultsSummaryEvalInfo] = {}
         scores_out: Dict[ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]] = {}
 
         for eval in task.evals(readonly=True):
-            if eval.eval_set_filter_id is not None:
-                cache_key = ("task_run", eval.eval_set_filter_id)
-            elif eval.eval_input_filter_id is not None:
-                cache_key = ("eval_input", eval.eval_input_filter_id)
-            else:
+            if eval.eval_set_filter_id is None and eval.eval_input_filter_id is None:
                 continue
-            if cache_key not in item_ids_cache:
-                expected_ids = expected_item_ids_for_eval(task, eval, readonly=True)
-                # None is unreachable here (a filter is set above), but keep the
-                # cache total rather than asserting.
-                item_ids_cache[cache_key] = expected_ids or set()
-            expected_item_ids = item_ids_cache[cache_key]
+
+            # "all" needs the judge config to know what has been run, so the
+            # config is resolved before the item set rather than after.
+            default_config = None
+            if eval.current_config_id is not None:
+                for eval_config in eval.configs(readonly=True):
+                    if eval_config.id == eval.current_config_id:
+                        default_config = eval_config
+                        break
+
+            expected_item_ids = resolver.items_for_query(eval, default_config, split)
 
             evals_out[eval.id] = EvalResultsSummaryEvalInfo(
                 name=eval.name,
                 default_judge_config_id=eval.current_config_id,
-                dataset_size=len(expected_item_ids),
+                dataset_size=len(expected_item_ids or []),
                 output_score_keys=[s.json_key() for s in eval.output_scores],
+                declared_splits=resolver.declared_splits(eval),
+                split_available=expected_item_ids is not None,
             )
 
-            if eval.current_config_id is None:
-                continue
-
-            default_config = None
-            for eval_config in eval.configs(readonly=True):
-                if eval_config.id == eval.current_config_id:
-                    default_config = eval_config
-                    break
-
-            if default_config is None or len(expected_item_ids) == 0:
+            if default_config is None or not expected_item_ids:
                 continue
 
             summary = compute_score_summary(
@@ -1831,6 +2037,9 @@ def connect_evals_api(app: FastAPI):
                 cell = EvalResultsSummaryResultCell(
                     mean_scores=mean_scores,
                     percent_complete=percent_complete,
+                    n_used_by_score_key={
+                        key: s.n_used for key, s in scores_dict.items()
+                    },
                 )
                 if rc_id not in scores_out:
                     scores_out[rc_id] = {}
@@ -1840,6 +2049,7 @@ def connect_evals_api(app: FastAPI):
             evals_by_id=evals_out,
             run_configs_by_id=run_configs_out,
             scores_by_run_config_by_eval=scores_out,
+            split=split,
         )
 
     # Compared to above, this is comparing all eval configs to each other, not looking at a single eval config
@@ -2013,11 +2223,22 @@ def connect_evals_api(app: FastAPI):
         run_config_id: Annotated[
             str, Path(description="The unique identifier of the run configuration.")
         ],
+        split: Annotated[
+            EvalSplitQuery | None,
+            Query(
+                description="Scope the scores and the usage averages to one "
+                "dataset split: 'train', 'val', 'test', or 'all' (every run "
+                "that exists). Omit for each eval's own set, which is what "
+                "'test' means. An eval with no such split reports "
+                "split_available=false rather than failing the request."
+            ),
+        ] = None,
     ) -> RunConfigEvalScoresSummary:
         task = task_from_id(project_id, task_id)
 
         # Verify the run config exists
         task_run_config_from_id(project_id, task_id, run_config_id)
+        resolver = SplitItemResolver(task)
 
         # Build a mapping from eval_id to spec_id for evals that are associated with specs
         # Also track which eval_ids belong to archived specs so we can exclude them
@@ -2051,13 +2272,10 @@ def connect_evals_api(app: FastAPI):
             if eval.id and eval.id in archived_eval_ids:
                 continue
 
-            # Get the eval set size for this eval (TaskRun- or EvalInput-sourced)
-            expected_item_ids = expected_item_ids_for_eval(task, eval, readonly=True)
-            if expected_item_ids is None:
-                continue
-            dataset_size = len(expected_item_ids)
+            declared_splits = resolver.declared_splits(eval)
 
             # Only process the default eval config (only if only one eval config, or default is set explicitly if many)
+            # Resolved before the item set, which "all" reads runs out of.
             default_eval_config = None
             eval_configs = eval.configs(readonly=True)
             if len(eval_configs) == 1:
@@ -2073,6 +2291,34 @@ def connect_evals_api(app: FastAPI):
                         None,
                     )
 
+            # The items this eval is scored over, for the requested split
+            expected_item_ids = resolver.items_for_query(
+                eval, default_eval_config, split
+            )
+            if expected_item_ids is None:
+                # No such split on this eval. Reported rather than dropped: a
+                # missing eval reads as an eval that failed, and the page has
+                # to be able to say "this one has no train set" instead.
+                if (
+                    eval.eval_set_filter_id is None
+                    and eval.eval_input_filter_id is None
+                ):
+                    continue
+                eval_results.append(
+                    RunConfigEvalResult(
+                        eval_id=eval.id,
+                        eval_name=eval.name,
+                        dataset_size=0,
+                        eval_config_result=None,
+                        missing_default_eval_config=default_eval_config is None,
+                        spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
+                        declared_splits=declared_splits,
+                        split_available=False,
+                    )
+                )
+                continue
+            dataset_size = len(expected_item_ids)
+
             if not default_eval_config:
                 # No default eval config set, so we can't process this eval. Still return it so UI can show an error
                 eval_results.append(
@@ -2083,6 +2329,7 @@ def connect_evals_api(app: FastAPI):
                         eval_config_result=None,
                         missing_default_eval_config=True,
                         spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
+                        declared_splits=declared_splits,
                     )
                 )
                 continue
@@ -2183,6 +2430,7 @@ def connect_evals_api(app: FastAPI):
                         percent_complete=percent_complete,
                         n_excluded=eval_config_n_excluded,
                     ),
+                    declared_splits=declared_splits,
                 )
             )
 
@@ -2209,6 +2457,8 @@ def connect_evals_api(app: FastAPI):
         return RunConfigEvalScoresSummary(
             eval_results=eval_results,
             mean_usage=mean_usage,
+            split=split,
+            n_eval_runs=total_eval_runs,
         )
 
     @app.post(

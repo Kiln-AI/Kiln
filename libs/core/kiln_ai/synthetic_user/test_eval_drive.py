@@ -144,12 +144,15 @@ async def test_drives_turns_and_returns_result(fake_adapter, fake_su_driver) -> 
     assert len(leaf.trace) == 6
 
     # The synthetic user's spend rides back with the result — it exists
-    # nowhere else, since SU turns are never persisted as TaskRuns.
+    # nowhere else, since SU turns are never persisted as TaskRuns. Three
+    # assistant turns cost only TWO SU calls: the seed prompt opens the
+    # conversation and the last turn gets no follow-up.
+    assert fake_su_driver.respond.await_count == 2
     assert result.su_usage is not None
-    assert result.su_usage.input_tokens == 300
-    assert result.su_usage.output_tokens == 30
-    assert result.su_usage.cost == pytest.approx(0.003)
-    assert result.su_total_cost == pytest.approx(0.003)
+    assert result.su_usage.input_tokens == 200
+    assert result.su_usage.output_tokens == 20
+    assert result.su_usage.cost == pytest.approx(0.002)
+    assert result.su_total_cost == pytest.approx(0.002)
 
     # The SU driver was built from the typed persona.
     assert fake_su_driver.ctor_args["info"] is _INFO

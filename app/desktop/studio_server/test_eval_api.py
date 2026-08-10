@@ -1976,6 +1976,94 @@ async def test_get_eval_run_results_split_filtering(
 
 
 @pytest.mark.asyncio
+async def test_get_eval_run_results_split_filtering_v2_eval(
+    client,
+    mock_task_from_id,
+    mock_task,
+    mock_eval,
+    mock_eval_config,
+    mock_run_config,
+):
+    """A V2 eval's runs key on eval_input_id, so its split filters have to be
+    resolved against EvalInputs. Matching them against TaskRun ids returned an
+    empty list for every split — the bug this covers."""
+    mock_task_from_id.return_value = mock_task
+
+    # Built rather than mutated from the V1 fixture: Eval validates that
+    # exactly one of the two filter ids is set, so there is no order of
+    # assignments that gets from one shape to the other.
+    v2_eval = Eval(
+        id="eval_v2",
+        name="V2 Eval",
+        output_scores=[
+            EvalOutputScore(
+                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
+            ),
+            EvalOutputScore(
+                name="overall_rating",
+                instruction="desc2",
+                type=TaskOutputRatingType.five_star,
+            ),
+        ],
+        eval_input_filter_id="tag::v2_test",
+        train_set_filter_id="tag::v2_train",
+        val_set_filter_id="tag::v2_val",
+        eval_configs_filter_id="tag::golden",
+        parent=mock_task,
+    )
+    v2_eval.save_to_file()
+    v2_config = EvalConfig(
+        id="eval_config1",
+        name="V2 Judge",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+        parent=v2_eval,
+        model_name="gpt-4",
+        model_provider="openai",
+    )
+    v2_config.save_to_file()
+
+    eval_run_ids = {}
+    for tag in ["v2_test", "v2_train"]:
+        eval_input = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text=f"input {tag}")),
+            tags=[tag],
+            parent=mock_task,
+        )
+        eval_input.save_to_file()
+        eval_run = EvalRun(
+            task_run_config_id="run_config1",
+            scores={"score1": 3.0, "overall_rating": 1.0},
+            input=f"input {tag}",
+            output=f"output {tag}",
+            eval_input_id=eval_input.id,
+            parent=v2_config,
+        )
+        eval_run.save_to_file()
+        eval_run_ids[tag] = eval_run.id
+
+    with (
+        patch("app.desktop.studio_server.eval_api.eval_from_id", return_value=v2_eval),
+        patch(
+            "app.desktop.studio_server.eval_api.eval_config_from_id",
+            return_value=v2_config,
+        ),
+    ):
+        for split, tag in [("test", "v2_test"), ("train", "v2_train")]:
+            response = client.get(_RESULTS_PATH, params={"split": split})
+            assert response.status_code == 200, response.text
+            assert {r["id"] for r in response.json()["results"]} == {
+                eval_run_ids[tag]
+            }, split
+
+        # A declared split that no EvalInput carries is empty, not an error:
+        # nothing has been run on it yet.
+        response = client.get(_RESULTS_PATH, params={"split": "val"})
+        assert response.status_code == 200
+        assert response.json()["results"] == []
+
+
+@pytest.mark.asyncio
 async def test_get_eval_run_results_split_unset_422(
     client,
     mock_task_from_id,
@@ -4789,6 +4877,12 @@ async def test_eval_results_summary_behavioral_equivalence(client):
             assert mean_val == pytest.approx(
                 score_data["results"][rc_id][score_key]["mean_score"]
             )
+        # Every mean carries the sample size it was computed over: the UI puts a
+        # confidence interval on the mean, which is not possible without it.
+        for score_key in cell["mean_scores"]:
+            n_used = cell["n_used_by_score_key"][score_key]
+            assert n_used == score_data["results"][rc_id][score_key]["n_used"]
+            assert n_used > 0
         assert cell["percent_complete"] == pytest.approx(
             score_data["run_config_percent_complete"][rc_id]
         )
@@ -4902,6 +4996,7 @@ async def test_eval_results_summary_no_evals(client):
         "evals_by_id": {},
         "run_configs_by_id": {},
         "scores_by_run_config_by_eval": {},
+        "split": None,
     }
 
 
@@ -4992,6 +5087,222 @@ async def test_eval_results_summary_dataset_ids_cached_per_filter(client):
 
     assert response.status_code == 200
     assert runs_call_count == 1
+
+
+# --- split-scoped summaries -------------------------------------------------
+#
+# The compare views read one dataset split at a time. The split's filter lives
+# on the eval (train_set_filter_id / val_set_filter_id) and is resolved against
+# whichever store the eval's items live in, which is the part these cover: a V2
+# eval keys its runs on eval_input_id, so its train filter has to be read as an
+# EvalInput filter or it silently selects nothing.
+
+
+def _build_mock_v2_eval(
+    eval_id: str,
+    name: str,
+    current_config_id: str | None,
+    eval_input_filter_id: str,
+    output_scores: list[EvalOutputScore],
+    configs: list,
+    train_filter_id: str | None = None,
+    val_filter_id: str | None = None,
+) -> Mock:
+    mock = Mock(spec=Eval)
+    mock.id = eval_id
+    mock.name = name
+    mock.current_config_id = current_config_id
+    mock.eval_set_filter_id = None
+    mock.eval_input_filter_id = eval_input_filter_id
+    mock.train_set_filter_id = train_filter_id
+    mock.val_set_filter_id = val_filter_id
+    mock.output_scores = output_scores
+    mock.configs.return_value = configs
+    mock.filter_id_for_split.side_effect = lambda split: {
+        "train": train_filter_id,
+        "val": val_filter_id,
+        "test": None,
+    }[split]
+    return mock
+
+
+_V2_ITEMS_BY_FILTER = {
+    "tag::x_test": {"ei1", "ei2"},
+    "tag::x_train": {"ei3", "ei4"},
+}
+
+
+def _v2_eval_input_ids_in_filter(task, filter_id, readonly):
+    return set(_V2_ITEMS_BY_FILTER.get(filter_id, set()))
+
+
+def _v2_summary_fixtures():
+    """A V2 eval scored on two test items, two train items, and one item that
+    is in no split at all (its filter moved on since)."""
+    output_scores = [
+        EvalOutputScore(
+            name="accuracy",
+            instruction="Test accuracy",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+    runs = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": score},
+            input="i",
+            output="o",
+            eval_input_id=item_id,
+            task_run_usage=Usage(input_tokens=10, output_tokens=2, cost=cost),
+        )
+        for item_id, score, cost in [
+            ("ei1", 0.8, 1.0),
+            ("ei2", 0.6, 1.0),
+            ("ei3", 0.2, 3.0),
+            ("ei4", 0.4, 3.0),
+            ("ei9", 1.0, 5.0),
+        ]
+    ]
+    config = _build_mock_eval_config("ec1", "Judge", runs)
+    eval1 = _build_mock_v2_eval(
+        eval_id="eval1",
+        name="V2 Eval",
+        current_config_id="ec1",
+        eval_input_filter_id="tag::x_test",
+        output_scores=output_scores,
+        configs=[config],
+        train_filter_id="tag::x_train",
+    )
+    rc1_mock = Mock(spec=TaskRunConfig, id="rc1")
+    rc1_mock.name = "RC1"
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = [rc1_mock]
+    mock_task.finetunes.return_value = []
+    mock_task.evals.return_value = [eval1]
+    mock_task.specs.return_value = []
+    return mock_task
+
+
+def _summary_for_split(client, split: str | None):
+    mock_task = _v2_summary_fixtures()
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.eval_api.eval_input_ids_in_filter",
+            side_effect=_v2_eval_input_ids_in_filter,
+        ),
+    ):
+        mock_task_from_id.return_value = mock_task
+        params = {} if split is None else {"split": split}
+        response = client.get(
+            "/api/projects/p1/tasks/t1/eval_results_summary", params=params
+        )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_split_omitted_is_unchanged(client):
+    """No split param means the eval's own set — the pre-split behaviour."""
+    body = _summary_for_split(client, None)
+    assert body["split"] is None
+    info = body["evals_by_id"]["eval1"]
+    assert info["dataset_size"] == 2
+    assert info["split_available"] is True
+    assert info["declared_splits"] == ["test", "train"]
+    cell = body["scores_by_run_config_by_eval"]["rc1"]["eval1"]
+    assert cell["mean_scores"]["accuracy"] == pytest.approx(0.7)
+    assert cell["n_used_by_score_key"] == {"accuracy": 2}
+    assert cell["percent_complete"] == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_split_train_scopes_a_v2_eval(client):
+    """The train filter is read against EvalInputs, so the train runs — which
+    the page could not see at all before — are what the mean is over."""
+    body = _summary_for_split(client, "train")
+    assert body["split"] == "train"
+    assert body["evals_by_id"]["eval1"]["dataset_size"] == 2
+    cell = body["scores_by_run_config_by_eval"]["rc1"]["eval1"]
+    assert cell["mean_scores"]["accuracy"] == pytest.approx(0.3)
+    assert cell["n_used_by_score_key"] == {"accuracy": 2}
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_split_val_missing_is_reported_not_dropped(client):
+    """An eval with no val filter says so, rather than vanishing from the page."""
+    body = _summary_for_split(client, "val")
+    info = body["evals_by_id"]["eval1"]
+    assert info["split_available"] is False
+    assert info["dataset_size"] == 0
+    assert "val" not in info["declared_splits"]
+    assert body["scores_by_run_config_by_eval"] == {}
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_split_all_includes_unsplit_runs(client):
+    """ "all" is every item scored plus the eval's own set — including the run
+    against an item that is in no split, which a union of the splits would
+    hide."""
+    body = _summary_for_split(client, "all")
+    assert body["evals_by_id"]["eval1"]["dataset_size"] == 5
+    cell = body["scores_by_run_config_by_eval"]["rc1"]["eval1"]
+    assert cell["mean_scores"]["accuracy"] == pytest.approx(0.6)
+    assert cell["n_used_by_score_key"] == {"accuracy": 5}
+
+
+@pytest.mark.asyncio
+async def test_run_config_eval_scores_split_scopes_scores_and_usage(client):
+    """The per-run-config endpoint scopes the same way, so the metrics chart
+    reports what the split cost rather than what the test set cost."""
+    mock_task = _v2_summary_fixtures()
+    rc1_mock = mock_task.run_configs.return_value[0]
+
+    def get_scores(split: str | None):
+        with (
+            patch(
+                "app.desktop.studio_server.eval_api.task_from_id"
+            ) as mock_task_from_id,
+            patch(
+                "app.desktop.studio_server.eval_api.task_run_config_from_id",
+                return_value=rc1_mock,
+            ),
+            patch(
+                "app.desktop.studio_server.eval_api.eval_input_ids_in_filter",
+                side_effect=_v2_eval_input_ids_in_filter,
+            ),
+        ):
+            mock_task_from_id.return_value = mock_task
+            params = {} if split is None else {"split": split}
+            response = client.get(
+                "/api/projects/p1/tasks/t1/run_configs/rc1/eval_scores",
+                params=params,
+            )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    test_body = get_scores(None)
+    assert test_body["split"] is None
+    assert test_body["n_eval_runs"] == 2
+    assert test_body["mean_usage"]["mean_cost"] == pytest.approx(1.0)
+    assert test_body["eval_results"][0]["eval_config_result"]["results"]["accuracy"][
+        "mean_score"
+    ] == pytest.approx(0.7)
+
+    train_body = get_scores("train")
+    assert train_body["split"] == "train"
+    assert train_body["n_eval_runs"] == 2
+    # The train runs are the expensive ones; the usage follows the split
+    assert train_body["mean_usage"]["mean_cost"] == pytest.approx(3.0)
+    assert train_body["eval_results"][0]["eval_config_result"]["results"]["accuracy"][
+        "mean_score"
+    ] == pytest.approx(0.3)
+
+    val_body = get_scores("val")
+    assert val_body["n_eval_runs"] == 0
+    assert val_body["mean_usage"] is None
+    assert val_body["eval_results"][0]["split_available"] is False
+    assert val_body["eval_results"][0]["eval_config_result"] is None
 
 
 class TestCodeEvalTrustEndpoints:

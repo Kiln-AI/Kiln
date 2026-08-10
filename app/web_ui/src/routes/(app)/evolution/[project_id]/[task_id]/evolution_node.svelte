@@ -84,12 +84,28 @@
     </div>
     <div class="flex items-center gap-1.5 w-full min-w-0">
       {#if !node.ghost}
+        <!-- The lens value is optional now (see the Lens type): with no lens
+             chosen the card shows what is true of the config without one. The
+             run count is always here, whatever the lens, because it is what
+             says whether a score is worth reading at all. -->
+        {#if display?.lens_value != null}
+          <span
+            class="w-2.5 h-2.5 rounded-full flex-none"
+            style="background-color: {display?.lens_color ?? '#d1d5db'}"
+          ></span>
+          <span class="text-xs font-medium text-gray-900 truncate">
+            {display.lens_value}
+          </span>
+        {/if}
         <span
-          class="w-2.5 h-2.5 rounded-full flex-none"
-          style="background-color: {display?.lens_color ?? '#d1d5db'}"
-        ></span>
-        <span class="text-xs font-medium text-gray-900 truncate">
-          {display?.lens_value ?? "—"}
+          class="text-xs flex-none {display?.runs
+            ? 'text-gray-500'
+            : 'text-gray-300'}"
+          title={display?.runs
+            ? `${display.runs} eval runs behind this config, in the selected split`
+            : "No eval runs in the selected split"}
+        >
+          {display?.runs ?? 0} runs
         </span>
         {#if strip.length > 0}
           <span
