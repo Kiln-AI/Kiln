@@ -690,7 +690,7 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     # per-claim ClaimReview. Chains partition into DISJOINT golden (rated,
     # capped at 25% — the answer key) and train slices; the EVAL slice is
     # EvalInput items minted from the driven cases, referenced via
-    # eval_input_filter_id, with the drive settings on the Eval.
+    # an EvalInput-backed test split, with the drive settings on the Eval.
     specs = temp_task.specs()
     _require(len(specs) == 1, f"expected 1 saved spec, found {len(specs)}")
     evals = temp_task.evals()
@@ -713,16 +713,24 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         "saved prompt_template does not contain the approved refined judge prompt",
     )
 
-    eval_tag, train_tag, golden_tag = generate_spec_eval_tags(SPEC_NAME)
+    tags_tuple = generate_spec_eval_tags(SPEC_NAME)
+    eval_tag, train_tag, golden_tag = (
+        tags_tuple.eval_tag,
+        tags_tuple.train_tag,
+        tags_tuple.golden_tag,
+    )
     rated_leaf_ids = {judged[i]["leaf_run_id"] for i in review_indices}
 
     saved_eval_obj = evals[0]
+    test_split = saved_eval_obj.splits.get("test")
     _require(
         saved_eval_obj.eval_set_filter_id is None
-        and saved_eval_obj.eval_input_filter_id == f"tag::{eval_tag}",
-        "saved multi-turn eval's slice is not EvalInput-typed "
+        and test_split is not None
+        and test_split.source == "eval_input"
+        and test_split.filter_id == f"tag::{eval_tag}",
+        "saved multi-turn eval's test split is not EvalInput-typed "
         f"(eval_set={saved_eval_obj.eval_set_filter_id}, "
-        f"eval_input={saved_eval_obj.eval_input_filter_id})",
+        f"test_split={test_split})",
     )
     drive_config = saved_eval_obj.multi_turn_drive_config
     _require(
