@@ -15,6 +15,7 @@
   import { onMount, tick } from "svelte"
   import { page } from "$app/stores"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
+  import { eval_split_filter_id } from "$lib/utils/eval_splits"
   import {
     eval_config_to_ui_name,
     eval_config_to_detailed_ui_name,
@@ -106,6 +107,9 @@
               eval_config_id: req_eval_config_id,
               run_config_id: req_run_config_id,
             },
+            // This page renders the eval's test split, which is what it has always
+            // shown. Train and val are not surfaced in the UI (functional spec 4.4).
+            query: { split: "test" },
           },
         },
       )
@@ -154,8 +158,9 @@
     const base: Record<string, string> = {
       "Run Configuration Name": run_config.name,
     }
-    if (evaluator.eval_set_filter_id) {
-      base["Task Inputs From Dataset"] = evaluator.eval_set_filter_id
+    const test_filter_id = eval_split_filter_id(evaluator, "test")
+    if (test_filter_id) {
+      base["Task Inputs From Dataset"] = test_filter_id
     }
     if (!isKilnAgentRunConfig(run_config.run_config_properties)) {
       return {

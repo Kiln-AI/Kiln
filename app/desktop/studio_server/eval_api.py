@@ -1,11 +1,12 @@
 import json
 from collections import defaultdict
+from dataclasses import replace
 from typing import Annotated, Any, Dict, List, Set, Tuple
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from pydantic import ValidationError
 from fastapi.responses import StreamingResponse
-from kiln_ai.adapters.eval.eval_runner import EvalRunner
+from kiln_ai.adapters.eval.eval_runner import EvalRunner, no_golden_set_message
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_ai.adapters.fine_tune.finetune_run_config_id import (
     finetune_from_finetune_run_config_id,
@@ -36,11 +37,20 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalRun,
     EvalScores,
+    EvalSplitName,
     EvalTaskInput,
     EvalTemplateId,
     SkippedReason,
+    TaskRunSplit,
     V2EvalConfigProperties,
     validate_scores_against_output_scores,
+)
+from kiln_ai.datamodel.eval_splits import (
+    ItemKey,
+    ItemSource,
+    ResolvedSplit,
+    eval_run_item_key,
+    resolve_split,
 )
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
@@ -410,7 +420,12 @@ class EvalProgress(BaseModel):
     golden_dataset_fully_rated_count: int = Field(
         description="Number of fully rated golden dataset items."
     )
-    train_dataset_size: int = Field(description="The total size of the train dataset.")
+    train_dataset_size: int = Field(
+        description="The total size of the train split. 0 when the eval has no train split."
+    )
+    val_dataset_size: int = Field(
+        description="The total size of the val split. 0 when the eval has no val split."
+    )
     current_eval_method: EvalConfig | None = Field(
         default=None, description="The currently selected eval config."
     )
@@ -533,20 +548,92 @@ class RunConfigEvalScoresSummary(BaseModel):
     )
 
 
-def dataset_ids_in_filter(
-    task: Task, filter_id: DatasetFilterId, readonly: bool
-) -> Set[ID_TYPE]:
-    # Fetch all the dataset items IDs in a filter
-    filter = dataset_filter_from_id(filter_id)
-    return {run.id for run in task.runs(readonly=readonly) if filter(run)}
-
-
 def runs_in_filter(
     task: Task, filter_id: DatasetFilterId, readonly: bool
 ) -> list[TaskRun]:
     # Fetch all the dataset items IDs in a filter
     filter = dataset_filter_from_id(filter_id)
     return [run for run in task.runs(readonly=readonly) if filter(run)]
+
+
+def resolved_split_or_422(
+    task: Task, eval: Eval, split: EvalSplitName
+) -> ResolvedSplit:
+    """The items of one of the eval's splits, or a 422 naming the split and the eval.
+
+    An eval without the split asked for is a client error, not a server one: the caller
+    named a split this eval doesn't have.
+
+    On the SSE run endpoint, resolving before the StreamingResponse is what makes the 422
+    reachable at all — see require_golden_set_or_422.
+    """
+    resolved = resolve_split(task, eval, split)
+    if resolved is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Eval '{eval.id}' has no '{split}' split.",
+        )
+    return resolved
+
+
+def split_size(split: ResolvedSplit | None) -> int:
+    """How many items a split has, with an absent split reported as zero.
+
+    Spelled out rather than written inline as `len(split) if split else 0`: ResolvedSplit
+    defines __len__, so an empty split is falsy and truthiness cannot tell "this eval has
+    no val split" from "its val split matched nothing". Both answer 0 here, but only
+    because the absence check is `is None`.
+    """
+    return len(split) if split is not None else 0
+
+
+def _cached_test_split(
+    task: Task, eval: Eval, cache: Dict[Tuple[ItemSource, str], ResolvedSplit]
+) -> ResolvedSplit | None:
+    """The eval's test split, reusing an equivalent resolution from `cache`.
+
+    Two evals resolve to the same items exactly when their splits name the same filter
+    over the same store, so that pair is the cache key. A hit is re-stamped with this
+    eval's id: ResolvedSplit carries the eval it was resolved from so a consumer can
+    check a split belongs to the eval it is working on, and a cached value handed on
+    unchanged would name whichever eval reached the filter first.
+
+    `task` is deliberately NOT part of the key, so a cache must not outlive one task: the
+    same (source, filter_id) selects different items in a different task. The one caller
+    builds the cache inside a single request and passes the task it loaded, which holds
+    that invariant positionally. A second caller has to keep it too, or key on the task.
+    """
+    split_ref = eval.splits.get("test")
+    if split_ref is None:
+        return None
+    key = (split_ref.source, split_ref.filter_id)
+    cached = cache.get(key)
+    if cached is None:
+        resolved = resolve_split(task, eval, "test")
+        if resolved is None:
+            return None
+        cache[key] = resolved
+        return resolved
+    return cached if cached.eval_id == eval.id else replace(cached, eval_id=eval.id)
+
+
+def require_golden_set_or_422(eval: Eval) -> None:
+    """422 unless the eval has a golden set, which judge comparison scores against.
+
+    Checked here rather than left to EvalRunner because these are SSE endpoints: the
+    response is a StreamingResponse over a generator, so anything raised once the
+    generator is running is emitted after a 200 status and an empty body, and the
+    refusal never appears in the response at all. Refusing before the response is built
+    is what makes the status code and detail part of the HTTP contract.
+
+    This reaches the user's screen too, but only because the web UI reads these endpoints
+    with `$lib/utils/sse_stream`'s fetch-based reader rather than a browser EventSource.
+    EventSource cannot see the status or body of a non-200 — it fires `onerror` with a
+    bare Event, which `createKilnError` renders as "Unknown error", so every refusal here
+    was invisible until that client changed.
+    """
+    if eval.eval_configs_filter_id is None:
+        raise HTTPException(status_code=422, detail=no_golden_set_message(eval))
 
 
 def build_score_key_to_task_requirement_id(task: Task) -> Dict[str, ID_TYPE]:
@@ -623,17 +710,26 @@ def compute_score_summary(
     eval: Eval,
     eval_config: EvalConfig,
     task_run_configs: list[TaskRunConfig],
-    expected_dataset_ids: set[ID_TYPE],
+    split: ResolvedSplit,
 ) -> EvalResultSummary:
-    if len(expected_dataset_ids) == 0:
+    """Aggregate an eval config's runs over exactly one of the eval's splits.
+
+    Takes the resolved split rather than a set of ids so the aggregate is scoped to one
+    store as well as one item set: a run is counted only when the item it scored is in
+    this split, keyed on (source, id). A bare id would let an EvalInput's score be
+    averaged into a TaskRun-backed split's mean, which no reader could then detect
+    (functional spec 5.3).
+    """
+    split_items = split.item_keys()
+    if len(split_items) == 0:
         return EvalResultSummary(
             results={},
             run_config_percent_complete={},
             dataset_size=0,
         )
 
-    remaining_expected_dataset_ids: Dict[ID_TYPE, Set[ID_TYPE]] = {
-        run_config.id: set(expected_dataset_ids) for run_config in task_run_configs
+    remaining_expected_items: Dict[ID_TYPE, Set[ItemKey]] = {
+        run_config.id: split_items.copy() for run_config in task_run_configs
     }
     partial_incomplete_counts: Dict[ID_TYPE, int] = {
         run_config.id: 0 for run_config in task_run_configs
@@ -650,12 +746,13 @@ def compute_score_summary(
             continue
         run_config_id = eval_run.task_run_config_id
 
-        if run_config_id not in remaining_expected_dataset_ids:
+        if run_config_id not in remaining_expected_items:
             continue
-        if eval_run.dataset_id not in remaining_expected_dataset_ids[run_config_id]:
+        item_key = eval_run_item_key(eval_run)
+        if item_key not in remaining_expected_items[run_config_id]:
             continue
         else:
-            remaining_expected_dataset_ids[run_config_id].remove(eval_run.dataset_id)
+            remaining_expected_items[run_config_id].remove(item_key)
 
         if eval_run.skipped_reason is not None:
             excluded_counts[run_config_id] += 1
@@ -696,16 +793,16 @@ def compute_score_summary(
     for run_config in task_run_configs:
         n_excluded = excluded_counts[run_config.id]
         incomplete_count = partial_incomplete_counts[run_config.id] + len(
-            remaining_expected_dataset_ids[run_config.id]
+            remaining_expected_items[run_config.id]
         )
-        n_processed = len(expected_dataset_ids) - incomplete_count
-        percent_complete = (n_processed) / len(expected_dataset_ids)
+        n_processed = len(split_items) - incomplete_count
+        percent_complete = (n_processed) / len(split_items)
         run_config_percent_complete[run_config.id] = percent_complete
 
     return EvalResultSummary(
         results=results,
         run_config_percent_complete=run_config_percent_complete,
-        dataset_size=len(expected_dataset_ids),
+        dataset_size=len(split_items),
     )
 
 
@@ -821,17 +918,20 @@ def connect_evals_api(app: FastAPI):
         if request.description is not None:
             eval.description = request.description
 
-        # legacy evals (not created with Specs) do not have a train set filter, but we need one
+        # legacy evals (not created with Specs) do not have a train split, but we need one
         # for some features such as prompt optimization
         if request.train_set_filter_id is not None:
-            # if the eval already has a train set filter, we do not allow changing it because it
+            # if the eval already has a train split, we do not allow changing it because it
             # would make comparing results before and after the change very confusing
-            if eval.train_set_filter_id is not None:
+            if eval.splits.get("train") is not None:
                 raise HTTPException(
                     status_code=400,
                     detail="Train set filter is already set and cannot be changed. Please create a new eval if you need a different train set.",
                 )
-            eval.train_set_filter_id = request.train_set_filter_id
+            # set_split, not a direct splits write: this train split is being created on
+            # behalf of a user whose eval predates `splits`, and prompt optimization reads
+            # it out of the packaged project file, so it has to land in the legacy field.
+            eval.set_split("train", TaskRunSplit(filter_id=request.train_set_filter_id))
 
         eval.save_to_file()
         return eval
@@ -1223,7 +1323,10 @@ def connect_evals_api(app: FastAPI):
         except (ValueError, NotImplementedError, ValidationError) as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
+    # GET for an operation that writes, per .agents/api_code_review.md's SSE exception.
+    # The web client is no longer an EventSource — run_eval.svelte reads this with fetch
+    # so it can see a 4xx refusal's body — but GET stays: it is the shape every SSE
+    # consumer expects, and switching to POST would break any client that is one.
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison",
         summary="Run Run Config Comparison",
@@ -1274,10 +1377,14 @@ def connect_evals_api(app: FastAPI):
                 for run_config_id in run_config_ids
             ]
 
+        eval = eval_from_id(project_id, task_id, eval_id)
+        task = task_from_id(project_id, task_id)
+
         eval_runner = EvalRunner(
             eval_configs=[eval_config],
             run_configs=run_configs,
             eval_run_type="task_run_eval",
+            split=resolved_split_or_422(task, eval, "test"),
             save_context=build_save_context(request),
         )
 
@@ -1328,7 +1435,10 @@ def connect_evals_api(app: FastAPI):
 
         return eval
 
-    # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
+    # GET for an operation that writes, per .agents/api_code_review.md's SSE exception.
+    # The web client is no longer an EventSource — run_eval.svelte reads this with fetch
+    # so it can see a 4xx refusal's body — but GET stays: it is the shape every SSE
+    # consumer expects, and switching to POST would break any client that is one.
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/run_calibration",
         summary="Run Calibration",
@@ -1351,6 +1461,7 @@ def connect_evals_api(app: FastAPI):
     ) -> StreamingResponse:
         """Run all eval configs against each other for calibration and stream progress via SSE. Used to check that eval configs produce consistent scores."""
         eval = eval_from_id(project_id, task_id, eval_id)
+        require_golden_set_or_422(eval)
         eval_configs = eval.configs()
         eval_runner = EvalRunner(
             eval_configs=eval_configs,
@@ -1382,14 +1493,31 @@ def connect_evals_api(app: FastAPI):
         run_config_id: Annotated[
             str, Path(description="The unique identifier of the run configuration.")
         ],
+        split: Annotated[
+            EvalSplitName,
+            Query(
+                description="Which of the eval's dataset splits to return results for. "
+                "Required: every response about eval results is scoped to exactly one "
+                "split, and reading has no obvious default the way running does."
+            ),
+        ],
     ) -> EvalRunResult:
+        """Results for one run config, scoped to one of the eval's splits."""
+        task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
         run_config = task_run_config_from_id(project_id, task_id, run_config_id)
+
+        # Filtered at query time against stored runs, so this works retroactively on
+        # results recorded before splits existed. Membership is keyed on (source, id):
+        # an EvalRun records exactly one of dataset_id or eval_input_id, and a split
+        # yields ids from one store only.
+        resolved_split = resolved_split_or_422(task, eval, split)
         results = [
             run_result
             for run_result in eval_config.runs(readonly=True)
             if run_result.task_run_config_id == run_config_id
+            and eval_run_item_key(run_result) in resolved_split
         ]
         return EvalRunResult(
             results=results,
@@ -1417,14 +1545,17 @@ def connect_evals_api(app: FastAPI):
     ) -> EvalProgress:
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
-        if eval.eval_set_filter_id is None:
-            raise HTTPException(
-                status_code=400,
-                detail="This endpoint isn't supported for this eval type.",
-            )
-        dataset_ids = dataset_ids_in_filter(
-            task, eval.eval_set_filter_id, readonly=True
-        )
+
+        # Every split size is resolved in its own store, so an EvalInput-backed eval
+        # reports its real counts rather than the 400 that used to stand here. That 400
+        # was never a policy about golden sets — it fired because this code could only
+        # count TaskRuns (functional spec 6.1).
+        test_split = resolved_split_or_422(task, eval, "test")
+        train_split = resolve_split(task, eval, "train")
+        val_split = resolve_split(task, eval, "val")
+
+        # Golden stays TaskRun-typed by definition, and is legitimately 0 for a V2 eval
+        # that has no golden set.
         golden_dataset_runs = (
             runs_in_filter(task, eval.eval_configs_filter_id, readonly=True)
             if eval.eval_configs_filter_id
@@ -1438,12 +1569,6 @@ def connect_evals_api(app: FastAPI):
             build_score_key_to_task_requirement_id(task),
         )
 
-        train_dataset_runs = (
-            runs_in_filter(task, eval.train_set_filter_id, readonly=True)
-            if eval.train_set_filter_id
-            else []
-        )
-
         current_eval_method = next(
             (
                 eval_config
@@ -1454,12 +1579,13 @@ def connect_evals_api(app: FastAPI):
         )
 
         return EvalProgress(
-            dataset_size=len(dataset_ids),
+            dataset_size=len(test_split),
             golden_dataset_size=len(golden_dataset_runs),
             golden_dataset_not_rated_count=not_rated_count,
             golden_dataset_partially_rated_count=partially_rated_count,
             golden_dataset_fully_rated_count=fully_rated_count,
-            train_dataset_size=len(train_dataset_runs),
+            train_dataset_size=split_size(train_split),
+            val_dataset_size=split_size(val_split),
             current_eval_method=current_eval_method,
         )
 
@@ -1488,23 +1614,14 @@ def connect_evals_api(app: FastAPI):
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
         task_run_configs = get_all_run_configs(project_id, task_id)
 
-        if eval.eval_set_filter_id is None:
-            raise HTTPException(
-                status_code=400,
-                detail="This endpoint isn't supported for this eval type.",
-            )
-        expected_dataset_ids = dataset_ids_in_filter(
-            task, eval.eval_set_filter_id, readonly=True
-        )
-        if len(expected_dataset_ids) == 0:
+        test_split = resolved_split_or_422(task, eval, "test")
+        if len(test_split) == 0:
             raise HTTPException(
                 status_code=400,
                 detail="No dataset ids in eval set filter. Add items to your dataset matching the eval set filter.",
             )
 
-        return compute_score_summary(
-            eval, eval_config, task_run_configs, expected_dataset_ids
-        )
+        return compute_score_summary(eval, eval_config, task_run_configs, test_split)
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/eval_results_summary",
@@ -1529,24 +1646,27 @@ def connect_evals_api(app: FastAPI):
             for rc in task_run_configs
         }
 
-        dataset_ids_cache: Dict[DatasetFilterId, Set[ID_TYPE]] = {}
+        # Resolving a split walks a whole store off disk, and sibling evals routinely
+        # share a test filter, so cache it. Keyed on (source, filter_id) rather than the
+        # filter id alone: the `tag::` grammar is shared across both stores, so
+        # "tag::golden" over task.runs() and over task.eval_inputs() are different item
+        # sets behind the same string (functional spec 5.3).
+        split_cache: Dict[Tuple[ItemSource, str], ResolvedSplit] = {}
         evals_out: Dict[ID_TYPE, EvalResultsSummaryEvalInfo] = {}
         scores_out: Dict[ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]] = {}
 
         for eval in task.evals(readonly=True):
-            filter_id = eval.eval_set_filter_id
-            if filter_id is None:
+            test_split = _cached_test_split(task, eval, split_cache)
+            if test_split is None:
+                # Unreachable for an eval that loaded: Eval validates that it has a test
+                # split. Skipping rather than 4xx-ing keeps one corrupt file from
+                # emptying the whole task's results table.
                 continue
-            if filter_id not in dataset_ids_cache:
-                dataset_ids_cache[filter_id] = dataset_ids_in_filter(
-                    task, filter_id, readonly=True
-                )
-            expected_dataset_ids = dataset_ids_cache[filter_id]
 
             evals_out[eval.id] = EvalResultsSummaryEvalInfo(
                 name=eval.name,
                 default_judge_config_id=eval.current_config_id,
-                dataset_size=len(expected_dataset_ids),
+                dataset_size=len(test_split),
                 output_score_keys=[s.json_key() for s in eval.output_scores],
             )
 
@@ -1559,14 +1679,14 @@ def connect_evals_api(app: FastAPI):
                     default_config = eval_config
                     break
 
-            if default_config is None or len(expected_dataset_ids) == 0:
+            if default_config is None or len(test_split) == 0:
                 continue
 
             summary = compute_score_summary(
                 eval,
                 default_config,
                 task_run_configs,
-                expected_dataset_ids,
+                test_split,
             )
 
             for rc_id, scores_dict in summary.results.items():
@@ -1793,13 +1913,13 @@ def connect_evals_api(app: FastAPI):
             if eval.id and eval.id in archived_eval_ids:
                 continue
 
-            # Get the dataset size for this eval
-            if eval.eval_set_filter_id is None:
+            # Get the dataset size for this eval, from whichever store backs its test
+            # split. None is unreachable for an eval that loaded (Eval validates a test
+            # split); skipping keeps one corrupt file from emptying the whole table.
+            test_split = resolve_split(task, eval, "test")
+            if test_split is None:
                 continue
-            expected_dataset_ids = dataset_ids_in_filter(
-                task, eval.eval_set_filter_id, readonly=True
-            )
-            dataset_size = len(expected_dataset_ids)
+            dataset_size = len(test_split)
 
             # Only process the default eval config (only if only one eval config, or default is set explicitly if many)
             default_eval_config = None
@@ -1832,8 +1952,9 @@ def connect_evals_api(app: FastAPI):
                 continue
 
             eval_config = default_eval_config
-            # Track which dataset items we've seen for this eval_config
-            remaining_expected_dataset_ids = set(expected_dataset_ids)
+            # Track which split items we've seen for this eval_config, keyed on
+            # (source, id) so an EvalInput's score can't be credited to a TaskRun.
+            remaining_expected_items = test_split.item_keys()
             partial_incomplete_count = 0
             eval_config_n_excluded = 0
 
@@ -1846,11 +1967,12 @@ def connect_evals_api(app: FastAPI):
                 if eval_run.task_run_config_id != run_config_id:
                     continue
 
-                # Check if this dataset_id is expected for this eval
-                if eval_run.dataset_id not in remaining_expected_dataset_ids:
+                # Check if this item is expected for this eval
+                item_key = eval_run_item_key(eval_run)
+                if item_key not in remaining_expected_items:
                     continue
                 else:
-                    remaining_expected_dataset_ids.remove(eval_run.dataset_id)
+                    remaining_expected_items.remove(item_key)
 
                 if eval_run.skipped_reason is not None:
                     eval_config_n_excluded += 1
@@ -1909,9 +2031,7 @@ def connect_evals_api(app: FastAPI):
                     results[score_key] = None
 
             # Calculate the percent of the dataset that has been processed
-            incomplete_count = partial_incomplete_count + len(
-                remaining_expected_dataset_ids
-            )
+            incomplete_count = partial_incomplete_count + len(remaining_expected_items)
             if dataset_size > 0:
                 percent_incomplete = incomplete_count / dataset_size
                 percent_complete = 1 - percent_incomplete
