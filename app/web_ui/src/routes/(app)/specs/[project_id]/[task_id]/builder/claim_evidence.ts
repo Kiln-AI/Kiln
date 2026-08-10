@@ -762,44 +762,29 @@ export function apply_rejudge_results(
 }
 
 // What a save request should do next. Multi-turn saves with disagreement
-// enter a calibration round (or the escape hatch once the round cap is
-// spent); everything else saves. Single-turn always saves — it has no saved
-// conversations to re-judge, so no loop can run there.
-export type SaveAction =
-  | { action: "save" }
-  | { action: "calibrate"; round: number }
-  | { action: "escape_cap" }
+// enter a calibration round — as many rounds as it takes, since the loop
+// only exits on convergence or the explicit save-without-refining link.
+// Single-turn always saves — it has no saved conversations to re-judge, so
+// no loop can run there.
+export type SaveAction = { action: "save" } | { action: "calibrate" }
 
 export function plan_save_action(args: {
   is_multi_turn: boolean
   has_disagreement: boolean
-  rounds_completed: number
-  max_rounds: number
 }): SaveAction {
   if (!args.is_multi_turn || !args.has_disagreement) return { action: "save" }
-  if (args.rounds_completed >= args.max_rounds) return { action: "escape_cap" }
-  return { action: "calibrate", round: args.rounds_completed + 1 }
+  return { action: "calibrate" }
 }
 
-// Which primary action the review CTA offers. Disagreements normally enter
-// a refine round; once the escape state is active (a refine attempt failed)
-// or the round cap is spent, the only honest offer left is saving with the
-// current judge (the escape dialog explains why). A review with zero
-// disagreements always saves — clearing the last disagreement reverts the
-// CTA even mid-escape, which doubles as the convergence signal.
-export type ReviewCta = "save" | "refine" | "escape"
+// Which primary action the review CTA offers. Any disagreement enters a
+// refine round; a review with zero disagreements saves — clearing the last
+// disagreement flips the CTA back, which doubles as the convergence signal.
+// The way out of the loop with disagreement remaining is the explicit
+// save-without-refining link, not this CTA.
+export type ReviewCta = "save" | "refine"
 
-export function review_cta(args: {
-  num_disagreements: number
-  rounds_completed: number
-  max_rounds: number
-  escape_active: boolean
-}): ReviewCta {
-  if (args.num_disagreements === 0) return "save"
-  if (args.escape_active || args.rounds_completed >= args.max_rounds) {
-    return "escape"
-  }
-  return "refine"
+export function review_cta(args: { num_disagreements: number }): ReviewCta {
+  return args.num_disagreements === 0 ? "save" : "refine"
 }
 
 // Whether save may quietly refine the judge from the grades. Multi-turn must
@@ -808,25 +793,6 @@ export function review_cta(args: {
 // Single-turn keeps the quiet refine-with-fallback at save.
 export function silent_refine_at_save(is_multi_turn: boolean): boolean {
   return !is_multi_turn
-}
-
-// The escape-hatch dialog's body: reached when the round cap is spent with
-// disagreement remaining, or when a refine attempt failed mid-loop. Honest
-// about the state and the ways out — retrying the refine (failure variant)
-// or saving with the judge whose verdicts the reviewer actually graded,
-// grades carried as-is. Failure specifics stay in telemetry, not copy.
-export function escape_hatch_message(state: {
-  reason: "cap" | "refine_failed"
-  num_disagreements: number
-  rounds_completed: number
-}): string {
-  if (state.reason === "refine_failed") {
-    return "Kiln couldn't improve your judge. Try again, or save with the current judge."
-  }
-  const conversations =
-    state.num_disagreements === 1 ? "conversation" : "conversations"
-  const rounds = state.rounds_completed === 1 ? "round" : "rounds"
-  return `You and the judge still disagree on ${state.num_disagreements} ${conversations} after ${state.rounds_completed} ${rounds} of improvement. You can save your eval with the current judge. It keeps the results and grades you just reviewed.`
 }
 
 // The honest shortfall notice when some conversations couldn't be

@@ -9,7 +9,6 @@ import {
   calibration_gate_target,
   disagreed_trace_indices,
   disagreement_feedback,
-  escape_hatch_message,
   final_judgement_reason,
   flipped_indices,
   grade_disagreement_count,
@@ -721,58 +720,34 @@ describe("apply_rejudge_results", () => {
   })
 })
 
-describe("plan_save_action — loop round and cap transitions", () => {
+describe("plan_save_action — loop entry and exit", () => {
   it("multi-turn with disagreement enters a calibration round", () => {
     expect(
-      plan_save_action({
-        is_multi_turn: true,
-        has_disagreement: true,
-        rounds_completed: 0,
-        max_rounds: 2,
-      }),
-    ).toEqual({ action: "calibrate", round: 1 })
-    expect(
-      plan_save_action({
-        is_multi_turn: true,
-        has_disagreement: true,
-        rounds_completed: 1,
-        max_rounds: 2,
-      }),
-    ).toEqual({ action: "calibrate", round: 2 })
+      plan_save_action({ is_multi_turn: true, has_disagreement: true }),
+    ).toEqual({ action: "calibrate" })
   })
 
-  it("raises the escape hatch once the round cap is spent", () => {
+  it("keeps calibrating however many rounds have run — the loop is uncapped", () => {
+    // The planner takes no round count, so nothing about a long-running loop
+    // can flip it to save. The only ways out are convergence and the explicit
+    // save-without-refining link, which bypasses this planner entirely.
     expect(
-      plan_save_action({
-        is_multi_turn: true,
-        has_disagreement: true,
-        rounds_completed: 2,
-        max_rounds: 2,
-      }),
-    ).toEqual({ action: "escape_cap" })
+      plan_save_action({ is_multi_turn: true, has_disagreement: true }),
+    ).toEqual({ action: "calibrate" })
   })
 
-  it("converged reviews save (with the last refined judge), at any round", () => {
-    for (const rounds_completed of [0, 1, 2]) {
-      expect(
-        plan_save_action({
-          is_multi_turn: true,
-          has_disagreement: false,
-          rounds_completed,
-          max_rounds: 2,
-        }),
-      ).toEqual({ action: "save" })
-    }
+  it("converged reviews save (with the last refined judge)", () => {
+    expect(
+      plan_save_action({ is_multi_turn: true, has_disagreement: false }),
+    ).toEqual({ action: "save" })
   })
 
   it("single-turn always saves — the loop never runs there", () => {
     expect(
-      plan_save_action({
-        is_multi_turn: false,
-        has_disagreement: true,
-        rounds_completed: 0,
-        max_rounds: 2,
-      }),
+      plan_save_action({ is_multi_turn: false, has_disagreement: true }),
+    ).toEqual({ action: "save" })
+    expect(
+      plan_save_action({ is_multi_turn: false, has_disagreement: false }),
     ).toEqual({ action: "save" })
   })
 })
@@ -844,134 +819,16 @@ describe("has_grade_disagreement / disagreed_trace_indices", () => {
   })
 })
 
-describe("review_cta — primary action in the escape state", () => {
-  const base = {
-    num_disagreements: 2,
-    rounds_completed: 0,
-    max_rounds: 2,
-    escape_active: false,
-  }
-
-  it("refines below the cap when disagreements exist", () => {
-    expect(review_cta(base)).toBe("refine")
-    expect(review_cta({ ...base, rounds_completed: 1 })).toBe("refine")
+describe("review_cta — primary action after a review", () => {
+  it("offers a refine round whenever disagreements remain", () => {
+    expect(review_cta({ num_disagreements: 1 })).toBe("refine")
+    expect(review_cta({ num_disagreements: 9 })).toBe("refine")
   })
 
-  it("offers the escape save at the cap, even before the state is entered", () => {
-    // The CTA must never promise a refine that a click would not start:
-    // at the cap the first click opens the escape dialog, so the label
-    // reads Save with current judge from the moment the cap is reached.
-    expect(review_cta({ ...base, rounds_completed: 2 })).toBe("escape")
-  })
-
-  it("offers the escape save whenever the escape state is active", () => {
-    // A refine failure enters the escape state below the cap; the CTA
-    // re-opens the dialog on demand from then on.
-    expect(review_cta({ ...base, escape_active: true })).toBe("escape")
-  })
-
-  it("reverts to the plain save the moment disagreements clear, even mid-escape", () => {
-    for (const escape_active of [false, true]) {
-      expect(
-        review_cta({
-          ...base,
-          num_disagreements: 0,
-          rounds_completed: 2,
-          escape_active,
-        }),
-      ).toBe("save")
-    }
-  })
-})
-
-// The dialog body per variant: opened from the escape CTA (cap) or
-// immediately on a refine failure.
-describe("escape_hatch_message", () => {
-  it("cap copy names the disagreements, rounds, and the way out", () => {
-    const msg = escape_hatch_message({
-      reason: "cap",
-      num_disagreements: 3,
-      rounds_completed: 2,
-    })
-    expect(msg).toContain("still disagree on 3 conversations")
-    expect(msg).toContain("2 rounds")
-    expect(msg).toContain("save your eval with the current judge")
-  })
-
-  it("cap copy handles the singular disagreement", () => {
-    expect(
-      escape_hatch_message({
-        reason: "cap",
-        num_disagreements: 1,
-        rounds_completed: 2,
-      }),
-    ).toContain("1 conversation after")
-  })
-
-  it("refine failure is the plain retry-or-save line, no failure detail", () => {
-    // The dialog pairs this body with a real Try again action; failure
-    // specifics live in telemetry, not user-facing copy.
-    expect(
-      escape_hatch_message({
-        reason: "refine_failed",
-        num_disagreements: 2,
-        rounds_completed: 1,
-      }),
-    ).toBe(
-      "Kiln couldn't improve your judge. Try again, or save with the current judge.",
-    )
-  })
-
-  it("copy carries no em-dashes", () => {
-    for (const reason of ["cap", "refine_failed"] as const) {
-      const msg = escape_hatch_message({
-        reason,
-        num_disagreements: 2,
-        rounds_completed: 2,
-      })
-      expect(msg).not.toMatch(/—/)
-    }
-  })
-})
-
-describe("refine retry semantics", () => {
-  it("a failed refine attempt does not consume a round", () => {
-    // The round counter advances only when a round completes (re-judge
-    // applied), so after a refine failure the next attempt — the dialog's
-    // Try again — plans the SAME round rather than moving toward the cap.
-    const after_failed_attempt = {
-      is_multi_turn: true,
-      has_disagreement: true,
-      rounds_completed: 1,
-      max_rounds: 2,
-    }
-    expect(plan_save_action(after_failed_attempt)).toEqual({
-      action: "calibrate",
-      round: 2,
-    })
-  })
-
-  it("a failed retry re-enters the escape state; a successful one proceeds", () => {
-    // Failure keeps the escape CTA (dialog re-opens on demand)...
-    expect(
-      review_cta({
-        num_disagreements: 2,
-        rounds_completed: 1,
-        max_rounds: 2,
-        escape_active: true,
-      }),
-    ).toBe("escape")
-    // ...while a successful retry completes the round: grades reset (zero
-    // disagreements) and the escape state clears, so the CTA is back to
-    // the plain save until the re-review says otherwise.
-    expect(
-      review_cta({
-        num_disagreements: 0,
-        rounds_completed: 2,
-        max_rounds: 2,
-        escape_active: false,
-      }),
-    ).toBe("save")
+  it("offers the plain save the moment disagreements clear", () => {
+    // Zero disagreements is the convergence signal, whether it's the first
+    // pass or the tail of a long refine loop.
+    expect(review_cta({ num_disagreements: 0 })).toBe("save")
   })
 })
 

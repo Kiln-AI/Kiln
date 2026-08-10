@@ -44,6 +44,10 @@
   // What the judge judged, for the verdict card's headline: "conversation"
   // for multi-turn, "example" for single-turn.
   export let judged_noun = "example"
+  // True while the reviewer is on the last selected trace — the only position
+  // where the primary action renders. Bound out (read-only for the parent) so
+  // anything the parent stacks under that action appears only alongside it.
+  export let on_last_trace = false
 
   let current_index = 0
   let trace_modal: ClaimTraceModal | null = null
@@ -94,6 +98,7 @@
   }
   $: has_prev = selected.some((i) => i < current_index)
   $: has_next = selected.some((i) => i > current_index)
+  $: on_last_trace = !has_next
 
   // Next is gated on the CURRENT conversation being fully answered — the same
   // per-trace completeness the old progress dots colored. Save takes the Next
