@@ -1336,12 +1336,12 @@ async def test_other_jobs_unaffected_by_save_context_rollback(
 
 @pytest.fixture
 def mock_v2_eval(mock_task):
-    """Eval with eval_input_filter_id set (V2 source mode)."""
+    """Eval with an EvalInput-backed test split."""
     eval = Eval(
         id="v2_eval",
         name="v2 test eval",
         description="v2 eval desc",
-        eval_input_filter_id="all",
+        splits={"test": EvalInputSplit(filter_id="all")},
         eval_configs_filter_id="all",
         output_scores=[
             EvalOutputScore(
@@ -1433,7 +1433,7 @@ class TestEvalRunnerV2Init:
             id="tag_eval",
             name="tag eval",
             description="tag eval desc",
-            eval_input_filter_id="tag::math",
+            splits={"test": EvalInputSplit(filter_id="tag::math")},
             eval_configs_filter_id="all",
             output_scores=[
                 EvalOutputScore(
@@ -2235,7 +2235,7 @@ def mock_v2_eval_input_task_run_eval(mock_task):
         id="v2_ei_tr_eval",
         name="v2 eval input task_run_eval",
         description="v2 eval for EvalInput + task_run_eval mode",
-        eval_input_filter_id="all",
+        splits={"test": EvalInputSplit(filter_id="all")},
         eval_configs_filter_id="all",
         output_scores=[
             EvalOutputScore(
@@ -2673,7 +2673,7 @@ class TestRunTaskFromEvalInput:
             id="v2_json_eval",
             name="json eval",
             description="json eval desc",
-            eval_input_filter_id="all",
+            splits={"test": EvalInputSplit(filter_id="all")},
             eval_configs_filter_id="all",
             output_scores=[
                 EvalOutputScore(
@@ -3028,7 +3028,7 @@ def mock_v2_redrive_eval(mock_task):
         id="v2_redrive_eval",
         name="v2 redrive eval",
         description="multi-turn re-drive eval",
-        eval_input_filter_id="all",
+        splits={"test": EvalInputSplit(filter_id="all")},
         eval_configs_filter_id="all",
         evaluation_data_type=EvalDataType.full_trace,
         multi_turn_drive_config=MultiTurnDriveConfig(
@@ -3181,7 +3181,7 @@ class TestRunV2MultiTurnRedrive:
             id="v2_no_drive_eval",
             name="no drive config",
             description="missing drive config",
-            eval_input_filter_id="all",
+            splits={"test": EvalInputSplit(filter_id="all")},
             eval_configs_filter_id="all",
             evaluation_data_type=EvalDataType.full_trace,
             output_scores=[
@@ -3746,7 +3746,7 @@ class TestValidateMultiTurnDriveReadiness:
             id="bad_provider_eval",
             name="bad provider eval",
             description="drive config with unknown provider",
-            eval_input_filter_id="all",
+            splits={"test": EvalInputSplit(filter_id="all")},
             eval_configs_filter_id="all",
             evaluation_data_type=EvalDataType.full_trace,
             multi_turn_drive_config=MultiTurnDriveConfig(

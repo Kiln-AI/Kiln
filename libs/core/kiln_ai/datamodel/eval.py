@@ -1200,33 +1200,6 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     # they came from. None means "provenance unknown" (see serialize_preserving_split_format).
     _legacy_homed_splits: Set[str] | None = PrivateAttr(default=None)
 
-    @model_validator(mode="before")
-    @classmethod
-    def migrate_eval_input_filter_id(cls, data: Any) -> Any:
-        """Fold the pre-`splits` `eval_input_filter_id` key into an EvalInput-backed test split.
-
-        TODO: Remove before shipping. Only internal projects contain this key; no public
-        project file has ever had it, so this never becomes a compatibility commitment.
-        """
-        if not isinstance(data, dict):
-            return data
-        filter_id = data.get("eval_input_filter_id")
-        if filter_id is None:
-            return data
-        if data.get("eval_set_filter_id") is not None:
-            # The invariant the deleted validate_filter_fields enforced, kept for as long
-            # as two legacy inputs can name the same split. Folding both would silently
-            # discard one of them.
-            raise ValueError(
-                "An eval cannot set both eval_set_filter_id and eval_input_filter_id: they are two backings for the same test split."
-            )
-        data = dict(data)
-        data.pop("eval_input_filter_id")
-        splits = dict(data.get("splits") or {})
-        splits["test"] = {"source": "eval_input", "filter_id": filter_id}
-        data["splits"] = splits
-        return data
-
     @model_validator(mode="after")
     def fold_legacy_filter_fields(self) -> Self:
         """Copy the legacy flat fields into `splits`, recording that they came from there.

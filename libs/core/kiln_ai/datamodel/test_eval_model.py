@@ -2328,11 +2328,11 @@ def test_step_count_check_bounds():
 # ── V2 Eval Tests ──────────────────────────────────────────────────────
 
 
-def test_eval_v2_with_eval_input_filter():
-    """The eval_input_filter_id shim becomes an EvalInput-backed test split."""
+def test_eval_v2_with_eval_input_split():
+    """An EvalInput-backed test split is authored directly in `splits`."""
     eval = Eval(
         name="V2 Eval",
-        eval_input_filter_id="all",
+        splits={"test": EvalInputSplit(filter_id="all")},
         eval_configs_filter_id="tag::cfg",
         output_scores=[
             EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
@@ -2340,7 +2340,6 @@ def test_eval_v2_with_eval_input_filter():
     )
     assert eval.splits["test"] == EvalInputSplit(filter_id="all")
     assert eval.eval_set_filter_id is None
-    assert not hasattr(eval, "eval_input_filter_id")
 
 
 def test_eval_requires_a_test_split():
@@ -2794,7 +2793,7 @@ class TestMultiTurnDriveConfig:
 
         eval = Eval(
             name="drive config eval",
-            eval_input_filter_id="tag::eval_x",
+            splits={"test": EvalInputSplit(filter_id="tag::eval_x")},
             eval_configs_filter_id="tag::golden_x",
             output_scores=[
                 EvalOutputScore(name="Overall", type=TaskOutputRatingType.pass_fail)
@@ -4141,22 +4140,6 @@ class TestEvalSplits:
         assert data["eval_set_filter_id"] == "tag::from_legacy"
         assert "splits" not in data
 
-    def test_both_legacy_test_filters_is_rejected(self, scores):
-        """The one conflict `splits` can't make unrepresentable: two legacy inputs, one split.
-
-        `validate_filter_fields` used to catch this. Folding both would silently discard
-        the EvalInput backing, so the shim refuses instead.
-        """
-        with pytest.raises(
-            ValidationError,
-            match="cannot set both eval_set_filter_id and eval_input_filter_id",
-        ):
-            self.build_eval(
-                scores,
-                eval_set_filter_id="tag::runs",
-                eval_input_filter_id="tag::inputs",
-            )
-
     def test_a_split_is_never_dropped_by_an_excluded_legacy_field(self, scores):
         """If a split's legacy home isn't in the dump, it stays in `splits`.
 
@@ -4386,34 +4369,20 @@ class TestEvalSplits:
         assert data["train_set_filter_id"] == "tag::train_x"
         assert "splits" not in data
 
-    def test_eval_input_backed_test_split_from_the_shim(self, saved_task, scores):
-        """The eval_input_filter_id shim: folded into splits, and never written back."""
+    def test_eval_input_backed_test_split_stays_in_splits(self, saved_task, scores):
+        """An EvalInput-backed test split serializes into `splits`, never a legacy field."""
         eval = self.build_eval(
-            scores, parent=saved_task, eval_input_filter_id="tag::inputs"
+            scores,
+            parent=saved_task,
+            splits={"test": EvalInputSplit(filter_id="tag::inputs")},
         )
         assert eval.splits["test"] == EvalInputSplit(filter_id="tag::inputs")
 
         data = self.saved_json(eval)
-        assert "eval_input_filter_id" not in data
+        assert data["eval_set_filter_id"] is None
         assert data["splits"] == {
             "test": {"source": "eval_input", "filter_id": "tag::inputs"}
         }
-
-    def test_shim_wins_over_an_explicit_splits_entry(self, scores):
-        """The shim's precedence, pinned rather than assumed.
-
-        Input carrying both `eval_input_filter_id` and a `splits["test"]` keeps the legacy
-        input, matching the fold's rule for the declared legacy fields. Unlike the
-        eval_set_filter_id conflict — which raises, because the two disagree about the
-        backing — this one can only be a file that predates `splits` and was then
-        hand-edited, so the older value is the safe answer rather than a lost one.
-        """
-        eval = self.build_eval(
-            scores,
-            eval_input_filter_id="tag::from_shim",
-            splits={"test": EvalInputSplit(filter_id="tag::from_dict")},
-        )
-        assert eval.splits["test"] == EvalInputSplit(filter_id="tag::from_shim")
 
     @pytest.mark.parametrize("source", ["task_run", "eval_input"])
     def test_unknown_field_inside_a_split_survives_a_round_trip(

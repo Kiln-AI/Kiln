@@ -2719,7 +2719,7 @@ async def test_get_eval_progress_eval_input_slice(client, mock_task_from_id, moc
                 name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
             ),
         ],
-        eval_input_filter_id="tag::eval_slice",
+        splits={"test": EvalInputSplit(filter_id="tag::eval_slice")},
         eval_configs_filter_id="tag::golden",
         parent=mock_task,
     )
@@ -3595,7 +3595,7 @@ async def test_get_run_config_eval_scores_includes_eval_input_evals(
                 type=TaskOutputRatingType.pass_fail,
             ),
         ],
-        eval_input_filter_id="tag::eval_slice",
+        splits={"test": EvalInputSplit(filter_id="tag::eval_slice")},
         eval_configs_filter_id="tag::golden",
         current_config_id="ec1",
         parent=mock_task,
