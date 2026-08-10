@@ -182,6 +182,12 @@ class EvalRunner:
         for eval_config in self.eval_configs:
             already_run[eval_config.id] = set()
             for run in eval_config.runs(readonly=True):
+                # Only calibration records mark a golden item done (or supersede
+                # its tombstones): the same eval config also accumulates
+                # task_run_eval records, and a golden TaskRun that was scored as
+                # a test item must still be calibrated.
+                if not run.eval_config_eval:
+                    continue
                 if self._counts_as_already_run(run, eval_config):
                     already_run[eval_config.id].add(run.dataset_id)
                 else:
@@ -525,8 +531,9 @@ class EvalRunner:
             # Multi-turn synthetic input: re-drive the conversation fresh
             # for this run config, then judge the new trace. The job.type
             # guard is defensive — collect_tasks never pairs eval_config_eval
-            # with EvalInput items (judge calibration uses golden TaskRuns);
-            # a hand-built job of that shape hits the EvalInput skip below.
+            # with EvalInput items, because judge calibration is scoped by the
+            # golden filter and golden filters only address TaskRuns. There is
+            # no runtime handler for a hand-built job of that shape.
             return await self._run_v2_multi_turn_synthetic_job(
                 job, evaluator, job.item, job.item.data, early_input_str
             )

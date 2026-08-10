@@ -41,6 +41,7 @@ from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import (
     FineTuneStatusType,
     StructuredOutputMode,
+    TurnMode,
 )
 from kiln_ai.datamodel.eval import (
     Eval,
@@ -5438,3 +5439,176 @@ async def test_run_comparison_multi_turn_drive_problems_400(
 
     assert response.status_code == 400
     assert "MCP one" in response.json()["message"]
+
+
+# ── Multi-turn item count: restored positive-case coverage for the count
+# re-expressed from the resolved split (stored conversations = chain leaves). ──
+
+
+def _multiturn_task_with_eval(tmp_path, evaluation_data_type: EvalDataType) -> Task:
+    """A real on-disk multiturn task with an eval (id eval1) filtering on
+    tag::eval_set and a judge config (id eval_config1)."""
+    project = Project(
+        id="project1", name="Test Project", path=tmp_path / "project.kiln"
+    )
+    project.save_to_file()
+    task = Task(
+        id="task1",
+        name="Test Task",
+        instruction="Test Instructions",
+        path=tmp_path / "task.kiln",
+        turn_mode=TurnMode.multiturn,
+        parent=project,
+    )
+    task.save_to_file()
+
+    eval = Eval(
+        id="eval1",
+        name="Eval",
+        output_scores=[
+            EvalOutputScore(
+                name="score1", instruction="desc1", type=TaskOutputRatingType.pass_fail
+            ),
+        ],
+        eval_set_filter_id="tag::eval_set",
+        eval_configs_filter_id="tag::golden",
+        evaluation_data_type=evaluation_data_type,
+        parent=task,
+    )
+    eval.save_to_file()
+    EvalConfig(
+        id="eval_config1",
+        name="Judge",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+        model_name="gpt-4",
+        model_provider="openai",
+        parent=eval,
+    ).save_to_file()
+    return task
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "evaluation_data_type",
+    [EvalDataType.final_answer, EvalDataType.full_trace],
+)
+async def test_get_eval_config_score_summary_multi_turn_item_count(
+    client, mock_task_from_id, tmp_path, evaluation_data_type
+):
+    """multi_turn_item_count counts the stored conversations (chain leaves) in
+    the eval set. It's a property of the item set alone, so it must be the same
+    for final_answer and full_trace evals."""
+    task = _multiturn_task_with_eval(tmp_path, evaluation_data_type)
+    mock_task_from_id.return_value = task
+
+    output = TaskOutput(output="test output")
+    # Single-turn item in the eval set: regenerated per run config.
+    TaskRun(input="i1", output=output, tags=["eval_set"], parent=task).save_to_file()
+    # Stored conversation in the eval set: only its leaf is an eval item.
+    root = TaskRun(input="i2", output=output, parent=task)
+    root.save_to_file()
+    TaskRun(
+        input="i3",
+        output=output,
+        tags=["eval_set"],
+        parent=task,
+        parent_task_run_id=root.id,
+    ).save_to_file()
+    # Stored conversation outside the eval set: must not count.
+    other_root = TaskRun(input="i4", output=output, parent=task)
+    other_root.save_to_file()
+    TaskRun(
+        input="i5",
+        output=output,
+        tags=["other"],
+        parent=task,
+        parent_task_run_id=other_root.id,
+    ).save_to_file()
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/score_summary"
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["dataset_size"] == 2
+    assert result["multi_turn_item_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_eval_config_score_summary_single_turn_only_set(
+    client, mock_task_from_id, tmp_path
+):
+    """A full_trace eval whose set has no stored conversations reports zero
+    multi-turn items — every item regenerates per run config."""
+    task = _multiturn_task_with_eval(tmp_path, EvalDataType.full_trace)
+    mock_task_from_id.return_value = task
+
+    output = TaskOutput(output="test output")
+    TaskRun(input="i1", output=output, tags=["eval_set"], parent=task).save_to_file()
+    TaskRun(input="i2", output=output, tags=["eval_set"], parent=task).save_to_file()
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/score_summary"
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["dataset_size"] == 2
+    assert result["multi_turn_item_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_emits_eval_input_backed_eval(client):
+    """End-to-end wiring for an EvalInput-backed eval in the task-wide summary:
+    its dataset size and scores must be emitted, not skipped."""
+    output_scores = [
+        EvalOutputScore(
+            name="accuracy",
+            instruction="Test accuracy",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+    eval_runs = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 1.0},
+            input="i",
+            output="o",
+            eval_input_id="ei1",
+        ),
+    ]
+    ec = _build_mock_eval_config("ec1", "Judge", eval_runs)
+    eval1 = _build_mock_eval(
+        eval_id="eval1",
+        name="Eval One",
+        current_config_id="ec1",
+        output_scores=output_scores,
+        configs=[ec],
+        test_split=EvalInputSplit(filter_id="tag::cases"),
+    )
+
+    rc1_mock = Mock(spec=TaskRunConfig, id="rc1")
+    rc1_mock.name = "RC1"
+
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = [rc1_mock]
+    mock_task.finetunes.return_value = []
+    mock_task.runs.return_value = []
+    mock_task.evals.return_value = [eval1]
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        patch_resolve_split_by_ref({("eval_input", "tag::cases"): {"ei1", "ei2"}}),
+    ):
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["evals_by_id"]["eval1"]["dataset_size"] == 2
+    rc_scores = data["scores_by_run_config_by_eval"]["rc1"]["eval1"]
+    assert rc_scores["mean_scores"]["accuracy"] == 1.0
+    assert rc_scores["percent_complete"] == 0.5

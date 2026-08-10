@@ -625,8 +625,11 @@ def _cached_test_split(
     return cached if cached.eval_id == eval.id else replace(cached, eval_id=eval.id)
 
 
-def require_golden_set_or_422(eval: Eval) -> None:
-    """422 unless the eval has a golden set, which judge comparison scores against.
+def require_golden_set_or_422(eval: Eval) -> DatasetFilterId:
+    """The eval's golden filter id, or 422 when none is configured.
+
+    Judge comparison scores against the golden set; returning the narrowed id
+    lets callers use it without re-checking for None.
 
     Checked here rather than left to EvalRunner because these are SSE endpoints: the
     response is a StreamingResponse over a generator, so anything raised once the
@@ -642,6 +645,7 @@ def require_golden_set_or_422(eval: Eval) -> None:
     """
     if eval.eval_configs_filter_id is None:
         raise HTTPException(status_code=422, detail=no_golden_set_message(eval))
+    return eval.eval_configs_filter_id
 
 
 def build_score_key_to_task_requirement_id(task: Task) -> Dict[str, ID_TYPE]:
@@ -733,6 +737,9 @@ def compute_score_summary(
     # judged on their saved trace, so their scores can't vary across run
     # configs; the UI calls this out per summary. Only a TaskRun-backed split
     # can contain them — EvalInput items are re-driven per run config.
+    # getattr rather than direct access: split.items is a TaskRun/EvalInput
+    # union (and test stubs), and only TaskRuns can be chain leaves. The
+    # positive-case tests below pin the field name against renames.
     multi_turn_item_count = (
         sum(
             1
@@ -1500,12 +1507,7 @@ def connect_evals_api(app: FastAPI):
     ) -> StreamingResponse:
         """Run all eval configs against each other for calibration and stream progress via SSE. Used to check that eval configs produce consistent scores."""
         eval = eval_from_id(project_id, task_id, eval_id)
-        # Inlined require_golden_set_or_422 (see its docstring for why refusals
-        # must precede the StreamingResponse) so the filter id is narrowed for
-        # the emptiness check below.
-        golden_filter_id = eval.eval_configs_filter_id
-        if golden_filter_id is None:
-            raise HTTPException(status_code=422, detail=no_golden_set_message(eval))
+        golden_filter_id = require_golden_set_or_422(eval)
 
         # An empty golden set would "complete" instantly with zero scores — a
         # vacuous calibration the UI reads as success. Refuse it up front.

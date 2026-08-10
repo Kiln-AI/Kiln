@@ -491,6 +491,76 @@ def test_collect_tasks_excludes_already_run_eval_config_eval(
     assert len(jobs) == 0
 
 
+def test_golden_item_scored_as_test_item_still_calibrates(
+    mock_task, data_source, mock_eval_config, mock_eval, mock_run_config
+):
+    """Only calibration records mark a golden item done. The same eval config
+    accumulates task_run_eval records too — a golden TaskRun that was scored as
+    a test item (or tombstoned in the test lane) must still be calibrated, and
+    the test lane's tombstones must not ride (or be deleted by) calibration."""
+    golden_run = TaskRun(
+        parent=mock_task,
+        input="test",
+        input_source=data_source,
+        tags=["tag1"],
+        output=TaskOutput(output="test"),
+    )
+    golden_run.save_to_file()
+
+    mock_eval.eval_set_filter_id = "tag::nonexistent"
+    mock_eval.eval_configs_filter_id = "tag::tag1"
+    # A drive config makes missing_drive_config tombstones recoverable, so the
+    # tombstone below would ride a job if the lane filter were missing.
+    mock_eval.multi_turn_drive_config = MultiTurnDriveConfig(
+        model_name="gpt_4o", model_provider="openrouter", turns=2
+    )
+    mock_eval.save_to_file()
+
+    # Test-lane records on the same golden item: a real score and a recoverable
+    # tombstone. Neither is a calibration record.
+    EvalRun(
+        parent=mock_eval_config,
+        dataset_id=golden_run.id,
+        task_run_config_id=mock_run_config.id,
+        eval_config_eval=False,
+        input="test",
+        output="test",
+        scores={"accuracy": 1.0},
+    ).save_to_file()
+    EvalRun(
+        parent=mock_eval_config,
+        dataset_id=golden_run.id,
+        task_run_config_id=mock_run_config.id,
+        eval_config_eval=False,
+        input="test",
+        output=None,
+        scores={},
+        skipped_reason=SkippedReason.missing_drive_config.value,
+        skipped_detail="test tombstone",
+    ).save_to_file()
+
+    runner = EvalRunner(
+        eval_configs=[mock_eval_config],
+        run_configs=None,
+        eval_run_type="eval_config_eval",
+    )
+    jobs = runner.collect_tasks()
+    assert [job.item.id for job in jobs] == [golden_run.id]
+    assert jobs[0].superseded_tombstones == []
+
+    # A real calibration record does mark it done.
+    EvalRun(
+        parent=mock_eval_config,
+        dataset_id=golden_run.id,
+        task_run_config_id=None,
+        eval_config_eval=True,
+        input="test",
+        output="test",
+        scores={"accuracy": 1.0},
+    ).save_to_file()
+    assert runner.collect_tasks() == []
+
+
 def test_collect_tasks_multiple_run_configs(
     mock_eval, mock_eval_config, mock_task, data_source, mock_run_config
 ):
@@ -4085,6 +4155,64 @@ class TestCollectTasksOverArbitrarySplits:
 
         assert [job.item.id for job in jobs] == [shared_id]
         assert isinstance(jobs[0].item, EvalInput)
+
+    def test_tombstones_key_on_the_item_source_not_the_bare_id(
+        self,
+        mock_task,
+        mock_v2_eval_input_task_run_eval,
+        mock_v2_ei_tr_eval_config,
+        mock_run_config,
+    ):
+        """A recoverable tombstone recorded against a TaskRun must not ride (and
+        later be deleted by) a job for an EvalInput that shares the bare id."""
+        shared_id = "collide_2"
+        TaskRun(
+            id=shared_id,
+            parent=mock_task,
+            input="task run with the colliding id",
+            input_source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt-4",
+                    "model_provider": "openai",
+                    "adapter_name": "test_adapter",
+                },
+            ),
+            output=TaskOutput(output="out"),
+        ).save_to_file()
+        EvalInput(
+            id=shared_id,
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="eval input")),
+            parent=mock_task,
+        ).save_to_file()
+
+        # Recoverable tombstone (drive config present) keyed to the TASK RUN store.
+        mock_v2_eval_input_task_run_eval.multi_turn_drive_config = MultiTurnDriveConfig(
+            model_name="gpt_4o", model_provider="openrouter", turns=2
+        )
+        mock_v2_eval_input_task_run_eval.save_to_file()
+        tombstone = EvalRun(
+            parent=mock_v2_ei_tr_eval_config,
+            dataset_id=shared_id,
+            task_run_config_id=mock_run_config.id,
+            eval_config_eval=False,
+            input="task run with the colliding id",
+            output=None,
+            scores={},
+            skipped_reason=SkippedReason.missing_drive_config.value,
+            skipped_detail="test tombstone",
+        )
+        tombstone.save_to_file()
+
+        jobs = build_task_run_eval_runner(
+            [mock_v2_ei_tr_eval_config], [mock_run_config]
+        ).collect_tasks()
+
+        ei_jobs = [j for j in jobs if j.item.id == shared_id]
+        assert len(ei_jobs) == 1
+        assert isinstance(ei_jobs[0].item, EvalInput)
+        # The TaskRun-store tombstone must not attach to the EvalInput's job.
+        assert ei_jobs[0].superseded_tombstones == []
 
     def test_overlapping_splits_reuse_already_scored_items(
         self, mock_eval, mock_task, mock_eval_config, mock_run_config, data_source
