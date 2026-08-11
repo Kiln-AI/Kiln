@@ -25,6 +25,10 @@
   import { formatLatency } from "$lib/utils/formatters"
   import { relative_metric_score } from "$lib/utils/relative_metric_score"
   import {
+    FALLBACK_SERIES_COLOR,
+    series_label,
+  } from "$lib/utils/evolution/series_identity"
+  import {
     family_bands,
     family_band_arc,
     family_band_label,
@@ -71,6 +75,25 @@
   // scrollable horizontal legend underneath, so it can never paint over the
   // right-hand axis labels — for narrow columns with many configs.
   export let legend_position: "side" | "bottom" = "side"
+  // Whether the LEGEND belongs to the page rather than to this card.
+  //
+  // Compare V2 draws one legend above three charts (evolution_legend.svelte),
+  // because three name-keyed echarts legends over three views of one
+  // comparison toggle independently: switching a config off to read the radar
+  // left it on the bars and the parallel chart beside it. This card then draws
+  // none of its own and gives the room back to the ring. The older compare
+  // page has no such legend and keeps this off, so it is unchanged.
+  //
+  // Separate from `legend_position` on purpose: bottom mode is a GEOMETRY -
+  // hand-placed axis names, family arcs solved in px - that Compare V2 needs
+  // whether or not it draws a legend, and folding "no legend" into that enum
+  // would tie the two together.
+  export let external_legend: boolean = false
+  // Colour per run config id, decided by the page (see series_color_map) so a
+  // config keeps ONE colour across every chart that plots it. Empty - the
+  // default, and what the older compare page passes - falls back to the theme
+  // palette by series index, which is what this chart always did.
+  export let seriesColors: Record<string, string> = {}
   // Family per data key, for grouping the ring. The page resolves these from
   // the task's own metadata (see $lib/utils/evolution/score_families) rather
   // than this chart classifying anything, and supplies them already ordered:
@@ -139,6 +162,15 @@
 
   // Below this many axes there's no shape to read, so there's no chart to draw
   const MIN_RADAR_AXES = 3
+
+  // One run config's polygon. `name` is what the reader sees and what echarts
+  // keys the shape by; `configId` is what anything looking the config back up
+  // should use, since a name is a fallback chain two configs can share.
+  type RadarSeriesEntry = {
+    value: (number | null)[]
+    name: string
+    configId: string | null
+  }
 
   $: SCALE_TOOLTIP = `**Full Scale** (the default): each axis uses the score's own range - 0-1 for pass/fail, 1-5 for 5-star - so the shape is where these run configs actually stand. Run configs that all score near the top draw a near-perfect circle, which is what being that similar looks like.
 
@@ -388,6 +420,13 @@ Related criteria sit together: the axes are grouped into the families the task's
   // One scrolling legend row: the name line (lineHeight 16) over up to three
   // {sub} lines (lineHeight 14), plus echarts' 5px legend padding either side.
   const BOTTOM_LEGEND_PX = 16 + 3 * 14 + 10
+  // What the ring leaves under itself when the page carries the legend
+  // instead: enough that a bottom axis name is not flush against the card's
+  // edge, and nothing more - the room the legend used to take goes to radius.
+  const EXTERNAL_LEGEND_PX = 8
+
+  // How much of the box is reserved below the ring, either way
+  $: reservedLegendPx = external_legend ? EXTERNAL_LEGEND_PX : BOTTOM_LEGEND_PX
 
   // ---------------------------------------------------------------------
   // Bottom-mode axis labels
@@ -646,11 +685,7 @@ Related criteria sit together: the axes are grouped into the families the task's
 
   // Get simple display name for the series (used as the internal name/key)
   function getSeriesDisplayName(config: TaskRunConfig): string {
-    if (config.name) return config.name
-    if (isMcpRunConfig(config.run_config_properties)) {
-      return config.run_config_properties.tool_reference.tool_name ?? "MCP Tool"
-    }
-    return getRunConfigModelDisplayName(config, model_info) ?? "Unknown"
+    return series_label(config, model_info)
   }
 
   // The raw quantity behind a usage axis, in its own units
@@ -714,10 +749,20 @@ Related criteria sit together: the axes are grouped into the families the task's
     return formatter
   }
 
-  // Colours are assigned per data item from the palette, in series order
-  function seriesColorAt(index: number): string {
+  // A run config's colour, decided by the page when it supplies a map (see
+  // series_color_map) and otherwise taken from the palette by data-item order,
+  // which is what this chart did for everybody. The page's map is what keeps a
+  // config the same colour here and on the two charts beside it: a config with
+  // no result for the shared axes is dropped from `plottedConfigs`, and used to
+  // renumber the palette for every config after it.
+  function seriesColorFor(
+    runConfigId: string | null | undefined,
+    index: number,
+  ): string {
+    const assigned = runConfigId ? seriesColors[runConfigId] : undefined
+    if (assigned) return assigned
     const palette = chartInstance?.getOption()?.color as string[] | undefined
-    if (!palette?.length) return "#888"
+    if (!palette?.length) return FALLBACK_SERIES_COLOR
     return palette[index % palette.length]
   }
 
@@ -730,7 +775,7 @@ Related criteria sit together: the axes are grouped into the families the task's
   function buildAxisTooltip(
     axisIndex: number,
     keys: string[],
-    series: { value: (number | null)[]; name: string }[],
+    series: RadarSeriesEntry[],
     hoveredName: string,
   ): string {
     const key = keys[axisIndex]
@@ -739,10 +784,11 @@ Related criteria sit together: the axes are grouped into the families the task's
     let html = `<div style="font-weight: bold; margin-bottom: 6px;">${getKeyLabel(key)}</div>`
     series.forEach((entry, index) => {
       const plotted = entry.value[axisIndex]
-      const config = run_configs.find(
-        (c) => getSeriesDisplayName(c) === entry.name,
-      )
-      const rawValue = config?.id ? getModelValueRaw(config.id, key) : null
+      // By id rather than by matching the display name back to a config: the
+      // name is a fallback chain and two configs may land on the same one.
+      const rawValue = entry.configId
+        ? getModelValueRaw(entry.configId, key)
+        : null
 
       let shown: string
       if (plotted === null || rawValue === null) {
@@ -756,7 +802,7 @@ Related criteria sit together: the axes are grouped into the families the task's
 
       const weight = entry.name === hoveredName ? "600" : "400"
       html += `<div style="font-weight: ${weight};">${tooltipMarker(
-        seriesColorAt(index),
+        seriesColorFor(entry.configId, index),
       )}${entry.name}: ${shown}</div>`
     })
     return html
@@ -859,14 +905,14 @@ Related criteria sit together: the axes are grouped into the families the task's
 
   function generateChartData(): {
     indicators: { name: string; max: number }[]
-    series: { value: (number | null)[]; name: string }[]
+    series: RadarSeriesEntry[]
     legend: string[]
     axisMaxes: Record<string, number>
     keys: string[]
     noResultKeyCount: number
   } {
     const indicators: { name: string; max: number }[] = []
-    const series: { value: (number | null)[]; name: string }[] = []
+    const series: RadarSeriesEntry[] = []
     const legend: string[] = []
     const axisMaxes: Record<string, number> = {}
     const empty = {
@@ -959,7 +1005,7 @@ Related criteria sit together: the axes are grouped into the families the task's
       })
       const name = getSeriesDisplayName(config)
       legend.push(name)
-      series.push({ value: values, name })
+      series.push({ value: values, name, configId: config.id ?? null })
     }
 
     return { indicators, series, legend, axisMaxes, keys, noResultKeyCount }
@@ -1079,7 +1125,7 @@ Related criteria sit together: the axes are grouped into the families the task's
     const solveBottomLayout = (lineCap: number) => {
       const wrappedNames = wrapAxisNames(
         indicators.map((indicator) => indicator.name),
-        chartHeight - BOTTOM_LEGEND_PX - 2 * LABEL_BAND_PAD,
+        chartHeight - reservedLegendPx - 2 * LABEL_BAND_PAD,
         lineCap,
       )
       const labelGap = axisLabelGapFor(wrappedNames)
@@ -1087,7 +1133,7 @@ Related criteria sit together: the axes are grouped into the families the task's
         { width: chartWidth, height: chartHeight },
         axisLabelBoxes(wrappedNames),
         {
-          legendHeight: BOTTOM_LEGEND_PX,
+          legendHeight: reservedLegendPx,
           labelGap,
           pad: LABEL_EDGE_PAD,
         },
@@ -1126,7 +1172,7 @@ Related criteria sit together: the axes are grouped into the families the task's
         labelGap,
         radius: bottomFit.radius,
         width: chartWidth,
-        bandBottom: chartHeight - BOTTOM_LEGEND_PX,
+        bandBottom: chartHeight - reservedLegendPx,
         keepOut: familyBands.length > 0 ? familyKeepOut : 0,
       })
       return { bottomFit, familyPlacements, familyTexts, axisLabels }
@@ -1242,36 +1288,43 @@ Related criteria sit together: the axes are grouped into the families the task's
             return buildRunConfigTooltip(params.name, axisMaxes, keys)
           },
         },
-        legend: {
-          data: legend,
-          // Clicking a legend entry hides/shows that run config's polygon.
-          // With this many overlapping shapes, isolating one is the only way
-          // to read the chart - the legend is not a selection surface.
-          selectedMode: true,
-          formatter: (name: string) => legendFormatter[name] || name,
-          tooltip: {
-            show: true,
-            formatter: (params: { name: string }) =>
-              buildRunConfigTooltip(params.name, axisMaxes, keys),
-          },
-          textStyle: legendTextStyle,
-          ...(compactLayout
-            ? {
-                orient: "horizontal" as const,
-                bottom: 0,
-                left: "center" as const,
-                itemGap: forceBottomLegend ? 24 : 40,
-                // Many configs in a narrow column would otherwise wrap into the
-                // plot; scroll mode keeps the legend to one paged row.
-                ...(forceBottomLegend ? { type: "scroll" as const } : {}),
-              }
-            : {
-                orient: "vertical" as const,
-                left: "60%",
-                top: "middle" as const,
-                itemGap: 16,
-              }),
-        },
+        // The page can own the legend for a whole section of charts, in which
+        // case this card draws none - see `external_legend`. Hiding a config
+        // is then subtraction at the source: it never reaches
+        // selectedRunConfigIds, so there is no per-chart selection state to
+        // keep and none to get out of step with the charts beside it.
+        legend: external_legend
+          ? { show: false }
+          : {
+              data: legend,
+              // Clicking a legend entry hides/shows that run config's polygon.
+              // With this many overlapping shapes, isolating one is the only
+              // way to read the chart - the legend is not a selection surface.
+              selectedMode: true,
+              formatter: (name: string) => legendFormatter[name] || name,
+              tooltip: {
+                show: true,
+                formatter: (params: { name: string }) =>
+                  buildRunConfigTooltip(params.name, axisMaxes, keys),
+              },
+              textStyle: legendTextStyle,
+              ...(compactLayout
+                ? {
+                    orient: "horizontal" as const,
+                    bottom: 0,
+                    left: "center" as const,
+                    itemGap: forceBottomLegend ? 24 : 40,
+                    // Many configs in a narrow column would otherwise wrap into
+                    // the plot; scroll mode keeps the legend to one paged row.
+                    ...(forceBottomLegend ? { type: "scroll" as const } : {}),
+                  }
+                : {
+                    orient: "vertical" as const,
+                    left: "60%",
+                    top: "middle" as const,
+                    itemGap: 16,
+                  }),
+            },
         radar: {
           // Ring-reversed so echarts' counterclockwise walk renders as the
           // clockwise reading order - see RADAR_START_ANGLE / ringReversed.
@@ -1333,10 +1386,27 @@ Related criteria sit together: the axes are grouped into the families the task's
             type: "radar",
             // Values permuted the same way as the indicators, so value j still
             // lands on the axis it belongs to.
-            data: series.map((entry) => ({
-              ...entry,
-              value: ringReversed(entry.value),
-            })),
+            data: series.map((entry) => {
+              // Stated per polygon when the page has decided the colours, and
+              // left to echarts' palette otherwise. `configId` is ours, not
+              // echarts', so it is dropped rather than passed through.
+              const assigned = entry.configId
+                ? seriesColors[entry.configId]
+                : undefined
+              return {
+                name: entry.name,
+                value: ringReversed(entry.value),
+                ...(assigned
+                  ? {
+                      itemStyle: { color: assigned },
+                      lineStyle: { color: assigned },
+                      ...(series.length === 1
+                        ? { areaStyle: { color: assigned, opacity: 0.2 } }
+                        : {}),
+                    }
+                  : {}),
+              }
+            }),
             lineStyle: {
               width: 2,
             },
@@ -1409,6 +1479,11 @@ Related criteria sit together: the axes are grouped into the families the task's
     axisScaleMode &&
     chartBoxKey &&
     legend_position &&
+    // A number, always truthy, and it moves when `external_legend` does - the
+    // flag itself cannot go in an && chain, since `false` would stop the
+    // redraw rather than trigger one
+    reservedLegendPx &&
+    seriesColors &&
     scoreAxisMaxes &&
     scoreDirections &&
     visibleUsageKeys &&

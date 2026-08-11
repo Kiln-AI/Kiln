@@ -63,6 +63,7 @@
     raw_score,
   } from "$lib/utils/evolution/score_lens"
   import { formatLatency } from "$lib/utils/formatters"
+  import { hidden_run_config_ids } from "$lib/utils/evolution/visibility_store"
   import CloseIcon from "$lib/ui/icons/close_icon.svelte"
 
   type RunConfigEvalScoresSummary =
@@ -80,6 +81,16 @@
   // Shown when the track has rows but every one of them is hidden
   export let empty_message: string =
     "Every row is hidden. Use “Hidden” above the table to restore them."
+  // Whether the page's chart legend (evolution_legend.svelte) also takes
+  // columns out of this table.
+  //
+  // Off by default, and off at both call sites today, because the charts and
+  // the table are read for different things: switching a config off up there
+  // is decluttering an image so the remaining shapes can be told apart, and
+  // that is not a reason to stop being able to read its numbers. The reader
+  // who wants the table to follow the legend flips this to true and gets it
+  // for both tracks at once.
+  export let respect_visibility: boolean = false
 
   const dispatch = createEventDispatcher<{
     select: string
@@ -92,7 +103,10 @@
   // holds every pin the page allows.
   const MAX_COLUMNS = 12
 
-  $: columns = pinned_nodes.slice(0, MAX_COLUMNS)
+  $: shown_nodes = respect_visibility
+    ? pinned_nodes.filter((node) => !$hidden_run_config_ids.has(node.id))
+    : pinned_nodes
+  $: columns = shown_nodes.slice(0, MAX_COLUMNS)
   $: row_count = groups.reduce((total, group) => total + group.rows.length, 0)
 
   function cell_raw(meta: ScoreKeyMeta, run_config_id: string): number | null {

@@ -91,6 +91,13 @@
     type ScoreFamily,
   } from "$lib/utils/evolution/score_families"
   import { spec_descriptions_by_eval } from "$lib/utils/evolution/axis_help"
+  import { series_color_map } from "$lib/utils/evolution/series_identity"
+  import {
+    hidden_run_config_ids,
+    reconcile_visibility,
+    visible_ids,
+  } from "$lib/utils/evolution/visibility_store"
+  import EvolutionLegend from "./evolution_legend.svelte"
   import EvolutionCanvas from "./evolution_canvas.svelte"
   import NodeDetailPanel from "./node_detail_panel.svelte"
   import UnlinkedSection from "./unlinked_section.svelte"
@@ -688,6 +695,25 @@
   // The matrix's usage rows and the inspector need per-config eval scores
   $: pinned_nodes.forEach((node) => fetch_eval_scores(node.id))
   $: pinned_ids = pinned_nodes.map((node) => node.id)
+
+  // ---- One legend for the charts ------------------------------------------
+  // The three plots below - the quality radar, the performance bars, and the
+  // parallel-coordinates view of the same quality scores - are one comparison
+  // drawn three ways, so the reader gets ONE legend for all of them, above
+  // them (evolution_legend.svelte). Each chart used to carry its own echarts
+  // legend, keyed by display name and toggled independently: switching a
+  // config off to read the radar left it drawn on the two charts underneath.
+  //
+  // Hiding is subtraction HERE rather than suppression inside a chart. A
+  // hidden config simply never reaches one, which is what lets three charts
+  // that know nothing about each other stay in step.
+  $: reconcile_visibility(pinned_ids)
+  $: visible_pinned_ids = visible_ids(pinned_ids, $hidden_run_config_ids)
+  // Colour is fixed by position in the PINNED list, not by a chart's series
+  // index. Any of the three can drop a config it has no numbers for, and doing
+  // so used to renumber the palette for every config after it - so the same
+  // run config came out one colour on the radar and another on the bars.
+  $: series_colors = series_color_map(pinned_ids)
 
   // ---- Hidden rows --------------------------------------------------------
   // One filtered view of the score keys drives both the matrix rows and the
@@ -1599,6 +1625,19 @@
       {/if}
     </div>
 
+    <!-- One legend for everything under it. Above the charts rather than
+         inside any of them: it governs all three, and a control that belongs
+         to three things cannot live in one of them. See evolution_legend. -->
+    <div class="mt-6">
+      <EvolutionLegend
+        run_configs={run_configs ?? []}
+        {pinned_ids}
+        model_info={$model_info}
+        {prompts}
+        colors={series_colors}
+      />
+    </div>
+
     <!-- Section 2: the two charts, side by side - quality on the left, what it
          cost to get it on the right. They only pair up once there is room for
          the radar's ring plus its axis names and the bars plus their gutter
@@ -1608,8 +1647,9 @@
          Height is what both charts grow into - a radius for one, a row per
          metric for the other - so the floor is generous: the chart's own 640px
          box plus its card header and padding. Tall enough for wrapped axis
-         names all the way round the outer ring, eleven readable metric rows,
-         and the scrolling legend underneath either.
+         names all the way round the outer ring and eleven readable metric
+         rows. Neither carries a legend of its own any more - the page's is
+         above - so all of that box is plot.
 
          The two cards are the same height, which is what makes the row read as
          a pair rather than two things that happen to be adjacent. Grid rows
@@ -1626,7 +1666,9 @@
             run_configs={run_configs ?? []}
             model_info={$model_info}
             {prompts}
-            selectedRunConfigIds={pinned_ids}
+            selectedRunConfigIds={visible_pinned_ids}
+            seriesColors={series_colors}
+            external_legend={true}
             scoreAxisMaxes={score_axis_maxes}
             scoreDirections={score_directions}
             axisFamilies={quality_axis_families}
@@ -1678,8 +1720,8 @@
           getMetricValue={get_metric_value}
           run_configs={run_configs ?? []}
           model_info={$model_info}
-          {prompts}
-          selectedRunConfigIds={pinned_ids}
+          selectedRunConfigIds={visible_pinned_ids}
+          seriesColors={series_colors}
           notShownNote={metrics_not_shown_note}
           availableAxisCount={visible_axes.length}
           hiddenAxisCount={hidden_axis_count}
@@ -1715,7 +1757,8 @@
           getSampleSize={get_sample_size}
           run_configs={run_configs ?? []}
           model_info={$model_info}
-          selectedRunConfigIds={pinned_ids}
+          selectedRunConfigIds={visible_pinned_ids}
+          seriesColors={series_colors}
         />
       </div>
     {/if}
@@ -1728,7 +1771,12 @@
          table scrolls inside its own container, so the page body never does.
 
          Same partition as the two radars above (is_metric_eval), so a score
-         cannot appear on one chart and in the other track's table. -->
+         cannot appear on one chart and in the other track's table.
+
+         Both tables list every PINNED config, including ones switched off in
+         the legend above: hiding a config there is decluttering an image, not
+         a statement that its numbers are no longer wanted. Flipping
+         respect_visibility to true on both is what links them. -->
     {#if pinned_nodes.length > 0}
       <div class="mt-6">
         <div class="flex items-center gap-2 mb-2">
@@ -1755,6 +1803,7 @@
           {eval_scores_cache}
           {eval_scores_loading}
           groups={quality_table_groups}
+          respect_visibility={false}
           empty_message="Every quality score is hidden. Use “Hidden” above to restore them."
           on:select={(event) => handle_select(event.detail)}
           on:inspect={(event) =>
@@ -1790,6 +1839,7 @@
           {eval_scores_cache}
           {eval_scores_loading}
           groups={performance_table_groups}
+          respect_visibility={false}
           empty_message="Every performance metric is hidden. Use “Hidden” above to restore them."
           on:select={(event) => handle_select(event.detail)}
           on:inspect={(event) =>
