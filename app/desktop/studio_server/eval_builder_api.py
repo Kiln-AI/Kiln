@@ -2,7 +2,7 @@
 
 Four streams, one frame contract (see api_models/eval_builder_models.py):
 
-  review_pipeline (multi-turn) — runs [drive → judge] as one unit of work
+  multi_turn_pipeline (multi-turn) — runs [drive → judge] as one unit of work
   per case. The await order inside each case's coroutine IS the stage
   dependency; per-stage semaphores bound the fan-out (DRIVE_CONCURRENCY
   drive loops, REVIEW_CONCURRENCY judge units). A case failing at any
@@ -14,7 +14,7 @@ Four streams, one frame contract (see api_models/eval_builder_models.py):
   traces a reviewer actually opens — under subset review most never are.
 
   single_turn_pipeline (single-turn) — the one-turn sibling of
-  review_pipeline: runs [run → judge] per generated input. The task runs
+  multi_turn_pipeline: runs [run → judge] per generated input. The task runs
   ONCE per input on the target run config — tools live, the user's keys —
   and each persisted, batch-tagged run pipes into the same judge unit.
   The judge scores the I/O pair (final_answer), exactly what the saved
@@ -22,7 +22,7 @@ Four streams, one frame contract (see api_models/eval_builder_models.py):
   frame for the UI only.
 
   judge_traces (multi-turn) — re-judge previously driven conversations:
-  the same judge unit and frames as review_pipeline, with the drive
+  the same judge unit and frames as multi_turn_pipeline, with the drive
   replaced by a disk reload of each chain's stored trace by leaf run id.
   Nothing is driven or written; the judge input is identical to drive
   time and to what the saved eval will judge.
@@ -191,7 +191,7 @@ SSE_TERMINATOR = "data: complete\n\n"
 
 class ReplaceBatchTagsField(BaseModel):
     """The delete-on-redrive half of a drive request, shared by both driving
-    streams (multi-turn review_pipeline, single_turn_pipeline) so the batch
+    streams (multi-turn multi_turn_pipeline, single_turn_pipeline) so the batch
     lifecycle contract can't drift between them. Subclasses declare their
     own `batch_tag`; the self-replacement guard reads it by name."""
 
@@ -228,7 +228,7 @@ class ReplaceBatchTagsField(BaseModel):
         return self
 
 
-class ReviewPipelineRequest(RunCasesBatchApiInput, ReplaceBatchTagsField):
+class MultiTurnPipelineRequest(RunCasesBatchApiInput, ReplaceBatchTagsField):
     """The merged multi-turn pipeline's request: everything a drive takes
     (inherited — the two drive contracts can't drift) plus the judge that
     scores the results and the batch lifecycle fields.
@@ -406,7 +406,7 @@ async def review_one_trace(
 
 class JudgeStreamBase:
     """The judge unit + frame plumbing shared by the three pipeline streams
-    (review_pipeline, judge_traces, single_turn_pipeline).
+    (multi_turn_pipeline, judge_traces, single_turn_pipeline).
 
     Subclasses own the producer that feeds cases in (live drive, disk
     reload, or one-shot run — `_produce`) and how the judge reads a case
@@ -691,7 +691,7 @@ class JudgeStreamBase:
         await self._queue.put(_sse(payload))
 
 
-class ReviewPipelineRun(JudgeStreamBase):
+class MultiTurnPipelineRun(JudgeStreamBase):
     """One merged-pipeline execution: [drive → judge] per case.
 
     Frames from the concurrently-running stages funnel through one queue and
@@ -699,7 +699,7 @@ class ReviewPipelineRun(JudgeStreamBase):
     the inherited judge unit scores and isolates failures.
     """
 
-    _stream_name = "review_pipeline"
+    _stream_name = "multi_turn_pipeline"
     _producer_cancelled_message = "The drive was cancelled unexpectedly."
 
     def __init__(
@@ -709,7 +709,7 @@ class ReviewPipelineRun(JudgeStreamBase):
         task_id: str,
         task: Task,
         cases: list[RunnerCase],
-        input: ReviewPipelineRequest,
+        input: MultiTurnPipelineRequest,
         save_context: SaveContext | None,
     ) -> None:
         super().__init__(
@@ -836,7 +836,7 @@ class JudgeTracesRun(JudgeStreamBase):
     """One judge_traces execution: [reload → judge] per case.
 
     The calibration loop's re-judge stream: the same judge unit and frame
-    contract as ReviewPipelineRun, with the drive replaced by a disk reload.
+    contract as MultiTurnPipelineRun, with the drive replaced by a disk reload.
     Each chain's leaf TaskRun already stores the full cumulative trace, so
     the judge scores exactly the conversation the drive-time judge saw and
     the saved eval will judge. Nothing is driven and nothing is written.
@@ -949,7 +949,7 @@ def _run_cost(run: TaskRun) -> float:
 def guard_single_turn(task: Task) -> None:
     """Reject early if the caller pointed the single-turn pipeline at a
     multi-turn task: its judge and save contract are the final_answer ones,
-    and multi-turn conversations have their own drive (review_pipeline).
+    and multi-turn conversations have their own drive (multi_turn_pipeline).
     """
     if task.turn_mode == TurnMode.multiturn:
         raise HTTPException(
@@ -1245,22 +1245,22 @@ class SingleTurnPipelineRun(JudgeStreamBase):
 
 def connect_eval_builder_api(app: FastAPI):
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/review_pipeline",
+        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/multi_turn_pipeline",
         tags=["Eval Builder"],
-        summary="Run Multi-Turn Review Pipeline",
+        summary="Run Multi-Turn Pipeline",
         openapi_extra=agent_policy_require_approval(
             "Drive multi-turn synthetic-user conversations and judge each? "
             "Invokes the target model, SU driver, and judge (cost)."
         ),
     )
     @no_write_lock  # streaming route: lock would buffer the SSE and break cancel-on-disconnect
-    async def review_pipeline(
+    async def multi_turn_pipeline(
         request: Request,
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
         task_id: Annotated[str, Path(description="The unique identifier of the task.")],
-        input: ReviewPipelineRequest,
+        input: MultiTurnPipelineRequest,
     ) -> CancellableStreamingResponse:
         """The merged multi-turn stream: [drive → judge] per case.
 
@@ -1301,7 +1301,7 @@ def connect_eval_builder_api(app: FastAPI):
                 },
             ) from exc
 
-        run = ReviewPipelineRun(
+        run = MultiTurnPipelineRun(
             project_id=project_id,
             task_id=task_id,
             task=task,
@@ -1334,7 +1334,7 @@ def connect_eval_builder_api(app: FastAPI):
     ) -> CancellableStreamingResponse:
         """The single-turn stream: [run → judge] per generated input.
 
-        The one-turn sibling of review_pipeline: the task runs ONCE per
+        The one-turn sibling of multi_turn_pipeline: the task runs ONCE per
         input on the target run config — tools live, the user's keys — and
         each persisted, batch-tagged run is judged locally.
 
@@ -1360,7 +1360,7 @@ def connect_eval_builder_api(app: FastAPI):
         included), echoed for the UI. Claims are built afterwards, per
         opened trace, via build_claims.
         """
-        # Same fail-fast posture as review_pipeline: this stream runs
+        # Same fail-fast posture as multi_turn_pipeline: this stream runs
         # entirely on the user's keys, but the review that follows builds
         # claims through the remote claim builder — discovering a missing
         # key there would be AFTER the user burned their own model spend
@@ -1426,7 +1426,7 @@ def connect_eval_builder_api(app: FastAPI):
         leaf_run_ids; no drive or turn frames appear on this stream. Claims
         are built afterwards, per opened trace, via build_claims.
         """
-        # Same fail-fast posture as review_pipeline: the judge runs on the
+        # Same fail-fast posture as multi_turn_pipeline: the judge runs on the
         # user's keys, but the review that follows builds claims through the
         # remote claim builder — surface a missing copilot key before the
         # user spends on judging every case.

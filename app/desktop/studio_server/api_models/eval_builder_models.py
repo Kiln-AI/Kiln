@@ -1,4 +1,4 @@
-"""Pydantic models for the Eval Builder review pipeline (studio side).
+"""Pydantic models for the Eval Builder pipelines (studio side).
 
 These are the STABLE, UI-driven contract (mirrors builder/claim_evidence.ts).
 They are deliberately decoupled from the kiln_server SDK models so
@@ -37,9 +37,9 @@ class TraceInput(BaseModel):
     """One single-turn example to review: the task's raw I/O pair.
 
     Multi-turn conversations never ride this request — they are driven,
-    judged, and distilled server-side by the review pipeline, which reads
-    the runner's real trace directly. Structured traces therefore have no
-    wire shape here at all.
+    judged, and distilled server-side by the multi-turn pipeline, which
+    reads the runner's real trace directly. Structured traces therefore
+    have no wire shape here at all.
     """
 
     raw_input: str = Field(description="The task's raw input.")
@@ -287,7 +287,7 @@ class TraceErrorEvent(BaseModel):
 
 # ── Review-pipeline SSE events (the merged pipeline streams) ──────────────
 #
-# One stream runs [drive → judge] (multi-turn review_pipeline) or
+# One stream runs [drive → judge] (multi-turn multi_turn_pipeline) or
 # [run → judge] (single_turn_pipeline) per case; each case flows through
 # independently, so events from different cases interleave. Ordering WITHIN
 # a case: turn_completed* (multi-turn only) → case_driven →

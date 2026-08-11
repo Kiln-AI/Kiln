@@ -3179,7 +3179,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/eval_builder/review_pipeline": {
+    "/api/projects/{project_id}/tasks/{task_id}/eval_builder/multi_turn_pipeline": {
         parameters: {
             query?: never;
             header?: never;
@@ -3189,7 +3189,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Run Multi-Turn Review Pipeline
+         * Run Multi-Turn Pipeline
          * @description The merged multi-turn stream: [drive → judge] per case.
          *
          *     Emits (all frames `type`-discriminated; errors carry {code, message}):
@@ -3209,7 +3209,7 @@ export interface paths {
          *     Terminated by `data: complete`. Claims are built afterwards, per
          *     opened trace, via build_claims.
          */
-        post: operations["review_pipeline_api_projects__project_id__tasks__task_id__eval_builder_review_pipeline_post"];
+        post: operations["multi_turn_pipeline_api_projects__project_id__tasks__task_id__eval_builder_multi_turn_pipeline_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3229,7 +3229,7 @@ export interface paths {
          * Run Single-Turn Review Pipeline
          * @description The single-turn stream: [run → judge] per generated input.
          *
-         *     The one-turn sibling of review_pipeline: the task runs ONCE per
+         *     The one-turn sibling of multi_turn_pipeline: the task runs ONCE per
          *     input on the target run config — tools live, the user's keys — and
          *     each persisted, batch-tagged run is judged locally.
          *
@@ -9482,6 +9482,58 @@ export interface components {
             turns: number;
         };
         /**
+         * MultiTurnPipelineRequest
+         * @description The merged multi-turn pipeline's request: everything a drive takes
+         *     (inherited — the two drive contracts can't drift) plus the judge that
+         *     scores the results and the batch lifecycle fields.
+         *
+         *     `judge.prompt` is also what the client later passes to build_claims as
+         *     the eval_rubric — the claim builder pressure-tests the rubric the
+         *     verdict was really produced under.
+         */
+        MultiTurnPipelineRequest: {
+            /**
+             * Replace Batch Tags
+             * @description Batch tags of previous drives this one supersedes (aborted re-drives can leave several behind). Their runs are deleted once this drive has produced replacements (delete-on-redrive), so abandoned batches don't accumulate on disk — and a wholesale drive failure never destroys the only batch the user has.
+             */
+            replace_batch_tags?: string[];
+            /**
+             * Target Run Config
+             * @description Inline run config for the target task, used verbatim — the same full properties shape a manual run sends, tools included. For driving a config that isn't worth saving (ad-hoc experiments, scripting). Must be a Kiln agent config. Exactly one of target_run_config / target_run_config_id is required.
+             */
+            target_run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
+            /**
+             * Target Run Config Id
+             * @description ID of one of the target task's saved run configs. The drive uses the saved config verbatim — model, prompt, sampling, and tools — so the agent under test behaves exactly like a manual run, and driven runs attribute back to the config. Exactly one of target_run_config / target_run_config_id is required.
+             */
+            target_run_config_id?: string | null;
+            /**
+             * Cases
+             * @description Cases as returned by /generate_cases, optionally edited. A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str, scenario_index?: int | null}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index is set only on scenario batches (generate_cases with case_prompts) and maps the case back to its plan prompt.
+             */
+            cases: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Turns
+             * @description Exact number of assistant turns to produce per case. The drive loop has no early termination.
+             * @default 5
+             */
+            turns: number;
+            su_driver: components["schemas"]["SyntheticUserDriverSpec"];
+            /**
+             * Batch Tag
+             * @description Optional user-supplied batch label. Constrained to [A-Za-z0-9_-]{1,64} so it can safely be used as a tag on leaf TaskRuns. Auto-generated if not provided.
+             */
+            batch_tag?: string | null;
+            /**
+             * Spec Name
+             * @description The spec's name. The review judge scores under the same output-score identity the saved eval will use, so the prompt the user calibrates here is byte-identical to the one that ships.
+             */
+            spec_name: string;
+            judge: components["schemas"]["JudgeConfig"];
+        };
+        /**
          * MultiTurnSaveInfo
          * @description Identifies an existing multi-turn synthetic-user batch to turn into an Eval.
          *
@@ -10773,58 +10825,6 @@ export interface components {
             provider_id: string;
             /** Models */
             models: components["schemas"]["RerankerModelDetails"][];
-        };
-        /**
-         * ReviewPipelineRequest
-         * @description The merged multi-turn pipeline's request: everything a drive takes
-         *     (inherited — the two drive contracts can't drift) plus the judge that
-         *     scores the results and the batch lifecycle fields.
-         *
-         *     `judge.prompt` is also what the client later passes to build_claims as
-         *     the eval_rubric — the claim builder pressure-tests the rubric the
-         *     verdict was really produced under.
-         */
-        ReviewPipelineRequest: {
-            /**
-             * Replace Batch Tags
-             * @description Batch tags of previous drives this one supersedes (aborted re-drives can leave several behind). Their runs are deleted once this drive has produced replacements (delete-on-redrive), so abandoned batches don't accumulate on disk — and a wholesale drive failure never destroys the only batch the user has.
-             */
-            replace_batch_tags?: string[];
-            /**
-             * Target Run Config
-             * @description Inline run config for the target task, used verbatim — the same full properties shape a manual run sends, tools included. For driving a config that isn't worth saving (ad-hoc experiments, scripting). Must be a Kiln agent config. Exactly one of target_run_config / target_run_config_id is required.
-             */
-            target_run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
-            /**
-             * Target Run Config Id
-             * @description ID of one of the target task's saved run configs. The drive uses the saved config verbatim — model, prompt, sampling, and tools — so the agent under test behaves exactly like a manual run, and driven runs attribute back to the config. Exactly one of target_run_config / target_run_config_id is required.
-             */
-            target_run_config_id?: string | null;
-            /**
-             * Cases
-             * @description Cases as returned by /generate_cases, optionally edited. A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str, scenario_index?: int | null}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index is set only on scenario batches (generate_cases with case_prompts) and maps the case back to its plan prompt.
-             */
-            cases: {
-                [key: string]: unknown;
-            }[];
-            /**
-             * Turns
-             * @description Exact number of assistant turns to produce per case. The drive loop has no early termination.
-             * @default 5
-             */
-            turns: number;
-            su_driver: components["schemas"]["SyntheticUserDriverSpec"];
-            /**
-             * Batch Tag
-             * @description Optional user-supplied batch label. Constrained to [A-Za-z0-9_-]{1,64} so it can safely be used as a tag on leaf TaskRuns. Auto-generated if not provided.
-             */
-            batch_tag?: string | null;
-            /**
-             * Spec Name
-             * @description The spec's name. The review judge scores under the same output-score identity the saved eval will use, so the prompt the user calibrates here is byte-identical to the one that ships.
-             */
-            spec_name: string;
-            judge: components["schemas"]["JudgeConfig"];
         };
         /**
          * ReviewTracesRequest
@@ -12949,9 +12949,9 @@ export interface components {
          * @description One single-turn example to review: the task's raw I/O pair.
          *
          *     Multi-turn conversations never ride this request — they are driven,
-         *     judged, and distilled server-side by the review pipeline, which reads
-         *     the runner's real trace directly. Structured traces therefore have no
-         *     wire shape here at all.
+         *     judged, and distilled server-side by the multi-turn pipeline, which
+         *     reads the runner's real trace directly. Structured traces therefore
+         *     have no wire shape here at all.
          */
         TraceInput: {
             /**
@@ -20627,7 +20627,7 @@ export interface operations {
             };
         };
     };
-    review_pipeline_api_projects__project_id__tasks__task_id__eval_builder_review_pipeline_post: {
+    multi_turn_pipeline_api_projects__project_id__tasks__task_id__eval_builder_multi_turn_pipeline_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -20641,7 +20641,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ReviewPipelineRequest"];
+                "application/json": components["schemas"]["MultiTurnPipelineRequest"];
             };
         };
         responses: {

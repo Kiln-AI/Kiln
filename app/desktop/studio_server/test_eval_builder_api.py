@@ -1018,9 +1018,9 @@ class TestRefineJudge:
         assert response.status_code == 422
 
 
-# ───────────────────────── review_pipeline (SSE) ─────────────────────────
+# ───────────────────────── multi_turn_pipeline (SSE) ─────────────────────────
 
-PIPELINE_URL = "/api/projects/p1/tasks/t1/eval_builder/review_pipeline"
+PIPELINE_URL = "/api/projects/p1/tasks/t1/eval_builder/multi_turn_pipeline"
 
 
 def _pipeline_case(i: int) -> dict:
@@ -1198,7 +1198,7 @@ def _events_of(events: list, type_name: str) -> list[dict]:
     return [e for e in events if isinstance(e, dict) and e.get("type") == type_name]
 
 
-class TestReviewPipeline:
+class TestMultiTurnPipeline:
     def test_happy_path_full_stream(self, client, pipeline_request, pipeline_seams):
         resp = client.post(PIPELINE_URL, json=pipeline_request)
 
@@ -2064,7 +2064,7 @@ class TestJudgeTraces:
     def test_missing_copilot_key_is_401_before_any_load(
         self, client, judge_traces_request, judge_traces_seams
     ):
-        """Same fail-fast posture as review_pipeline: without a copilot key
+        """Same fail-fast posture as multi_turn_pipeline: without a copilot key
         the claims stage that follows can never succeed, so the request must
         4xx before the user spends on judging every case."""
         with patch(
@@ -2492,7 +2492,7 @@ class TestSingleTurnPipeline:
         assert "task_not_single_turn" in resp.text
 
     def test_missing_copilot_key_is_401(self, client, single_turn_request):
-        """Same fail-fast posture as review_pipeline: the review that
+        """Same fail-fast posture as multi_turn_pipeline: the review that
         follows needs the remote claim builder, so a missing key stops the
         stream before any model spend."""
         with patch(

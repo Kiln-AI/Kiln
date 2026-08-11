@@ -19,7 +19,7 @@ calls, so the harness starts at Step 4 with the spec text already "written":
                        (UI: on_drive_multi_turn part 1 — ONE batch call, one
                        synthetic-user case per approved scenario prompt,
                        case i <- prompt i; each case carries scenario_index.)
-  Steps 4c+5 PIPELINE  POST .../eval_builder/review_pipeline    [SSE]
+  Steps 4c+5 PIPELINE  POST .../eval_builder/multi_turn_pipeline    [SSE]
                        (UI: on_drive_multi_turn part 2 — ONE stream runs
                        [drive -> judge] per case: the SU driver plays the
                        customer against the target model for N turns, chains
@@ -225,7 +225,7 @@ def _parse_sse(text: str) -> list[dict | str]:
 
 
 def _collect_pipeline(events: list[dict | str]) -> dict:
-    """Reduce a review_pipeline SSE stream to the fields the harness asserts
+    """Reduce a multi_turn_pipeline SSE stream to the fields the harness asserts
     on. Shared by the first drive and the post-refine re-drive."""
     out: dict = {
         "batch_tag": None,
@@ -257,11 +257,13 @@ def _collect_pipeline(events: list[dict | str]) -> dict:
 def _assert_pipeline_judged(
     pipe: dict, num_driven: int, turns: int = TURNS_PER_CASE
 ) -> None:
-    """The structural wire contract of one review_pipeline run: no failures,
+    """The structural wire contract of one multi_turn_pipeline run: no failures,
     every driven case judged for the full turn count, totals agree, and each
     case_judged leaf id matches its case_driven leaf id."""
     _require(not pipe["failed"], f"pipeline emitted failures: {pipe['failed']}")
-    _require(pipe["batch_tag"] is not None, "review_pipeline emitted no batch_started")
+    _require(
+        pipe["batch_tag"] is not None, "multi_turn_pipeline emitted no batch_started"
+    )
     _require(
         len(pipe["judged"]) == num_driven,
         f"expected {num_driven} judged cases, got {len(pipe['judged'])}",
@@ -466,7 +468,7 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     # of the runner's REAL trace — claims built later cite into that text.
     num_driven = len(cases)
     resp = client.post(
-        "/api/projects/p/tasks/t/eval_builder/review_pipeline",
+        "/api/projects/p/tasks/t/eval_builder/multi_turn_pipeline",
         json={
             "cases": cases,
             "turns": TURNS_PER_CASE,
@@ -476,7 +478,7 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             "judge": JUDGE,
         },
     )
-    _require(resp.status_code == 200, f"review_pipeline failed: {resp.text}")
+    _require(resp.status_code == 200, f"multi_turn_pipeline failed: {resp.text}")
     pipe = _collect_pipeline(_parse_sse(resp.text))
     _assert_pipeline_judged(pipe, num_driven)
     batch_tag = pipe["batch_tag"]
@@ -1171,7 +1173,7 @@ def test_eval_builder_pipeline_tools_e2e(preflight, temp_tool_task, client):
     # ── PIPELINE — the drive references the SAVED run config by id. ─────
     num_driven = len(cases)
     resp = client.post(
-        "/api/projects/p/tasks/t/eval_builder/review_pipeline",
+        "/api/projects/p/tasks/t/eval_builder/multi_turn_pipeline",
         json={
             "cases": cases,
             "turns": TOOL_TURNS_PER_CASE,
@@ -1181,7 +1183,7 @@ def test_eval_builder_pipeline_tools_e2e(preflight, temp_tool_task, client):
             "judge": TOOL_JUDGE,
         },
     )
-    _require(resp.status_code == 200, f"review_pipeline failed: {resp.text}")
+    _require(resp.status_code == 200, f"multi_turn_pipeline failed: {resp.text}")
     pipe = _collect_pipeline(_parse_sse(resp.text))
     _assert_pipeline_judged(pipe, num_driven, turns=TOOL_TURNS_PER_CASE)
 

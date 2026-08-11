@@ -925,7 +925,7 @@
   //      prompts → ONE batch call, one synthetic-user case per prompt.
   //      Single-turn: start_generate_inputs_batch → one test input minted
   //      locally per prompt on the input-generator lane.
-  //   5. One SSE stream runs the pipeline per case — review_pipeline
+  //   5. One SSE stream runs the pipeline per case — multi_turn_pipeline
   //      ([drive → judge]) or single_turn_pipeline ([run → judge]) — and
   //      the PipelineEvent frames drive progress + the review results.
   //
@@ -1222,7 +1222,7 @@
   }
 
   // Events on the merged review-pipeline stream (one stream runs
-  // [drive → judge → claims] per case; see eval_builder_api.review_pipeline).
+  // [drive → judge → claims] per case; see eval_builder_api.multi_turn_pipeline).
   // All eval_builder frames share the `type` discriminator and the
   // {code, message} error shape.
   type PipelineEvent =
@@ -1419,7 +1419,7 @@
 
   // Step 4 (multi-turn) part 2 — drive from the approved plan. The approved
   // prompts become synthetic-user cases in ONE batch call (case i ← prompt i
-  // via generate_cases' case_prompts), then a single review_pipeline stream
+  // via generate_cases' case_prompts), then a single multi_turn_pipeline stream
   // runs [drive → judge → claims] per case — each case flows through
   // independently, so the plan rows light up as their case progresses.
   // Ping every lane concurrently (~2s total); the returned failure is the
@@ -1636,7 +1636,7 @@
       // per case. POST endpoint, so fetch + shared SSE reader (EventSource
       // is GET-only).
       generation_phase = "running_pipeline"
-      const url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval_builder/review_pipeline`
+      const url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval_builder/multi_turn_pipeline`
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -1656,7 +1656,7 @@
       })
 
       if (!response.ok || !response.body) {
-        generation_error = `review_pipeline failed (${response.status}): ${await error_detail(response)}`
+        generation_error = `multi_turn_pipeline failed (${response.status}): ${await error_detail(response)}`
         return
       }
 
