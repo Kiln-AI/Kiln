@@ -35,6 +35,7 @@ from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
     EvalInput,
     MultiTurnSyntheticEvalInputData,
+    SingleTurnEvalInputData,
     UserMessage,
 )
 from kiln_ai.datamodel.task_output import (
@@ -71,14 +72,15 @@ NUM_TOPICS = 15
 
 # Dataset split — the 50/25/25 spec (train / eval / golden). Golden is the
 # human-rated answer key, filled from RATED items only (never padded with
-# unrated ones). Multi-turn: golden is capped at GOLDEN_TARGET_FRACTION of
-# the chains (select_golden_leaves) and the remainder is all train — the
-# eval slice is EvalInput items minted from the driven cases, not chains.
-# Single-turn: golden is the reviewed examples (structurally small, no cap
-# needed) and the unrated pool splits train:eval at 2:1 (the 50:25). If
-# fewer than the target fraction are rated the answer key is simply smaller
-# (warned). One owner so the golden fraction can't drift between the
-# single-turn and multi-turn splitters.
+# unrated ones). On both arms the eval slice is EvalInput items — inputs the
+# runner executes fresh per run config — so only golden and train are stored
+# as TaskRuns. Multi-turn: golden is capped at GOLDEN_TARGET_FRACTION of the
+# chains (select_golden_leaves) and the remainder is all train. Single-turn:
+# golden is the reviewed examples (structurally small, no cap needed) and the
+# generated pool splits train:eval at 2:1 (the 50:25). If fewer than the
+# target fraction are rated the answer key is simply smaller (warned). One
+# owner so the golden fraction can't drift between the single-turn and
+# multi-turn splitters.
 TRAIN_SPLIT_WEIGHT = 2
 EVAL_SPLIT_WEIGHT = 1
 GOLDEN_SPLIT_WEIGHT = 1
@@ -257,7 +259,7 @@ def create_task_run_from_reviewed(
 
     Returns a (TaskRun, feedback_text) tuple. The caller should create Feedback
     and ClaimReview children on the TaskRun after saving it (see
-    DatasetTaskRuns.save_pending_children).
+    SingleTurnDataset.save_pending_children).
     """
     data_source = DataSource(
         type=DataSourceType.synthetic,
@@ -294,12 +296,20 @@ def create_task_run_from_reviewed(
     return task_run, feedback_text
 
 
-class DatasetTaskRuns:
-    """Result of creating dataset task runs, with pending review children
-    (feedback + claim reviews) to attach after saving."""
+class SingleTurnDataset:
+    """The dataset one single-turn spec save creates: the golden and train
+    TaskRuns (with pending review children — feedback + claim reviews — to
+    attach after saving) plus the eval slice as EvalInput items.
+
+    The two stores differ because the slices are used differently: golden and
+    train are finished input/output pairs the judge is calibrated on and the
+    user can fine-tune from, while the eval slice is inputs only — the runner
+    generates the output fresh per run config at eval time.
+    """
 
     def __init__(self) -> None:
         self.task_runs: list[TaskRun] = []
+        self.eval_inputs: list[EvalInput] = []
         self._pending_feedback: dict[str, str] = {}
         self._pending_claim_reviews: dict[str, ClaimReviewApi] = {}
 
@@ -346,7 +356,7 @@ def save_claim_review(task_run: TaskRun, claim_review: ClaimReviewApi) -> ClaimR
     return review
 
 
-def create_dataset_task_runs(
+def create_single_turn_dataset(
     all_examples: list[SampleApi],
     reviewed_examples: list[ReviewedExample],
     eval_tag: str,
@@ -354,23 +364,26 @@ def create_dataset_task_runs(
     golden_tag: str,
     spec_name: str,
     rng: random.Random | None = None,
-) -> DatasetTaskRuns:
-    """Create TaskRuns for the golden, eval, and train datasets (disjoint).
+) -> SingleTurnDataset:
+    """Build the golden, train, and eval slices of a single-turn save (disjoint).
 
-    - Golden: the human-rated reviewed examples ONLY (the answer key). Never
-      padded with unrated machine examples — an unrated golden calibrates
-      nothing.
-    - Eval + train: the unrated machine pool, split 2:1 (the 50:25 of the split).
+    - Golden: the human-rated reviewed examples ONLY (the answer key), as
+      TaskRuns. Never padded with unrated machine examples — an unrated golden
+      calibrates nothing.
+    - Train + eval: the unrated machine pool, split 2:1 (the 50:25 of the
+      split). Train is stored as TaskRuns; the eval slice is EvalInput items
+      carrying the generated input only.
 
     The three tag sets never overlap. `rng` is injected for deterministic
     tests; None uses a fresh system-seeded Random. `all_examples` is not
-    mutated. Returns DatasetTaskRuns without parent set — the caller sets
-    parent and calls save_pending_children after saving each run.
+    mutated. Returns a SingleTurnDataset with no parents set — the caller
+    parents every model, and calls save_pending_children after saving each run.
     """
     rng = rng or random.Random()
-    result = DatasetTaskRuns()
+    result = SingleTurnDataset()
 
-    # One session tag stamps every run in this batch.
+    # One session tag stamps every item in this batch — runs and eval inputs
+    # alike, so a saved spec's whole dataset traces back to one generation.
     session_tag = f"synthetic_session_{rng.randint(0, 999999999999)}"
     extra_tags = [session_tag]
 
@@ -386,7 +399,9 @@ def create_dataset_task_runs(
     # pool from a separate source), so it is structurally well under the 25%
     # cap — no cap needed here, unlike the multi-turn all-rated case.
     train_examples, eval_examples = split_pool_train_eval(all_examples, rng)
-    write_eval_slice(result, eval_examples, eval_tag, extra_tags)
+    result.eval_inputs = build_single_turn_eval_inputs(
+        eval_examples, eval_tag, extra_tags
+    )
     for example in train_examples:
         result.add_run(create_task_run_from_sample(example, train_tag, extra_tags))
 
@@ -396,20 +411,30 @@ def create_dataset_task_runs(
     return result
 
 
-def write_eval_slice(
-    result: DatasetTaskRuns,
+def build_single_turn_eval_inputs(
     eval_examples: list[SampleApi],
     eval_tag: str,
     extra_tags: list[str],
-) -> None:
-    """Materialize the single-turn eval slice as eval-tagged TaskRuns.
+) -> list[EvalInput]:
+    """Mint one EvalInput per eval-slice example — the single-turn eval slice.
 
-    Isolated from the split logic on purpose: when the eval dataset moves to
-    persisted EvalInput items, only this writer changes — the partitioning
-    stays put.
+    Each carries the example's INPUT only, tagged with the eval-slice tag and
+    the generation session it came from. The generated output is dropped on
+    purpose: the runner produces a fresh output per run config at eval time
+    and judges that, so a stored output would only be a misleading artifact of
+    the machine that wrote the input.
+
+    Models are built and validated here, unsaved — persistence happens in
+    persist_eval_slice inside the save unit-of-work (mirrors the multi-turn
+    producer).
     """
-    for example in eval_examples:
-        result.add_run(create_task_run_from_sample(example, eval_tag, extra_tags))
+    return [
+        EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text=example.input)),
+            tags=[eval_tag, *extra_tags],
+        )
+        for example in eval_examples
+    ]
 
 
 def find_multi_turn_chain_leaves(task: Task, batch_tag: str) -> list[TaskRun]:
@@ -512,7 +537,7 @@ def split_and_tag_multi_turn_chains(
     Golden = the human-rated leaves (the answer key), capped at the target
     fraction; every remaining leaf is train. Chains carry no eval slice —
     the eval set is EvalInput items minted from the driven cases
-    (write_eval_slice_multi_turn) and re-driven fresh at eval time, so
+    (build_multi_turn_eval_inputs) and re-driven fresh at eval time, so
     reusing a golden chain's scenario there is not circular: golden
     validates the judge on the STORED conversation while the eval set
     scores NEW ones.
@@ -590,7 +615,7 @@ def build_multi_turn_eval_inputs(
     case was driven in and, when known, the batch-plan scenario it came from.
 
     Models are built and validated here, unsaved — persistence happens in
-    write_eval_slice_multi_turn inside the save unit-of-work. Raises
+    persist_eval_slice inside the save unit-of-work. Raises
     HTTPException(422) when a case's persona blob doesn't parse, so a
     malformed request fails before anything is written.
     """
@@ -619,15 +644,16 @@ def build_multi_turn_eval_inputs(
     return eval_inputs
 
 
-def write_eval_slice_multi_turn(
+def persist_eval_slice(
     eval_inputs: list[EvalInput],
     saved_out: list,
 ) -> None:
-    """Materialize the multi-turn eval slice by persisting its EvalInput items.
+    """Materialize an eval slice by persisting its EvalInput items.
 
-    Isolated from the split logic (mirrors write_eval_slice single-turn).
-    Each item is appended to `saved_out` the moment it hits disk so a failed
-    save rolls it back with the other created models.
+    Shared by both arms: the items differ (a driven case's seed + persona vs a
+    generated single-turn input) but the persistence and rollback contract is
+    the same. Each item is appended to `saved_out` the moment it hits disk so
+    a failed save rolls it back with the other created models.
     """
     for eval_input in eval_inputs:
         eval_input.save_to_file()

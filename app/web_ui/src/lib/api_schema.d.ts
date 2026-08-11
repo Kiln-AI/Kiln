@@ -3157,12 +3157,15 @@ export interface paths {
          *     1. An Eval for the spec with the appropriate template
          *     2. A judge EvalConfig (LLM-as-judge)
          *     3. Single-turn only: batch examples via copilot API, split into the
-         *        eval + train datasets and persisted as TaskRuns; the golden
-         *        dataset is the request's human-reviewed examples
+         *        train dataset (persisted as TaskRuns) and the eval slice (persisted
+         *        as inputs-only EvalInputs); the golden dataset is the request's
+         *        human-reviewed examples
          *     4. The Spec itself
          *     Plus, for multi-turn: tag existing chain leaves with the golden/train
-         *     filter tags and mint one EvalInput per driven case — the eval slice
-         *     the runner re-drives per run config at eval time.
+         *     filter tags and mint one EvalInput per driven case.
+         *
+         *     On both arms the eval slice is EvalInput items, which the runner runs
+         *     fresh per run config at eval time — nothing generated here is judged.
          *
          *     If you don't need copilot, use POST /spec instead.
          *

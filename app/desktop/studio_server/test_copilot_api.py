@@ -38,8 +38,9 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_sp
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
     Response as SdkResponse,
 )
+from app.desktop.studio_server.api_models.copilot_models import SampleApi
 from app.desktop.studio_server.copilot_api import connect_copilot_api
-from app.desktop.studio_server.utils.copilot_utils import DatasetTaskRuns
+from app.desktop.studio_server.utils.copilot_utils import SingleTurnDataset
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task, TaskRun
@@ -621,8 +622,8 @@ class TestCreateSpecWithCopilot:
                 return_value={},
             ),
             patch(
-                "app.desktop.studio_server.copilot_api.create_dataset_task_runs",
-                return_value=DatasetTaskRuns(),
+                "app.desktop.studio_server.copilot_api.create_single_turn_dataset",
+                return_value=SingleTurnDataset(),
             ),
             patch(
                 "app.desktop.studio_server.copilot_api.generate_memorable_name",
@@ -664,13 +665,206 @@ class TestCreateSpecWithCopilot:
         assert len(specs) == 1
         assert specs[0].eval_id == evals[0].id
 
-        # Single-turn on disk: both splits are TaskRun-backed and live in the
-        # legacy flat fields, so the `splits` key is omitted entirely — old
-        # clients read this eval unchanged.
+        # Single-turn on disk: the test split is EvalInput-backed (expressible
+        # only in `splits`); train is TaskRun-backed and stays in its legacy
+        # flat field, where old clients still read it.
         on_disk = json.loads(evals[0].path.read_text())
-        assert "splits" not in on_disk
-        assert on_disk["eval_set_filter_id"] == "tag::eval_test_spec"
+        assert on_disk["splits"] == {
+            "test": {"source": "eval_input", "filter_id": "tag::eval_test_spec"}
+        }
+        assert on_disk["eval_set_filter_id"] is None
         assert on_disk["train_set_filter_id"] == "tag::train_test_spec"
+
+    def test_single_turn_save_writes_eval_inputs_and_splits_to_disk(
+        self, client, project_and_task, copilot_request_data
+    ):
+        # Asserts on the SAVED BYTES, not the in-memory models: the eval slice
+        # moving stores is only visible on disk (which files exist, and what
+        # the eval's splits point at).
+        project, task = project_and_task
+        # 9 generated examples split 2:1 → 6 train runs + a 3-item eval slice;
+        # the 2 reviewed examples become the golden answer key.
+        generated = [
+            SampleApi(input=f"generated input {i}", output=f"generated output {i}")
+            for i in range(9)
+        ]
+        copilot_request_data["reviewed_examples"] = [
+            {
+                "input": "reviewed input 0",
+                "output": "reviewed output 0",
+                "model_says_meets_spec": False,
+                "user_says_meets_spec": False,
+                "feedback": "Fabricated a return window.",
+                "claim_review": {
+                    "judge_score": "fail",
+                    "judge_reasoning": "Judge reasoning here.",
+                    "claims": [
+                        {
+                            "claim": "The agent stated a return window.",
+                            "evidence": "Gives 30 days [1].",
+                            "expected_result": "fail",
+                            "human_grade": "agree",
+                            "human_feedback": None,
+                        }
+                    ],
+                    "final_judgement": {
+                        "claim": "Overall verdict.",
+                        "evidence": "Decisive fact [1].",
+                        "expected_result": "fail",
+                        "human_grade": "agree",
+                        "human_feedback": None,
+                    },
+                },
+            },
+            {
+                "input": "reviewed input 1",
+                "output": "reviewed output 1",
+                "model_says_meets_spec": True,
+                "user_says_meets_spec": True,
+                "feedback": "",
+            },
+        ]
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.get_copilot_api_key",
+                return_value="test_key",
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_copilot_examples",
+                new_callable=AsyncMock,
+                return_value=generated,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_memorable_name",
+                return_value="single-turn-judge",
+            ),
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=copilot_request_data,
+            )
+        assert response.status_code == 200, response.text
+
+        eval_path = task.evals()[0].path
+        first_bytes = eval_path.read_text()
+        on_disk = json.loads(first_bytes)
+
+        # Test split: EvalInput-backed, expressible only in `splits`.
+        assert on_disk["splits"] == {
+            "test": {"source": "eval_input", "filter_id": "tag::eval_test_spec"}
+        }
+        # Train and golden stay TaskRun-backed: train in its legacy flat field
+        # (still read by old clients and the project zip), golden in the
+        # eval-configs filter the judge is calibrated against.
+        assert on_disk["eval_set_filter_id"] is None
+        assert on_disk["train_set_filter_id"] == "tag::train_test_spec"
+        assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_test_spec"
+
+        # Reload → save again is byte-stable: the split homing survives a
+        # round trip rather than living only in the freshly-built instance.
+        reloaded = Eval.load_from_file(eval_path)
+        reloaded.save_to_file()
+        assert eval_path.read_text() == first_bytes
+
+        # The eval slice on disk: one EvalInput per eval-slice example,
+        # carrying the generated INPUT verbatim and nothing else.
+        eval_inputs = task.eval_inputs()
+        assert len(eval_inputs) == 3
+        slice_inputs = {ei.data.user_message.text for ei in eval_inputs}
+        assert slice_inputs <= {ex.input for ex in generated}
+        for eval_input in eval_inputs:
+            assert eval_input.data.type == "single_turn"
+            assert "eval_test_spec" in eval_input.tags
+            # The generated output is discarded at mint — the runner writes a
+            # fresh one per run config, so a stored one would never be judged.
+            assert "generated output" not in eval_input.path.read_text()
+
+        # No run carries the eval tag any more: the dataset is the 6 train
+        # runs plus the 2 golden ones, and nothing is in two splits at once.
+        runs = task.runs()
+        assert len(runs) == 8
+        by_tag = {
+            tag: [run for run in runs if tag in run.tags]
+            for tag in ("train_test_spec", "eval_golden_test_spec", "eval_test_spec")
+        }
+        assert len(by_tag["train_test_spec"]) == 6
+        assert len(by_tag["eval_golden_test_spec"]) == 2
+        assert by_tag["eval_test_spec"] == []
+
+        # The golden answer key rides through untouched: human verdicts as
+        # requirement ratings, plus the feedback and per-claim grades.
+        golden_by_input = {run.input: run for run in by_tag["eval_golden_test_spec"]}
+        rating_key = "named::Test Spec"
+        failed = golden_by_input["reviewed input 0"]
+        assert failed.output.rating.requirement_ratings[rating_key].value == 0.0
+        assert (
+            failed.output.rating.requirement_ratings[rating_key].type
+            == TaskOutputRatingType.pass_fail
+        )
+        assert [fb.feedback for fb in failed.feedback()] == [
+            "Fabricated a return window."
+        ]
+        assert len(failed.claim_reviews()) == 1
+        assert failed.claim_reviews()[0].judge_score == "fail"
+
+        passed = golden_by_input["reviewed input 1"]
+        assert passed.output.rating.requirement_ratings[rating_key].value == 1.0
+        assert passed.feedback() == []
+        assert passed.claim_reviews() == []
+
+    def test_single_turn_save_failure_after_eval_slice_rolls_back(
+        self, client, project_and_task, copilot_request_data
+    ):
+        # A failure AFTER the eval slice hit disk reverses everything: the
+        # EvalInputs are Task children, so an incomplete save would otherwise
+        # leave a tagged slice pointing at an eval that no longer exists.
+        project, task = project_and_task
+        generated = [
+            SampleApi(input=f"generated input {i}", output=f"generated output {i}")
+            for i in range(9)
+        ]
+
+        from app.desktop.studio_server.utils import copilot_utils
+
+        def persist_then_boom(*args, **kwargs):
+            copilot_utils.persist_eval_slice(*args, **kwargs)
+            raise RuntimeError("disk full")
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.get_copilot_api_key",
+                return_value="test_key",
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_copilot_examples",
+                new_callable=AsyncMock,
+                return_value=generated,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.persist_eval_slice",
+                side_effect=persist_then_boom,
+            ),
+            # The endpoint re-raises after rollback; TestClient propagates it.
+            pytest.raises(RuntimeError, match="disk full"),
+        ):
+            client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=copilot_request_data,
+            )
+
+        assert task.evals() == []
+        assert task.specs() == []
+        assert task.runs() == []
+        assert task.eval_inputs() == []
 
 
 class TestClassifySpecDescription:

@@ -77,17 +77,17 @@ from app.desktop.studio_server.api_models.copilot_models import (
     TaskInfoApi,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
-    DatasetTaskRuns,
+    SingleTurnDataset,
     build_multi_turn_eval_inputs,
-    create_dataset_task_runs,
+    create_single_turn_dataset,
     find_multi_turn_chain_leaves,
     generate_copilot_examples,
     get_copilot_api_key,
+    persist_eval_slice,
     rate_multi_turn_chain_leaves,
     split_and_tag_multi_turn_chains,
     unrate_multi_turn_chain_leaves,
     untag_multi_turn_chains_for_eval,
-    write_eval_slice_multi_turn,
 )
 from app.desktop.studio_server.api_models.eval_builder_models import (
     JudgeConfig,
@@ -543,8 +543,7 @@ def persist_spec_save(
     *,
     eval: Eval,
     eval_config: EvalConfig,
-    task_runs: list[TaskRun],
-    dataset_runs: DatasetTaskRuns | None,
+    single_turn_dataset: SingleTurnDataset | None,
     spec: Spec,
     multi_turn: MultiTurnSaveInfo | None,
     multi_turn_leaves: list[TaskRun],
@@ -579,11 +578,14 @@ def persist_spec_save(
         eval_config.save_to_file()
         saved_models.append(eval_config)
 
-        for run in task_runs:
-            run.save_to_file()
-            saved_models.append(run)
-            if dataset_runs is not None:
-                dataset_runs.save_pending_children(run)
+        # Single-turn: the golden and train runs (with their review children),
+        # then the eval slice split out of the same generated pool as train.
+        if single_turn_dataset is not None:
+            for run in single_turn_dataset.task_runs:
+                run.save_to_file()
+                saved_models.append(run)
+                single_turn_dataset.save_pending_children(run)
+            persist_eval_slice(single_turn_dataset.eval_inputs, saved_models)
 
         spec.save_to_file()
         saved_models.append(spec)
@@ -594,7 +596,7 @@ def persist_spec_save(
         # below. tagged_leaves captures only the tags this call added, so
         # untagging on rollback preserves any tags the leaf already had.
         if multi_turn is not None:
-            write_eval_slice_multi_turn(multi_turn_eval_inputs, saved_models)
+            persist_eval_slice(multi_turn_eval_inputs, saved_models)
             split_and_tag_multi_turn_chains(
                 multi_turn_leaves,
                 reviewed_leaf_ids,
@@ -1013,12 +1015,15 @@ def connect_copilot_api(app: FastAPI):
         1. An Eval for the spec with the appropriate template
         2. A judge EvalConfig (LLM-as-judge)
         3. Single-turn only: batch examples via copilot API, split into the
-           eval + train datasets and persisted as TaskRuns; the golden
-           dataset is the request's human-reviewed examples
+           train dataset (persisted as TaskRuns) and the eval slice (persisted
+           as inputs-only EvalInputs); the golden dataset is the request's
+           human-reviewed examples
         4. The Spec itself
         Plus, for multi-turn: tag existing chain leaves with the golden/train
-        filter tags and mint one EvalInput per driven case — the eval slice
-        the runner re-drives per run config at eval time.
+        filter tags and mint one EvalInput per driven case.
+
+        On both arms the eval slice is EvalInput items, which the runner runs
+        fresh per run config at eval time — nothing generated here is judged.
 
         If you don't need copilot, use POST /spec instead.
 
@@ -1045,15 +1050,16 @@ def connect_copilot_api(app: FastAPI):
                 "by case or spacing) already exists for this task.",
             )
 
-        # Generate tags and filter IDs. The shipped tag helper also mints a
-        # val tag; the wizard doesn't create a val split, so it goes unused.
+        # Generate tags and filter IDs. The shipped tag helper also mints a val
+        # tag, which neither arm uses: the wizard splits its data three ways
+        # (train / eval / golden) and mints no val items, so a val split would
+        # address a tag nothing carries. Deliberate on both arms.
         tags = generate_spec_eval_tags(request.name)
         eval_tag, train_tag, golden_tag = (
             tags.eval_tag,
             tags.train_tag,
             tags.golden_tag,
         )
-        eval_set_filter_id = tag_filter_id(eval_tag)
         train_set_filter_id = tag_filter_id(train_tag)
         eval_configs_filter_id = tag_filter_id(golden_tag)
 
@@ -1141,23 +1147,21 @@ def connect_copilot_api(app: FastAPI):
             )
 
         # 1. Create the Eval. Golden and train are TaskRun slices on both
-        # paths; the eval slice is TaskRun-tagged for single-turn and
-        # EvalInput-tagged for multi-turn (re-driven per run config, using
-        # the drive config persisted on the Eval).
+        # paths; the eval slice is EvalInput-tagged on both, re-run per run
+        # config at eval time (multi-turn re-drives it, using the drive config
+        # persisted on the Eval).
         eval = Eval(
             parent=task,
             name=request.name,
             description=None,
             template=template,
             output_scores=output_scores,
-            eval_set_filter_id=None
-            if request.multi_turn is not None
-            else eval_set_filter_id,
-            # Multi-turn's test split is EvalInput-backed, which only `splits`
-            # can express; its train split is homed via set_split below.
-            splits={"test": EvalInputSplit(filter_id=f"tag::{eval_tag}")}
-            if request.multi_turn is not None
-            else {},
+            # The EvalInput-backed test split is expressible only in `splits`,
+            # so the legacy flat field stays empty. Single-turn's train split
+            # is TaskRun-backed and homed in its legacy field by the
+            # constructor; multi-turn's is homed via set_split below.
+            eval_set_filter_id=None,
+            splits={"test": EvalInputSplit(filter_id=f"tag::{eval_tag}")},
             train_set_filter_id=None
             if request.multi_turn is not None
             else train_set_filter_id,
@@ -1199,10 +1203,10 @@ def connect_copilot_api(app: FastAPI):
         # multi-turn chains) — injectable so tests are deterministic.
         rng = random.Random()
 
-        # 3. Single-turn: synthesise examples + create TaskRuns.
+        # 3. Single-turn: synthesise examples, then build the golden/train
+        #    TaskRuns and the eval slice's EvalInputs from them.
         #    Multi-turn: skipped — chains already exist on disk.
-        task_runs: list[TaskRun] = []
-        dataset_runs = None
+        single_turn_dataset: SingleTurnDataset | None = None
         sdg_session_config_for_spec: SyntheticDataGenerationSessionConfig | None = None
         if request.multi_turn is None:
             assert request.sdg_session_config is not None  # validator guarantees
@@ -1224,7 +1228,7 @@ def connect_copilot_api(app: FastAPI):
                 spec_definition=request.definition,
             )
 
-            dataset_runs = create_dataset_task_runs(
+            single_turn_dataset = create_single_turn_dataset(
                 all_examples=all_examples,
                 reviewed_examples=request.reviewed_examples,
                 eval_tag=eval_tag,
@@ -1233,9 +1237,10 @@ def connect_copilot_api(app: FastAPI):
                 spec_name=request.name,
                 rng=rng,
             )
-            task_runs = dataset_runs.task_runs
-            for run in task_runs:
+            for run in single_turn_dataset.task_runs:
                 run.parent = task
+            for eval_input in single_turn_dataset.eval_inputs:
+                eval_input.parent = task
 
             # Snapshot the generation config on the Spec (single-turn only).
             topic_cfg = request.sdg_session_config.topic_generation_config
@@ -1282,8 +1287,7 @@ def connect_copilot_api(app: FastAPI):
             persist_spec_save,
             eval=eval,
             eval_config=eval_config,
-            task_runs=task_runs,
-            dataset_runs=dataset_runs,
+            single_turn_dataset=single_turn_dataset,
             spec=spec,
             multi_turn=request.multi_turn,
             multi_turn_leaves=multi_turn_leaves,

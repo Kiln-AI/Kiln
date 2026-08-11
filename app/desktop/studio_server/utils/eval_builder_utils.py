@@ -50,6 +50,7 @@ from kiln_ai.datamodel.eval import (
     EvalDataType,
     EvalTaskInput,
     LlmJudgeProperties,
+    TaskRunSplit,
 )
 from kiln_ai.datamodel.task import Task
 from kiln_server.task_api import task_from_id
@@ -132,8 +133,8 @@ def build_transient_judge_eval_config(
     eval_obj = Eval(
         name="Eval Builder Review Judge",
         parent=task,
-        # Eval requires exactly one filter id; this eval never runs via filters.
-        eval_set_filter_id="tag::transient_eval_builder_review",
+        # Eval requires a test split; this eval never runs via filters.
+        splits={"test": TaskRunSplit(filter_id="tag::transient_eval_builder_review")},
         output_scores=[spec_eval_output_score(spec_name)],
         evaluation_data_type=(
             EvalDataType.full_trace if multi_turn else EvalDataType.final_answer

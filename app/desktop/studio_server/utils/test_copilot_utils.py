@@ -17,18 +17,19 @@ from app.desktop.studio_server.utils.copilot_utils import (
     KILN_COPILOT_MODEL_NAME,
     KILN_COPILOT_MODEL_PROVIDER,
     build_multi_turn_eval_inputs,
-    create_dataset_task_runs,
+    build_single_turn_eval_inputs,
+    create_single_turn_dataset,
     create_task_run_from_reviewed,
     create_task_run_from_sample,
     delete_multi_turn_batch_chains,
     get_copilot_api_key,
+    persist_eval_slice,
     rate_multi_turn_chain_leaves,
     select_golden_leaves,
     split_and_tag_multi_turn_chains,
     split_pool_train_eval,
     unrate_multi_turn_chain_leaves,
     warn_if_golden_below_target,
-    write_eval_slice_multi_turn,
 )
 from fastapi import HTTPException
 from kiln_ai.datamodel import GradedClaim, Project, Task, TaskRun
@@ -345,7 +346,7 @@ def _make_dataset(
     reviewed_examples: list[ReviewedExample],
     seed: int = 0,
 ):
-    return create_dataset_task_runs(
+    return create_single_turn_dataset(
         all_examples,
         reviewed_examples,
         "eval_tag",
@@ -353,27 +354,29 @@ def _make_dataset(
         "golden_tag",
         "Test Spec",
         rng=random.Random(seed),
-    ).task_runs
+    )
 
 
 def _by_split(task_runs):
-    """Bucket runs by their single split tag."""
+    """Bucket runs by their single split tag. The eval slice is never here:
+    it is EvalInput items, not runs."""
     return {
-        "eval": [tr for tr in task_runs if "eval_tag" in tr.tags],
         "train": [tr for tr in task_runs if "train_tag" in tr.tags],
         "golden": [tr for tr in task_runs if "golden_tag" in tr.tags],
     }
 
 
-class TestCreateDatasetTaskRuns:
-    def test_total_runs_is_pool_plus_rated(self):
-        # Golden holds the rated examples; the unrated pool fills eval + train.
-        task_runs = _make_dataset(_samples(300), _reviewed(4))
-        assert len(task_runs) == 304
+class TestCreateSingleTurnDataset:
+    def test_run_count_is_train_plus_rated(self):
+        # Golden holds the rated examples; the unrated pool splits into the
+        # train runs and the eval slice (EvalInputs, not runs).
+        dataset = _make_dataset(_samples(300), _reviewed(4))
+        assert len(dataset.task_runs) == 204
+        assert len(dataset.eval_inputs) == 100
 
     def test_reviewed_examples_are_golden_and_rated(self):
-        task_runs = _make_dataset(_samples(60), _reviewed(1))
-        golden = _by_split(task_runs)["golden"]
+        dataset = _make_dataset(_samples(60), _reviewed(1))
+        golden = _by_split(dataset.task_runs)["golden"]
         # Golden == exactly the rated set, no unrated padding.
         assert len(golden) == 1
         assert golden[0].input == "reviewed_input_0"
@@ -382,49 +385,51 @@ class TestCreateDatasetTaskRuns:
     def test_golden_is_rated_only_no_unrated_padding(self):
         # Golden holds exactly the rated count — never topped up with unrated
         # machine examples, even when that leaves it small.
-        task_runs = _make_dataset(_samples(60), _reviewed(2))
-        golden = _by_split(task_runs)["golden"]
+        dataset = _make_dataset(_samples(60), _reviewed(2))
+        golden = _by_split(dataset.task_runs)["golden"]
         assert len(golden) == 2
         assert all(tr.output.rating is not None for tr in golden)
 
     def test_zero_rated_yields_no_golden(self):
-        task_runs = _make_dataset(_samples(30), _reviewed(0))
-        assert _by_split(task_runs)["golden"] == []
+        dataset = _make_dataset(_samples(30), _reviewed(0))
+        assert _by_split(dataset.task_runs)["golden"] == []
 
     def test_splits_are_disjoint_and_complete(self):
-        task_runs = _make_dataset(_samples(60), _reviewed(4))
-        for tr in task_runs:
-            split_tags = {"eval_tag", "train_tag", "golden_tag"} & set(tr.tags)
+        dataset = _make_dataset(_samples(60), _reviewed(4))
+        for tr in dataset.task_runs:
+            split_tags = {"train_tag", "golden_tag"} & set(tr.tags)
             assert len(split_tags) == 1, f"run {tr.input} has splits {split_tags}"
-        buckets = _by_split(task_runs)
-        assert len(buckets["eval"]) + len(buckets["train"]) + len(
-            buckets["golden"]
-        ) == len(task_runs)
+            # The eval slice never rides on a run — a stray eval tag here would
+            # put the same example in two splits, one of them frozen output.
+            assert "eval_tag" not in tr.tags
+        buckets = _by_split(dataset.task_runs)
+        assert len(buckets["train"]) + len(buckets["golden"]) == len(dataset.task_runs)
+        # Every example lands in exactly one slice across both stores.
+        assert len(dataset.task_runs) + len(dataset.eval_inputs) == 64
 
     def test_unrated_pool_splits_two_to_one(self):
-        task_runs = _make_dataset(_samples(60), _reviewed(0))
-        buckets = _by_split(task_runs)
-        assert len(buckets["eval"]) == 20  # 60 // 3
-        assert len(buckets["train"]) == 40
+        dataset = _make_dataset(_samples(60), _reviewed(0))
+        assert len(dataset.eval_inputs) == 20  # 60 // 3
+        assert len(_by_split(dataset.task_runs)["train"]) == 40
 
     def test_one_rated_small_pool(self):
         # golden=1 (rated); the 3 unrated split 2:1 → train 2, eval 1.
-        task_runs = _make_dataset(_samples(3), _reviewed(1))
-        buckets = _by_split(task_runs)
+        dataset = _make_dataset(_samples(3), _reviewed(1))
+        buckets = _by_split(dataset.task_runs)
         assert len(buckets["golden"]) == 1
         assert len(buckets["train"]) == 2
-        assert len(buckets["eval"]) == 1
+        assert len(dataset.eval_inputs) == 1
 
     def test_tiny_pool_all_train_no_eval(self):
         # 2 unrated → 2//3 == 0 eval, both to train (documented small-N edge).
-        task_runs = _make_dataset(_samples(2), _reviewed(0))
-        buckets = _by_split(task_runs)
-        assert len(buckets["train"]) == 2
-        assert len(buckets["eval"]) == 0
+        dataset = _make_dataset(_samples(2), _reviewed(0))
+        assert len(_by_split(dataset.task_runs)["train"]) == 2
+        assert dataset.eval_inputs == []
 
     def test_handles_insufficient_examples(self):
-        task_runs = _make_dataset(_samples(5), _reviewed(0))
-        assert len(task_runs) == 5
+        dataset = _make_dataset(_samples(5), _reviewed(0))
+        assert len(dataset.task_runs) == 4
+        assert len(dataset.eval_inputs) == 1
 
     def test_does_not_mutate_all_examples(self):
         all_examples = _samples(30)
@@ -432,22 +437,52 @@ class TestCreateDatasetTaskRuns:
         _make_dataset(all_examples, _reviewed(2))
         assert all_examples == original
 
-    def test_all_task_runs_have_one_shared_session_tag(self):
-        task_runs = _make_dataset(_samples(60), _reviewed(2))
+    def test_every_item_shares_one_session_tag(self):
+        # Runs and eval inputs alike carry the generation session's tag, so a
+        # saved spec's whole dataset stays traceable to one batch.
+        dataset = _make_dataset(_samples(60), _reviewed(2))
+        tagged = [*dataset.task_runs, *dataset.eval_inputs]
         session_tags = {
             tag
-            for tr in task_runs
-            for tag in tr.tags
+            for item in tagged
+            for tag in item.tags
             if tag.startswith("synthetic_session_")
         }
         assert len(session_tags) == 1
-        for tr in task_runs:
-            assert sum(t.startswith("synthetic_session_") for t in tr.tags) == 1
+        for item in tagged:
+            assert sum(t.startswith("synthetic_session_") for t in item.tags) == 1
 
     def test_warns_when_golden_below_target(self, caplog):
         with caplog.at_level("WARNING"):
             _make_dataset(_samples(99), _reviewed(1))  # golden 1% << 25%
         assert any("below the" in r.message for r in caplog.records)
+
+
+class TestBuildSingleTurnEvalInputs:
+    def test_carries_the_input_verbatim_and_drops_the_output(self):
+        # Inputs only: the generated output is discarded because the runner
+        # produces a fresh one per run config and judges that instead.
+        eval_inputs = build_single_turn_eval_inputs(
+            _samples(2), "eval_myspec", ["synthetic_session_7"]
+        )
+        assert len(eval_inputs) == 2
+        assert [ei.data.type for ei in eval_inputs] == ["single_turn", "single_turn"]
+        assert [ei.data.user_message.text for ei in eval_inputs] == [
+            "input_0",
+            "input_1",
+        ]
+        assert all(ei.reference is None for ei in eval_inputs)
+
+    def test_tags_carry_the_eval_slice_and_session(self):
+        eval_inputs = build_single_turn_eval_inputs(
+            _samples(1), "eval_myspec", ["synthetic_session_7"]
+        )
+        assert eval_inputs[0].tags == ["eval_myspec", "synthetic_session_7"]
+
+    def test_builds_unsaved_models(self):
+        # Built and validated here, persisted inside the save unit of work.
+        eval_inputs = build_single_turn_eval_inputs(_samples(3), "eval_myspec", [])
+        assert all(ei.path is None for ei in eval_inputs)
 
 
 def _claim_review_api(judge_score: str = "fail") -> ClaimReviewApi:
@@ -647,7 +682,7 @@ class TestSavePendingChildren:
             feedback="Fabricated the window.",
             claim_review=_claim_review_api(),
         )
-        dataset = create_dataset_task_runs(
+        dataset = create_single_turn_dataset(
             [], [reviewed], "eval_tag", "train_tag", "golden_tag", "My Spec"
         )
         assert len(dataset.task_runs) == 1
@@ -994,13 +1029,13 @@ class TestBuildMultiTurnEvalInputs:
         assert multiturn_task.eval_inputs(readonly=True) == []
 
 
-class TestWriteEvalSliceMultiTurn:
+class TestPersistEvalSlice:
     def test_persists_and_ledgers_each_item(self, multiturn_task):
         eval_inputs = build_multi_turn_eval_inputs(
             [_driven_case(0), _driven_case(1)], "b1", multiturn_task, "eval_x"
         )
         saved_out: list = []
-        write_eval_slice_multi_turn(eval_inputs, saved_out)
+        persist_eval_slice(eval_inputs, saved_out)
 
         on_disk = multiturn_task.eval_inputs(readonly=True)
         assert len(on_disk) == 2
