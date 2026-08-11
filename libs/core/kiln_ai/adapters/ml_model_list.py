@@ -58,6 +58,7 @@ class ModelName(str, Enum):
     """
 
     fugu_ultra = "fugu_ultra"
+    muse_spark_1_2 = "muse_spark_1_2"
     muse_spark_1_1 = "muse_spark_1_1"
     llama_3_1_8b = "llama_3_1_8b"
     llama_3_1_70b = "llama_3_1_70b"
@@ -3855,6 +3856,33 @@ built_in_models: List[KilnModel] = [
                 model_id="nvidia/llama-3.1-nemotron-70b-instruct",
                 deprecated=True,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Muse Spark 1.2
+    KilnModel(
+        family=ModelFamily.muse,
+        name=ModelName.muse_spark_1_2,
+        friendly_name="Muse Spark 1.2",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="meta/muse-spark-1.2",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents (Meta backend 400s on html/csv uploads, so excluded)
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
             ),
         ],
     ),
