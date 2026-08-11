@@ -4,10 +4,16 @@
 
 import type { ClaimsBuildState } from "./claim_evidence"
 
-// The three model lanes a drive spends through, checked before anything
-// runs. Lane order IS blame order: the target run config is the likeliest
-// culprit and the one the user can fix in-app.
-export type PreflightLane = "run config" | "synthetic-user driver" | "judge"
+// The model lanes a drive spends through, checked before anything runs.
+// Multi-turn preflights run config + synthetic-user driver + judge;
+// single-turn preflights run config + input generator + judge. Lane order
+// IS blame order: the target run config is the likeliest culprit and the
+// one the user can fix in-app.
+export type PreflightLane =
+  | "run config"
+  | "synthetic-user driver"
+  | "input generator"
+  | "judge"
 
 export type PreflightOutcome = {
   lane: PreflightLane
@@ -93,18 +99,23 @@ export function drive_stop_banner(
   stop: DriveStop,
   run_config_name: string | null,
   run_config_model: string | null = null,
+  // The arm's word for one unit of work — "conversation" (multi-turn) or
+  // "test run" (single-turn) — so the banner never claims conversations a
+  // one-shot run never had.
+  case_noun: string = "conversation",
 ): string {
   const config_clause = run_config_name
     ? ` (run config: ${run_config_name})`
     : ""
+  const plural = (n: number) => `${case_noun}${n === 1 ? "" : "s"}`
   if (stop.preflight) {
     // A lane failed its pre-drive test call: nothing ran and nothing was
     // spent. All lanes show the raw error (the SDG precedent — generation
     // failures render getMessage() verbatim), with a parenthetical naming
     // what was tested: the run config (name + model) on the user's lane,
-    // the model on the Kiln-chosen lanes. Recovery is the banner family's
-    // deeplink formula; the Kiln-chosen lanes also state the one
-    // requirement fact we know (which provider's key the step runs on).
+    // the model on the other lanes. Recovery is the banner family's
+    // deeplink formula; the model lanes also state the one requirement
+    // fact we know (which provider's key the step runs on).
     const f = stop.preflight
     if (f.lane === "run config") {
       const clause = run_config_name
@@ -117,7 +128,9 @@ export function drive_stop_banner(
     const subject =
       f.lane === "synthetic-user driver"
         ? "The model that plays the user"
-        : "The judge model"
+        : f.lane === "input generator"
+          ? "The model that writes the test inputs"
+          : "The judge model"
     const model_clause = f.model ? ` (${f.model})` : ""
     const requirement = f.provider
       ? `Creating your eval data requires your ${f.provider} API key. `
@@ -135,16 +148,16 @@ export function drive_stop_banner(
       : ""
     const recovery =
       stop.survivors > 0
-        ? `${stop.survivors} conversation${
-            stop.survivors === 1 ? "" : "s"
-          } completed before the stop. Continue with those, or [test your run config](/run) and run the batch again.`
+        ? `${stop.survivors} ${plural(
+            stop.survivors,
+          )} completed before the stop. Continue with those, or [test your run config](/run) and run the batch again.`
         : `You can [test your run config](/run), then run the batch again.`
     return `The run was stopped: ${stop.aborted_error}${abort_config}.\n\n${recovery}`
   }
   if (stop.survivors === 0) {
     // Every case failed identically — a capability boundary of the run
     // config, not bad luck. Point at the one place it can be verified.
-    return `All conversations failed: ${
+    return `All ${plural(2)} failed: ${
       stop.dominant_error ?? "no error details"
     }${config_clause}.\n\nYou can [test your run config](/run), then run the batch again.`
   }
@@ -152,7 +165,9 @@ export function drive_stop_banner(
   const common_clause = stop.dominant_error
     ? ` (most common: ${stop.dominant_error})`
     : ""
-  return `${stop.survivors} of ${total} conversations completed. ${stop.failed} failed after retries${common_clause}.\n\nContinue with the ${stop.survivors} that completed, or run the batch again.`
+  return `${stop.survivors} of ${total} ${plural(
+    total,
+  )} completed. ${stop.failed} failed after retries${common_clause}.\n\nContinue with the ${stop.survivors} that completed, or run the batch again.`
 }
 
 // SDG's confirm formula for the destructive tier that carries real work.
@@ -171,26 +186,29 @@ export function driven_data_confirm(
   }${progress_clause}. ${action} will discard them. This cannot be undone.`
 }
 
-// New Scenarios ALWAYS confirms — a plan alone costs minutes to make.
-// Three-tier wording: what you lose scales the message — plan only /
-// plan + row deletions / driven conversations. The first two tiers are
-// SDG's exact formulas.
+// Regenerating the plan ALWAYS confirms — a plan alone costs minutes to
+// make. Three-tier wording: what you lose scales the message — plan only /
+// plan + row deletions / driven results. The first two tiers are SDG's
+// exact formulas. plan_noun is the arm's word for the plan's rows —
+// "scenarios" (multi-turn) or "planned inputs" (single-turn).
 export function new_plan_confirm(state: {
   has_driven_results: boolean
   survivors: number
   include_review_progress: boolean
   plan_edited: boolean
+  plan_noun?: string
 }): string {
+  const plan_noun = state.plan_noun ?? "scenarios"
   if (state.has_driven_results) {
     return driven_data_confirm(
-      "New scenarios",
+      `New ${plan_noun}`,
       state.survivors,
       state.include_review_progress,
     )
   }
   return state.plan_edited
-    ? "Are you sure you want to discard the current scenarios, including the ones you removed? This cannot be undone."
-    : "Are you sure you want to discard the current scenarios? This cannot be undone."
+    ? `Are you sure you want to discard the current ${plan_noun}, including the ones you removed? This cannot be undone.`
+    : `Are you sure you want to discard the current ${plan_noun}? This cannot be undone.`
 }
 
 // ── The preparing-review gate ────────────────────────────────────────────

@@ -39,8 +39,10 @@
     reset_draft_keeping_tags,
     restore_step,
     reusable_cached_cases,
+    reusable_minted_inputs,
     EMPTY_BUILDER_DRAFT,
     type BuilderDraft,
+    type CachedMintedInputs,
     type CachedSuCases,
     type SyntheticUserCaseWire,
   } from "./builder_draft"
@@ -57,7 +59,10 @@
   // Step 4 plan approval reuses the /generate batch-plan components — one
   // plan-review surface across the app rather than a builder-local fork.
   import KilnProBatchPlan from "../../../../generate/[project_id]/[task_id]/kiln_pro_batch_plan.svelte"
-  import { multiturn_plan_guidance } from "./batch_plan_guidance"
+  import {
+    multiturn_plan_guidance,
+    single_turn_plan_guidance,
+  } from "./batch_plan_guidance"
   import {
     all_traces_reviewed,
     apply_rejudge_results,
@@ -69,7 +74,6 @@
     disagreed_trace_indices,
     disagreement_feedback,
     empty_claim_verdicts,
-    first_pass_coverage_error,
     flipped_indices,
     grade_disagreement_count,
     has_grade_disagreement,
@@ -111,9 +115,10 @@
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
   import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
   import SavingAnimation from "$lib/ui/animations/saving_animation.svelte"
-  // Conversation-themed loading animation (chat bubbles building a thread) for
-  // the multi-turn generation and review-prep screens, which are all about
-  // building conversations rather than grading a flat list of examples.
+  // Conversation-themed loading animation (chat bubbles building a thread)
+  // for the MULTI-TURN generation and review-prep screens, which are about
+  // building conversations; the single-turn arm renders the analysis
+  // animation on the same screens.
   import ConversationAnimation from "$lib/ui/animations/conversation_animation.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
   import type { SuggestedEdit } from "../spec_utils"
@@ -122,8 +127,6 @@
   import { sse_data_payloads } from "$lib/utils/sse"
   import { with_deadline } from "$lib/utils/deadline_signal"
   import {
-    build_default_judge_info,
-    judge_config_from_sdg_step,
     model_choice,
     type JudgeConfig,
     type ModelChoice,
@@ -140,9 +143,6 @@
     QuestionSet,
     QuestionWithAnswer,
     SpecType,
-    SubsampleBatchOutputItemApi,
-    SyntheticDataGenerationSessionConfigApi,
-    ReviewedExample,
   } from "$lib/types"
   import posthog from "posthog-js"
 
@@ -228,9 +228,9 @@
   //
   //   goto_step    — forward to a step the user dwells on (pushes an entry).
   //   replace_step — swap the current entry for a result step, so transient
-  //                  loading steps (single-turn generate, save) don't become
-  //                  Back targets. Multi-turn generate holds the interactive
-  //                  plan-approval view, so review is PUSHED over it instead.
+  //                  loading steps (save) don't become Back targets. Both
+  //                  arms' generate step holds the interactive plan-approval
+  //                  view, so review is PUSHED over it instead.
   function goto_step(next: BuilderStep) {
     current_step = next
     pushState("", { builder_step: next })
@@ -281,7 +281,6 @@
   $: has_unpersisted_work =
     current_step === "clarify" ||
     trace_claims.length > 0 ||
-    single_turn_examples.length > 0 ||
     generation_loading ||
     preparing_review ||
     saving ||
@@ -343,9 +342,12 @@
         batch_plan,
         batch_plan_edited,
         cached_su_cases,
+        cached_minted_inputs,
         multi_turn_batch_tag,
+        single_turn_batch_tag,
         undeleted_batch_tags,
         su_driver,
+        input_generator,
         judge_model,
       }
     : null
@@ -413,10 +415,13 @@
       batch_plan = saved.batch_plan
       batch_plan_edited = saved.batch_plan_edited
       cached_su_cases = saved.cached_su_cases ?? null
+      cached_minted_inputs = saved.cached_minted_inputs ?? null
       multi_turn_batch_tag = saved.multi_turn_batch_tag
+      single_turn_batch_tag = saved.single_turn_batch_tag ?? null
       undeleted_batch_tags = saved.undeleted_batch_tags
       // Model lanes: pre-Drive-Settings drafts have no such keys.
       su_driver = saved.su_driver ?? null
+      input_generator = saved.input_generator ?? null
       judge_model = saved.judge_model ?? null
       // Rebuild the shallow-routing chain up to the restored step (the
       // mount already seeded "describe") so the browser's Back walks the
@@ -721,26 +726,25 @@
   // ── Step 4 state — generation
   let generation_loading = false
   let generation_error: string | null = null
-  let single_turn_examples: SubsampleBatchOutputItemApi[] = []
-  let sdg_session_config: SyntheticDataGenerationSessionConfigApi | null = null
-  // The judge, in the ONE JudgeConfig shape used by review and save alike.
-  // SINGLE-TURN ONLY: mapped from clarify_spec's judge_result. Multi-turn
-  // never sets this — its judge is authored per-drive in on_drive_multi_turn.
-  let judge_info: JudgeConfig | null = null
   // The judge the review step actually ran — save persists THIS object, so
-  // the judge the user calibrated against is the judge that ships.
+  // the judge the user calibrated against is the judge that ships. Both
+  // arms author it per-drive (author_judge; the server picks the rubric
+  // framing from the task's turn mode).
   let review_judge: JudgeConfig | null = null
   // Identity snapshot of what the review judged (spec name + spec text).
   // Save is refused when it no longer matches: renaming or editing the spec
   // after review would ship a judge the review never calibrated.
   let reviewed_identity: string | null = null
 
-  // Number of synthetic-user cases to drive in one multi-turn batch —
-  // matches NUM_CASES_MAX in libs/core/kiln_ai/synthetic_user/runner.py.
+  // Number of cases in one batch (conversations to drive, or single-turn
+  // inputs to run) — matches NUM_CASES_MAX in
+  // libs/core/kiln_ai/synthetic_user/runner.py and the single-turn
+  // pipeline's inputs cap.
   const NUM_CASES = 40
-  // Batch plan for multi-turn Step 4 — one scenario prompt per conversation,
-  // drafted by the copilot batch planner and approved (with edits/deletions)
-  // by the user before any conversation is driven.
+  // Batch plan for Step 4 — one prompt per unit of work (a conversation
+  // scenario or a single-turn test input), drafted by the copilot batch
+  // planner and approved (with edits/deletions) by the user before anything
+  // is driven.
   type BatchPlan = { prompts: string[]; summary: string }
   let batch_plan: BatchPlan | null = null
   // The summary isn't regenerated when the user edits/deletes prompts — flag
@@ -754,24 +758,29 @@
   // config, so a fix-config-then-drive-again loop shouldn't re-pay the
   // multi-minute generation. Rides the persisted draft.
   let cached_su_cases: CachedSuCases | null = null
+  // The single-turn arm's minted inputs, reused on a re-run while the plan
+  // and input-generator model are byte-unchanged. Rides the persisted draft.
+  let cached_minted_inputs: CachedMintedInputs | null = null
   // Approved plan length drives the batch size; NUM_CASES is the requested
   // plan size before any deletions.
-  $: multi_turn_total = batch_plan?.prompts.length ?? NUM_CASES
+  $: planned_total = batch_plan?.prompts.length ?? NUM_CASES
   // Which loading stage Step 4 is in — drives the progress screen only.
   // The interactive plan-approval view is DERIVED (show_plan_approval below),
   // not a phase, so no code path can strand it behind a stale flag.
-  type MultiTurnPhase =
+  // generating_cases is the multi-turn SU generation; minting_inputs is the
+  // single-turn input generation — the same slot in each arm's sequence.
+  type GenerationPhase =
     | "idle"
     | "authoring_judge"
     | "preflight"
     | "planning"
     | "generating_cases"
+    | "minting_inputs"
     | "running_pipeline"
-  let multi_turn_phase: MultiTurnPhase = "idle"
+  let generation_phase: GenerationPhase = "idle"
   $: pipeline_running =
-    generation_loading && multi_turn_phase === "running_pipeline"
+    generation_loading && generation_phase === "running_pipeline"
   $: show_plan_approval =
-    is_multi_turn &&
     batch_plan !== null &&
     !generation_loading &&
     !generation_error &&
@@ -783,7 +792,7 @@
   // dialog. Fire-and-forget: prepopulate_lanes only fills null lanes (never
   // overwrites a draft/user choice) and its own guard makes the drive's
   // later call a no-op, so this never starts a drive nor races the run flow.
-  $: if (show_plan_approval && is_multi_turn && !lanes_prepopulated) {
+  $: if (show_plan_approval && !lanes_prepopulated) {
     void prepopulate_lanes()
   }
   // Live pipeline counters, reset at each drive. Latest completed-turn count
@@ -803,16 +812,24 @@
     judged_case_count = 0
     pipeline_failed_count = 0
     case_failure_messages = []
+    minting_done = 0
+    minting_total = 0
   }
+
+  // Input-minting progress (single-turn): the generate-inputs batch job's
+  // completed/total, polled while the minting phase runs.
+  let minting_done = 0
+  let minting_total = 0
 
   // The cases whose conversations were actually driven (chains exist on
   // disk). Save mints one EvalInput per driven case — the eval slice the
   // runner re-drives per run config.
   let driven_cases: SyntheticUserCaseWire[] = []
-  // batch_tag from the pipeline's batch_started event — passed to the save
-  // endpoint so the backend can tag the matching chains for the eval
+  // batch_tag from each arm's pipeline batch_started event — passed to the
+  // save endpoint so the backend can tag the matching runs for the eval
   // dataset.
   let multi_turn_batch_tag: string | null = null
+  let single_turn_batch_tag: string | null = null
   // Every batch that put chains on disk and hasn't been cleaned up yet —
   // aborted re-drives can strand several. The next drive passes ALL of them
   // as replace_batch_tags so none is orphaned (delete-on-redrive).
@@ -835,105 +852,94 @@
   // model rides along for the abort banner (the model IS the usual culprit).
   let drive_run_config_name: string | null = null
   let drive_run_config_model: string | null = null
-  // Set when on_generate_multi_turn had to fall back to the first available
-  // run config because the task has no default set — surfaced in the UI so
-  // testers know which model the chains were generated against.
-  let multi_turn_fallback_run_config_name: string | null = null
+  // Set when the drive had to fall back to the first available run config
+  // because the task has no default set — surfaced in the UI so testers
+  // know which model the eval data was generated against.
+  let fallback_run_config_name: string | null = null
 
-  async function on_generate_single_turn() {
-    // No judge lane committed (deep link / stale state) — ask, don't guess.
-    const chosen_judge = judge_model
-    if (!chosen_judge) {
-      open_drive_settings()
-      return
+  // Resolve the target run config a drive runs on (both arms): prefer the
+  // task's default; if none set, fall back to the first available config so
+  // the user doesn't have to detour into task settings just to try v2.
+  // Returns null AFTER setting generation_error (task unrunnable or the
+  // config isn't a Kiln agent one). Re-fetches the task first: the default
+  // can change while the wizard is open — the stop banner's own recovery
+  // loop sends the user to /run in another tab to fix it — and driving with
+  // the mount-time snapshot would resolve the OLD default.
+  async function resolve_drive_run_config(): Promise<{
+    id: string
+    model_name: string
+    model_provider: string
+  } | null> {
+    task = await load_task(project_id, task_id)
+    if (!task?.id) {
+      generation_error = "Task not loaded."
+      return null
     }
-    generation_loading = true
-    generation_error = null
-    try {
-      const { data, error } = await client.POST("/api/copilot/clarify_spec", {
-        body: {
-          target_task_info: {
-            task_prompt: task?.instruction ?? "",
-            task_input_schema: "",
-            task_output_schema: "",
-          },
-          // The refined spec (Step 3), not the raw Step-1 text: the saved
-          // definition and the judge both read spec_text(), so generating
-          // from anything else would diverge the examples from what ships.
-          target_specification: spec_text(),
-          num_samples_per_topic: 10,
-          num_topics: 10,
-          providers: ["openrouter"],
-          num_exemplars: 10,
-        },
-        signal: new_copilot_abort_signal(),
-      })
-      if (error || !data) {
-        generation_error = "Failed to generate examples."
-        return
-      }
-      const examples = data.examples_for_feedback ?? []
-      // The server's judge_result names whatever model IT judged with —
-      // the user's judge pick overrides it (the prompt is the part the
-      // server authored; the model is the user's choice).
-      const batch_judge = data.judge_result
-        ? judge_config_from_sdg_step(data.judge_result, chosen_judge)
-        : null
-      const built = await build_claims_for_review(examples, batch_judge)
-      if (claims_error) {
-        generation_error = claims_error
-        return
-      }
-      // Bailed without an error = the user aborted mid-build (Back, or a
-      // second Generate). Nothing below has run, so the previous batch — its
-      // review, its judge, its generation config — is still intact and
-      // consistent. Stay on the generation step.
-      if (!built) return
-      // Committed together, and only now: the review on screen, the answer
-      // key it becomes, and the sdg_session_config the server mints the eval
-      // dataset from must all describe the SAME generation session. Fresh
-      // examples also mean a fresh loop — rounds counted against the previous
-      // batch say nothing about this one.
-      reset_calibration_state()
-      single_turn_examples = examples
-      sdg_session_config = data.sdg_session_config ?? null
-      judge_info = batch_judge
-      replace_step("review")
-    } catch (e) {
-      if (is_abort_error(e)) return
-      generation_error = e instanceof Error ? e.message : "Generation failed."
-    } finally {
-      generation_loading = false
+    await load_task_run_configs(project_id, task.id)
+    const run_configs =
+      get(run_configs_by_task_composite_id)[
+        get_task_composite_id(project_id, task.id)
+      ] ?? []
+    if (run_configs.length === 0) {
+      generation_error =
+        "Task has no run configs. Create one before creating eval data."
+      return null
+    }
+    const default_match = run_configs.find(
+      (c) => c.id === task!.default_run_config_id,
+    )
+    const chosen_config = default_match ?? run_configs[0]
+    fallback_run_config_name = default_match ? null : chosen_config.name
+    drive_run_config_name = chosen_config.name
+    const rcp = chosen_config.run_config_properties
+    if (!isKilnAgentRunConfig(rcp)) {
+      generation_error =
+        "Creating eval data requires a Kiln Agent run config; the selected one isn't."
+      return null
+    }
+    drive_run_config_model = rcp.model_name
+    if (!chosen_config.id) {
+      generation_error = "The selected run config has no id."
+      return null
+    }
+    return {
+      id: chosen_config.id,
+      model_name: rcp.model_name,
+      model_provider: rcp.model_provider_name,
     }
   }
 
-  // ── Step 4 multi-turn — one review_pipeline SSE stream.
+  // ── Step 4 — both arms are plan-first over one pipeline shape.
   //
-  // Sequence:
-  //   1. POST copilot/batch_plan → one scenario prompt per conversation;
-  //      the user approves (edit/delete/regenerate) before anything runs.
+  // Sequence (shared):
+  //   1. POST copilot/batch_plan → one prompt per unit of work; the user
+  //      approves (edit/delete/regenerate) before anything runs.
   //   2. Pull the task's default run config and send its ID — the server
   //      drives the task with the saved config verbatim (model, prompt,
-  //      sampling, tools). Multi-turn requires a KilnAgentRunConfig (the
-  //      conversation needs an agent-shaped invoker).
-  //   3. Preflight the three model lanes (target config, SU driver, judge)
-  //      with one-word completions — a dead key/model stops the drive
-  //      before any spend instead of after the SU-gen minutes.
-  //   4. POST /multiturn_sdg/generate_cases with the approved prompts →
-  //      ONE batch call, one synthetic-user case per prompt.
-  //   5. POST /eval_builder/review_pipeline as SSE; the server runs
-  //      [drive → judge → claims] per case and the PipelineEvent frames
-  //      drive the per-row status pills + the review results.
+  //      sampling, tools). Both arms require a KilnAgentRunConfig.
+  //   3. Author the judge (author_judge — the server frames the rubric from
+  //      the task's turn mode), then preflight every model lane with
+  //      one-word completions — a dead key/model stops the drive before any
+  //      spend.
+  //   4. Multi-turn: POST /multiturn_sdg/generate_cases with the approved
+  //      prompts → ONE batch call, one synthetic-user case per prompt.
+  //      Single-turn: start_generate_inputs_batch → one test input minted
+  //      locally per prompt on the input-generator lane.
+  //   5. One SSE stream runs the pipeline per case — review_pipeline
+  //      ([drive → judge]) or single_turn_pipeline ([run → judge]) — and
+  //      the PipelineEvent frames drive progress + the review results.
   //
   const TURNS_PER_CASE = 5
 
   // ── Model lanes (SDG's Generation Settings pattern). The primary button
   // runs immediately with these lanes resolved to their defaults; the
   // "Advanced" dialog lets the user pick them first — the user simulator
-  // (multi-turn only) and the judge — and its submit starts the run the same
-  // way. The committed lanes ride the persisted draft; the builder has no
-  // hardcoded model or provider anywhere.
+  // (multi-turn), the input generator (single-turn), and the judge — and
+  // its submit starts the run the same way. The committed lanes ride the
+  // persisted draft; the builder has no hardcoded model or provider
+  // anywhere.
   let su_driver: ModelChoice | null = null
+  let input_generator: ModelChoice | null = null
   let judge_model: ModelChoice | null = null
   let drive_settings_dialog: Dialog | null = null
   // Dropdown bindings: the combined "provider_id/model_id" string plus the
@@ -942,6 +948,9 @@
   let su_model_combined: string | null = null
   let su_model_id: string | null = null
   let su_provider_id: string | null = null
+  let input_gen_model_combined: string | null = null
+  let input_gen_model_id: string | null = null
+  let input_gen_provider_id: string | null = null
   let judge_model_combined: string | null = null
   let judge_model_id: string | null = null
   let judge_provider_id: string | null = null
@@ -1020,7 +1029,8 @@
     if (lanes_prepopulated) return
     lanes_prepopulated = true
     const su_needed = is_multi_turn && su_driver === null
-    if (!su_needed && judge_model !== null) return
+    const input_gen_needed = !is_multi_turn && input_generator === null
+    if (!su_needed && !input_gen_needed && judge_model !== null) return
     try {
       const saved = await last_saved_eval_lanes()
       if (su_needed && saved.su_driver) su_driver = saved.su_driver
@@ -1036,6 +1046,17 @@
       const suggested = build_suggested_models(models, "data_gen")[0]
       if (suggested) {
         su_driver = model_choice(suggested.model_id, suggested.provider_id)
+      }
+    }
+    if (!is_multi_turn && input_generator === null) {
+      // Same suggestion tier as /generate's input-generation dropdown (a
+      // saved eval records no input-generator, so there is no replay tier).
+      const suggested = build_suggested_models(models, "data_gen")[0]
+      if (suggested) {
+        input_generator = model_choice(
+          suggested.model_id,
+          suggested.provider_id,
+        )
       }
     }
     if (judge_model === null) {
@@ -1055,21 +1076,28 @@
     su_model_combined = su_driver
       ? `${su_driver.model_provider}/${su_driver.model_name}`
       : su_model_combined
+    input_gen_model_combined = input_generator
+      ? `${input_generator.model_provider}/${input_generator.model_name}`
+      : input_gen_model_combined
     judge_model_combined = judge_model
       ? `${judge_model.model_provider}/${judge_model.model_name}`
       : judge_model_combined
   }
 
   // Run-immediately (the plan-approval primary button): resolve the default
-  // model lanes (draft → last saved eval → registry suggestion) and start the
-  // drive without a settings detour — the common path is "just make my data".
-  // If a lane can't be resolved (no usable model anywhere), on_drive_multi_turn
-  // opens the dialog instead of running — fail-loud recovery, never a silent
-  // substitution of some other model. "Advanced" opens the same dialog up
-  // front for users who want to pick the models before spending.
-  async function start_multiturn_drive_with_defaults() {
+  // model lanes (draft → last saved eval → registry suggestion) and start
+  // the drive without a settings detour — the common path is "just make my
+  // data". If a lane can't be resolved (no usable model anywhere), the
+  // drive opens the dialog instead of running — fail-loud recovery, never a
+  // silent substitution of some other model. "Advanced" opens the same
+  // dialog up front for users who want to pick the models before spending.
+  async function start_drive_with_defaults() {
     await prepopulate_lanes()
-    on_drive_multi_turn()
+    if (is_multi_turn) {
+      on_drive_multi_turn()
+    } else {
+      void on_drive_single_turn()
+    }
   }
 
   // The authored multi-turn judge prompt, cached against BOTH authoring
@@ -1169,14 +1197,19 @@
   function submit_drive_settings() {
     drive_settings_submitting = false
     const su_ok = !is_multi_turn || (su_model_id && su_provider_id)
-    if (!su_ok || !judge_model_id || !judge_provider_id) {
+    const input_gen_ok =
+      is_multi_turn || (input_gen_model_id && input_gen_provider_id)
+    if (!su_ok || !input_gen_ok || !judge_model_id || !judge_provider_id) {
       drive_settings_error = is_multi_turn
         ? "Select a model to play the user and a judge model to continue."
-        : "Select a judge model to continue."
+        : "Select a model to write the test inputs and a judge model to continue."
       return
     }
     if (is_multi_turn && su_model_id && su_provider_id) {
       su_driver = model_choice(su_model_id, su_provider_id)
+    }
+    if (!is_multi_turn && input_gen_model_id && input_gen_provider_id) {
+      input_generator = model_choice(input_gen_model_id, input_gen_provider_id)
     }
     judge_model = model_choice(judge_model_id, judge_provider_id)
     drive_settings_error = null
@@ -1184,7 +1217,7 @@
     if (is_multi_turn) {
       on_drive_multi_turn()
     } else {
-      on_generate_single_turn()
+      void on_drive_single_turn()
     }
   }
 
@@ -1217,7 +1250,7 @@
     | {
         type: "case_failed"
         case_index: number
-        stage: "drive" | "judge"
+        stage: "drive" | "run" | "judge"
         code: string
         message: string
       }
@@ -1229,7 +1262,11 @@
         total_cost: number
       }
     | { type: "batch_failed"; code: string; message: string }
-    | { type: "batch_aborted"; error: string; stage: "drive" | "judge" }
+    | {
+        type: "batch_aborted"
+        error: string
+        stage: "drive" | "run" | "judge"
+      }
 
   // THE spec text — the single source every consumer reads (batch planning,
   // synthetic-user generation, the default judge prompt, and the saved Spec),
@@ -1243,47 +1280,52 @@
     return (values.issue_description as string | null) ?? description
   }
 
-  // Step 4 (multi-turn) part 1 — plan. Ask the batch planner for one
-  // conversation scenario per case, balanced ~50/50 expected-pass /
-  // expected-fail (the balance policy lives in multiturn_plan_guidance), then
-  // pause on the approval screen. Nothing is driven until the user approves.
-  async function on_plan_multi_turn() {
+  // Step 4 part 1 — plan (both arms). Ask the batch planner for one prompt
+  // per case — a conversation scenario or a single-turn test input —
+  // balanced ~50/50 expected-pass / expected-fail (the balance policy lives
+  // in batch_plan_guidance), then pause on the approval screen. Nothing is
+  // driven until the user approves.
+  async function on_plan_batch() {
     generation_loading = true
     generation_error = null
     batch_plan = null
     batch_plan_edited = false
-    // The cached synthetic users belong to the discarded plan (the byte
-    // compare would reject them anyway) — drop the payload from the draft.
+    // The cached synthetic users / minted inputs belong to the discarded
+    // plan (the byte compare would reject them anyway) — drop the payload
+    // from the draft.
     cached_su_cases = null
+    cached_minted_inputs = null
     reset_pipeline_counters()
     drive_stop = null
-    // Deliberately NOT clearing multi_turn_batch_tag (save still needs it)
+    // Deliberately NOT clearing the live batch tag (save still needs it)
     // or undeleted_batch_tags: the next drive passes the cleanup list as
     // replace_batch_tags, and the server deletes those batches once the new
-    // drive has produced replacement chains.
-    // Claims belong to the discarded plan's conversations — clear them so
+    // drive has produced replacements.
+    // Claims belong to the discarded plan's results — clear them so
     // browser Forward can't re-enter review over stale results.
     trace_claims = []
     trace_reviews = []
     selected_trace_indices = []
     driven_prompts_json = null
-    // Calibration rounds calibrated the discarded conversations' judge.
+    // Calibration rounds calibrated the discarded results' judge.
     reset_calibration_state()
-    multi_turn_phase = "planning"
+    generation_phase = "planning"
     try {
       const { data, error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/copilot/batch_plan",
         {
           params: { path: { project_id, task_id } },
           body: {
-            guidance: multiturn_plan_guidance(spec_text()),
+            guidance: is_multi_turn
+              ? multiturn_plan_guidance(spec_text())
+              : single_turn_plan_guidance(spec_text()),
             count: NUM_CASES,
           },
           signal: new_copilot_abort_signal(),
         },
       )
       if (error || !data) {
-        generation_error = "Failed to draft scenarios."
+        generation_error = `Failed to draft ${plan_noun}.`
         return
       }
       // Clamp: the planner is an LLM and can over-deliver or emit blanks;
@@ -1293,14 +1335,13 @@
         .filter(Boolean)
         .slice(0, NUM_CASES)
       if (prompts.length === 0) {
-        generation_error = "The planner returned no usable scenarios. Retry."
+        generation_error = `The planner returned no usable ${plan_noun}. Retry.`
         return
       }
       batch_plan = { prompts, summary: data.summary }
     } catch (e) {
       if (is_abort_error(e)) return
-      generation_error =
-        e instanceof Error ? e.message : "Scenario drafting failed."
+      generation_error = e instanceof Error ? e.message : "Planning failed."
     } finally {
       generation_loading = false
     }
@@ -1346,7 +1387,7 @@
     // SDG's unconfirmed row deletes.
     if (has_driven_results) {
       const msg = driven_data_confirm(
-        "Editing the scenarios",
+        `Editing the ${plan_noun}`,
         trace_claims.length,
         // Review progress exists only once the user accepted the results
         // (was in review) — on the stop screen no review exists yet.
@@ -1370,9 +1411,10 @@
       survivors: trace_claims.length,
       include_review_progress: drive_stop === null,
       plan_edited: batch_plan_edited,
+      plan_noun,
     })
     if (!confirm(msg)) return
-    on_plan_multi_turn()
+    on_plan_batch()
   }
 
   // Step 4 (multi-turn) part 2 — drive from the approved plan. The approved
@@ -1456,54 +1498,15 @@
     // before the post-preflight clear, and its error must not render
     // alongside a stale stop screen.
     drive_stop = null
-    multi_turn_phase = "preflight"
+    generation_phase = "preflight"
 
     try {
-      // 1. Resolve target_run_config: prefer the task's default; if none
-      // set, fall back to the first available run config so the user
-      // doesn't have to detour into task settings just to try v2. Only
-      // error when the task has zero configs (genuinely unrunnable).
-      // Re-fetch the task first: the default run config can change while
-      // the wizard is open — the stop banner's own recovery loop sends
-      // the user to /run in another tab to fix it — and driving with the
-      // mount-time snapshot would resolve the OLD default.
-      task = await load_task(project_id, task_id)
-      if (!task?.id) {
-        generation_error = "Task not loaded."
-        return
-      }
-      await load_task_run_configs(project_id, task.id)
-      const run_configs =
-        get(run_configs_by_task_composite_id)[
-          get_task_composite_id(project_id, task.id)
-        ] ?? []
-      if (run_configs.length === 0) {
-        generation_error =
-          "Task has no run configs. Create one before running multi-turn."
-        return
-      }
-      const default_match = run_configs.find(
-        (c) => c.id === task!.default_run_config_id,
-      )
-      const chosen_config = default_match ?? run_configs[0]
-      multi_turn_fallback_run_config_name = default_match
-        ? null
-        : chosen_config.name
-      drive_run_config_name = chosen_config.name
-      const rcp = chosen_config.run_config_properties
-      if (!isKilnAgentRunConfig(rcp)) {
-        generation_error =
-          "Multi-turn requires a Kiln Agent run config; the selected one isn't."
-        return
-      }
-      drive_run_config_model = rcp.model_name
-      if (!chosen_config.id) {
-        generation_error = "The selected run config has no id."
-        return
-      }
-      // Reference the saved config by id: the server drives the task with it
-      // verbatim, so model, prompt, sampling, and TOOLS all match a manual run.
-      const target_run_config_id = chosen_config.id
+      // 1. Resolve target_run_config (task default → first config). The
+      // server drives the task with the saved config verbatim by id, so
+      // model, prompt, sampling, and TOOLS all match a manual run.
+      const drive_config = await resolve_drive_run_config()
+      if (!drive_config) return
+      const target_run_config_id = drive_config.id
 
       // 2. The judge, resolved BEFORE the pipeline (not just before the
       // stream) so the preflight below covers the judge lane too — the
@@ -1513,7 +1516,7 @@
       // authoring deliberately precedes preflight and SU spend) — and the
       // per-spec cache makes re-drives free. A user abort (Back/navigation)
       // during it cancels the whole drive.
-      multi_turn_phase = "authoring_judge"
+      generation_phase = "authoring_judge"
       const authored = await author_judge_prompt_for_spec(
         new_copilot_abort_signal(),
       )
@@ -1522,7 +1525,7 @@
         model_name: chosen_judge_model.model_name,
         model_provider: chosen_judge_model.model_provider,
       }
-      multi_turn_phase = "preflight"
+      generation_phase = "preflight"
 
       // 3. Preflight ALL THREE lanes concurrently before anything runs or
       // is discarded: a dead key/model stops the drive here — before the
@@ -1534,8 +1537,8 @@
         [
           {
             lane: "run config",
-            model_name: rcp.model_name,
-            model_provider: rcp.model_provider_name,
+            model_name: drive_config.model_name,
+            model_provider: drive_config.model_provider,
           },
           {
             lane: "synthetic-user driver",
@@ -1595,7 +1598,7 @@
         // scenario prompt. Under the upstream salvage contract a flaky case
         // is dropped instead of failing the batch; scenario_index maps each
         // survivor back to its plan row.
-        multi_turn_phase = "generating_cases"
+        generation_phase = "generating_cases"
         const cases_resp = await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/multiturn_sdg/generate_cases",
           {
@@ -1632,7 +1635,7 @@
       // 7. One SSE stream runs the whole pipeline: [drive → judge → claims]
       // per case. POST endpoint, so fetch + shared SSE reader (EventSource
       // is GET-only).
-      multi_turn_phase = "running_pipeline"
+      generation_phase = "running_pipeline"
       const url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval_builder/review_pipeline`
       const response = await fetch(url, {
         method: "POST",
@@ -1653,20 +1656,7 @@
       })
 
       if (!response.ok || !response.body) {
-        let detail: string
-        try {
-          const err_json = await response.json()
-          // The error handler wraps detail as {message}; typed route errors
-          // nest {code, message} inside it — unwrap either shape.
-          const message = err_json?.message
-          detail =
-            (typeof message === "string" ? message : message?.message) ??
-            err_json?.detail?.message ??
-            "unknown"
-        } catch {
-          detail = await response.text().catch(() => "unknown")
-        }
-        generation_error = `review_pipeline failed (${response.status}): ${detail}`
+        generation_error = `review_pipeline failed (${response.status}): ${await error_detail(response)}`
         return
       }
 
@@ -1837,6 +1827,423 @@
     }
   }
 
+  // Mint one test input per approved prompt, locally on the input-generator
+  // lane — the same batch-job endpoints the /generate Kiln Pro flow
+  // executes its plan with. Returns the inputs as strings (structured-task
+  // inputs as JSON strings — the encoding the pipeline and the saved eval's
+  // items both use); a prompt whose generation failed is dropped, like the
+  // multi-turn arm's upstream salvage, and surfaces in the stop banner's
+  // survivor accounting. Throws on job-level failure or zero survivors.
+  async function mint_inputs_from_plan(
+    approved_prompts: string[],
+    input_gen: ModelChoice,
+    signal: AbortSignal,
+  ): Promise<string[]> {
+    minting_total = approved_prompts.length
+    minting_done = 0
+    const start = await client.POST(
+      "/api/projects/{project_id}/tasks/{task_id}/generate_inputs_batch",
+      {
+        params: { path: { project_id, task_id } },
+        body: {
+          prompts: approved_prompts,
+          // The wizard surfaces no data-guide toggle; null means "no guide",
+          // matching the batch planner call above.
+          data_guide: null,
+          run_config_properties: {
+            type: "kiln_agent" as const,
+            model_name: input_gen.model_name,
+            model_provider_name: input_gen.model_provider,
+            // Input generation runs its own purpose-built prompt server-side
+            // and the sampling knobs are the datamodel defaults; these
+            // fields just complete the run-config shape.
+            prompt_id: "simple_prompt_builder",
+            structured_output_mode: "default" as const,
+            top_p: 1.0,
+            temperature: 1.0,
+          },
+        },
+        signal,
+      },
+    )
+    if (start.error || !start.data) {
+      throw new KilnError(
+        `Couldn't start writing the test inputs: ${createKilnError(start.error).getMessage()}`,
+      )
+    }
+    const job_id = start.data.job_id
+    // Poll the job (the /generate flow's pattern — the batch runs
+    // server-side; the client only reads progress).
+    for (;;) {
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/generate_inputs_batch/{job_id}",
+        { params: { path: { project_id, task_id, job_id } }, signal },
+      )
+      if (error || !data) {
+        throw new KilnError(
+          `Lost track of the input-writing job: ${createKilnError(error).getMessage()}`,
+        )
+      }
+      minting_done = data.completed
+      if (data.status === "error") {
+        throw new KilnError(
+          `Writing the test inputs failed: ${data.error_message ?? "unknown error"}`,
+        )
+      }
+      if (data.status === "complete") {
+        // A blank string is a failed mint too (the pipeline route rejects a
+        // request carrying one, and running the task on nothing would be
+        // meaningless) — dropped under the same salvage posture as an
+        // errored generation. Each failure's message feeds the stop
+        // banner's dominant-error diagnosis.
+        const inputs = data.results
+          .filter(
+            (r) =>
+              r.input !== null &&
+              r.input !== undefined &&
+              (typeof r.input !== "string" || r.input.trim() !== ""),
+          )
+          .map((r) =>
+            typeof r.input === "string" ? r.input : JSON.stringify(r.input),
+          )
+        for (const r of data.results) {
+          if (r.error) case_failure_messages.push(r.error)
+        }
+        if (inputs.length === 0) {
+          throw new KilnError(
+            "None of the test inputs could be written. Try again.",
+          )
+        }
+        return inputs
+      }
+      await new Promise((resolve) => setTimeout(resolve, 750))
+      if (signal.aborted) {
+        throw new DOMException("aborted", "AbortError")
+      }
+    }
+  }
+
+  // Step 4 (single-turn) part 2 — run from the approved plan: mint one test
+  // input per approved prompt (local, input-generator lane), then a single
+  // single_turn_pipeline stream runs [run → judge] per input — the task
+  // executes once per input with tools live on the user's keys.
+  async function on_drive_single_turn() {
+    // The plan surface's primary button calls this directly, so guard
+    // reentry: a double-click during lane resolution must not start a
+    // second concurrent pipeline.
+    if (generation_loading) return
+    if (!batch_plan || batch_plan.prompts.length === 0) {
+      generation_error = "No approved inputs. Draft a plan first."
+      return
+    }
+    // Lanes uncommitted (internal re-run path reached before any settings
+    // submit) — ask, don't guess.
+    const chosen_input_gen = input_generator
+    const chosen_judge_model = judge_model
+    if (!chosen_input_gen || !chosen_judge_model) {
+      open_drive_settings()
+      return
+    }
+    const approved_prompts = batch_plan.prompts
+    generation_loading = true
+    generation_error = null
+    // Clear a previous run's stop banner up front: authoring can fail
+    // before the post-preflight clear, and its error must not render
+    // alongside a stale stop screen.
+    drive_stop = null
+    generation_phase = "preflight"
+
+    try {
+      // 1. Resolve target_run_config (task default → first config). The
+      // pipeline runs the task with the saved config verbatim by id, so
+      // model, prompt, sampling, and TOOLS all match a manual run.
+      const drive_config = await resolve_drive_run_config()
+      if (!drive_config) return
+      const target_run_config_id = drive_config.id
+
+      // 2. The judge, authored BEFORE the pipeline so the preflight covers
+      // its lane too. The server frames the rubric for single-turn from the
+      // task's turn mode; the per-spec cache makes re-runs free. A user
+      // abort during it cancels the whole run.
+      generation_phase = "authoring_judge"
+      const authored = await author_judge_prompt_for_spec(
+        new_copilot_abort_signal(),
+      )
+      const judge: JudgeConfig = {
+        prompt: authored,
+        model_name: chosen_judge_model.model_name,
+        model_provider: chosen_judge_model.model_provider,
+      }
+      generation_phase = "preflight"
+
+      // 3. Preflight ALL THREE lanes concurrently before anything runs or
+      // is discarded: a dead key/model stops the run here — before the
+      // minting spend and the batch's task/judge spend — on the same stop
+      // screen, with the previous run's results (if any) left intact.
+      const preflight_failure = await preflight_lanes(
+        [
+          {
+            lane: "run config",
+            model_name: drive_config.model_name,
+            model_provider: drive_config.model_provider,
+          },
+          {
+            lane: "input generator",
+            model_name: chosen_input_gen.model_name,
+            model_provider: chosen_input_gen.model_provider,
+          },
+          {
+            lane: "judge",
+            model_name: judge.model_name,
+            model_provider: judge.model_provider,
+          },
+        ],
+        new_copilot_abort_signal(),
+      )
+      if (preflight_failure) {
+        drive_stop = {
+          survivors: trace_claims.length,
+          failed: 0,
+          dominant_error: null,
+          preflight: preflight_failure,
+        }
+        return
+      }
+
+      // 4. Preflight passed — commit to the run. Every undeleted previous
+      // batch is superseded from here: the pipeline deletes their runs once
+      // this one has produced replacements.
+      const previous_batch_tag = single_turn_batch_tag
+      const tags_to_replace = [...undeleted_batch_tags]
+      trace_claims = []
+      trace_reviews = []
+      selected_trace_indices = []
+      driven_prompts_json = JSON.stringify(approved_prompts)
+      pipeline_total_cases = approved_prompts.length
+      reset_pipeline_counters()
+      // A fresh run means fresh results: the loop starts over.
+      reset_calibration_state()
+
+      // 5. The test inputs. Their generation depends only on the plan and
+      // the input-generator model — never the run config — so a re-run with
+      // both byte-unchanged (the fix-config-then-run-again recovery loop)
+      // reuses the cached inputs instead of re-paying one generation call
+      // per prompt. Any plan edit or new plan misses the cache.
+      let inputs = reusable_minted_inputs(
+        cached_minted_inputs,
+        approved_prompts,
+        chosen_input_gen.model_name,
+        chosen_input_gen.model_provider,
+      )
+      if (inputs) {
+        posthog.capture("eval_v2_minted_inputs_reused", {
+          num_inputs: inputs.length,
+        })
+      } else {
+        generation_phase = "minting_inputs"
+        inputs = await mint_inputs_from_plan(
+          approved_prompts,
+          chosen_input_gen,
+          new_copilot_abort_signal(),
+        )
+        // Cache only a COMPLETE mint: a partial set cached against the full
+        // prompt list would make the stop banner's "run the batch again"
+        // recovery reuse the same shortfall forever instead of re-minting
+        // the failures.
+        if (inputs.length === approved_prompts.length) {
+          cached_minted_inputs = {
+            prompts_json: JSON.stringify(approved_prompts),
+            model_name: chosen_input_gen.model_name,
+            model_provider: chosen_input_gen.model_provider,
+            inputs,
+          }
+        }
+      }
+      // Failed generations drop their input (the salvage posture): the
+      // driven count — the progress denominator — is what actually minted.
+      pipeline_total_cases = inputs.length
+
+      // 6. Remember the judge (the ONE JudgeConfig shape used by review and
+      // save alike) and identity BEFORE the pipeline runs so save can
+      // verify nothing changed under the results.
+      review_judge = judge
+      reviewed_identity = JSON.stringify({ name, spec: spec_text() })
+
+      // 7. One SSE stream runs the whole pipeline: [run → judge] per input.
+      // POST endpoint, so fetch + shared SSE reader (EventSource is
+      // GET-only).
+      generation_phase = "running_pipeline"
+      const url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval_builder/single_turn_pipeline`
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({
+          inputs,
+          input_model_name: chosen_input_gen.model_name,
+          input_provider: chosen_input_gen.model_provider,
+          target_run_config_id,
+          replace_batch_tags: tags_to_replace,
+          spec_name: name,
+          judge,
+        }),
+        signal: new_copilot_abort_signal(),
+      })
+
+      if (!response.ok || !response.body) {
+        generation_error = `single_turn_pipeline failed (${response.status}): ${await error_detail(response)}`
+        return
+      }
+
+      // Fill by case_index as case_judged events arrive (cases complete
+      // out of order); compacted into trace_claims at batch end.
+      const built: (TraceClaims | null)[] = new Array(inputs.length).fill(null)
+      let any_case_driven = false
+      // Set by a batch_aborted frame: a config-scoped judge failure aborted
+      // the batch server-side. Cases judged before it remain valid.
+      let batch_abort: { error: string; stage: string } | null = null
+      // Set by the batch_completed frame — the server's ONLY signal that
+      // the run stage finished cleanly and the superseded-batch delete
+      // actually ran (a failed/aborted stream tears down before it).
+      let batch_completed = false
+      const reader = response.body.getReader()
+      stream_loop: for await (const payload of sse_data_payloads(reader)) {
+        if (payload === "complete") break
+        let event: PipelineEvent
+        try {
+          event = JSON.parse(payload) as PipelineEvent
+        } catch {
+          continue
+        }
+
+        if (event.type === "batch_started") {
+          single_turn_batch_tag = event.batch_tag
+        } else if (event.type === "case_driven") {
+          any_case_driven = true
+          // Runs exist on disk under this batch's tag from here on —
+          // record it immediately so an abort can't orphan the batch.
+          if (
+            single_turn_batch_tag &&
+            !undeleted_batch_tags.includes(single_turn_batch_tag)
+          ) {
+            undeleted_batch_tags = [
+              ...undeleted_batch_tags,
+              single_turn_batch_tag,
+            ]
+          }
+        } else if (event.type === "case_judged") {
+          // Claims stay unbuilt here — they're built lazily (build_claims)
+          // for the traces the review surfaces or the user opens. The
+          // per-run batch_tag makes the trace id unique across runs, so a
+          // stale claims build from a prior run can't pass the identity
+          // guard and corrupt the new run's trace at the same index.
+          built[event.case_index] = {
+            trace_id: `${single_turn_batch_tag}_case_${event.case_index}`,
+            leaf_run_id: event.leaf_run_id || null,
+            raw_input: event.raw_input,
+            raw_output: event.raw_output,
+            judge_score: event.judge_score,
+            judge_reasoning: event.judge_reasoning,
+            claims: null,
+            final_judgement: null,
+            claims_state: "unbuilt",
+            claims_error: null,
+            // The run's structured trace (tool calls included) powers the
+            // modal's chat rendering; null when the run recorded none.
+            trace: event.trace ?? null,
+          }
+          judged_case_count += 1
+        } else if (event.type === "case_failed") {
+          pipeline_failed_count += 1
+          // Keep the message: the stop banner aggregates these into the
+          // dominant-error diagnosis.
+          case_failure_messages.push(event.message)
+          posthog.capture("eval_v2_pipeline_case_failed", {
+            stage: event.stage,
+            code: event.code,
+          })
+        } else if (event.type === "batch_failed") {
+          posthog.capture("eval_v2_pipeline_batch_failed", {
+            code: event.code,
+          })
+          generation_error = `The pipeline failed: ${event.message}`
+          break stream_loop
+        } else if (event.type === "batch_aborted") {
+          posthog.capture("eval_v2_pipeline_batch_aborted", {
+            stage: event.stage,
+          })
+          // Keep draining: results that raced past the abort frame are
+          // still valid survivors; the server ends the stream right after.
+          batch_abort = { error: event.error, stage: event.stage }
+        } else if (event.type === "batch_completed") {
+          batch_completed = true
+        }
+        // The `complete` terminator ends the loop.
+      }
+      if (any_case_driven) {
+        if (batch_completed) {
+          // batch_completed is the server's guarantee that the superseded
+          // batches were deleted — only now are their runs gone. A failed
+          // or aborted stream never reaches that delete, so its tags ride
+          // to the next run's replace_batch_tags (idempotent, so
+          // re-passing an already-deleted tag is harmless).
+          undeleted_batch_tags = undeleted_batch_tags.filter(
+            (t) => !tags_to_replace.includes(t),
+          )
+        }
+      } else {
+        // Nothing ran: no replacement runs, no deletions — keep pointing
+        // at the previous batch so save/cleanup still work.
+        single_turn_batch_tag = previous_batch_tag
+      }
+
+      // Compact survivors BEFORE any error/warning path: completed verdicts
+      // are paid results and must never be discarded by a late failure.
+      const complete = built.filter((t): t is TraceClaims => t !== null)
+      if (complete.length > 0) {
+        trace_claims = complete
+        trace_reviews = build_trace_reviews(complete)
+        // Single-turn still reviews every result; the judge-stratified
+        // subset math activates when the pooled review lands.
+        selected_trace_indices = complete.map((_, i) => i)
+      }
+      if (generation_error) return
+      if (batch_abort) {
+        drive_stop = {
+          survivors: complete.length,
+          failed: approved_prompts.length - complete.length,
+          dominant_error: null,
+          aborted_error: batch_abort.error,
+        }
+        return
+      }
+      // Failures reaching here are TERMINAL — transient errors were already
+      // retried server-side. A clean batch auto-advances silently; ANY
+      // shortfall vs the approved plan (minting drops included) stops once
+      // on the plan screen with the outcome and the recovery choice.
+      const failed = approved_prompts.length - complete.length
+      if (failed > 0) {
+        drive_stop = {
+          survivors: complete.length,
+          failed,
+          dominant_error: dominant_failure_message(case_failure_messages),
+        }
+        return
+      }
+      // Clean batch: hold the progress screen while the claims build, then
+      // advance to a fully-loaded review.
+      start_claims_gate()
+    } catch (e) {
+      if (is_abort_error(e)) return
+      generation_error =
+        e instanceof Error ? e.message : "Single-turn generation failed."
+    } finally {
+      generation_loading = false
+    }
+  }
+
   // Accepting the survivors from the stop screen: from here the normal
   // has-data rules apply (Drive hidden; destructive actions confirm with
   // the review-progress clause).
@@ -1846,31 +2253,24 @@
   }
 
   function on_continue_from_generate_step() {
-    if (is_multi_turn) {
-      // No plan → plan; otherwise (re)drive the approved plan. A re-drive
-      // passes the previous batch_tag so its chains are deleted server-side.
-      if (batch_plan === null) {
-        on_plan_multi_turn()
-      } else {
-        on_drive_multi_turn()
-      }
+    // No plan → plan; otherwise (re)drive the approved plan. A re-drive
+    // passes the previous batch tags so their runs are deleted server-side.
+    if (batch_plan === null) {
+      on_plan_batch()
+    } else if (is_multi_turn) {
+      on_drive_multi_turn()
     } else {
-      on_generate_single_turn()
+      void on_drive_single_turn()
     }
   }
 
-  // Advance from the Refine step (3) into Generate (4). Multi-turn plans
+  // Advance from the Refine step (3) into Generate (4). Both arms plan
   // immediately (planning needs no model choice); an existing plan renders
-  // for re-approval instead. Single-turn opens Drive Settings over the
-  // step — generation starts from the dialog's submit, so the judge choice
-  // is confirmed before any spend (SDG's pattern).
+  // for re-approval instead. Model choices are confirmed on the plan
+  // screen — run-immediately with defaults, or the settings link.
   function on_advance_to_generate() {
     goto_step("generate")
-    if (is_multi_turn) {
-      if (batch_plan === null) on_plan_multi_turn()
-      return
-    }
-    open_drive_settings()
+    if (batch_plan === null) on_plan_batch()
   }
 
   // Same pattern for Review (5) → Save (6): land on Save with the request
@@ -1911,8 +2311,6 @@
   // single-turn. The review surfaces exactly this subset — unselected traces
   // are not shown; they land in the train split unrated.
   let selected_trace_indices: number[] = []
-  let claims_loading = false
-  let claims_error: string | null = null
   $: all_reviewed = all_traces_reviewed(trace_claims, trace_reviews)
   // Multi-turn save gate: the human-rated golden answer key caps at 25% of
   // chains server-side, so the reviewer must rate at least N//4 traces —
@@ -1944,6 +2342,10 @@
   })
   // The arm's word for one reviewed item, for copy that counts them.
   $: judged_noun = is_multi_turn ? "conversation" : "example"
+  // The arm's words for the plan's rows and one unit of drive work — the
+  // step-4 surfaces (plan screen, confirms, stop banner) count in these.
+  $: plan_noun = is_multi_turn ? "scenarios" : "planned inputs"
+  $: case_noun = is_multi_turn ? "conversation" : "test run"
   // Bound out of the review component: true only while it shows its last
   // trace, which is where it renders the primary CTA. The save-without-
   // refining link stacks under that CTA, so it follows this flag.
@@ -2112,7 +2514,7 @@
         (i) => trace_claims[i]?.claims_state === "error",
       ).length,
     })
-    // PUSH review (single-turn replaces): Back must return to the plan.
+    // PUSH review (both arms): Back must return to the plan screen.
     goto_step("review")
   }
 
@@ -2629,9 +3031,10 @@
     on_save()
   }
 
-  // SSE events from the eval_builder review_traces endpoint (single-turn).
-  // The judge runs server-side (local, in-app) via the Eval V2 llm_judge
-  // adapter; the claim step calls the remote claim builder.
+  // SSE events from the eval_builder review_traces endpoint — the
+  // single-turn calibration loop's re-review stream. The judge runs
+  // server-side (local, in-app) via the Eval V2 llm_judge adapter; the
+  // claim step calls the remote claim builder.
   type ReviewTraceEvent =
     | { type: "batch_started"; total: number }
     | {
@@ -2653,136 +3056,10 @@
         message: string
       }
 
-  // Build claims for every SINGLE-TURN example via review_traces, which fans
-  // out [judge → claim builder] per trace (server-side, concurrency-capped)
-  // and streams a result per trace back. Multi-turn never comes here — its
-  // claims arrive on the merged review_pipeline stream during the drive.
-  // Returns whether the review state now reflects THIS call's results —
-  // false when it bailed (no judge, stream error, or a user abort), so a
-  // caller never advances to a review built from someone else's run.
-  // Examples and judge are parameters so a fresh generation can be reviewed
-  // BEFORE it is committed to the wizard's state: on a bail the caller keeps
-  // the previous batch, and nothing here has touched it. Defaults serve the
-  // rebuild path, which re-reviews what is already committed.
-  async function build_claims_for_review(
-    examples: SubsampleBatchOutputItemApi[] = single_turn_examples,
-    batch_judge: JudgeConfig | null = judge_info,
-  ): Promise<boolean> {
-    // batch_judge comes from clarify_spec (already model-overridden); fall
-    // back to the default prompt on the picked judge model. Either way,
-    // remember the judge the review ran — save persists that exact object.
-    const judge =
-      batch_judge ??
-      (judge_model ? build_default_judge_info(spec_text(), judge_model) : null)
-    if (!judge) {
-      claims_error = "No judge model selected. Start generation again."
-      return false
-    }
-    claims_loading = true
-    claims_error = null
-    const ios = examples.map((e) => ({
-      raw_input: e.input,
-      raw_output: e.output,
-    }))
-    // Fill by trace_index as events arrive (they complete out of order).
-    const built: (TraceClaims | null)[] = new Array(ios.length).fill(null)
-    try {
-      const url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval_builder/review_traces`
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "text/event-stream",
-        },
-        // spec_name pins the review judge's score identity to the one the
-        // saved eval will use; the judge's prompt doubles as the claim
-        // builder's rubric server-side.
-        body: JSON.stringify({
-          traces: ios,
-          spec_name: name,
-          judge,
-        }),
-        signal: new_copilot_abort_signal(),
-      })
-      if (!response.ok || !response.body) {
-        claims_error = `Failed to build claims (${response.status}).`
-        return false
-      }
-
-      const reader = response.body.getReader()
-      for await (const payload of sse_data_payloads(reader)) {
-        if (payload === "complete") continue
-        let event: ReviewTraceEvent
-        try {
-          event = JSON.parse(payload) as ReviewTraceEvent
-        } catch {
-          continue
-        }
-        if (event.type === "trace_reviewed") {
-          built[event.trace_index] = {
-            trace_id: `trace_${event.trace_index}`,
-            leaf_run_id: null,
-            raw_input: event.raw_input,
-            raw_output: event.raw_output,
-            judge_score: event.judge_score,
-            judge_reasoning: event.judge_reasoning,
-            claims: event.claims ?? [],
-            final_judgement: event.final_judgement,
-            claims_state: "built",
-            claims_error: null,
-          }
-        } else if (event.type === "trace_error") {
-          posthog.capture("eval_v2_review_trace_error", {
-            code: event.code,
-            phase: "first_pass",
-          })
-          claims_error = `Failed to build claims for a trace: ${event.message}`
-        }
-      }
-
-      // ALL-OR-NOTHING, same rule the re-review round enforces: single-turn
-      // grades every example, so a missing one has no place to sit. Two ways
-      // to come up short — a per-trace error frame, or a stream that ended
-      // early without one (dropped connection). Both fail the build, because
-      // a truncated set presented as the full review is a silent loss the
-      // user has no way to notice. Checked before anything commits, so a
-      // failed build leaves the previous review untouched.
-      if (claims_error) return false
-      const complete = built.filter((t): t is TraceClaims => t !== null)
-      const coverage_error = first_pass_coverage_error({
-        built: complete.length,
-        submitted: ios.length,
-      })
-      if (coverage_error) {
-        claims_error = coverage_error
-        return false
-      }
-      trace_claims = complete
-      trace_reviews = build_trace_reviews(complete)
-      // Single-turn reviews everything: clarify_spec already subsampled the
-      // most informative examples upstream.
-      selected_trace_indices = complete.map((_, i) => i)
-      // Pinned WITH the results, never before them: an aborted rebuild must
-      // not leave review_judge pointing at a judge that produced none of the
-      // traces on screen, nor re-pin the identity the save-time staleness
-      // guard checks. Save persists review_judge, so a mismatch here is
-      // exactly the "judge nobody graded" case the loop exists to prevent.
-      review_judge = judge
-      reviewed_identity = JSON.stringify({ name, spec: spec_text() })
-      return true
-    } catch (e) {
-      if (is_abort_error(e)) return false
-      claims_error = e instanceof Error ? e.message : "Failed to build claims."
-      return false
-    } finally {
-      claims_loading = false
-    }
-  }
-
-  // Generation → review: advance to existing results, rebuilding when stale.
-  // Pushes (not replaces) so Back from review returns here — this path is
-  // only reachable when Step 4 has real content to come back to.
-  async function continue_to_review() {
+  // Generation → review: advance to existing results, re-driving when
+  // stale. Pushes (not replaces) so Back from review returns here — this
+  // path is only reachable when Step 4 has real content to come back to.
+  function continue_to_review() {
     // Results reviewed under an old name/spec text are stale — the judge
     // identity changed, so the review must be re-run, not presented.
     const stale =
@@ -2793,36 +3070,27 @@
       trace_reviews = []
       selected_trace_indices = []
       // Rounds belong to the discarded review, not to whatever replaces it —
-      // single-turn rebuilds in place just below, multi-turn is sent back to
-      // re-drive. Either way, without this the next review would inherit a
-      // round count it never earned.
+      // without this the next review would inherit a round count it never
+      // earned.
       reset_calibration_state()
-      if (is_multi_turn) {
-        // Multi-turn results come from the merged pipeline (judge rides the
-        // drive), so a stale review means re-driving the plan.
-        generation_error =
-          "The eval's name or description changed since the review. Create your eval data again."
-        return
-      }
-    }
-    if (trace_claims.length === 0) {
-      if (is_multi_turn) {
-        // Nothing to show (a Back aborted the pipeline) — re-drive.
-        on_drive_multi_turn()
-        return
-      }
-      // Any bail — no judge, stream failure, or a user abort — leaves the
-      // review state untouched, so there is nothing to advance to.
-      if (!(await build_claims_for_review())) return
-    }
-    if (is_multi_turn) {
-      // Multi-turn claims are lazy — gate the advance on the selected
-      // subset being fully resolved (instant when already built).
-      start_claims_gate()
+      // Both arms' results come from a merged pipeline (the judge rides the
+      // drive), so a stale review means re-driving the plan.
+      generation_error =
+        "The eval's name or description changed since the review. Create your eval data again."
       return
     }
-    // Single-turn claims were built eagerly with the examples — advance.
-    goto_step("review")
+    if (trace_claims.length === 0) {
+      // Nothing to show (a Back aborted the pipeline) — re-drive.
+      if (is_multi_turn) {
+        on_drive_multi_turn()
+      } else {
+        void on_drive_single_turn()
+      }
+      return
+    }
+    // Claims are lazy on both arms — gate the advance on the selected
+    // traces being fully resolved (instant when already built).
+    start_claims_gate()
   }
 
   // ── Step 6 state — save
@@ -2860,11 +3128,10 @@
         issue_description,
       }
 
-      // The judge to persist = the judge the review ran (review_judge), or
-      // single-turn's clarify_spec judge if save is somehow reached without
-      // a review. Deliberately NO static-template last resort: silently
+      // The judge to persist = the judge the review ran (review_judge).
+      // Deliberately NO fallback or static-template last resort: silently
       // persisting a generic judge is the one thing save must never do.
-      const review_judge_config = review_judge ?? judge_info
+      const review_judge_config = review_judge
       if (!review_judge_config) {
         save_error = "No judge was configured. Go back and re-run the review."
         return
@@ -2980,71 +3247,20 @@
         return
       }
 
-      // Single-turn save path.
-      // Derive reviewed examples from the claim verdicts. The judge's verdict
-      // anchors to judge_score (the server pins final_judgement.
-      // expected_result to it deterministically); disagreeing with the final
-      // judgement flips it, and disagreements' reasons become the feedback.
-      const reviewed_examples: ReviewedExample[] = trace_claims.map((tc, i) => {
-        const review = trace_reviews[i]
-        return {
-          input: tc.raw_input,
-          output: tc.raw_output,
-          model_says_meets_spec: tc.judge_score === "pass",
-          user_says_meets_spec: user_says_meets_spec(tc, review),
-          feedback: disagreement_feedback(review),
-          claim_review: build_claim_review_payload(tc, review),
-        }
-      })
-
-      if (!sdg_session_config) {
-        save_error =
-          "Missing generation config. Go back to Step 4 and regenerate."
-        return
-      }
-
-      const { data, error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
-        {
-          params: { path: { project_id, task_id } },
-          body: {
-            name,
-            definition: issue_description,
-            properties: spec_properties,
-            evaluate_full_trace: false,
-            reviewed_examples,
-            judge_info: save_judge,
-            sdg_session_config,
-            task_prompt_with_example: task?.instruction ?? "",
-          },
-          signal: new_copilot_abort_signal(),
-        },
-      )
-      if (error || !data) {
-        save_error = createKilnError(error).getMessage()
-        posthog.capture("eval_v2_save_error", {
-          is_multi_turn: false,
-          error_code: (error as { status?: number } | undefined)?.status,
-        })
-        return
-      }
-      posthog.capture("eval_v2_save_success", {
-        is_multi_turn: false,
-        num_cases: reviewed_examples.length,
-      })
-      // Land on the spec/eval detail page (titled "Eval: ..."). This is
-      // the same destination v1 uses.
-      const saved = data as { id?: string }
-      // Persisted — the leave guard has nothing left to protect, and the
-      // draft's job is done (a kept draft would restore a stale wizard
-      // over the saved eval on the next visit).
-      await clear_builder_draft()
-      if (saved.id) {
-        leave_guard_suppressed = true
-        goto(`/specs/${project_id}/${task_id}/${saved.id}`)
-      } else {
-        replace_step("done")
-      }
+      // Single-turn save path — being rebuilt around the locally-driven
+      // runs. The retired writer sent the review pairs plus a kiln_server
+      // generation session it minted the dataset from; that session no
+      // longer exists (generation moved onto the local pipeline), and the
+      // replacement writer — golden/train tags on the batch-tagged runs,
+      // like the multi-turn branch above — lands with the save-writer
+      // rework. Refuse loudly rather than silently generating server-side
+      // data that ignores the runs the user just reviewed. save_judge is
+      // unused until then; reference it so the shared judge resolution
+      // above stays live for this branch.
+      void save_judge
+      save_error =
+        "Saving single-turn evals from locally-run eval data isn't wired up yet."
+      return
     } catch (e) {
       if (is_abort_error(e)) return
       save_error = e instanceof Error ? e.message : "Save failed."
@@ -3141,7 +3357,7 @@
       case "generate":
         return is_multi_turn
           ? "Kiln simulates a user talking to your agent to build your eval's test data."
-          : "Generating sample inputs and outputs based on your spec."
+          : "Kiln plans test inputs, runs your task on each, and judges the results."
       case "review":
         // The mistake framing lives at the STEP level, where it's true of
         // the batch (some conversations failed); each conversation's own
@@ -3164,9 +3380,9 @@
   function page_max_w_for(step: BuilderStep): string {
     if (step === "review") return "max-w-[1400px]"
     if (step === "refine" && !is_multi_turn) return "max-w-[1400px]"
-    // Multi-turn generate hosts the plan-approval table (long scenario
-    // prompts) — give it the same wide layout as review.
-    if (step === "generate" && is_multi_turn) return "max-w-[1400px]"
+    // Generate hosts the plan-approval table (long prompts, both arms) —
+    // give it the same wide layout as review.
+    if (step === "generate") return "max-w-[1400px]"
     return "max-w-[900px]"
   }
 
@@ -3192,23 +3408,45 @@
   // the DRIVEN case count: salvage can drive fewer cases than the plan has.
   $: multi_turn_total_turns = pipeline_total_cases * TURNS_PER_CASE
 
-  // Step 4 animation caption for the pre-pipeline loading stages (plan and
-  // SU generation); the pipeline stage has its own progress screen below.
-  $: generate_animation_description = is_multi_turn
-    ? multi_turn_phase === "planning"
-      ? `Drafting a balanced set of ${NUM_CASES} scenarios for your eval…`
-      : multi_turn_phase === "authoring_judge"
+  // Step 4 loading-stage title + caption for the pre-pipeline stages (the
+  // pipeline stage has its own progress screen below). One phase machine,
+  // arm-specific words for the arm-specific stages.
+  $: generate_animation_title =
+    generation_phase === "planning"
+      ? is_multi_turn
+        ? "Drafting Scenarios"
+        : "Planning Test Inputs"
+      : generation_phase === "authoring_judge"
+        ? "Authoring Judge"
+        : generation_phase === "preflight"
+          ? "Checking Configuration"
+          : generation_phase === "minting_inputs"
+            ? "Writing Test Inputs"
+            : "Creating Simulated Users"
+  $: generate_animation_description =
+    generation_phase === "planning"
+      ? is_multi_turn
+        ? `Drafting a balanced set of ${NUM_CASES} scenarios for your eval…`
+        : `Drafting a balanced plan of ${NUM_CASES} test inputs for your eval…`
+      : generation_phase === "authoring_judge"
         ? "Authoring a judge rubric tailored to your eval…"
-        : multi_turn_phase === "preflight"
-          ? "Checking that your run config, the model that plays the user, and the judge all respond before creating your eval data…"
-          : `Setting up ${multi_turn_total} simulated users from the approved scenarios…`
-    : "Kiln is generating example data to review and creating a judge. Hold tight!"
+        : generation_phase === "preflight"
+          ? `Checking that your run config, the ${
+              is_multi_turn
+                ? "model that plays the user"
+                : "model that writes the test inputs"
+            }, and the judge all respond before creating your eval data…`
+          : generation_phase === "minting_inputs"
+            ? `Writing ${planned_total} test inputs from the approved plan…`
+            : `Setting up ${planned_total} simulated users from the approved scenarios…`
 
-  // Multi-turn save tags existing chains rather than generating a dataset, so
-  // the save copy differs from single-turn's generate-then-save.
+  // Multi-turn save tags existing chains rather than generating a dataset.
+  // The single-turn line is a placeholder: its save currently refuses (the
+  // writer is moving onto the locally-run data), so the screen shows the
+  // refusal, not this caption.
   $: save_animation_description = is_multi_turn
     ? "Kiln is saving your eval and tagging the generated conversations. Hold tight!"
-    : "Kiln is generating test and training data for your eval before saving. Hold tight!"
+    : "Kiln is saving your eval. Hold tight!"
 </script>
 
 <svelte:window
@@ -3398,77 +3636,110 @@
           {/if}
         {:else if current_step === "generate"}
           <!-- ── Step 4 — Generate ── -->
-          {#if is_multi_turn && multi_turn_fallback_run_config_name}
+          {#if fallback_run_config_name}
             <Warning
               warning_color="primary"
               warning_icon="info"
-              warning_message={`Using run config ${multi_turn_fallback_run_config_name}. Set a default in task settings to silence this notice.`}
+              warning_message={`Using run config ${fallback_run_config_name}. Set a default in task settings to silence this notice.`}
             />
           {/if}
           {#if generation_loading && !pipeline_running}
-            <!-- Plan and SU generation are each one long request (minutes at
-                 a 40-case batch) — the standard animation warning line sets
-                 the expectation, matching every other long wait in the app.
-                 Multi-turn is building conversations, so it uses the chat-
-                 bubble animation; single-turn keeps the example-grading one. -->
+            <!-- Plan, SU generation, and input minting are each one long
+                 request/job (minutes at a 40-case batch) — the standard
+                 animation warning line sets the expectation, matching every
+                 other long wait in the app. Multi-turn is building
+                 conversations, so it uses the chat-bubble animation;
+                 single-turn keeps the analysis one. The minting stage adds
+                 the house batch-progress readout — it completes one input
+                 at a time, so real progress exists to show. -->
             {#if is_multi_turn}
               <ConversationAnimation
-                title={multi_turn_phase === "planning"
-                  ? "Drafting Scenarios"
-                  : multi_turn_phase === "authoring_judge"
-                    ? "Authoring Judge"
-                    : multi_turn_phase === "preflight"
-                      ? "Checking Configuration"
-                      : "Creating Simulated Users"}
+                title={generate_animation_title}
                 description={generate_animation_description}
-                warning={multi_turn_phase === "planning" ||
-                multi_turn_phase === "generating_cases"
+                warning={generation_phase === "planning" ||
+                generation_phase === "generating_cases"
                   ? "This may take a while, depending on the number of scenarios"
                   : null}
               />
             {:else}
               <AnalyzingAnimation
-                title="Analyzing Eval"
+                title={generate_animation_title}
                 description={generate_animation_description}
-                warning="This may take a while"
+                warning={generation_phase === "planning" ||
+                generation_phase === "minting_inputs"
+                  ? "This may take a while, depending on the number of inputs"
+                  : null}
               />
+              {#if generation_phase === "minting_inputs"}
+                <div class="flex flex-col items-center mt-2">
+                  <progress
+                    class="progress w-56 progress-success"
+                    value={minting_done}
+                    max={minting_total}
+                  ></progress>
+                  <div class="font-light text-xs text-center mt-1">
+                    {minting_done} of {minting_total} inputs written
+                  </div>
+                </div>
+              {/if}
             {/if}
           {/if}
           {#if pipeline_running}
-            <!-- The drive stage: the conversation-building animation plus the
-                 house batch-progress readout (slim bar + tiny count line,
-                 mirroring /generate's batch generation). The bar tracks
-                 TURNS for smooth motion (cases complete in concurrency
-                 waves), so the count line LEADS with turns — the number
-                 that moves with the bar — then the conversation outcome. The
-                 title carries the live per-conversation count. -->
-            <ConversationAnimation
-              title={`Creating Eval Data ${judged_case_count} of ${pipeline_total_cases}…`}
-              description="Kiln is simulating conversations with your agent and judging each one. Hold tight!"
-              warning={null}
-            />
-            <div class="flex flex-col items-center mt-2">
-              <progress
-                class="progress w-56 progress-success"
-                value={multi_turn_turns_done}
-                max={multi_turn_total_turns}
-              ></progress>
-              <!-- Fine-grained progress only — the coarse case count already
-                   lives in the title above ("Creating Eval Data N of M"). -->
-              <div class="font-light text-xs text-center mt-1">
-                {multi_turn_turns_done} of {multi_turn_total_turns} turns complete{#if pipeline_failed_count > 0},
-                  {pipeline_failed_count} failed{/if}
+            <!-- The drive stage: the arm's animation plus the house
+                 batch-progress readout (slim bar + tiny count line,
+                 mirroring /generate's batch generation). Multi-turn's bar
+                 tracks TURNS for smooth motion (cases complete in
+                 concurrency waves), so its count line LEADS with turns;
+                 single-turn cases are one run each, so its bar counts
+                 finished cases directly. The title carries the live
+                 per-case count. -->
+            {#if is_multi_turn}
+              <ConversationAnimation
+                title={`Creating Eval Data ${judged_case_count} of ${pipeline_total_cases}…`}
+                description="Kiln is simulating conversations with your agent and judging each one. Hold tight!"
+                warning={null}
+              />
+              <div class="flex flex-col items-center mt-2">
+                <progress
+                  class="progress w-56 progress-success"
+                  value={multi_turn_turns_done}
+                  max={multi_turn_total_turns}
+                ></progress>
+                <!-- Fine-grained progress only — the coarse case count
+                     already lives in the title above. -->
+                <div class="font-light text-xs text-center mt-1">
+                  {multi_turn_turns_done} of {multi_turn_total_turns} turns complete{#if pipeline_failed_count > 0},
+                    {pipeline_failed_count} failed{/if}
+                </div>
               </div>
-            </div>
+            {:else}
+              <AnalyzingAnimation
+                title={`Creating Eval Data ${judged_case_count} of ${pipeline_total_cases}…`}
+                description="Kiln is running your task on each test input and judging the result. Hold tight!"
+                warning={null}
+              />
+              <div class="flex flex-col items-center mt-2">
+                <progress
+                  class="progress w-56 progress-success"
+                  value={judged_case_count + pipeline_failed_count}
+                  max={pipeline_total_cases}
+                ></progress>
+                <div class="font-light text-xs text-center mt-1">
+                  {judged_case_count} of {pipeline_total_cases} judged{#if pipeline_failed_count > 0},
+                    {pipeline_failed_count} failed{/if}
+                </div>
+              </div>
+            {/if}
           {/if}
           {#if preparing_review}
             <!-- The claims gate: the progress screen holds while the
                  selected traces' claims build, so review opens fully
                  loaded — Previous can revisit any earlier trace, so every
                  selected claim set must be resolved up front. -->
-            <ConversationAnimation
+            <svelte:component
+              this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
               title="Preparing Review"
-              description="Kiln is flagging possible mistakes in each conversation for you to review. Hold tight!"
+              description={`Kiln is flagging possible mistakes in each ${judged_noun} for you to review. Hold tight!`}
               warning={null}
             />
             <div class="flex flex-col items-center mt-2">
@@ -3497,7 +3768,7 @@
                   claims_gate_error = null
                 }}
               >
-                Back to Scenarios
+                {is_multi_turn ? "Back to Scenarios" : "Back to Plan"}
               </button>
               <button
                 class="btn btn-primary"
@@ -3511,7 +3782,7 @@
           {#if generation_error}
             <Warning warning_color="error" warning_message={generation_error} />
             <div class="text-center py-4 flex justify-center gap-2">
-              {#if is_multi_turn && batch_plan !== null}
+              {#if batch_plan !== null}
                 <!-- Drive failed after approval — let the user rework the plan
                      instead of only retrying it verbatim. -->
                 <button
@@ -3520,7 +3791,7 @@
                     generation_error = null
                   }}
                 >
-                  Back to Scenarios
+                  {is_multi_turn ? "Back to Scenarios" : "Back to Plan"}
                 </button>
               {/if}
               <button
@@ -3551,29 +3822,36 @@
                     drive_stop,
                     drive_run_config_name,
                     drive_run_config_model,
+                    case_noun,
                   )}
                 />
               </div>
             {/if}
             <!-- Plan approval: the run starts only after the user approves
-                 the scenarios — the shared /generate batch-plan surface,
-                 relabelled for the eval builder (scenarios, eval inputs).
-                 The primary button runs immediately with the default model
-                 lanes; the Advanced Settings trigger (slotted above the button)
-                 opens the same settings dialog to pick them first. -->
+                 the plan — the shared /generate batch-plan surface,
+                 relabelled per arm (scenarios / planned test inputs). The
+                 primary button runs immediately with the default model
+                 lanes; the settings link (slotted above the button) opens
+                 the same settings dialog to pick them first. -->
             <KilnProBatchPlan
               plan={batch_plan}
               summary_out_of_sync={batch_plan_edited}
-              header_label="Scenarios"
-              subheader="Each scenario becomes one eval input. Edit any before starting."
-              regenerate_label="New Scenarios"
-              on_generate_inputs={start_multiturn_drive_with_defaults}
+              header_label={is_multi_turn ? "Scenarios" : "Planned Test Inputs"}
+              subheader={is_multi_turn
+                ? "Each scenario becomes one eval input. Edit any before starting."
+                : "Each plan line becomes one test input your task runs on. Edit any before starting."}
+              regenerate_label={is_multi_turn ? "New Scenarios" : "New Plan"}
+              on_generate_inputs={start_drive_with_defaults}
               on_regenerate={on_new_plan_with_confirm}
               on_delete_prompt={on_delete_plan_prompt}
               hide_generate_button={has_data_accepted}
-              generate_button_label={`Create ${batch_plan.prompts.length} Eval Input${
-                batch_plan.prompts.length === 1 ? "" : "s"
-              }`}
+              generate_button_label={is_multi_turn
+                ? `Create ${batch_plan.prompts.length} Eval Input${
+                    batch_plan.prompts.length === 1 ? "" : "s"
+                  }`
+                : `Run Task on ${batch_plan.prompts.length} Input${
+                    batch_plan.prompts.length === 1 ? "" : "s"
+                  }`}
             >
               <svelte:fragment slot="advanced">
                 {#if !has_data_accepted}
@@ -3618,7 +3896,7 @@
             {/if}
           {:else if !generation_loading && !generation_error && !preparing_review && !claims_gate_error}
             <div class="flex justify-end mt-8">
-              {#if single_turn_examples.length > 0 || trace_claims.length > 0}
+              {#if trace_claims.length > 0}
                 <!-- Generation already ran (navigated back into this step) —
                      continue to the existing results instead of re-running,
                      matching the browser Forward path. -->
@@ -3626,19 +3904,12 @@
                   Next →
                 </button>
               {:else}
-                <!-- No results (a Back aborted generation) — offer to start
-                     it. Multi-turn only reaches this branch with no plan (a
-                     plan renders the approval view above), so planning is
-                     the next action there; single-turn goes through Drive
-                     Settings like every fresh generation. -->
-                <button
-                  class="btn btn-primary"
-                  on:click={() =>
-                    is_multi_turn
-                      ? on_plan_multi_turn()
-                      : open_drive_settings()}
-                >
-                  {is_multi_turn ? "Draft Scenarios →" : "Generate examples →"}
+                <!-- No results (a Back aborted generation). This branch is
+                     only reachable with no plan (a plan renders the
+                     approval view above), so planning is the next action —
+                     both arms are plan-first. -->
+                <button class="btn btn-primary" on:click={on_plan_batch}>
+                  {is_multi_turn ? "Draft Scenarios →" : "Plan Test Inputs →"}
                 </button>
               {/if}
             </div>
@@ -3655,7 +3926,8 @@
           {:else if calibration_phase === "rejudging"}
             <!-- The pipeline progress surface in judge-only form: no drive,
                  no turns — one result per item as the stream lands. -->
-            <ConversationAnimation
+            <svelte:component
+              this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
               title={`Re-checking Eval Data ${rejudged_done} of ${rejudge_total}…`}
               description="Re-checking your eval data with the improved judge. Hold tight!"
               warning={null}
@@ -3674,9 +3946,10 @@
           {:else if calibration_phase === "building_claims"}
             <!-- Same wait-for-all claims gate as the first round, held on the
                  review step: the re-review opens fully loaded. -->
-            <ConversationAnimation
+            <svelte:component
+              this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
               title="Preparing Review"
-              description="Kiln is flagging possible mistakes in each conversation for you to review. Hold tight!"
+              description={`Kiln is flagging possible mistakes in each ${judged_noun} for you to review. Hold tight!`}
               warning={null}
             />
             <div class="flex flex-col items-center mt-2">
@@ -3717,14 +3990,6 @@
                 Retry →
               </button>
             </div>
-          {:else if claims_loading}
-            <ConversationAnimation
-              title="Building Claims"
-              description="Distilling each trace into claims for you to review."
-              warning={null}
-            />
-          {:else if claims_error}
-            <Warning warning_color="error" warning_message={claims_error} />
           {:else if trace_claims.length === 0}
             <!-- Browser Forward can land here after results were cleared
                  (plan regenerated / drive restarted). Browser Back returns to
@@ -3851,24 +4116,20 @@
 
 <!-- Drive settings dialog (SDG's Generation Settings pattern): the primary
      button runs immediately with the default lanes, so this opens only from
-     "Advanced" (pre-run model choice) or as fail-loud recovery when a default
-     lane can't be resolved. Its submit starts the run either way. Model-only
-     lanes — the user-simulator and judge are fixed-prompt internal roles, so
-     no run-config extras. Lane filters: the simulator wants a data-gen chat
-     model (SDG's settings); judge needs structured output (v1 judge
-     form's settings). With no usable model, the dropdowns' own empty
-     state links to provider settings (same-tab, so the models list is
-     fresh when the user returns) and submit refuses to start. -->
-<Dialog
-  bind:this={drive_settings_dialog}
-  title={is_multi_turn ? "Advanced Settings" : "Generation Settings"}
->
+     the settings link (pre-run model choice) or as fail-loud recovery when
+     a default lane can't be resolved. Its submit starts the run either way.
+     Model-only lanes — the user-simulator, input generator, and judge are
+     fixed-prompt internal roles, so no run-config extras. Lane filters: the
+     simulator and input generator want a data-gen model (SDG's settings);
+     judge needs structured output (v1 judge form's settings). With no
+     usable model, the dropdowns' own empty state links to provider settings
+     (same-tab, so the models list is fresh when the user returns) and
+     submit refuses to start. -->
+<Dialog bind:this={drive_settings_dialog} title="Advanced Settings">
   <FormContainer
     submit_label={is_multi_turn
-      ? `Create ${multi_turn_total} Eval Input${
-          multi_turn_total === 1 ? "" : "s"
-        }`
-      : "Generate Examples"}
+      ? `Create ${planned_total} Eval Input${planned_total === 1 ? "" : "s"}`
+      : `Run Task on ${planned_total} Input${planned_total === 1 ? "" : "s"}`}
     bind:submitting={drive_settings_submitting}
     on:submit={submit_drive_settings}
     keyboard_submit={false}
@@ -3885,12 +4146,22 @@
           suggested_mode: "data_gen",
         }}
       />
+    {:else}
+      <AvailableModelsDropdown
+        label="Model that writes the test inputs"
+        description="Writes one test input from each approved plan line; your task then runs on them."
+        bind:model={input_gen_model_combined}
+        bind:model_name={input_gen_model_id}
+        bind:provider_name={input_gen_provider_id}
+        settings={{
+          requires_data_gen: true,
+          suggested_mode: "data_gen",
+        }}
+      />
     {/if}
     <AvailableModelsDropdown
-      label={is_multi_turn ? "Model that judges the results" : "Judge Model"}
-      description={`Reviews each ${
-        is_multi_turn ? "conversation" : "example"
-      } against your eval's criteria and decides pass or fail.`}
+      label="Model that judges the results"
+      description={`Reviews each ${judged_noun} against your eval's criteria and decides pass or fail.`}
       bind:model={judge_model_combined}
       bind:model_name={judge_model_id}
       bind:provider_name={judge_provider_id}

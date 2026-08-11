@@ -11,7 +11,6 @@ import {
   disagreed_trace_indices,
   disagreement_feedback,
   final_judgement_reason,
-  first_pass_coverage_error,
   flipped_indices,
   grade_disagreement_count,
   has_grade_disagreement,
@@ -818,30 +817,6 @@ describe("apply_rereview_results (single-turn round)", () => {
     expect(flipped_indices([trace({ judge_score: "pass" })], results)).toEqual(
       [],
     )
-  })
-})
-
-describe("first_pass_coverage_error (single-turn first build)", () => {
-  it("a complete build passes", () => {
-    expect(first_pass_coverage_error({ built: 8, submitted: 8 })).toBeNull()
-  })
-
-  it("a short build fails, naming what came back", () => {
-    // The stream ended early with no error frame (dropped connection): the
-    // survivors must not be presented as the whole review, the same
-    // all-or-nothing rule apply_rereview_results enforces for a round.
-    const error = first_pass_coverage_error({ built: 6, submitted: 8 })
-    expect(error).toContain("6 of 8")
-  })
-
-  it("a build with nothing in it fails", () => {
-    expect(first_pass_coverage_error({ built: 0, submitted: 3 })).not.toBeNull()
-  })
-
-  it("an empty submission is not a shortfall", () => {
-    // No examples asked for, none missing — the empty case is caught upstream
-    // (no judge / nothing generated), not reported as a coverage failure.
-    expect(first_pass_coverage_error({ built: 0, submitted: 0 })).toBeNull()
   })
 })
 

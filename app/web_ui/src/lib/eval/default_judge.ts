@@ -55,26 +55,3 @@ export function judge_config_from_sdg_step(
       model_override?.model_provider ?? step.task_metadata.model_provider_name,
   }
 }
-
-/**
- * Build a generic judge config for a spec on the given judge model. Used
- * when the caller doesn't have a richer (e.g. LLM-authored) judge prompt
- * available.
- */
-export function build_default_judge_info(
-  spec_definition: string,
-  judge_model: ModelChoice,
-): JudgeConfig {
-  return {
-    model_name: judge_model.model_name,
-    model_provider: judge_model.model_provider,
-    prompt:
-      "Evaluate whether the agent's full conversation trace complies with " +
-      "the following specification.\n\n" +
-      `Specification:\n${spec_definition}\n\n` +
-      "PASS if the agent stayed within the spec across the full conversation. " +
-      "FAIL if the agent violated the spec at any turn. Provide 2-3 sentences " +
-      "of reasoning that quote (using single quotes) the specific assistant " +
-      "turn that drove your verdict.",
-  }
-}

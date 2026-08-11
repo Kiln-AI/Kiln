@@ -45,6 +45,33 @@ export function reusable_cached_cases(
   return cache.cases
 }
 
+// The single-turn arm's minted test inputs, cached against exactly what
+// produced them: the approved plan prompts and the input-generator model
+// (the spec plays no part — it already shaped the PLAN). A re-run with both
+// unchanged reuses the inputs instead of re-paying one generation call per
+// prompt, which makes the fix-config-then-run-again recovery loop fast.
+export type CachedMintedInputs = {
+  prompts_json: string
+  model_name: string
+  model_provider: string
+  // Each input as the string the pipeline runs on (structured-task inputs
+  // are JSON strings — the same encoding the saved eval's items store).
+  inputs: string[]
+}
+
+export function reusable_minted_inputs(
+  cache: CachedMintedInputs | null,
+  approved_prompts: string[],
+  model_name: string,
+  model_provider: string,
+): string[] | null {
+  if (!cache || cache.inputs.length === 0) return null
+  if (cache.model_name !== model_name) return null
+  if (cache.model_provider !== model_provider) return null
+  if (cache.prompts_json !== JSON.stringify(approved_prompts)) return null
+  return cache.inputs
+}
+
 export type BuilderDraft = {
   // Step 1-3 — spec authoring.
   description: string
@@ -60,15 +87,21 @@ export type BuilderDraft = {
   // The plan's generated synthetic users (more minutes) — reused on drive
   // while plan+spec are byte-unchanged, revalidated in reusable_cached_cases.
   cached_su_cases: CachedSuCases | null
+  // The single-turn arm's minted inputs — reused on a re-run while
+  // plan+model are byte-unchanged, revalidated in reusable_minted_inputs.
+  cached_minted_inputs: CachedMintedInputs | null
   // Batch-tag bookkeeping — a CORRECTNESS carry, not convenience: these
-  // name chains already on disk. multi_turn_batch_tag is the live batch;
-  // undeleted_batch_tags is the delete-on-next-drive cleanup list.
+  // name runs already on disk. The per-arm live-batch tag plus
+  // undeleted_batch_tags, the delete-on-next-drive cleanup list (shared —
+  // a task is one arm, so its tags never mix).
   multi_turn_batch_tag: string | null
+  single_turn_batch_tag: string | null
   undeleted_batch_tags: string[]
   // The Drive Settings model lanes. Persisted so a reload or the
   // connect-a-provider round trip keeps the user's picks; pre-Drive-Settings
   // drafts restore these as null (?? below) and fall back to pre-population.
   su_driver: ModelChoice | null
+  input_generator: ModelChoice | null
   judge_model: ModelChoice | null
 }
 
@@ -83,9 +116,12 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   batch_plan: null,
   batch_plan_edited: false,
   cached_su_cases: null,
+  cached_minted_inputs: null,
   multi_turn_batch_tag: null,
+  single_turn_batch_tag: null,
   undeleted_batch_tags: [],
   su_driver: null,
+  input_generator: null,
   judge_model: null,
 }
 
@@ -120,6 +156,7 @@ export function draft_has_content(draft: BuilderDraft): boolean {
     Object.keys(draft.suggested_edits).length > 0 ||
     draft.batch_plan !== null ||
     draft.multi_turn_batch_tag !== null ||
+    draft.single_turn_batch_tag !== null ||
     draft.undeleted_batch_tags.length > 0
   )
 }
@@ -147,13 +184,14 @@ export function restore_step(draft: BuilderDraft): RestoreStep {
 }
 
 // A fresh draft that KEEPS the batch-tag bookkeeping. Reset must not wipe
-// the tags: they name chains already on disk, and delete-on-next-drive is
+// the tags: they name runs already on disk, and delete-on-next-drive is
 // the only thing that ever cleans those up — a full wipe would orphan them
 // forever (the leak the draft's tag persistence exists to prevent).
 export function reset_draft_keeping_tags(draft: BuilderDraft): BuilderDraft {
   return {
     ...EMPTY_BUILDER_DRAFT,
     multi_turn_batch_tag: draft.multi_turn_batch_tag,
+    single_turn_batch_tag: draft.single_turn_batch_tag,
     undeleted_batch_tags: draft.undeleted_batch_tags,
   }
 }

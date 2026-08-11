@@ -324,4 +324,95 @@ describe("drive_stop_banner — preflight stop", () => {
     expect(banner).not.toContain("old error")
     expect(banner).toContain("BudgetExceededError")
   })
+
+  it("input-generator lane names its role, model, and key requirement", () => {
+    const banner = drive_stop_banner(
+      {
+        survivors: 0,
+        failed: 0,
+        dominant_error: null,
+        preflight: {
+          lane: "input generator",
+          message: "NotFoundError: model retired",
+          model: "gpt_5_4_mini via openrouter",
+          provider: "OpenRouter",
+        },
+      },
+      "Polite Hawk",
+    )
+    expect(banner).toContain(
+      "The model that writes the test inputs failed a test call: NotFoundError: model retired (gpt_5_4_mini via openrouter).",
+    )
+    expect(banner).toContain(
+      "Creating your eval data requires your OpenRouter API key.",
+    )
+    expect(banner).toContain(
+      "[check your model providers](/settings/providers)",
+    )
+  })
+})
+
+describe("drive_stop_banner — single-turn case noun", () => {
+  it("counts test runs, never conversations", () => {
+    const banner = drive_stop_banner(
+      {
+        survivors: 38,
+        failed: 2,
+        dominant_error: "RateLimitError from OpenRouter",
+      },
+      "Polite Hawk",
+      null,
+      "test run",
+    )
+    expect(banner).toContain("38 of 40 test runs completed.")
+    expect(banner).not.toContain("conversation")
+  })
+
+  it("all-failed and abort variants carry the noun too", () => {
+    const all_failed = drive_stop_banner(
+      { survivors: 0, failed: 40, dominant_error: "boom" },
+      "Polite Hawk",
+      null,
+      "test run",
+    )
+    expect(all_failed).toContain("All test runs failed: boom")
+    const aborted = drive_stop_banner(
+      {
+        survivors: 12,
+        failed: 0,
+        dominant_error: null,
+        aborted_error: "AuthenticationError: invalid api key",
+      },
+      "Polite Hawk",
+      "gpt_5_5",
+      "test run",
+    )
+    expect(aborted).toContain("12 test runs completed before the stop.")
+    expect(aborted).not.toContain("conversation")
+  })
+})
+
+describe("new_plan_confirm — single-turn plan noun", () => {
+  it("speaks of planned inputs, not scenarios", () => {
+    expect(
+      new_plan_confirm({
+        has_driven_results: false,
+        survivors: 0,
+        include_review_progress: false,
+        plan_edited: false,
+        plan_noun: "planned inputs",
+      }),
+    ).toBe(
+      "Are you sure you want to discard the current planned inputs? This cannot be undone.",
+    )
+    expect(
+      new_plan_confirm({
+        has_driven_results: true,
+        survivors: 5,
+        include_review_progress: true,
+        plan_edited: false,
+        plan_noun: "planned inputs",
+      }),
+    ).toContain("New planned inputs will discard them.")
+  })
 })

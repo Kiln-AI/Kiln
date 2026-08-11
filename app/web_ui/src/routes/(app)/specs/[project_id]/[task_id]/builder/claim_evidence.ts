@@ -829,21 +829,6 @@ export function apply_rereview_results(
   })
 }
 
-// The first-pass single-turn build's coverage rule — the companion to
-// apply_rereview_results' check, for the pass that has no verdicts to apply
-// yet. Single-turn ships every example it generated, so a build that came
-// back with fewer results than examples submitted (a stream that ended early,
-// with no per-trace error to report) must fail rather than present the
-// survivors as the whole review. Returns the user-facing error, or null when
-// every example came back.
-export function first_pass_coverage_error(args: {
-  built: number
-  submitted: number
-}): string | null {
-  if (args.built === args.submitted) return null
-  return `Only ${args.built} of ${args.submitted} examples could be reviewed. Try again.`
-}
-
 // What a save request should do next. A save with disagreement enters a
 // calibration round on either arm — as many rounds as it takes, since the
 // loop only exits on convergence or the explicit save-without-refining link.

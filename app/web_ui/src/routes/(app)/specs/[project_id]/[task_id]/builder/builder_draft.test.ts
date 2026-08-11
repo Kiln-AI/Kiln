@@ -8,6 +8,7 @@ import {
   reset_draft_keeping_tags,
   restore_step,
   reusable_cached_cases,
+  reusable_minted_inputs,
   EMPTY_BUILDER_DRAFT,
   type BuilderDraft,
   type CachedSuCases,
@@ -58,9 +59,23 @@ const full_draft: BuilderDraft = {
       },
     ],
   },
+  cached_minted_inputs: {
+    prompts_json: JSON.stringify([
+      "Customer asks about a return window.",
+      "Warranty question.",
+    ]),
+    model_name: "gpt_5_4_mini",
+    model_provider: "openai",
+    inputs: ["What's your return window?", "Is my laptop under warranty?"],
+  },
   multi_turn_batch_tag: "multi_turn_batch_1234",
+  single_turn_batch_tag: "single_turn_batch_5678",
   undeleted_batch_tags: ["multi_turn_batch_1200", "multi_turn_batch_1234"],
   su_driver: {
+    model_name: "gpt_5_4_mini",
+    model_provider: "openai",
+  },
+  input_generator: {
     model_name: "gpt_5_4_mini",
     model_provider: "openai",
   },
@@ -200,6 +215,12 @@ describe("draft_has_content", () => {
         multi_turn_batch_tag: "multi_turn_batch_1234",
       }),
     ).toBe(true)
+    expect(
+      draft_has_content({
+        ...EMPTY_BUILDER_DRAFT,
+        single_turn_batch_tag: "single_turn_batch_5678",
+      }),
+    ).toBe(true)
   })
 
   it("is true for a plan", () => {
@@ -287,6 +308,7 @@ describe("reset_draft_keeping_tags", () => {
   it("wipes all authoring state but carries the batch tags", () => {
     const fresh = reset_draft_keeping_tags(full_draft)
     expect(fresh.multi_turn_batch_tag).toBe("multi_turn_batch_1234")
+    expect(fresh.single_turn_batch_tag).toBe("single_turn_batch_5678")
     expect(fresh.undeleted_batch_tags).toEqual([
       "multi_turn_batch_1200",
       "multi_turn_batch_1234",
@@ -295,6 +317,7 @@ describe("reset_draft_keeping_tags", () => {
     expect(fresh.name).toBe("")
     expect(fresh.batch_plan).toBeNull()
     expect(fresh.cached_su_cases).toBeNull()
+    expect(fresh.cached_minted_inputs).toBeNull()
     expect(fresh.refined_property_values).toEqual({})
   })
 
@@ -310,9 +333,71 @@ describe("reset_draft_keeping_tags", () => {
     const no_tags = {
       ...full_draft,
       multi_turn_batch_tag: null,
+      single_turn_batch_tag: null,
       undeleted_batch_tags: [],
     }
     expect(reset_draft_keeping_tags(no_tags)).toEqual(EMPTY_BUILDER_DRAFT)
+  })
+})
+
+describe("reusable_minted_inputs — single-turn input reuse", () => {
+  const prompts = ["input plan a", "input plan b"]
+  const cache = {
+    prompts_json: JSON.stringify(prompts),
+    model_name: "gpt_5_4_mini",
+    model_provider: "openai",
+    inputs: ["What's your return window?", "Is my laptop under warranty?"],
+  }
+
+  it("reuses when plan and input-generator model are byte-unchanged", () => {
+    expect(
+      reusable_minted_inputs(
+        cache,
+        ["input plan a", "input plan b"],
+        "gpt_5_4_mini",
+        "openai",
+      ),
+    ).toBe(cache.inputs)
+  })
+
+  it("misses with no cache", () => {
+    expect(
+      reusable_minted_inputs(null, prompts, "gpt_5_4_mini", "openai"),
+    ).toBeNull()
+  })
+
+  it("misses when a prompt was edited or deleted", () => {
+    expect(
+      reusable_minted_inputs(
+        cache,
+        ["input plan a EDITED", "input plan b"],
+        "gpt_5_4_mini",
+        "openai",
+      ),
+    ).toBeNull()
+    expect(
+      reusable_minted_inputs(cache, ["input plan a"], "gpt_5_4_mini", "openai"),
+    ).toBeNull()
+  })
+
+  it("misses when the input-generator model or provider changed", () => {
+    expect(
+      reusable_minted_inputs(cache, prompts, "other_model", "openai"),
+    ).toBeNull()
+    expect(
+      reusable_minted_inputs(cache, prompts, "gpt_5_4_mini", "openrouter"),
+    ).toBeNull()
+  })
+
+  it("misses on an empty cached input list", () => {
+    expect(
+      reusable_minted_inputs(
+        { ...cache, inputs: [] },
+        prompts,
+        "gpt_5_4_mini",
+        "openai",
+      ),
+    ).toBeNull()
   })
 })
 
