@@ -60,6 +60,7 @@
   } from "$lib/components/compare_radar_chart.svelte"
   import CompareMetricsBarChart from "$lib/components/compare_metrics_bar_chart.svelte"
   import CompareParallelChart from "$lib/components/compare_parallel_chart.svelte"
+  import ComparePriceLatencyChart from "$lib/components/compare_price_latency_chart.svelte"
   import type { ParallelAxisSpec } from "$lib/utils/evolution/parallel_bands"
   import {
     build_metric_axes,
@@ -90,6 +91,10 @@
     order_families,
     type ScoreFamily,
   } from "$lib/utils/evolution/score_families"
+  import {
+    build_price_latency_points,
+    split_by_gate,
+  } from "$lib/utils/evolution/price_latency"
   import { spec_descriptions_by_eval } from "$lib/utils/evolution/axis_help"
   import { series_color_map } from "$lib/utils/evolution/series_identity"
   import {
@@ -203,6 +208,13 @@
   // table, and a hidden row never edits this selection - it comes back with its
   // axis on if that is how it went away.
   let metric_axis_keys: string[] | null = null
+  // The quality floor on the price/latency chart, as a 0..1 aggregate score.
+  // Null - no gate - is the default: the gate is a claim about what "good
+  // enough" means on this task, and the page has no business asserting one. In
+  // the URL because it is a DECISION rather than a view setting: the chart is
+  // read by someone arguing for a config, and the link they send has to carry
+  // the floor they argued under.
+  let quality_floor: number | null = null
 
   // Drill-down UI state (not round-tripped)
   let inspector: {
@@ -289,6 +301,16 @@
             .filter((key) => key.length > 0),
         ),
       ]
+    }
+    // A floor outside 0..1 is not a floor anyone could have set from the menu,
+    // and clamping a hand-edited one would invent a gate the reader never
+    // chose - so anything unparseable or out of range drops back to no gate.
+    const urlQualityFloor = urlParams.get("quality_floor")
+    if (urlQualityFloor !== null) {
+      const parsed = parseFloat(urlQualityFloor)
+      if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) {
+        quality_floor = parsed
+      }
     }
   }
 
@@ -385,6 +407,12 @@
     } else {
       urlParams.delete("metrics")
     }
+    // Only once a gate has been set; "off" is the default and stays implicit
+    if (quality_floor !== null) {
+      urlParams.set("quality_floor", String(quality_floor))
+    } else {
+      urlParams.delete("quality_floor")
+    }
 
     // Replace state: this only records existing UI state in the URL.
     // noScroll/keepFocus so selecting a node doesn't jump the page.
@@ -409,6 +437,7 @@
     hidden_scores,
     hidden_usage,
     metric_axis_keys,
+    quality_floor,
   )
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function sync_url(..._dependencies: unknown[]) {
@@ -635,6 +664,17 @@
   // the one the cards' own subtitles already describe.
   $: split_scope_label =
     split_view === "test" ? null : `${SPLIT_LABELS[split_view]} split`
+
+  // The same thing for a card that has to name the split even when it is the
+  // default one. The price/latency chart is the card someone screenshots to
+  // argue for a config, and "$0.31 a conversation" is a different claim on
+  // train than on test - so that card states the lane unconditionally, and
+  // this is the label it states. "All runs" is already a phrase; the others
+  // are named for the split they are.
+  $: stated_scope_label =
+    split_view === "all"
+      ? SPLIT_LABELS.all
+      : `${SPLIT_LABELS[split_view]} split`
 
   $: selected_node = selected_id ? forest.nodes.get(selected_id) ?? null : null
 
@@ -1295,6 +1335,57 @@
     }
   }
 
+  // ---- Price vs latency ---------------------------------------------------
+  // The one chart on this page whose question is "which of these do we ship".
+  // It needs a single number for quality, which is exactly what the aggregate
+  // lens is: every non-informational score key, direction-corrected onto 0..1
+  // and averaged. Read straight from the lens rather than through
+  // `current_lens`, because the gate is not a lens - a reader looking at one
+  // criterion on the graph has not said they want their shipping decision made
+  // on that one criterion.
+  $: get_quality = make_quality_getter(lens_data)
+  function make_quality_getter(data: LensData) {
+    return (run_config_id: string): number | null =>
+      normalized_lens_value(data, run_config_id, { kind: "aggregate" })
+  }
+
+  // The gate the reader can set. Round numbers, not a slider: the floor is an
+  // argument ("80% is good enough to ship"), and an argument is made in round
+  // numbers. A slider would also invite tuning the gate until the preferred
+  // config is the only one left, which is the one thing this chart must not
+  // make easy.
+  const QUALITY_FLOORS = [0.5, 0.7, 0.8, 0.9]
+  $: quality_floor_label =
+    quality_floor === null ? "Off" : `${Math.round(quality_floor * 100)}%`
+
+  // What each floor would leave standing, so the reader can see what a gate
+  // costs them before setting it rather than by trying all five. The same two
+  // pure functions the chart draws from, over the same inputs, so the menu
+  // cannot disagree with the picture beside it.
+  $: price_latency_plotted = build_price_latency_points(
+    visible_pinned_ids,
+    get_metric_value,
+    get_quality,
+  ).plotted
+  $: quality_floor_menu_items = [
+    { label: "Quality gate", header: true },
+    {
+      // A marker on every row, not just the chosen one: the labels are rendered
+      // as ordinary text, where a leading run of spaces collapses to one, so an
+      // unmarked row would sit a glyph to the left of its neighbours.
+      label: `${quality_floor === null ? "✓" : "○"}  Off`,
+      description: `Compare all ${price_latency_plotted.length} plotted on price and speed`,
+      onclick: () => (quality_floor = null),
+    },
+    ...QUALITY_FLOORS.map((floor) => ({
+      label: `${quality_floor === floor ? "✓" : "○"}  ${Math.round(floor * 100)}%`,
+      description: `${
+        split_by_gate(price_latency_plotted, floor).qualifying.length
+      } of ${price_latency_plotted.length} clear it`,
+      onclick: () => (quality_floor = floor),
+    })),
+  ] as FloatingMenuItem[]
+
   function toggle_pin(id: string) {
     if (pins.includes(id)) {
       pins = pins.filter((pin) => pin !== id)
@@ -1740,6 +1831,50 @@
         </CompareMetricsBarChart>
       </div>
     </div>
+
+    <!-- Section 2a: the shipping decision. Quality held to a floor, then the
+         two costs that are left - money and time - against each other.
+
+         Full width and on its own row, under the pair above rather than beside
+         them: it is not a third view of the same comparison, it is the question
+         the other two are read in service of, and a scatter needs both of its
+         axes long enough to separate points that a squeezed one piles up. It
+         sits ABOVE the confidence view because that one is a footnote to the
+         radar directly over it, and splitting the pair would break that read.
+
+         Mounted whenever anything is pinned, not only when it can draw: the
+         card's footnote names the configs it had to leave off and why, and that
+         is most worth saying exactly when there is no chart. -->
+    {#if pinned_nodes.length > 0}
+      <div class="mt-6">
+        <ComparePriceLatencyChart
+          run_configs={run_configs ?? []}
+          model_info={$model_info}
+          selectedRunConfigIds={visible_pinned_ids}
+          seriesColors={series_colors}
+          getMetricValue={get_metric_value}
+          getQuality={get_quality}
+          getSampleSize={get_sample_size}
+          qualityFloor={quality_floor}
+          scopeLabel={stated_scope_label}
+        >
+          <FloatingMenu
+            slot="controls"
+            items={quality_floor_menu_items}
+            width="w-72"
+          >
+            <button
+              slot="trigger"
+              type="button"
+              class="btn btn-sm font-normal"
+              title="Only configs at or above this aggregate quality are compared on price"
+            >
+              Quality gate: {quality_floor_label}
+            </button>
+          </FloatingMenu>
+        </ComparePriceLatencyChart>
+      </div>
+    {/if}
 
     <!-- Section 2b: the quality scores once more, full width, with the
          confidence interval behind each one drawn.
