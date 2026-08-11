@@ -53,7 +53,7 @@ from kiln_ai.datamodel.prompt_id import is_frozen_prompt
 from kiln_ai.datamodel.prompt_type import generator_label
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.spec import SpecStatus
+from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.task_output import normalize_rating
@@ -703,6 +703,19 @@ def expected_item_ids_for_eval(
             task, eval.eval_input_filter_id, readonly=readonly
         )
     return None
+
+
+def specs_by_eval_id(task: Task, readonly: bool = True) -> Dict[ID_TYPE, Spec]:
+    """The spec each eval belongs to, keyed by eval id.
+
+    One scan of the task's specs, so a caller looping over every eval reads the
+    spec's status and id off a map rather than re-scanning per eval (which is
+    what Eval.associated_spec does). Legacy evals predate specs and are simply
+    absent from the map.
+    """
+    return {
+        spec.eval_id: spec for spec in task.specs(readonly=readonly) if spec.eval_id
+    }
 
 
 def eval_run_item_id(eval_run: EvalRun) -> ID_TYPE:
@@ -1968,9 +1981,18 @@ def connect_evals_api(app: FastAPI):
         resolver = SplitItemResolver(task)
         evals_out: Dict[ID_TYPE, EvalResultsSummaryEvalInfo] = {}
         scores_out: Dict[ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]] = {}
+        specs_by_eval = specs_by_eval_id(task)
 
         for eval in task.evals(readonly=True):
             if eval.eval_set_filter_id is None and eval.eval_input_filter_id is None:
+                continue
+
+            # Archived specs leave the comparison entirely, which is what
+            # run_configs/{id}/eval_scores already does. Reporting an eval here
+            # that endpoint drops left an archived eval's row on the page with a
+            # mean but no sample size and no usage behind it.
+            spec = specs_by_eval.get(eval.id)
+            if spec is not None and spec.status == SpecStatus.archived:
                 continue
 
             # "all" needs the judge config to know what has been run, so the
@@ -2216,16 +2238,9 @@ def connect_evals_api(app: FastAPI):
         task_run_config_from_id(project_id, task_id, run_config_id)
         resolver = SplitItemResolver(task)
 
-        # Build a mapping from eval_id to spec_id for evals that are associated with specs
-        # Also track which eval_ids belong to archived specs so we can exclude them
-        specs = task.specs()
-        eval_id_to_spec_id: Dict[str, str] = {}
-        archived_eval_ids: set[str] = set()
-        for spec in specs:
-            if spec.eval_id and spec.id:
-                eval_id_to_spec_id[spec.eval_id] = spec.id
-                if spec.status == SpecStatus.archived:
-                    archived_eval_ids.add(spec.eval_id)
+        # The spec behind each eval: its id labels the result, and an archived
+        # one excludes the eval entirely (same rule as eval_results_summary).
+        specs_by_eval = specs_by_eval_id(task)
 
         evals = task.evals()
         eval_results: List[RunConfigEvalResult] = []
@@ -2245,7 +2260,8 @@ def connect_evals_api(app: FastAPI):
 
         for eval in evals:
             # Skip evals associated with archived specs
-            if eval.id and eval.id in archived_eval_ids:
+            spec = specs_by_eval.get(eval.id)
+            if spec is not None and spec.status == SpecStatus.archived:
                 continue
 
             declared_splits = resolver.declared_splits(eval)
@@ -2287,7 +2303,7 @@ def connect_evals_api(app: FastAPI):
                         dataset_size=0,
                         eval_config_result=None,
                         missing_default_eval_config=default_eval_config is None,
-                        spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
+                        spec_id=spec.id if spec is not None else None,
                         declared_splits=declared_splits,
                         split_available=False,
                     )
@@ -2304,7 +2320,7 @@ def connect_evals_api(app: FastAPI):
                         dataset_size=dataset_size,
                         eval_config_result=None,
                         missing_default_eval_config=True,
-                        spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
+                        spec_id=spec.id if spec is not None else None,
                         declared_splits=declared_splits,
                     )
                 )
@@ -2399,7 +2415,7 @@ def connect_evals_api(app: FastAPI):
                     eval_name=eval.name,
                     dataset_size=dataset_size,
                     missing_default_eval_config=False,
-                    spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
+                    spec_id=spec.id if spec is not None else None,
                     eval_config_result=EvalConfigResult(
                         eval_config_id=eval_config.id,
                         results=results,
