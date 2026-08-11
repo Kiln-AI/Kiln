@@ -26,6 +26,21 @@
   // Axes can be different score types, so every axis is plotted as a fraction
   // of its own full range - the radar's Full Scale convention, so a config sits
   // at the same height on both charts. Real values are in the tooltip.
+  //
+  // Performance metrics are opt-in extra axes, and they are RANKS. A metric has
+  // no full range to be a fraction of, so a cost or a latency arrives here
+  // already normalized as a capped rank score over the configs currently drawn
+  // (rank_score.ts): up is still better, the axis still runs 0..1, and a config
+  // still sits at a comparable height. What the height means is different, and
+  // is marked as such - the axis name carries "(rank)", the tooltip carries the
+  // raw dollars or seconds and the position ("2nd of 5"), and the axis gets no
+  // band. Two consequences the reader is told about rather than left to
+  // discover: hiding a config in the legend RE-RANKS every metric axis, and a
+  // rank axis says which config won without saying by how much.
+  //
+  // Metric axes do not count toward MIN_AXES. The card exists to compare
+  // quality scores against each other; two rank axes and no quality score is
+  // not that comparison, and would open the card on a chart of pure ordering.
 
   import * as echarts from "echarts"
   import type { TaskRunConfig, ProviderModels } from "$lib/types"
@@ -41,12 +56,22 @@
     type ParallelAxisSpec,
     type ParallelRow,
   } from "$lib/utils/evolution/parallel_bands"
+  import { describe_rank } from "$lib/utils/evolution/rank_score"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   export let axes: ParallelAxisSpec[] = []
   export let getValue: (runConfigId: string, key: string) => number | null
   export let getSampleSize: (runConfigId: string, key: string) => number | null
+  // Rank axes only. The page computes these, because a rank is relative to the
+  // comparison and the page is what knows the comparison - see the note above.
+  export let getRankScore: (
+    runConfigId: string,
+    key: string,
+  ) => number | null = () => null
+  // What the metric picker left off, stated under the header rather than
+  // silently missing. Null when there is nothing to say.
+  export let notShownNote: string | null = null
   export let run_configs: TaskRunConfig[] = []
   // Only for the model-name fallback when a config has no name of its own; the
   // tooltip here is per-axis rather than per-config, so it has no room for the
@@ -63,7 +88,8 @@
   export let seriesColors: Record<string, string> = {}
 
   // Below this there is no comparison to draw - a single config's bands are
-  // still true, but the chart's whole job is telling configs apart.
+  // still true, but the chart's whole job is telling configs apart. Counted
+  // over QUALITY axes only: see the header note.
   const MIN_AXES = 2
 
   // Room under the plot for the draggable axis-name row. It used to carry the
@@ -101,30 +127,69 @@
     plottedConfigs.map((config) => config.id as string),
     getValue,
     getSampleSize,
+    getRankScore,
   )
   $: drawnRows = rows.filter((row) => row.hasData)
-  $: hasData = orderedAxes.length >= MIN_AXES && drawnRows.length > 0
+  // Only the quality axes gate the card. A reader who adds two metrics to a
+  // task with one quality score has not built a comparison this chart can make.
+  $: qualityAxisCount = orderedAxes.filter((axis) => !axis.rank).length
+  $: rankAxisCount = orderedAxes.length - qualityAxisCount
+  $: hasData = qualityAxisCount >= MIN_AXES && drawnRows.length > 0
   $: widestBand = widest_band_pp(rows)
 
   // Any axis whose score type has no honest interval (see score_intervals):
-  // named rather than left as a silently bandless line.
+  // named rather than left as a silently bandless line. Rank axes are exempt -
+  // they are bandless for a different reason, which the header states once for
+  // all of them rather than listing them here beside a sentence about score
+  // types.
   $: unbandedAxes = orderedAxes
-    .filter((_axis, axisIndex) =>
-      rows.some(
-        (row) =>
-          row.cells[axisIndex]?.fraction !== null &&
-          !row.cells[axisIndex]?.banded,
-      ),
+    .filter(
+      (axis, axisIndex) =>
+        !axis.rank &&
+        rows.some(
+          (row) =>
+            row.cells[axisIndex]?.fraction !== null &&
+            !row.cells[axisIndex]?.banded,
+        ),
     )
     .map((axis) => axis.label)
+
+  // The line under the header, as whole sentences joined rather than markup
+  // strung together with separators. Any of the five can be absent - a task
+  // with no pass/fail score has no widest interval, a chart with no metric
+  // axes has nothing to say about ranks - and assembling it here is what keeps
+  // a missing first clause from leaving the line starting on a space.
+  $: footnote = [
+    widestBand !== null
+      ? `Widest interval on this chart: ${Math.round(widestBand)} points of its axis.`
+      : null,
+    unbandedAxes.length > 0
+      ? `No interval for ${unbandedAxes.join(", ")} — only pass/fail scores can be given one exactly.`
+      : null,
+    rankAxisCount > 0
+      ? `${rankAxisCount} ${
+          rankAxisCount === 1 ? "metric is" : "metrics are"
+        } plotted as a rank among the ${drawnRows.length} ${
+          drawnRows.length === 1 ? "config" : "configs"
+        } shown, not as an absolute value — hiding a config re-ranks them.`
+      : null,
+    notShownNote,
+    hasData
+      ? "Drag an axis name to reorder — which axes are adjacent decides which crossings you can see."
+      : null,
+  ]
+    .filter((part): part is string => !!part)
+    .join(" ")
 
   $: SCALE_TOOLTIP = `Each line is one run config's scores; the band around it is the **95% confidence interval** for that score, given how many runs it was measured over.
 
 **Where two bands overlap, those configs are not distinguishable on that axis** - the difference you can see is inside what re-running would move on its own.
 
-Every axis is drawn as a share of its own full scale (0-1 for pass/fail, 1-5 for five star), so a config sits at the same height here as on the radar above. Hover a point for the score in its own units, its interval and its sample size.
+Every quality axis is drawn as a share of its own full scale (0-1 for pass/fail, 1-5 for five star), so a config sits at the same height here as on the radar above. Hover a point for the score in its own units, its interval and its sample size.
 
-Intervals need a proportion to be exact, so only pass/fail scores carry a band. Other score types plot their point alone rather than a band that would be wrong.`
+Intervals need a proportion to be exact, so only pass/fail scores carry a band. Other score types plot their point alone rather than a band that would be wrong.
+
+**Performance metrics you add from the Metrics menu are RANK axes**, marked \`(rank)\`. Cost and latency have no full scale to be a share of, so each is plotted as its position among the configs currently shown - highest is best, as on every other axis. That means the axis says which config won and not by how much, and that **adding, removing or hiding a config re-ranks it**. Rank axes carry no band: an interval is a statement about a proportion, not about an ordering. Hover a point for the raw value and the position.`
 
   function tooltipMarker(color: string): string {
     return `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};margin-right:6px;"></span>`
@@ -146,10 +211,25 @@ Intervals need a proportion to be exact, so only pass/fail scores carry a band. 
     return Number.isInteger(value) ? `${value}` : value.toFixed(2)
   }
 
+  /**
+   * How many configs a rank axis was actually ranked over. Counted off the
+   * drawn cells rather than taken from the page, so the "of M" in the tooltip
+   * can never disagree with the points the reader is looking at.
+   */
+  function rankedCount(axisIndex: number): number {
+    return drawnRows.filter((row) => row.cells[axisIndex]?.fraction !== null)
+      .length
+  }
+
   function axisTooltip(axisIndex: number): string {
     const axis = orderedAxes[axisIndex]
     if (!axis) return ""
-    let html = `<div style="font-weight:bold;margin-bottom:2px;">${axis.label}</div>`
+    const ranked = axis.rank ? rankedCount(axisIndex) : 0
+    let html = `<div style="font-weight:bold;margin-bottom:2px;">${axis.label}${
+      axis.rank
+        ? ` <span style="color:#9ca3af;font-weight:500;">(rank)</span>`
+        : ""
+    }</div>`
     html += `<div style="color:#888;margin-bottom:6px;">${axis.evalName}</div>`
     drawnRows.forEach((row, rowIndex) => {
       const cell = row.cells[axisIndex]
@@ -157,6 +237,21 @@ Intervals need a proportion to be exact, so only pass/fail scores carry a band. 
       const config = plottedConfigs.find((c) => c.id === row.runConfigId)
       const name = config ? seriesName(config) : "Unknown"
       const color = seriesColor(row.runConfigId, rowIndex)
+      if (axis.rank) {
+        // The RAW quantity is the bold number, not the rank score. The height
+        // already carries the ordering; what the chart cannot say is how many
+        // dollars or seconds it took, and that is the whole reason to hover.
+        const raw = axis.format
+          ? axis.format(cell.value)
+          : formatScore(cell.value)
+        const place = describe_rank(cell.fraction, ranked)
+        html += `<div style="margin-top:3px;">${tooltipMarker(color)}${name}: <b>${raw}</b>`
+        if (place) {
+          html += ` <span style="color:#888;">ranked ${place} shown</span>`
+        }
+        html += `</div>`
+        return
+      }
       html += `<div style="margin-top:3px;">${tooltipMarker(color)}${name}: <b>${formatScore(cell.value)}</b>`
       if (cell.banded && cell.lower !== null && cell.upper !== null) {
         // Bounds are fractions of the axis; for pass/fail that is the score's
@@ -168,6 +263,21 @@ Intervals need a proportion to be exact, so only pass/fail scores carry a band. 
       html += `</div>`
     })
     return html
+  }
+
+  /**
+   * The popup on an axis NAME, which is where a rank axis has to explain
+   * itself: the one thing a reader cannot infer from the picture is that the
+   * height moved because the comparison changed, not because the config did.
+   */
+  function axisHandleTitle(axis: ParallelAxisSpec, axisIndex: number): string {
+    if (!axis.rank) {
+      return `${axis.label} — ${axis.evalName}. Drag, or use the arrow keys, to reorder.`
+    }
+    const ranked = rankedCount(axisIndex)
+    return `${axis.label} — ${axis.evalName}. Ranked among the ${ranked} ${
+      ranked === 1 ? "config" : "configs"
+    } currently shown — adding, removing or hiding configs re-ranks this axis. Raw values in the tooltip. Drag, or use the arrow keys, to reorder.`
   }
 
   function buildSeries(): echarts.SeriesOption[] {
@@ -283,7 +393,12 @@ Intervals need a proportion to be exact, so only pass/fail scores carry a band. 
           type: "value",
           min: 0,
           max: 1,
-          name: "share of each score's full scale",
+          // Two things share this axis once a metric is added, and the name has
+          // to admit it rather than assert the quality convention over both.
+          name:
+            rankAxisCount > 0
+              ? "share of full scale · rank position on (rank) axes"
+              : "share of each score's full scale",
           nameLocation: "middle",
           nameGap: 42,
           nameTextStyle: { color: "#9ca3af", fontSize: 11 },
@@ -424,22 +539,19 @@ Intervals need a proportion to be exact, so only pass/fail scores carry a band. 
     <div class="flex-grow">
       <div class="text-xl font-bold">Quality Scores with Confidence</div>
       <div class="text-sm text-gray-500">
-        The same scores as the radar, with the range each one could plausibly
-        take given how many runs it was measured over. Overlapping bands mean
-        the configs are not distinguishable on that axis.
+        The radar's scores, with the range each one could plausibly take given
+        how many runs it was measured over — plus any performance metrics you
+        add, as ranked axes. Overlapping bands mean the configs are not
+        distinguishable on that axis.
       </div>
-      {#if widestBand !== null}
-        <div class="text-xs text-gray-400 mt-1">
-          Widest interval on this chart: {Math.round(widestBand)} points of its axis.{#if unbandedAxes.length > 0}
-            &nbsp;No interval for {unbandedAxes.join(", ")} — only pass/fail scores
-            can be given one exactly.{/if}
-          {#if hasData}
-            &nbsp;Drag an axis name to reorder — which axes are adjacent decides
-            which crossings you can see.{/if}
-        </div>
+      {#if footnote}
+        <div class="text-xs text-gray-400 mt-1">{footnote}</div>
       {/if}
     </div>
     <div class="flex flex-row gap-1 items-center flex-shrink-0">
+      <!-- The page owns which metrics are on, so it supplies the control -
+           the same element the performance track's chart carries. -->
+      <slot name="controls" />
       <InfoTooltip tooltip_text={SCALE_TOOLTIP} position="bottom" />
     </div>
   </div>
@@ -480,21 +592,27 @@ Intervals need a proportion to be exact, so only pass/fail scores carry a band. 
                  {dragIndex === index
             ? `transform: translate(calc(-50% + ${dragOffset}px), 0);`
             : ''}"
-          title="{axis.label} — {axis.evalName}. Drag, or use the arrow keys, to reorder."
+          title={axisHandleTitle(axis, index)}
           on:pointerdown={(event) => startDrag(event, index)}
           on:keydown={(event) => moveByKey(event, index)}
         >
           <span class="font-medium text-gray-700">{axis.label}</span>
+          {#if axis.rank}
+            <!-- Marked on the axis itself, not only in the tooltip: a height on
+                 this axis is a POSITION, and a reader who takes it for a score
+                 has misread the chart in a way nothing else on it corrects. -->
+            <span class="text-gray-400">&nbsp;(rank)</span>
+          {/if}
         </button>
       {/each}
     </div>
   {:else}
     <ChartNoData
-      title={orderedAxes.length < MIN_AXES
+      title={qualityAxisCount < MIN_AXES
         ? "Not enough scores to compare"
         : "Pin configs to compare"}
-      message={orderedAxes.length < MIN_AXES
-        ? `This view needs at least ${MIN_AXES} quality scores to place side by side.`
+      message={qualityAxisCount < MIN_AXES
+        ? `This view needs at least ${MIN_AXES} quality scores to place side by side. Performance metrics plot as rank axes beside them and do not count toward that.`
         : "Select a run config, or hover a card and hit Pin, to build a compare set."}
     />
   {/if}

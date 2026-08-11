@@ -67,6 +67,7 @@
     criterion_key_metas,
     default_metric_axis_keys,
     directionless_key_count,
+    format_metric_value,
     known_metric_axis_keys,
     METRIC_FAMILIES,
     METRIC_FAMILY_LABELS,
@@ -82,8 +83,10 @@
     toggled_metric_axis_keys,
     usage_row_family,
     visible_metric_axes,
+    type MetricAxis,
     type MetricFamily,
   } from "$lib/utils/evolution/metric_axes"
+  import { capped_rank_scores } from "$lib/utils/evolution/rank_score"
   import {
     build_score_families,
     family_for_eval,
@@ -208,6 +211,17 @@
   // table, and a hidden row never edits this selection - it comes back with its
   // axis on if that is how it went away.
   let metric_axis_keys: string[] | null = null
+  // Performance metrics the reader ADDED to the quality parallel chart, as
+  // extra rank axes. Empty by default, and empty is the whole design: that
+  // chart's subject is the quality scores and their intervals, and a metric
+  // only belongs on it when the reader has a question that crosses the two
+  // ("the config that wins on P1 - what did it cost?"). Nobody's default view
+  // should be a mixed chart they did not ask for.
+  //
+  // A list rather than metric_axis_keys' null-means-default, because there is
+  // no default set to fall back to: [] IS the intent, so it needs no sentinel
+  // and the URL stays clean without one.
+  let parallel_metric_keys: string[] = []
   // The quality floor on the price/latency chart, as a 0..1 aggregate score.
   // Null - no gate - is the default: the gate is a claim about what "good
   // enough" means on this task, and the page has no business asserting one. In
@@ -302,6 +316,21 @@
         ),
       ]
     }
+    // Same discipline as `metrics` above, and the same reason to test against
+    // null: `pmetrics=` present but empty is a legal, meaningful state (the
+    // reader cleared the axes), and it happens to resolve to the same [] the
+    // default is. Unknown keys are dropped in validateStateFromURL.
+    const urlParallelMetrics = urlParams.get("pmetrics")
+    if (urlParallelMetrics !== null) {
+      parallel_metric_keys = [
+        ...new Set(
+          urlParallelMetrics
+            .split(",")
+            .map((key) => key.trim())
+            .filter((key) => key.length > 0),
+        ),
+      ]
+    }
     // A floor outside 0..1 is not a floor anyone could have set from the menu,
     // and clamping a hand-edited one would invent a gate the reader never
     // chose - so anything unparseable or out of range drops back to no gate.
@@ -332,9 +361,17 @@
     // an axis that no longer exists. Checked against every key that could be an
     // axis rather than the deduplicated set, since which of two sources for a
     // quantity wins depends on usage that has not been fetched yet.
-    if (metric_axis_keys !== null) {
+    if (metric_axis_keys !== null || parallel_metric_keys.length > 0) {
       const known_metric_keys = known_metric_axis_keys(lens_data.keyMetas)
-      metric_axis_keys = metric_axis_keys.filter((key) =>
+      if (metric_axis_keys !== null) {
+        metric_axis_keys = metric_axis_keys.filter((key) =>
+          known_metric_keys.has(key),
+        )
+      }
+      // The parallel chart's added axes come from the same catalog, so they
+      // are validated against the same set - a stale link must not leave the
+      // chart holding a rank axis for a metric this task never reports.
+      parallel_metric_keys = parallel_metric_keys.filter((key) =>
         known_metric_keys.has(key),
       )
     }
@@ -407,6 +444,13 @@
     } else {
       urlParams.delete("metrics")
     }
+    // Empty is the default here, so it stays implicit - no `pmetrics=` in the
+    // URL until the reader adds an axis, and clearing them takes it back out.
+    if (parallel_metric_keys.length > 0) {
+      urlParams.set("pmetrics", parallel_metric_keys.join(","))
+    } else {
+      urlParams.delete("pmetrics")
+    }
     // Only once a gate has been set; "off" is the default and stays implicit
     if (quality_floor !== null) {
       urlParams.set("quality_floor", String(quality_floor))
@@ -437,6 +481,7 @@
     hidden_scores,
     hidden_usage,
     metric_axis_keys,
+    parallel_metric_keys,
     quality_floor,
   )
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -998,6 +1043,190 @@
   // is also untrue in that state: the table is empty too, and says so itself.
   $: quality_all_hidden =
     criterion_metas.length === 0 && hidden_quality_info.length > 0
+
+  // ---- Performance metrics on the uncertainty view ------------------------
+  // Opt-in extra axes on the parallel chart, so a question that crosses the two
+  // tracks ("the config that wins on P1 - what did it cost?") can be read off
+  // one picture instead of by matching colours between two.
+  //
+  // They are RANKS, and everything below exists to keep that honest.
+  //
+  // A quality axis is plotted as a share of its score's own full range, which
+  // works because pass/fail RUNS 0 to 1. A cost has no top and a latency has no
+  // top, so there is no fraction to take. Min-max over the configs shown would
+  // manufacture one, and would be wrong twice: it pins the best config to
+  // exactly 1.0 and the worst to exactly 0.0 on every axis whatever the spread
+  // (two configs a hundredth of a cent apart would draw the full height of the
+  // axis between them), and one outlier flattens everyone else onto the floor.
+  // So each metric is plotted as the config's POSITION among the configs
+  // currently drawn - see rank_score for the arithmetic and why it is capped
+  // strictly inside (0,1), which is what keeps a rank axis from ever claiming
+  // the 0 and 1 that a pass/fail axis earns.
+  //
+  // "Currently drawn" is `visible_pinned_ids`, and that is the semantics rather
+  // than an implementation detail: the scale is the SELECTION. Unpinning a
+  // config, or switching one off in the legend, re-ranks every metric axis, and
+  // the chart says so on the axis name, in the tooltip and under the header.
+  // Nothing else on the page behaves this way, which is exactly why it is said
+  // three times.
+
+  // Filtered from the canonical catalog rather than mapped from the selection,
+  // so the axes append in chart order however they were switched on - and
+  // through `visible_axes`, so hiding a performance row takes its rank axis off
+  // this chart too. That is what the x on a table row means everywhere else on
+  // the page (it leaves the table AND the chart beside it), and a metric that
+  // is out of the comparison cannot be a legitimate axis on a chart of that
+  // comparison.
+  $: parallel_metric_axes = visible_axes.filter((axis) =>
+    parallel_metric_keys.includes(axis.key),
+  )
+
+  // One rank map per added metric, over exactly the configs the chart draws.
+  // Rebuilt whenever the pins, the legend, the selection or the underlying
+  // numbers move - all four are arguments, so none of them can change without
+  // the ranks being recomputed.
+  $: parallel_rank_scores = build_parallel_rank_scores(
+    parallel_metric_axes,
+    visible_pinned_ids,
+    get_metric_value,
+  )
+  function build_parallel_rank_scores(
+    axes: MetricAxis[],
+    run_config_ids: string[],
+    getter: (run_config_id: string, key: string) => number | null,
+  ): Record<string, Map<string, number | null>> {
+    const ranks: Record<string, Map<string, number | null>> = {}
+    for (const axis of axes) {
+      ranks[axis.key] = capped_rank_scores(
+        run_config_ids.map((id) => ({ id, value: getter(id, axis.key) })),
+        // The catalog's own direction, so UP is BETTER on a rank axis exactly
+        // as it is on every quality axis beside it
+        axis.better,
+      )
+    }
+    return ranks
+  }
+
+  $: get_parallel_rank_score = make_rank_score_getter(parallel_rank_scores)
+  function make_rank_score_getter(
+    ranks: Record<string, Map<string, number | null>>,
+  ) {
+    return (run_config_id: string, key: string): number | null =>
+      ranks[key]?.get(run_config_id) ?? null
+  }
+
+  // An added metric that no visible config has a number for. Dropped rather
+  // than drawn as an empty column: a rank axis with nothing on it is not an
+  // axis, and leaving it in place would spend width on a line whose only
+  // reading - "these configs all rank the same here" - is false. Named in the
+  // footnote instead, so the reader is told where their metric went.
+  $: parallel_metric_plotted = parallel_metric_axes.filter((axis) =>
+    visible_pinned_ids.some(
+      (id) => parallel_rank_scores[axis.key]?.get(id) != null,
+    ),
+  )
+  $: parallel_metric_empty = parallel_metric_axes.filter(
+    (axis) => !parallel_metric_plotted.includes(axis),
+  )
+  // ...and one an active selection points at, but whose row was hidden from the
+  // performance table. Its axis is gone for a different reason and has a
+  // different remedy, so it is counted separately rather than folded in above.
+  $: parallel_metric_hidden_count = parallel_metric_keys.filter(
+    (key) =>
+      !visible_axes.some((axis) => axis.key === key) &&
+      all_metric_axes.some((axis) => axis.key === key),
+  ).length
+
+  $: parallel_metrics_note = (() => {
+    const parts: string[] = []
+    if (parallel_metric_empty.length > 0) {
+      parts.push(
+        `No values on the configs shown: ${parallel_metric_empty
+          .map((axis) => axis.valueLabel)
+          .join(", ")}.`,
+      )
+    }
+    if (parallel_metric_hidden_count > 0) {
+      parts.push(
+        `${parallel_metric_hidden_count} added ${
+          parallel_metric_hidden_count === 1 ? "metric is" : "metrics are"
+        } hidden from the comparison — restore from “Hidden” above the performance table.`,
+      )
+    }
+    return parts.length > 0 ? parts.join(" ") : null
+  })()
+
+  // The axis set the chart actually receives: the radar's quality axes first,
+  // the rank axes appended. Order past that point is the reader's - the chart's
+  // own drag handles own it, and reconcile_order keeps an arrangement across a
+  // metric being switched on or off.
+  $: parallel_chart_axes = [
+    ...parallel_axes,
+    ...parallel_metric_plotted.map(
+      (axis): ParallelAxisSpec => ({
+        key: axis.key,
+        label: axis.label,
+        // The axis is named for the virtue ("Cost Efficiency"), so the line
+        // under it names the quantity and where it came from - the same
+        // subtitle the metrics picker and the bar chart's tooltips print.
+        evalName: `${axis.valueLabel} · ${axis.evalName ?? "Usage rollup"}`,
+        // No score type: a metric has no rating scale, which is the whole
+        // reason it is ranked instead of scaled.
+        type: null,
+        rank: true,
+        format: (value: number | null) => format_metric_value(axis.unit, value),
+      }),
+    ),
+  ]
+
+  // The picker on the parallel card. Built like the performance track's Metrics
+  // menu and grouped the same way, because it IS the same choice made against
+  // the same catalog - one control the reader has already learned. The counts
+  // read "on out of available", which is 0 of n everywhere until they add one.
+  $: parallel_metric_menu_items = (() => {
+    const items: FloatingMenuItem[] = []
+    let family: MetricFamily | null = null
+    for (const axis of visible_axes) {
+      if (axis.family !== family) {
+        family = axis.family
+        const in_family = visible_axes.filter(
+          (candidate) => candidate.family === family,
+        )
+        const on_in_family = in_family.filter((candidate) =>
+          parallel_metric_keys.includes(candidate.key),
+        ).length
+        items.push({
+          label: `${METRIC_FAMILY_LABELS[family]} · ${on_in_family} of ${in_family.length}`,
+          header: true,
+        })
+      }
+      const on = parallel_metric_keys.includes(axis.key)
+      items.push({
+        label: `${on ? "✓" : "+"}  ${axis.label}`,
+        description: `${axis.valueLabel} · ${axis.evalName ?? "Usage rollup"}`,
+        onclick: () => toggle_parallel_metric_axis(axis.key),
+      })
+    }
+    if (parallel_metric_keys.length > 0) {
+      items.push({
+        label: "Clear metric axes",
+        onclick: () => (parallel_metric_keys = []),
+      })
+    }
+    return items
+  })()
+
+  function toggle_parallel_metric_axis(key: string) {
+    // Resolved against the UNFILTERED catalog for the same reason the sibling
+    // picker is: an axis whose row is hidden is not in `visible_axes`, and
+    // dropping it here would edit the selection as a side effect of an
+    // unrelated click.
+    parallel_metric_keys = toggled_metric_axis_keys(
+      all_metric_axes,
+      parallel_metric_keys,
+      key,
+    )
+  }
 
   // ---- Performance-metrics radar ------------------------------------------
   // The exact complement of the chart above: every key from a metrics eval,
@@ -1887,15 +2116,36 @@
          stacks them into mud. -->
     {#if parallel_available}
       <div class="mt-6">
+        <!-- get_metric_value is a superset of get_model_value_raw: for every
+             key that is not a `cost::` rollup field it reads the same lens map,
+             so one getter serves both the quality axes and the raw values
+             behind the rank axes. -->
         <CompareParallelChart
-          axes={parallel_axes}
-          getValue={(runConfigId, key) => get_model_value_raw(runConfigId, key)}
+          axes={parallel_chart_axes}
+          getValue={get_metric_value}
           getSampleSize={get_sample_size}
+          getRankScore={get_parallel_rank_score}
+          notShownNote={parallel_metrics_note}
           run_configs={run_configs ?? []}
           model_info={$model_info}
           selectedRunConfigIds={visible_pinned_ids}
           seriesColors={series_colors}
-        />
+        >
+          <FloatingMenu
+            slot="controls"
+            items={parallel_metric_menu_items}
+            width="w-64"
+          >
+            <button
+              slot="trigger"
+              type="button"
+              class="btn btn-sm font-normal"
+              title="Add a performance metric as a ranked axis on this chart"
+            >
+              Metrics ({parallel_metric_keys.length})
+            </button>
+          </FloatingMenu>
+        </CompareParallelChart>
       </div>
     {/if}
 
