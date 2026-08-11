@@ -160,6 +160,118 @@ different lifecycle and different filters.
 eval-specific fields, so moving to B later is a relocation rather than a redesign.
 This is a decision the spec must make explicitly.
 
+### C2b. Cross-eval reuse — the four options aren't parallel, and two of them collapse
+
+scosman raised cross-eval reuse with a concrete use case: a "tool calling error rate"
+eval that reuses another eval's EvalRuns and just produces a new score. Use cases
+today skew to **high-level metrics** (tokens used, turn count, tool call errors)
+rather than LLM-as-judge. Four options were proposed: punt / pointer EvalInput /
+move to task level / new Metrics concept.
+
+Three code facts reframe the choice.
+
+#### Fact 1 — most of "move to task level" is already built
+
+| Premise of Option 3 | Actual state |
+|---|---|
+| "Move EvalInput up to task level" | **Already there.** `Task(parent_of={..., "eval_inputs": EvalInput})` (`task.py:137`). EvalInput has never been owned by an Eval |
+| "Use tags to link to evals" | **Already the mechanism.** `EvalInputFilterId` accepts `tag::<name>` → `TagEvalInputFilter` matching `eval_input.tags` (`dataset_filters.py:205-257`). Evals never owned inputs; they select them |
+| "Would need to remove SU config from eval and put it on eval input" | **Already on the EvalInput.** `MultiTurnSyntheticEvalInputData.synthetic_user_info` (`eval.py:519`). There is no eval-level synthetic-user config to move. (Multi-turn *execution* is still deferred — `eval_runner.py:417-442` — but the schema slot is on the right entity) |
+
+So Option 3 does not mean "move EvalInput and EvalRun up and invent a tag link". It
+means **move only EvalRun**. The complexity priced into that option is largely
+already paid.
+
+#### Fact 2 — that collapses the pointer option into it
+
+The pointer EvalInput exists to express "this eval's input *is* that eval's input".
+But `EvalInput.tags` is a list, and evals select by tag filter. Two evals share an
+input by both selecting it: `tags: ["quality_eval", "tool_error_rate"]`.
+
+Every pro listed for the pointer option is delivered by task-level EvalRun with zero
+new concepts:
+
+| Pointer-option pro | Delivered by task-level runs? |
+|---|---|
+| Full reuse of eval runs | Yes — reuse is just "the trace lookup found one" |
+| Fixed set of eval inputs on the new eval → consistent score | Yes — that is exactly what the tag filter already is |
+| EvalRun lives in one place for deletion | Yes, more so — owned by the Task, not by whichever eval happened to create it |
+| Child eval keeps complete control over what it's judged on | Yes — it picks its own filter |
+
+The pointer type is tag membership, re-implemented as a schema feature. Recommend
+dropping it.
+
+#### Fact 3 — the Metrics option is on a different axis, and the stated use case never generates
+
+There are two independent questions here:
+
+- **Storage:** where do traces live? (Eval vs Task)
+- **Consumption:** how does a score get computed over a trace someone else generated?
+
+The Metrics option is purely consumption. And the use case that motivates it —
+tokens used, turn count, tool call error rate — is inherently **read-only**. You
+would never want a "tool call error rate eval" to generate its own traces: it would
+then be measuring a different population than the eval you actually care about, which
+is worse than measuring nothing. So a metric reads what exists and never runs a task.
+
+That means Metrics works regardless of where traces are stored. It is additive and
+orthogonal to the storage decision, not a competing answer to it.
+
+**Its stated con is fixable.** "Can't define exact dataset — a bunch of simple 1-turn
+tasks might shift it." Scope a metric with an `EvalInputFilterId`, the same tag filter
+evals already use. You get dataset control; you just *measure what's available within
+scope* rather than generating to fill it. The con becomes "coverage may be partial",
+which is honest and displayable (`n_used` already exists), not "population is
+uncontrolled".
+
+#### The argument for task-level that wasn't listed: orphaning
+
+If a metric's scores live under Eval B while the traces live under Eval A, deleting
+Eval A punches holes in Eval B's metric history. For a metric tracked over time (tool
+call error rate across releases) that is a bad failure mode. Under task-level storage
+it cannot happen — traces are owned by the Task and evals are lenses over them.
+
+#### Pre-ship asymmetry
+
+V2 hasn't shipped. Moving EvalRun to task level is free today (dev data only) and a
+user-data migration later. Choosing Eval-level now and needing task-level later is
+the expensive direction; choosing task-level now and never needing reuse costs a
+bigger flat directory and an eval-deletion GC question. Asymmetric.
+
+#### What task-level actually costs, given C3
+
+If `EvalScore` lives under `EvalConfig` and denormalizes `eval_input_id` +
+`task_run_config_id` (needed for dedupe anyway), then **every aggregate read path
+never touches EvalRuns at all** — `compute_score_summary`, the compare view, and the
+correlation endpoint each stay a single flat scan per config, exactly as today. Only
+two consumers read EvalRuns: the job planner (`(eval_input_id, run_config_id) →
+EvalRun`) and the single-item run-detail view.
+
+Residual real costs:
+
+- **One large flat `eval_runs/` directory.** 10 evals × 500 inputs × 4 run configs ≈
+  20k records, scanned by the job planner on every "run eval". Precedent exists —
+  `runs/` (TaskRun) already has this shape and `ModelCache` backs it — but this is
+  the one genuine risk and deserves a benchmark spike before committing.
+- **Eval deletion no longer GCs traces.** Policy needed: keep them (they're reusable)
+  plus an explicit cleanup action.
+- **Packaging.** `_ignore_eval_config_runs` (`package_project.py:904`) keys on the
+  `configs/*/runs/` path and needs updating under any option.
+
+#### Recommendation
+
+1. **Store EvalRun at Task level** — sibling of `eval_inputs/`. Correct
+   normalization, two-thirds already built, only option that can't orphan, free
+   pre-ship. Gate on the directory-scan benchmark.
+2. **Drop the pointer EvalInput option** — it re-implements tag membership.
+3. **Punt Metrics as a feature, not as a shape.** Ship the split now; add metrics
+   later as a read-side concept. Commit now only to the one thing that keeps it
+   cheap: metrics are scoped by an `EvalInputFilterId`.
+
+The strongest counter to (1): "which runs are mine" becomes a query in the job
+planner's hot path instead of a directory listing. That is what the benchmark should
+settle.
+
 ### C3. Childing EvalScore to EvalRun is the intuitive answer and probably the wrong one
 
 The overview floats "maybe even child them". Every aggregate read in the API is
@@ -309,6 +421,9 @@ include the surface.
 ## 5. Decisions the functional spec must make
 
 1. **Where does EvalRun live** — under `Eval` (C2-A) or under `Task` (C2-B)?
+   Recommendation: Task, gated on a directory-scan benchmark (C2b). Settling this
+   also settles cross-eval reuse: the pointer-EvalInput option is dropped, and
+   Metrics is deferred as a read-side concept scoped by an `EvalInputFilterId`.
 2. **Where does EvalScore live** — child of `EvalConfig` with an `eval_run_id`
    pointer (recommended, C3), or child of `EvalRun`?
 3. **How is V1 back-compat handled** — deprecate-in-place, new entity names, or
