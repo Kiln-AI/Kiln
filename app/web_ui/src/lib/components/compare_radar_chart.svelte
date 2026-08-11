@@ -226,13 +226,23 @@ Related criteria sit together: the axes are grouped into the families the task's
     )
   }
 
-  // Indicator 0 sits at the top and the ring is read clockwise from there, the
-  // same way the metrics radar reads. echarts walks indicators counterclockwise
-  // unless told otherwise, which draws a grouped ring backwards - the families
-  // would come out in the reverse of the order the key names them in. Set
-  // unconditionally rather than only when families are on, so an axis is in the
-  // same place whether or not the task groups its specs.
+  // Indicator 0 sits at the top and the ring is read clockwise from there.
+  // echarts walks indicators COUNTERCLOCKWISE from startAngle and has no
+  // clockwise mode at all (its radar source carries a literal "TODO clockwise";
+  // a `clockwise` option is silently ignored) - so the indicators and every
+  // series' values are handed to echarts in ring-reversed order instead, which
+  // renders echarts' counterclockwise walk as the clockwise reading order every
+  // hand-drawn layer here (axis names, family arcs) is laid out in. See
+  // ringReversed - one involution owns the correspondence both ways.
   const RADAR_START_ANGLE = 90
+
+  // Reverse the direction a ring is walked while keeping index 0 at the top:
+  // position j on the reversed ring holds item (n - j) % n. Applying it twice
+  // is the identity, so the same function maps an echarts axis index back to
+  // ours (see the tooltip formatter).
+  function ringReversed<T>(items: T[]): T[] {
+    return items.map((_, j) => items[(items.length - j) % items.length])
+  }
 
   // The family band: a thin arc outside the ring, broken at each boundary, with
   // the family's name written along it. Same geometry, same tone ladder and the
@@ -505,10 +515,11 @@ Related criteria sit together: the axes are grouped into the families the task's
     return lines.map((entry) => ellipsize(entry, budget))
   }
 
-  // echarts puts indicator 0 at startAngle and, with `clockwise` set on the
-  // radar, walks the indicators the way the ring is read - so the angle
-  // DECREASES with the index. Radians, y up, the convention radarCoordSys(),
-  // the radar's own dataToPoint and $lib/utils/evolution/metric_axes all share.
+  // Where OUR axis i sits: at startAngle, walking the way the ring is read
+  // (clockwise), so the angle DECREASES with the index. echarts itself walks
+  // the other way - ringReversed is what makes its layout land on these same
+  // rays. Radians, y up, the convention radarCoordSys(), the radar's own
+  // dataToPoint and $lib/utils/evolution/metric_axes all share.
   function axisAngles(count: number): number[] {
     return Array.from(
       { length: count },
@@ -1221,12 +1232,12 @@ Related criteria sit together: the axes are grouped into the families the task's
               hoveredAxisIndex >= 0 &&
               hoveredAxisIndex < keys.length
             ) {
-              return buildAxisTooltip(
-                hoveredAxisIndex,
-                keys,
-                series,
-                params.name,
-              )
+              // hoveredAxisIndex is an echarts axis index; the ring is fed to
+              // echarts ring-reversed, so map it back to ours before indexing
+              // keys/series. ringReversed's involution, as an index map.
+              const ourAxisIndex =
+                (keys.length - hoveredAxisIndex) % keys.length
+              return buildAxisTooltip(ourAxisIndex, keys, series, params.name)
             }
             return buildRunConfigTooltip(params.name, axisMaxes, keys)
           },
@@ -1262,7 +1273,9 @@ Related criteria sit together: the axes are grouped into the families the task's
               }),
         },
         radar: {
-          indicator: indicators,
+          // Ring-reversed so echarts' counterclockwise walk renders as the
+          // clockwise reading order - see RADAR_START_ANGLE / ringReversed.
+          indicator: ringReversed(indicators),
           // Bottom mode fills its (tall, page-wide) box: the ring is centred in
           // what the legend leaves and grown until the axis names would leave
           // the box - see fit_radar. Side mode's percentages are unchanged, and
@@ -1282,10 +1295,6 @@ Related criteria sit together: the axes are grouped into the families the task's
                 ? "62%"
                 : "85%",
           startAngle: RADAR_START_ANGLE,
-          // Read clockwise from the top, matching the metrics radar beside it.
-          // Without this echarts walks the indicators the other way and a
-          // grouped ring comes out in the reverse of the order its key names.
-          clockwise: true,
           axisName: {
             color: LABEL_COLOR,
             ...(forceBottomLegend
@@ -1322,7 +1331,12 @@ Related criteria sit together: the axes are grouped into the families the task's
           {
             name: "Eval Scores",
             type: "radar",
-            data: series,
+            // Values permuted the same way as the indicators, so value j still
+            // lands on the axis it belongs to.
+            data: series.map((entry) => ({
+              ...entry,
+              value: ringReversed(entry.value),
+            })),
             lineStyle: {
               width: 2,
             },
