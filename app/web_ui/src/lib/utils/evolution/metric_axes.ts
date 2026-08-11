@@ -185,7 +185,10 @@ const METRIC_CATALOG: MetricDefinition[] = [
     unit: "tokens",
     better: "lower",
     order: 200,
-    defaultRank: 2,
+    // Off by default: the input/output split below is the same total with the
+    // half that actually moves cost separated out, so the total is the first
+    // runner-up rather than a default axis. One click away in the Axes menu.
+    defaultRank: 6,
     aliases: ["total_tokens"],
   },
   {
@@ -198,7 +201,7 @@ const METRIC_CATALOG: MetricDefinition[] = [
     unit: "tokens",
     better: "lower",
     order: 210,
-    defaultRank: 9,
+    defaultRank: 12,
     aliases: ["peak_input_tokens"],
   },
   // The two metrics here where MORE is better: a cached token is one that was
@@ -215,7 +218,7 @@ const METRIC_CATALOG: MetricDefinition[] = [
     order: 220,
     // Off by default: the hit rate below is the same fact normalized, and two
     // rows for one story spend height on nothing. Opt in from the Metrics menu.
-    defaultRank: 12,
+    defaultRank: 14,
     aliases: ["cached_tokens"],
   },
   {
@@ -228,7 +231,9 @@ const METRIC_CATALOG: MetricDefinition[] = [
     unit: "ratio",
     better: "higher",
     order: 225,
-    defaultRank: 10,
+    // A default axis: it is the one lever that lowers cost without changing
+    // what the config does, so it belongs beside the tokens it is reusing.
+    defaultRank: 3,
     aliases: ["cache_hit_rate"],
   },
   {
@@ -239,9 +244,12 @@ const METRIC_CATALOG: MetricDefinition[] = [
     unit: "tokens",
     better: "lower",
     order: 230,
-    // The input/output split restates the total, so it is the first thing
-    // dropped when the default set is trimmed.
-    defaultRank: 90,
+    // The split is the point, not a breakdown of one: input and output tokens
+    // are priced differently and move for different reasons - context that was
+    // sent versus reasoning that was generated - so the total averages away the
+    // half a change usually lands on. Both are kept by default and the total,
+    // which restates them, is not.
+    defaultRank: 4,
     aliases: ["input_tokens"],
   },
   {
@@ -252,7 +260,9 @@ const METRIC_CATALOG: MetricDefinition[] = [
     unit: "tokens",
     better: "lower",
     order: 240,
-    defaultRank: 91,
+    // The other half of that split - see input_tokens above. Kept next to it so
+    // the two are always read as a pair.
+    defaultRank: 5,
     aliases: ["output_tokens"],
   },
 
@@ -264,7 +274,7 @@ const METRIC_CATALOG: MetricDefinition[] = [
     unit: "count",
     better: "lower",
     order: 300,
-    defaultRank: 4,
+    defaultRank: 7,
     aliases: ["tool_calls"],
   },
   {
@@ -275,7 +285,7 @@ const METRIC_CATALOG: MetricDefinition[] = [
     unit: "count",
     better: "lower",
     order: 310,
-    defaultRank: 5,
+    defaultRank: 8,
     aliases: ["llm_calls"],
   },
   {
@@ -286,7 +296,7 @@ const METRIC_CATALOG: MetricDefinition[] = [
     unit: "count",
     better: "lower",
     order: 320,
-    defaultRank: 6,
+    defaultRank: 9,
     aliases: ["skill_reads_repeat"],
   },
 
@@ -298,7 +308,7 @@ const METRIC_CATALOG: MetricDefinition[] = [
     unit: "ms",
     better: "lower",
     order: 400,
-    defaultRank: 3,
+    defaultRank: 2,
     aliases: ["latency", "latency_ms", "latency_ms_total"],
   },
   // Per-turn latencies sit between the total and the per-call average; their
@@ -311,7 +321,7 @@ const METRIC_CATALOG: MetricDefinition[] = [
     unit: "ms",
     better: "lower",
     order: 490,
-    defaultRank: 11,
+    defaultRank: 13,
     aliases: ["latency_per_call", "latency_ms_per_call"],
   },
 
@@ -325,7 +335,7 @@ const METRIC_CATALOG: MetricDefinition[] = [
     unit: "count",
     better: "lower",
     order: 500,
-    defaultRank: 7,
+    defaultRank: 10,
     aliases: ["max_silent_run"],
   },
   {
@@ -336,7 +346,7 @@ const METRIC_CATALOG: MetricDefinition[] = [
     unit: "count",
     better: "lower",
     order: 510,
-    defaultRank: 8,
+    defaultRank: 11,
     aliases: ["calls_before_first_text"],
   },
 ]
@@ -345,7 +355,10 @@ const METRIC_CATALOG: MetricDefinition[] = [
 // it likes - so they are matched by shape rather than listed.
 const TURN_LATENCY_PATTERN = /^latency(?:_ms)?_turn(\d+)$/
 const TURN_LATENCY_ORDER_BASE = 400
-const TURN_LATENCY_RANK_BASE = 11
+// Behind every catalog entry (the last is 14), so a per-turn latency is only
+// ever reached once every named quantity has been offered, and turn N still
+// ranks ahead of turn N+1.
+const TURN_LATENCY_RANK_BASE = 14
 
 function turn_latency_definition(turn: number): MetricDefinition {
   return {
@@ -486,21 +499,26 @@ export const MIN_METRIC_CONFIGS = 2
 /**
  * How many axes are shown before the user opts into more.
  *
- * Fourteen fit without clipping, which is what set the previous ceiling, but
- * fitting is not reading. The card gives the plot about 600px of height, so
- * past roughly a dozen rows each one is thinner than the group of bars in it:
- * with a handful of run configs pinned the bars go from marks to hairlines,
- * and a list that long is scanned rather than read. The families make that
- * worse when they are lopsided - five of the sixteen were per-turn latencies,
- * so a third of the chart was Speed saying the same thing five times.
+ * Room was never the binding constraint - the card gives the plot about 600px
+ * of height, so a dozen rows fit - but fitting is not reading. A default set is
+ * what someone sees before they have asked for anything, and its job is to
+ * answer one question on sight rather than to survey every number the task
+ * happens to report.
  *
- * Eleven is the top of the ranking, and it lands one axis of Cost, three of
- * Tokens, three of Calls, two of Speed and two of Responsiveness: every family
- * present, none of them dominant, and the second-order breakdowns (the per-turn
- * latencies, the input/output split, cached tokens beside the hit rate) one
- * click away in the Axes menu. Nothing is dropped, only deferred.
+ * That question is efficiency, and five axes state it completely: what a run
+ * COST, how long the model spent (total LLM latency), how much of the context
+ * was served from cache, and the input/output token split those three are made
+ * of. Cost is the outcome; the other four are the terms it decomposes into, so
+ * a config that got cheaper always shows WHERE on the same screen - fewer input
+ * tokens, less generated output, better cache reuse, or simply less time.
+ *
+ * Everything else - the call counts, the responsiveness pair, the per-turn
+ * latencies, peak input tokens, cached tokens beside the hit rate, and the
+ * total the split restates - is one click away in the Axes menu. Nothing is
+ * dropped, only deferred; the ranking in the catalog is what decides the order
+ * they come back in.
  */
-export const DEFAULT_METRIC_AXIS_COUNT = 11
+export const DEFAULT_METRIC_AXIS_COUNT = 5
 
 /**
  * Unit for a metric score key, guessed from its name. Display only: it decides
@@ -779,10 +797,18 @@ export function directionless_key_count(keyMetas: ScoreKeyMeta[]): number {
  * The axes shown before the user picks their own: the highest-ranked ones the
  * task has, capped for legibility, returned in chart order.
  *
- * The ranking is what survives the cap. Cost, tokens and speed lead because
- * every task has them; then the counts a code eval had to read the trace to
- * know; then the second-order token and latency breakdowns; and the
- * input/output split last, since it only restates the total.
+ * The ranking is what survives the cap, and it runs cost first, then the four
+ * terms cost decomposes into (latency, cache hit rate, input and output
+ * tokens); then the total those two restate; then the counts a code eval had to
+ * read the trace to know; then the responsiveness pair; and the second-order
+ * breakdowns last.
+ *
+ * Ranking is by QUANTITY, never by eval id, and that is what makes the default
+ * portable. `cache_hit_rate` resolves to whichever eval on the task emits that
+ * score key, so no task is wired in here. On a task that emits none, the axis
+ * does not exist and the next-ranked quantity takes the freed slot - the set is
+ * always the best five the task can actually plot, and always exactly as many
+ * as it has.
  */
 export function default_metric_axis_keys(
   axes: MetricAxis[],

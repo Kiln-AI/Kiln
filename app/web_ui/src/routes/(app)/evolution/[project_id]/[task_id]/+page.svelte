@@ -1647,8 +1647,9 @@
          Height is what both charts grow into - a radius for one, a row per
          metric for the other - so the floor is generous: the chart's own 640px
          box plus its card header and padding. Tall enough for wrapped axis
-         names all the way round the outer ring and eleven readable metric
-         rows. Neither carries a legend of its own any more - the page's is
+         names all the way round the outer ring and, when a reader switches
+         more on, about a dozen readable metric rows - well past the five the
+         chart opens with. Neither carries a legend of its own any more - the page's is
          above - so all of that box is plot.
 
          The two cards are the same height, which is what makes the row read as
