@@ -61,6 +61,7 @@ from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
 from pydantic import BaseModel, Field, model_validator
+from typing_extensions import Self
 
 from app.desktop.studio_server.eval_api import task_run_config_from_id
 from app.desktop.studio_server.synthetic_user.client import (
@@ -136,25 +137,11 @@ class SyntheticUserDriverSpec(BaseModel):
     model_provider: ModelProviderName
 
 
-class RunCasesBatchApiInput(BaseModel):
-    cases: list[SyntheticUserCaseDict] = Field(
-        ...,
-        min_length=1,
-        max_length=NUM_CASES_MAX,
-        description=(
-            f"Cases as returned by /generate_cases, optionally edited. "
-            f"{_CASE_DICT_DESCRIPTION}"
-        ),
-    )
-    turns: int = Field(
-        default=MAX_TURNS_DEFAULT,
-        ge=1,
-        le=20,
-        description=(
-            "Exact number of assistant turns to produce per case. The drive "
-            "loop has no early termination."
-        ),
-    )
+class TargetRunConfigFields(BaseModel):
+    """The target-config half of every drive request — inherited by both the
+    multi-turn batch/pipeline requests and the single-turn pipeline request,
+    so the two drive contracts can't drift."""
+
     target_run_config: RunConfigProperties | None = Field(
         default=None,
         description=(
@@ -176,6 +163,35 @@ class RunCasesBatchApiInput(BaseModel):
             "of target_run_config / target_run_config_id is required."
         ),
     )
+
+    @model_validator(mode="after")
+    def _exactly_one_target_config(self) -> Self:
+        if (self.target_run_config is None) == (self.target_run_config_id is None):
+            raise ValueError(
+                "Provide exactly one of target_run_config or target_run_config_id."
+            )
+        return self
+
+
+class RunCasesBatchApiInput(TargetRunConfigFields):
+    cases: list[SyntheticUserCaseDict] = Field(
+        ...,
+        min_length=1,
+        max_length=NUM_CASES_MAX,
+        description=(
+            f"Cases as returned by /generate_cases, optionally edited. "
+            f"{_CASE_DICT_DESCRIPTION}"
+        ),
+    )
+    turns: int = Field(
+        default=MAX_TURNS_DEFAULT,
+        ge=1,
+        le=20,
+        description=(
+            "Exact number of assistant turns to produce per case. The drive "
+            "loop has no early termination."
+        ),
+    )
     su_driver: SyntheticUserDriverSpec
     batch_tag: str | None = Field(
         default=None,
@@ -188,14 +204,6 @@ class RunCasesBatchApiInput(BaseModel):
             "TaskRuns. Auto-generated if not provided."
         ),
     )
-
-    @model_validator(mode="after")
-    def _exactly_one_target_config(self) -> "RunCasesBatchApiInput":
-        if (self.target_run_config is None) == (self.target_run_config_id is None):
-            raise ValueError(
-                "Provide exactly one of target_run_config or target_run_config_id."
-            )
-        return self
 
 
 # ───────────────────────── helpers ─────────────────────────
@@ -221,9 +229,9 @@ def guard_multiturn(task: Task) -> None:
 
 
 def resolve_target_run_config(
-    input: RunCasesBatchApiInput, project_id: str, task_id: str
+    input: TargetRunConfigFields, project_id: str, task_id: str
 ) -> tuple[KilnAgentRunConfigProperties, str | None]:
-    """The runner's target config, from whichever source the request used,
+    """The drive's target config, from whichever source the request used,
     plus the saved config's id for run attribution (None on the inline
     path — those runs are ad-hoc by definition).
 
@@ -260,7 +268,7 @@ def resolve_target_run_config(
                 detail={
                     "code": "run_config_not_agent",
                     "message": (
-                        "Multi-turn driving requires a Kiln agent run config; "
+                        "Driving the task requires a Kiln agent run config; "
                         "the selected run config is a different type."
                     ),
                 },
@@ -278,7 +286,7 @@ def resolve_target_run_config(
             detail={
                 "code": "run_config_not_agent",
                 "message": (
-                    "Multi-turn driving requires a Kiln agent run config; "
+                    "Driving the task requires a Kiln agent run config; "
                     "the inline run config is a different type."
                 ),
             },

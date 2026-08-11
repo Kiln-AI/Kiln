@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import litellm
@@ -735,12 +736,36 @@ class TestBuildClaims:
 AUTHOR_JUDGE_URL = "/api/projects/p1/tasks/t1/eval_builder/author_judge"
 
 
+def _task_mock(turn_mode=None, input_json_schema=None):
+    """A Task mock for route tests. turn_mode defaults to multiturn."""
+    from kiln_ai.datamodel.datamodel_enums import TurnMode
+    from kiln_ai.datamodel.task import Task as KilnTask
+
+    task = Mock(spec=KilnTask)
+    task.name = "support_agent"
+    task.instruction = "You are a customer support agent."
+    task.turn_mode = turn_mode if turn_mode is not None else TurnMode.multiturn
+    task.input_json_schema = input_json_schema
+    return task
+
+
 @pytest.fixture
 def author_judge_input():
     return {
         "target_specification": "The agent must never fabricate information.",
         "target_task_prompt": "You are a customer support agent.",
     }
+
+
+@pytest.fixture
+def author_judge_task():
+    """The route derives trace_type from the task — resolve it to a
+    multi-turn mock unless a test overrides the return value."""
+    with patch(
+        "app.desktop.studio_server.eval_builder_api.task_from_id",
+        return_value=_task_mock(),
+    ) as mock_task:
+        yield mock_task
 
 
 class TestAuthorJudge:
@@ -755,7 +780,9 @@ class TestAuthorJudge:
             assert response.status_code == 401
             assert "API key not configured" in response.json()["message"]
 
-    def test_author_judge_success(self, client, author_judge_input, mock_api_key):
+    def test_author_judge_success(
+        self, client, author_judge_input, mock_api_key, author_judge_task
+    ):
         mock_output = MagicMock(spec=GenerateJudgePromptOutput)
         mock_output.judge_evaluation_prompt = (
             "1. When the assistant states a specific order fact, check whether "
@@ -774,13 +801,12 @@ class TestAuthorJudge:
             assert response.status_code == 200
             assert "fabrication fails" in response.json()["judge_prompt"]
 
-    def test_author_judge_pins_multi_turn_trace_type(
-        self, client, author_judge_input, mock_api_key
+    def test_author_judge_multi_turn_task_authors_multi_turn(
+        self, client, author_judge_input, mock_api_key, author_judge_task
     ):
-        """The SDK payload must carry trace_type=multi_turn — the run-config
-        routing on kiln_server hangs entirely on this field, and the builder
-        (this route's only caller) is multi-turn-only. A regression to
-        single_turn would author the wrong rubric with a green suite."""
+        """The SDK payload's trace_type follows the task's turn mode — the
+        rubric routing on kiln_server hangs entirely on this field, so a
+        multi-turn task must author the conversation rubric."""
         mock_output = MagicMock(spec=GenerateJudgePromptOutput)
         mock_output.judge_evaluation_prompt = "1. Check the transcript."
         mock_response = MagicMock()
@@ -798,8 +824,33 @@ class TestAuthorJudge:
         assert body.trace_type.value == "multi_turn"
         assert body.target_specification == author_judge_input["target_specification"]
 
+    def test_author_judge_single_turn_task_authors_single_turn(
+        self, client, author_judge_input, mock_api_key, author_judge_task
+    ):
+        """A single-turn task authors the I/O-pair rubric — derived from the
+        task server-side, so the framing can never disagree with the task
+        being judged."""
+        from kiln_ai.datamodel.datamodel_enums import TurnMode
+
+        author_judge_task.return_value = _task_mock(TurnMode.single_turn)
+        mock_output = MagicMock(spec=GenerateJudgePromptOutput)
+        mock_output.judge_evaluation_prompt = "1. Check the reply."
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ) as mock_post:
+            client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
+
+        body = mock_post.call_args.kwargs["body"]
+        assert body.trace_type.value == "single_turn"
+
     def test_author_judge_remote_error_surfaces_upstream_message(
-        self, client, author_judge_input, mock_api_key
+        self, client, author_judge_input, mock_api_key, author_judge_task
     ):
         """A remote failure propagates the upstream status + message — the
         client stops the drive on it (authoring is required, no fallback
@@ -819,7 +870,7 @@ class TestAuthorJudge:
             assert "upstream refused" in response.json()["message"]
 
     def test_author_judge_no_response_is_500(
-        self, client, author_judge_input, mock_api_key
+        self, client, author_judge_input, mock_api_key, author_judge_task
     ):
         """A 2xx with no parsed body surfaces as a 500 with a clear message."""
         mock_response = MagicMock()
@@ -1101,16 +1152,7 @@ def _fake_run_cases_batch(*, fail_case: int | None = None, events_per_case: int 
 
 
 def _multiturn_task_mock():
-    from unittest.mock import Mock
-
-    from kiln_ai.datamodel.datamodel_enums import TurnMode
-    from kiln_ai.datamodel.task import Task as KilnTask
-
-    task = Mock(spec=KilnTask)
-    task.name = "support_agent"
-    task.instruction = "You are a customer support agent."
-    task.turn_mode = TurnMode.multiturn
-    return task
+    return _task_mock()
 
 
 @pytest.fixture
@@ -2034,6 +2076,454 @@ class TestJudgeTraces:
         assert resp.status_code == 401
         assert "API key not configured" in resp.json()["message"]
         judge_traces_seams["loader"].assert_not_called()
+
+
+# ───────────────────────── single_turn_pipeline (SSE) ─────────────────────
+
+SINGLE_TURN_URL = "/api/projects/p1/tasks/t1/eval_builder/single_turn_pipeline"
+
+
+def _fake_single_turn_run(i: int, cost: float = 0.05, with_trace: bool = True):
+    """A TaskRun stand-in with the real attributes the pipeline touches:
+    tags mutate through the real tagging helper, save/delete are observable,
+    and the trace is the structured shape the frames echo."""
+    run = Mock()
+    run.id = f"run-{i}"
+    run.tags = []
+    run.output = Mock()
+    run.output.output = f"answer {i}"
+    run.output.rating = None
+    run.trace = _real_trace(i) if with_trace else None
+    usage = Mock()
+    usage.cost = cost
+    run.cumulative_usage = usage
+    run.save_to_file = Mock()
+    run.delete = Mock()
+    return run
+
+
+@pytest.fixture
+def single_turn_request():
+    return {
+        "inputs": ["What is your return policy?", "Cancel my order now"],
+        "input_model_name": "gpt_5_5_mini",
+        "input_provider": "openrouter",
+        # Inline run config = the FULL properties shape a manual run sends.
+        "target_run_config": {
+            "model_name": "gpt_5_5",
+            "model_provider_name": "openrouter",
+            "prompt_id": "simple_prompt_builder",
+            "structured_output_mode": "default",
+        },
+        "spec_name": "Test Spec",
+        "judge": {
+            "prompt": "Judge whether the output fabricates policy.",
+            "model_name": "claude_sonnet_4_6",
+            "model_provider": "anthropic",
+        },
+    }
+
+
+@pytest.fixture
+def single_turn_seams(single_turn_request):
+    """Patch the pipeline's seams: the copilot key, task resolution, skills,
+    the adapter, the judge, and the batch deleter. `runs_by_input` maps each
+    request input to what its invoke produces — a run, an exception, or a
+    list popped per attempt (for retry tests). The real tagging helper runs
+    against the fake runs, so tag assertions exercise the shipped code."""
+    from kiln_ai.datamodel.datamodel_enums import TurnMode
+
+    runs_by_input: dict = {
+        text: _fake_single_turn_run(i)
+        for i, text in enumerate(single_turn_request["inputs"])
+    }
+    invocations: list[dict] = []
+
+    def fake_adapter_for_task(task, run_config, base_adapter_config=None):
+        adapter = Mock()
+
+        async def invoke(*, input, input_source=None):
+            invocations.append(
+                {
+                    "input": input,
+                    "input_source": input_source,
+                    "adapter_config": base_adapter_config,
+                }
+            )
+            key = input if isinstance(input, str) else json.dumps(input)
+            outcome = runs_by_input[key]
+            if isinstance(outcome, list):
+                outcome = outcome.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+        adapter.invoke = invoke
+        return adapter
+
+    with (
+        patch(
+            "app.desktop.studio_server.eval_builder_api.get_copilot_api_key",
+            return_value="test_api_key",
+        ),
+        patch(
+            "app.desktop.studio_server.eval_builder_api.task_from_id",
+            return_value=_task_mock(TurnMode.single_turn),
+        ) as task_mock,
+        patch(
+            "app.desktop.studio_server.eval_builder_api.load_skills_for_task",
+            return_value={},
+        ),
+        patch(
+            "app.desktop.studio_server.eval_builder_api.adapter_for_task",
+            side_effect=fake_adapter_for_task,
+        ),
+        patch(
+            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+            new=AsyncMock(return_value=JudgeVerdict("fail", "fabricated a policy")),
+        ) as judge_mock,
+        patch(
+            "app.desktop.studio_server.eval_builder_api.delete_single_turn_batch_runs",
+            return_value=0,
+        ) as delete_mock,
+    ):
+        yield {
+            "task": task_mock,
+            "judge": judge_mock,
+            "delete": delete_mock,
+            "runs_by_input": runs_by_input,
+            "invocations": invocations,
+        }
+
+
+class TestSingleTurnPipeline:
+    def test_happy_path_full_stream(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
+        assert resp.status_code == 200
+        events = _parse_sse(resp.text)
+
+        started = _events_of(events, "batch_started")
+        assert len(started) == 1
+        assert started[0]["total_cases"] == 2
+        # Auto-minted batch tag: 12 hex chars, echoed on the first frame.
+        assert re.fullmatch(r"[0-9a-f]{12}", started[0]["batch_tag"])
+
+        driven = _events_of(events, "case_driven")
+        assert {e["leaf_run_id"] for e in driven} == {"run-0", "run-1"}
+
+        judged = _events_of(events, "case_judged")
+        assert len(judged) == 2
+        by_index = {e["case_index"]: e for e in judged}
+        for i, input_text in enumerate(single_turn_request["inputs"]):
+            assert by_index[i]["raw_input"] == input_text
+            assert by_index[i]["raw_output"] == f"answer {i}"
+            assert by_index[i]["leaf_run_id"] == f"run-{i}"
+            assert by_index[i]["judge_score"] == "fail"
+            assert by_index[i]["total_cost"] == 0.05
+            # The run's structured trace rides the frame for the UI.
+            assert by_index[i]["trace"][0]["role"] == "system"
+
+        completed = _events_of(events, "batch_completed")
+        assert completed == [
+            {
+                "type": "batch_completed",
+                "judged": 2,
+                "failed": 0,
+                "batch_tag": started[0]["batch_tag"],
+                "total_cost": 0.1,
+            }
+        ]
+        assert events[-1] == "complete"
+
+    def test_judge_scores_io_pair_not_trace(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        """The judge must receive trace=None (final_answer parity with the
+        saved eval) even though the run HAS a structured trace — the trace
+        is a UI echo only."""
+        client.post(SINGLE_TURN_URL, json=single_turn_request)
+        judge = single_turn_seams["judge"]
+        assert judge.await_count == 2
+        for call in judge.await_args_list:
+            assert call.kwargs["trace"] is None
+            assert call.kwargs["spec_name"] == "Test Spec"
+
+    def test_runs_are_batch_tagged_and_saved(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        client.post(
+            SINGLE_TURN_URL, json={**single_turn_request, "batch_tag": "batch42"}
+        )
+        for text in single_turn_request["inputs"]:
+            run = single_turn_seams["runs_by_input"][text]
+            assert run.tags == sorted(
+                ["single_turn_drive", "single_turn_drive_batch:batch42"]
+            )
+            run.save_to_file.assert_called_once()
+
+    def test_run_config_id_stamps_adapter_config(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        """Inline config: no task_run_config_id stamped (ad-hoc by
+        definition); the input source attributes the input-generator lane."""
+        client.post(
+            SINGLE_TURN_URL, json={**single_turn_request, "batch_tag": "batch42"}
+        )
+        invocation = single_turn_seams["invocations"][0]
+        assert invocation["adapter_config"].task_run_config_id is None
+        # default_tags rides the run's own save, so even a run orphaned by a
+        # cancel mid-invoke stays discoverable by the batch sweeper.
+        assert invocation["adapter_config"].default_tags == sorted(
+            ["single_turn_drive", "single_turn_drive_batch:batch42"]
+        )
+        source_props = invocation["input_source"].properties
+        assert source_props["model_name"] == "gpt_5_5_mini"
+        assert source_props["model_provider"] == "openrouter"
+        assert source_props["adapter_name"] == "kiln_eval_builder_single_turn"
+
+    def test_run_failure_is_isolated(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        """A deterministic run failure fails that case at stage=run; the
+        other case still runs and judges."""
+        failed_input = single_turn_request["inputs"][0]
+        single_turn_seams["runs_by_input"][failed_input] = ValueError("model exploded")
+        resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
+        events = _parse_sse(resp.text)
+
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 1
+        assert failed[0]["case_index"] == 0
+        assert failed[0]["stage"] == "run"
+        assert "model exploded" in failed[0]["message"]
+
+        judged = _events_of(events, "case_judged")
+        assert [e["case_index"] for e in judged] == [1]
+        completed = _events_of(events, "batch_completed")
+        assert completed[0]["judged"] == 1
+        assert completed[0]["failed"] == 1
+
+    def test_transient_run_error_retries(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        """A transient provider failure (shared classifier) retries the case
+        instead of failing it — same posture as the multi-turn drive."""
+        retried_input = single_turn_request["inputs"][0]
+        recovered_run = _fake_single_turn_run(0)
+        single_turn_seams["runs_by_input"][retried_input] = [
+            _rate_limit_error(),
+            recovered_run,
+        ]
+        resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
+        events = _parse_sse(resp.text)
+        assert len(_events_of(events, "case_failed")) == 0
+        assert len(_events_of(events, "case_judged")) == 2
+
+    def test_judge_failure_is_isolated(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        """A non-fatal judge failure fails that case at stage=judge; the
+        other case's verdict still lands."""
+        failing_input = single_turn_request["inputs"][0]
+
+        async def judge(_project, _task, raw_input, *args, **kwargs):
+            if raw_input == failing_input:
+                raise ValueError("judge choked")
+            return JudgeVerdict("pass", "clean")
+
+        single_turn_seams["judge"].side_effect = judge
+        resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
+        events = _parse_sse(resp.text)
+
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 1
+        assert failed[0]["stage"] == "judge"
+        judged = _events_of(events, "case_judged")
+        assert [e["case_index"] for e in judged] == [1]
+
+    def test_batch_fatal_judge_error_aborts(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        """A config-scoped judge failure aborts the whole batch (one
+        batch_aborted frame in place of batch_completed) — same contract as
+        the multi-turn pipeline."""
+        single_turn_seams["judge"].side_effect = _auth_error()
+        resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
+        events = _parse_sse(resp.text)
+
+        aborted = _events_of(events, "batch_aborted")
+        assert len(aborted) == 1
+        assert aborted[0]["stage"] == "judge"
+        assert "invalid api key" in aborted[0]["error"]
+        assert len(_events_of(events, "batch_completed")) == 0
+        assert events[-1] == "complete"
+
+    def test_superseded_batches_deleted_after_success(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        client.post(
+            SINGLE_TURN_URL,
+            json={**single_turn_request, "replace_batch_tags": ["old1", "old2"]},
+        )
+        delete = single_turn_seams["delete"]
+        assert delete.call_count == 2
+        deleted_tags = {call.args[1] for call in delete.call_args_list}
+        assert deleted_tags == {"old1", "old2"}
+
+    def test_no_deletion_when_nothing_driven(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        """A run stage that produced nothing keeps the superseded batches —
+        a wholesale failure must never destroy the only batch on disk."""
+        for text in single_turn_request["inputs"]:
+            single_turn_seams["runs_by_input"][text] = ValueError("all dead")
+        resp = client.post(
+            SINGLE_TURN_URL,
+            json={**single_turn_request, "replace_batch_tags": ["old1"]},
+        )
+        events = _parse_sse(resp.text)
+        single_turn_seams["delete"].assert_not_called()
+        completed = _events_of(events, "batch_completed")
+        assert completed[0]["judged"] == 0
+        assert completed[0]["failed"] == 2
+
+    def test_structured_input_parsed_to_dict(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        """Tasks with an input schema carry inputs as JSON strings — parsed
+        to a dict before invoke, mirroring base_eval.run_task at eval time."""
+        from kiln_ai.datamodel.datamodel_enums import TurnMode
+
+        single_turn_seams["task"].return_value = _task_mock(
+            TurnMode.single_turn, input_json_schema='{"type": "object"}'
+        )
+        structured_input = json.dumps({"question": "What is your return policy?"})
+        single_turn_seams["runs_by_input"][structured_input] = _fake_single_turn_run(0)
+        resp = client.post(
+            SINGLE_TURN_URL, json={**single_turn_request, "inputs": [structured_input]}
+        )
+        events = _parse_sse(resp.text)
+        assert len(_events_of(events, "case_judged")) == 1
+        assert single_turn_seams["invocations"][0]["input"] == {
+            "question": "What is your return policy?"
+        }
+        # raw_input on the frame stays the JSON string — what the saved
+        # eval's inputs-only item will store.
+        assert _events_of(events, "case_judged")[0]["raw_input"] == structured_input
+
+    def test_invalid_json_input_fails_case_without_spend(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        from kiln_ai.datamodel.datamodel_enums import TurnMode
+
+        single_turn_seams["task"].return_value = _task_mock(
+            TurnMode.single_turn, input_json_schema='{"type": "object"}'
+        )
+        resp = client.post(
+            SINGLE_TURN_URL, json={**single_turn_request, "inputs": ["not json"]}
+        )
+        events = _parse_sse(resp.text)
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 1
+        assert failed[0]["code"] == "invalid_input"
+        # The parse failure precedes any model call — nothing was invoked.
+        assert single_turn_seams["invocations"] == []
+
+    def test_missing_output_fails_case_and_deletes_run(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        """A run with no output can't be judged: the case fails and the
+        unusable persisted run is removed (it would otherwise sit on disk
+        untagged and undiscoverable)."""
+        target_input = single_turn_request["inputs"][0]
+        bad_run = _fake_single_turn_run(0)
+        bad_run.output = None
+        single_turn_seams["runs_by_input"][target_input] = bad_run
+        resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
+        events = _parse_sse(resp.text)
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 1
+        assert failed[0]["code"] == "missing_output"
+        bad_run.delete.assert_called_once()
+        # Cost honesty: the discarded run's spend was real — banked into the
+        # batch total alongside the surviving case's 0.05.
+        assert _events_of(events, "batch_completed")[0]["total_cost"] == 0.1
+
+    def test_timeout_fails_case(self, client, single_turn_request, single_turn_seams):
+        """A run over budget fails with case_timeout and frees its slot;
+        the batch continues."""
+        slow_input = single_turn_request["inputs"][0]
+
+        def fake_adapter(task, run_config, base_adapter_config=None):
+            adapter = Mock()
+
+            async def invoke(*, input, input_source=None):
+                if input == slow_input:
+                    await asyncio.sleep(0.2)
+                return single_turn_seams["runs_by_input"][input]
+
+            adapter.invoke = invoke
+            return adapter
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.RUN_TIMEOUT_SECONDS", 0.05
+            ),
+            patch(
+                "app.desktop.studio_server.eval_builder_api.adapter_for_task",
+                side_effect=fake_adapter,
+            ),
+        ):
+            resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
+        events = _parse_sse(resp.text)
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 1
+        assert failed[0]["code"] == "case_timeout"
+        assert [e["case_index"] for e in _events_of(events, "case_judged")] == [1]
+
+    def test_multiturn_task_rejected(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        single_turn_seams["task"].return_value = _task_mock()
+        resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
+        assert resp.status_code == 400
+        assert "task_not_single_turn" in resp.text
+
+    def test_missing_copilot_key_is_401(self, client, single_turn_request):
+        """Same fail-fast posture as review_pipeline: the review that
+        follows needs the remote claim builder, so a missing key stops the
+        stream before any model spend."""
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+        ) as mock_config_shared:
+            mock_config_shared.return_value.kiln_copilot_api_key = None
+            resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
+        assert resp.status_code == 401
+
+    def test_request_validation(self, client, single_turn_request):
+        """The request contract fails loud: exactly one target config, no
+        blank inputs, no self-replacement, no unknown fields."""
+        no_config = {k: v for k, v in single_turn_request.items()}
+        del no_config["target_run_config"]
+        assert client.post(SINGLE_TURN_URL, json=no_config).status_code == 422
+
+        both_configs = {**single_turn_request, "target_run_config_id": "rc1"}
+        assert client.post(SINGLE_TURN_URL, json=both_configs).status_code == 422
+
+        blank_input = {**single_turn_request, "inputs": ["ok", "  "]}
+        assert client.post(SINGLE_TURN_URL, json=blank_input).status_code == 422
+
+        self_replace = {
+            **single_turn_request,
+            "batch_tag": "b1",
+            "replace_batch_tags": ["b1"],
+        }
+        assert client.post(SINGLE_TURN_URL, json=self_replace).status_code == 422
+
+        unknown_field = {**single_turn_request, "cases": []}
+        assert client.post(SINGLE_TURN_URL, json=unknown_field).status_code == 422
 
 
 # ───────────────────────── preflight_model ─────────────────────────

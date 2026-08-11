@@ -3216,6 +3216,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_builder/single_turn_pipeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Single-Turn Review Pipeline
+         * @description The single-turn stream: [run → judge] per generated input.
+         *
+         *     The one-turn sibling of review_pipeline: the task runs ONCE per
+         *     input on the target run config — tools live, the user's keys — and
+         *     each persisted, batch-tagged run is judged locally.
+         *
+         *     Emits (all frames `type`-discriminated; errors carry {code, message}):
+         *       - batch_started   { batch_tag, total_cases }
+         *       - case_driven     { case_index, leaf_run_id }
+         *       - case_judged     { case_index, leaf_run_id, raw_input, raw_output,
+         *                           judge_score, judge_reasoning, total_cost,
+         *                           trace }
+         *       - case_failed     { case_index, stage: "run" | "judge", code,
+         *                           message }  (batch continues)
+         *       - batch_completed { judged, failed, batch_tag, total_cost }
+         *       - batch_aborted   { error, stage }  (in place of batch_completed:
+         *                           a config-scoped judge failure aborted the whole
+         *                           batch; results already streamed remain valid)
+         *       - batch_failed    { code, message }  (in place of batch_completed:
+         *                           an orchestration-level crash ended the stream;
+         *                           results already streamed remain valid)
+         *     Terminated by `data: complete`. No turn frames appear on this stream
+         *     (each case is one run). raw_input/raw_output are the run's I/O
+         *     pair — what the judge scored and what the saved final_answer eval
+         *     will score; `trace` is the run's structured trace (tool calls
+         *     included), echoed for the UI. Claims are built afterwards, per
+         *     opened trace, via build_claims.
+         */
+        post: operations["single_turn_pipeline_api_projects__project_id__tasks__task_id__eval_builder_single_turn_pipeline_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/eval_builder/judge_traces": {
         parameters: {
             query?: never;
@@ -3354,12 +3400,14 @@ export interface paths {
         put?: never;
         /**
          * Author Judge
-         * @description Author a spec-tailored judge prompt for the multi-turn review.
+         * @description Author a spec-tailored judge prompt for the review — both arms.
          *
-         *     The multi-turn counterpart of clarify_spec's judge_result: returns the
-         *     PROMPT only — the judge model is the user's pick. Authoring is a
-         *     REQUIRED step of the multi-turn drive: an error here stops the drive
-         *     on a retryable error client-side. There is no fallback judge.
+         *     Returns the PROMPT only — the judge model is the user's pick. The
+         *     rubric's framing follows the task's turn mode: full conversations
+         *     for multi-turn, one I/O pair for single-turn — derived here, not
+         *     client-sent, so it can never disagree with the task being judged.
+         *     Authoring is a REQUIRED step of the drive: an error here stops the
+         *     drive on a retryable error client-side. There is no fallback judge.
          */
         post: operations["author_judge_api_projects__project_id__tasks__task_id__eval_builder_author_judge_post"];
         delete?: never;
@@ -4436,8 +4484,10 @@ export interface components {
          * AuthorJudgeApiInput
          * @description The spec + target-task prompt the judge author tailors its rubric to.
          *
-         *     The multi-turn counterpart of clarify_spec's judge authoring: same two
-         *     inputs, prompt-only output — the judge model stays the caller's choice.
+         *     One authoring path for both arms: same two inputs, prompt-only output —
+         *     the judge model stays the caller's choice. The rubric's trace framing
+         *     (conversation vs I/O pair) is derived server-side from the task's turn
+         *     mode, never client-sent.
          */
         AuthorJudgeApiInput: {
             /** Target Specification */
@@ -10728,13 +10778,28 @@ export interface components {
          * ReviewPipelineRequest
          * @description The merged multi-turn pipeline's request: everything a drive takes
          *     (inherited — the two drive contracts can't drift) plus the judge that
-         *     scores the results and the batch lifecycle field.
+         *     scores the results and the batch lifecycle fields.
          *
          *     `judge.prompt` is also what the client later passes to build_claims as
          *     the eval_rubric — the claim builder pressure-tests the rubric the
          *     verdict was really produced under.
          */
         ReviewPipelineRequest: {
+            /**
+             * Replace Batch Tags
+             * @description Batch tags of previous drives this one supersedes (aborted re-drives can leave several behind). Their runs are deleted once this drive has produced replacements (delete-on-redrive), so abandoned batches don't accumulate on disk — and a wholesale drive failure never destroys the only batch the user has.
+             */
+            replace_batch_tags?: string[];
+            /**
+             * Target Run Config
+             * @description Inline run config for the target task, used verbatim — the same full properties shape a manual run sends, tools included. For driving a config that isn't worth saving (ad-hoc experiments, scripting). Must be a Kiln agent config. Exactly one of target_run_config / target_run_config_id is required.
+             */
+            target_run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
+            /**
+             * Target Run Config Id
+             * @description ID of one of the target task's saved run configs. The drive uses the saved config verbatim — model, prompt, sampling, and tools — so the agent under test behaves exactly like a manual run, and driven runs attribute back to the config. Exactly one of target_run_config / target_run_config_id is required.
+             */
+            target_run_config_id?: string | null;
             /**
              * Cases
              * @description Cases as returned by /generate_cases, optionally edited. A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str, scenario_index?: int | null}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index is set only on scenario batches (generate_cases with case_prompts) and maps the case back to its plan prompt.
@@ -10748,27 +10813,12 @@ export interface components {
              * @default 5
              */
             turns: number;
-            /**
-             * Target Run Config
-             * @description Inline run config for the target task, used verbatim — the same full properties shape a manual run sends, tools included. For driving a config that isn't worth saving (ad-hoc experiments, scripting). Must be a Kiln agent config. Exactly one of target_run_config / target_run_config_id is required.
-             */
-            target_run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
-            /**
-             * Target Run Config Id
-             * @description ID of one of the target task's saved run configs. The drive uses the saved config verbatim — model, prompt, sampling, and tools — so the agent under test behaves exactly like a manual run, and driven runs attribute back to the config. Exactly one of target_run_config / target_run_config_id is required.
-             */
-            target_run_config_id?: string | null;
             su_driver: components["schemas"]["SyntheticUserDriverSpec"];
             /**
              * Batch Tag
              * @description Optional user-supplied batch label. Constrained to [A-Za-z0-9_-]{1,64} so it can safely be used as a tag on leaf TaskRuns. Auto-generated if not provided.
              */
             batch_tag?: string | null;
-            /**
-             * Replace Batch Tags
-             * @description Batch tags of previous drives this one supersedes (aborted re-drives can leave several behind). Their chains are deleted once this drive has produced replacement chains (delete-on-redrive), so abandoned batches don't accumulate on disk — and a wholesale drive failure never destroys the only batch the user has.
-             */
-            replace_batch_tags?: string[];
             /**
              * Spec Name
              * @description The spec's name. The review judge scores under the same output-score identity the saved eval will use, so the prompt the user calibrates here is byte-identical to the one that ships.
@@ -10838,6 +10888,16 @@ export interface components {
         /** RunCasesBatchApiInput */
         RunCasesBatchApiInput: {
             /**
+             * Target Run Config
+             * @description Inline run config for the target task, used verbatim — the same full properties shape a manual run sends, tools included. For driving a config that isn't worth saving (ad-hoc experiments, scripting). Must be a Kiln agent config. Exactly one of target_run_config / target_run_config_id is required.
+             */
+            target_run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
+            /**
+             * Target Run Config Id
+             * @description ID of one of the target task's saved run configs. The drive uses the saved config verbatim — model, prompt, sampling, and tools — so the agent under test behaves exactly like a manual run, and driven runs attribute back to the config. Exactly one of target_run_config / target_run_config_id is required.
+             */
+            target_run_config_id?: string | null;
+            /**
              * Cases
              * @description Cases as returned by /generate_cases, optionally edited. A SyntheticUserCase. Shape: {seed_prompt: str, synthetic_user_info: str, scenario_index?: int | null}. The synthetic_user_info value is an XML-tagged blob: <persona>...</persona><goal>...</goal><behavior_guidance>...</behavior_guidance>. Parsed client-side by kiln_ai.synthetic_user.parser. scenario_index is set only on scenario batches (generate_cases with case_prompts) and maps the case back to its plan prompt.
              */
@@ -10850,16 +10910,6 @@ export interface components {
              * @default 5
              */
             turns: number;
-            /**
-             * Target Run Config
-             * @description Inline run config for the target task, used verbatim — the same full properties shape a manual run sends, tools included. For driving a config that isn't worth saving (ad-hoc experiments, scripting). Must be a Kiln agent config. Exactly one of target_run_config / target_run_config_id is required.
-             */
-            target_run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
-            /**
-             * Target Run Config Id
-             * @description ID of one of the target task's saved run configs. The drive uses the saved config verbatim — model, prompt, sampling, and tools — so the agent under test behaves exactly like a manual run, and driven runs attribute back to the config. Exactly one of target_run_config / target_run_config_id is required.
-             */
-            target_run_config_id?: string | null;
             su_driver: components["schemas"]["SyntheticUserDriverSpec"];
             /**
              * Batch Tag
@@ -11307,6 +11357,57 @@ export interface components {
              * @enum {string}
              */
             mode: "subset" | "superset" | "equal";
+        };
+        /**
+         * SingleTurnPipelineRequest
+         * @description The single-turn pipeline's request: the generated inputs to run the
+         *     task on, the target config that runs them (inherited — the two drive
+         *     contracts can't drift), the judge that scores each result, and the
+         *     batch lifecycle fields.
+         *
+         *     `judge.prompt` is also what the client later passes to build_claims as
+         *     the eval_rubric — the claim builder pressure-tests the rubric the
+         *     verdict was really produced under.
+         */
+        SingleTurnPipelineRequest: {
+            /**
+             * Replace Batch Tags
+             * @description Batch tags of previous drives this one supersedes (aborted re-drives can leave several behind). Their runs are deleted once this drive has produced replacements (delete-on-redrive), so abandoned batches don't accumulate on disk — and a wholesale drive failure never destroys the only batch the user has.
+             */
+            replace_batch_tags?: string[];
+            /**
+             * Target Run Config
+             * @description Inline run config for the target task, used verbatim — the same full properties shape a manual run sends, tools included. For driving a config that isn't worth saving (ad-hoc experiments, scripting). Must be a Kiln agent config. Exactly one of target_run_config / target_run_config_id is required.
+             */
+            target_run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
+            /**
+             * Target Run Config Id
+             * @description ID of one of the target task's saved run configs. The drive uses the saved config verbatim — model, prompt, sampling, and tools — so the agent under test behaves exactly like a manual run, and driven runs attribute back to the config. Exactly one of target_run_config / target_run_config_id is required.
+             */
+            target_run_config_id?: string | null;
+            /**
+             * Inputs
+             * @description The generated task inputs, one run each — typically one per approved batch-plan prompt. For tasks with an input schema, each entry is the input as a JSON string (the same encoding the saved eval's inputs-only items store). Capped at the multi-turn batch size: the two arms share one batch budget.
+             */
+            inputs: string[];
+            /**
+             * Input Model Name
+             * @description The model that generated the inputs (recorded on each run's input source, like the /generate output writer records it).
+             */
+            input_model_name: string;
+            /** @description The provider the inputs were generated with. */
+            input_provider: components["schemas"]["ModelProviderName"];
+            /**
+             * Batch Tag
+             * @description Optional user-supplied batch label. Constrained to [A-Za-z0-9_-]{1,64} so it can safely be used as a tag on the driven TaskRuns. Auto-generated if not provided.
+             */
+            batch_tag?: string | null;
+            /**
+             * Spec Name
+             * @description The spec's name. The review judge scores under the same output-score identity the saved eval will use, so the prompt the user calibrates here is byte-identical to the one that ships.
+             */
+            spec_name: string;
+            judge: components["schemas"]["JudgeConfig"];
         };
         /**
          * SkillContentResponse
@@ -20541,6 +20642,44 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ReviewPipelineRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    single_turn_pipeline_api_projects__project_id__tasks__task_id__eval_builder_single_turn_pipeline_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SingleTurnPipelineRequest"];
             };
         };
         responses: {

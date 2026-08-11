@@ -22,8 +22,11 @@ from app.desktop.studio_server.utils.copilot_utils import (
     create_task_run_from_reviewed,
     create_task_run_from_sample,
     delete_multi_turn_batch_chains,
+    delete_single_turn_batch_runs,
+    find_single_turn_batch_runs,
     get_copilot_api_key,
     persist_eval_slice,
+    tag_single_turn_drive_run,
     rate_multi_turn_chain_leaves,
     select_golden_leaves,
     split_and_tag_multi_turn_chains,
@@ -972,6 +975,126 @@ class TestDeleteMultiTurnBatchChains:
 
         assert deleted == 0
         assert len(multiturn_task.runs(include_intermediate_runs=True)) == 4
+
+
+# ───────────── single-turn drive tags + delete_single_turn_batch_runs ───────
+
+
+def _single_turn_source() -> DataSource:
+    return DataSource(
+        type=DataSourceType.synthetic,
+        properties={
+            "model_name": "gpt_5_5_mini",
+            "model_provider": "openrouter",
+            "adapter_name": "kiln_eval_builder_single_turn",
+            "batch_tag": "batch1",
+        },
+    )
+
+
+def _build_single_turn_run(task: Task, batch_tag: str, i: int = 0) -> TaskRun:
+    """One driven run shaped like the single-turn pipeline's output: saved,
+    then tagged through the real tagging helper."""
+    run = TaskRun(
+        parent=task,
+        input=f"input {i}",
+        input_source=_single_turn_source(),
+        output=TaskOutput(output=f"output {i}", source=_single_turn_source()),
+    )
+    run.save_to_file()
+    tag_single_turn_drive_run(run, batch_tag)
+    return run
+
+
+@pytest.fixture
+def singleturn_task(tmp_path):
+    project_path = tmp_path / "st_project" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="ST Project", path=project_path)
+    project.save_to_file()
+    task = Task(
+        name="ST Task",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+    return task
+
+
+class TestSingleTurnDriveTags:
+    def test_tags_and_persists(self, singleturn_task):
+        run = _build_single_turn_run(singleturn_task, "batch42")
+        reloaded = singleturn_task.runs()[0]
+        assert reloaded.tags == sorted(
+            ["single_turn_drive", "single_turn_drive_batch:batch42"]
+        )
+        assert str(reloaded.id) == str(run.id)
+
+    def test_retagging_is_idempotent(self, singleturn_task):
+        run = _build_single_turn_run(singleturn_task, "batch42")
+        tag_single_turn_drive_run(run, "batch42")
+        assert run.tags == sorted(
+            ["single_turn_drive", "single_turn_drive_batch:batch42"]
+        )
+
+    def test_find_returns_only_the_batch(self, singleturn_task):
+        run_a = _build_single_turn_run(singleturn_task, "batch-a", 0)
+        _build_single_turn_run(singleturn_task, "batch-b", 1)
+        found = find_single_turn_batch_runs(singleturn_task, "batch-a")
+        assert [str(r.id) for r in found] == [str(run_a.id)]
+
+
+class TestDeleteSingleTurnBatchRuns:
+    def test_deletes_the_batch(self, singleturn_task):
+        run_a = _build_single_turn_run(singleturn_task, "old-batch", 0)
+        run_b = _build_single_turn_run(singleturn_task, "old-batch", 1)
+
+        deleted = delete_single_turn_batch_runs(singleturn_task, "old-batch")
+
+        assert deleted == 2
+        assert singleturn_task.runs() == []
+        for run in (run_a, run_b):
+            assert run.path is not None and not run.path.exists()
+
+    def test_other_batches_survive(self, singleturn_task):
+        _build_single_turn_run(singleturn_task, "old-batch", 0)
+        keep = _build_single_turn_run(singleturn_task, "new-batch", 1)
+
+        deleted = delete_single_turn_batch_runs(singleturn_task, "old-batch")
+
+        assert deleted == 1
+        assert [str(r.id) for r in singleturn_task.runs()] == [str(keep.id)]
+
+    def test_skips_run_claimed_by_another_flow(self, singleturn_task):
+        """A run with tags beyond the pipeline's own (an eval save tagged it
+        golden/train) is dataset material, not an abandoned drive artifact —
+        left alone. The exact-set match fails CLOSED."""
+        run = _build_single_turn_run(singleturn_task, "old-batch")
+        run.tags = sorted({*(run.tags or []), "eval_config_my_spec"})
+        run.save_to_file()
+
+        deleted = delete_single_turn_batch_runs(singleturn_task, "old-batch")
+
+        assert deleted == 0
+        assert len(singleturn_task.runs()) == 1
+
+    def test_skips_rated_run(self, singleturn_task):
+        """A rated run is answer-key material — never delete it."""
+        run = _build_single_turn_run(singleturn_task, "old-batch")
+        run.output.rating = TaskOutputRating(
+            type=TaskOutputRatingType.pass_fail, value=1.0
+        )
+        run.save_to_file()
+
+        deleted = delete_single_turn_batch_runs(singleturn_task, "old-batch")
+
+        assert deleted == 0
+        assert len(singleturn_task.runs()) == 1
+
+    def test_unknown_batch_tag_is_a_noop(self, singleturn_task):
+        _build_single_turn_run(singleturn_task, "some-batch")
+        assert delete_single_turn_batch_runs(singleturn_task, "nonexistent") == 0
+        assert len(singleturn_task.runs()) == 1
 
 
 # ───────────────── multi-turn eval slice (EvalInput writer) ─────────────────

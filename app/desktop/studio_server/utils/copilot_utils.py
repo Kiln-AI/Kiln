@@ -59,6 +59,14 @@ logger = logging.getLogger(__name__)
 _TAG_PREFIX_SU_BATCH = "synthetic_user_batch:"
 _TAG_SU_CASE = "synthetic_user_case"
 
+# Tag scheme the single-turn pipeline stamps on each run it drives (the
+# one-turn sibling of the runner scheme above): a marker tag for all
+# wizard-driven single-turn runs plus a batch tag grouping one drive.
+# Discovery is tag-based — save and delete-on-redrive both find a batch's
+# runs through these.
+_TAG_PREFIX_SINGLE_TURN_DRIVE_BATCH = "single_turn_drive_batch:"
+_TAG_SINGLE_TURN_DRIVE = "single_turn_drive"
+
 # Constants for copilot spec creation
 KILN_COPILOT_MODEL_NAME = "kiln-copilot"
 KILN_COPILOT_MODEL_PROVIDER = "kiln"
@@ -521,6 +529,71 @@ def delete_multi_turn_batch_chains(task: Task, batch_tag: str) -> int:
         for run in chain:
             run.delete()
             deleted += 1
+    return deleted
+
+
+def single_turn_drive_tags(batch_tag: str) -> list[str]:
+    """The single-turn pipeline's discovery tags for one batch — the one
+    producer of the scheme, shared by the adapter's save-time default_tags
+    and the explicit tagger so the two paths can't drift."""
+    return sorted(
+        [_TAG_SINGLE_TURN_DRIVE, f"{_TAG_PREFIX_SINGLE_TURN_DRIVE_BATCH}{batch_tag}"]
+    )
+
+
+def tag_single_turn_drive_run(run: TaskRun, batch_tag: str) -> None:
+    """Ensure a driven run carries the pipeline's discovery tags and persist.
+
+    Normally a no-op belt-and-braces pass (the adapter's default_tags land
+    the same tags in the run's own save); it exists so a run persisted by an
+    adapter without them can never slip through untagged. Tags are
+    deduplicated (treated as a set then sorted) so re-tagging is idempotent.
+    A save_to_file exception surfaces to the caller (which converts it to a
+    case failure) — an untagged run is invisible to save and cleanup, so
+    silence here would strand it.
+    """
+    tags = set(run.tags or []) | set(single_turn_drive_tags(batch_tag))
+    if sorted(tags) == (run.tags or []):
+        return
+    run.tags = sorted(tags)
+    run.save_to_file()
+
+
+def find_single_turn_batch_runs(task: Task, batch_tag: str) -> list[TaskRun]:
+    """Return the runs of one single-turn pipeline batch, by its batch tag."""
+    target_tag = f"{_TAG_PREFIX_SINGLE_TURN_DRIVE_BATCH}{batch_tag}"
+    return [run for run in task.runs() if target_tag in (run.tags or [])]
+
+
+def delete_single_turn_batch_runs(task: Task, batch_tag: str) -> int:
+    """Delete every run of an abandoned single-turn pipeline batch.
+
+    Re-running a batch mints a new batch_tag, which would orphan the previous
+    batch's runs on disk forever — the caller passes the superseded tag once
+    the replacing run has produced results, so a failed re-run never destroys
+    the only batch on disk. Returns the number of TaskRuns deleted.
+
+    Safety mirrors delete_multi_turn_batch_chains: a run is only deleted when
+    it carries EXACTLY the pipeline's own tags and no rating. Any extra tag
+    or a rating means another flow (an eval save, a manual rating) claimed
+    it — no longer an abandoned drive artifact, so it is left alone. The
+    exact-set match fails CLOSED: if the tag scheme ever grows, batches get
+    skipped (orphaned) rather than risking deletion of claimed runs. No
+    descendant check is needed — single-turn tasks reject chained runs at the
+    datamodel level.
+    """
+    target_tag = f"{_TAG_PREFIX_SINGLE_TURN_DRIVE_BATCH}{batch_tag}"
+    pipeline_tags = {_TAG_SINGLE_TURN_DRIVE, target_tag}
+    deleted = 0
+    for run in find_single_turn_batch_runs(task, batch_tag):
+        if set(run.tags or []) != pipeline_tags or run.output.rating is not None:
+            logger.info(
+                "Skipping delete of single-turn run %s: claimed by another flow",
+                run.id,
+            )
+            continue
+        run.delete()
+        deleted += 1
     return deleted
 
 

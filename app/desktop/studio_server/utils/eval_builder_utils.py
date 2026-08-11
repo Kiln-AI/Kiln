@@ -11,7 +11,7 @@ the stable UI-facing models so the endpoints and UI never see SDK types.
 """
 
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     build_claim_evidence_v1_copilot_build_claim_evidence_post,
@@ -293,25 +293,26 @@ async def build_claims_for_trace(
 async def author_judge_prompt(
     target_specification: str,
     target_task_prompt: str,
+    trace_type: Literal["multi_turn", "single_turn"],
 ) -> AuthorJudgeApiOutput:
-    """Author a spec-tailored multi-turn judge prompt via kiln_server.
+    """Author a spec-tailored judge prompt via kiln_server.
 
     Thin remote passthrough: marshal → SDK call → map back. The authoring
     (LLM) runs on kiln_server and returns the PROMPT only — the judge model
-    stays the caller's choice. Authoring is REQUIRED for a multi-turn drive:
-    an error here surfaces to the client, which stops the drive on a
-    retryable error (no server, no eval — there is no fallback judge).
+    stays the caller's choice. `trace_type` selects the rubric's framing:
+    full conversations (multi-turn) or one I/O pair (single-turn) — one
+    authoring path for both arms. Authoring is REQUIRED for a drive: an
+    error here surfaces to the client, which stops the drive on a retryable
+    error (no server, no eval — there is no fallback judge).
     """
     api_key = get_copilot_api_key()
     client = get_authenticated_client(api_key)
 
-    # trace_type is pinned here, not exposed on the studio route: the builder
-    # is this route's only caller and it is multi-turn-only.
     body = GenerateJudgePromptApiInput.from_dict(
         {
             "target_specification": target_specification,
             "target_task_prompt": target_task_prompt,
-            "trace_type": "multi_turn",
+            "trace_type": trace_type,
         }
     )
 

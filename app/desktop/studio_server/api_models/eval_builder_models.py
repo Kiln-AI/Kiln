@@ -235,8 +235,10 @@ class RefineJudgeApiOutput(BaseModel):
 class AuthorJudgeApiInput(BaseModel):
     """The spec + target-task prompt the judge author tailors its rubric to.
 
-    The multi-turn counterpart of clarify_spec's judge authoring: same two
-    inputs, prompt-only output — the judge model stays the caller's choice.
+    One authoring path for both arms: same two inputs, prompt-only output —
+    the judge model stays the caller's choice. The rubric's trace framing
+    (conversation vs I/O pair) is derived server-side from the task's turn
+    mode, never client-sent.
     """
 
     target_specification: str = Field(min_length=1)
@@ -283,18 +285,20 @@ class TraceErrorEvent(BaseModel):
     message: str
 
 
-# ── Review-pipeline SSE events (the merged multi-turn stream) ─────────────
+# ── Review-pipeline SSE events (the merged pipeline streams) ──────────────
 #
-# One stream runs [drive → judge] per case; each case flows through
+# One stream runs [drive → judge] (multi-turn review_pipeline) or
+# [run → judge] (single_turn_pipeline) per case; each case flows through
 # independently, so events from different cases interleave. Ordering WITHIN
-# a case: turn_completed* → case_driven → (case_judged | case_failed), or
-# case_failed at any earlier point. A failed case never discards other
-# cases' results. Claims are NOT built on this stream: the client builds
-# them lazily via the build_claims primitive for the traces a reviewer
-# actually opens — under subset review most traces are never opened.
+# a case: turn_completed* (multi-turn only) → case_driven →
+# (case_judged | case_failed), or case_failed at any earlier point. A
+# failed case never discards other cases' results. Claims are NOT built on
+# these streams: the client builds them lazily via the build_claims
+# primitive for the traces a reviewer actually opens — under subset review
+# most traces are never opened.
 #
 # judge_traces (the re-judge stream) emits the SAME batch/case frames with
-# no drive or turn events, so one client consumer serves both streams.
+# no drive or turn events, so one client consumer serves every stream.
 # Drive-only fields carry honest neutral values there (batch_tag "",
 # total_cost 0).
 
@@ -317,7 +321,9 @@ class PipelineTurnCompletedEvent(BaseModel):
 
 
 class PipelineCaseDrivenEvent(BaseModel):
-    """A case's conversation finished driving; its judge stage begins."""
+    """A case's conversation (or single-turn run) finished; its judge stage
+    begins. leaf_run_id is the chain's leaf on the multi-turn stream and the
+    run itself on the single-turn one."""
 
     type: Literal["case_driven"] = "case_driven"
     case_index: int
@@ -341,20 +347,26 @@ class PipelineCaseJudgedEvent(BaseModel):
     judge_score: JudgeScoreLiteral
     judge_reasoning: str
     total_cost: float
-    # The structured conversation the judge saw, as raw chat-completion
-    # message dicts. raw_output is the lossy flattening of this; the client
-    # renders the trace in the house chat UI and maps citation spans back onto
-    # it. Multi-turn only (single-turn has no structure to show), hence
-    # nullable — an additive echo of the trace already in hand at emit time.
+    # The structured conversation behind raw_output, as raw chat-completion
+    # message dicts: the runner's real trace on the multi-turn stream, the
+    # run's own trace (tool calls included) on the single-turn one. The
+    # client renders it in the house chat UI. Nullable: legacy streams and
+    # runs whose adapter recorded no trace don't carry it. On the single-turn
+    # stream this is a UI echo only — the judge scores the I/O pair
+    # (final_answer), exactly what the saved eval judges.
     trace: list[dict[str, Any]] | None = None
 
 
 class PipelineCaseFailedEvent(BaseModel):
-    """A case died at some stage; the batch continues without it."""
+    """A case died at some stage; the batch continues without it.
+
+    Stage vocabulary: "drive" = the multi-turn conversation stage, "run" =
+    the single-turn one-shot task run, "judge" = the shared scoring stage.
+    """
 
     type: Literal["case_failed"] = "case_failed"
     case_index: int
-    stage: Literal["drive", "judge"]
+    stage: Literal["drive", "run", "judge"]
     code: str
     message: str
 
@@ -383,4 +395,4 @@ class PipelineBatchAbortedEvent(BaseModel):
 
     type: Literal["batch_aborted"] = "batch_aborted"
     error: str
-    stage: Literal["drive", "judge"]
+    stage: Literal["drive", "run", "judge"]
