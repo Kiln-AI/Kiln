@@ -61,6 +61,7 @@
   import {
     all_traces_reviewed,
     apply_rejudge_results,
+    apply_rereview_results,
     build_claim_review_payload,
     build_graded_traces,
     build_trace_reviews,
@@ -68,6 +69,7 @@
     disagreed_trace_indices,
     disagreement_feedback,
     empty_claim_verdicts,
+    first_pass_coverage_error,
     flipped_indices,
     grade_disagreement_count,
     has_grade_disagreement,
@@ -80,13 +82,13 @@
     reviewed_trace_count,
     select_calibration_subset,
     select_review_subset,
-    silent_refine_at_save,
     user_says_meets_spec,
     validate_refined_judge_prompt,
     type Claim,
     type FinalJudgement,
     type RefineJudgeProposal,
     type RejudgeCaseResult,
+    type ReReviewCaseResult,
     type TraceClaims,
     type TraceReview,
   } from "./claim_evidence"
@@ -209,11 +211,11 @@
     return error instanceof DOMException && error.name === "AbortError"
   }
 
-  // Deadline on the judge-copilot calls (authoring and refine-at-save): one
-  // full server attempt. The server retries for up to ~20 minutes for
-  // callers that can afford to wait; an interactive flow cannot, so past
-  // this the call is surfaced as failed — authoring as a retryable drive
-  // error, refine by keeping the judge the reviewer already calibrated.
+  // Deadline on the judge-copilot calls (authoring and the loop's refine):
+  // one full server attempt. The server retries for up to ~20 minutes for
+  // callers that can afford to wait; an interactive flow cannot, so past this
+  // the call is surfaced as failed — authoring as a retryable drive error,
+  // refine as the inline error under the review actions.
   const JUDGE_COPILOT_DEADLINE_MS = 300_000
 
   // ── Navigation (Svelte shallow routing).
@@ -870,19 +872,32 @@
         generation_error = "Failed to generate examples."
         return
       }
-      single_turn_examples = data.examples_for_feedback ?? []
-      sdg_session_config = data.sdg_session_config ?? null
+      const examples = data.examples_for_feedback ?? []
       // The server's judge_result names whatever model IT judged with —
       // the user's judge pick overrides it (the prompt is the part the
       // server authored; the model is the user's choice).
-      judge_info = data.judge_result
+      const batch_judge = data.judge_result
         ? judge_config_from_sdg_step(data.judge_result, chosen_judge)
         : null
-      await build_claims_for_review()
+      const built = await build_claims_for_review(examples, batch_judge)
       if (claims_error) {
         generation_error = claims_error
         return
       }
+      // Bailed without an error = the user aborted mid-build (Back, or a
+      // second Generate). Nothing below has run, so the previous batch — its
+      // review, its judge, its generation config — is still intact and
+      // consistent. Stay on the generation step.
+      if (!built) return
+      // Committed together, and only now: the review on screen, the answer
+      // key it becomes, and the sdg_session_config the server mints the eval
+      // dataset from must all describe the SAME generation session. Fresh
+      // examples also mean a fresh loop — rounds counted against the previous
+      // batch say nothing about this one.
+      reset_calibration_state()
+      single_turn_examples = examples
+      sdg_session_config = data.sdg_session_config ?? null
+      judge_info = batch_judge
       replace_step("review")
     } catch (e) {
       if (is_abort_error(e)) return
@@ -1860,28 +1875,27 @@
 
   // Same pattern for Review (5) → Save (6): land on Save with the request
   // already in flight; only show the in-step button on error as retry.
-  // Multi-turn first routes through the calibration loop: a review with
+  // Both arms first route through the calibration loop: a review with
   // disagreement enters a refine+re-check round instead of saving, round
   // after round, until the grades converge (or the user opts out via the
-  // save-without-refining link under the CTA).
+  // save-without-refining link under the CTA). A judge the reviewer said was
+  // wrong never ships without them seeing it re-checked.
   function on_advance_to_save() {
-    if (is_multi_turn) {
-      const graded = build_graded_traces(trace_claims, trace_reviews)
-      const decision = plan_save_action({
-        is_multi_turn: true,
-        has_disagreement: has_grade_disagreement(graded),
+    const graded = build_graded_traces(trace_claims, trace_reviews)
+    const decision = plan_save_action({
+      has_disagreement: has_grade_disagreement(graded),
+    })
+    if (decision.action === "calibrate") {
+      void run_calibration_round()
+      return
+    }
+    // Converged: zero disagreement, so the judge whose verdicts were just
+    // graded (the last refined one) ships through the normal save.
+    if (calibration_rounds_completed > 0) {
+      posthog.capture("eval_v2_judge_calibration_converged", {
+        is_multi_turn,
+        rounds: calibration_rounds_completed,
       })
-      if (decision.action === "calibrate") {
-        void run_calibration_round()
-        return
-      }
-      // Converged: zero disagreement, so the judge whose verdicts were just
-      // graded (the last refined one) ships through the normal save.
-      if (calibration_rounds_completed > 0) {
-        posthog.capture("eval_v2_judge_calibration_converged", {
-          rounds: calibration_rounds_completed,
-        })
-      }
     }
     goto_step("save")
     on_save()
@@ -1918,17 +1932,18 @@
     ? trace_claims.length > 0 && reviewed_count >= multi_turn_review_target
     : all_reviewed
   // The review CTA says what clicking it does: with any graded disagreement
-  // a multi-turn save enters a refine round, so the button reads Refine
-  // Judge (with a tooltip naming the count). It flips back to Save the
-  // moment the last disagreement clears — the convergence signal. Uses the
-  // loop's exact entry predicate, so label and behavior can't drift apart.
-  // Single-turn saves directly and keeps the save label.
-  $: review_disagreement_count = is_multi_turn
-    ? grade_disagreement_count(build_graded_traces(trace_claims, trace_reviews))
-    : 0
-  $: review_cta_state = is_multi_turn
-    ? review_cta({ num_disagreements: review_disagreement_count })
-    : "save"
+  // a save enters a refine round, so the button reads Refine Judge (with a
+  // tooltip naming the count). It flips back to Save the moment the last
+  // disagreement clears — the convergence signal. Uses the loop's exact entry
+  // predicate, so label and behavior can't drift apart.
+  $: review_disagreement_count = grade_disagreement_count(
+    build_graded_traces(trace_claims, trace_reviews),
+  )
+  $: review_cta_state = review_cta({
+    num_disagreements: review_disagreement_count,
+  })
+  // The arm's word for one reviewed item, for copy that counts them.
+  $: judged_noun = is_multi_turn ? "conversation" : "example"
   // Bound out of the review component: true only while it shows its last
   // trace, which is where it renders the primary CTA. The save-without-
   // refining link stacks under that CTA, so it follows this flag.
@@ -2107,41 +2122,51 @@
     void build_claims_for_index(index)
   }
 
-  // ── Judge calibration loop (multi-turn). A save with disagreement doesn't
-  // ship a silently-refined judge: it refines EXPLICITLY, re-judges every
-  // driven conversation with the refined prompt (judge_traces), and asks the
-  // reviewer to grade a fresh smart-picked subset — round after round. Save
-  // happens only when a review carries zero disagreement (the judge that
-  // ships is the one whose verdicts were graded) or when the user opts out
-  // via the save-without-refining link under the review CTA.
+  // ── Judge calibration loop (both arms). A save with disagreement never
+  // ships a judge the reviewer hasn't seen judge: it refines EXPLICITLY,
+  // re-checks the eval data with the refined prompt, and asks the reviewer to
+  // grade the result — round after round. Multi-turn re-judges its driven
+  // conversations (judge_traces) and re-opens a smart-picked subset;
+  // single-turn re-reviews all its examples (review_traces). Save happens
+  // only when a review carries zero disagreement (the judge that ships is the
+  // one whose verdicts were graded) or when the user opts out via the
+  // save-without-refining link under the review CTA.
   type CalibrationPhase = "idle" | "refining" | "rejudging" | "building_claims"
   let calibration_phase: CalibrationPhase = "idle"
   // Completed refine+re-judge rounds this batch — round tags, the gate
   // target, and convergence telemetry all key off it.
   let calibration_rounds_completed = 0
-  // Retryable round failure (re-judge stream died); Retry resumes at the
-  // re-judge without re-paying the refine call.
+  // Retryable round failure (the re-check stream died, or single-turn
+  // couldn't re-review every example); Retry resumes at the re-check without
+  // re-paying the refine call.
   let calibration_error: string | null = null
   // Refine-attempt failure (request died, timeout, unusable prompt): shown
   // inline under the review actions. The CTA stays Refine Judge and re-fires
   // the refine; the save-without-refining link remains the way out.
   let calibration_refine_error: string | null = null
-  // Cases without a fresh verdict last round (failed re-judge) — surfaced
-  // honestly above the review; they keep stale results and sit the round out.
+  // MULTI-TURN only: conversations without a fresh verdict last round —
+  // surfaced honestly above the review; they keep stale results and sit the
+  // round out. Pinned to 0 for single-turn, whose re-review is
+  // all-or-nothing, so a committed round has no shortfall to report.
   let calibration_failed_count = 0
-  // Durable ids (leaf run ids) of traces graded in ANY round — the fresh
-  // top-up must never re-serve them as "never reviewed".
+  // MULTI-TURN only: durable ids (leaf run ids) of traces graded in ANY
+  // round — the fresh top-up must never re-serve them as "never reviewed".
+  // Single-turn re-opens every example each round, so it has no top-up and
+  // leaves this empty.
   let calibration_reviewed_keys = new Set<string>()
-  // The refined judge awaiting a successful re-judge, plus the disagreement
-  // snapshot it was refined from — kept so a re-judge Retry resumes here.
+  // The refined judge awaiting a successful re-check, plus the disagreement
+  // snapshot it was refined from — kept so a Retry resumes here.
   let calibration_pending_judge: JudgeConfig | null = null
   let calibration_pending_disagreed: number[] = []
-  // Live re-judge progress (judge-only pipeline surface).
+  // Live re-check progress (the pipeline progress surface, without the
+  // drive). Multi-turn counts re-judged conversations; single-turn counts
+  // examples that came back judged AND re-claimed.
   let rejudged_done = 0
   let rejudge_failed_live = 0
   let rejudge_total = 0
 
-  // Fresh batch, fresh loop: any new plan or drive invalidates every round.
+  // Fresh batch, fresh loop: a new multi-turn plan or drive, or a new
+  // single-turn generation, invalidates every round counted before it.
   function reset_calibration_state() {
     calibration_phase = "idle"
     calibration_rounds_completed = 0
@@ -2156,11 +2181,27 @@
     rejudge_total = 0
   }
 
-  // Refine the judge from the current grades — the loop's explicit version
-  // of the old silent save-time refine. Unlike that path it does NOT fall
-  // back: any failure or unusable prompt throws to the inline refine error,
-  // because silently keeping the old judge here would re-run the review the
-  // user just did and call it improvement. A user abort propagates.
+  // The readable reason from a failed streaming response. The error handler
+  // wraps detail as {message}; typed route errors nest {code, message} inside
+  // it — unwrap either shape so a retry surface says what to fix.
+  async function error_detail(response: Response): Promise<string> {
+    try {
+      const err_json = await response.json()
+      const message = err_json?.message
+      return (
+        (typeof message === "string" ? message : message?.message) ??
+        err_json?.detail?.message ??
+        "unknown"
+      )
+    } catch {
+      return await response.text().catch(() => "unknown")
+    }
+  }
+
+  // Refine the judge from the current grades. It does NOT fall back: any
+  // failure or unusable prompt throws to the inline refine error, because
+  // silently keeping the old judge would re-run the review the user just did
+  // and call it improvement. A user abort propagates.
   class CalibrationRefineError extends Error {
     reason: string
     constructor(reason: string, message: string) {
@@ -2256,21 +2297,8 @@
       signal: new_copilot_abort_signal(),
     })
     if (!response.ok || !response.body) {
-      let detail: string
-      try {
-        const err_json = await response.json()
-        // The error handler wraps detail as {message}; typed route errors
-        // nest {code, message} inside it — unwrap either shape.
-        const message = err_json?.message
-        detail =
-          (typeof message === "string" ? message : message?.message) ??
-          err_json?.detail?.message ??
-          "unknown"
-      } catch {
-        detail = await response.text().catch(() => "unknown")
-      }
       throw new KilnError(
-        `Re-checking your eval data failed (${response.status}): ${detail}`,
+        `Re-checking your eval data failed (${response.status}): ${await error_detail(response)}`,
       )
     }
     const results = new Map<number, RejudgeCaseResult>()
@@ -2323,23 +2351,127 @@
     return results
   }
 
-  // One calibration round: refine → re-judge all → smart-pick a new subset →
-  // rebuild claims and reset every grade (a refined judge can flip
-  // previously-agreed verdicts too, and nothing unseen ships). `resume`
-  // restarts at the re-judge with the already-refined judge (the Retry path).
+  // Re-review every SINGLE-TURN example with the refined judge over the
+  // review_traces stream — the same route the first review ran on, which
+  // re-judges and rebuilds claims in one pass.
+  //
+  // ALL-OR-NOTHING, like the first-pass build on this same route: single-turn
+  // grades every example and ships every one in the golden answer key, so an
+  // example that fails to re-review has nowhere to hide. Keeping it would
+  // either re-present the previous judge's verdict as if the refined judge
+  // produced it, or leave it ungraded and wedge the save gate. Failing the
+  // round instead costs a Retry (which resumes at the re-check without paying
+  // for the refine again) and keeps the answer key honest. Multi-turn can
+  // afford the partial round because it re-reviews a subset it picks from the
+  // cases that actually came back.
+  async function rereview_all_examples(
+    judge: JudgeConfig,
+  ): Promise<Map<number, ReReviewCaseResult>> {
+    // Re-send what the current review is showing (not the original generation
+    // output), so a round always re-checks exactly the text on screen.
+    const ios = trace_claims.map((tc) => ({
+      raw_input: tc.raw_input,
+      raw_output: tc.raw_output,
+    }))
+    if (ios.length === 0) {
+      throw new KilnError("There are no examples to re-check.")
+    }
+    rejudge_total = ios.length
+    rejudged_done = 0
+    rejudge_failed_live = 0
+    const url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval_builder/review_traces`
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify({ traces: ios, spec_name: name, judge }),
+      signal: new_copilot_abort_signal(),
+    })
+    if (!response.ok || !response.body) {
+      throw new KilnError(
+        `Re-checking your eval data failed (${response.status}): ${await error_detail(response)}`,
+      )
+    }
+    const results = new Map<number, ReReviewCaseResult>()
+    let case_error: string | null = null
+    const reader = response.body.getReader()
+    for await (const payload of sse_data_payloads(reader)) {
+      if (payload === "complete") break
+      let event: ReviewTraceEvent
+      try {
+        event = JSON.parse(payload) as ReviewTraceEvent
+      } catch {
+        continue
+      }
+      if (event.type === "trace_reviewed") {
+        results.set(event.trace_index, {
+          judge_score: event.judge_score,
+          judge_reasoning: event.judge_reasoning,
+          raw_input: event.raw_input,
+          raw_output: event.raw_output,
+          claims: event.claims ?? [],
+          final_judgement: event.final_judgement,
+        })
+        rejudged_done += 1
+      } else if (event.type === "trace_error") {
+        // Keep draining so the progress count stays honest; the first error
+        // is the one reported, and the round fails once the stream ends.
+        // phase separates a re-check failure from a first-pass one: same
+        // route, but one costs a whole calibration round.
+        posthog.capture("eval_v2_review_trace_error", {
+          code: event.code,
+          phase: "rereview",
+        })
+        rejudge_failed_live += 1
+        case_error = case_error ?? event.message
+      }
+    }
+    if (case_error) {
+      throw new KilnError(`Re-checking your eval data failed: ${case_error}`)
+    }
+    if (results.size !== rejudge_total) {
+      // Short stream (connection dropped mid-batch): the missing examples
+      // never reported either way, which is the same problem as an error.
+      throw new KilnError(
+        "Some examples weren't re-checked with the improved judge. Try again.",
+      )
+    }
+    return results
+  }
+
+  // One calibration round: refine → re-check the eval data → re-grade against
+  // the refined judge's verdicts. Every grade resets (a refined judge can flip
+  // previously-agreed verdicts too, and nothing unseen ships). Multi-turn then
+  // smart-picks a new subset and waits on a claims rebuild; single-turn
+  // re-opens all its examples, whose claims already came back with the
+  // verdicts. `resume` restarts at the re-check with the already-refined judge
+  // (the Retry path).
   async function run_calibration_round(resume = false) {
     if (calibration_phase !== "idle") return
     calibration_error = null
     calibration_refine_error = null
     const round = calibration_rounds_completed + 1
     const base_judge = review_judge
-    if (!base_judge) return
+    if (!base_judge) {
+      // There is no judge to refine FROM — the review on screen was never
+      // pinned to one. Report it on the inline refine surface (the same
+      // sentence save uses for the same missing judge) rather than returning
+      // quietly, which would leave the CTA doing nothing however often it is
+      // clicked.
+      calibration_refine_error =
+        "No judge was configured. Go back and re-run the review."
+      return
+    }
     try {
       let refined = resume ? calibration_pending_judge : null
       let disagreed = resume ? calibration_pending_disagreed : []
       if (!refined) {
         // Snapshot who was reviewed and who was disagreed with BEFORE the
-        // grades reset — the smart pick and the fresh top-up need both.
+        // grades reset. Multi-turn consumes both (its smart pick and fresh
+        // top-up); single-turn re-reviews everything, so it only carries the
+        // disagreements to the refine.
         disagreed = disagreed_trace_indices(trace_reviews)
         trace_claims.forEach((tc, i) => {
           if (tc.leaf_run_id && is_trace_reviewed(tc, trace_reviews[i])) {
@@ -2347,6 +2479,7 @@
           }
         })
         posthog.capture("eval_v2_judge_calibration_round_started", {
+          is_multi_turn,
           round,
           num_disagreements: disagreed.length,
         })
@@ -2356,6 +2489,40 @@
         calibration_pending_disagreed = disagreed
       }
       calibration_phase = "rejudging"
+      if (!is_multi_turn) {
+        const results = await rereview_all_examples(refined)
+        const flipped = flipped_indices(trace_claims, results)
+        // Computed before anything commits, same as multi-turn below: a round
+        // that throws leaves the previous grades and verdicts intact.
+        const applied = apply_rereview_results(
+          trace_claims,
+          results,
+          `single_turn_r${round}`,
+        )
+        // Always zero here: the re-review is all-or-nothing, so a round that
+        // commits re-checked every example.
+        calibration_failed_count = 0
+        posthog.capture("eval_v2_judge_calibration_round_completed", {
+          is_multi_turn: false,
+          round,
+          num_flips: flipped.length,
+          num_judged: results.size,
+          num_failed: 0,
+        })
+        // Single-turn grades every example — the save path builds the golden
+        // answer key from all of them, so there is no subset to pick and the
+        // round re-opens the whole set. Claims arrived with the verdicts, so
+        // the review opens straight away with no claims-build wait.
+        trace_claims = applied
+        trace_reviews = build_trace_reviews(applied)
+        review_judge = refined
+        selected_trace_indices = applied.map((_, i) => i)
+        calibration_rounds_completed = round
+        calibration_pending_judge = null
+        calibration_pending_disagreed = []
+        calibration_phase = "idle"
+        return
+      }
       const results = await rejudge_all_traces(refined)
       const flipped = flipped_indices(trace_claims, results)
       // Compute the whole round outcome BEFORE committing any of it, so a
@@ -2389,6 +2556,7 @@
       }
       calibration_failed_count = trace_claims.length - results.size
       posthog.capture("eval_v2_judge_calibration_round_completed", {
+        is_multi_turn: true,
         round,
         num_flips: flipped.length,
         num_judged: results.size,
@@ -2415,6 +2583,7 @@
       if (is_abort_error(e)) return
       if (e instanceof CalibrationRefineError) {
         posthog.capture("eval_v2_judge_calibration_refine_failed", {
+          is_multi_turn,
           round,
           reason: e.reason,
         })
@@ -2447,6 +2616,7 @@
   // refined one once a round has run — grades carried as-is.
   function save_without_refining() {
     posthog.capture("eval_v2_judge_calibration_opted_out", {
+      is_multi_turn,
       rounds: calibration_rounds_completed,
       num_disagreements: review_disagreement_count,
       // Whether a refine failure was on screen when they bailed: bailing out
@@ -2457,81 +2627,6 @@
     calibration_refine_error = null
     goto_step("save")
     on_save()
-  }
-
-  // ── Under-the-hood judge refinement (SINGLE-TURN, at save). The reviewer
-  // aligns on CLAIMS, never on prompt text — so refinement is invisible: if
-  // their grades carry any disagreement, the judge prompt is refined from
-  // those grades and the REFINED judge is what ships. Non-blocking — any
-  // failure or an unusable refined prompt keeps the original judge, so a
-  // refine hiccup never blocks the save. Multi-turn never comes here: its
-  // refinement runs explicitly in the calibration loop, where the reviewer
-  // re-grades the refined judge's verdicts before anything ships.
-  async function refined_judge_for_save(
-    judge: JudgeConfig,
-  ): Promise<JudgeConfig> {
-    const graded_traces = build_graded_traces(trace_claims, trace_reviews)
-    if (!has_grade_disagreement(graded_traces)) return judge
-    // Deadline-bounded, but unlike authoring a refine failure does NOT
-    // block: the fallback keeps the judge the reviewer just calibrated —
-    // retaining a reviewed judge isn't degradation, and a save should never
-    // die on an optional improvement. A user abort propagates as before.
-    const { signal, timed_out } = with_deadline(
-      new_copilot_abort_signal(),
-      JUDGE_COPILOT_DEADLINE_MS,
-    )
-    let data, error
-    try {
-      ;({ data, error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/refine_judge",
-        {
-          params: { path: { project_id, task_id } },
-          body: { judge_prompt: judge.prompt, graded_traces },
-          signal,
-        },
-      ))
-    } catch (e) {
-      // Only a USER abort propagates (it cancels the whole save). Every
-      // other throw — deadline expiry, network/transport failure — keeps
-      // the reviewed judge, same as a server-side error below.
-      if (is_abort_error(e) && !timed_out()) throw e
-      const reason = timed_out() ? "timeout" : "request_failed"
-      console.warn(
-        `Judge refinement ${reason === "timeout" ? "timed out" : "failed"} at save; keeping the reviewed judge.`,
-        e,
-      )
-      posthog.capture("eval_v2_judge_refine_fallback", { reason })
-      return judge
-    }
-    // Refine failed — ship the original judge rather than block the save.
-    // The fallback is invisible to the user by design, so leave a telemetry
-    // trail: silent fallbacks would otherwise read as "refinement works".
-    if (error || !data) {
-      console.warn(
-        "Judge refinement failed at save; keeping the reviewed judge.",
-        error,
-      )
-      posthog.capture("eval_v2_judge_refine_fallback", {
-        reason: "request_failed",
-      })
-      return judge
-    }
-    const proposal = data as RefineJudgeProposal
-    // Only ship a mechanically-valid refined prompt (it renders into the judge
-    // harness verbatim); otherwise fall back to the original.
-    const validation_error = validate_refined_judge_prompt(
-      proposal.refined_judge_prompt,
-    )
-    if (validation_error) {
-      console.warn(
-        `Refined judge prompt rejected (${validation_error}); keeping the reviewed judge.`,
-      )
-      posthog.capture("eval_v2_judge_refine_fallback", {
-        reason: "invalid_refined_prompt",
-      })
-      return judge
-    }
-    return { ...judge, prompt: proposal.refined_judge_prompt }
   }
 
   // SSE events from the eval_builder review_traces endpoint (single-turn).
@@ -2562,25 +2657,33 @@
   // out [judge → claim builder] per trace (server-side, concurrency-capped)
   // and streams a result per trace back. Multi-turn never comes here — its
   // claims arrive on the merged review_pipeline stream during the drive.
-  async function build_claims_for_review() {
-    // judge_info comes from clarify_spec (already model-overridden); fall
+  // Returns whether the review state now reflects THIS call's results —
+  // false when it bailed (no judge, stream error, or a user abort), so a
+  // caller never advances to a review built from someone else's run.
+  // Examples and judge are parameters so a fresh generation can be reviewed
+  // BEFORE it is committed to the wizard's state: on a bail the caller keeps
+  // the previous batch, and nothing here has touched it. Defaults serve the
+  // rebuild path, which re-reviews what is already committed.
+  async function build_claims_for_review(
+    examples: SubsampleBatchOutputItemApi[] = single_turn_examples,
+    batch_judge: JudgeConfig | null = judge_info,
+  ): Promise<boolean> {
+    // batch_judge comes from clarify_spec (already model-overridden); fall
     // back to the default prompt on the picked judge model. Either way,
     // remember the judge the review ran — save persists that exact object.
     const judge =
-      judge_info ??
+      batch_judge ??
       (judge_model ? build_default_judge_info(spec_text(), judge_model) : null)
     if (!judge) {
       claims_error = "No judge model selected. Start generation again."
-      return
+      return false
     }
     claims_loading = true
     claims_error = null
-    const ios = single_turn_examples.map((e) => ({
+    const ios = examples.map((e) => ({
       raw_input: e.input,
       raw_output: e.output,
     }))
-    review_judge = judge
-    reviewed_identity = JSON.stringify({ name, spec: spec_text() })
     // Fill by trace_index as events arrive (they complete out of order).
     const built: (TraceClaims | null)[] = new Array(ios.length).fill(null)
     try {
@@ -2603,7 +2706,7 @@
       })
       if (!response.ok || !response.body) {
         claims_error = `Failed to build claims (${response.status}).`
-        return
+        return false
       }
 
       const reader = response.body.getReader()
@@ -2629,21 +2732,48 @@
             claims_error: null,
           }
         } else if (event.type === "trace_error") {
-          posthog.capture("eval_v2_review_trace_error", { code: event.code })
+          posthog.capture("eval_v2_review_trace_error", {
+            code: event.code,
+            phase: "first_pass",
+          })
           claims_error = `Failed to build claims for a trace: ${event.message}`
         }
       }
 
-      if (claims_error) return
+      // ALL-OR-NOTHING, same rule the re-review round enforces: single-turn
+      // grades every example, so a missing one has no place to sit. Two ways
+      // to come up short — a per-trace error frame, or a stream that ended
+      // early without one (dropped connection). Both fail the build, because
+      // a truncated set presented as the full review is a silent loss the
+      // user has no way to notice. Checked before anything commits, so a
+      // failed build leaves the previous review untouched.
+      if (claims_error) return false
       const complete = built.filter((t): t is TraceClaims => t !== null)
+      const coverage_error = first_pass_coverage_error({
+        built: complete.length,
+        submitted: ios.length,
+      })
+      if (coverage_error) {
+        claims_error = coverage_error
+        return false
+      }
       trace_claims = complete
       trace_reviews = build_trace_reviews(complete)
       // Single-turn reviews everything: clarify_spec already subsampled the
       // most informative examples upstream.
       selected_trace_indices = complete.map((_, i) => i)
+      // Pinned WITH the results, never before them: an aborted rebuild must
+      // not leave review_judge pointing at a judge that produced none of the
+      // traces on screen, nor re-pin the identity the save-time staleness
+      // guard checks. Save persists review_judge, so a mismatch here is
+      // exactly the "judge nobody graded" case the loop exists to prevent.
+      review_judge = judge
+      reviewed_identity = JSON.stringify({ name, spec: spec_text() })
+      return true
     } catch (e) {
-      if (is_abort_error(e)) return
+      if (is_abort_error(e)) return false
       claims_error = e instanceof Error ? e.message : "Failed to build claims."
+      return false
     } finally {
       claims_loading = false
     }
@@ -2662,6 +2792,11 @@
       trace_claims = []
       trace_reviews = []
       selected_trace_indices = []
+      // Rounds belong to the discarded review, not to whatever replaces it —
+      // single-turn rebuilds in place just below, multi-turn is sent back to
+      // re-drive. Either way, without this the next review would inherit a
+      // round count it never earned.
+      reset_calibration_state()
       if (is_multi_turn) {
         // Multi-turn results come from the merged pipeline (judge rides the
         // drive), so a stale review means re-driving the plan.
@@ -2676,10 +2811,9 @@
         on_drive_multi_turn()
         return
       }
-      await build_claims_for_review()
-      if (claims_error) return
-      // Still empty with no error = aborted mid-build — stay put.
-      if (trace_claims.length === 0) return
+      // Any bail — no judge, stream failure, or a user abort — leaves the
+      // review state untouched, so there is nothing to advance to.
+      if (!(await build_claims_for_review())) return
     }
     if (is_multi_turn) {
       // Multi-turn claims are lazy — gate the advance on the selected
@@ -2735,14 +2869,11 @@
         save_error = "No judge was configured. Go back and re-run the review."
         return
       }
-      // Single-turn only: if the reviewer disagreed anywhere, quietly refine
-      // the judge from their grades (falling back to the reviewed judge on
-      // failure). Multi-turn ships review_judge untouched — the calibration
-      // loop already refined explicitly, and the reviewer graded that exact
-      // judge's verdicts.
-      const save_judge = silent_refine_at_save(is_multi_turn)
-        ? await refined_judge_for_save(review_judge_config)
-        : review_judge_config
+      // What ships is exactly the judge whose verdicts the reviewer graded.
+      // Both arms refine in the calibration loop, where the refined judge is
+      // re-checked and re-graded before it can reach save — so there is no
+      // late rewrite the reviewer never saw.
+      const save_judge = review_judge_config
 
       // Multi-turn save: golden/train tags land on the driven chains; the
       // eval slice is minted server-side as EvalInputs from the driven cases.
@@ -3515,15 +3646,15 @@
         {:else if current_step === "review"}
           <!-- ── Step 5 — Claim/Evidence review (trace hidden in a modal) ── -->
           {#if calibration_phase === "refining"}
-            <!-- The loop's explicit refine: the old silent save-time rewrite,
-                 now a visible stage the reviewer can watch and abort. -->
+            <!-- The refine, as a visible stage the reviewer can watch and
+                 abort rather than something that happens at save. -->
             <RefiningAnimation
               title="Improving Your Judge"
               description="Kiln is applying your feedback to improve the judge that grades your eval. Hold tight!"
             />
           {:else if calibration_phase === "rejudging"}
             <!-- The pipeline progress surface in judge-only form: no drive,
-                 no turns — one verdict per conversation as the stream lands. -->
+                 no turns — one result per item as the stream lands. -->
             <ConversationAnimation
               title={`Re-checking Eval Data ${rejudged_done} of ${rejudge_total}…`}
               description="Re-checking your eval data with the improved judge. Hold tight!"
@@ -3562,10 +3693,13 @@
           {:else if calibration_error}
             <!-- Retryable re-judge failure — the grades that fed the refine
                  are intact, so Retry resumes at the re-check without paying
-                 the refine again. -->
+                 the refine again. The appended sentence names the other exit:
+                 a failure that repeats every round (a case the re-check can
+                 never complete) would otherwise leave Retry as the only
+                 visible move. -->
             <Warning
               warning_color="error"
-              warning_message={calibration_error}
+              warning_message={`${calibration_error.trimEnd().replace(/\.$/, "")}. You can also go back to review and save without refining further.`}
             />
             <div class="text-center py-4 flex justify-center gap-2">
               <button
@@ -3621,7 +3755,7 @@
                 traces={trace_claims}
                 bind:verdicts={trace_reviews}
                 selected_indices={selected_trace_indices}
-                judged_noun={is_multi_turn ? "conversation" : "example"}
+                {judged_noun}
                 {on_open_trace}
                 on_save={on_advance_to_save}
                 save_disabled={!save_gate_met}
@@ -3629,7 +3763,7 @@
                   ? "Refine Judge"
                   : "Save →"}
                 save_tooltip={review_cta_state === "refine"
-                  ? refine_judge_tooltip(review_disagreement_count)
+                  ? refine_judge_tooltip(review_disagreement_count, judged_noun)
                   : null}
                 bind:on_last_trace={review_on_last_trace}
               />

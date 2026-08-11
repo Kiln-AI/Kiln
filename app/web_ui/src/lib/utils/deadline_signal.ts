@@ -1,9 +1,8 @@
 // Compose a user-driven abort signal with a hard deadline, keeping the two
 // causes distinguishable after the fact. A fired deadline means the call is
-// over-budget and the caller applies its failure policy (surface a retryable
-// error, or keep already-good state), while a user abort must still cancel
-// the whole flow — so the catch block needs to know which one rejected the
-// request.
+// over-budget and the caller surfaces a retryable error, while a user abort
+// must still cancel the whole flow — so the catch block needs to know which
+// one rejected the request.
 export type DeadlineSignal = {
   signal: AbortSignal
   // True iff the deadline fired and the user signal did not. Checking the

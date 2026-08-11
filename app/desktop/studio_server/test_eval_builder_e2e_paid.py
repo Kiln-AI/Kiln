@@ -38,15 +38,18 @@ calls, so the harness starts at Step 4 with the spec text already "written":
                        traces the reviewer opens. The human then
                        agrees/disagrees per claim — headless we agree with
                        all but one final judgement, and that one
-                       disagreement drives the auto-refine below.)
+                       disagreement is what the reviewer's Refine Judge
+                       click feeds into the refine below.)
   Step 5r  REFINE      POST .../eval_builder/refine_judge
-                       (UI: on_save → refined_judge_for_save, UNDER THE HOOD.
-                       The reviewer DISAGREES with one case's final judgement
-                       with a why and agrees with the rest; at save those grades
-                       are fed to the refine model and the REFINED judge is what
-                       ships — no user step, no proposal, no approval. The
-                       refined prompt is validated (plain text, no template
-                       syntax); on any failure the original judge ships.)
+                       (UI: the calibration loop's refine step. The reviewer
+                       DISAGREES with one case's final judgement with a why and
+                       agrees with the rest; those grades feed the refine model
+                       and the REFINED judge re-checks the eval data, which the
+                       reviewer then re-grades before any save. The refined
+                       prompt is validated (plain text, no template syntax);
+                       on failure the round surfaces an inline error and
+                       nothing ships. This test exercises the refine call
+                       itself, not the loop's re-check and re-grade.)
   Step 6   SAVE        POST .../spec_with_copilot
                        (UI: on_save — persists the Spec, the Eval, the V2
                        judge config, and the answer key. Only REVIEWED
@@ -552,12 +555,12 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         f"missed): {citation_misses}",
     )
 
-    # ── Step 5r refine — AUTO-REFINE THE JUDGE (UI: on_save →
-    # refined_judge_for_save). The reviewer disagrees with one case's final
-    # judgement (with a why) and agrees with the rest of the REVIEWED SUBSET;
-    # at save the studio feeds those grades to the refine model UNDER THE
-    # HOOD and the REFINED judge is what ships. No user step — the reviewer
-    # only ever graded claims.
+    # ── Step 5r refine — REFINE THE JUDGE (UI: the calibration loop). The
+    # reviewer disagrees with one case's final judgement (with a why) and
+    # agrees with the rest of the REVIEWED SUBSET; the studio feeds those
+    # grades to the refine model. In the wizard the refined judge then
+    # re-checks the data for another review round; here we take the refined
+    # judge straight to save, since this test covers the refine contract.
     dissent_index = review_indices[0]
     dissent_why = (
         "A polite, helpful reply that still states an unverified specific "
@@ -668,8 +671,8 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             "properties": {"spec_type": "issue", "issue_description": SPEC_TEXT},
             "evaluate_full_trace": True,
             "reviewed_examples": [],
-            # The auto-refined judge is what ships (UI: on_save →
-            # refined_judge_for_save refines from the grades, then persists).
+            # The refined judge is what ships: the wizard persists whichever
+            # judge produced the verdicts the reviewer last graded.
             "judge_info": refined_judge,
             "multi_turn": {
                 "batch_tag": batch_tag,

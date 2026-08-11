@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   all_traces_reviewed,
   apply_rejudge_results,
+  apply_rereview_results,
   blind_final_judgement,
   build_claim_review_payload,
   build_graded_traces,
@@ -10,6 +11,7 @@ import {
   disagreed_trace_indices,
   disagreement_feedback,
   final_judgement_reason,
+  first_pass_coverage_error,
   flipped_indices,
   grade_disagreement_count,
   has_grade_disagreement,
@@ -25,7 +27,6 @@ import {
   reviewed_trace_count,
   select_calibration_subset,
   select_review_subset,
-  silent_refine_at_save,
   user_says_meets_spec,
   validate_refined_judge_prompt,
   type Claim,
@@ -283,6 +284,17 @@ describe("build_claim_review_payload", () => {
     })
     const review = build_trace_reviews([t])[0]
     expect(() => build_claim_review_payload(t, review)).toThrow(/built/)
+  })
+
+  it("throws on an ungraded overall call rather than guessing a verdict", () => {
+    // The answer key must never invent a human grade: written as "disagree"
+    // it would contradict user_says_meets_spec, which reads null as agree.
+    // Reachable only if a caller ever skips the is_trace_reviewed gate — most
+    // pressingly after a calibration round, which resets every grade to null.
+    const t = trace()
+    const review = build_trace_reviews([t])[0]
+    expect(review.final_judgement_verdict.agrees).toBeNull()
+    expect(() => build_claim_review_payload(t, review)).toThrow(/graded/)
   })
 
   it("includes only graded claims and always the final judgement", () => {
@@ -720,45 +732,137 @@ describe("apply_rejudge_results", () => {
   })
 })
 
-describe("plan_save_action — loop entry and exit", () => {
-  it("multi-turn with disagreement enters a calibration round", () => {
-    expect(
-      plan_save_action({ is_multi_turn: true, has_disagreement: true }),
-    ).toEqual({ action: "calibrate" })
+describe("apply_rereview_results (single-turn round)", () => {
+  function rereview_result(judge_score: "pass" | "fail") {
+    return {
+      judge_score,
+      judge_reasoning: `Re-checked: ${judge_score}.`,
+      raw_input: "What's the return window?",
+      raw_output: "Our return window is 30 days.",
+      claims: [claim({ claim: "Fresh claim from the refined judge." })],
+      final_judgement: claim({ claim: "Fresh final judgement." }),
+    }
+  }
+
+  it("folds fresh verdicts AND claims in — no rebuild needed", () => {
+    // The single-turn re-check returns claims with the verdict, so unlike the
+    // multi-turn fold these land built and the review opens immediately.
+    const t = trace({ trace_id: "trace_0" })
+    const applied = apply_rereview_results(
+      [t],
+      new Map([[0, rereview_result("pass")]]),
+      "single_turn_r1",
+    )
+    expect(applied[0].judge_score).toBe("pass")
+    expect(applied[0].claims_state).toBe("built")
+    expect(applied[0].claims?.[0].claim).toBe(
+      "Fresh claim from the refined judge.",
+    )
+    expect(applied[0].final_judgement?.claim).toBe("Fresh final judgement.")
+    expect(applied[0].claims_error).toBeNull()
+    expect(applied[0].trace_id).toBe("single_turn_r1_case_0")
   })
 
-  it("keeps calibrating however many rounds have run — the loop is uncapped", () => {
-    // The planner takes no round count, so nothing about a long-running loop
-    // can flip it to save. The only ways out are convergence and the explicit
-    // save-without-refining link, which bypasses this planner entirely.
-    expect(
-      plan_save_action({ is_multi_turn: true, has_disagreement: true }),
-    ).toEqual({ action: "calibrate" })
+  it("refuses a partial round rather than keeping a stale verdict", () => {
+    // Single-turn ships every example in the answer key, so one still holding
+    // the previous judge's verdict would be attributed to the refined judge.
+    // Naming the example makes a caller bug diagnosable.
+    const traces = [trace({ trace_id: "trace_0" }), trace({ trace_id: "t_1" })]
+    const partial = new Map([[0, rereview_result("pass")]])
+    expect(() =>
+      apply_rereview_results(traces, partial, "single_turn_r1"),
+    ).toThrow(/no result for example 2/)
+    expect(() =>
+      apply_rereview_results(traces, new Map(), "single_turn_r1"),
+    ).toThrow(/partial re-review/)
   })
 
-  it("converged reviews save (with the last refined judge)", () => {
-    expect(
-      plan_save_action({ is_multi_turn: true, has_disagreement: false }),
-    ).toEqual({ action: "save" })
+  it("checks coverage, not count — a gap with the right total still throws", () => {
+    // Guards against simplifying the coverage scan back to a length compare:
+    // three results for three examples, but keyed 0, 1, 5 — example 3 would
+    // silently keep the previous judge's verdict.
+    const traces = [
+      trace(),
+      trace({ trace_id: "t_1" }),
+      trace({ trace_id: "t_2" }),
+    ]
+    const miskeyed = new Map([
+      [0, rereview_result("pass")],
+      [1, rereview_result("pass")],
+      [5, rereview_result("pass")],
+    ])
+    expect(miskeyed.size).toBe(traces.length)
+    expect(() =>
+      apply_rereview_results(traces, miskeyed, "single_turn_r1"),
+    ).toThrow(/no result for example 3/)
   })
 
-  it("single-turn always saves — the loop never runs there", () => {
-    expect(
-      plan_save_action({ is_multi_turn: false, has_disagreement: true }),
-    ).toEqual({ action: "save" })
-    expect(
-      plan_save_action({ is_multi_turn: false, has_disagreement: false }),
-    ).toEqual({ action: "save" })
+  it("grades reset, so the reviewer re-grades against the refined judge", () => {
+    const t = trace()
+    const applied = apply_rereview_results(
+      [t],
+      new Map([[0, rereview_result("pass")]]),
+      "single_turn_r1",
+    )
+    const reviews = build_trace_reviews(applied)
+    expect(reviews[0].final_judgement_verdict.agrees).toBeNull()
+    // One slot per fresh claim: the old grades cannot carry over, because the
+    // refined judge rebuilt the claims they were made against.
+    expect(reviews[0].claim_verdicts).toHaveLength(1)
+  })
+
+  it("flips are detected against the pre-round verdicts", () => {
+    const t = trace({ judge_score: "fail" })
+    const results = new Map([[0, rereview_result("pass")]])
+    expect(flipped_indices([t], results)).toEqual([0])
+    expect(flipped_indices([trace({ judge_score: "pass" })], results)).toEqual(
+      [],
+    )
   })
 })
 
-describe("silent_refine_at_save", () => {
-  it("multi-turn save never silently refines; single-turn keeps it", () => {
-    // Multi-turn ships review_judge untouched: refinement already ran
-    // explicitly in the loop and the reviewer graded that judge's verdicts.
-    expect(silent_refine_at_save(true)).toBe(false)
-    expect(silent_refine_at_save(false)).toBe(true)
+describe("first_pass_coverage_error (single-turn first build)", () => {
+  it("a complete build passes", () => {
+    expect(first_pass_coverage_error({ built: 8, submitted: 8 })).toBeNull()
   })
+
+  it("a short build fails, naming what came back", () => {
+    // The stream ended early with no error frame (dropped connection): the
+    // survivors must not be presented as the whole review, the same
+    // all-or-nothing rule apply_rereview_results enforces for a round.
+    const error = first_pass_coverage_error({ built: 6, submitted: 8 })
+    expect(error).toContain("6 of 8")
+  })
+
+  it("a build with nothing in it fails", () => {
+    expect(first_pass_coverage_error({ built: 0, submitted: 3 })).not.toBeNull()
+  })
+
+  it("an empty submission is not a shortfall", () => {
+    // No examples asked for, none missing — the empty case is caught upstream
+    // (no judge / nothing generated), not reported as a coverage failure.
+    expect(first_pass_coverage_error({ built: 0, submitted: 0 })).toBeNull()
+  })
+})
+
+describe("plan_save_action — loop entry and exit", () => {
+  it("disagreement enters a calibration round", () => {
+    expect(plan_save_action({ has_disagreement: true })).toEqual({
+      action: "calibrate",
+    })
+  })
+
+  it("converged reviews save (with the last refined judge)", () => {
+    expect(plan_save_action({ has_disagreement: false })).toEqual({
+      action: "save",
+    })
+  })
+
+  // The disagreement flag is the ONLY input: both arms calibrate the same
+  // way, and no round count caps the loop. Both properties are enforced by
+  // the signature, so the two tests above are the whole surface; the only
+  // other ways out are convergence and the save-without-refining link, which
+  // bypasses this planner entirely.
 })
 
 describe("has_grade_disagreement / disagreed_trace_indices", () => {
@@ -908,15 +1012,24 @@ describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () =>
   })
 
   it("tooltip names the count, singular and plural, without em-dashes", () => {
-    expect(refine_judge_tooltip(1)).toContain(
+    expect(refine_judge_tooltip(1, "conversation")).toContain(
       "disagreed with the judge on 1 conversation.",
     )
-    expect(refine_judge_tooltip(3)).toContain(
+    expect(refine_judge_tooltip(3, "conversation")).toContain(
       "disagreed with the judge on 3 conversations.",
     )
-    expect(refine_judge_tooltip(3)).toContain(
+    expect(refine_judge_tooltip(3, "conversation")).toContain(
       "improve the judge from your feedback and re-check your eval data, then you'll review once more.",
     )
-    expect(refine_judge_tooltip(1)).not.toMatch(/—/)
+    expect(refine_judge_tooltip(1, "conversation")).not.toMatch(/—/)
+  })
+
+  it("tooltip speaks each arm's noun", () => {
+    expect(refine_judge_tooltip(1, "example")).toContain(
+      "disagreed with the judge on 1 example.",
+    )
+    expect(refine_judge_tooltip(2, "example")).toContain(
+      "disagreed with the judge on 2 examples.",
+    )
   })
 })

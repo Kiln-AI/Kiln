@@ -37,8 +37,8 @@
   // until the gate is met, then takes the Next slot on the last conversation.
   export let save_disabled = true
   // The primary action's label and optional tooltip, parent-owned so the
-  // button can say what the click actually does (multi-turn: a review with
-  // disagreements enters a judge-refine round instead of saving).
+  // button can say what the click actually does (a review with disagreements
+  // enters a judge-refine round instead of saving).
   export let save_label = "Save →"
   export let save_tooltip: string | null = null
   // What the judge judged, for the verdict card's headline: "conversation"

@@ -580,6 +580,13 @@ export function build_claim_review_payload(
   if (!trace.final_judgement) {
     throw new Error("Cannot build a claim review before claims are built.")
   }
+  // An ungraded overall call has no honest encoding: graded_claim would write
+  // it as "disagree" while user_says_meets_spec reads it as agreement, so the
+  // same record would contradict itself in the answer key. Callers gate on
+  // is_trace_reviewed; this refuses rather than guesses if one ever doesn't.
+  if (review.final_judgement_verdict.agrees === null) {
+    throw new Error("Cannot build a claim review before the trace is graded.")
+  }
   return {
     judge_score: trace.judge_score,
     judge_reasoning: trace.judge_reasoning,
@@ -680,10 +687,14 @@ export function has_grade_disagreement(
 
 // The refine CTA's tooltip: says what the click actually starts (a refine
 // round, not a save) and what it costs the reviewer (one more review).
-export function refine_judge_tooltip(num_disagreements: number): string {
-  const conversations =
-    num_disagreements === 1 ? "conversation" : "conversations"
-  return `You disagreed with the judge on ${num_disagreements} ${conversations}. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more.`
+// judged_noun is the arm's word for one reviewed item — the wizard reviews
+// conversations in multi-turn and examples in single-turn.
+export function refine_judge_tooltip(
+  num_disagreements: number,
+  judged_noun: string,
+): string {
+  const items = num_disagreements === 1 ? judged_noun : `${judged_noun}s`
+  return `You disagreed with the judge on ${num_disagreements} ${items}. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more.`
 }
 
 // Indices of traces carrying any explicit disagreement (on a claim or the
@@ -699,11 +710,15 @@ export function disagreed_trace_indices(reviews: TraceReview[]): number[] {
     .map(({ i }) => i)
 }
 
-// ── Calibration loop (multi-turn) ────────────────────────────────────────
+// ── Calibration loop ──────────────────────────────────────────────────────
 //
-// After a review with disagreements, the judge is refined from the grades
-// and re-scores every driven conversation; the reviewer then re-grades a
-// freshly picked subset. The helpers below are the loop's pure core — round
+// After a review with disagreements, the judge is refined from the grades and
+// re-scores the eval data; the reviewer then re-grades against the refined
+// judge's verdicts. The arms differ only in what the re-check costs and
+// returns: multi-turn re-judges saved conversations (verdicts only, claims
+// rebuilt after) and re-grades a freshly picked subset, while single-turn
+// re-reviews its in-memory examples (verdicts AND claims in one pass) and
+// re-grades all of them. The helpers below are the loop's pure core — round
 // control, verdict flips, state rebuild — so the wizard component only wires
 // streams and screens around them.
 
@@ -761,19 +776,86 @@ export function apply_rejudge_results(
   })
 }
 
-// What a save request should do next. Multi-turn saves with disagreement
-// enter a calibration round — as many rounds as it takes, since the loop
-// only exits on convergence or the explicit save-without-refining link.
-// Single-turn always saves — it has no saved conversations to re-judge, so
-// no loop can run there.
+// One example's fresh result from a SINGLE-TURN re-review round. The
+// review_traces pass that produces it re-judges and rebuilds the claims
+// together, so unlike the multi-turn re-judge it already carries everything
+// the next review needs — there is no separate claims build to wait on.
+export type ReReviewCaseResult = {
+  judge_score: ExpectedResult
+  judge_reasoning: string
+  raw_input: string
+  raw_output: string
+  claims: Claim[]
+  final_judgement: FinalJudgement | null
+}
+
+// Fold a single-turn re-review round's results into the trace list. Mirrors
+// apply_rejudge_results, except the fresh claims arrive with the verdict, so
+// traces land BUILT rather than reset to unbuilt. The new trace_id (unique
+// per round) makes any still-in-flight claim build from the previous round
+// miss the identity guard instead of corrupting the fresh state.
+//
+// Requires a result for EVERY example and throws otherwise. Single-turn
+// grades and ships all of them, so an example left on the previous judge's
+// verdict would enter the golden answer key attributed to the refined judge
+// that never produced it. Checking coverage here rather than trusting a count
+// upstream keeps that invariant local to the fold that would break it.
+export function apply_rereview_results(
+  traces: TraceClaims[],
+  results: Map<number, ReReviewCaseResult>,
+  round_tag: string,
+): TraceClaims[] {
+  const missing = traces.findIndex((_, i) => !results.has(i))
+  if (missing !== -1) {
+    throw new Error(
+      `Cannot apply a partial re-review: no result for example ${missing + 1}.`,
+    )
+  }
+  return traces.map((t, i) => {
+    const result = results.get(i)
+    if (!result) return t // unreachable after the check above; narrows Map.get
+    return {
+      ...t,
+      trace_id: `${round_tag}_case_${i}`,
+      judge_score: result.judge_score,
+      judge_reasoning: result.judge_reasoning,
+      raw_input: result.raw_input,
+      raw_output: result.raw_output,
+      claims: result.claims,
+      final_judgement: result.final_judgement,
+      claims_state: "built",
+      claims_error: null,
+    }
+  })
+}
+
+// The first-pass single-turn build's coverage rule — the companion to
+// apply_rereview_results' check, for the pass that has no verdicts to apply
+// yet. Single-turn ships every example it generated, so a build that came
+// back with fewer results than examples submitted (a stream that ended early,
+// with no per-trace error to report) must fail rather than present the
+// survivors as the whole review. Returns the user-facing error, or null when
+// every example came back.
+export function first_pass_coverage_error(args: {
+  built: number
+  submitted: number
+}): string | null {
+  if (args.built === args.submitted) return null
+  return `Only ${args.built} of ${args.submitted} examples could be reviewed. Try again.`
+}
+
+// What a save request should do next. A save with disagreement enters a
+// calibration round on either arm — as many rounds as it takes, since the
+// loop only exits on convergence or the explicit save-without-refining link.
+// Arm-independent: the arms differ in HOW they re-check (multi-turn re-judges
+// saved conversations, single-turn re-reviews its examples), not in whether
+// unaddressed disagreement may ship.
 export type SaveAction = { action: "save" } | { action: "calibrate" }
 
 export function plan_save_action(args: {
-  is_multi_turn: boolean
   has_disagreement: boolean
 }): SaveAction {
-  if (!args.is_multi_turn || !args.has_disagreement) return { action: "save" }
-  return { action: "calibrate" }
+  return args.has_disagreement ? { action: "calibrate" } : { action: "save" }
 }
 
 // Which primary action the review CTA offers. Any disagreement enters a
@@ -787,16 +869,10 @@ export function review_cta(args: { num_disagreements: number }): ReviewCta {
   return args.num_disagreements === 0 ? "save" : "refine"
 }
 
-// Whether save may quietly refine the judge from the grades. Multi-turn must
-// not: its refinement runs explicitly in the calibration loop, and the judge
-// that ships is exactly the one whose verdicts the reviewer graded.
-// Single-turn keeps the quiet refine-with-fallback at save.
-export function silent_refine_at_save(is_multi_turn: boolean): boolean {
-  return !is_multi_turn
-}
-
 // The honest shortfall notice when some conversations couldn't be
 // re-checked: they kept stale verdicts, so they were left out of the round.
+// Multi-turn only — a single-turn round is all-or-nothing, so it never
+// commits with a shortfall to report.
 export function rejudge_shortfall_notice(failed: number): string | null {
   if (failed <= 0) return null
   const conversations = failed === 1 ? "conversation" : "conversations"
