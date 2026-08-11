@@ -68,6 +68,14 @@
   // by this chart's series order, so a config is the same colour on all four
   // plots. Empty falls back to the theme palette by index.
   export let seriesColors: Record<string, string> = {}
+  // What to CALL each run config, by id, decided once by the page for the
+  // whole comparison - see series_display_map, which leads with the model and
+  // appends the config's name only where a model is shared. These names are
+  // drawn ON the chart beside each dot, which is exactly the single-line
+  // context that dedup rule exists for: two dots called "GPT-5.4-mini" would
+  // be two configs the reader cannot tell apart. Empty falls back to
+  // series_label.
+  export let seriesLabels: Record<string, string> = {}
   // Both axes come from the usage rollup, under the same keys the metrics chart
   // uses. Passed in rather than read here so this chart is scoped by whatever
   // split the page is showing, like every other card on it.
@@ -125,6 +133,8 @@ Latency is LLM generation time only. Tool execution, retrieval and network time 
   let chartInstance: echarts.ECharts | null = null
 
   function displayName(runConfigId: string): string {
+    const assigned = seriesLabels[runConfigId]
+    if (assigned) return assigned
     const config = run_configs.find((candidate) => candidate.id === runConfigId)
     return config ? series_label(config, model_info) : "Unknown"
   }
@@ -426,6 +436,7 @@ Latency is LLM generation time only. Tool execution, retrieval and network time 
     hasData,
     selectedRunConfigIds,
     seriesColors,
+    seriesLabels,
     getMetricValue,
     getQuality,
     getSampleSize,

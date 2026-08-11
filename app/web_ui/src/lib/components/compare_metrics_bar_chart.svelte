@@ -88,6 +88,12 @@
   // it - so the same run config came out one colour here and another on the
   // radar beside it. Empty falls back to the theme palette by index.
   export let seriesColors: Record<string, string> = {}
+  // What to CALL each run config, by id, decided once by the page for the
+  // whole comparison - see series_display_map, which leads with the model and
+  // appends the config's name only where a model is shared. Used for the
+  // series names and the row tooltip. Empty falls back to series_label, the
+  // config-name-first naming this chart used before.
+  export let seriesLabels: Record<string, string> = {}
   // Rendered under the subtitle - what the page left off and why
   export let notShownNote: string | null = null
   // Which slice of the dataset these numbers are over, when it is not the
@@ -196,7 +202,8 @@ Because it is a comparison, at least two run configs are needed.`
   let boxHeight = 0
 
   function getSeriesDisplayName(config: TaskRunConfig): string {
-    return series_label(config, model_info)
+    const assigned = config.id ? seriesLabels[config.id] : undefined
+    return assigned ?? series_label(config, model_info)
   }
 
   // Run configs that will actually be drawn: selected, resolvable, and with at
@@ -697,6 +704,7 @@ Because it is a comparison, at least two run configs are needed.`
     plottedConfigs,
     selectedRunConfigIds,
     seriesColors,
+    seriesLabels,
     getMetricValue,
     model_info,
     // The gutter and the family band are solved from the box, so a resize is a

@@ -94,6 +94,16 @@
   // default, and what the older compare page passes - falls back to the theme
   // palette by series index, which is what this chart always did.
   export let seriesColors: Record<string, string> = {}
+  // What to CALL each run config, by id, when the page has decided that for
+  // the whole comparison - see series_display_map, which leads with the model
+  // and only falls back to the config's name where a model is shared. This
+  // chart's series names, its legend keys and every tooltip that prints a
+  // config go through it.
+  //
+  // Empty - the default, and what the older compare page passes - falls back
+  // to series_label, the config-name-first naming this chart has always used.
+  // That page has no unified legend to lead with a model, so it is unchanged.
+  export let seriesLabels: Record<string, string> = {}
   // Family per data key, for grouping the ring. The page resolves these from
   // the task's own metadata (see $lib/utils/evolution/score_families) rather
   // than this chart classifying anything, and supplies them already ordered:
@@ -683,9 +693,12 @@ Related criteria sit together: the axes are grouped into the families the task's
     chartHeight = height
   }
 
-  // Get simple display name for the series (used as the internal name/key)
+  // Get simple display name for the series (used as the internal name/key).
+  // The page's label wins when it supplies one, so a series is called the same
+  // thing here as on the charts beside it and in the legend above them.
   function getSeriesDisplayName(config: TaskRunConfig): string {
-    return series_label(config, model_info)
+    const assigned = config.id ? seriesLabels[config.id] : undefined
+    return assigned ?? series_label(config, model_info)
   }
 
   // The raw quantity behind a usage axis, in its own units
@@ -1484,6 +1497,7 @@ Related criteria sit together: the axes are grouped into the families the task's
     // redraw rather than trigger one
     reservedLegendPx &&
     seriesColors &&
+    seriesLabels &&
     scoreAxisMaxes &&
     scoreDirections &&
     visibleUsageKeys &&

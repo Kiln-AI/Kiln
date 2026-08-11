@@ -26,7 +26,7 @@
   } from "$lib/types"
   import {
     FALLBACK_SERIES_COLOR,
-    series_label,
+    series_primary_label,
     series_subtext,
   } from "$lib/utils/evolution/series_identity"
   import {
@@ -48,10 +48,20 @@
     .filter((config): config is TaskRunConfig => !!config?.id)
     .map((config) => {
       const id = config.id as string
+      // The MODEL is the chip's headline - what the reader is comparing -
+      // and the config's own name drops into the subtext under it. Several
+      // chips may therefore share a top line; they stay unique through that
+      // subtext, so no suffix is added here. The single-line contexts that
+      // have no subtext to lean on dedup instead - see series_display_map.
+      const label = series_primary_label(config, model_info)
+      const name = config.name?.trim()
       return {
         id,
-        label: series_label(config, model_info),
+        label,
         subtext: series_subtext(config, model_info, prompts),
+        // A tooltip is one line with nothing under it, so it carries the name
+        // beside the model rather than repeating a headline three chips share.
+        title_label: name && name !== label ? `${label} — ${name}` : label,
         color: colors[id] ?? FALLBACK_SERIES_COLOR,
         hidden: $hidden_run_config_ids.has(id),
       }
@@ -83,7 +93,9 @@
             ? 'border-gray-200 bg-gray-50 opacity-45 hover:opacity-70'
             : 'border-gray-300 bg-white hover:bg-gray-50'}"
           aria-pressed={!entry.hidden}
-          title="{entry.hidden ? 'Show' : 'Hide'} {entry.label} on every chart"
+          title="{entry.hidden
+            ? 'Show'
+            : 'Hide'} {entry.title_label} on every chart"
           on:click={() => toggle_run_config(entry.id)}
         >
           <!-- Colour is the only thing tying this chip to a line on a chart,
@@ -94,11 +106,20 @@
             aria-hidden="true"
           ></span>
           <span class="min-w-0">
-            <span class="block text-sm text-gray-900 truncate">
+            <!-- Three tiers, heaviest first: the model, then which config on
+                 it, then what else it is made of. The first subtext line is
+                 the config's own name (series_subtext puts it there), so it
+                 is set a shade darker than the detail line under it - it is
+                 an identity, not a property. -->
+            <span class="block text-sm font-medium text-gray-900 truncate">
               {entry.label}
             </span>
-            {#each entry.subtext as line}
-              <span class="block text-xs text-gray-500 truncate">{line}</span>
+            {#each entry.subtext as line, index}
+              <span
+                class="block text-xs truncate {index === 0
+                  ? 'text-gray-600'
+                  : 'text-gray-500'}">{line}</span
+              >
             {/each}
           </span>
         </button>

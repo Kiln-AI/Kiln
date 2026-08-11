@@ -1,11 +1,14 @@
 import { describe, it, expect } from "vitest"
-import type { TaskRunConfig } from "$lib/types"
+import type { ProviderModels, TaskRunConfig } from "$lib/types"
 import {
   FALLBACK_SERIES_COLOR,
   SERIES_PALETTE,
   series_color,
   series_color_map,
+  series_display_map,
   series_label,
+  series_model_label,
+  series_primary_label,
   series_subtext,
 } from "./series_identity"
 
@@ -60,6 +63,35 @@ function mcp_config(overrides: Partial<TaskRunConfig> = {}): TaskRunConfig {
   } as TaskRunConfig
 }
 
+// The model catalog the page has loaded. Names resolve through it; a config on
+// a model that is not in it is the "model_info missing" case.
+const CATALOG: ProviderModels = {
+  models: {
+    "gpt-4": { name: "GPT-4", id: "gpt-4", supports_function_calling: true },
+    "gpt-5-4-mini": {
+      name: "GPT-5.4-mini",
+      id: "gpt-5-4-mini",
+      supports_function_calling: true,
+    },
+    luna: { name: "GPT-5.6 Luna", id: "luna", supports_function_calling: true },
+  },
+} as ProviderModels
+
+function on_model(
+  model: string,
+  name: string | undefined,
+  id: string,
+): TaskRunConfig {
+  return agent_config({
+    id,
+    name,
+    run_config_properties: {
+      ...agent_config().run_config_properties,
+      model_name: model,
+    },
+  } as Partial<TaskRunConfig>)
+}
+
 describe("series_label", () => {
   it("prefers the config's own name", () => {
     expect(series_label(agent_config(), null)).toBe("Luna")
@@ -88,21 +120,74 @@ describe("series_label", () => {
   })
 })
 
+describe("series_model_label", () => {
+  it("is the model's display name, without the provider", () => {
+    expect(series_model_label(agent_config(), CATALOG)).toBe("GPT-4")
+  })
+
+  it("is null for an MCP config, which has no model at all", () => {
+    expect(series_model_label(mcp_config(), CATALOG)).toBeNull()
+  })
+
+  it("is null when the catalog cannot resolve the model", () => {
+    expect(series_model_label(agent_config(), null)).toBeNull()
+    expect(series_model_label(on_model("who-dis", "X", "rc-x"), CATALOG)).toBe(
+      null,
+    )
+  })
+})
+
+describe("series_primary_label", () => {
+  it("is the model, not the config's own name", () => {
+    expect(series_primary_label(agent_config(), CATALOG)).toBe("GPT-4")
+  })
+
+  it("falls back to the config's name when there is no model to name", () => {
+    expect(series_primary_label(agent_config(), null)).toBe("Luna")
+    expect(series_primary_label(mcp_config({ name: "My MCP" }), CATALOG)).toBe(
+      "My MCP",
+    )
+  })
+
+  it("falls back to the tool for an unnamed MCP config", () => {
+    expect(series_primary_label(mcp_config(), CATALOG)).toBe("Demo Tool")
+  })
+})
+
 describe("series_subtext", () => {
-  it("names the tool for an MCP config, and nothing else", () => {
-    expect(series_subtext(mcp_config(), null, null)).toEqual([
+  it("names the tool for a named MCP config", () => {
+    expect(series_subtext(mcp_config({ name: "My MCP" }), null, null)).toEqual([
       "Tool: Demo Tool",
     ])
   })
 
-  it("leads with the model for an agent config", () => {
+  it("does not repeat a tool name that is already the top line", () => {
+    // Unnamed, so the top line has fallen back to the tool itself
+    expect(series_subtext(mcp_config(), null, null)).toEqual([])
+  })
+
+  it("leads with the config's own name, under the model", () => {
+    const lines = series_subtext(agent_config(), CATALOG, null)
+    expect(lines[0]).toBe("Luna")
+    expect(lines.some((line) => line.includes("GPT-4"))).toBe(false)
+  })
+
+  it("does not repeat a name the top line already fell back to", () => {
+    // No catalog, so series_primary_label is the config's name
     const lines = series_subtext(agent_config(), null, null)
-    expect(lines[0]).toContain("Model:")
-    expect(lines[0]).toContain("gpt-4")
+    expect(lines.some((line) => line === "Luna")).toBe(false)
+  })
+
+  it("puts the provider and the prompt on one detail line", () => {
+    const lines = series_subtext(agent_config(), CATALOG, null)
+    const detail = lines[lines.length - 1]
+    expect(detail).toContain("OpenAI")
+    expect(detail).toContain("Prompt:")
+    expect(detail).toContain(" · ")
   })
 
   it("adds the input transform only when there is one", () => {
-    const plain = series_subtext(agent_config(), null, null)
+    const plain = series_subtext(agent_config(), CATALOG, null)
     const transformed = series_subtext(
       agent_config({
         run_config_properties: {
@@ -110,15 +195,82 @@ describe("series_subtext", () => {
           input_transform: { type: "jinja", template: "Hi {{ input }}" },
         },
       } as Partial<TaskRunConfig>),
-      null,
+      CATALOG,
       null,
     )
-    expect(plain.some((line) => line.startsWith("Input Transform:"))).toBe(
-      false,
+    expect(plain.some((line) => line.includes("Input Transform:"))).toBe(false)
+    expect(transformed.some((line) => line.includes("Input Transform:"))).toBe(
+      true,
     )
-    expect(
-      transformed.some((line) => line.startsWith("Input Transform:")),
-    ).toBe(true)
+  })
+})
+
+describe("series_display_map", () => {
+  it("is the model alone when that model is pinned once", () => {
+    const map = series_display_map(
+      [on_model("luna", "Luna M1", "rc-1"), on_model("gpt-4", "Base", "rc-2")],
+      CATALOG,
+    )
+    expect(map).toEqual({ "rc-1": "GPT-5.6 Luna", "rc-2": "GPT-4" })
+  })
+
+  it("appends the config name when a model is shared", () => {
+    const map = series_display_map(
+      [
+        on_model("gpt-5-4-mini", "mini v5", "rc-1"),
+        on_model("gpt-5-4-mini", "mini v6", "rc-2"),
+        on_model("luna", "Luna M1", "rc-3"),
+      ],
+      CATALOG,
+    )
+    expect(map["rc-1"]).toBe("GPT-5.4-mini — mini v5")
+    expect(map["rc-2"]).toBe("GPT-5.4-mini — mini v6")
+    // Unshared, so it takes no suffix it does not need
+    expect(map["rc-3"]).toBe("GPT-5.6 Luna")
+  })
+
+  it("keeps the bare model for an unnamed config with nothing to add", () => {
+    const map = series_display_map(
+      [
+        on_model("gpt-5-4-mini", undefined, "rc-1"),
+        on_model("gpt-5-4-mini", "mini v6", "rc-2"),
+      ],
+      CATALOG,
+    )
+    expect(map["rc-1"]).toBe("GPT-5.4-mini")
+    expect(map["rc-2"]).toBe("GPT-5.4-mini — mini v6")
+  })
+
+  it("falls back to the config name when the model is unknown", () => {
+    const map = series_display_map(
+      [agent_config(), mcp_config({ name: "My MCP" })],
+      null,
+    )
+    expect(map["rc-agent"]).toBe("Luna")
+    expect(map["rc-mcp"]).toBe("My MCP")
+  })
+
+  it("does not depend on the order the configs arrive in", () => {
+    const configs = [
+      on_model("gpt-5-4-mini", "mini v5", "rc-1"),
+      on_model("gpt-5-4-mini", "mini v6", "rc-2"),
+      on_model("luna", "Luna M1", "rc-3"),
+    ]
+    expect(series_display_map([...configs].reverse(), CATALOG)).toEqual(
+      series_display_map(configs, CATALOG),
+    )
+  })
+
+  it("counts a repeated id once, and labels it once", () => {
+    const config = on_model("gpt-5-4-mini", "mini v6", "rc-1")
+    expect(series_display_map([config, config], CATALOG)).toEqual({
+      // Counted twice, it would look shared with itself and take a suffix
+      "rc-1": "GPT-5.4-mini",
+    })
+  })
+
+  it("is empty for an empty pin list", () => {
+    expect(series_display_map([], CATALOG)).toEqual({})
   })
 })
 

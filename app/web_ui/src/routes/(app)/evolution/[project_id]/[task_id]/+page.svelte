@@ -6,7 +6,7 @@
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { components } from "$lib/api_schema"
-  import type { Eval } from "$lib/types"
+  import type { Eval, TaskRunConfig } from "$lib/types"
   import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
   import {
     get_task_composite_id,
@@ -99,7 +99,10 @@
     split_by_gate,
   } from "$lib/utils/evolution/price_latency"
   import { spec_descriptions_by_eval } from "$lib/utils/evolution/axis_help"
-  import { series_color_map } from "$lib/utils/evolution/series_identity"
+  import {
+    series_color_map,
+    series_display_map,
+  } from "$lib/utils/evolution/series_identity"
   import {
     hidden_run_config_ids,
     reconcile_visibility,
@@ -799,6 +802,15 @@
   // so used to renumber the palette for every config after it - so the same
   // run config came out one colour on the radar and another on the bars.
   $: series_colors = series_color_map(pinned_ids)
+  // ...and what each one is CALLED, decided here for the same reason: the
+  // model leads every label on this page, and whether a config's own name has
+  // to follow it depends on the whole pinned set, which only the page knows.
+  // Built over every pinned config rather than the visible ones, so hiding a
+  // chip in the legend cannot rename the configs still drawn beside it.
+  $: pinned_configs = pinned_ids
+    .map((id) => (run_configs ?? []).find((config) => config.id === id))
+    .filter((config): config is TaskRunConfig => !!config)
+  $: series_labels = series_display_map(pinned_configs, $model_info)
 
   // ---- Hidden rows --------------------------------------------------------
   // One filtered view of the score keys drives both the matrix rows and the
@@ -1989,6 +2001,7 @@
             {prompts}
             selectedRunConfigIds={visible_pinned_ids}
             seriesColors={series_colors}
+            seriesLabels={series_labels}
             external_legend={true}
             scoreAxisMaxes={score_axis_maxes}
             scoreDirections={score_directions}
@@ -2043,6 +2056,7 @@
           model_info={$model_info}
           selectedRunConfigIds={visible_pinned_ids}
           seriesColors={series_colors}
+          seriesLabels={series_labels}
           notShownNote={metrics_not_shown_note}
           availableAxisCount={visible_axes.length}
           hiddenAxisCount={hidden_axis_count}
@@ -2081,6 +2095,7 @@
           model_info={$model_info}
           selectedRunConfigIds={visible_pinned_ids}
           seriesColors={series_colors}
+          seriesLabels={series_labels}
           getMetricValue={get_metric_value}
           getQuality={get_quality}
           getSampleSize={get_sample_size}
@@ -2130,6 +2145,7 @@
           model_info={$model_info}
           selectedRunConfigIds={visible_pinned_ids}
           seriesColors={series_colors}
+          seriesLabels={series_labels}
         >
           <FloatingMenu
             slot="controls"

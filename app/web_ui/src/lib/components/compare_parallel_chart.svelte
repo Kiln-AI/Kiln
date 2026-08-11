@@ -86,6 +86,11 @@
   // shift every colour after it here. Empty falls back to the theme palette by
   // index, which is what this chart did before.
   export let seriesColors: Record<string, string> = {}
+  // What to CALL each run config, by id, decided once by the page for the
+  // whole comparison - see series_display_map, which leads with the model and
+  // appends the config's name only where a model is shared. It is what the
+  // axis tooltip prints beside each point. Empty falls back to series_label.
+  export let seriesLabels: Record<string, string> = {}
 
   // Below this there is no comparison to draw - a single config's bands are
   // still true, but the chart's whole job is telling configs apart. Counted
@@ -99,7 +104,8 @@
   let chartInstance: echarts.ECharts | null = null
 
   function seriesName(config: TaskRunConfig): string {
-    return series_label(config, model_info)
+    const assigned = config.id ? seriesLabels[config.id] : undefined
+    return assigned ?? series_label(config, model_info)
   }
 
   // ---- Axis order ---------------------------------------------------------
@@ -507,7 +513,14 @@ Intervals need a proportion to be exact, so only pass/fail scores carry a band. 
   // Redraw whenever the inputs the option is built from change. Series colours
   // come off the live instance when the page supplies none, so this has to run
   // after init as well.
-  $: redraw(orderedAxes, drawnRows, plottedConfigs, hasData, seriesColors)
+  $: redraw(
+    orderedAxes,
+    drawnRows,
+    plottedConfigs,
+    hasData,
+    seriesColors,
+    seriesLabels,
+  )
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function redraw(..._dependencies: unknown[]) {
     updateChart()
