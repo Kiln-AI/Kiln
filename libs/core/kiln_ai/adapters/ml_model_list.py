@@ -5628,8 +5628,14 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
-                model_id="accounts/fireworks/models/deepseek-v4-flash",
+                model_id="accounts/fireworks/models/deepseek-v4-flash-0731",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="deepseek-ai/DeepSeek-V4-Flash-0731",
+                structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
             ),
         ],
@@ -8861,6 +8867,15 @@ built_in_models: List[KilnModel] = [
                 require_openrouter_reasoning=True,
                 parser=ModelParserID.r1_thinking,
             ),
+            # Fireworks exposes M2.7 as a text-only endpoint and does not emit
+            # reasoning unless a reasoning effort is explicitly requested, so we
+            # treat it as a standard model here (mirroring the M3 Fireworks entry).
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/minimax-m2p7",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+            ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="MiniMaxAI/MiniMax-M2.7",
@@ -9279,7 +9294,12 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
             ),
-            # Fireworks lists Inkling on its site but the API returns 404 (not deployed).
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/inkling",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
         ],
     ),
     # Fugu Ultra
