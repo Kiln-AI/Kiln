@@ -61,6 +61,65 @@ Fixing the structure before that lands is much cheaper than after.
 
 ---
 
+## 2.4 Second goal: persist the trace before scoring (added by scosman)
+
+**Goal:** save the EvalRun as soon as generation completes. A failing judge must not
+destroy the trace. Re-running finds the existing EvalRun and jumps straight to
+judging — the same lookup that makes a new eval config fast.
+
+**The failure mode is real and worse than "data lost".** `_run_v2_job` awaits
+`run_task(...)`, then `evaluate(...)`, then writes a single EvalRun
+(`eval_runner.py:464-490`, `492-522`). If `evaluate()` raises:
+
+- Nothing is persisted — the generation is gone.
+- `run_job` classifies the error and, if retryable (rate limit, 5xx, connection),
+  raises `RetryableError` (`eval_runner.py:295-308`), and `AsyncJobRunner` retries
+  **the whole job** up to `max_retries=2` (`async_job_runner.py:152-164`,
+  `eval_runner.py:284`). So a rate-limited *judge* triggers up to two full
+  *regenerations*.
+- If not retryable, the job fails and the trace is lost outright.
+
+So today one flaky judge call can cost three generations. This goal is a bug fix, not
+just an optimization.
+
+**It fits the same mechanism as the main split** — that's the point. Once EvalRun and
+EvalScore are separate records, the runner's per-job flow becomes:
+
+1. Look up an existing EvalRun for `(input, run_config)`. Reuse it if found.
+2. Otherwise generate and **persist the EvalRun immediately**.
+3. Look up an existing EvalScore for `(eval_run, eval_config)`. Skip if found.
+4. Otherwise score and persist the EvalScore.
+
+Steps 1 and 3 are the same two-lookup planner C4 already requires. "Trace saved but
+not yet scored" is a natural, valid state under the split, and retry becomes a
+step-4-only retry. This goal costs almost nothing *given* the split — but it is
+impossible without it, since today `validate_scores` (`eval.py:772-796`) forbids
+saving an EvalRun with no scores at all.
+
+**Consequences to carry into the spec:**
+
+- **Progress accounting flips to the score side.** `percent_complete` can no longer
+  be derived from EvalRun presence — an unscored EvalRun is *incomplete*. Completion
+  is `EvalScore` presence per `(eval_config, run_config, input)`. Consistent with C6
+  and with C3's denormalization recommendation.
+- **Retry granularity narrows.** `RetryableError` should retry only the failed phase.
+  A retryable *generation* error retries step 2; a retryable *scoring* error retries
+  step 4 against the already-persisted trace.
+- **Two saves per fresh job instead of one**, inside the git-sync `SaveContext`
+  (`eval_runner.py:355`, `468`). Cheap, but the write-lock interaction is worth a
+  look given the `git_sync_write_locks` work.
+- **Open question — failed generations.** If `run_task` itself fails, do we persist a
+  terminal "generation failed" EvalRun, or leave it absent so it retries next run?
+  `KilnRunError` already carries a partial trace (`eval_runner.py:554-564`), so
+  persisting one is possible. Absent-means-retry is the simpler default and matches
+  today's "DB-level absence = not-yet-run" convention; persisting gives users
+  visibility into *why* an item never scored. This sharpens the "generation_failed"
+  question raised in C6.
+- **Reuse must be observable.** If a re-run silently skips generation, users need to
+  see it (C11) — otherwise "why was that so fast?" reads as a bug.
+
+---
+
 ## 3. Challenges to the proposal
 
 ### C1. Half the judge-iteration loop already reuses stored data
@@ -262,3 +321,7 @@ include the surface.
 7. **Product surface:** re-score action, reuse indicator, force-fresh escape hatch,
    stale-on-config-edit behavior (C11).
 8. **Naming** (C10).
+9. **Failed generations:** persist a terminal "generation failed" EvalRun, or leave
+   absent so it retries? (2.4)
+10. **Retry granularity:** confirm `RetryableError` retries only the failed phase
+    rather than the whole job (2.4).

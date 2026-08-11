@@ -26,6 +26,15 @@ Split `EvalRun` into two entities:
 - **EvalScore** — the scores. Links to an `EvalRun` id (maybe even childed to it),
   and links to an `eval_config` (key data).
 
+## Second goal: don't lose expensive traces on judge failure
+
+EvalRuns should be saved as soon as the run is done. A failing judge shouldn't cause
+the data to be lost.
+
+Re-running should find the existing EvalRun and jump straight to judging — the same
+mechanism that makes new eval configs fast (try to find an existing run before
+running a new one).
+
 ## Known open issue
 
 This likely shifts our whole data structure. `EvalRun` is currently a child of
