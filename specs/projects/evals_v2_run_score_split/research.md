@@ -272,6 +272,113 @@ The strongest counter to (1): "which runs are mine" becomes a query in the job
 planner's hot path instead of a directory listing. That is what the benchmark should
 settle.
 
+### C2c. Checked against `claude/eval-splits-evals-v2` — plan holds, with three refinements
+
+That branch replaces the flat `eval_set_filter_id` / `eval_input_filter_id` fields with
+named splits. Checked at `origin/claude/eval-splits-evals-v2` (`ef8d80e`).
+
+```python
+class TaskRunSplit(BaseModel):   source: Literal["task_run"];   filter_id: DatasetFilterId
+class EvalInputSplit(BaseModel): source: Literal["eval_input"]; filter_id: EvalInputFilterId
+SplitRef = Annotated[Union[TaskRunSplit, EvalInputSplit], Discriminator("source")]
+
+class Eval(...):
+    splits: Dict[str, SplitRef]   # keyed "train" | "val" | "test"
+```
+
+**"Use tags to link to evals" holds, and gets stronger.** An eval still never *owns*
+its items — it names a filter per split, and `EvalInputFilterId` is still `tag::<name>`
+or `all` (`dataset_filters.py:226-257`, unchanged on the branch). Task-level EvalRun
+storage is compatible: evals remain lenses over a task-level item store, now with a
+named-split lens per purpose. Two evals still share items by both selecting them.
+
+Three things the branch changes for this project:
+
+#### R1. The join key is `ItemKey`, not a bare id — this is a correctness trap
+
+```python
+ItemKey = Tuple[ItemSource, ID_TYPE]
+"""Never a bare id: ids are drawn from one 12-digit generator shared by every model
+type, so a TaskRun and an EvalInput can collide."""
+```
+
+A split can be TaskRun-backed or EvalInput-backed, so ids are only unique *within* a
+store. Therefore:
+
+- The trace reuse lookup keys on **`(ItemSource, item_id, task_run_config_id)`** — a
+  bare `(item_id, run_config_id)` can collide across stores and hand back the wrong
+  trace. This is exactly the kind of silent wrong-answer bug reuse introduces.
+- `EvalScore` must denormalize the **full ItemKey** (source + id), not just an id.
+- `eval_splits.eval_run_item_key(eval_run)` already derives this from an EvalRun's
+  `dataset_id`/`eval_input_id`. Reuse it rather than re-deriving.
+
+#### R2. `resolve_split()` is the single seam — the trace store must go through it
+
+The module docstring is explicit: it is "the one seam that knows a split can be backed
+by either `TaskRun`s or `EvalInput`s… nothing outside this module decides which store
+an eval's items come from". A task-level EvalRun store must resolve membership through
+`resolve_split()`, never by re-implementing filter dispatch. Also note `ResolvedSplit`
+carries `eval_id` so a consumer can verify a split belongs to the eval whose judges are
+about to score it — the same check applies to scoring reused traces.
+
+#### R3. The runner's dedupe is already most of the way there
+
+Post-splits, `collect_tasks_for_task_run_eval` keys `already_run` on
+`(eval_config_id, run_config_id, ItemKey)`, and the separate `collect_tasks_for_eval_input`
+collector is gone — one collector now serves both stores via the resolved split. So this
+project's runner change is **a subtraction plus one addition**: drop `eval_config_id`
+from the trace lookup, add a second score-level lookup on `(eval_run_id, eval_config_id)`.
+Materially smaller diff than against pre-splits `main`.
+
+#### Conflict to resolve: golden sets are deliberately TaskRun-only on that branch
+
+`eval_splits.py` deliberately routes the golden set (`eval_configs_filter_id`) *around*
+`resolve_split`: "Golden is TaskRun-only by definition, and routing it through here would
+imply it could be EvalInput-backed, which is precisely what this project says it cannot
+be." That directly contradicts §2.2 of this research, which treats unblocking
+EvalInput-sourced `eval_config_eval` as a win the split delivers.
+
+Both positions are coherent; they can't both stand. **Needs a decision** — see §5 Q11.
+
+#### Back-compat precedents worth copying
+
+The branch establishes patterns that support the C8 recommendation:
+
+- **Two-homed storage.** `LEGACY_SPLIT_FIELDS` projects TaskRun-backed splits back into
+  the flat legacy fields so older builds still read them — preserve, don't break.
+- **`extra="allow"`** on `TaskRunSplit`/`EvalInputSplit` so fields from a future build
+  survive a round-trip through an older one.
+- **Lazy fold for internal-only data.** `migrate_eval_input_filter_id` is a
+  `mode="before"` validator with `TODO: Remove before shipping. Only internal projects
+  contain this key`. Confirms internal projects carry V2 data — and that a load-time
+  fold is the house style for it. That style does *not* extend to this project's
+  migration: relocating EvalRun files between directories cannot happen lazily on load,
+  so a script is required (see the migration phase).
+
+#### Note only, not actioned: generation provenance and `multi_turn_drive_config`
+
+`multi_turn_drive_config` lives on `Eval` on an unmerged branch and is part of the
+synthetic-user config. That means a multi-turn trace is a function of
+`(item, task_run_config, drive_config)` — the Eval contributes to generation, so trace
+reuse across evals is only valid when drive configs match.
+
+The general principle this implies holds under every option and should be designed in
+now: **an EvalRun must record a complete description of what produced it, and the reuse
+lookup must key on that description.** Otherwise reuse silently returns traces produced
+under different conditions — a wrong-answer bug, not a cache miss. Practically: a
+generation-provenance fingerprint on EvalRun, joined into the lookup key.
+
+Relocating `multi_turn_drive_config` off `Eval` (onto the run-config side, or its own
+addressable entity) would make that fingerprint simpler. **Flagged for the plan, not
+actioned here** — it's owned by the in-flight multi-turn branch and can be fixed before
+ship.
+
+Related, and independent of multi-turn: `UpdateRunConfigRequest` allows editing
+`prompt_name` on an existing run config (`eval_api.py:317-327`, `1009-1017`), which
+mutates the frozen prompt while the id stays the same. So `task_run_config_id` alone is
+already not a complete description of how a trace was generated. The fingerprint needs
+to cover this too.
+
 ### C3. Childing EvalScore to EvalRun is the intuitive answer and probably the wrong one
 
 The overview floats "maybe even child them". Every aggregate read in the API is
@@ -418,25 +525,48 @@ include the surface.
 
 ---
 
-## 5. Decisions the functional spec must make
+## 5. Decision status
 
-1. **Where does EvalRun live** — under `Eval` (C2-A) or under `Task` (C2-B)?
-   Recommendation: Task, gated on a directory-scan benchmark (C2b). Settling this
-   also settles cross-eval reuse: the pointer-EvalInput option is dropped, and
-   Metrics is deferred as a read-side concept scoped by an `EvalInputFilterId`.
-2. **Where does EvalScore live** — child of `EvalConfig` with an `eval_run_id`
-   pointer (recommended, C3), or child of `EvalRun`?
-3. **How is V1 back-compat handled** — deprecate-in-place, new entity names, or
-   on-read adapter (C8)?
-4. **One trace per (input, run_config), or many?** (C4)
-5. **Is `eval_config_eval` unified into the same trace+score model** (C1), and does
-   an EvalInput-sourced golden set become supported (2.2)?
-6. **Field placement:** `reference_data` (C5), `intermediate_outputs` (C7),
-   judge `usage` (C7), `SkippedReason` partition (C6).
-7. **Product surface:** re-score action, reuse indicator, force-fresh escape hatch,
-   stale-on-config-edit behavior (C11).
-8. **Naming** (C10).
-9. **Failed generations:** persist a terminal "generation failed" EvalRun, or leave
+### Settled
+
+| # | Decision | Outcome |
+|---|---|---|
+| D1 | Where EvalRun lives | **Task level**, sibling of `eval_inputs/`. Gated on a directory-scan benchmark as a phase-1 spike (C2b) |
+| D2 | Cross-eval reuse mechanism | Pointer-EvalInput option **dropped** — it re-implements tag membership (C2b) |
+| D3 | Metrics concept | **Deferred**, as a read-side concept. Commit now only to scoping it by a split ref so adding it later stays cheap (C2b, R2) |
+| D4 | Internal V2 data | **Migration script**, sequenced as the final phase. A lazy load-time fold is not available for file relocation (C2c) |
+| D5 | `multi_turn_drive_config` placement | **Note in the plan, don't action.** Owned by the multi-turn branch; fix before ship (C2c) |
+| D6 | Splits-branch compatibility | Confirmed. Tag-filter linkage survives; runner dedupe already keys on `(eval_config, run_config, ItemKey)` (C2c) |
+
+### Open
+
+**Blocking the functional spec:**
+
+1. **Where does EvalScore live** — child of `EvalConfig` with an `eval_run_id` pointer
+   (recommended, C3), or child of `EvalRun`? This one gates the read-path design and
+   most of the aggregation work.
+2. **Golden-set conflict (new).** §2.2 treats unblocking EvalInput-sourced
+   `eval_config_eval` as a win of the split. `eval_splits.py` deliberately holds the
+   opposite: golden is TaskRun-only *by definition*, routed around `resolve_split` on
+   purpose. Both are coherent; one has to give (C2c).
+3. **One trace per `(ItemKey, run_config)`, or many?** One-way door — "exactly one"
+   forecloses variance sampling later (C4).
+4. **V1 back-compat approach** — deprecate `scores` in place, new entity names for
+   V2's trace record, or an on-read adapter (C8). The splits branch's two-homed /
+   `extra="allow"` / lazy-fold precedents lean toward preserve-don't-break.
+5. **Is the re-score product surface in scope** for this project, or a follow-up?
+   Storage-only ships zero user-visible benefit (C11).
+
+**Design detail, low risk, needs ratification:**
+
+6. **Generation-provenance fingerprint (new)** — what it covers and whether it's a hash
+   or structured. Must at minimum cover the mutable-`prompt_name` case, which already
+   breaks `task_run_config_id` as a complete description today (C2c).
+7. **Field placement** — `reference_data` → score side (C5); `intermediate_outputs` →
+   score side, coordinate with D31 in `evals_v2_cleanup` (C7); judge `usage` → new on
+   EvalScore (C7); `SkippedReason` partition across the two entities (C6).
+8. **Failed generations** — persist a terminal "generation failed" EvalRun, or leave
    absent so it retries? (2.4)
-10. **Retry granularity:** confirm `RetryableError` retries only the failed phase
-    rather than the whole job (2.4).
+9. **Retry granularity** — confirm `RetryableError` retries only the failed phase
+   rather than the whole job (2.4).
+10. **Naming** — `EvalScore` collides with the existing `EvalScores` alias (C10).

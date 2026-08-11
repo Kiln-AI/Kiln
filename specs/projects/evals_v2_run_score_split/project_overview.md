@@ -41,6 +41,26 @@ This likely shifts our whole data structure. `EvalRun` is currently a child of
 `EvalConfig`. In the new model it should be under the `Eval`? And `EvalScore` also
 under the `Eval`, but with IDs mapping to both `EvalConfig` and `EvalRun`?
 
+## Deliverable: migration script (final phase)
+
+This branch hasn't shipped, but internal projects are already using it. A migration
+script that relocates existing V2 EvalRun records into the new structure is a required
+deliverable, sequenced as the final phase.
+
+Note this cannot follow the house style of a lazy load-time fold (as
+`migrate_eval_input_filter_id` does on the splits branch) — relocating files between
+directories has to be an explicit script.
+
+## Dependencies
+
+- **`claude/eval-splits-evals-v2`** — replaces per-eval filter fields with named
+  splits (`Eval.splits: Dict[str, SplitRef]`). This project builds on it. Checked:
+  the tag-filter linkage this project depends on survives, and the runner's dedupe is
+  already keyed on `(eval_config, run_config, ItemKey)`.
+- **Multi-turn branch** — `multi_turn_drive_config` on `Eval` is part of the synthetic
+  user config and is a generation input. Its placement should be fixed before ship.
+  Noted in the plan; not actioned by this project.
+
 ## Approach
 
 Research first. Confirm the logic is sound and challenge the assumptions before
