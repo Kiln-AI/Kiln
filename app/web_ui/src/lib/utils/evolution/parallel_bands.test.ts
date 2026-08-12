@@ -3,6 +3,7 @@ import {
   axis_fraction,
   build_cell,
   build_parallel_rows,
+  build_rank_cell,
   reconcile_order,
   reorder,
   widest_band_pp,
@@ -203,6 +204,104 @@ describe("build_parallel_rows", () => {
     expect(row.hasData).toBe(true)
     expect(row.cells[0].fraction).toBeCloseTo(0.72, 10)
     expect(row.cells[1].fraction).toBeNull()
+  })
+})
+
+describe("build_rank_cell", () => {
+  it("plots the rank score itself, with the raw value kept for the tooltip", () => {
+    expect(build_rank_cell(0.75, 0.0123)).toEqual({
+      fraction: 0.75,
+      lower: 0.75,
+      upper: 0.75,
+      value: 0.0123,
+      n: null,
+      banded: false,
+    })
+  })
+
+  it("is never banded - a rank has no proportion to build an interval on", () => {
+    const cell = build_rank_cell(0.5, 42000)
+    expect(cell.banded).toBe(false)
+    expect(cell.lower).toBe(cell.upper)
+    expect(cell.n).toBeNull()
+  })
+
+  it("is a gap, not a zero, when the config has no rank", () => {
+    expect(build_rank_cell(null, null).fraction).toBeNull()
+    // Even with a raw value in hand: a rank the page could not compute is not
+    // last place
+    expect(build_rank_cell(null, 0.5).fraction).toBeNull()
+    expect(build_rank_cell(Number.NaN, 0.5).fraction).toBeNull()
+  })
+})
+
+describe("build_parallel_rows with rank axes", () => {
+  const axes: ParallelAxisSpec[] = [
+    {
+      key: "e1::grounded",
+      label: "Grounded",
+      evalName: "E1",
+      type: "pass_fail",
+    },
+    {
+      key: "cost::mean_cost",
+      label: "Cost Efficiency",
+      evalName: "Cost · Usage rollup",
+      type: null,
+      rank: true,
+    },
+  ]
+  const raw: Record<string, Record<string, number | null>> = {
+    a: { "e1::grounded": 0.48, "cost::mean_cost": 0.01 },
+    b: { "e1::grounded": 0.72, "cost::mean_cost": 0.02 },
+    nocost: { "e1::grounded": 0.5, "cost::mean_cost": null },
+  }
+  const ranks: Record<string, number | null> = {
+    a: 0.75,
+    b: 0.25,
+    nocost: null,
+  }
+  const getValue = (rc: string, key: string) => raw[rc]?.[key] ?? null
+  const getN = () => 25
+  const getRank = (rc: string) => ranks[rc] ?? null
+
+  it("takes the rank score as the height and leaves it unnormalized", () => {
+    const rows = build_parallel_rows(axes, ["a", "b"], getValue, getN, getRank)
+    expect(rows[0].cells[1].fraction).toBe(0.75)
+    expect(rows[1].cells[1].fraction).toBe(0.25)
+    // ...and the raw dollars are still there for the tooltip
+    expect(rows[0].cells[1].value).toBe(0.01)
+  })
+
+  it("bands the quality axis and not the rank axis, in the same row", () => {
+    const [row] = build_parallel_rows(axes, ["a"], getValue, getN, getRank)
+    expect(row.cells[0].banded).toBe(true)
+    expect(row.cells[1].banded).toBe(false)
+  })
+
+  it("draws a gap on the rank axis for an unmeasured config", () => {
+    const rows = build_parallel_rows(axes, ["nocost"], getValue, getN, getRank)
+    expect(rows[0].cells[1].fraction).toBeNull()
+    // The row survives on its quality score alone
+    expect(rows[0].hasData).toBe(true)
+  })
+
+  it("treats a missing rank getter as no rank at all", () => {
+    const rows = build_parallel_rows(axes, ["a"], getValue, getN)
+    expect(rows[0].cells[1].fraction).toBeNull()
+    expect(rows[0].cells[0].fraction).not.toBeNull()
+  })
+
+  it("keeps rank cells out of the widest-band figure entirely", () => {
+    const rankOnly: ParallelAxisSpec[] = [axes[1]]
+    const rows = build_parallel_rows(
+      rankOnly,
+      ["a", "b"],
+      getValue,
+      getN,
+      getRank,
+    )
+    expect(widest_band_pp(rows)).toBeNull()
   })
 })
 

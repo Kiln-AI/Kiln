@@ -1,3 +1,4 @@
+import hashlib
 import json
 from collections import defaultdict
 from dataclasses import dataclass
@@ -54,7 +55,7 @@ from kiln_ai.datamodel.prompt_id import is_frozen_prompt
 from kiln_ai.datamodel.prompt_type import generator_label
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.spec import SpecStatus
+from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.task_output import normalize_rating
@@ -700,6 +701,86 @@ class RunConfigEvalScoresSummary(BaseModel):
     )
 
 
+class EvalRunIndexRow(BaseModel):
+    """One eval run, stripped to what a comparison basis needs.
+
+    The full EvalRun carries its input, its output and the whole task run
+    trace, which is why /results is fetched one cell at a time by the
+    inspector. This is the same run with all of that dropped: the item it
+    scored, the scores, and the usage the run cost. Small enough to fetch every
+    row of every eval for a dozen run configs at once, which is what matching
+    run configs on the conversations they actually share requires.
+    """
+
+    item_id: ID_TYPE = Field(
+        description="The item this run scored: an EvalInput id on a V2 eval, a "
+        "TaskRun (dataset) id on a V1 one. Unique within an eval's rows."
+    )
+    eval_run_id: ID_TYPE = Field(
+        description="The EvalRun this row is. One record, one row - not an "
+        "identity for the conversation behind it, which is what execution_id is."
+    )
+    execution_id: str = Field(
+        description="Which CONVERSATION this row's scores were computed over. "
+        "Equal across two rows exactly when they scored the same run of the "
+        "task, so a caller can join rows from different evals and know it is "
+        "reading one execution rather than two."
+    )
+    scores: Dict[str, float] = Field(
+        default_factory=dict,
+        description="The run's scores, keyed by output_score_key, exactly as "
+        "stored. A key an eval declares can be absent here, the same way it is "
+        "absent from the per-key counts in the summary.",
+    )
+    input_tokens: float | None = Field(
+        default=None, description="Input tokens this run used. None when unrecorded."
+    )
+    output_tokens: float | None = Field(
+        default=None, description="Output tokens this run used. None when unrecorded."
+    )
+    total_tokens: float | None = Field(
+        default=None, description="Total tokens this run used. None when unrecorded."
+    )
+    cost: float | None = Field(
+        default=None, description="Cost of this run in USD. None when unrecorded."
+    )
+    total_llm_latency_ms: float | None = Field(
+        default=None,
+        description="End-to-end LLM latency of this run in ms. None when unrecorded.",
+    )
+
+
+class EvalRunIndexEval(BaseModel):
+    """One eval's rows for the requested run config."""
+
+    eval_id: ID_TYPE = Field(description="The unique identifier of the eval.")
+    eval_config_id: ID_TYPE = Field(
+        description="The judge config these rows came from: the eval's current "
+        "default, the same one every other compare surface reads."
+    )
+    rows: List[EvalRunIndexRow] = Field(
+        description="The run config's non-skipped runs under this eval, one per "
+        "item. Empty when it has never been run against this split."
+    )
+
+
+class EvalRunIndexResponse(BaseModel):
+    """Per-run rows for one run config, across every eval on the task."""
+
+    evals: List[EvalRunIndexEval] = Field(
+        description="One entry per eval that has a default judge config and "
+        "resolves the requested split. An eval missing either is omitted "
+        "rather than reported: this payload feeds a comparison basis, and an "
+        "eval that cannot supply rows cannot contribute to one. The summary "
+        "endpoints are where an eval's absence is explained."
+    )
+    split: str | None = Field(
+        default=None,
+        description="The split these rows were scoped to, echoed back. None "
+        "means the request did not ask for one and got each eval's own set.",
+    )
+
+
 def dataset_ids_in_filter(
     task: Task, filter_id: DatasetFilterId, readonly: bool
 ) -> Set[ID_TYPE]:
@@ -745,6 +826,19 @@ def expected_item_ids_for_eval(
     return None
 
 
+def specs_by_eval_id(task: Task, readonly: bool = True) -> Dict[ID_TYPE, Spec]:
+    """The spec each eval belongs to, keyed by eval id.
+
+    One scan of the task's specs, so a caller looping over every eval reads the
+    spec's status and id off a map rather than re-scanning per eval (which is
+    what Eval.associated_spec does). Legacy evals predate specs and are simply
+    absent from the map.
+    """
+    return {
+        spec.eval_id: spec for spec in task.specs(readonly=readonly) if spec.eval_id
+    }
+
+
 def eval_run_item_id(eval_run: EvalRun) -> ID_TYPE:
     # The item an EvalRun scored: EvalRun validates exactly one of dataset_id
     # (TaskRun source) or eval_input_id (EvalInput source) is set.
@@ -753,6 +847,44 @@ def eval_run_item_id(eval_run: EvalRun) -> ID_TYPE:
         if eval_run.dataset_id is not None
         else eval_run.eval_input_id
     )
+
+
+def eval_run_execution_id(eval_run: EvalRun) -> str:
+    """Which CONVERSATION an EvalRun's scores were computed over.
+
+    An item id is NOT this. Two evals can hold a row for the same item under
+    the same run config and mean two different runs of the task: trace reuse
+    makes them one conversation judged twice, but a second drive - a resample,
+    or two jobs racing - makes them two. A caller that joins rows across evals
+    by item id (say, to read a metrics eval's tool_calls for a judge's item)
+    reads the wrong conversation's number whenever it is the second case, and
+    has no way to tell from the payload which case it got.
+
+    Nothing stored on the record is that identity:
+
+    - `drive_fingerprint` is the drive's INPUTS (drive config + run config +
+      scenario), which is what makes reuse safe to look up. It is equal by
+      construction across two independent drives of the same scenario.
+      Measured on a real task: 756 of 756 cross-eval (config, item) pairs
+      shared a fingerprint while 85 of them held demonstrably different
+      conversations.
+    - there is no task-run id to borrow. A V2 run stores its conversation
+      inline as `task_run_trace` and a V1 run stores its output inline; neither
+      points at a persisted TaskRun.
+
+    So the identity is the conversation's own content: a hash of the stored
+    trace. Rows that reused a trace hash equal, rows from separate drives do
+    not, and the only cost is a digest over a string already in memory.
+
+    A run with no trace (V1 evals, final-answer evals) falls back to the
+    record's own id, which makes every such row its own execution. That is the
+    conservative direction: a cross-eval join finds no match and reports a
+    missing value instead of quietly reading a different run's number.
+    """
+    trace = eval_run.task_run_trace
+    if trace is None:
+        return f"run:{eval_run.id}"
+    return f"trace:{hashlib.sha256(trace.encode('utf-8')).hexdigest()}"
 
 
 # ---------------------------------------------------------------------------
@@ -1992,9 +2124,18 @@ def connect_evals_api(app: FastAPI):
         resolver = SplitItemResolver(task)
         evals_out: Dict[ID_TYPE, EvalResultsSummaryEvalInfo] = {}
         scores_out: Dict[ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]] = {}
+        specs_by_eval = specs_by_eval_id(task)
 
         for eval in task.evals(readonly=True):
             if eval.eval_set_filter_id is None and eval.eval_input_filter_id is None:
+                continue
+
+            # Archived specs leave the comparison entirely, which is what
+            # run_configs/{id}/eval_scores already does. Reporting an eval here
+            # that endpoint drops left an archived eval's row on the page with a
+            # mean but no sample size and no usage behind it.
+            spec = specs_by_eval.get(eval.id)
+            if spec is not None and spec.status == SpecStatus.archived:
                 continue
 
             # "all" needs the judge config to know what has been run, so the
@@ -2240,16 +2381,9 @@ def connect_evals_api(app: FastAPI):
         task_run_config_from_id(project_id, task_id, run_config_id)
         resolver = SplitItemResolver(task)
 
-        # Build a mapping from eval_id to spec_id for evals that are associated with specs
-        # Also track which eval_ids belong to archived specs so we can exclude them
-        specs = task.specs()
-        eval_id_to_spec_id: Dict[str, str] = {}
-        archived_eval_ids: set[str] = set()
-        for spec in specs:
-            if spec.eval_id and spec.id:
-                eval_id_to_spec_id[spec.eval_id] = spec.id
-                if spec.status == SpecStatus.archived:
-                    archived_eval_ids.add(spec.eval_id)
+        # The spec behind each eval: its id labels the result, and an archived
+        # one excludes the eval entirely (same rule as eval_results_summary).
+        specs_by_eval = specs_by_eval_id(task)
 
         evals = task.evals()
         eval_results: List[RunConfigEvalResult] = []
@@ -2269,7 +2403,8 @@ def connect_evals_api(app: FastAPI):
 
         for eval in evals:
             # Skip evals associated with archived specs
-            if eval.id and eval.id in archived_eval_ids:
+            spec = specs_by_eval.get(eval.id)
+            if spec is not None and spec.status == SpecStatus.archived:
                 continue
 
             declared_splits = resolver.declared_splits(eval)
@@ -2311,7 +2446,7 @@ def connect_evals_api(app: FastAPI):
                         dataset_size=0,
                         eval_config_result=None,
                         missing_default_eval_config=default_eval_config is None,
-                        spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
+                        spec_id=spec.id if spec is not None else None,
                         declared_splits=declared_splits,
                         split_available=False,
                     )
@@ -2328,7 +2463,7 @@ def connect_evals_api(app: FastAPI):
                         dataset_size=dataset_size,
                         eval_config_result=None,
                         missing_default_eval_config=True,
-                        spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
+                        spec_id=spec.id if spec is not None else None,
                         declared_splits=declared_splits,
                     )
                 )
@@ -2423,7 +2558,7 @@ def connect_evals_api(app: FastAPI):
                     eval_name=eval.name,
                     dataset_size=dataset_size,
                     missing_default_eval_config=False,
-                    spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
+                    spec_id=spec.id if spec is not None else None,
                     eval_config_result=EvalConfigResult(
                         eval_config_id=eval_config.id,
                         results=results,
@@ -2460,6 +2595,145 @@ def connect_evals_api(app: FastAPI):
             split=split,
             n_eval_runs=total_eval_runs,
         )
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/eval_run_index",
+        summary="Get Run Config Eval Run Index",
+        tags=["Run Configs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_run_config_eval_run_index(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_config_id: Annotated[
+            str, Path(description="The unique identifier of the run configuration.")
+        ],
+        split: Annotated[
+            EvalSplitQuery | None,
+            Query(
+                description="Scope the rows to one dataset split: 'train', "
+                "'val', 'test', or 'all' (every run that exists). Omit for each "
+                "eval's own set, which is what 'test' means. An eval with no "
+                "such split contributes no entry."
+            ),
+        ] = None,
+    ) -> EvalRunIndexResponse:
+        """Every eval run this run config has, one row each, without the traces.
+
+        The aggregating siblings (eval_results_summary, eval_scores) answer
+        "what did this config score", which is all a page needs while every
+        config is measured on whatever runs happen to exist. Comparing configs
+        on the SAME conversations needs the rows themselves - which items each
+        config covered, and how big each conversation was - and there is no way
+        to intersect item sets from a mean.
+
+        Scoped exactly like eval_scores, so a number computed from these rows
+        can only differ from the aggregate one by the filtering the caller
+        applied: the eval's current default judge config only, archived-spec
+        evals skipped, the split resolved through SplitItemResolver, skipped
+        runs excluded, and at most one row per item (first wins, in
+        eval_config.runs() order - the same rule and the same iteration order
+        compute_score_summary dedupes with, so both surfaces pick the same run
+        when a job race left two).
+        """
+        task = task_from_id(project_id, task_id)
+
+        # Verify the run config exists
+        task_run_config_from_id(project_id, task_id, run_config_id)
+        resolver = SplitItemResolver(task)
+
+        specs_by_eval = specs_by_eval_id(task)
+
+        index_evals: List[EvalRunIndexEval] = []
+
+        for eval in task.evals():
+            # Skip evals associated with archived specs
+            spec = specs_by_eval.get(eval.id)
+            if spec is not None and spec.status == SpecStatus.archived:
+                continue
+
+            # Only the default eval config (only if only one eval config, or
+            # default is set explicitly if many). Resolved before the item set,
+            # which "all" reads runs out of.
+            default_eval_config = None
+            eval_configs = eval.configs(readonly=True)
+            if len(eval_configs) == 1:
+                default_eval_config = eval_configs[0]
+            elif eval.current_config_id:
+                default_eval_config = next(
+                    (
+                        config
+                        for config in eval_configs
+                        if config.id == eval.current_config_id
+                    ),
+                    None,
+                )
+            if default_eval_config is None:
+                continue
+
+            expected_item_ids = resolver.items_for_query(
+                eval, default_eval_config, split
+            )
+            if expected_item_ids is None:
+                continue
+
+            remaining_expected_item_ids = set(expected_item_ids)
+            rows: List[EvalRunIndexRow] = []
+
+            for eval_run in default_eval_config.runs(readonly=True):
+                if eval_run.task_run_config_id != run_config_id:
+                    continue
+
+                item_id = eval_run_item_id(eval_run)
+                if item_id not in remaining_expected_item_ids:
+                    continue
+                # The item's slot is consumed HERE, before the skip test, so a
+                # skipped run and a scored one for the same item leave exactly
+                # one row - the first in iteration order - and a skipped first
+                # takes the item off the index entirely. That is deliberate,
+                # and it is deliberate because compute_score_summary does the
+                # same thing at the same point (:1099-1110): these rows exist
+                # to be intersected with numbers that endpoint produced, so a
+                # different dedupe here would make a matched mean and an
+                # unfiltered mean disagree about a config nobody filtered out.
+                # No behavior change - stated so the next reader does not
+                # "fix" it into a divergence.
+                remaining_expected_item_ids.remove(item_id)
+
+                if eval_run.skipped_reason is not None:
+                    continue
+
+                usage = eval_run.task_run_usage
+                rows.append(
+                    EvalRunIndexRow(
+                        item_id=item_id,
+                        eval_run_id=eval_run.id,
+                        execution_id=eval_run_execution_id(eval_run),
+                        scores=dict(eval_run.scores),
+                        input_tokens=usage.input_tokens if usage else None,
+                        output_tokens=usage.output_tokens if usage else None,
+                        total_tokens=usage.total_tokens if usage else None,
+                        cost=usage.cost if usage else None,
+                        total_llm_latency_ms=usage.total_llm_latency_ms
+                        if usage
+                        else None,
+                    )
+                )
+
+            index_evals.append(
+                EvalRunIndexEval(
+                    eval_id=eval.id,
+                    eval_config_id=default_eval_config.id,
+                    rows=rows,
+                )
+            )
+
+        return EvalRunIndexResponse(evals=index_evals, split=split)
 
     @app.post(
         "/api/projects/{project_id}/add_code_trust",

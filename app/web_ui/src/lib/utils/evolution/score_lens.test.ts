@@ -494,6 +494,174 @@ describe("informational metrics reach the chart, not the aggregate", () => {
   })
 })
 
+// A metrics eval's keys are `custom` and NOT informational - cost_usd,
+// total_tokens, cache_hit_rate all declare a direction, because the metrics
+// radar needs one. That made them non-informational keys of the aggregate,
+// which is a category error: a custom key has no scale of its own, so it is
+// min-max scaled across the run configs in the summary, and "cheapest of the
+// thirteen ever run here" was being averaged in with pass rates as if it were
+// one.
+describe("metric evals stay out of the aggregate", () => {
+  const quality: ScoreSpec[] = [
+    { name: "pass", type: "pass_fail" },
+    { name: "grounded", type: "pass_fail" },
+  ]
+  // Directions declared, exactly as a real metrics eval declares them
+  const metrics: ScoreSpec[] = [
+    { name: "cost_usd", type: "custom", direction: "lower_is_better" },
+    { name: "total_tokens", type: "custom", direction: "lower_is_better" },
+    { name: "cache_hit_rate", type: "custom", direction: "higher_is_better" },
+  ]
+
+  const built = make_summary(
+    [
+      { id: "e1", name: "Quality", scores: quality },
+      { id: "m1", name: "Efficiency", scores: metrics },
+    ],
+    {
+      // The expensive, good config
+      rc1: {
+        e1: { means: { pass: 1, grounded: 1 } },
+        m1: { means: { cost_usd: 10, total_tokens: 1000, cache_hit_rate: 0 } },
+      },
+      // The cheap, bad one
+      rc2: {
+        e1: { means: { pass: 0, grounded: 0 } },
+        m1: { means: { cost_usd: 1, total_tokens: 100, cache_hit_rate: 1 } },
+      },
+    },
+  )
+  const data = build_lens_data(built.summary, built.evals)
+  const lens = { kind: "aggregate" as const }
+
+  it("is the quality mean, whatever the metrics say", () => {
+    expect(normalized_lens_value(data, "rc1", lens)).toBeCloseTo(1, 6)
+    expect(normalized_lens_value(data, "rc2", lens)).toBeCloseTo(0, 6)
+  })
+
+  it("does not let cheapness read as quality", () => {
+    // Unfixed, rc2 scored 3 of the 5 keys at 1.0 (cheapest cost, fewest
+    // tokens, best cache rate) and came out at 0.6 - ABOVE the config that
+    // passes every criterion, on the number that gates a price chart.
+    const rc1 = normalized_lens_value(data, "rc1", lens) as number
+    const rc2 = normalized_lens_value(data, "rc2", lens) as number
+    expect(rc1).toBeGreaterThan(rc2)
+  })
+
+  it("counts a custom key that sits beside graded ones, since its eval grades", () => {
+    // is_metric_eval is about the EVAL, not the key: an eval with any bounded
+    // score is a criterion eval and every key on it is a criterion key.
+    const mixed = make_summary(
+      [
+        {
+          id: "e1",
+          name: "Judge",
+          scores: [
+            { name: "pass", type: "pass_fail" },
+            {
+              name: "odd_scale",
+              type: "custom",
+              direction: "higher_is_better",
+            },
+          ],
+        },
+      ],
+      {
+        rc1: { e1: { means: { pass: 1, odd_scale: 10 } } },
+        rc2: { e1: { means: { pass: 1, odd_scale: 0 } } },
+      },
+    )
+    const mixed_data = build_lens_data(mixed.summary, mixed.evals)
+    expect(normalized_lens_value(mixed_data, "rc1", lens)).toBeCloseTo(1, 6)
+    expect(normalized_lens_value(mixed_data, "rc2", lens)).toBeCloseTo(0.5, 6)
+  })
+
+  it("has no aggregate at all for a task that only reports metrics", () => {
+    const only = make_summary(
+      [{ id: "m1", name: "Efficiency", scores: metrics }],
+      {
+        rc1: {
+          m1: {
+            means: { cost_usd: 10, total_tokens: 1000, cache_hit_rate: 0 },
+          },
+        },
+      },
+    )
+    const only_data = build_lens_data(only.summary, only.evals)
+    expect(normalized_lens_value(only_data, "rc1", lens)).toBeNull()
+  })
+
+  // The measured case this came from: the Nova task's test lane, five pinned
+  // configs, six quality keys and eleven non-informational metric keys. The
+  // decontaminated aggregate has to be the flat pass-fail mean, and it is what
+  // the investigation's (a′) column reports.
+  it("reproduces the pass-fail means measured on a real five-config task", () => {
+    const axes = {
+      tool_call_errored: [0.7727272727, 0.16, 0.2777777778, 0.2, 0.44],
+      failed_skill_read: [0.7391304348, 1, 1, 0.2, 0.48],
+      one_at_a_time_writes: [1, 1, 1, 0, 0],
+      write_correctness: [0.4761904762, 0.5454545455, 0.6818181818, 0.32, 0],
+      false_done_claim: [1, 1, 0.88, 1, 0.96],
+      answer_matches_data: [0.88, 0.9583333333, 0.875, 0.72, 0],
+    }
+    const configs = ["luna", "flash", "pro", "gpt5p4", "mini"]
+    const expected = [
+      0.8113413639, 0.7772979798, 0.7857659933, 0.4066666667, 0.3133333333,
+    ]
+
+    const cells: Record<
+      string,
+      Record<string, { means: Record<string, number> }>
+    > = {}
+    configs.forEach((id, i) => {
+      cells[id] = {
+        q: {
+          means: Object.fromEntries(
+            Object.entries(axes).map(([key, values]) => [key, values[i]]),
+          ),
+        },
+        // Eleven metric keys, all with declared directions, on values that
+        // min-max to whatever the cheap arm wants them to be
+        eff: {
+          means: Object.fromEntries(
+            Array.from({ length: 11 }, (_, k) => [`m${k}`, (i + 1) * (k + 1)]),
+          ),
+        },
+      }
+    })
+
+    const real = make_summary(
+      [
+        {
+          id: "q",
+          name: "Quality",
+          scores: Object.keys(axes).map((name) => ({
+            name,
+            type: "pass_fail" as ScoreType,
+          })),
+        },
+        {
+          id: "eff",
+          name: "Efficiency",
+          scores: Array.from({ length: 11 }, (_, k) => ({
+            name: `m${k}`,
+            type: "custom" as ScoreType,
+            direction: "lower_is_better" as ScoreDirection,
+          })),
+        },
+      ],
+      cells,
+    )
+    const real_data = build_lens_data(real.summary, real.evals)
+    configs.forEach((id, i) => {
+      expect(normalized_lens_value(real_data, id, lens)).toBeCloseTo(
+        expected[i],
+        6,
+      )
+    })
+  })
+})
+
 describe("lens_color", () => {
   it("bins normalized values darkest-is-best and grays out no score", () => {
     expect(lens_color(null)).toBe(NO_SCORE_COLOR)

@@ -104,6 +104,50 @@ export function score_key_id(evalId: string, scoreKey: string): string {
   return `${evalId}::${scoreKey}`
 }
 
+/**
+ * Whether an eval's score keys are metrics rather than criteria.
+ *
+ * The test is the score TYPE, because that is the structural difference the
+ * page's two tracks are built on rather than a naming convention. A criterion
+ * is graded on a bounded scale the type itself defines - pass/fail is 0..1,
+ * five star is 1..5 - which is what lets it be plotted against an absolute
+ * axis and averaged with its peers. A metric is `custom`: unbounded, with no
+ * maximum cost or latency to normalize against, so the only scale it has is
+ * position among the run configs being compared.
+ *
+ * So: an eval whose scores are ALL custom is a metrics eval. One with any
+ * bounded score is a criterion eval, and every key on it - including a custom
+ * one sitting beside the graded ones - is a criterion key.
+ *
+ * Deliberately not the direction. Routing on direction was the bug: it holds
+ * only while every metric is better small, and `cache_hit_rate` is not.
+ *
+ * Lives HERE, beside ScoreKeyMeta, rather than in metric_axes where it was
+ * first written, because the aggregate lens needs it too and a rule this
+ * consequential must have exactly one definition. metric_axes re-exports it.
+ */
+export function is_metric_eval(evalKeyMetas: ScoreKeyMeta[]): boolean {
+  return (
+    evalKeyMetas.length > 0 &&
+    evalKeyMetas.every((meta) => meta.type === "custom")
+  )
+}
+
+/** The ids of the evals that report metrics rather than grade criteria */
+export function metric_eval_ids(keyMetas: ScoreKeyMeta[]): Set<string> {
+  const by_eval = new Map<string, ScoreKeyMeta[]>()
+  for (const meta of keyMetas) {
+    const group = by_eval.get(meta.evalId) ?? []
+    group.push(meta)
+    by_eval.set(meta.evalId, group)
+  }
+  const ids = new Set<string>()
+  for (const [evalId, metas] of by_eval) {
+    if (is_metric_eval(metas)) ids.add(evalId)
+  }
+  return ids
+}
+
 export function lens_key(lens: Lens): string {
   switch (lens.kind) {
     case "none":
@@ -318,8 +362,36 @@ export function percent_complete(
   return data.percentComplete.get(runConfigId)?.get(evalId) ?? null
 }
 
+/**
+ * The keys an aggregate is over: the criteria, minus the ones that declare no
+ * better direction.
+ *
+ * METRIC EVALS ARE EXCLUDED, and that is a correction rather than a choice. A
+ * metrics eval's keys are `custom`, so they have no scale of their own and are
+ * min-max scaled across the run configs in the summary - which turns "this
+ * config was the cheapest of the thirteen ever run here" into a number
+ * indistinguishable from a pass rate, and then averages it with the pass
+ * rates. Measured on one task, that put 11 metric keys against 6 quality keys
+ * in the "quality" aggregate: two thirds of it, uncorrelated with the quality
+ * block (r = 0.03), compressing the spread by ~45% and inverting the order of
+ * two configs. The cheap arm read as higher quality BECAUSE it was cheap, and
+ * the number gating a price chart had cost inside it.
+ *
+ * Same partition the two radars use (is_metric_eval), so "aggregate" means the
+ * same thing everywhere it is shown: the DAG cards, the delta strips' baseline,
+ * and the price/latency gate.
+ */
+export function aggregate_key_metas(keyMetas: ScoreKeyMeta[]): ScoreKeyMeta[] {
+  const metric_evals = metric_eval_ids(keyMetas)
+  return keyMetas.filter(
+    (meta) =>
+      meta.direction !== "informational" && !metric_evals.has(meta.evalId),
+  )
+}
+
 // Normalized value under a lens. Aggregate = unweighted mean of the run
-// config's normalized, non-informational score keys.
+// config's normalized criterion keys - see aggregate_key_metas for what is in
+// and what is not.
 export function normalized_lens_value(
   data: LensData,
   runConfigId: string,
@@ -333,10 +405,7 @@ export function normalized_lens_value(
   }
   let total = 0
   let count = 0
-  for (const meta of data.keyMetas) {
-    if (meta.direction === "informational") {
-      continue
-    }
+  for (const meta of aggregate_key_metas(data.keyMetas)) {
     const value = normalized_score(
       data,
       runConfigId,

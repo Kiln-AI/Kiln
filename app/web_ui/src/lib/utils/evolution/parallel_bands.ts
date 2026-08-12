@@ -6,6 +6,14 @@
 // 3.2 both become 0.44 and 0.55 of their axis. Same convention the radar's Full
 // Scale mode uses, so a config sits at the same height on both charts. Real
 // values go in the tooltip; the axis carries the fraction.
+//
+// A RANK axis is the one exception, and it is why `ParallelAxisSpec.rank`
+// exists: a performance metric the reader added has no full range to be a
+// fraction of, so it arrives already normalized as a capped rank score over the
+// configs on screen (see rank_score). Everything below leaves those values
+// alone - the score IS the height - and gives them no confidence band, because
+// a Wilson interval on a pass rate says nothing about a position in an
+// ordering.
 
 import type { components } from "$lib/api_schema"
 import { score_type_range } from "$lib/utils/formatters"
@@ -21,6 +29,18 @@ export interface ParallelAxisSpec {
   /** Owning eval, shown under the label and in tooltips */
   evalName: string
   type: ScoreType | null
+  /**
+   * A performance metric plotted as a capped rank score rather than as a share
+   * of a score's own scale. Absent on the quality axes this chart began as.
+   */
+  rank?: boolean
+  /**
+   * How this axis's RAW value is written out in the tooltip - dollars, seconds,
+   * tokens. Rank axes only: the height is a position, so the tooltip is the
+   * only place the actual quantity appears, and the axis's own unit is the only
+   * thing that can format it.
+   */
+  format?: (value: number | null) => string
 }
 
 export interface ParallelCell {
@@ -103,23 +123,65 @@ export function build_cell(
 }
 
 /**
+ * One config's cell on a RANK axis.
+ *
+ * The rank score is already the height - it is a 0..1 position among the
+ * configs on screen, computed by the page over exactly the set being drawn - so
+ * there is nothing to normalize and no range to normalize against. The raw
+ * value rides along untouched for the tooltip, which is the only place a metric
+ * axis reports an actual quantity.
+ *
+ * Never banded, and `n` is deliberately left null. A confidence interval is a
+ * statement about a proportion; a rank is a statement about an ordering, and
+ * putting a band round one would be drawing uncertainty in units the number
+ * does not have. A config with no rank (nothing measured) yields the empty
+ * cell, which the chart draws as a gap rather than as a zero - last place and
+ * "not measured" are different facts.
+ */
+export function build_rank_cell(
+  score: number | null,
+  value: number | null,
+): ParallelCell {
+  if (score === null || !Number.isFinite(score)) {
+    return { ...EMPTY_CELL }
+  }
+  return {
+    fraction: score,
+    lower: score,
+    upper: score,
+    value,
+    n: null,
+    banded: false,
+  }
+}
+
+/**
  * Plotted rows, one per run config, in the order given. Configs with nothing to
  * plot are still returned (with `hasData` false) so callers can tell "no score
  * for this config" apart from "config not in the comparison".
+ *
+ * `getRankScore` is consulted for rank axes only, and is optional: a caller
+ * with no metric axes never needs one.
  */
 export function build_parallel_rows(
   axes: ParallelAxisSpec[],
   runConfigIds: string[],
   getValue: (runConfigId: string, key: string) => number | null,
   getSampleSize: (runConfigId: string, key: string) => number | null,
+  getRankScore?: (runConfigId: string, key: string) => number | null,
 ): ParallelRow[] {
   return runConfigIds.map((runConfigId) => {
     const cells = axes.map((axis) =>
-      build_cell(
-        getValue(runConfigId, axis.key),
-        getSampleSize(runConfigId, axis.key),
-        axis.type,
-      ),
+      axis.rank
+        ? build_rank_cell(
+            getRankScore?.(runConfigId, axis.key) ?? null,
+            getValue(runConfigId, axis.key),
+          )
+        : build_cell(
+            getValue(runConfigId, axis.key),
+            getSampleSize(runConfigId, axis.key),
+            axis.type,
+          ),
     )
     return {
       runConfigId,

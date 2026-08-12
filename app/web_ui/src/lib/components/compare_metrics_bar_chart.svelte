@@ -38,17 +38,11 @@
   // is refused explicitly below rather than rendered.
 
   import * as echarts from "echarts"
-  import type {
-    TaskRunConfig,
-    ProviderModels,
-    PromptResponse,
-  } from "$lib/types"
-  import { isMcpRunConfig } from "$lib/types"
+  import type { TaskRunConfig, ProviderModels } from "$lib/types"
   import {
-    getRunConfigModelDisplayName,
-    getRunConfigPromptDisplayName,
-    getRunConfigInputTransformSummaryLabel,
-  } from "$lib/utils/run_config_formatters"
+    FALLBACK_SERIES_COLOR,
+    series_label,
+  } from "$lib/utils/evolution/series_identity"
   import { relative_metric_score } from "$lib/utils/relative_metric_score"
   import {
     format_metric_value,
@@ -82,10 +76,30 @@
   // Raw value of a metric for a run config, in its own units. Null when the
   // config has no number for it.
   export let getMetricValue: (runConfigId: string, key: string) => number | null
+  // Runs behind each (config, key) number, appended to the row tooltip.
+  // Optional and null by default - the usage rollup keys have no per-key count
+  // at all, so a row simply prints without one.
+  export let getSampleSize:
+    | ((runConfigId: string, key: string) => number | null)
+    | null = null
   export let run_configs: TaskRunConfig[] = []
   export let model_info: ProviderModels | null = null
-  export let prompts: PromptResponse | null = null
+  // Only what the page's legend has left switched on. This chart draws no
+  // legend of its own - see evolution_legend.svelte - so a hidden config never
+  // reaches it rather than reaching it and being suppressed here.
   export let selectedRunConfigIds: string[] = []
+  // Colour per run config id, fixed by the page (series_color_map) rather than
+  // by this chart's series order. A config with no metrics at all is dropped
+  // from `plottedConfigs`, which used to shift the colour of every config after
+  // it - so the same run config came out one colour here and another on the
+  // radar beside it. Empty falls back to the theme palette by index.
+  export let seriesColors: Record<string, string> = {}
+  // What to CALL each run config, by id, decided once by the page for the
+  // whole comparison - see series_display_map, which leads with the model and
+  // appends the config's name only where a model is shared. Used for the
+  // series names and the row tooltip. Empty falls back to series_label, the
+  // config-name-first naming this chart used before.
+  export let seriesLabels: Record<string, string> = {}
   // Rendered under the subtitle - what the page left off and why
   export let notShownNote: string | null = null
   // Which slice of the dataset these numbers are over, when it is not the
@@ -187,12 +201,6 @@ Because it is a comparison, at least two run configs are needed.`
   // three slabs in a tall card - echarts keeps them centred in their row.
   const BAR_MAX_WIDTH = 26
 
-  // The bottom legend, which the plot has to sit above: one line for the run
-  // config's name plus one per line of subtext, at the line heights set below.
-  const LEGEND_NAME_LINE_HEIGHT = 16
-  const LEGEND_SUB_LINE_HEIGHT = 14
-  const LEGEND_PADDING = 10
-
   let chartInstance: echarts.ECharts | null = null
   // The drawing box, tracked because the gutter and the family band are solved
   // from it in px rather than left to echarts' percentages
@@ -200,11 +208,8 @@ Because it is a comparison, at least two run configs are needed.`
   let boxHeight = 0
 
   function getSeriesDisplayName(config: TaskRunConfig): string {
-    if (config.name) return config.name
-    if (isMcpRunConfig(config.run_config_properties)) {
-      return config.run_config_properties.tool_reference.tool_name ?? "MCP Tool"
-    }
-    return getRunConfigModelDisplayName(config, model_info) ?? "Unknown"
+    const assigned = config.id ? seriesLabels[config.id] : undefined
+    return assigned ?? series_label(config, model_info)
   }
 
   // Run configs that will actually be drawn: selected, resolvable, and with at
@@ -273,13 +278,16 @@ Because it is a comparison, at least two run configs are needed.`
     return `Not shown: ${parts.join(", ")}. See the table below.`
   })()
 
-  // Colour follows the run config: pinned order is series order here and data
-  // order on the quality radar, and both take the palette by that index, so a
-  // config is the same colour on both charts of the pair. Read back off the
-  // option rather than restated, since the palette is the theme's.
-  function seriesColorAt(index: number): string {
+  // Colour follows the run config, and the page is what decides it - see
+  // series_color_map. "Series order here is data order on the radar" was the
+  // old rule and it was not true: either chart can drop a config it has no
+  // numbers for, and one that did renumbered every colour after it. The
+  // palette read is the fallback for a caller that supplies no map.
+  function seriesColorFor(runConfigId: string | null, index: number): string {
+    const assigned = runConfigId ? seriesColors[runConfigId] : undefined
+    if (assigned) return assigned
     const palette = chartInstance?.getOption()?.color as string[] | undefined
-    if (!palette?.length) return "#888"
+    if (!palette?.length) return FALLBACK_SERIES_COLOR
     return palette[index % palette.length]
   }
 
@@ -319,71 +327,17 @@ Because it is a comparison, at least two run configs are needed.`
               axis.unit,
               rawValue,
             )})</span>`
-      html += `<div>${tooltipMarker(seriesColorAt(index))}${name}: ${shown}</div>`
+      const n =
+        getSampleSize && config.id ? getSampleSize(config.id, axis.key) : null
+      const nText =
+        n === null || rawValue === null
+          ? ""
+          : ` <span style="color: #888;">· n=${n}</span>`
+      html += `<div>${tooltipMarker(
+        seriesColorFor(config.id ?? null, index),
+      )}${name}: ${shown}${nText}</div>`
     })
     return html
-  }
-
-  // The legend keeps the whole-config summary: what it is, and its raw numbers.
-  function buildRunConfigTooltip(
-    name: string,
-    chartAxes: MetricAxis[],
-  ): string {
-    const config = run_configs.find(
-      (candidate) => getSeriesDisplayName(candidate) === name,
-    )
-
-    let html = `<div style="font-weight: bold; margin-bottom: 4px;">${name}</div>`
-    if (config && isMcpRunConfig(config.run_config_properties)) {
-      const toolName =
-        config.run_config_properties.tool_reference.tool_name ?? "MCP Tool"
-      html += `<div>MCP Tool: ${toolName}</div>`
-    } else {
-      const modelName = config
-        ? getRunConfigModelDisplayName(config, model_info) || "Unknown"
-        : "Unknown"
-      html += `<div>Model: ${modelName}</div>`
-      const promptName = config
-        ? getRunConfigPromptDisplayName(config, prompts)
-        : null
-      if (promptName) html += `<div>Prompt: ${promptName}</div>`
-      if (config) {
-        const transformLabel = getRunConfigInputTransformSummaryLabel(config)
-        if (transformLabel) {
-          html += `<div>Input Transform: ${transformLabel}</div>`
-        }
-      }
-    }
-
-    html += `<div style="font-weight: bold; margin-bottom: 4px; padding-top: 8px;">Values</div>`
-    for (const axis of chartAxes) {
-      const rawValue = config?.id ? getMetricValue(config.id, axis.key) : null
-      // The raw quantity's own name, not the row label: "Cost: $0.0123", not
-      // "Cost Efficiency: $0.0123", which would read as a score.
-      html += `<div>${axis.valueLabel}: ${format_metric_value(
-        axis.unit,
-        rawValue,
-      )}</div>`
-    }
-    return html
-  }
-
-  function buildLegendSubtext(config: TaskRunConfig): string {
-    const parts: string[] = []
-    if (isMcpRunConfig(config.run_config_properties)) {
-      const toolName =
-        config.run_config_properties.tool_reference.tool_name ?? "MCP Tool"
-      parts.push(`{sub|Tool: ${toolName}}`)
-    } else {
-      const modelName =
-        getRunConfigModelDisplayName(config, model_info) || "Unknown"
-      const promptName = getRunConfigPromptDisplayName(config, prompts)
-      parts.push(`{sub|Model: ${modelName}}`)
-      if (promptName) parts.push(`{sub|Prompt: ${promptName}}`)
-      const transformLabel = getRunConfigInputTransformSummaryLabel(config)
-      if (transformLabel) parts.push(`{sub|Input Transform: ${transformLabel}}`)
-    }
-    return parts.join("\n")
   }
 
   // One canvas for the life of the component: measuring text needs a 2d context
@@ -405,24 +359,6 @@ Because it is a comparison, at least two run configs are needed.`
 
   function measureFamilyWidth(text: string): number {
     return measureIn(FAMILY_LABEL_FONT, FAMILY_LABEL_CHAR_WIDTH, text)
-  }
-
-  // What the bottom legend will occupy, from the subtext it is actually going
-  // to carry - an MCP config prints one line under its name, a model-and-prompt
-  // config three - so the plot is never held off by room nothing will use.
-  function legendHeight(): number {
-    let subLines = 0
-    for (const config of plottedConfigs) {
-      subLines = Math.max(
-        subLines,
-        buildLegendSubtext(config).split("\n").length,
-      )
-    }
-    return (
-      LEGEND_PADDING +
-      LEGEND_NAME_LINE_HEIGHT +
-      subLines * LEGEND_SUB_LINE_HEIGHT
-    )
   }
 
   // How far outside a name's own box a pointer still counts as being on it.
@@ -467,10 +403,9 @@ Because it is a comparison, at least two run configs are needed.`
     )
     const gridLeft = CHART_PAD + familyTier + labelWidth + ROW_LABEL_GAP
     const top = CHART_PAD
-    const height = Math.max(
-      0,
-      boxHeight - top - legendHeight() - VALUE_AXIS_HEIGHT,
-    )
+    // Nothing under the plot but its value axis: the legend that used to sit
+    // below that belongs to the page now, so the rows get its height back.
+    const height = Math.max(0, boxHeight - top - CHART_PAD - VALUE_AXIS_HEIGHT)
     return { gridLeft, labelWidth, plot: { top, height } }
   }
 
@@ -602,8 +537,9 @@ Because it is a comparison, at least two run configs are needed.`
 
   function generateChartData(): {
     names: string[]
-    series: { name: string; data: number[] }[]
-    legend: string[]
+    // The run config id rides along with the series: it is what a colour is
+    // keyed by, and two configs are allowed to share a display name.
+    series: { name: string; configId: string; data: number[] }[]
     chartAxes: MetricAxis[]
   } {
     const chartAxes = plottedAxes
@@ -633,18 +569,16 @@ Because it is a comparison, at least two run configs are needed.`
       scoresByAxis.set(axis.key, scores)
     }
 
-    const series: { name: string; data: number[] }[] = []
-    const legend: string[] = []
+    const series: { name: string; configId: string; data: number[] }[] = []
     for (const config of plottedConfigs) {
-      const name = getSeriesDisplayName(config)
-      legend.push(name)
       series.push({
-        name,
+        name: getSeriesDisplayName(config),
+        configId: config.id as string,
         data: chartAxes.map((axis) => scoreFor(config, axis) ?? 0),
       })
     }
 
-    return { names, series, legend, chartAxes }
+    return { names, series, chartAxes }
   }
 
   function updateChart() {
@@ -658,15 +592,8 @@ Because it is a comparison, at least two run configs are needed.`
     // observe, so this only skips the render before the first frame.
     if (boxWidth <= 0 || boxHeight <= 0) return
 
-    const { names, series, legend, chartAxes } = generateChartData()
+    const { names, series, chartAxes } = generateChartData()
     const layout = barLayout(names)
-
-    const legendFormatter: Record<string, string> = {}
-    for (const config of plottedConfigs) {
-      const displayName = getSeriesDisplayName(config)
-      legendFormatter[displayName] =
-        `${displayName}\n${buildLegendSubtext(config)}`
-    }
 
     chartInstance.setOption(
       {
@@ -686,36 +613,17 @@ Because it is a comparison, at least two run configs are needed.`
             return buildAxisTooltip(hovered.dataIndex, chartAxes)
           },
         },
-        legend: {
-          data: legend,
-          // Clicking a legend entry hides/shows that run config's bars - with a
-          // dozen configs allowed, isolating one is the only way to read the
-          // chart. Same behaviour as the eval-score radar.
-          selectedMode: true,
-          formatter: (name: string) => legendFormatter[name] || name,
-          tooltip: {
-            show: true,
-            formatter: (params: { name: string }) =>
-              buildRunConfigTooltip(params.name, chartAxes),
-          },
-          textStyle: {
-            lineHeight: 16,
-            rich: {
-              sub: {
-                fontSize: 11,
-                color: "#666",
-                lineHeight: 14,
-              },
-            },
-          },
-          orient: "horizontal" as const,
-          bottom: 0,
-          left: "center" as const,
-          itemGap: 24,
-          // This chart sits in a column beside the eval-score radar, so a
-          // wrapping legend would eat the plot. Scroll keeps it to one row.
-          type: "scroll" as const,
-        },
+        // No legend of its own. There is ONE legend for the whole compare
+        // section, above the charts (evolution_legend.svelte): three
+        // independent legends over three views of one comparison meant
+        // switching a config off to read this chart left it drawn on the two
+        // beside it, in a different colour.
+        //
+        // The legend used to carry a per-config tooltip - what the config is,
+        // and its raw quantities - and that moves with it: the chip names the
+        // model and prompt, and the quantities are in the row tooltip above
+        // and in the table under the charts.
+        legend: { show: false },
         graphic: [
           ...bandGraphics(familyBands, chartAxes.length, layout),
           ...axisHelpGraphics(chartAxes, names, layout),
@@ -772,7 +680,7 @@ Because it is a comparison, at least two run configs are needed.`
             areaStyle: { color: ["#f8f9fa", "#ffffff"] },
           },
         },
-        series: series.map((entry) => ({
+        series: series.map((entry, index) => ({
           name: entry.name,
           type: "bar" as const,
           data: entry.data,
@@ -784,6 +692,9 @@ Because it is a comparison, at least two run configs are needed.`
           barCategoryGap: "35%",
           itemStyle: {
             borderRadius: [0, 3, 3, 0] as [number, number, number, number],
+            // Stated per config rather than left to the palette's walk over
+            // whatever this chart happens to be drawing
+            color: seriesColorFor(entry.configId, index),
           },
         })),
       },
@@ -804,9 +715,10 @@ Because it is a comparison, at least two run configs are needed.`
     familyBands,
     plottedConfigs,
     selectedRunConfigIds,
+    seriesColors,
+    seriesLabels,
     getMetricValue,
     model_info,
-    prompts,
     // The gutter and the family band are solved from the box, so a resize is a
     // redraw and not just an echarts resize()
     boxWidth,
@@ -890,8 +802,8 @@ Because it is a comparison, at least two run configs are needed.`
     </div>
   </div>
   {#if hasData}
-    <!-- Matches the eval-score radar's bottom-legend box, so the two charts
-         line up when they sit side by side. -->
+    <!-- The same box as the eval-score radar's, so the two charts line up
+         when they sit side by side. -->
     <div use:initChart class="w-full flex-1 min-h-[640px]"></div>
   {:else}
     <ChartNoData title={noData.title} message={noData.message} />

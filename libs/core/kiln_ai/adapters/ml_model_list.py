@@ -58,6 +58,7 @@ class ModelName(str, Enum):
     """
 
     fugu_ultra = "fugu_ultra"
+    muse_spark_1_2 = "muse_spark_1_2"
     muse_spark_1_1 = "muse_spark_1_1"
     llama_3_1_8b = "llama_3_1_8b"
     llama_3_1_70b = "llama_3_1_70b"
@@ -3858,6 +3859,33 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Muse Spark 1.2
+    KilnModel(
+        family=ModelFamily.muse,
+        name=ModelName.muse_spark_1_2,
+        friendly_name="Muse Spark 1.2",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="meta/muse-spark-1.2",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents (Meta backend 400s on html/csv uploads, so excluded)
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
     # Muse Spark 1.1
     KilnModel(
         family=ModelFamily.muse,
@@ -5628,8 +5656,14 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
-                model_id="accounts/fireworks/models/deepseek-v4-flash",
+                model_id="accounts/fireworks/models/deepseek-v4-flash-0731",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="deepseek-ai/DeepSeek-V4-Flash-0731",
+                structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
             ),
         ],
@@ -8861,6 +8895,15 @@ built_in_models: List[KilnModel] = [
                 require_openrouter_reasoning=True,
                 parser=ModelParserID.r1_thinking,
             ),
+            # Fireworks exposes M2.7 as a text-only endpoint and does not emit
+            # reasoning unless a reasoning effort is explicitly requested, so we
+            # treat it as a standard model here (mirroring the M3 Fireworks entry).
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/minimax-m2p7",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+            ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="MiniMaxAI/MiniMax-M2.7",
@@ -9279,7 +9322,12 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
             ),
-            # Fireworks lists Inkling on its site but the API returns 404 (not deployed).
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/inkling",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
         ],
     ),
     # Fugu Ultra

@@ -6,7 +6,7 @@
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { components } from "$lib/api_schema"
-  import type { Eval } from "$lib/types"
+  import type { Eval, TaskRunConfig } from "$lib/types"
   import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
   import {
     get_task_composite_id,
@@ -60,12 +60,14 @@
   } from "$lib/components/compare_radar_chart.svelte"
   import CompareMetricsBarChart from "$lib/components/compare_metrics_bar_chart.svelte"
   import CompareParallelChart from "$lib/components/compare_parallel_chart.svelte"
+  import ComparePriceLatencyChart from "$lib/components/compare_price_latency_chart.svelte"
   import type { ParallelAxisSpec } from "$lib/utils/evolution/parallel_bands"
   import {
     build_metric_axes,
     criterion_key_metas,
     default_metric_axis_keys,
     directionless_key_count,
+    format_metric_value,
     known_metric_axis_keys,
     METRIC_FAMILIES,
     METRIC_FAMILY_LABELS,
@@ -81,8 +83,10 @@
     toggled_metric_axis_keys,
     usage_row_family,
     visible_metric_axes,
+    type MetricAxis,
     type MetricFamily,
   } from "$lib/utils/evolution/metric_axes"
+  import { capped_rank_scores } from "$lib/utils/evolution/rank_score"
   import {
     build_score_families,
     family_for_eval,
@@ -90,7 +94,47 @@
     order_families,
     type ScoreFamily,
   } from "$lib/utils/evolution/score_families"
+  import {
+    weakest_family_quality,
+    type QualityBreakdown,
+  } from "$lib/utils/evolution/quality_score"
+  import {
+    build_price_latency_points,
+    quality_gate_cuts,
+    split_by_gate,
+  } from "$lib/utils/evolution/price_latency"
   import { spec_descriptions_by_eval } from "$lib/utils/evolution/axis_help"
+  import {
+    series_color_map,
+    series_display_map,
+  } from "$lib/utils/evolution/series_identity"
+  import {
+    hidden_run_config_ids,
+    reconcile_visibility,
+    visible_ids,
+  } from "$lib/utils/evolution/visibility_store"
+  import {
+    DEFAULT_MATCH_PREDICATE,
+    MATCH_LABELS,
+    MATCH_PREDICATES,
+    MIN_MATCHED_N,
+    build_matched_lens_data,
+    build_matched_usage,
+    match_param,
+    matched_items_by_eval,
+    parse_match_param,
+    recovery_hints,
+    tool_call_source,
+    type MatchPredicate,
+    type MatchedUsage,
+    type RunIndexes,
+  } from "$lib/utils/evolution/run_matching"
+  import ComparisonBasis, {
+    type BasisError,
+    type BasisEval,
+    type BasisRecovery,
+  } from "./comparison_basis.svelte"
+  import EvolutionLegend from "./evolution_legend.svelte"
   import EvolutionCanvas from "./evolution_canvas.svelte"
   import NodeDetailPanel from "./node_detail_panel.svelte"
   import UnlinkedSection from "./unlinked_section.svelte"
@@ -110,6 +154,7 @@
   type Spec = components["schemas"]["Spec"]
   type RunConfigEvalScoresSummary =
     components["schemas"]["RunConfigEvalScoresSummary"]
+  type EvalRunIndexResponse = components["schemas"]["EvalRunIndexResponse"]
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -141,6 +186,13 @@
   let eval_scores_cache: Record<string, RunConfigEvalScoresSummary> = {}
   let eval_scores_loading: Record<string, boolean> = {}
   let eval_scores_errors: Record<string, string> = {}
+
+  // Per-run rows for the configs being compared, fetched only while a matching
+  // predicate is active. Keyed and emptied exactly like eval_scores_cache
+  // above, for the same reason: the split scopes the whole page.
+  let eval_run_index_cache: RunIndexes = {}
+  let eval_run_index_loading: Record<string, boolean> = {}
+  let eval_run_index_errors: Record<string, string> = {}
 
   // Which dataset split the page is reading.
   //
@@ -196,6 +248,40 @@
   // table, and a hidden row never edits this selection - it comes back with its
   // axis on if that is how it went away.
   let metric_axis_keys: string[] | null = null
+  // Performance metrics the reader ADDED to the quality parallel chart, as
+  // extra rank axes. Empty by default, and empty is the whole design: that
+  // chart's subject is the quality scores and their intervals, and a metric
+  // only belongs on it when the reader has a question that crosses the two
+  // ("the config that wins on P1 - what did it cost?"). Nobody's default view
+  // should be a mixed chart they did not ask for.
+  //
+  // A list rather than metric_axis_keys' null-means-default, because there is
+  // no default set to fall back to: [] IS the intent, so it needs no sentinel
+  // and the URL stays clean without one.
+  let parallel_metric_keys: string[] = []
+  // The quality floor on the price/latency chart, as a 0..1 aggregate score.
+  // Null - no gate - is the default: the gate is a claim about what "good
+  // enough" means on this task, and the page has no business asserting one. In
+  // the URL because it is a DECISION rather than a view setting: the chart is
+  // read by someone arguing for a config, and the link they send has to carry
+  // the floor they argued under.
+  let quality_floor: number | null = null
+
+  // Which conversations the comparison is made over. See run_matching: at "all"
+  // every config is measured on whatever runs it happens to have, which is what
+  // this page used to do and what makes two configs on one axis not necessarily
+  // a comparison at all.
+  //
+  // The default is `shared` (DEFAULT_MATCH_PREDICATE), so the page opens on the
+  // basis where a difference between two means is a difference between the
+  // CONFIGS. On a single pinned config every predicate is the identity and the
+  // banner reports "All runs", so nothing about a one-config view changes.
+  // "all" is the explicit opt-out and is what serializes into the URL now.
+  //
+  // It is in the URL for the same reason quality_floor is: a Compare V2 link is
+  // an argument someone sends, and the basis it was argued under has to travel
+  // with it.
+  let match_predicate: MatchPredicate = DEFAULT_MATCH_PREDICATE
 
   // Drill-down UI state (not round-tripped)
   let inspector: {
@@ -241,6 +327,10 @@
     if (urlSplit && (SPLIT_VIEWS as readonly string[]).includes(urlSplit)) {
       split_view = urlSplit as SplitView
     }
+    // Validated against the enum inside parse_match_param, where an unknown
+    // value is the default rather than an error - a hand-edited URL must not be
+    // able to put the page in a basis it cannot name.
+    match_predicate = parse_match_param(urlParams.get("match"))
     starred_only = urlParams.get("starred") === "1"
     unlinked_expanded = urlParams.get("unlinked") === "1"
 
@@ -283,6 +373,31 @@
         ),
       ]
     }
+    // Same discipline as `metrics` above, and the same reason to test against
+    // null: `pmetrics=` present but empty is a legal, meaningful state (the
+    // reader cleared the axes), and it happens to resolve to the same [] the
+    // default is. Unknown keys are dropped in validateStateFromURL.
+    const urlParallelMetrics = urlParams.get("pmetrics")
+    if (urlParallelMetrics !== null) {
+      parallel_metric_keys = [
+        ...new Set(
+          urlParallelMetrics
+            .split(",")
+            .map((key) => key.trim())
+            .filter((key) => key.length > 0),
+        ),
+      ]
+    }
+    // A floor outside 0..1 is not a floor anyone could have set from the menu,
+    // and clamping a hand-edited one would invent a gate the reader never
+    // chose - so anything unparseable or out of range drops back to no gate.
+    const urlQualityFloor = urlParams.get("quality_floor")
+    if (urlQualityFloor !== null) {
+      const parsed = parseFloat(urlQualityFloor)
+      if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) {
+        quality_floor = parsed
+      }
+    }
   }
 
   // After data loads, drop URL state that doesn't resolve against it
@@ -303,9 +418,17 @@
     // an axis that no longer exists. Checked against every key that could be an
     // axis rather than the deduplicated set, since which of two sources for a
     // quantity wins depends on usage that has not been fetched yet.
-    if (metric_axis_keys !== null) {
+    if (metric_axis_keys !== null || parallel_metric_keys.length > 0) {
       const known_metric_keys = known_metric_axis_keys(lens_data.keyMetas)
-      metric_axis_keys = metric_axis_keys.filter((key) =>
+      if (metric_axis_keys !== null) {
+        metric_axis_keys = metric_axis_keys.filter((key) =>
+          known_metric_keys.has(key),
+        )
+      }
+      // The parallel chart's added axes come from the same catalog, so they
+      // are validated against the same set - a stale link must not leave the
+      // chart holding a rank axis for a metric this task never reports.
+      parallel_metric_keys = parallel_metric_keys.filter((key) =>
         known_metric_keys.has(key),
       )
     }
@@ -351,6 +474,15 @@
     } else {
       urlParams.delete("split")
     }
+    // Same omitted-default discipline as the split, around the new default:
+    // `shared` stays absent and `all` is written, because pooling every run is
+    // now the position a link has to state.
+    const serialized_match = match_param(match_predicate)
+    if (serialized_match !== null) {
+      urlParams.set("match", serialized_match)
+    } else {
+      urlParams.delete("match")
+    }
     if (starred_only) {
       urlParams.set("starred", "1")
     } else {
@@ -378,6 +510,19 @@
     } else {
       urlParams.delete("metrics")
     }
+    // Empty is the default here, so it stays implicit - no `pmetrics=` in the
+    // URL until the reader adds an axis, and clearing them takes it back out.
+    if (parallel_metric_keys.length > 0) {
+      urlParams.set("pmetrics", parallel_metric_keys.join(","))
+    } else {
+      urlParams.delete("pmetrics")
+    }
+    // Only once a gate has been set; "off" is the default and stays implicit
+    if (quality_floor !== null) {
+      urlParams.set("quality_floor", String(quality_floor))
+    } else {
+      urlParams.delete("quality_floor")
+    }
 
     // Replace state: this only records existing UI state in the URL.
     // noScroll/keepFocus so selecting a node doesn't jump the page.
@@ -396,12 +541,15 @@
     lens_selected,
     selected_id,
     split_view,
+    match_predicate,
     starred_only,
     unlinked_expanded,
     pins,
     hidden_scores,
     hidden_usage,
     metric_axis_keys,
+    parallel_metric_keys,
+    quality_floor,
   )
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function sync_url(..._dependencies: unknown[]) {
@@ -542,6 +690,9 @@
     eval_scores_cache = {}
     eval_scores_loading = {}
     eval_scores_errors = {}
+    eval_run_index_cache = {}
+    eval_run_index_loading = {}
+    eval_run_index_errors = {}
     get_summary(true)
   }
 
@@ -589,6 +740,56 @@
     }
   }
 
+  // The per-run rows a matching predicate needs, fetched lazily and never at
+  // the default predicate: at "all" the page's network cost is exactly what it
+  // was before this feature existed. Activation fetches the current basis;
+  // pinning a config while a predicate is active fetches the newcomer.
+  //
+  // Same stale-split guard as fetch_eval_scores above, for the same reason: a
+  // split toggle empties the caches, and a request in flight when that happened
+  // would file one split's rows under another.
+  async function fetch_eval_run_index(run_config_id: string) {
+    if (
+      eval_run_index_cache[run_config_id] ||
+      eval_run_index_loading[run_config_id] ||
+      eval_run_index_errors[run_config_id]
+    ) {
+      return // Already cached, loading, or errored
+    }
+    const requested_split = split_view
+    try {
+      eval_run_index_loading[run_config_id] = true
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/eval_run_index",
+        {
+          params: {
+            path: { project_id, task_id, run_config_id },
+            query: split_query(requested_split),
+          },
+        },
+      )
+      if (fetch_error) {
+        throw fetch_error
+      }
+      if (requested_split !== split_view) {
+        return
+      }
+      eval_run_index_cache[run_config_id] = data as EvalRunIndexResponse
+      delete eval_run_index_errors[run_config_id]
+    } catch (err) {
+      if (requested_split !== split_view) {
+        return
+      }
+      const kilnError = createKilnError(err)
+      eval_run_index_errors[run_config_id] =
+        kilnError.getMessage() || "Failed to fetch eval runs"
+    } finally {
+      if (requested_split === split_view) {
+        eval_run_index_loading[run_config_id] = false
+      }
+    }
+  }
+
   // Derived graph data
   $: run_configs =
     $run_configs_by_task_composite_id[
@@ -628,6 +829,25 @@
   // the one the cards' own subtitles already describe.
   $: split_scope_label =
     split_view === "test" ? null : `${SPLIT_LABELS[split_view]} split`
+
+  // The same thing for a card that has to name the split even when it is the
+  // default one. The price/latency chart is the card someone screenshots to
+  // argue for a config, and "$0.31 a conversation" is a different claim on
+  // train than on test - so that card states the lane unconditionally, and
+  // this is the label it states. "All runs" is already a phrase; the others
+  // are named for the split they are.
+  // ...and it has to state the matching basis for exactly the same reason: over
+  // 23 matched conversations "$0.31 a conversation" is a different claim than
+  // over every run a config ever had.
+  $: stated_scope_label = `${
+    split_view === "all"
+      ? SPLIT_LABELS.all
+      : `${SPLIT_LABELS[split_view]} split`
+  }${
+    matching_active
+      ? ` · ${MATCH_LABELS[match_result.applied].toLowerCase()}${matched_conversation_phrase}`
+      : ""
+  }`
 
   $: selected_node = selected_id ? forest.nodes.get(selected_id) ?? null : null
 
@@ -688,6 +908,211 @@
   // The matrix's usage rows and the inspector need per-config eval scores
   $: pinned_nodes.forEach((node) => fetch_eval_scores(node.id))
   $: pinned_ids = pinned_nodes.map((node) => node.id)
+
+  // ---- The comparison basis ------------------------------------------------
+  // Stage 2 of the composition: the split (stage 1, server-side) scopes each
+  // eval's item universe, matching then filters items per eval over the PINNED
+  // set, aggregation follows, and only then does the legend decide what is
+  // drawn. Legend visibility deliberately does NOT feed this - hiding a chip is
+  // documented on this page as decluttering an image, not as removing a config
+  // from the comparison (both tables still show hidden configs), and a legend
+  // toggle that silently moved every mean and every N would make that false.
+
+  $: if (match_predicate !== "all") {
+    pinned_ids.forEach((id) => fetch_eval_run_index(id))
+  }
+
+  // A config whose rows could not be read is left OUT of the basis rather than
+  // treated as a config that ran nothing: the latter would empty every
+  // intersection on the page and blame the data. Its own cells still gap (it
+  // has no matched rows), and the banner names the failure.
+  $: basis_ids = pinned_ids.filter((id) => !eval_run_index_errors[id])
+
+  // Every basis config has to have answered - or failed - before a predicate
+  // can be applied. Until then the page keeps showing what it was showing and
+  // the banner says it is matching; the alternative is charts that empty and
+  // refill, or worse, pooled numbers presented under a matched banner.
+  $: basis_indexes_ready = basis_ids.every(
+    (id) => !!eval_run_index_cache[id] || !!eval_run_index_errors[id],
+  )
+  $: matching_pending = match_predicate !== "all" && !basis_indexes_ready
+
+  $: tool_source = tool_call_source(lens_data.keyMetas, eval_run_index_cache)
+  // The metrics partition goes in because two of the matcher's decisions are
+  // about the CRITERIA: whether a shape predicate has left them readable, and
+  // what denominator the banner quotes. A metrics eval scores every
+  // conversation on the task and would carry both votes on its own.
+  $: is_metric_eval_id = (evalId: string): boolean =>
+    metric_eval_id_set.has(evalId)
+  $: match_result = matched_items_by_eval(
+    eval_run_index_cache,
+    basis_ids,
+    matching_pending ? "all" : match_predicate,
+    tool_source,
+    is_metric_eval_id,
+  )
+  $: matching_active = match_result.applied !== "all"
+
+  // The swap that carries the whole feature: every chart and both tables read
+  // their numbers through page-level getters, so pointing those getters at
+  // matched data filters the entire page without a single chart knowing.
+  $: effective_lens_data = matching_active
+    ? build_matched_lens_data(
+        lens_data,
+        eval_run_index_cache,
+        basis_ids,
+        match_result.items_by_eval,
+      )
+    : lens_data
+  $: matched_usage = matching_active
+    ? build_matched_usage(
+        eval_run_index_cache,
+        basis_ids,
+        match_result.items_by_eval,
+      )
+    : null
+
+  // What the banner states. Names rather than ids: an id is not a fact the
+  // reader can act on.
+  $: eval_names_by_id = new Map(
+    lens_data.keyMetas.map((meta) => [meta.evalId, meta.evalName]),
+  )
+  $: config_label = (id: string): string =>
+    series_labels[id] ?? forest.nodes.get(id)?.name ?? id
+  $: basis_evals = match_result.evals.map(
+    (entry): BasisEval => ({
+      evalId: entry.evalId,
+      name: eval_names_by_id.get(entry.evalId) ?? "Eval",
+      matched: entry.matched,
+      shared: entry.shared,
+      universe: entry.universe,
+      shape_matched: entry.shape_matched,
+      missing_shape: entry.missing_shape,
+      is_metric: entry.is_metric,
+    }),
+  )
+
+  // The measurable way out of a matched set nobody can read: which config is
+  // costing the most on which eval, and what dropping it recovers. Computed
+  // only when there is something to recover from - it re-runs the matcher once
+  // per basis config, which is cheap but not free, and pointless while every
+  // eval is healthy.
+  $: basis_recovery = compute_basis_recovery(
+    match_result,
+    eval_run_index_cache,
+    basis_ids,
+    match_predicate,
+    tool_source,
+    is_metric_eval_id,
+    eval_names_by_id,
+    config_label,
+  )
+  function compute_basis_recovery(
+    result: typeof match_result,
+    indexes: RunIndexes,
+    ids: string[],
+    predicate: MatchPredicate,
+    source: ReturnType<typeof tool_call_source>,
+    is_metric: (evalId: string) => boolean,
+    names: Map<string, string>,
+    label_of: (id: string) => string,
+  ): BasisRecovery[] {
+    if (result.applied === "all") return []
+    const worth_asking =
+      result.fallback === "shape_too_thin" ||
+      result.evals.some(
+        (entry) =>
+          !entry.is_metric &&
+          entry.universe > 0 &&
+          entry.matched < MIN_MATCHED_N,
+      )
+    if (!worth_asking) return []
+    return recovery_hints(indexes, ids, predicate, source, is_metric).map(
+      (hint) => ({
+        name: names.get(hint.evalId) ?? "Eval",
+        config: label_of(hint.configId),
+        from: hint.from,
+        to: hint.to,
+      }),
+    )
+  }
+  // The default predicate's N range, over the cells the page actually draws.
+  // This is the number that was never on screen: it is what says two configs
+  // side by side were measured 11 times and 148 times.
+  $: basis_n_range = (() => {
+    let min = Infinity
+    let max = -Infinity
+    for (const id of pinned_ids) {
+      for (const n of effective_lens_data.counts.get(id)?.values() ?? []) {
+        min = Math.min(min, n)
+        max = Math.max(max, n)
+      }
+    }
+    return min <= max ? { min, max } : null
+  })()
+  $: basis_errors = pinned_ids
+    .filter((id) => !!eval_run_index_errors[id])
+    .map(
+      (id): BasisError => ({
+        label: config_label(id),
+        message: eval_run_index_errors[id],
+      }),
+    )
+  $: basis_missing_shape_labels =
+    match_result.configs_missing_shape.map(config_label)
+
+  // Matched conversations behind the cost/latency numbers, as one phrase. The
+  // price/latency card states its lane unconditionally, so under a predicate it
+  // has to state the basis too - "$0.31 a conversation" is a different claim
+  // over 23 matched conversations than over every run a config ever had.
+  // How the charts name the basis in their own subtitles. "Among conversations
+  // of similar length" - never "controlled for length", which is a claim these
+  // predicates cannot support (see run_matching's header on r = 0.26).
+  $: match_basis_phrase =
+    match_result.applied === "length"
+      ? "similar length, run by every config here"
+      : match_result.applied === "tools"
+        ? "similar tool use, run by every config here"
+        : "run by every config here"
+
+  $: matched_conversation_phrase = (() => {
+    if (!matched_usage) return ""
+    const counts = visible_pinned_ids
+      .map((id) => matched_usage?.get(id)?.n_conversations ?? 0)
+      .filter((n) => n > 0)
+    if (counts.length === 0) return ""
+    const min = Math.min(...counts)
+    const max = Math.max(...counts)
+    return min === max ? ` (n=${min})` : ` (n=${min}–${max})`
+  })()
+
+  // ---- One legend for the charts ------------------------------------------
+  // The three plots below - the quality radar, the performance bars, and the
+  // parallel-coordinates view of the same quality scores - are one comparison
+  // drawn three ways, so the reader gets ONE legend for all of them, above
+  // them (evolution_legend.svelte). Each chart used to carry its own echarts
+  // legend, keyed by display name and toggled independently: switching a
+  // config off to read the radar left it drawn on the two charts underneath.
+  //
+  // Hiding is subtraction HERE rather than suppression inside a chart. A
+  // hidden config simply never reaches one, which is what lets three charts
+  // that know nothing about each other stay in step.
+  $: reconcile_visibility(pinned_ids)
+  $: visible_pinned_ids = visible_ids(pinned_ids, $hidden_run_config_ids)
+  // Colour is fixed by position in the PINNED list, not by a chart's series
+  // index. Any of the three can drop a config it has no numbers for, and doing
+  // so used to renumber the palette for every config after it - so the same
+  // run config came out one colour on the radar and another on the bars.
+  $: series_colors = series_color_map(pinned_ids)
+  // ...and what each one is CALLED, decided here for the same reason: the
+  // model leads every label on this page, and whether a config's own name has
+  // to follow it depends on the whole pinned set, which only the page knows.
+  // Built over every pinned config rather than the visible ones, so hiding a
+  // chip in the legend cannot rename the configs still drawn beside it.
+  $: pinned_configs = pinned_ids
+    .map((id) => (run_configs ?? []).find((config) => config.id === id))
+    .filter((config): config is TaskRunConfig => !!config)
+  $: series_labels = series_display_map(pinned_configs, $model_info)
 
   // ---- Hidden rows --------------------------------------------------------
   // One filtered view of the score keys drives both the matrix rows and the
@@ -865,8 +1290,9 @@
     }))
   }
 
-  // Rebuilt when lens_data changes so the radar's reactive blocks notice
-  $: get_model_value_raw = make_value_getter(lens_data)
+  // Rebuilt when the effective lens data changes so the radar's reactive blocks
+  // notice - which is also how a predicate change reaches the chart at all.
+  $: get_model_value_raw = make_value_getter(effective_lens_data)
   function make_value_getter(data: LensData) {
     return (modelKey: string | null, dataKey: string): number | null => {
       if (!modelKey) {
@@ -918,7 +1344,9 @@
       type: meta.type,
     }),
   )
-  $: get_sample_size = make_sample_size_getter(lens_data)
+  // Reads the effective data, so the parallel chart's Wilson bands widen with
+  // the filtered N without the chart knowing a predicate exists.
+  $: get_sample_size = make_sample_size_getter(effective_lens_data)
   function make_sample_size_getter(data: LensData) {
     return (runConfigId: string, dataKey: string): number | null =>
       data.counts.get(runConfigId)?.get(dataKey) ?? null
@@ -933,6 +1361,195 @@
   $: quality_all_hidden =
     criterion_metas.length === 0 && hidden_quality_info.length > 0
 
+  // ---- Performance metrics on the uncertainty view ------------------------
+  // Opt-in extra axes on the parallel chart, so a question that crosses the two
+  // tracks ("the config that wins on P1 - what did it cost?") can be read off
+  // one picture instead of by matching colours between two.
+  //
+  // They are RANKS, and everything below exists to keep that honest.
+  //
+  // A quality axis is plotted as a share of its score's own full range, which
+  // works because pass/fail RUNS 0 to 1. A cost has no top and a latency has no
+  // top, so there is no fraction to take. Min-max over the configs shown would
+  // manufacture one, and would be wrong twice: it pins the best config to
+  // exactly 1.0 and the worst to exactly 0.0 on every axis whatever the spread
+  // (two configs a hundredth of a cent apart would draw the full height of the
+  // axis between them), and one outlier flattens everyone else onto the floor.
+  // So each metric is plotted as the config's POSITION among the configs
+  // currently drawn - see rank_score for the arithmetic and why it is capped
+  // strictly inside (0,1), which is what keeps a rank axis from ever claiming
+  // the 0 and 1 that a pass/fail axis earns.
+  //
+  // "Currently drawn" is `visible_pinned_ids`, and that is the semantics rather
+  // than an implementation detail: the scale is the SELECTION. Unpinning a
+  // config, or switching one off in the legend, re-ranks every metric axis, and
+  // the chart says so on the axis name, in the tooltip and under the header.
+  // Nothing else on the page behaves this way, which is exactly why it is said
+  // three times.
+
+  // Filtered from the canonical catalog rather than mapped from the selection,
+  // so the axes append in chart order however they were switched on - and
+  // through `visible_axes`, so hiding a performance row takes its rank axis off
+  // this chart too. That is what the x on a table row means everywhere else on
+  // the page (it leaves the table AND the chart beside it), and a metric that
+  // is out of the comparison cannot be a legitimate axis on a chart of that
+  // comparison.
+  $: parallel_metric_axes = visible_axes.filter((axis) =>
+    parallel_metric_keys.includes(axis.key),
+  )
+
+  // One rank map per added metric, over exactly the configs the chart draws.
+  // Rebuilt whenever the pins, the legend, the selection or the underlying
+  // numbers move - all four are arguments, so none of them can change without
+  // the ranks being recomputed.
+  $: parallel_rank_scores = build_parallel_rank_scores(
+    parallel_metric_axes,
+    visible_pinned_ids,
+    get_metric_value,
+  )
+  function build_parallel_rank_scores(
+    axes: MetricAxis[],
+    run_config_ids: string[],
+    getter: (run_config_id: string, key: string) => number | null,
+  ): Record<string, Map<string, number | null>> {
+    const ranks: Record<string, Map<string, number | null>> = {}
+    for (const axis of axes) {
+      ranks[axis.key] = capped_rank_scores(
+        run_config_ids.map((id) => ({ id, value: getter(id, axis.key) })),
+        // The catalog's own direction, so UP is BETTER on a rank axis exactly
+        // as it is on every quality axis beside it
+        axis.better,
+      )
+    }
+    return ranks
+  }
+
+  $: get_parallel_rank_score = make_rank_score_getter(parallel_rank_scores)
+  function make_rank_score_getter(
+    ranks: Record<string, Map<string, number | null>>,
+  ) {
+    return (run_config_id: string, key: string): number | null =>
+      ranks[key]?.get(run_config_id) ?? null
+  }
+
+  // An added metric that no visible config has a number for. Dropped rather
+  // than drawn as an empty column: a rank axis with nothing on it is not an
+  // axis, and leaving it in place would spend width on a line whose only
+  // reading - "these configs all rank the same here" - is false. Named in the
+  // footnote instead, so the reader is told where their metric went.
+  $: parallel_metric_plotted = parallel_metric_axes.filter((axis) =>
+    visible_pinned_ids.some(
+      (id) => parallel_rank_scores[axis.key]?.get(id) != null,
+    ),
+  )
+  $: parallel_metric_empty = parallel_metric_axes.filter(
+    (axis) => !parallel_metric_plotted.includes(axis),
+  )
+  // ...and one an active selection points at, but whose row was hidden from the
+  // performance table. Its axis is gone for a different reason and has a
+  // different remedy, so it is counted separately rather than folded in above.
+  $: parallel_metric_hidden_count = parallel_metric_keys.filter(
+    (key) =>
+      !visible_axes.some((axis) => axis.key === key) &&
+      all_metric_axes.some((axis) => axis.key === key),
+  ).length
+
+  $: parallel_metrics_note = (() => {
+    const parts: string[] = []
+    if (parallel_metric_empty.length > 0) {
+      // Under a predicate the absence is attributable: the metric is not
+      // missing, the conversations it would have been read over are. Saying
+      // "no values" there would read as "this config was never run".
+      parts.push(
+        `${
+          matching_active
+            ? "No matched conversations on the configs shown"
+            : "No values on the configs shown"
+        }: ${parallel_metric_empty.map((axis) => axis.valueLabel).join(", ")}.`,
+      )
+    }
+    if (parallel_metric_hidden_count > 0) {
+      parts.push(
+        `${parallel_metric_hidden_count} added ${
+          parallel_metric_hidden_count === 1 ? "metric is" : "metrics are"
+        } hidden from the comparison — restore from “Hidden” above the performance table.`,
+      )
+    }
+    return parts.length > 0 ? parts.join(" ") : null
+  })()
+
+  // The axis set the chart actually receives: the radar's quality axes first,
+  // the rank axes appended. Order past that point is the reader's - the chart's
+  // own drag handles own it, and reconcile_order keeps an arrangement across a
+  // metric being switched on or off.
+  $: parallel_chart_axes = [
+    ...parallel_axes,
+    ...parallel_metric_plotted.map(
+      (axis): ParallelAxisSpec => ({
+        key: axis.key,
+        label: axis.label,
+        // The axis is named for the virtue ("Cost Efficiency"), so the line
+        // under it names the quantity and where it came from - the same
+        // subtitle the metrics picker and the bar chart's tooltips print.
+        evalName: `${axis.valueLabel} · ${axis.evalName ?? "Usage rollup"}`,
+        // No score type: a metric has no rating scale, which is the whole
+        // reason it is ranked instead of scaled.
+        type: null,
+        rank: true,
+        format: (value: number | null) => format_metric_value(axis.unit, value),
+      }),
+    ),
+  ]
+
+  // The picker on the parallel card. Built like the performance track's Metrics
+  // menu and grouped the same way, because it IS the same choice made against
+  // the same catalog - one control the reader has already learned. The counts
+  // read "on out of available", which is 0 of n everywhere until they add one.
+  $: parallel_metric_menu_items = (() => {
+    const items: FloatingMenuItem[] = []
+    let family: MetricFamily | null = null
+    for (const axis of visible_axes) {
+      if (axis.family !== family) {
+        family = axis.family
+        const in_family = visible_axes.filter(
+          (candidate) => candidate.family === family,
+        )
+        const on_in_family = in_family.filter((candidate) =>
+          parallel_metric_keys.includes(candidate.key),
+        ).length
+        items.push({
+          label: `${METRIC_FAMILY_LABELS[family]} · ${on_in_family} of ${in_family.length}`,
+          header: true,
+        })
+      }
+      const on = parallel_metric_keys.includes(axis.key)
+      items.push({
+        label: `${on ? "✓" : "+"}  ${axis.label}`,
+        description: `${axis.valueLabel} · ${axis.evalName ?? "Usage rollup"}`,
+        onclick: () => toggle_parallel_metric_axis(axis.key),
+      })
+    }
+    if (parallel_metric_keys.length > 0) {
+      items.push({
+        label: "Clear metric axes",
+        onclick: () => (parallel_metric_keys = []),
+      })
+    }
+    return items
+  })()
+
+  function toggle_parallel_metric_axis(key: string) {
+    // Resolved against the UNFILTERED catalog for the same reason the sibling
+    // picker is: an axis whose row is hidden is not in `visible_axes`, and
+    // dropping it here would edit the selection as a side effect of an
+    // unrelated click.
+    parallel_metric_keys = toggled_metric_axis_keys(
+      all_metric_axes,
+      parallel_metric_keys,
+      key,
+    )
+  }
+
   // ---- Performance-metrics radar ------------------------------------------
   // The exact complement of the chart above: every key from a metrics eval,
   // whichever way it points, alongside the native usage rollup - so cost and
@@ -944,7 +1561,7 @@
   // Depends on the pinned set and the lazily fetched usage, so it is rebuilt
   // whenever either changes.
   $: metric_axis_has_value = make_metric_axis_has_value(
-    get_metric_value,
+    get_metric_value_unfiltered,
     pinned_ids,
   )
   function make_metric_axis_has_value(
@@ -1237,16 +1854,54 @@
   )
 
   // Score keys come from the lens; the usage rollup comes from the lazily
-  // fetched per-config summary. Both caches are passed in as arguments so the
-  // getter is rebuilt (and the chart redrawn) when either arrives.
-  $: get_metric_value = make_metric_value_getter(lens_data, eval_scores_cache)
+  // fetched per-config summary, or - under a matching predicate - from the
+  // matched rollup, so the cost and speed axes are over the same conversations
+  // the quality axes are. All three sources are passed in as arguments so the
+  // getter is rebuilt (and the charts redrawn) when any of them arrives.
+  $: get_metric_value = make_metric_value_getter(
+    effective_lens_data,
+    eval_scores_cache,
+    matched_usage,
+  )
+  // The same getter over UNFILTERED data, for deciding which axes the catalog
+  // has at all. build_metric_axes uses "has a value" to settle which SOURCE
+  // wins a quantity (the usage rollup or an eval's own cost_usd key), so
+  // feeding it filtered values would let a predicate silently re-point an axis
+  // - a different number under an unchanged label. What is IN the comparison is
+  // a property of the task; what the numbers are is where the predicate acts.
+  $: get_metric_value_unfiltered = make_metric_value_getter(
+    lens_data,
+    eval_scores_cache,
+    null,
+  )
   function make_metric_value_getter(
     data: LensData,
     cache: Record<string, RunConfigEvalScoresSummary>,
+    matched: Map<string, MatchedUsage> | null,
   ) {
     return (run_config_id: string, key: string): number | null => {
       if (!key.startsWith(USAGE_KEY_PREFIX)) {
         return data.raw.get(run_config_id)?.get(key) ?? null
+      }
+      if (matched) {
+        const usage = matched.get(run_config_id)
+        if (!usage) {
+          return null
+        }
+        switch (key) {
+          case COST_KEY:
+            return usage.mean_cost
+          case TOTAL_TOKENS_KEY:
+            return usage.mean_total_tokens
+          case LATENCY_KEY:
+            return usage.mean_latency_ms
+          case INPUT_TOKENS_KEY:
+            return usage.mean_input_tokens
+          case OUTPUT_TOKENS_KEY:
+            return usage.mean_output_tokens
+          default:
+            return null
+        }
       }
       const usage = cache[run_config_id]?.mean_usage
       if (!usage) {
@@ -1267,6 +1922,177 @@
           return null
       }
     }
+  }
+
+  // What the matrices' usage rows print. Null keeps them on the native rollup,
+  // which is what they have always shown.
+  $: matrix_usage_getter = matched_usage
+    ? (run_config_id: string, key: UsageRowKey): number | null => {
+        const usage = matched_usage?.get(run_config_id)
+        if (!usage) return null
+        switch (key) {
+          case "cost":
+            return usage.mean_cost
+          case "tokens":
+            return usage.mean_total_tokens
+          case "latency":
+            return usage.mean_latency_ms
+        }
+      }
+    : null
+
+  // ---- Price vs latency ---------------------------------------------------
+  // The one chart on this page whose question is "which of these do we ship".
+  // It needs a single number for quality, and that number is the WEAKEST
+  // CONCERN AREA rather than the mean of every criterion - see quality_score.
+  // A mean lets a config buy back a failure on the criterion the customer
+  // cares most about with a pass on one nobody was worried about, which is how
+  // an arm cleared a 70% gate with a 48% write-correctness coin flip inside it.
+  //
+  // Computed off effective_lens_data, so it recomputes over the matched
+  // conversations under a predicate with nothing else to do, and off the same
+  // family grouping the radar's bands read (score_families). Read straight
+  // from the lens rather than through `current_lens`, because the gate is not
+  // a lens - a reader looking at one criterion on the graph has not said they
+  // want their shipping decision made on that one criterion.
+  $: quality_breakdowns = build_quality_breakdowns(
+    effective_lens_data,
+    score_families,
+    pinned_ids,
+  )
+  function build_quality_breakdowns(
+    data: LensData,
+    families: Map<string, ScoreFamily>,
+    ids: string[],
+  ): Map<string, QualityBreakdown | null> {
+    return new Map(
+      ids.map((id) => [id, weakest_family_quality(data, families, id)]),
+    )
+  }
+  $: get_quality_breakdown = (run_config_id: string): QualityBreakdown | null =>
+    quality_breakdowns.get(run_config_id) ?? null
+  $: get_quality = make_quality_getter(quality_breakdowns)
+  function make_quality_getter(
+    breakdowns: Map<string, QualityBreakdown | null>,
+  ) {
+    return (run_config_id: string): number | null =>
+      breakdowns.get(run_config_id)?.quality ?? null
+  }
+  // Whether the number is a weakest area or the flat mean, which is what the
+  // gate menu and the chart have to call it. Taken from whatever the pinned
+  // configs resolved to: the grouping is a property of the task, so they agree.
+  $: quality_is_grouped = [...quality_breakdowns.values()].some(
+    (breakdown) => breakdown?.mode === "families",
+  )
+
+  // The gate the reader can set. Round numbers, not a slider: the floor is an
+  // argument ("80% is good enough to ship"), and an argument is made in round
+  // numbers. A slider would also invite tuning the gate until the preferred
+  // config is the only one left, which is the one thing this chart must not
+  // make easy.
+  //
+  // The numbers on offer come from the DATA, not from a fixed ladder. A menu of
+  // 50/70/80/90 is a claim about where quality lands on a task, and it was
+  // wrong on the first real one: five configs between 51% and 64% meant 50%
+  // gated out nobody and 70/80/90 gated out everybody - four positions, none of
+  // which drew a different chart. The quintiles of the plotted configs' quality
+  // always cut BETWEEN them. See quality_gate_cuts for the rule that decides
+  // which of the four earn a row.
+  $: quality_floor_label =
+    quality_floor === null ? "Off" : `${Math.round(quality_floor * 100)}%`
+
+  // What each floor would leave standing, so the reader can see what a gate
+  // costs them before setting it rather than by trying all of them. The same
+  // pure functions the chart draws from, over the same inputs, so the menu
+  // cannot disagree with the picture beside it.
+  $: price_latency_plotted = build_price_latency_points(
+    visible_pinned_ids,
+    get_metric_value,
+    get_quality,
+  ).plotted
+  // Only the configs actually ON the plane feed the cuts - a config with no
+  // cost has no dot to gate. The getter is whatever the page calls quality
+  // today; the cuts take the numbers and ask nothing about where they came
+  // from.
+  $: quality_gate_cut_values = quality_gate_cuts(
+    price_latency_plotted.map((point) => point.quality),
+  )
+  $: quality_scored_count = price_latency_plotted.filter(
+    (point) => point.quality !== null,
+  ).length
+  // Why the menu is Off-only, in the words of the data that made it so.
+  $: no_gate_cuts_reason =
+    quality_scored_count < 2
+      ? `Only ${quality_scored_count} of these has a quality score, so there is nothing to cut between.`
+      : "Every scored config here is at the same quality, so any gate would keep all of them or none."
+  // A floor from a shared link that no current cut matches still applies - the
+  // gate travelled with the argument someone sent, and dropping it would change
+  // their chart out from under them. It gets its own row so the menu shows a
+  // checked option rather than four unchecked ones over a gated chart.
+  $: custom_quality_floor = floor_off_the_menu(
+    quality_floor,
+    quality_gate_cut_values,
+  )
+  function floor_off_the_menu(
+    floor: number | null,
+    cuts: number[],
+  ): number | null {
+    if (floor === null) return null
+    // Both sides are whole percents by construction, so this is an equality
+    // test written to survive the float arithmetic that produced them.
+    return cuts.some((cut) => Math.abs(cut - floor) < 1e-9) ? null : floor
+  }
+  // What the gate MEANS, stated in the menu that sets it. Under families the
+  // floor is non-compensatory - every area has to clear it, not the average -
+  // and that is the whole difference between this gate and the one it replaced.
+  // A task with no family grouping gets the old sentence, because that is what
+  // its number still is.
+  $: quality_gate_header = quality_is_grouped
+    ? `Quality gate: every area ≥ ${quality_floor === null ? "the floor" : quality_floor_label}`
+    : "Quality gate"
+  $: quality_gate_hint = quality_is_grouped
+    ? "Only configs whose weakest concern area clears this floor are compared on price"
+    : "Only configs at or above this aggregate quality are compared on price"
+  $: quality_floor_menu_items = [
+    { label: quality_gate_header, header: true },
+    {
+      // A marker on every row, not just the chosen one: the labels are rendered
+      // as ordinary text, where a leading run of spaces collapses to one, so an
+      // unmarked row would sit a glyph to the left of its neighbours.
+      label: `${quality_floor === null ? "✓" : "○"}  Off`,
+      description:
+        quality_gate_cut_values.length === 0
+          ? `Compare all ${price_latency_plotted.length} plotted on price and speed. ${no_gate_cuts_reason}`
+          : `Compare all ${price_latency_plotted.length} plotted on price and speed`,
+      onclick: () => set_quality_floor(null),
+    },
+    ...quality_gate_cut_values.map((floor) => ({
+      label: `${quality_floor === floor ? "✓" : "○"}  ${Math.round(floor * 100)}%`,
+      description: `${
+        split_by_gate(price_latency_plotted, floor).qualifying.length
+      } of ${price_latency_plotted.length} clear it`,
+      onclick: () => set_quality_floor(floor),
+    })),
+    ...(custom_quality_floor === null
+      ? []
+      : [
+          {
+            label: `✓  Custom: ${Math.round(custom_quality_floor * 100)}%`,
+            description: `${
+              split_by_gate(price_latency_plotted, custom_quality_floor)
+                .qualifying.length
+            } of ${price_latency_plotted.length} clear it — from the link this page was opened with`,
+            onclick: () => set_quality_floor(custom_quality_floor),
+          },
+        ]),
+  ] as FloatingMenuItem[]
+
+  // Through a function rather than assigned in the menu block above: the menu
+  // now READS a value derived from the floor (the custom row), and a reactive
+  // block that both reads that derivation and writes the floor is a cycle the
+  // Svelte compiler rejects. The write is the same one either way.
+  function set_quality_floor(floor: number | null) {
+    quality_floor = floor
   }
 
   function toggle_pin(id: string) {
@@ -1496,6 +2322,30 @@
           </span>
         {/if}
       </div>
+      <!-- Which conversations the pinned configs are compared ON. One control
+           for the whole page, beside the split for the same reason: the charts
+           are one comparison drawn several ways, and a radar over matched runs
+           above a table over pooled ones is a lie of composition. See
+           run_matching for what each option does and, more importantly, what
+           the shape ones are not. -->
+      <div class="flex flex-row items-center gap-2">
+        <span class="text-sm text-gray-500">Matching:</span>
+        <div class="join" role="group" aria-label="Run matching">
+          {#each MATCH_PREDICATES as predicate_option}
+            <button
+              type="button"
+              class="join-item btn btn-sm font-normal {match_predicate ===
+              predicate_option
+                ? 'btn-active'
+                : ''}"
+              aria-pressed={match_predicate === predicate_option}
+              on:click={() => (match_predicate = predicate_option)}
+            >
+              {MATCH_LABELS[predicate_option]}
+            </button>
+          {/each}
+        </div>
+      </div>
       <div class="flex-grow"></div>
       {#if forest.edges.length > 0}
         <div class="join">
@@ -1599,6 +2449,46 @@
       {/if}
     </div>
 
+    <!-- One legend for everything under it. Above the charts rather than
+         inside any of them: it governs all three, and a control that belongs
+         to three things cannot live in one of them. See evolution_legend.
+
+         Mounted bare, with no wrapper: it is sticky, and a sticky box travels
+         inside its containing block, so a div wrapped tight around it would pin
+         it to a 100px-tall box and it would never move. Its containing block is
+         this page body instead, which is why it stays on screen for the whole
+         comparison. It carries its own top margin as padding for the same
+         reason - see the component. -->
+    <EvolutionLegend
+      run_configs={run_configs ?? []}
+      {pinned_ids}
+      model_info={$model_info}
+      {prompts}
+      colors={series_colors}
+    />
+
+    <!-- What every number under here is over. Between the legend and the
+         charts because it governs all of them, and rendered at every
+         predicate - including the default, where the fact worth stating is
+         that the configs are NOT on the same conversations. -->
+    {#if pinned_nodes.length > 0}
+      <div class="mt-3">
+        <ComparisonBasis
+          applied={match_result.applied}
+          requested={match_predicate}
+          fallback={match_result.fallback}
+          basis_count={basis_ids.length}
+          evals={basis_evals}
+          n_range={basis_n_range}
+          missing_shape_labels={basis_missing_shape_labels}
+          tool_source_available={tool_source !== null}
+          errors={basis_errors}
+          recovery={basis_recovery}
+          loading={matching_pending}
+        />
+      </div>
+    {/if}
+
     <!-- Section 2: the two charts, side by side - quality on the left, what it
          cost to get it on the right. They only pair up once there is room for
          the radar's ring plus its axis names and the bars plus their gutter
@@ -1608,8 +2498,10 @@
          Height is what both charts grow into - a radius for one, a row per
          metric for the other - so the floor is generous: the chart's own 640px
          box plus its card header and padding. Tall enough for wrapped axis
-         names all the way round the outer ring, eleven readable metric rows,
-         and the scrolling legend underneath either.
+         names all the way round the outer ring and, when a reader switches
+         more on, about a dozen readable metric rows - well past the five the
+         chart opens with. Neither carries a legend of its own any more - the page's is
+         above - so all of that box is plot.
 
          The two cards are the same height, which is what makes the row read as
          a pair rather than two things that happen to be adjacent. Grid rows
@@ -1626,14 +2518,22 @@
             run_configs={run_configs ?? []}
             model_info={$model_info}
             {prompts}
-            selectedRunConfigIds={pinned_ids}
+            selectedRunConfigIds={visible_pinned_ids}
+            seriesColors={series_colors}
+            seriesLabels={series_labels}
+            external_legend={true}
             scoreAxisMaxes={score_axis_maxes}
             scoreDirections={score_directions}
             axisFamilies={quality_axis_families}
             specDescriptions={spec_descriptions}
+            getSampleSize={get_sample_size}
             title="Quality Scores"
             subtitle={`Eval scores for the selected run configurations.${
               split_scope_label ? ` ${split_scope_label} only.` : ""
+            }${
+              matching_active
+                ? ` Among conversations of ${match_basis_phrase}.`
+                : ""
             } Higher is better on every axis.`}
             table_location="below"
             legend_position="bottom"
@@ -1664,7 +2564,9 @@
                 Some are hidden — use “Hidden” above the table below to restore them.
               {:else}
                 A radar chart needs at least {MIN_RADAR_AXES} higher-is-better scores.
-                Every score is still in the comparison table below.
+                Every score is still in the comparison table below.{#if matching_active}
+                  Matching is on — switch it back to “{MATCH_LABELS.all}” above
+                  to compare on every run instead.{/if}
               {/if}
             </div>
           </div>
@@ -1673,13 +2575,15 @@
 
       <div class="min-w-0 min-h-[800px] flex flex-col">
         <CompareMetricsBarChart
-          scopeLabel={split_scope_label}
+          scopeLabel={matching_active ? stated_scope_label : split_scope_label}
           axes={shown_metric_axes}
           getMetricValue={get_metric_value}
+          getSampleSize={get_sample_size}
           run_configs={run_configs ?? []}
           model_info={$model_info}
-          {prompts}
-          selectedRunConfigIds={pinned_ids}
+          selectedRunConfigIds={visible_pinned_ids}
+          seriesColors={series_colors}
+          seriesLabels={series_labels}
           notShownNote={metrics_not_shown_note}
           availableAxisCount={visible_axes.length}
           hiddenAxisCount={hidden_axis_count}
@@ -1698,6 +2602,64 @@
       </div>
     </div>
 
+    <!-- Section 2a: the shipping decision. Quality held to a floor, then the
+         two costs that are left - money and time - against each other.
+
+         On its own row under the pair above rather than beside them: it is not
+         a third view of the same comparison, it is the question the other two
+         are read in service of. It sits ABOVE the confidence view because that
+         one is a footnote to the radar directly over it, and splitting the pair
+         would break that read.
+
+         HALF WIDTH, in the same two-column grid the radar and bars use, and
+         left-aligned in it. A scatter of a dozen dots at most is not a chart
+         that grows with the page: stretched across the full width it reads as
+         one long empty band with a handful of marks in it, and the eye has to
+         travel the whole page to compare two points that are a thumb apart. The
+         right column is deliberately empty - the grid is the page's unit of
+         layout, so a card that wants half the width takes a column rather than
+         a max-width of its own, and whatever lands beside it later inherits a
+         row that already lines up. Below xl the grid collapses to one column
+         and this is page-width again, exactly like the pair above.
+
+         Mounted whenever anything is pinned, not only when it can draw: the
+         card's footnote names the configs it had to leave off and why, and that
+         is most worth saying exactly when there is no chart. -->
+    {#if pinned_nodes.length > 0}
+      <div class="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div class="min-w-0 flex flex-col">
+          <ComparePriceLatencyChart
+            run_configs={run_configs ?? []}
+            model_info={$model_info}
+            selectedRunConfigIds={visible_pinned_ids}
+            seriesColors={series_colors}
+            seriesLabels={series_labels}
+            getMetricValue={get_metric_value}
+            getQuality={get_quality}
+            getQualityBreakdown={get_quality_breakdown}
+            getSampleSize={get_sample_size}
+            qualityFloor={quality_floor}
+            scopeLabel={stated_scope_label}
+          >
+            <FloatingMenu
+              slot="controls"
+              items={quality_floor_menu_items}
+              width="w-72"
+            >
+              <button
+                slot="trigger"
+                type="button"
+                class="btn btn-sm font-normal"
+                title={quality_gate_hint}
+              >
+                Quality gate: {quality_floor_label}
+              </button>
+            </FloatingMenu>
+          </ComparePriceLatencyChart>
+        </div>
+      </div>
+    {/if}
+
     <!-- Section 2b: the quality scores once more, full width, with the
          confidence interval behind each one drawn.
 
@@ -1709,14 +2671,37 @@
          stacks them into mud. -->
     {#if parallel_available}
       <div class="mt-6">
+        <!-- get_metric_value is a superset of get_model_value_raw: for every
+             key that is not a `cost::` rollup field it reads the same lens map,
+             so one getter serves both the quality axes and the raw values
+             behind the rank axes. -->
         <CompareParallelChart
-          axes={parallel_axes}
-          getValue={(runConfigId, key) => get_model_value_raw(runConfigId, key)}
+          axes={parallel_chart_axes}
+          getValue={get_metric_value}
           getSampleSize={get_sample_size}
+          getRankScore={get_parallel_rank_score}
+          notShownNote={parallel_metrics_note}
           run_configs={run_configs ?? []}
           model_info={$model_info}
-          selectedRunConfigIds={pinned_ids}
-        />
+          selectedRunConfigIds={visible_pinned_ids}
+          seriesColors={series_colors}
+          seriesLabels={series_labels}
+        >
+          <FloatingMenu
+            slot="controls"
+            items={parallel_metric_menu_items}
+            width="w-64"
+          >
+            <button
+              slot="trigger"
+              type="button"
+              class="btn btn-sm font-normal"
+              title="Add a performance metric as a ranked axis on this chart"
+            >
+              Metrics ({parallel_metric_keys.length})
+            </button>
+          </FloatingMenu>
+        </CompareParallelChart>
       </div>
     {/if}
 
@@ -1728,7 +2713,12 @@
          table scrolls inside its own container, so the page body never does.
 
          Same partition as the two radars above (is_metric_eval), so a score
-         cannot appear on one chart and in the other track's table. -->
+         cannot appear on one chart and in the other track's table.
+
+         Both tables list every PINNED config, including ones switched off in
+         the legend above: hiding a config there is decluttering an image, not
+         a statement that its numbers are no longer wanted. Flipping
+         respect_visibility to true on both is what links them. -->
     {#if pinned_nodes.length > 0}
       <div class="mt-6">
         <div class="flex items-center gap-2 mb-2">
@@ -1751,10 +2741,12 @@
         </div>
         <CompareMatrix
           {pinned_nodes}
-          {lens_data}
+          lens_data={effective_lens_data}
           {eval_scores_cache}
           {eval_scores_loading}
+          get_usage_value={matrix_usage_getter}
           groups={quality_table_groups}
+          respect_visibility={false}
           empty_message="Every quality score is hidden. Use “Hidden” above to restore them."
           on:select={(event) => handle_select(event.detail)}
           on:inspect={(event) =>
@@ -1786,10 +2778,12 @@
         </div>
         <CompareMatrix
           {pinned_nodes}
-          {lens_data}
+          lens_data={effective_lens_data}
           {eval_scores_cache}
           {eval_scores_loading}
+          get_usage_value={matrix_usage_getter}
           groups={performance_table_groups}
+          respect_visibility={false}
           empty_message="Every performance metric is hidden. Use “Hidden” above to restore them."
           on:select={(event) => handle_select(event.detail)}
           on:inspect={(event) =>

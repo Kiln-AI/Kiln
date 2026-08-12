@@ -494,11 +494,12 @@ describe("default_metric_axis_keys", () => {
     expect(keys).toHaveLength(DEFAULT_METRIC_AXIS_COUNT)
   })
 
-  it("leads with the three headline usage metrics", () => {
+  it("leads with cost, the outcome the other four decompose", () => {
     const keys = default_metric_axis_keys(build_metric_axes(KEY_METAS))
-    for (const key of CORE_USAGE_KEYS) {
-      expect(keys).toContain(key)
-    }
+    expect(keys[0]).toBe(COST_KEY)
+    expect(keys).toContain(LATENCY_KEY)
+    // Still the headline usage fields; the total is the one that now waits in
+    // the menu, because the input/output split says it with the halves apart.
     expect(CORE_USAGE_KEYS).toEqual([COST_KEY, TOTAL_TOKENS_KEY, LATENCY_KEY])
   })
 
@@ -511,17 +512,21 @@ describe("default_metric_axis_keys", () => {
     expect(keys).toEqual(ring)
   })
 
-  it("drops the input/output split before anything else - it restates the total", () => {
-    const trimmed = default_metric_axis_keys(build_metric_axes(KEY_METAS), 10)
-    expect(trimmed).toContain(TOTAL_TOKENS_KEY)
-    expect(trimmed).not.toContain(INPUT_TOKENS_KEY)
-    expect(trimmed).not.toContain(OUTPUT_TOKENS_KEY)
+  it("keeps the input/output split and drops the total that restates it", () => {
+    const keys = default_metric_axis_keys(build_metric_axes(KEY_METAS))
+    expect(keys).toContain(INPUT_TOKENS_KEY)
+    expect(keys).toContain(OUTPUT_TOKENS_KEY)
+    expect(keys).not.toContain(TOTAL_TOKENS_KEY)
+    // Dropped from the default set, never from the chart: the total is the
+    // first axis the Axes menu offers back.
+    expect(known_metric_axis_keys(KEY_METAS)).toContain(TOTAL_TOKENS_KEY)
   })
 
-  it("keeps the per-turn latencies a metrics eval was written to report", () => {
+  it("keeps the total latency and defers the per-turn breakdown of it", () => {
     const keys = default_metric_axis_keys(build_metric_axes(KEY_METAS))
-    expect(keys).toContain("l1::latency_ms_turn1")
-    expect(keys).toContain("l1::latency_ms_turn2")
+    expect(keys).toContain(LATENCY_KEY)
+    expect(keys).not.toContain("l1::latency_ms_turn1")
+    expect(keys).not.toContain("l1::latency_ms_turn2")
   })
 
   it("prefers a task's own metrics over an unrecognised one", () => {
@@ -572,8 +577,10 @@ describe("hidden rows and the axis picker", () => {
   }
 
   it("takes a hidden score row's axis off the ring", () => {
-    expect(plotted([], null)).toContain("e1::tool_calls")
-    expect(plotted(["e1::tool_calls"], null)).not.toContain("e1::tool_calls")
+    expect(plotted([], null)).toContain("e1::cache_hit_rate")
+    expect(plotted(["e1::cache_hit_rate"], null)).not.toContain(
+      "e1::cache_hit_rate",
+    )
   })
 
   it("takes a hidden usage row's axis off the ring", () => {
@@ -585,12 +592,12 @@ describe("hidden rows and the axis picker", () => {
     // The default set is capped, so there are always axes waiting off the ring.
     // Resolving it against the whole catalog is what stops one of them being
     // promoted the moment a hide frees a slot: hiding is a subtraction, and a
-    // reader who took Cost out did not ask for Input Token Economy instead.
+    // reader who took Cost out did not ask for Token Economy instead.
     expect(AXES.length).toBeGreaterThan(DEFAULTS.length)
     const before = plotted([], null)
     const after = plotted([COST_KEY], null)
     expect(after).toEqual(before.filter((key) => key !== COST_KEY))
-    expect(after).not.toContain(INPUT_TOKENS_KEY)
+    expect(after).not.toContain(TOTAL_TOKENS_KEY)
   })
 
   it("leaves no axis behind when the quantity's other source is still visible", () => {
@@ -609,7 +616,7 @@ describe("hidden rows and the axis picker", () => {
 
   it("brings the axis back on restore, exactly as it went away", () => {
     const before = plotted([], null)
-    plotted(["e1::llm_calls"], null)
+    plotted([INPUT_TOKENS_KEY], null)
     expect(plotted([], null)).toEqual(before)
   })
 
@@ -627,19 +634,19 @@ describe("hidden rows and the axis picker", () => {
     // VISIBLE axes would drop the hidden one, so restoring the row would bring
     // the row back without its axis - the user's pick silently lost to a click
     // somewhere else in the menu.
-    const selection = toggled_metric_axis_keys(AXES, DEFAULTS, INPUT_TOKENS_KEY)
-    expect(selection).toContain("e1::tool_calls")
+    const selection = toggled_metric_axis_keys(AXES, DEFAULTS, TOTAL_TOKENS_KEY)
     expect(selection).toContain(INPUT_TOKENS_KEY)
-    expect(plotted(["e1::tool_calls"], selection)).not.toContain(
-      "e1::tool_calls",
+    expect(selection).toContain(TOTAL_TOKENS_KEY)
+    expect(plotted([INPUT_TOKENS_KEY], selection)).not.toContain(
+      INPUT_TOKENS_KEY,
     )
-    expect(plotted([], selection)).toContain("e1::tool_calls")
+    expect(plotted([], selection)).toContain(INPUT_TOKENS_KEY)
   })
 
   it("switches an axis off and back on without disturbing ring order", () => {
-    const off = toggled_metric_axis_keys(AXES, DEFAULTS, "e1::llm_calls")
-    expect(off).not.toContain("e1::llm_calls")
-    expect(toggled_metric_axis_keys(AXES, off, "e1::llm_calls")).toEqual(
+    const off = toggled_metric_axis_keys(AXES, DEFAULTS, INPUT_TOKENS_KEY)
+    expect(off).not.toContain(INPUT_TOKENS_KEY)
+    expect(toggled_metric_axis_keys(AXES, off, INPUT_TOKENS_KEY)).toEqual(
       DEFAULTS,
     )
   })
@@ -765,32 +772,101 @@ function axis(family: MetricFamily, label: string): MetricAxis {
 }
 
 describe("the default axis set", () => {
-  const shown = (keys: string[]) =>
-    build_metric_axes(FULL_KEY_METAS).filter((a) => keys.includes(a.key))
+  // The axes a task's default selection actually plots, in chart order
+  const shown_for = (metas: ScoreKeyMeta[], keys: string[]) =>
+    build_metric_axes(metas).filter((a) => keys.includes(a.key))
+  const shown = (keys: string[]) => shown_for(FULL_KEY_METAS, keys)
+  const defaults_for = (metas: ScoreKeyMeta[]) =>
+    default_metric_axis_keys(build_metric_axes(metas))
 
-  it("is eleven axes - a radar past a dozen is a circle, not a shape", () => {
-    expect(DEFAULT_METRIC_AXIS_COUNT).toBe(11)
-    const keys = default_metric_axis_keys(build_metric_axes(FULL_KEY_METAS))
-    expect(keys).toHaveLength(11)
+  it("is five axes - the efficiency question, answered on sight", () => {
+    expect(DEFAULT_METRIC_AXIS_COUNT).toBe(5)
+    const keys = defaults_for(FULL_KEY_METAS)
+    expect(keys).toHaveLength(5)
   })
 
-  it("gives every family a place and lets none of them take over", () => {
-    const keys = default_metric_axis_keys(build_metric_axes(FULL_KEY_METAS))
-    const counts = new Map<MetricFamily, number>()
-    for (const family of families(shown(keys))) {
-      counts.set(family, (counts.get(family) ?? 0) + 1)
-    }
-    expect(Object.fromEntries(counts)).toEqual({
-      cost: 1,
-      tokens: 3,
-      calls: 3,
-      speed: 2,
-      responsiveness: 2,
-    })
+  // The contract, stated as the exact set: cost and the four terms it
+  // decomposes into. Cost is the outcome; latency, cache reuse and the
+  // input/output split are where a cheaper config got cheaper.
+  it("is cost plus the four terms cost decomposes into", () => {
+    const keys = defaults_for(FULL_KEY_METAS)
+    expect(shown(keys).map((a) => a.quantity)).toEqual([
+      "cost",
+      "cache_hit_rate",
+      "input_tokens",
+      "output_tokens",
+      "latency",
+    ])
+    // In chart order that reads Cost, then the three Tokens axes, then Speed -
+    // the families stay contiguous, as they do for any selection.
+    expect(keys).toEqual([
+      COST_KEY,
+      "e1::cache_hit_rate",
+      INPUT_TOKENS_KEY,
+      OUTPUT_TOKENS_KEY,
+      LATENCY_KEY,
+    ])
   })
 
-  it("defers the per-turn latencies - five Speed axes swamped the ring", () => {
-    const keys = default_metric_axis_keys(build_metric_axes(FULL_KEY_METAS))
+  // No eval id is wired into the ranking - the cache axis is whichever eval on
+  // the task emits cache_hit_rate, so the same default set travels to a task
+  // whose metrics eval is called something else entirely.
+  it("takes the cache axis from whichever eval reports the key", () => {
+    const moved = [
+      ...FULL_KEY_METAS.filter((m) => m.scoreKey !== "cache_hit_rate"),
+      meta("m9", "Agent Metrics", "cache_hit_rate", "higher_is_better"),
+    ]
+    const keys = defaults_for(moved)
+    expect(keys).toContain("m9::cache_hit_rate")
+    expect(shown_for(moved, keys).map((a) => a.quantity)).toEqual([
+      "cost",
+      "cache_hit_rate",
+      "input_tokens",
+      "output_tokens",
+      "latency",
+    ])
+  })
+
+  // Graceful degradation: an axis the task cannot report simply is not built,
+  // and the next-ranked quantity takes the freed slot rather than the set
+  // coming back one short.
+  it("fills the freed slot when no eval reports a cache hit rate", () => {
+    const no_cache = FULL_KEY_METAS.filter(
+      (m) => m.scoreKey !== "cache_hit_rate",
+    )
+    const keys = defaults_for(no_cache)
+    expect(keys).toHaveLength(5)
+    expect(keys).not.toContain("e1::cache_hit_rate")
+    // Token Economy, ranked immediately behind the split, is the runner-up
+    expect(shown_for(no_cache, keys).map((a) => a.quantity)).toEqual([
+      "cost",
+      "total_tokens",
+      "input_tokens",
+      "output_tokens",
+      "latency",
+    ])
+  })
+
+  it("returns fewer than five only when the task has fewer than five", () => {
+    // The usage rollup is always there, so the floor is its five fields.
+    expect(defaults_for([])).toHaveLength(5)
+    expect(default_metric_axis_keys(build_metric_axes([]), 3)).toHaveLength(3)
+  })
+
+  it("keeps the families it plots in unbroken runs", () => {
+    // Five axes cannot seat all six families; what must hold is that the ones
+    // seated are contiguous, which is what the family bands draw.
+    const order = families(shown(defaults_for(FULL_KEY_METAS)))
+    expect(order).toEqual(
+      [...order].sort(
+        (a, b) => METRIC_FAMILIES.indexOf(a) - METRIC_FAMILIES.indexOf(b),
+      ),
+    )
+    expect(order).toEqual(["cost", "tokens", "tokens", "tokens", "speed"])
+  })
+
+  it("defers the per-turn latencies - the total is the one that leads", () => {
+    const keys = defaults_for(FULL_KEY_METAS)
     expect(keys).not.toContain("l1::latency_ms_turn1")
     expect(keys).not.toContain("l1::latency_ms_turn3")
     // Deferred, never dropped: still an axis the Axes menu can switch on
@@ -800,7 +876,7 @@ describe("the default axis set", () => {
   })
 
   it("defers cached tokens, which the hit rate already says normalized", () => {
-    const keys = default_metric_axis_keys(build_metric_axes(FULL_KEY_METAS))
+    const keys = defaults_for(FULL_KEY_METAS)
     const labelled = labels(shown(keys))
     expect(labelled).toContain("Cache Hit Rate")
     expect(labelled).not.toContain("Cache Reuse")
