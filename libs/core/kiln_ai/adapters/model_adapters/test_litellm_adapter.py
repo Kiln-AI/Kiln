@@ -1104,6 +1104,14 @@ async def test_litellm_tools_returns_empty_list_without_tools(config, mock_task)
             {"tools": [], "allowed_openai_params": ["custom_param"]},
             ["custom_param", "tools"],
         ),
+        # LiteLLM's param list for some providers (Together, for one) omits
+        # reasoning_effort even though the provider honors it, so we whitelist it
+        # whenever we set it -- otherwise the thinking level is silently dropped.
+        ({"reasoning_effort": "high"}, ["reasoning_effort"]),
+        (
+            {"tools": [], "reasoning_effort": "high"},
+            ["reasoning_effort", "tools"],
+        ),
     ],
 )
 def test_allowed_openai_params_for_completion_kwargs_independent_keys(

@@ -623,6 +623,22 @@ DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS = {
     "Extra High": "xhigh",
 }
 
+# Together does not expose OpenRouter's five reasoning depths for DeepSeek V4. It
+# normalizes server-side ("low"/"medium" -> "high", "xhigh" -> "max") and accepts an
+# invalid value with a 200, so a level being accepted proves nothing.
+#
+# Measured against the live API on a bounded, single-solution puzzle (n=25/arm, no
+# truncated samples): "none" removes the reasoning channel entirely (0/16 responses
+# carried reasoning vs 16/16 for the default, across Flash and Pro). "max" did NOT
+# separate from "high" on reasoning volume (medians 1176 vs 1253, IQRs overlapping,
+# Mann-Whitney p=0.27) even though Together does re-render the prompt for it. So
+# "max" is deliberately omitted: it would be a level that looks like more thinking
+# and measurably is not. Do not re-add it without new evidence.
+DEEPSEEK_V4_TOGETHER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "High": "high",
+}
+
 GROK_4_3_OPENROUTER_THINKING_LEVELS = {
     "Off/None": "none",
     "Low": "low",
@@ -5628,6 +5644,8 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek-ai/DeepSeek-V4-Pro",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
+                available_thinking_levels=DEEPSEEK_V4_TOGETHER_THINKING_LEVELS,
+                default_thinking_level="high",
             ),
             KilnModelProvider(
                 name=ModelProviderName.featherless_ai,
@@ -5665,6 +5683,8 @@ built_in_models: List[KilnModel] = [
                 model_id="deepseek-ai/DeepSeek-V4-Flash-0731",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
+                available_thinking_levels=DEEPSEEK_V4_TOGETHER_THINKING_LEVELS,
+                default_thinking_level="high",
             ),
         ],
     ),

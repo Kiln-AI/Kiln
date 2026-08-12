@@ -694,6 +694,13 @@ class LiteLlmAdapter(BaseAdapter):
             automatic_allowed_params.append("tools")
         if "tool_choice" in completion_kwargs:
             automatic_allowed_params.append("tool_choice")
+        # LiteLLM's per-provider param lists omit reasoning_effort for several providers
+        # that do honor it (Together's DeepSeek V4 models, for example), so without this
+        # the thinking level is dropped and the knob silently does nothing. We only set
+        # reasoning_effort when the provider declares available_thinking_levels, so
+        # whitelisting it here can't send it to a model that doesn't support it.
+        if "reasoning_effort" in completion_kwargs:
+            automatic_allowed_params.append("reasoning_effort")
 
         return list(set(explicit_allowed_params_validated + automatic_allowed_params))
 
