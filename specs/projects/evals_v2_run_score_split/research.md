@@ -541,39 +541,47 @@ the model."* Reuse just cashes that in. No hash or fingerprint needed — two id
 is the frozen prompt, and the PATCH only rewrites `prompt.name`
 (`eval_api.py:1009-1017`). The model never sees the name.
 
-### One gap this project creates
+### The one gap — resolved
 
-**`multi_turn_drive_config` on `Eval`.** It is a generation input that lives on the one
-entity the key deliberately drops. Under task-level storage, Eval B would reuse Eval A's
-multi-turn trace even when they drive the synthetic user differently — a wrong answer,
-not a stale one. This is the only case where reuse *introduces* the bug rather than
-extending a pre-existing one.
+**`multi_turn_drive_config` on `Eval`** would be a generation input living on the very
+entity the key drops: Eval B would reuse Eval A's multi-turn trace even when they drive
+the synthetic user differently. A wrong answer, not a stale one.
 
-So: **the key is complete if and only if drive config moves off `Eval`** (onto the
-run-config side, or its own addressable entity the run config references). That
-promotes the D5 "note only" item to a prerequisite for cross-eval reuse of multi-turn
-traces. Fallback if it can't move in time: exclude multi-turn traces from cross-eval
-reuse until it does.
+**Confirmed absent from every branch this project builds on.** No code defines it in
+`HEAD`, `origin/scosman/evals_v2`, or `origin/claude/eval-splits-evals-v2` — the only
+hits are prose. It exists on the unmerged eb-v2 branch, and **scosman confirms it moves
+onto `EvalInput` before ship**.
 
-### Three pre-existing holes it inherits and extends
+That closes the gap completely: once the drive config is on the EvalInput, it *is* part
+of the item, so `(ItemSource, item_id, task_run_config_id)` covers it with no extra
+term. The key is complete as proposed.
 
-None of these are created here — but reuse makes traces long-lived, so the exposure
-window grows from "until the next eval config" to "indefinitely".
+Two notes for the eb-v2 handoff, not work for this project:
 
-| Hole | Why the key doesn't cover it |
-|---|---|
-| **Unfrozen dynamic prompts** | Freezing is optional (`prompt: BasePrompt \| None`). If `prompt is None` and `prompt_id` is dataset-derived, the prompt text drifts as runs accumulate (`prompt_builders.py:206` reads `task.runs()`) — with no id change and **no user action at all**. The worst of the three |
-| **Tools referenced by id** | `ToolsRunConfig.tools: List[ToolId]` stores ids only; tool definitions are separately mutable (`tool_api.py:685/759/882`, `code_tool_api.py:341`). Note `MCPToolReference` already snapshots `input_schema`/`output_schema` — the drift risk is recognised there but not in `ToolsRunConfig` |
-| **`task.instruction`** | Mutable, goes into every prompt, sits above the run config entirely |
+- `specs/projects/eb_v2_splits_alignment/project_overview.md` §9 independently raises
+  the same question and leans the other way — *"eval-level is probably right — the drive
+  config exists to hold the synthetic user constant across run configs so a comparison
+  varies only the agent."* Moving it to `EvalInput` **preserves** that property (the
+  item is shared across run configs in a comparison) and additionally holds it constant
+  across evals, which is what reuse needs. Worth saying explicitly so the two projects
+  don't reach opposite conclusions.
+- That branch also has `validate_multi_turn_drive_readiness` (`eval_runner.py:341`) and
+  `SkippedReason.missing_drive_config`. Per-input placement turns readiness into a
+  per-item check, which fits the existing per-item skip model.
 
-**Recommendation: don't fix these here.** Two cheap mitigations instead:
+### Three pre-existing holes — accepted, no action
 
-1. Surface trace age — `created_at` is already on the base model — wherever reuse
-   happens, so a stale trace is visible rather than silent (pairs with the C11 reuse
-   indicator).
-2. Optionally refuse cross-eval reuse when `run_config.prompt is None` and `prompt_id`
-   is a dynamic type. That closes the only hole that drifts without user action, and
-   it's a two-line predicate.
+Reuse extends the exposure window on three existing gaps in the "identical calls"
+invariant. **scosman accepted all three; no work here.**
+
+| Hole | Why the key doesn't cover it | Why accepted |
+|---|---|---|
+| **Unfrozen dynamic prompts** | Freezing is optional (`prompt: BasePrompt \| None`); a dataset-derived `prompt_id` drifts as runs accumulate (`prompt_builders.py:206`) with no id change | Unfrozen prompts aren't used in measured experiments |
+| **Tools referenced by id** | `ToolsRunConfig.tools: List[ToolId]` stores ids only; definitions are separately mutable | Tools are immutable in practice |
+| **`task.instruction`** | Mutable, sits above the run config | Baked into the frozen prompt |
+
+Trace age is still visible for free — `created_at` is on the base model and the reuse
+indicator (C11) is already in scope.
 
 ## 5. Decision status
 
@@ -584,11 +592,12 @@ window grows from "until the next eval config" to "indefinitely".
 | D1 | Where EvalRun lives | **Task level**, sibling of `eval_inputs/`. Gated on a directory-scan benchmark as a phase-1 spike (C2b) |
 | D7 | Where EvalScore lives | **Child of `EvalConfig`**, with an `eval_run_id` pointer and a denormalized `ItemKey` + `task_run_config_id`. Scores are tied to the config (C3, R1) |
 | D8 | Traces per `(ItemKey, run_config)` | **Many possible, first wins.** Sync means uniqueness can never be guaranteed; the system is already robust to duplicates and selects the first found. Never intentionally create more than one. Leaves the door open to N-sampling later (C4) |
-| D9 | Generation provenance key | **`(ItemSource, item_id, task_run_config_id)`** — no hash. Conditional on drive config moving off `Eval` (4b) |
+| D9 | Generation provenance key | **`(ItemSource, item_id, task_run_config_id)`** — no hash; the datamodel already asserts this invariant. Complete as proposed: `multi_turn_drive_config` is absent from every branch here and moves onto `EvalInput` before ship (4b) |
+| D10 | Pre-existing drift holes | **Accepted, no action** — unfrozen dynamic prompts, tools-by-id, `task.instruction` (4b) |
 | D2 | Cross-eval reuse mechanism | Pointer-EvalInput option **dropped** — it re-implements tag membership (C2b) |
 | D3 | Metrics concept | **Deferred**, as a read-side concept. Commit now only to scoping it by a split ref so adding it later stays cheap (C2b, R2) |
 | D4 | Internal V2 data | **Migration script**, sequenced as the final phase. A lazy load-time fold is not available for file relocation (C2c) |
-| D5 | `multi_turn_drive_config` placement | **Note in the plan, don't action.** Owned by the multi-turn branch; fix before ship (C2c) |
+| D5 | `multi_turn_drive_config` placement | **Moves onto `EvalInput` before ship**, owned by the eb-v2 branch. Confirmed absent from all branches here. Not actioned by this project; flag the conflicting lean in eb-v2 §9 (4b) |
 | D6 | Splits-branch compatibility | Confirmed. Tag-filter linkage survives; runner dedupe already keys on `(eval_config, run_config, ItemKey)` (C2c) |
 
 ### Open
@@ -607,13 +616,11 @@ window grows from "until the next eval config" to "indefinitely".
 
 **Design detail, low risk, needs ratification:**
 
-4. **Reuse-safety mitigations** — surface trace age at reuse points, and optionally
-   refuse cross-eval reuse of unfrozen dynamic prompts (4b).
-5. **Field placement** — `reference_data` → score side (C5); `intermediate_outputs` →
+4. **Field placement** — `reference_data` → score side (C5); `intermediate_outputs` →
    score side, coordinate with D31 in `evals_v2_cleanup` (C7); judge `usage` → new on
    EvalScore (C7); `SkippedReason` partition across the two entities (C6).
-6. **Failed generations** — persist a terminal "generation failed" EvalRun, or leave
+5. **Failed generations** — persist a terminal "generation failed" EvalRun, or leave
    absent so it retries? (2.4)
-7. **Retry granularity** — confirm `RetryableError` retries only the failed phase
+6. **Retry granularity** — confirm `RetryableError` retries only the failed phase
    rather than the whole job (2.4).
-8. **Naming** — `EvalScore` collides with the existing `EvalScores` alias (C10).
+7. **Naming** — `EvalScore` collides with the existing `EvalScores` alias (C10).
