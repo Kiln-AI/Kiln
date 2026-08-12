@@ -125,7 +125,7 @@
     const test_split = eval_split(evaluator, "test")
     if (test_split?.source === "eval_input") {
       alert(
-        "We can't generate synthetic data for this eval. Its eval set is made of eval inputs, and synthetic data generation adds task runs to your dataset.",
+        "We can't generate synthetic data for this eval. Its test set is made of eval inputs, and synthetic data generation adds task runs to your dataset.",
       )
       return
     }
@@ -135,7 +135,7 @@
     const splits = build_eval_generation_splits(evaluator)
     if (!splits) {
       alert(
-        "We can't generate synthetic data for this eval as its eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
+        "We can't generate synthetic data for this eval because its test set isn't defined by a tag filter. Select an eval which uses tags to define its datasets.",
       )
       return
     }
