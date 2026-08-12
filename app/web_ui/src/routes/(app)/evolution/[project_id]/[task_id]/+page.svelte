@@ -272,11 +272,11 @@
   // this page used to do and what makes two configs on one axis not necessarily
   // a comparison at all.
   //
-  // The default is `shared` (DEFAULT_MATCH_PREDICATE), so the page opens on the
-  // basis where a difference between two means is a difference between the
-  // CONFIGS. On a single pinned config every predicate is the identity and the
-  // banner reports "All runs", so nothing about a one-config view changes.
-  // "all" is the explicit opt-out and is what serializes into the URL now.
+  // The default is `all` (DEFAULT_MATCH_PREDICATE): the page opens unfiltered,
+  // and a matched basis is an explicit choice that serializes into the URL —
+  // so a shared link always states the basis it was read under. On a single
+  // pinned config every predicate is the identity and the banner reports
+  // "All runs", so nothing about a one-config view changes either way.
   //
   // It is in the URL for the same reason quality_floor is: a Compare V2 link is
   // an argument someone sends, and the basis it was argued under has to travel

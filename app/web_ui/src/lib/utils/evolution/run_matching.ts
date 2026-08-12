@@ -9,9 +9,9 @@
 //
 // A matching predicate makes the BASIS explicit and selectable:
 //
-//   all     every run in the split-scoped universe (the old behavior)
-//   shared  only items EVERY basis config has a non-skipped run for — the
-//           DEFAULT once two configs are pinned, see DEFAULT_MATCH_PREDICATE
+//   all     every run in the split-scoped universe — the DEFAULT, see
+//           DEFAULT_MATCH_PREDICATE
+//   shared  only items EVERY basis config has a non-skipped run for
 //   length  shared, and the configs' total_tokens on that item within 1.5x
 //   tools   shared, and the configs' tool_calls on that item within 1.5x
 //
@@ -125,7 +125,7 @@ export const MATCH_LABELS: Record<MatchPredicate, string> = {
  * the identity there and the applied predicate reports as "all" (see
  * matched_items_by_eval). Reverting the whole change is this constant.
  */
-export const DEFAULT_MATCH_PREDICATE: MatchPredicate = "shared"
+export const DEFAULT_MATCH_PREDICATE: MatchPredicate = "all"
 
 /**
  * How far apart two configs' shape may be on the same item and still count as
@@ -349,10 +349,9 @@ export interface MatchedUsage {
 /**
  * URL value -> predicate. Anything unknown is the default, not an error.
  *
- * An absent parameter is `shared` (DEFAULT_MATCH_PREDICATE), so every link
- * written before this existed - and every link written since without touching
- * the control - opens on the honest basis. `match=all` is the explicit
- * opt-out and is a legal value.
+ * An absent parameter is `all` (DEFAULT_MATCH_PREDICATE): a link that never
+ * touched the control opens on the full, unfiltered basis, and a matched
+ * basis is always an explicit choice carried in the URL.
  */
 export function parse_match_param(value: string | null): MatchPredicate {
   if (value && (MATCH_PREDICATES as string[]).includes(value)) {
@@ -363,13 +362,9 @@ export function parse_match_param(value: string | null): MatchPredicate {
 
 /**
  * Predicate -> URL value, or null for the default so it stays out of the URL —
- * the same omitted-default discipline the split control uses.
- *
- * Which value is omitted moved with the default: `shared` no longer
- * serializes, and `all` now does. A link someone sent before that carrying no
- * `match` param opens on `shared` rather than `all`, which is the one
- * behavior change in this direction and the intended one: the basis a link is
- * read under should be the honest one unless its author said otherwise.
+ * the same omitted-default discipline the split control uses. `all` is the
+ * default and stays implicit; every matched predicate serializes, so a shared
+ * link always states the basis it was read under.
  */
 export function match_param(predicate: MatchPredicate): string | null {
   return predicate === DEFAULT_MATCH_PREDICATE ? null : predicate
