@@ -636,6 +636,109 @@ from "two capabilities behind one flag" to just the calibration capability.
    — which only becomes possible because this project makes EvalRun a first-class
    record. Worth recording as an unlock, not scheduling.
 
+## 4d. Does EvalRun collapse into TaskRun? (scosman)
+
+**Proposal:** kill the new EvalRun entity. Eval traces *are* TaskRuns. Add a source
+pointer (`ItemSource` + `EvalInput.id` / `TaskRun.id`) and a flag/tag so they filter out
+of the dataset UI by default.
+
+### Both premises verified
+
+| Claim | Verdict |
+|---|---|
+| TaskRun already stores the trace | Yes — `trace: list[ChatCompletionMessageParam] \| None` (`task_run.py:74`) |
+| TaskRun already stores the run config | Yes, **twice** — `output.source.run_config_id` *and* `output.source.run_config: RunConfigProperties`, the full frozen properties (`task_output.py:208-215`) |
+
+### It carries three more things we need, which strengthens the case
+
+- **`output.rating`** — human ratings. This directly reopens the §4c follow-up: golden
+  sets are TaskRun-only *because ratings live on TaskRuns*. If eval traces **are**
+  TaskRuns, they are natively rateable, and a V2 EvalInput-backed golden set becomes
+  possible with nothing new invented. The "post-ship unlock" recorded in §4c becomes
+  free.
+- **`parent_task_run_id`** (`task_run.py:78`) — multi-turn chaining already modelled.
+  The synthetic-user conversation has a home that a fresh EvalRun entity would have had
+  to reinvent.
+- **`feedback` children + `repair_instructions` / `repaired_output`** — curating a bad
+  eval output into a training example becomes a first-class flow instead of an
+  export/reimport. Adjacent to the "bridge between data guide examples and eval
+  datasets — promotion mechanism" item parked in `evals_v2/components/90_open_risks.md`.
+
+Also note `usage` **and** `cumulative_usage` (sum across a whole trace including seeded
+prior trace) — better than the single `task_run_usage` field EvalRun has today, and
+exactly right for multi-turn cost accounting.
+
+### Two hard constraints to design around
+
+**1. Sharing the class forces sharing the directory.** `KilnParentModel.__init_subclass__`
+rejects registering one child class under two relationships — *"A child class can only
+appear once - it holds a single `relationship_name()` / `parent_type()` pair"*
+(`basemodel.py`). So there is no "same class, separate `eval_runs/` folder" option. Eval
+traces land in `runs/` alongside the dataset, or they are a different class.
+
+*(A `class EvalTaskRun(TaskRun)` subclass would be a distinct class and so get its own
+folder — but then `isinstance(x, TaskRun)` is True for eval traces, so every filter and
+consumer written against TaskRun silently accepts them. That trades a visible problem
+for an invisible one. Listed for completeness, not recommended.)*
+
+**2. `output: TaskOutput` is required** (`task_run.py:44`) — a TaskRun cannot exist
+without an output. A failed generation therefore has no representation. That is fine,
+and it **settles open question "failed generations"**: leave absent, matching today's
+"absence = not-yet-run" convention. One fewer decision.
+
+### The real objection: pollution, and how to make it safe
+
+Every `task.runs()` consumer would start seeing eval traces:
+
+| Call site | Risk if polluted |
+|---|---|
+| `prompt_builders.py:206` (few-shot) | **Feedback loop** — model prompted with its own eval outputs. Partly self-limiting: the builder selects on `repaired_output` then on rating, and eval traces are unrated by default |
+| `dataset_split.py:186,211` | Fine-tune train/val sets contaminated with eval traces |
+| `finetune_api.py:234` | Fine-tune sample selection |
+| `run_api.py:284,355,632` | Dataset browsing UI floods |
+| `dataset_filter_from_id` → `AllDatasetFilter` | Any `all`-filtered consumer gets everything |
+
+**Recommendation: invert the default rather than add an opt-out flag.** Make
+`task.runs()` exclude eval traces unless explicitly asked for. Then forgetting to handle
+this fails *visibly* (missing data) instead of *silently* (contaminated training data,
+leaked feedback loop). A tag-based opt-out requires auditing every call site and getting
+all of them right; a default-exclude requires the eval runner to opt in, in one place.
+
+This is the crux of the decision and should be a spec-level invariant, not an
+implementation detail.
+
+### Volume
+
+Merging eval traces into `runs/` makes the C2b directory-scan concern worse, not better
+— the dataset directory now holds the user's corpus *and* every eval trace. The
+benchmark spike gating D1 becomes more important, and should now measure `runs/` at
+combined scale rather than a separate `eval_runs/`.
+
+### What it kills
+
+- **The new EvalRun entity, entirely.** No new tree, no new class, no migration target
+  for it.
+- **The naming problem (C10) dissolves** — V2 has no "EvalRun", so the legacy V1
+  `EvalRun` keeps its name unambiguously.
+- **V1 back-compat gets simpler** — legacy EvalRuns stay exactly where they are; there
+  is no new entity competing for the name or the concept.
+- D1 (task-level EvalRun) is subsumed: TaskRun is already task-level.
+
+### One thing to revisit deliberately, not by accident
+
+Today's runner comments that `run_task` **deliberately** does not persist its generation
+(`eval_runner.py:498-499`). No rationale for that choice is recorded in the specs I read.
+Worth asking whether it was a considered decision or just the path of least resistance,
+before reversing it.
+
+### Recommendation
+
+**Pursue it.** It removes an entity rather than adding one, and it unlocks ratings,
+multi-turn chaining, and repair/feedback on eval traces for free. Gate on two things:
+
+1. Agreement that `task.runs()` becomes default-exclude (the safety property).
+2. The directory-scan benchmark at combined dataset + eval-trace scale.
+
 ## 5. Decision status
 
 ### Settled
