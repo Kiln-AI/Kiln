@@ -106,7 +106,16 @@ New:
 
 ```python
 scored_run_id: ID_TYPE | None = None   # the TaskRun this score was computed over
+
+eval_usage: Usage | None = Field(
+    default=None,
+    description="The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field.",
+)
 ```
+
+`eval_usage` closes a real gap: LLM-judge token cost is recorded nowhere today. It is
+also the natural counterpart to deprecating `task_run_usage` — the *task's* usage moves
+to the TaskRun, and the *judge's* usage takes its place on the score record.
 
 Retained and meaningful:
 
@@ -119,11 +128,15 @@ Retained and meaningful:
 | `intermediate_outputs` | judge thinking |
 | `skipped_reason` / `skipped_detail` | scoring skips |
 | `reference_data` | what the scorer actually saw |
+| `eval_usage` | **new** — the judge's own token/cost usage |
 | `eval_config_eval` | unchanged; shipped V1 field (D18) |
 
 **Deprecated** — kept declared and loadable forever, never set on new records (D15):
 `input`, `output`, `task_run_trace`, `task_run_usage`, `reference_answer`.
 `input` changes from required to optional.
+
+`task_run_usage` is deprecated with the rest: it is the *evaluated task run's* usage,
+which now lives on the TaskRun as `usage`. Legacy records keep theirs.
 
 Nothing is deleted and no existing file is rewritten.
 
@@ -216,14 +229,23 @@ and never delete-protected.
 
 ## 5. Read paths
 
-### 5.1 Aggregation is unchanged
+### 5.1 Score aggregation is unchanged; the usage rollup is not
 
 `compute_score_summary`, the eval-config compare summary, and the per-run-config summary
 all read `eval_config.runs()` and bucket by `task_run_config_id` and item key. Every
-field they touch stays on `EvalRun`. **This project changes none of that code.**
+field the **score** math touches stays on `EvalRun`, so that code is untouched.
 
 Completeness is still `EvalRun` presence per `(eval_config, run_config, item)`: an
 unscored trace is incomplete, which is correct.
+
+**One exception.** The per-run-config summary rolls up tokens, cost and latency from
+`eval_run.task_run_usage` (`eval_api.py:1862-1878`). With that field deprecated, the
+rollup reads `TaskRun.usage` through the join instead. Eval traces are always freshly
+generated (never seeded), so `usage` is the right field — `cumulative_usage` equals it
+for non-seeded runs.
+
+Legacy records still carry `task_run_usage`, so the rollup falls back to it when
+`scored_run_id` is unset.
 
 ### 5.2 The run-results view joins
 
@@ -273,19 +295,20 @@ because records move between directories.
 
 For each V2 `EvalRun` (parent `EvalConfig.config_type == "v2"`):
 
-1. **Group** by `(item key, task_run_config_id)` *first*. Several EvalRuns from different
-   eval configs describe the same generation; they must collapse to **one** TaskRun.
-   Collapsing is the point of the project — a migration that creates one TaskRun per
-   EvalRun would preserve the duplication it exists to remove.
-2. For each group, create one TaskRun from the inline trace fields (`input`, `output`,
+1. Create one TaskRun per EvalRun, from its inline trace fields (`input`, `output`,
    `task_run_trace`, `task_run_usage`), setting `eval_source` from the
    `dataset_id`/`eval_input_id` pair and the run config from `task_run_config_id`.
-3. Rewrite each EvalRun in the group to pointer mode: set `scored_run_id`, clear the
-   inline fields.
-4. **Calibration EvalRuns** (`eval_config_eval=True`) already reference a real TaskRun
+2. Rewrite the EvalRun to pointer mode: set `scored_run_id`, clear the inline fields.
+
+   **Deliberately not deduplicated.** Several EvalRuns from different eval configs may
+   describe the same generation, and grouping them by `(item key, task_run_config_id)`
+   would collapse them into one shared TaskRun. That is *not* done: this is one internal
+   project's data, so the duplication is small and harmless, and going forward the live
+   trace lookup produces one trace per key anyway. Punted.
+3. **Calibration EvalRuns** (`eval_config_eval=True`) already reference a real TaskRun
    via `dataset_id` — set `scored_run_id = dataset_id` and create nothing.
-5. **Skipped EvalRuns with no trace** — clear inline fields, leave `scored_run_id` unset.
-6. **V1 EvalRuns are skipped entirely.**
+4. **Skipped EvalRuns with no trace** — clear inline fields, leave `scored_run_id` unset.
+5. **V1 EvalRuns are skipped entirely.**
 
 The script is idempotent: an EvalRun already in pointer mode is left alone.
 
@@ -334,12 +357,3 @@ name:
   Benchmarked separately and accepted.
 - **No new dependencies.**
 - **Two saves per fresh job** instead of one, inside the git-sync `SaveContext`.
-
-## 13. Open — confirm or cut
-
-One discretionary addition, called out rather than assumed:
-
-**Judge usage on `EvalRun`.** LLM-judge token cost is currently recorded nowhere —
-`task_run_usage` is the *task's* usage, not the judge's. Splitting the records is the
-natural moment to add a `usage: Usage | None` for the scoring call. Small, real user
-value, cheaper now than later. Cut it if scope discipline wins.
