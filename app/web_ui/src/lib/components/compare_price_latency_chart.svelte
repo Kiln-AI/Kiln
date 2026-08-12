@@ -53,6 +53,11 @@
     type PricePoint,
   } from "$lib/utils/evolution/price_latency"
   import { COST_KEY } from "$lib/utils/evolution/metric_axes"
+  import {
+    below_gate_reason,
+    quality_tooltip_lines,
+    type QualityBreakdown,
+  } from "$lib/utils/evolution/quality_score"
   import { formatLatency } from "$lib/utils/formatters"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
@@ -80,9 +85,18 @@
   // uses. Passed in rather than read here so this chart is scoped by whatever
   // split the page is showing, like every other card on it.
   export let getMetricValue: (runConfigId: string, key: string) => number | null
-  // Direction-corrected aggregate quality, 0..1, or null for a config with no
-  // scores. What the gate is applied to.
+  // Direction-corrected quality, 0..1, or null for a config with no scores.
+  // What the gate is applied to.
   export let getQuality: (runConfigId: string) => number | null
+  // What that number is MADE of: the concern areas, their values, and the axes
+  // under the weakest one. Optional, with the old single-line tooltip as the
+  // fallback - a scalar gate needs no breakdown to work, but a reader asking
+  // "why is this one below the line" is asking about the breakdown, and a
+  // chart that can only answer "74%" is asking them to go and find out
+  // elsewhere.
+  export let getQualityBreakdown: (
+    runConfigId: string,
+  ) => QualityBreakdown | null = () => null
   // Runs behind the cost mean, when the page knows it. Usually null: the usage
   // rollup arrives as a blob of means with no count attached, unlike an eval
   // score. Asked for anyway, so the tooltip states n the moment there is one to
@@ -101,11 +115,18 @@
   // someone screenshots to argue for a config.
   export let scopeLabel: string | null = null
 
-  const SCALE_TOOLTIP = `One dot per run config: how long a conversation takes against what it costs. **Down and to the left is better** on both.
+  // Reactive, because what the gate MEANS depends on whether the task grouped
+  // its criteria: with families the floor is non-compensatory, and that is the
+  // sentence a reader has to have before they set one.
+  $: SCALE_TOOLTIP = `One dot per run config: how long a conversation takes against what it costs. **Down and to the left is better** on both.
 
 **Cost is on a log scale.** The arms on a real task span a couple of orders of magnitude, and on a linear axis every cheap one collapses onto the floor. Each gridline is a fixed RATIO, not a fixed amount.
 
-**The quality gate** is yours to set. Configs that clear it are solid and joined by the dashed **frontier** — the ones nothing else beats on both price and speed. A config above that line is paying for nothing: something on it is cheaper AND faster.
+**The quality gate** is yours to set. ${
+    qualityIsGrouped
+      ? "It holds EVERY concern area to the floor, not the average of them — so a config cannot clear it by doing well on the criteria nobody was worried about. Hover a dot for its weakest area."
+      : "It is the mean of every criterion on the task."
+  } Configs that clear it are solid and joined by the dashed **frontier** — the ones nothing else beats on both price and speed. A config above that line is paying for nothing: something on it is cheaper AND faster.
 
 Configs below the gate stay on the chart, hollow, because "the cheap one is cheap because it is bad" is worth seeing.
 
@@ -175,6 +196,13 @@ Latency is LLM generation time only. Tool execution, retrieval and network time 
   $: floorPercent =
     qualityFloor === null ? null : Math.round(qualityFloor * 100)
 
+  // Whether the task grouped its criteria, read off the points themselves
+  // rather than passed in: the breakdown is already here, and a second prop
+  // saying the same thing could disagree with it.
+  $: qualityIsGrouped = built.plotted.some(
+    (point) => getQualityBreakdown(point.id)?.mode === "families",
+  )
+
   $: subtitle = (() => {
     const parts = [
       "Cost against speed for the selected run configurations, one dot each.",
@@ -184,7 +212,11 @@ Latency is LLM generation time only. Tool execution, retrieval and network time 
       parts.push("Set a quality gate to hold quality fixed and compare price.")
     } else {
       parts.push(
-        `Quality gate ${floorPercent}%: ${gated.qualifying.length} of ${built.plotted.length} clear it, joined by the frontier. The rest are hollow.`,
+        `Quality gate ${
+          qualityIsGrouped
+            ? `every area ≥ ${floorPercent}%`
+            : `${floorPercent}%`
+        }: ${gated.qualifying.length} of ${built.plotted.length} clear it, joined by the frontier. The rest are hollow.`,
       )
     }
     return parts.join(" ")
@@ -250,21 +282,47 @@ Latency is LLM generation time only. Tool execution, retrieval and network time 
     }
   }
 
+  function escape_html(text: string): string {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+  }
+
   function itemTooltip(datum: PlotDatum): string {
     const color = colorFor(datum.id, colorIndex.get(datum.id) ?? 0)
     const n = getSampleSize(datum.id, COST_KEY)
+    const breakdown = getQualityBreakdown(datum.id)
     let html = `<div style="font-weight:bold;">${tooltipMarker(
       color,
       datum.ghost !== null,
     )}${datum.name}</div>`
     html += `<div style="margin-top:4px;">Cost: <b>$${datum.cost.toFixed(4)}</b> <span style="color:#888;">per conversation</span></div>`
     html += `<div>Model time: <b>${formatLatency(datum.latency_ms)}</b> <span style="color:#888;">per conversation</span></div>`
-    html += `<div>Quality: <b>${formatQuality(datum.quality)}</b> <span style="color:#888;">aggregate</span></div>`
+    // The breakdown's own first line already says what the number is and which
+    // area it came from, so it replaces the plain "Quality: 74%" rather than
+    // sitting under it.
+    const quality_lines = quality_tooltip_lines(breakdown, qualityFloor)
+    if (quality_lines.length > 0) {
+      html += `<div style="margin-top:4px;">${escape_html(quality_lines[0])}</div>`
+      for (const line of quality_lines.slice(1)) {
+        html += `<div style="color:#888;">${escape_html(line)}</div>`
+      }
+    } else {
+      html += `<div>Quality: <b>${formatQuality(datum.quality)}</b></div>`
+    }
     if (n !== null) {
       html += `<div style="color:#888;">n=${n}</div>`
     }
     if (datum.ghost) {
-      html += `<div style="margin-top:4px;color:#888;">${GHOST_LABELS[datum.ghost]}</div>`
+      // The area that failed, when the page knows it: "below the gate" says a
+      // config lost without saying what it lost on, and the reader's next
+      // question is always which one.
+      const reason =
+        (datum.ghost === "below_gate"
+          ? below_gate_reason(breakdown, qualityFloor)
+          : null) ?? GHOST_LABELS[datum.ghost]
+      html += `<div style="margin-top:4px;color:#888;">${escape_html(reason)}</div>`
     } else if (frontier.some((point) => point.id === datum.id)) {
       html += `<div style="margin-top:4px;color:#888;">On the frontier — nothing here is both cheaper and faster.</div>`
     }
@@ -439,6 +497,7 @@ Latency is LLM generation time only. Tool execution, retrieval and network time 
     seriesLabels,
     getMetricValue,
     getQuality,
+    getQualityBreakdown,
     getSampleSize,
     model_info,
     run_configs,

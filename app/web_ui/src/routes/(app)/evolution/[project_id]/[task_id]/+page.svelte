@@ -95,6 +95,10 @@
     type ScoreFamily,
   } from "$lib/utils/evolution/score_families"
   import {
+    weakest_family_quality,
+    type QualityBreakdown,
+  } from "$lib/utils/evolution/quality_score"
+  import {
     build_price_latency_points,
     quality_gate_cuts,
     split_by_gate,
@@ -1939,17 +1943,47 @@
 
   // ---- Price vs latency ---------------------------------------------------
   // The one chart on this page whose question is "which of these do we ship".
-  // It needs a single number for quality, which is exactly what the aggregate
-  // lens is: every non-informational score key, direction-corrected onto 0..1
-  // and averaged. Read straight from the lens rather than through
-  // `current_lens`, because the gate is not a lens - a reader looking at one
-  // criterion on the graph has not said they want their shipping decision made
-  // on that one criterion.
-  $: get_quality = make_quality_getter(effective_lens_data)
-  function make_quality_getter(data: LensData) {
-    return (run_config_id: string): number | null =>
-      normalized_lens_value(data, run_config_id, { kind: "aggregate" })
+  // It needs a single number for quality, and that number is the WEAKEST
+  // CONCERN AREA rather than the mean of every criterion - see quality_score.
+  // A mean lets a config buy back a failure on the criterion the customer
+  // cares most about with a pass on one nobody was worried about, which is how
+  // an arm cleared a 70% gate with a 48% write-correctness coin flip inside it.
+  //
+  // Computed off effective_lens_data, so it recomputes over the matched
+  // conversations under a predicate with nothing else to do, and off the same
+  // family grouping the radar's bands read (score_families). Read straight
+  // from the lens rather than through `current_lens`, because the gate is not
+  // a lens - a reader looking at one criterion on the graph has not said they
+  // want their shipping decision made on that one criterion.
+  $: quality_breakdowns = build_quality_breakdowns(
+    effective_lens_data,
+    score_families,
+    pinned_ids,
+  )
+  function build_quality_breakdowns(
+    data: LensData,
+    families: Map<string, ScoreFamily>,
+    ids: string[],
+  ): Map<string, QualityBreakdown | null> {
+    return new Map(
+      ids.map((id) => [id, weakest_family_quality(data, families, id)]),
+    )
   }
+  $: get_quality_breakdown = (run_config_id: string): QualityBreakdown | null =>
+    quality_breakdowns.get(run_config_id) ?? null
+  $: get_quality = make_quality_getter(quality_breakdowns)
+  function make_quality_getter(
+    breakdowns: Map<string, QualityBreakdown | null>,
+  ) {
+    return (run_config_id: string): number | null =>
+      breakdowns.get(run_config_id)?.quality ?? null
+  }
+  // Whether the number is a weakest area or the flat mean, which is what the
+  // gate menu and the chart have to call it. Taken from whatever the pinned
+  // configs resolved to: the grouping is a property of the task, so they agree.
+  $: quality_is_grouped = [...quality_breakdowns.values()].some(
+    (breakdown) => breakdown?.mode === "families",
+  )
 
   // The gate the reader can set. Round numbers, not a slider: the floor is an
   // argument ("80% is good enough to ship"), and an argument is made in round
@@ -2008,8 +2042,19 @@
     // test written to survive the float arithmetic that produced them.
     return cuts.some((cut) => Math.abs(cut - floor) < 1e-9) ? null : floor
   }
+  // What the gate MEANS, stated in the menu that sets it. Under families the
+  // floor is non-compensatory - every area has to clear it, not the average -
+  // and that is the whole difference between this gate and the one it replaced.
+  // A task with no family grouping gets the old sentence, because that is what
+  // its number still is.
+  $: quality_gate_header = quality_is_grouped
+    ? `Quality gate: every area ≥ ${quality_floor === null ? "the floor" : quality_floor_label}`
+    : "Quality gate"
+  $: quality_gate_hint = quality_is_grouped
+    ? "Only configs whose weakest concern area clears this floor are compared on price"
+    : "Only configs at or above this aggregate quality are compared on price"
   $: quality_floor_menu_items = [
-    { label: "Quality gate", header: true },
+    { label: quality_gate_header, header: true },
     {
       // A marker on every row, not just the chosen one: the labels are rendered
       // as ordinary text, where a leading run of spaces collapses to one, so an
@@ -2591,6 +2636,7 @@
             seriesLabels={series_labels}
             getMetricValue={get_metric_value}
             getQuality={get_quality}
+            getQualityBreakdown={get_quality_breakdown}
             getSampleSize={get_sample_size}
             qualityFloor={quality_floor}
             scopeLabel={stated_scope_label}
@@ -2604,7 +2650,7 @@
                 slot="trigger"
                 type="button"
                 class="btn btn-sm font-normal"
-                title="Only configs at or above this aggregate quality are compared on price"
+                title={quality_gate_hint}
               >
                 Quality gate: {quality_floor_label}
               </button>
