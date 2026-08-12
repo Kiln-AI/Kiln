@@ -95,10 +95,10 @@
   // radar beside it. Empty falls back to the theme palette by index.
   export let seriesColors: Record<string, string> = {}
   // What to CALL each run config, by id, decided once by the page for the
-  // whole comparison - see series_display_map, which leads with the model and
-  // appends the config's name only where a model is shared. Used for the
-  // series names and the row tooltip. Empty falls back to series_label, the
-  // config-name-first naming this chart used before.
+  // whole comparison - see series_display_map, which leads with the config's
+  // own name and appends the model only where a name is shared. Used for the
+  // series names and the row tooltip. Empty falls back to series_label, which
+  // is the same naming without the cross-config dedup.
   export let seriesLabels: Record<string, string> = {}
   // Rendered under the subtitle - what the page left off and why
   export let notShownNote: string | null = null

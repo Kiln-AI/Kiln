@@ -8,7 +8,6 @@ import {
   series_display_map,
   series_label,
   series_model_label,
-  series_primary_label,
   series_subtext,
 } from "./series_identity"
 
@@ -137,23 +136,6 @@ describe("series_model_label", () => {
   })
 })
 
-describe("series_primary_label", () => {
-  it("is the model, not the config's own name", () => {
-    expect(series_primary_label(agent_config(), CATALOG)).toBe("GPT-4")
-  })
-
-  it("falls back to the config's name when there is no model to name", () => {
-    expect(series_primary_label(agent_config(), null)).toBe("Luna")
-    expect(series_primary_label(mcp_config({ name: "My MCP" }), CATALOG)).toBe(
-      "My MCP",
-    )
-  })
-
-  it("falls back to the tool for an unnamed MCP config", () => {
-    expect(series_primary_label(mcp_config(), CATALOG)).toBe("Demo Tool")
-  })
-})
-
 describe("series_subtext", () => {
   it("names the tool for a named MCP config", () => {
     expect(series_subtext(mcp_config({ name: "My MCP" }), null, null)).toEqual([
@@ -166,16 +148,26 @@ describe("series_subtext", () => {
     expect(series_subtext(mcp_config(), null, null)).toEqual([])
   })
 
-  it("leads with the config's own name, under the model", () => {
+  it("leads with the model, under the config's own name", () => {
     const lines = series_subtext(agent_config(), CATALOG, null)
-    expect(lines[0]).toBe("Luna")
-    expect(lines.some((line) => line.includes("GPT-4"))).toBe(false)
+    expect(lines[0]).toBe("GPT-4")
+    expect(lines.some((line) => line === "Luna")).toBe(false)
   })
 
-  it("does not repeat a name the top line already fell back to", () => {
-    // No catalog, so series_primary_label is the config's name
+  it("does not name a model the top line already fell back to", () => {
+    // Unnamed, so series_label is already the model
+    const lines = series_subtext(
+      agent_config({ name: undefined }),
+      CATALOG,
+      null,
+    )
+    expect(lines.some((line) => line === "GPT-4")).toBe(false)
+  })
+
+  it("names no model when the catalog cannot resolve one", () => {
     const lines = series_subtext(agent_config(), null, null)
     expect(lines.some((line) => line === "Luna")).toBe(false)
+    expect(lines.length).toBe(1)
   })
 
   it("puts the provider and the prompt on one detail line", () => {
@@ -206,15 +198,7 @@ describe("series_subtext", () => {
 })
 
 describe("series_display_map", () => {
-  it("is the model alone when that model is pinned once", () => {
-    const map = series_display_map(
-      [on_model("luna", "Luna M1", "rc-1"), on_model("gpt-4", "Base", "rc-2")],
-      CATALOG,
-    )
-    expect(map).toEqual({ "rc-1": "GPT-5.6 Luna", "rc-2": "GPT-4" })
-  })
-
-  it("appends the config name when a model is shared", () => {
+  it("is the config's own name alone, model shared or not", () => {
     const map = series_display_map(
       [
         on_model("gpt-5-4-mini", "mini v5", "rc-1"),
@@ -223,13 +207,40 @@ describe("series_display_map", () => {
       ],
       CATALOG,
     )
-    expect(map["rc-1"]).toBe("GPT-5.4-mini — mini v5")
-    expect(map["rc-2"]).toBe("GPT-5.4-mini — mini v6")
-    // Unshared, so it takes no suffix it does not need
-    expect(map["rc-3"]).toBe("GPT-5.6 Luna")
+    // The whole point: three arms, three distinct labels, and a shared model
+    // does not force a suffix onto any of them
+    expect(map).toEqual({
+      "rc-1": "mini v5",
+      "rc-2": "mini v6",
+      "rc-3": "Luna M1",
+    })
   })
 
-  it("keeps the bare model for an unnamed config with nothing to add", () => {
+  it("appends the model when a name is shared", () => {
+    const map = series_display_map(
+      [
+        on_model("gpt-5-4-mini", "baseline", "rc-1"),
+        on_model("luna", "baseline", "rc-2"),
+        on_model("gpt-4", "Solo", "rc-3"),
+      ],
+      CATALOG,
+    )
+    expect(map["rc-1"]).toBe("baseline — GPT-5.4-mini")
+    expect(map["rc-2"]).toBe("baseline — GPT-5.6 Luna")
+    // Unshared, so it takes no suffix it does not need
+    expect(map["rc-3"]).toBe("Solo")
+  })
+
+  it("keeps the bare label for a shared name with no model to add", () => {
+    const map = series_display_map(
+      [mcp_config({ id: "rc-1", name: "shared" }), mcp_config({ id: "rc-2" })],
+      CATALOG,
+    )
+    expect(map["rc-1"]).toBe("shared")
+    expect(map["rc-2"]).toBe("Demo Tool")
+  })
+
+  it("keeps the bare model for two unnamed configs on one model", () => {
     const map = series_display_map(
       [
         on_model("gpt-5-4-mini", undefined, "rc-1"),
@@ -237,11 +248,12 @@ describe("series_display_map", () => {
       ],
       CATALOG,
     )
-    expect(map["rc-1"]).toBe("GPT-5.4-mini")
-    expect(map["rc-2"]).toBe("GPT-5.4-mini — mini v6")
+    // Its label is already the model, so there is nothing to append
+    expect(map["rc-1"]).toBe("GPT-5.4-mini (OpenAI)")
+    expect(map["rc-2"]).toBe("mini v6")
   })
 
-  it("falls back to the config name when the model is unknown", () => {
+  it("is the config name when the model is unknown", () => {
     const map = series_display_map(
       [agent_config(), mcp_config({ name: "My MCP" })],
       null,
@@ -252,9 +264,9 @@ describe("series_display_map", () => {
 
   it("does not depend on the order the configs arrive in", () => {
     const configs = [
-      on_model("gpt-5-4-mini", "mini v5", "rc-1"),
-      on_model("gpt-5-4-mini", "mini v6", "rc-2"),
-      on_model("luna", "Luna M1", "rc-3"),
+      on_model("gpt-5-4-mini", "baseline", "rc-1"),
+      on_model("luna", "baseline", "rc-2"),
+      on_model("gpt-4", "Solo", "rc-3"),
     ]
     expect(series_display_map([...configs].reverse(), CATALOG)).toEqual(
       series_display_map(configs, CATALOG),
@@ -265,7 +277,7 @@ describe("series_display_map", () => {
     const config = on_model("gpt-5-4-mini", "mini v6", "rc-1")
     expect(series_display_map([config, config], CATALOG)).toEqual({
       // Counted twice, it would look shared with itself and take a suffix
-      "rc-1": "GPT-5.4-mini",
+      "rc-1": "mini v6",
     })
   })
 
