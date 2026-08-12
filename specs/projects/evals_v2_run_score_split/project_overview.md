@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Project: Split EvalRun into EvalRun (trace) + EvalScore (scores)
