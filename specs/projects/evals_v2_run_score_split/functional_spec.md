@@ -65,13 +65,31 @@ an `EvalInput` id can collide (`eval_splits.ItemKey`).
 
 ```python
 class EvalItemSource(BaseModel):
-    """The eval dataset item this run was generated for."""
+    """The eval *dataset item* this run was generated for.
+
+    Not the run config — that already lives on this TaskRun at
+    `output.source.run_config_id`.
+    """
     source_type: Literal["eval_input", "task_run"]
     source_id: ID_TYPE
 
 class TaskRun(...):
     eval_source: EvalItemSource | None = None
 ```
+
+The two source types are the two kinds of dataset item a split can be backed by:
+
+| `source_type` | `source_id` points at | When |
+|---|---|---|
+| `"eval_input"` | `EvalInput.id` | V2 EvalInput-backed split |
+| `"task_run"` | `TaskRun.id` — the dataset item | V1 TaskRun-backed split |
+
+So a legacy-sourced eval trace is a TaskRun whose `eval_source` points at *another*
+TaskRun: the generated trace pointing back at the dataset item it was generated from.
+The two are always distinct records.
+
+This mirrors the splits branch's `ItemKey = Tuple[ItemSource, ID_TYPE]` exactly — same
+two source types, same meaning.
 
 - **Presence of `eval_source` is the eval-generated flag.** No separate boolean —
   an eval-generated run always has a source item, and an ordinary dataset run never
