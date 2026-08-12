@@ -45,12 +45,17 @@ savings.
 
 ### 2.2 It closes a hole V2 currently ships with
 
-`eval_config_eval` over an EvalInput-sourced dataset is **not supported today** — it
-persists a skip: `"EvalInput source has no stored output; eval_config_eval over
+> **Amended — see §4c.** The original claim here (that this unblocks EvalInput-backed
+> *golden sets*) was imprecise and is withdrawn. Golden sets stay TaskRun-only, because
+> the blocker is human ratings, not stored output. What remains true is below.
+
+Scoring an EvalInput-sourced item without re-running the task is **not possible today**
+— it persists a skip: `"EvalInput source has no stored output; eval_config_eval over
 EvalInput is deferred in V2.0"` (`eval_runner.py:444-462`). The reason is exactly the
 flaw under discussion: there is no place to store an EvalInput's generated output
-independent of a judge. The split fixes this as a side effect. That converts this
-project from "optimization" to "unblocks a shipped-as-broken path".
+independent of a judge. The split removes that skip by making the output exist. Under
+the split this stops being a *mode* at all — it is simply what happens when the trace
+lookup hits.
 
 ### 2.3 The cost is about to get much worse
 
@@ -583,6 +588,54 @@ invariant. **scosman accepted all three; no work here.**
 Trace age is still visible for free — `created_at` is on the base model and the reuse
 indicator (C11) is already in scope.
 
+## 4c. Golden-set conflict — resolved
+
+**The conflict.** §2.2 of this research treats "unblock EvalInput-sourced
+`eval_config_eval`" as a win the split delivers. `eval_splits.py` holds the opposite
+deliberately: golden is TaskRun-only *by definition*, routed around `resolve_split` on
+purpose, because "routing it through here would imply it could be EvalInput-backed,
+which is precisely what this project says it cannot be."
+
+**The splits branch is right, and §2.2 was imprecise.** The blocker is not stored
+output — it is human ratings.
+
+- Golden sets exist to answer *"how well does this judge correlate with a human?"*
+  `Eval.eval_configs_filter_id` says so in its own field description: *"Should consist
+  of dataset items with ratings."*
+- Human ratings live in exactly one place: `TaskRun.output.rating`
+  (`human_score_from_task_run`, `eval_api.py:562-587` — overall rating, requirement
+  ratings, named ratings, all off the TaskRun).
+- `EvalInput` has no `output` and no `rating`. It is an input, not a judged item. So an
+  EvalInput-backed golden set has nothing to correlate against, split or no split.
+
+**What §2.2 actually got right, and why it stops being a mode.** `eval_config_eval`
+today does double duty:
+
+| Capability | Needs | Status under the split |
+|---|---|---|
+| Correlate judge scores against human ratings (calibration) | Human ratings → TaskRun | Unchanged. Still TaskRun-only |
+| Score a stored output without re-running the task | A persisted output | **Stops being a mode at all** |
+
+The second is the entire point of this project. Once a trace is a first-class record,
+"score without generating" is not a special mode — it is simply what happens when the
+trace lookup hits. So the thing §2.2 wanted does arrive; it arrives as the normal path
+rather than as an EvalInput-backed golden set.
+
+That is a real simplification worth taking deliberately: `eval_config_eval` narrows
+from "two capabilities behind one flag" to just the calibration capability.
+
+**Resolution:**
+
+1. **Golden sets stay TaskRun-only.** Agree with the splits branch; keep the golden
+   filter routed around `resolve_split`. §2.2's framing is withdrawn.
+2. **Amend §2.2's claim** to what is actually true: the split removes the
+   `"EvalInput source has no stored output"` skip (`eval_runner.py:444-462`) by making
+   the output exist — not by making EvalInput golden sets work.
+3. **Follow-up, post-ship, not this project:** the honest V2 question is *where do human
+   ratings live in an EvalInput world?* The natural answer is a rating on the `EvalRun`
+   — which only becomes possible because this project makes EvalRun a first-class
+   record. Worth recording as an unlock, not scheduling.
+
 ## 5. Decision status
 
 ### Settled
@@ -594,6 +647,7 @@ indicator (C11) is already in scope.
 | D8 | Traces per `(ItemKey, run_config)` | **Many possible, first wins.** Sync means uniqueness can never be guaranteed; the system is already robust to duplicates and selects the first found. Never intentionally create more than one. Leaves the door open to N-sampling later (C4) |
 | D9 | Generation provenance key | **`(ItemSource, item_id, task_run_config_id)`** — no hash; the datamodel already asserts this invariant. Complete as proposed: `multi_turn_drive_config` is absent from every branch here and moves onto `EvalInput` before ship (4b) |
 | D10 | Pre-existing drift holes | **Accepted, no action** — unfrozen dynamic prompts, tools-by-id, `task.instruction` (4b) |
+| D11 | Golden sets | **Stay TaskRun-only.** Human ratings live only on `TaskRun.output.rating`; EvalInput has no output or rating. §2.2 withdrawn. "Score without re-running" stops being a mode and becomes the normal trace-lookup path (4c) |
 | D2 | Cross-eval reuse mechanism | Pointer-EvalInput option **dropped** — it re-implements tag membership (C2b) |
 | D3 | Metrics concept | **Deferred**, as a read-side concept. Commit now only to scoping it by a split ref so adding it later stays cheap (C2b, R2) |
 | D4 | Internal V2 data | **Migration script**, sequenced as the final phase. A lazy load-time fold is not available for file relocation (C2c) |
@@ -604,14 +658,10 @@ indicator (C11) is already in scope.
 
 **Blocking the functional spec:**
 
-1. **Golden-set conflict (new).** §2.2 treats unblocking EvalInput-sourced
-   `eval_config_eval` as a win of the split. `eval_splits.py` deliberately holds the
-   opposite: golden is TaskRun-only *by definition*, routed around `resolve_split` on
-   purpose. Both are coherent; one has to give (C2c).
-2. **V1 back-compat approach** — deprecate `scores` in place, new entity names for
+1. **V1 back-compat approach** — deprecate `scores` in place, new entity names for
    V2's trace record, or an on-read adapter (C8). The splits branch's two-homed /
    `extra="allow"` / lazy-fold precedents lean toward preserve-don't-break.
-3. **Is the re-score product surface in scope** for this project, or a follow-up?
+2. **Is the re-score product surface in scope** for this project, or a follow-up?
    Storage-only ships zero user-visible benefit (C11).
 
 **Design detail, low risk, needs ratification:**
