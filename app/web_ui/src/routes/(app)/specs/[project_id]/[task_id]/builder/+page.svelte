@@ -483,6 +483,11 @@
 
   onMount(async () => {
     await router_ready_promise
+        replaceState("", { builder_step: "generate" })
+        goto_step("review")
+      }
+    }
+    await router_ready_promise
     // Seed the first history entry with the starting step so Back from Step 2
     // returns to Step 1 rather than leaving the builder.
     replaceState("", { builder_step: current_step })
@@ -526,6 +531,31 @@
   let classify_error: string | null = null
   $: field_configs = spec_field_configs[spec_type]
 
+  // Resolve a candidate eval name against the task's existing specs — the
+  // save guard's derived-tag comparison (case/spacing-insensitive), run
+  // where a collision costs nothing. On a collision the server returns the
+  // nearest available suffixed variant. Returns null when the check itself
+  // fails (offline etc.) — the save-time 409 remains the backstop then.
+  async function resolve_available_name(
+    candidate: string,
+  ): Promise<{ name: string; was_taken: boolean } | null> {
+    try {
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/available_spec_name",
+        {
+          params: {
+            path: { project_id, task_id },
+            query: { name: candidate },
+          },
+        },
+      )
+      if (error || !data) return null
+      return data
+    } catch {
+      return null
+    }
+  }
+
   // Call classify_spec_description to map the free-text Step 1 description
   // to a spec_type + suggested name + structured property_values. On error
   // we keep the "issue" defaults so the user can still proceed and fill in
@@ -562,7 +592,12 @@
         return
       }
       spec_type = data.spec_type as SpecType
-      name = data.suggested_name
+      // The suggester is deterministic over similar descriptions, so a
+      // second eval on this task would regenerate a taken name — prefill
+      // the nearest available variant instead (best-effort).
+      name =
+        (await resolve_available_name(data.suggested_name))?.name ??
+        data.suggested_name
       // The classifier returns the property_values dict already keyed for
       // this spec_type. Cast to the looser Record shape consumed by
       // Questions / RefineSpec.
@@ -688,7 +723,11 @@
         refine_response.suggested_name &&
         filename_string_short_validator(refine_response.suggested_name) === null
       ) {
-        name = refine_response.suggested_name
+        // Same deterministic-suggester hazard as the classify prefill: take
+        // the nearest available variant of the suggestion (best-effort).
+        name =
+          (await resolve_available_name(refine_response.suggested_name))
+            ?.name ?? refine_response.suggested_name
       }
 
       // Start from current values, then apply each proposed edit. Mirrors v1's
@@ -721,13 +760,39 @@
   // and create_spec (no edits) — advance to Step 4 generation. v2 doesn't
   // re-analyze, it just uses whatever refined_property_values the user
   // finalized.
-  function on_refine_submit() {
-    // FormContainer flips submitting=true on every submit and leaves it to
-    // the caller to reset. We dispatch the form forward immediately (no
-    // network call here), so clear the flag before advancing — otherwise
-    // RefineSpec's button stays disabled if the user navigates back.
-    refine_submitting = false
-    on_advance_to_generate()
+  // Reentry guard for the async submit below: a second activation during
+  // the availability round trip (double-click, Cmd-Enter key-repeat) must
+  // not advance twice — that would double-push history and start two
+  // concurrent plan calls.
+  let refine_submit_in_flight = false
+
+  async function on_refine_submit() {
+    if (refine_submit_in_flight) return
+    refine_submit_in_flight = true
+    try {
+      // Early collision check on the final (possibly user-typed) name — the
+      // same derived-tag rule the save guard enforces, surfaced here where
+      // a rename costs nothing instead of after generation and review.
+      // Best-effort: if the check itself can't run, advance — the save-time
+      // 409 remains the backstop.
+      refine_form_error = null
+      const resolved = await resolve_available_name(name)
+      if (resolved?.was_taken) {
+        refine_form_error = new KilnError(
+          `An eval named '${name}' already exists for this task ` +
+            `('${resolved.name}' is available).`,
+          null,
+        )
+        return
+      }
+      on_advance_to_generate()
+    } finally {
+      // FormContainer flips submitting=true on every submit and leaves the
+      // reset to the caller — cleared here (after the gate) so RefineSpec's
+      // button isn't disabled if the user navigates back.
+      refine_submitting = false
+      refine_submit_in_flight = false
+    }
   }
 
   // ── Step 4 state — generation
@@ -3572,6 +3637,18 @@
                 />
               {/if}
 
+              {#if refine_form_error}
+                <!-- The Step 3 gate errors (e.g. a taken eval name). The
+                     single-turn arm surfaces these through RefineSpec's
+                     bound error; this bespoke branch needs its own region
+                     or the Next button silently does nothing. -->
+                <div class="mt-4">
+                  <Warning
+                    warning_color="error"
+                    warning_message={refine_form_error.getMessage()}
+                  />
+                </div>
+              {/if}
               <div class="flex justify-end mt-8">
                 <button
                   class="btn btn-primary"

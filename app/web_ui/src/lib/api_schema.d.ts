@@ -217,6 +217,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/available_spec_name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve an Available Spec Name
+         * @description Check a candidate spec name against the task's existing specs and
+         *     return an available one — the candidate itself, or the nearest
+         *     suffixed variant on a collision.
+         *
+         *     The check uses the derived-tag comparison the spec-save guard
+         *     enforces (case/spacing-insensitive), so a name this endpoint returns
+         *     will not 409 at save. Callers prefill suggested names through this
+         *     (the suggester is deterministic over similar inputs, so second evals
+         *     on a task collide otherwise) and validate typed names early, where a
+         *     collision costs nothing instead of surfacing after generation and
+         *     review.
+         */
+        get: operations["available_spec_name_api_projects__project_id__tasks__task_id__available_spec_name_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/specs": {
         parameters: {
             query?: never;
@@ -4513,6 +4543,22 @@ export interface components {
              * @enum {string}
              */
             provider_type: "builtin" | "custom";
+        };
+        /**
+         * AvailableSpecNameResponse
+         * @description An available spec name resolved from a candidate.
+         */
+        AvailableSpecNameResponse: {
+            /**
+             * Name
+             * @description The candidate itself when free, else the nearest available suffixed variant.
+             */
+            name: string;
+            /**
+             * Was Taken
+             * @description Whether the candidate collided with an existing spec (and `name` is therefore a suffixed variant).
+             */
+            was_taken: boolean;
         };
         /**
          * BackgroundJobStatus
@@ -13878,6 +13924,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BuildPromptResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    available_spec_name_api_projects__project_id__tasks__task_id__available_spec_name_get: {
+        parameters: {
+            query: {
+                /** @description The candidate spec name to check. */
+                name: string;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailableSpecNameResponse"];
                 };
             };
             /** @description Validation Error */

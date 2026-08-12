@@ -1,6 +1,6 @@
 {
   "method": "post",
-  "path": "/api/projects/{project_id}/tasks/{task_id}/eval_builder/review_pipeline",
+  "path": "/api/projects/{project_id}/tasks/{task_id}/eval_builder/multi_turn_pipeline",
   "agent_policy": {
     "permission": "allow",
     "requires_approval": true,

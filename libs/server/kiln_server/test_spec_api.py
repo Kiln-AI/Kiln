@@ -3,7 +3,7 @@ import logging
 from unittest.mock import patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import Priority
@@ -23,7 +23,7 @@ from kiln_ai.datamodel.spec_properties import (
 )
 
 from kiln_server.custom_errors import connect_custom_errors
-from kiln_server.spec_api import connect_spec_api
+from kiln_server.spec_api import connect_spec_api, resolve_available_spec_name
 
 
 @pytest.fixture
@@ -1529,3 +1529,100 @@ def test_update_spec_name_rollback_eval_fails_logs_error(
                         )
 
     assert "Failed to roll back eval name after spec save failure" in caplog.text
+
+
+class TestResolveAvailableSpecName:
+    """The early-check resolver behind /available_spec_name — the same
+    derived-tag comparison the spec-save guard enforces."""
+
+    def test_free_name_returned_verbatim(self):
+        result = resolve_available_spec_name("policy_adherence", ["other_spec"])
+        assert result.name == "policy_adherence"
+        assert result.was_taken is False
+
+    def test_collision_gets_the_first_free_suffix(self):
+        result = resolve_available_spec_name("policy_adherence", ["policy_adherence"])
+        assert result.name == "policy_adherence_2"
+        assert result.was_taken is True
+
+    def test_suffix_walks_past_taken_variants(self):
+        result = resolve_available_spec_name(
+            "policy_adherence",
+            ["policy_adherence", "policy_adherence_2", "policy_adherence_3"],
+        )
+        assert result.name == "policy_adherence_4"
+        assert result.was_taken is True
+
+    def test_collision_is_tag_derived_not_string_equality(self):
+        # "Policy Adherence" and "policy_adherence" share a tag namespace —
+        # the exact comparison that would 409 at save.
+        result = resolve_available_spec_name("Policy Adherence", ["policy_adherence"])
+        assert result.was_taken is True
+        result = resolve_available_spec_name("policy_adherence", ["Policy Adherence"])
+        assert result.was_taken is True
+
+    def test_suffix_trims_to_the_short_name_limit(self):
+        # 32-char candidate whose trim cut lands EXACTLY on a "_": the base
+        # is trimmed so base + "_2" still fits, and the trailing-underscore
+        # strip is what keeps the join from fabricating a forbidden "__".
+        long_name = "a" * 29 + "_bb"  # 32 chars; [:30] ends with "_"
+        result = resolve_available_spec_name(long_name, [long_name])
+        assert result.was_taken is True
+        assert result.name == "a" * 29 + "_2"
+        assert len(result.name) <= 32
+        assert "__" not in result.name
+
+    def test_exhausted_search_refuses(self):
+        taken = ["name"] + [f"name_{i}" for i in range(2, 100)]
+        with pytest.raises(HTTPException) as exc:
+            resolve_available_spec_name("name", taken)
+        assert exc.value.status_code == 409
+
+
+def test_available_spec_name_route(client, project_and_task):
+    project, task = project_and_task
+    url = f"/api/projects/{project.id}/tasks/{task.id}/available_spec_name"
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+
+        # No specs yet: the candidate comes back untouched.
+        response = client.get(url, params={"name": "policy_adherence"})
+        assert response.status_code == 200
+        assert response.json() == {"name": "policy_adherence", "was_taken": False}
+
+        # Save a spec under that namespace, then the same candidate suffixes.
+        spec = Spec(
+            parent=task,
+            name="Policy Adherence",  # differs by case/spacing — still collides
+            definition="def",
+            properties={
+                "spec_type": "desired_behaviour",
+                "core_requirement": "x",
+                "desired_behaviour_description": "y",
+            },
+            priority=Priority.p1,
+            status=SpecStatus.active,
+            eval_id="12345",
+        )
+        spec.save_to_file()
+        response = client.get(url, params={"name": "policy_adherence"})
+        assert response.status_code == 200
+        assert response.json() == {"name": "policy_adherence_2", "was_taken": True}
+
+
+def test_available_spec_name_route_rejects_invalid_candidate(client, project_and_task):
+    project, task = project_and_task
+    url = f"/api/projects/{project.id}/tasks/{task.id}/available_spec_name"
+    # Over the short-name limit — the query param carries the same validator
+    # the save request enforces. Validation fires before task resolution.
+    response = client.get(url, params={"name": "x" * 33})
+    assert response.status_code == 422
+
+
+def test_available_spec_name_route_task_not_found(client):
+    response = client.get(
+        "/api/projects/p/tasks/t/available_spec_name",
+        params={"name": "policy_adherence"},
+    )
+    assert response.status_code == 404
