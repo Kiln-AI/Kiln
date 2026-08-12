@@ -851,7 +851,9 @@ record needs:
 | `eval_config_eval` | Mode flag — and already redundant, see below |
 | `input`, `output`, `task_run_trace`, `task_run_usage`, `reference_answer` | Trace-side. Redundant once the trace is a TaskRun |
 
-So the change is **remove trace fields, add `scored_run_id`** — not build a new entity.
+So the change is **deprecate the trace fields, add `scored_run_id`** — not build a new
+entity, and not delete anything. The trace fields stay declared and loadable forever;
+new records simply never set them.
 
 ### Consequences
 
@@ -866,12 +868,15 @@ So the change is **remove trace fields, add `scored_run_id`** — not build a ne
   A validator enforces exactly one. Old records stay valid forever, nothing is rewritten,
   and no field is deleted. This is C8-1 "deprecate in place" — except it is no longer a
   concession, because there is no competing V2 entity wanting the name.
-- **§2.4's validator problem evaporates.** That section worried `validate_scores`
-  (non-empty scores required) blocks persisting a trace before scoring. Under the
-  collapse the unscored state is *"a TaskRun exists and no EvalRun does"* — so the
-  validator can stay exactly as written.
+- **§2.4's `validate_scores` concern was an artifact of the old design, and there is
+  nothing to fix.** It only mattered when the *trace* was an EvalRun that had to be
+  saved score-less. Under the collapse the trace is a TaskRun, which has no score fields
+  at all, and "generated but not yet scored" is simply *a flagged TaskRun with no EvalRun
+  pointing at it*. The next run's trace lookup finds it by `(ItemKey, run_config_id)`,
+  sees no EvalRun for `(that TaskRun, eval_config)`, and scores it. `validate_scores`
+  keeps requiring non-empty scores, unchanged.
 
-### `eval_config_eval` is already fully derivable — recommend dropping it
+### `eval_config_eval` — redundant, but out of scope
 
 `validate_eval_run_types` (`eval.py:760-770`) enforces a strict biconditional:
 
@@ -879,8 +884,12 @@ So the change is **remove trace fields, add `scored_run_id`** — not build a ne
 eval_config_eval == True   <=>   task_run_config_id is None
 ```
 
-Both directions raise. So the boolean carries zero information beyond
-`task_run_config_id is None`. Recommend deriving it and removing the stored field.
+Both directions raise, so the boolean carries zero information beyond
+`task_run_config_id is None`.
+
+**Not changing it.** Verified present on `origin/main` — it is shipped V1, not something
+this branch introduced, so removing it is unrelated back-compat churn. Recorded as a
+standing observation only.
 
 **What the name means** (it is genuinely bad, so worth stating plainly):
 
@@ -893,16 +902,24 @@ It reads badly because "eval" appears twice meaning different things, and becaus
 `False` case means something entirely absent from the name. Recommend **scoring** vs
 **calibration** wherever a name is still needed in code or UI.
 
-### Two small items this raises
+### The two-mode validator (scosman)
 
-- **`input` is currently required** (`input: str`). In pointer mode the input lives on
-  the TaskRun. Either make it optional, or keep it as a display denormalization for the
-  results list. Recommend **optional, no content denormalization** — denormalized
-  content goes stale when the TaskRun is edited. The results list joins at the API layer
-  (C9), which already returns a joined view model.
-- **Repair changes what "the scored output" is.** `TaskRun.repaired_output` can be set
-  after scoring. The results UI must display `output`, not `repaired_output`, when
-  showing what a score was computed over. A display rule, not a schema field.
+`input` becomes optional, and the two modes are enforced explicitly rather than by
+convention. A record is in exactly one:
+
+| Mode | Discriminator | `input` | Trace fields (`output`, `task_run_trace`, `task_run_usage`, `reference_answer`) |
+|---|---|---|---|
+| **Legacy / inline** | `scored_run_id is None` | **Required** | Allowed |
+| **Pointer** | `scored_run_id is not None` | **Must be None** | **Must be None** |
+
+Both directions matter. Requiring `input` when there is no source keeps every legacy
+record self-describing; *forbidding* the trace fields when a source is set is what stops
+the two representations from drifting apart — a pointer-mode record must never carry a
+stale second copy of what it scored.
+
+Related display rule (not a schema field): `TaskRun.repaired_output` can be set after
+scoring, so the results UI must show `output`, not `repaired_output`, when displaying
+what a score was computed over.
 
 ### Delete protection (scosman)
 
@@ -923,7 +940,9 @@ it removes the footgun regardless of whether any EvalRun currently points at it.
 | D9 | Generation provenance key | **`(ItemSource, item_id, task_run_config_id)`** — no hash; the datamodel already asserts this invariant. Complete as proposed: `multi_turn_drive_config` is absent from every branch here and moves onto `EvalInput` before ship (4b) |
 | D10 | Pre-existing drift holes | **Accepted, no action** — unfrozen dynamic prompts, tools-by-id, `task.instruction` (4b) |
 | D12 | Eval traces are TaskRuns | **Collapse EvalRun into TaskRun.** TaskRun already carries trace + run config; adds rating, fork-ability, feedback/repair. `task.runs()` becomes **default-exclude** for eval traces, in API and UI. Gated on the combined-scale benchmark (4d, 4e) |
-| D15 | No new score class | **Reuse the existing `EvalRun` class as the score record.** Remove trace fields, add `scored_run_id`. Legacy records keep inline trace as a second valid mode — nothing rewritten, nothing deleted. C10 and the C8 back-compat problem both dissolve (4f) |
+| D15 | No new score class | **Reuse the existing `EvalRun` class as the score record.** *Deprecate* the trace fields (keep declared and loadable), add `scored_run_id`. Legacy inline records stay a valid mode forever. C10 and the C8 back-compat problem both dissolve (4f) |
+| D17 | Two-mode validator | `input` becomes optional. `scored_run_id is None` → `input` required, trace fields allowed. `scored_run_id` set → `input` and all trace fields **must be None**, so the two representations can't drift (4f) |
+| D18 | `eval_config_eval` | **Leave as-is.** Provably redundant, but shipped on `origin/main` — removing it is unrelated back-compat churn (4f) |
 | D16 | Eval traces are delete-protected | Refuse deletion of eval-flagged TaskRuns: *"This is needed for an eval."* No reverse reference scan needed (4f) |
 | D13 | EvalScore links | `scored_run_id` → TaskRun, single-typed. `source_item_key` → `ItemKey`, denormalized for join-free aggregation (4e) |
 | D14 | Failed generations | **Leave absent.** `TaskRun.output` is required, so a failed generation has no representation — matching today's "absence = not-yet-run" (4d) |
