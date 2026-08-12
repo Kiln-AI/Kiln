@@ -2495,45 +2495,57 @@
     <!-- Section 2a: the shipping decision. Quality held to a floor, then the
          two costs that are left - money and time - against each other.
 
-         Full width and on its own row, under the pair above rather than beside
-         them: it is not a third view of the same comparison, it is the question
-         the other two are read in service of, and a scatter needs both of its
-         axes long enough to separate points that a squeezed one piles up. It
-         sits ABOVE the confidence view because that one is a footnote to the
-         radar directly over it, and splitting the pair would break that read.
+         On its own row under the pair above rather than beside them: it is not
+         a third view of the same comparison, it is the question the other two
+         are read in service of. It sits ABOVE the confidence view because that
+         one is a footnote to the radar directly over it, and splitting the pair
+         would break that read.
+
+         HALF WIDTH, in the same two-column grid the radar and bars use, and
+         left-aligned in it. A scatter of a dozen dots at most is not a chart
+         that grows with the page: stretched across the full width it reads as
+         one long empty band with a handful of marks in it, and the eye has to
+         travel the whole page to compare two points that are a thumb apart. The
+         right column is deliberately empty - the grid is the page's unit of
+         layout, so a card that wants half the width takes a column rather than
+         a max-width of its own, and whatever lands beside it later inherits a
+         row that already lines up. Below xl the grid collapses to one column
+         and this is page-width again, exactly like the pair above.
 
          Mounted whenever anything is pinned, not only when it can draw: the
          card's footnote names the configs it had to leave off and why, and that
          is most worth saying exactly when there is no chart. -->
     {#if pinned_nodes.length > 0}
-      <div class="mt-6">
-        <ComparePriceLatencyChart
-          run_configs={run_configs ?? []}
-          model_info={$model_info}
-          selectedRunConfigIds={visible_pinned_ids}
-          seriesColors={series_colors}
-          seriesLabels={series_labels}
-          getMetricValue={get_metric_value}
-          getQuality={get_quality}
-          getSampleSize={get_sample_size}
-          qualityFloor={quality_floor}
-          scopeLabel={stated_scope_label}
-        >
-          <FloatingMenu
-            slot="controls"
-            items={quality_floor_menu_items}
-            width="w-72"
+      <div class="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div class="min-w-0 flex flex-col">
+          <ComparePriceLatencyChart
+            run_configs={run_configs ?? []}
+            model_info={$model_info}
+            selectedRunConfigIds={visible_pinned_ids}
+            seriesColors={series_colors}
+            seriesLabels={series_labels}
+            getMetricValue={get_metric_value}
+            getQuality={get_quality}
+            getSampleSize={get_sample_size}
+            qualityFloor={quality_floor}
+            scopeLabel={stated_scope_label}
           >
-            <button
-              slot="trigger"
-              type="button"
-              class="btn btn-sm font-normal"
-              title="Only configs at or above this aggregate quality are compared on price"
+            <FloatingMenu
+              slot="controls"
+              items={quality_floor_menu_items}
+              width="w-72"
             >
-              Quality gate: {quality_floor_label}
-            </button>
-          </FloatingMenu>
-        </ComparePriceLatencyChart>
+              <button
+                slot="trigger"
+                type="button"
+                class="btn btn-sm font-normal"
+                title="Only configs at or above this aggregate quality are compared on price"
+              >
+                Quality gate: {quality_floor_label}
+              </button>
+            </FloatingMenu>
+          </ComparePriceLatencyChart>
+        </div>
       </div>
     {/if}
 
