@@ -303,18 +303,46 @@ Every current caller, and whether the new default is correct. **All of them are.
 
 Only `TraceIndex._seed()` passes `include_eval_generated=True`.
 
-### 4.1 Packaging — needs an explicit decision
+### 4.1 Packaging — two independent flags, and a new cross-flag hazard
 
-`export_task_runs` (`package_project.py:978`) is a `shutil.copytree` of `runs/`, so it
-copies eval traces by construction — a field-level filter is invisible to it. The
-existing `exclude_eval_config_runs` flag has an `ignore_fn` hook
-(`_ignore_eval_config_runs`) that filters by path, which cannot see `eval_source`.
+`kiln package-project` exports a project as a zip. `PackageForTrainingConfig` has two
+relevant flags, on **two independent paths**:
 
-**Decision:** when `exclude_eval_config_runs=True`, also skip eval-generated TaskRuns,
-by parsing each `task_run.kiln` in the `ignore_fn`. This is slow per file, but it is an
-explicit opt-in flag on an export operation, not a hot path, and the flag exists
-precisely to keep eval data out of packages. With the flag off, behavior is unchanged
-(everything is copied), which is the conservative default.
+| Flag | Gates | Copies |
+|---|---|---|
+| `exclude_task_runs` | `export_task_runs` | the task's `runs/` directory |
+| `exclude_eval_config_runs` | `export_evals` → `_ignore_eval_config_runs` | `evals/*/configs/*/runs/` (score records) |
+
+`exclude_eval_config_runs` is **unaffected by this project** — EvalRuns stay exactly where
+they are, and that path-based ignore callback keeps working unchanged.
+
+**The new hazard is the other flag.** Today an EvalRun is self-contained: it carries its
+trace inline, so `exclude_task_runs=True` exports evals that still render fully. Under
+pointer mode the trace lives in `runs/`, so `exclude_task_runs=True` produces exported
+evals whose every `scored_run_id` dangles. It degrades gracefully (§5.3 — scores render,
+trace fields null) but the exported evals silently lose data that used to survive.
+
+**Decision: route eval traces by meaning, not by directory.** Each flag keeps governing
+the kind of data its name describes:
+
+- `exclude_task_runs` → skip **non**-eval-generated runs (the dataset)
+- `exclude_eval_config_runs` → skip score records **and** eval-generated traces (eval data)
+
+Eval traces are eval data that happens to live in `runs/`; the flags should follow that,
+not the filesystem layout.
+
+Implementation — `export_task_runs` gains an `ignore_fn`, with fast paths so the common
+cases pay nothing:
+
+| `exclude_task_runs` | `exclude_eval_config_runs` | Behavior |
+|---|---|---|
+| False | False | `copytree` everything — no parsing (unchanged, and the default) |
+| True | True | skip `runs/` entirely — no parsing |
+| False | True | parse each `task_run.kiln`, skip those with `eval_source` set |
+| True | False | parse each `task_run.kiln`, keep only those with `eval_source` set |
+
+Only the two mixed cases parse per file, and only during an explicit export. Both call
+sites in `package_project.py` (`:1080`, `:1086`) pass both flags.
 
 ## 5. API changes — `app/desktop/studio_server/eval_api.py`
 
