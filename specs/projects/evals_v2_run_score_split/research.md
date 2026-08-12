@@ -739,6 +739,98 @@ multi-turn chaining, and repair/feedback on eval traces for free. Gate on two th
 1. Agreement that `task.runs()` becomes default-exclude (the safety property).
 2. The directory-scan benchmark at combined dataset + eval-trace scale.
 
+## 4e. What the TaskRun collapse does to EvalScore
+
+### It removes a polymorphic link (scosman)
+
+Confirmed, and it is the biggest structural win after removing the entity itself.
+
+Under the separate-EvalRun plan, `EvalScore` needed a **polymorphic trace link**: a V2
+score points at an `EvalRun`, a V1/calibration score points at a `TaskRun`. Either a
+discriminated `(kind, id)` link, or a degenerate wrapper EvalRun whose only job is to
+point at a TaskRun (the workaround §C1 proposed). Both are overhead.
+
+With the collapse there is exactly one kind of scored thing:
+
+```
+scored_run_id: ID_TYPE   -> TaskRun.  Always. No discriminator.
+```
+
+**Calibration mode gets better, not just simpler.** In `eval_config_eval` the scored
+TaskRun *is* the golden dataset item — no generation, no wrapper record, the score
+points straight at the human-rated run. §C1's degenerate-EvalRun workaround is deleted
+rather than implemented.
+
+### The second link is still needed, and is still polymorphic — but it is a denormalization
+
+The *dataset item* remains `ItemKey = (ItemSource, id)` — `eval_input` for V2 splits,
+`task_run` for V1 splits. That stays on EvalScore, per C3, so aggregation needs no join:
+`compute_score_summary` buckets by `task_run_config_id` and checks membership against
+the ResolvedSplit's item keys, both read straight off the score record.
+
+Note this is a *denormalized copy* of something the scored TaskRun also carries, not a
+second parent. Reusing the splits branch's existing `ItemKey` type, not inventing a link.
+
+**Naming trap to avoid.** An EvalScore now holds two references that can both be TaskRun
+ids:
+
+| Field | Meaning |
+|---|---|
+| `scored_run_id` | the trace that was scored — always a TaskRun |
+| `source_item_key` | the dataset item — `("eval_input", id)` or `("task_run", id)` |
+
+For a V1-sourced production eval these are *different* TaskRuns. For calibration they are
+the *same* TaskRun. Name them distinctly in the spec so that is obvious at every call
+site.
+
+**Possible further simplification, not pushed:** `eval_config_eval` may become derivable
+rather than stored — `task_run_config_id is None` already means "no run config under
+evaluation", which is exactly calibration. Worth checking during spec work.
+
+### Correction to §4d
+
+§4d claimed the collapse dissolves "the naming problem (C10)". That was the wrong
+reference. **C10 (`EvalScore` vs the existing `EvalScores = Dict[str, float]` alias) is
+untouched and still open.** What the collapse dissolves is the *`EvalRun` name
+contention*, which belongs to C8:
+
+- Under the separate-entity plan, V2's trace record wanted the name `EvalRun`, but that
+  class already exists meaning something else (V1: trace **and** scores, child of
+  `EvalConfig`). That forced a choice between renaming the legacy class across the
+  codebase, inventing a second name for the V2 trace, or the deprecate-fields-in-place
+  option (C8-1) where one class serves two shapes.
+- Under the collapse, V2 has no trace entity at all. `EvalRun` therefore only ever means
+  the V1 legacy record — one name, one meaning. The class stays byte-identical and
+  read-only for old projects. No rename, no deprecated-field gymnastics.
+
+### New risk the collapse introduces: eval traces become user-deletable
+
+Under a separate `eval_runs/` tree, eval traces sat outside the dataset UI's reach.
+As TaskRuns they are browsable, bulk-taggable, and **deletable** through the normal
+dataset surfaces. A user cleaning up their dataset can now destroy the traces that
+back their eval scores.
+
+Mitigations, in order of importance:
+
+1. Default-exclude (D12) already keeps them out of the lists users act on.
+2. Orphaned EvalScores must degrade gracefully — the score value still displays; only
+   the trace drill-through is dead. Do not cascade-delete scores, and do not error on a
+   dangling `scored_run_id`.
+3. Consider whether bulk destructive operations should refuse eval-flagged runs even
+   when explicitly included.
+
+### Accepted (scosman)
+
+- **`parent_task_run_id`:** not used. Multi-turn is generated in a tight loop and saved
+  once at the end — no message-by-message persistence, and nothing saved if it fails
+  partway. The whole conversation lives in one TaskRun's `trace`. Forking remains
+  available. Consistent with the required-`output` constraint in §4d.
+- **One folder:** desirable, not a cost. These *are* TaskRuns.
+- **`task.runs()` default-exclude:** agreed, and it applies to the UI as well.
+- **Why `run_task` never persisted:** dataset pollution, because runs were being saved
+  elsewhere anyway. That is precisely what the flag + default-exclude solves, so this is
+  a reversal of a workaround, not of a considered design decision.
+
 ## 5. Decision status
 
 ### Settled
@@ -750,6 +842,9 @@ multi-turn chaining, and repair/feedback on eval traces for free. Gate on two th
 | D8 | Traces per `(ItemKey, run_config)` | **Many possible, first wins.** Sync means uniqueness can never be guaranteed; the system is already robust to duplicates and selects the first found. Never intentionally create more than one. Leaves the door open to N-sampling later (C4) |
 | D9 | Generation provenance key | **`(ItemSource, item_id, task_run_config_id)`** — no hash; the datamodel already asserts this invariant. Complete as proposed: `multi_turn_drive_config` is absent from every branch here and moves onto `EvalInput` before ship (4b) |
 | D10 | Pre-existing drift holes | **Accepted, no action** — unfrozen dynamic prompts, tools-by-id, `task.instruction` (4b) |
+| D12 | Eval traces are TaskRuns | **Collapse EvalRun into TaskRun.** TaskRun already carries trace + run config; adds rating, fork-ability, feedback/repair. `task.runs()` becomes **default-exclude** for eval traces, in API and UI. Gated on the combined-scale benchmark (4d, 4e) |
+| D13 | EvalScore links | `scored_run_id` → TaskRun, single-typed. `source_item_key` → `ItemKey`, denormalized for join-free aggregation (4e) |
+| D14 | Failed generations | **Leave absent.** `TaskRun.output` is required, so a failed generation has no representation — matching today's "absence = not-yet-run" (4d) |
 | D11 | Golden sets | **Stay TaskRun-only.** Human ratings live only on `TaskRun.output.rating`; EvalInput has no output or rating. §2.2 withdrawn. "Score without re-running" stops being a mode and becomes the normal trace-lookup path (4c) |
 | D2 | Cross-eval reuse mechanism | Pointer-EvalInput option **dropped** — it re-implements tag membership (C2b) |
 | D3 | Metrics concept | **Deferred**, as a read-side concept. Commit now only to scoping it by a split ref so adding it later stays cheap (C2b, R2) |
@@ -772,8 +867,6 @@ multi-turn chaining, and repair/feedback on eval traces for free. Gate on two th
 4. **Field placement** — `reference_data` → score side (C5); `intermediate_outputs` →
    score side, coordinate with D31 in `evals_v2_cleanup` (C7); judge `usage` → new on
    EvalScore (C7); `SkippedReason` partition across the two entities (C6).
-5. **Failed generations** — persist a terminal "generation failed" EvalRun, or leave
-   absent so it retries? (2.4)
-6. **Retry granularity** — confirm `RetryableError` retries only the failed phase
+5. **Retry granularity** — confirm `RetryableError` retries only the failed phase
    rather than the whole job (2.4).
 7. **Naming** — `EvalScore` collides with the existing `EvalScores` alias (C10).
