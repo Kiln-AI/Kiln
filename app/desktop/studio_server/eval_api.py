@@ -660,6 +660,76 @@ class RunConfigEvalScoresSummary(BaseModel):
     )
 
 
+class EvalRunIndexRow(BaseModel):
+    """One eval run, stripped to what a comparison basis needs.
+
+    The full EvalRun carries its input, its output and the whole task run
+    trace, which is why /results is fetched one cell at a time by the
+    inspector. This is the same run with all of that dropped: the item it
+    scored, the scores, and the usage the run cost. Small enough to fetch every
+    row of every eval for a dozen run configs at once, which is what matching
+    run configs on the conversations they actually share requires.
+    """
+
+    item_id: ID_TYPE = Field(
+        description="The item this run scored: an EvalInput id on a V2 eval, a "
+        "TaskRun (dataset) id on a V1 one. Unique within an eval's rows."
+    )
+    scores: Dict[str, float] = Field(
+        default_factory=dict,
+        description="The run's scores, keyed by output_score_key, exactly as "
+        "stored. A key an eval declares can be absent here, the same way it is "
+        "absent from the per-key counts in the summary.",
+    )
+    input_tokens: float | None = Field(
+        default=None, description="Input tokens this run used. None when unrecorded."
+    )
+    output_tokens: float | None = Field(
+        default=None, description="Output tokens this run used. None when unrecorded."
+    )
+    total_tokens: float | None = Field(
+        default=None, description="Total tokens this run used. None when unrecorded."
+    )
+    cost: float | None = Field(
+        default=None, description="Cost of this run in USD. None when unrecorded."
+    )
+    total_llm_latency_ms: float | None = Field(
+        default=None,
+        description="End-to-end LLM latency of this run in ms. None when unrecorded.",
+    )
+
+
+class EvalRunIndexEval(BaseModel):
+    """One eval's rows for the requested run config."""
+
+    eval_id: ID_TYPE = Field(description="The unique identifier of the eval.")
+    eval_config_id: ID_TYPE = Field(
+        description="The judge config these rows came from: the eval's current "
+        "default, the same one every other compare surface reads."
+    )
+    rows: List[EvalRunIndexRow] = Field(
+        description="The run config's non-skipped runs under this eval, one per "
+        "item. Empty when it has never been run against this split."
+    )
+
+
+class EvalRunIndexResponse(BaseModel):
+    """Per-run rows for one run config, across every eval on the task."""
+
+    evals: List[EvalRunIndexEval] = Field(
+        description="One entry per eval that has a default judge config and "
+        "resolves the requested split. An eval missing either is omitted "
+        "rather than reported: this payload feeds a comparison basis, and an "
+        "eval that cannot supply rows cannot contribute to one. The summary "
+        "endpoints are where an eval's absence is explained."
+    )
+    split: str | None = Field(
+        default=None,
+        description="The split these rows were scoped to, echoed back. None "
+        "means the request did not ask for one and got each eval's own set.",
+    )
+
+
 def dataset_ids_in_filter(
     task: Task, filter_id: DatasetFilterId, readonly: bool
 ) -> Set[ID_TYPE]:
@@ -2452,6 +2522,132 @@ def connect_evals_api(app: FastAPI):
             split=split,
             n_eval_runs=total_eval_runs,
         )
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/eval_run_index",
+        summary="Get Run Config Eval Run Index",
+        tags=["Run Configs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_run_config_eval_run_index(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_config_id: Annotated[
+            str, Path(description="The unique identifier of the run configuration.")
+        ],
+        split: Annotated[
+            EvalSplitQuery | None,
+            Query(
+                description="Scope the rows to one dataset split: 'train', "
+                "'val', 'test', or 'all' (every run that exists). Omit for each "
+                "eval's own set, which is what 'test' means. An eval with no "
+                "such split contributes no entry."
+            ),
+        ] = None,
+    ) -> EvalRunIndexResponse:
+        """Every eval run this run config has, one row each, without the traces.
+
+        The aggregating siblings (eval_results_summary, eval_scores) answer
+        "what did this config score", which is all a page needs while every
+        config is measured on whatever runs happen to exist. Comparing configs
+        on the SAME conversations needs the rows themselves - which items each
+        config covered, and how big each conversation was - and there is no way
+        to intersect item sets from a mean.
+
+        Scoped exactly like eval_scores, so a number computed from these rows
+        can only differ from the aggregate one by the filtering the caller
+        applied: the eval's current default judge config only, archived-spec
+        evals skipped, the split resolved through SplitItemResolver, skipped
+        runs excluded, and at most one row per item (first wins, in
+        eval_config.runs() order - the same rule and the same iteration order
+        compute_score_summary dedupes with, so both surfaces pick the same run
+        when a job race left two).
+        """
+        task = task_from_id(project_id, task_id)
+
+        # Verify the run config exists
+        task_run_config_from_id(project_id, task_id, run_config_id)
+        resolver = SplitItemResolver(task)
+
+        specs_by_eval = specs_by_eval_id(task)
+
+        index_evals: List[EvalRunIndexEval] = []
+
+        for eval in task.evals():
+            # Skip evals associated with archived specs
+            spec = specs_by_eval.get(eval.id)
+            if spec is not None and spec.status == SpecStatus.archived:
+                continue
+
+            # Only the default eval config (only if only one eval config, or
+            # default is set explicitly if many). Resolved before the item set,
+            # which "all" reads runs out of.
+            default_eval_config = None
+            eval_configs = eval.configs(readonly=True)
+            if len(eval_configs) == 1:
+                default_eval_config = eval_configs[0]
+            elif eval.current_config_id:
+                default_eval_config = next(
+                    (
+                        config
+                        for config in eval_configs
+                        if config.id == eval.current_config_id
+                    ),
+                    None,
+                )
+            if default_eval_config is None:
+                continue
+
+            expected_item_ids = resolver.items_for_query(
+                eval, default_eval_config, split
+            )
+            if expected_item_ids is None:
+                continue
+
+            remaining_expected_item_ids = set(expected_item_ids)
+            rows: List[EvalRunIndexRow] = []
+
+            for eval_run in default_eval_config.runs(readonly=True):
+                if eval_run.task_run_config_id != run_config_id:
+                    continue
+
+                item_id = eval_run_item_id(eval_run)
+                if item_id not in remaining_expected_item_ids:
+                    continue
+                remaining_expected_item_ids.remove(item_id)
+
+                if eval_run.skipped_reason is not None:
+                    continue
+
+                usage = eval_run.task_run_usage
+                rows.append(
+                    EvalRunIndexRow(
+                        item_id=item_id,
+                        scores=dict(eval_run.scores),
+                        input_tokens=usage.input_tokens if usage else None,
+                        output_tokens=usage.output_tokens if usage else None,
+                        total_tokens=usage.total_tokens if usage else None,
+                        cost=usage.cost if usage else None,
+                        total_llm_latency_ms=usage.total_llm_latency_ms
+                        if usage
+                        else None,
+                    )
+                )
+
+            index_evals.append(
+                EvalRunIndexEval(
+                    eval_id=eval.id,
+                    eval_config_id=default_eval_config.id,
+                    rows=rows,
+                )
+            )
+
+        return EvalRunIndexResponse(evals=index_evals, split=split)
 
     @app.post(
         "/api/projects/{project_id}/add_code_trust",

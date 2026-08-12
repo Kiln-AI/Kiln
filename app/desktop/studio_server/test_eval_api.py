@@ -5133,6 +5133,368 @@ async def test_run_config_eval_scores_split_scopes_scores_and_usage(client):
     assert val_body["eval_results"][0]["eval_config_result"] is None
 
 
+# --- the per-run index ------------------------------------------------------
+#
+# The compare page matches run configs on the conversations they actually
+# share, which needs the rows rather than the means. These cover the one
+# property that matters for that: the index is scoped by exactly the rules the
+# aggregating endpoints use, so a mean recomputed client-side from these rows
+# can only differ from the server's by the filtering the caller applied.
+
+_INDEX_ITEMS_BY_FILTER = {
+    "tag::ix_test": {"ei1", "ei2", "ei3"},
+    "tag::ix_train": {"ei4"},
+    "tag::ix_v1_test": {"ds1", "ds2"},
+}
+
+
+def _index_eval_input_ids_in_filter(task, filter_id, readonly):
+    return set(_INDEX_ITEMS_BY_FILTER.get(filter_id, set()))
+
+
+def _index_dataset_ids_in_filter(task, filter_id, readonly):
+    return set(_INDEX_ITEMS_BY_FILTER.get(filter_id, set()))
+
+
+def _index_output_scores() -> list[EvalOutputScore]:
+    return [
+        EvalOutputScore(
+            name="accuracy",
+            instruction="Test accuracy",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+
+
+def _index_v2_runs() -> list[EvalRun]:
+    """The default judge config's runs, covering every exclusion rule at once."""
+    return [
+        # Full usage, and the winner of the duplicate pair below.
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 1.0},
+            input="i",
+            output="o",
+            eval_input_id="ei1",
+            task_run_usage=Usage(
+                input_tokens=10,
+                output_tokens=2,
+                total_tokens=12,
+                cost=0.5,
+                total_llm_latency_ms=100,
+            ),
+        ),
+        # Same item, later in iteration order: dropped, first wins.
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.0},
+            input="i",
+            output="o",
+            eval_input_id="ei1",
+            task_run_usage=Usage(cost=99.0),
+        ),
+        # No usage recorded at all: the fields come back None, never 0.
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.0},
+            input="i",
+            output="o",
+            eval_input_id="ei2",
+        ),
+        # Skipped: excluded from the rows entirely.
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 99.0},
+            input="i",
+            output="o",
+            eval_input_id="ei3",
+            skipped_reason="extraction_failed",
+        ),
+        # Train item: only in the rows when the train (or all) split is asked for.
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.25},
+            input="i",
+            output="o",
+            eval_input_id="ei4",
+            task_run_usage=Usage(cost=3.0),
+        ),
+        # An item in no split at all - only "all" reaches it.
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.75},
+            input="i",
+            output="o",
+            eval_input_id="ei9",
+            task_run_usage=Usage(cost=5.0),
+        ),
+        # Another run config's run: never this run config's row.
+        EvalRun(
+            task_run_config_id="rc2",
+            scores={"accuracy": 0.5},
+            input="i",
+            output="o",
+            eval_input_id="ei2",
+        ),
+    ]
+
+
+def _index_v2_task() -> Mock:
+    """A V2 eval with a superseded judge config beside its current one."""
+    superseded = _build_mock_eval_config(
+        "ec_old",
+        "Retired Judge",
+        [
+            EvalRun(
+                task_run_config_id="rc1",
+                scores={"accuracy": 0.123},
+                input="i",
+                output="o",
+                eval_input_id="ei1",
+            )
+        ],
+    )
+    current = _build_mock_eval_config("ec1", "Judge", _index_v2_runs())
+    eval1 = _build_mock_v2_eval(
+        eval_id="eval1",
+        name="V2 Eval",
+        current_config_id="ec1",
+        eval_input_filter_id="tag::ix_test",
+        output_scores=_index_output_scores(),
+        configs=[superseded, current],
+        train_filter_id="tag::ix_train",
+    )
+    rc1_mock = Mock(spec=TaskRunConfig, id="rc1")
+    rc1_mock.name = "RC1"
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = [rc1_mock]
+    mock_task.finetunes.return_value = []
+    mock_task.evals.return_value = [eval1]
+    mock_task.specs.return_value = []
+    return mock_task
+
+
+def _get_index(client, mock_task, split: str | None, run_config_id: str = "rc1"):
+    rc_mock = mock_task.run_configs.return_value[0]
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.eval_api.task_run_config_from_id",
+            return_value=rc_mock,
+        ),
+        patch(
+            "app.desktop.studio_server.eval_api.eval_input_ids_in_filter",
+            side_effect=_index_eval_input_ids_in_filter,
+        ),
+        patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter",
+            side_effect=_index_dataset_ids_in_filter,
+        ),
+    ):
+        mock_task_from_id.return_value = mock_task
+        params = {} if split is None else {"split": split}
+        response = client.get(
+            f"/api/projects/p1/tasks/t1/run_configs/{run_config_id}/eval_run_index",
+            params=params,
+        )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _rows_by_item(body, eval_id: str = "eval1") -> Dict[str, dict]:
+    entry = next(e for e in body["evals"] if e["eval_id"] == eval_id)
+    return {row["item_id"]: row for row in entry["rows"]}
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_v2_keys_on_eval_input_id(client):
+    """A V2 eval's rows are keyed by the EvalInput they scored, and carry the
+    scores as stored."""
+    body = _get_index(client, _index_v2_task(), None)
+
+    assert body["split"] is None
+    assert [e["eval_id"] for e in body["evals"]] == ["eval1"]
+    assert body["evals"][0]["eval_config_id"] == "ec1"
+
+    rows = _rows_by_item(body)
+    assert set(rows) == {"ei1", "ei2"}
+    assert rows["ei1"]["scores"] == {"accuracy": 1.0}
+    assert rows["ei2"]["scores"] == {"accuracy": 0.0}
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_v1_keys_on_dataset_id(client):
+    """A V1 eval's rows key on the TaskRun (dataset) id instead, with no other
+    difference - the caller intersects item ids without knowing which kind it
+    has."""
+    runs = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 1.0},
+            input="i",
+            output="o",
+            dataset_id="ds1",
+        ),
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.0},
+            input="i",
+            output="o",
+            dataset_id="ds2",
+        ),
+    ]
+    eval1 = _build_mock_eval(
+        eval_id="v1_eval",
+        name="V1 Eval",
+        current_config_id="ec1",
+        eval_set_filter_id="tag::ix_v1_test",
+        output_scores=_index_output_scores(),
+        configs=[_build_mock_eval_config("ec1", "Judge", runs)],
+    )
+    rc1_mock = Mock(spec=TaskRunConfig, id="rc1")
+    rc1_mock.name = "RC1"
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = [rc1_mock]
+    mock_task.finetunes.return_value = []
+    mock_task.evals.return_value = [eval1]
+    mock_task.specs.return_value = []
+
+    body = _get_index(client, mock_task, None)
+    rows = _rows_by_item(body, "v1_eval")
+    assert set(rows) == {"ds1", "ds2"}
+    assert rows["ds1"]["scores"] == {"accuracy": 1.0}
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_split_scopes_the_rows(client):
+    """Each split reaches exactly its own items. "all" additionally reaches the
+    run against an item that is in no split, which a union of the splits would
+    hide."""
+    test_rows = _rows_by_item(_get_index(client, _index_v2_task(), None))
+    assert set(test_rows) == {"ei1", "ei2"}
+
+    train_body = _get_index(client, _index_v2_task(), "train")
+    assert train_body["split"] == "train"
+    assert set(_rows_by_item(train_body)) == {"ei4"}
+
+    all_body = _get_index(client, _index_v2_task(), "all")
+    assert set(_rows_by_item(all_body)) == {"ei1", "ei2", "ei4", "ei9"}
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_omits_eval_without_the_split(client):
+    """An eval with no val filter contributes no entry: this payload feeds a
+    comparison basis, and an eval that cannot supply rows cannot join one."""
+    body = _get_index(client, _index_v2_task(), "val")
+    assert body["split"] == "val"
+    assert body["evals"] == []
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_only_the_default_eval_config(client):
+    """Runs scored under a superseded judge are invisible here, exactly as they
+    are to every other compare surface."""
+    body = _get_index(client, _index_v2_task(), None)
+    assert [e["eval_config_id"] for e in body["evals"]] == ["ec1"]
+    rows = _rows_by_item(body)
+    # ec_old scored ei1 as 0.123; the current judge's 1.0 is what is reported
+    assert rows["ei1"]["scores"] == {"accuracy": 1.0}
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_omits_eval_without_default_eval_config(client):
+    """Two judge configs and no current_config_id: nothing to read the rows
+    from, so the eval is omitted rather than guessed at."""
+    mock_task = _index_v2_task()
+    mock_task.evals.return_value[0].current_config_id = None
+    body = _get_index(client, mock_task, None)
+    assert body["evals"] == []
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_excludes_skipped_runs(client):
+    """A skipped run is not a conversation anybody can be compared on. ei3 is
+    in the test slice and has a run, and still has no row."""
+    rows = _rows_by_item(_get_index(client, _index_v2_task(), None))
+    assert "ei3" not in rows
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_excludes_other_run_configs(client):
+    """rc2's run against ei2 must not land in rc1's index."""
+    rows = _rows_by_item(_get_index(client, _index_v2_task(), None))
+    assert rows["ei2"]["scores"] == {"accuracy": 0.0}
+    assert len(rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_dedupes_items_the_way_the_summary_does(client):
+    """A job race can leave two runs for one item. The index keeps one row -
+    and it has to be the SAME one compute_score_summary keeps, or a matched
+    mean and an unfiltered mean would disagree about a config nobody filtered
+    out."""
+    body = _get_index(client, _index_v2_task(), None)
+    rows = _rows_by_item(body)
+    assert len(rows) == 2, "the duplicate ei1 row is dropped"
+
+    # The same eval config, the same iteration order, through the aggregator
+    mock_task = _index_v2_task()
+    eval1 = mock_task.evals.return_value[0]
+    eval_config = next(c for c in eval1.configs(readonly=True) if c.id == "ec1")
+    summary = compute_score_summary(
+        eval1,
+        eval_config,
+        [Mock(spec=TaskRunConfig, id="rc1")],
+        {"ei1"},
+    )
+    kept = summary.results["rc1"]["accuracy"].mean_score
+    assert summary.results["rc1"]["accuracy"].n_used == 1
+    assert rows["ei1"]["scores"]["accuracy"] == pytest.approx(kept)
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_passes_usage_through(client):
+    """Usage rides on the row, and an unrecorded one is None rather than 0 - a
+    zero-cost conversation and an unmeasured one are different claims."""
+    rows = _rows_by_item(_get_index(client, _index_v2_task(), None))
+
+    assert rows["ei1"]["input_tokens"] == pytest.approx(10)
+    assert rows["ei1"]["output_tokens"] == pytest.approx(2)
+    assert rows["ei1"]["total_tokens"] == pytest.approx(12)
+    assert rows["ei1"]["cost"] == pytest.approx(0.5)
+    assert rows["ei1"]["total_llm_latency_ms"] == pytest.approx(100)
+
+    assert rows["ei2"]["input_tokens"] is None
+    assert rows["ei2"]["output_tokens"] is None
+    assert rows["ei2"]["total_tokens"] is None
+    assert rows["ei2"]["cost"] is None
+    assert rows["ei2"]["total_llm_latency_ms"] is None
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_skips_archived_spec_evals(client):
+    """Same rule as every other compare endpoint: an archived spec takes its
+    eval off the page."""
+    mock_task = _index_v2_task()
+    spec = Mock(spec=Spec)
+    spec.id = "spec1"
+    spec.eval_id = "eval1"
+    spec.status = SpecStatus.archived
+    mock_task.specs.return_value = [spec]
+
+    body = _get_index(client, mock_task, None)
+    assert body["evals"] == []
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_empty_for_a_run_config_with_no_runs(client):
+    """An eval the config was never run against is present with no rows, not
+    absent: "we have no conversations here" is a fact the basis needs."""
+    body = _get_index(client, _index_v2_task(), None, run_config_id="rc9")
+    assert [e["eval_id"] for e in body["evals"]] == ["eval1"]
+    assert body["evals"][0]["rows"] == []
+
+
 class TestCodeEvalTrustEndpoints:
     @pytest.fixture(autouse=True)
     def _clear_trust(self):

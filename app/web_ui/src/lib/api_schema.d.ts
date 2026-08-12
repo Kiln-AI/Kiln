@@ -2359,6 +2359,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/eval_run_index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run Config Eval Run Index
+         * @description Every eval run this run config has, one row each, without the traces.
+         *
+         *     The aggregating siblings (eval_results_summary, eval_scores) answer
+         *     "what did this config score", which is all a page needs while every
+         *     config is measured on whatever runs happen to exist. Comparing configs
+         *     on the SAME conversations needs the rows themselves - which items each
+         *     config covered, and how big each conversation was - and there is no way
+         *     to intersect item sets from a mean.
+         *
+         *     Scoped exactly like eval_scores, so a number computed from these rows
+         *     can only differ from the aggregate one by the filtering the caller
+         *     applied: the eval's current default judge config only, archived-spec
+         *     evals skipped, the split resolved through SplitItemResolver, skipped
+         *     runs excluded, and at most one row per item (first wins, in
+         *     eval_config.runs() order - the same rule and the same iteration order
+         *     compute_score_summary dedupes with, so both surfaces pick the same run
+         *     when a job race left two).
+         */
+        get: operations["get_run_config_eval_run_index_api_projects__project_id__tasks__task_id__run_configs__run_config_id__eval_run_index_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/add_code_trust": {
         parameters: {
             query?: never;
@@ -7670,6 +7706,93 @@ export interface components {
             drive_fingerprint?: string | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /**
+         * EvalRunIndexEval
+         * @description One eval's rows for the requested run config.
+         */
+        EvalRunIndexEval: {
+            /**
+             * Eval Id
+             * @description The unique identifier of the eval.
+             */
+            eval_id: string | null;
+            /**
+             * Eval Config Id
+             * @description The judge config these rows came from: the eval's current default, the same one every other compare surface reads.
+             */
+            eval_config_id: string | null;
+            /**
+             * Rows
+             * @description The run config's non-skipped runs under this eval, one per item. Empty when it has never been run against this split.
+             */
+            rows: components["schemas"]["EvalRunIndexRow"][];
+        };
+        /**
+         * EvalRunIndexResponse
+         * @description Per-run rows for one run config, across every eval on the task.
+         */
+        EvalRunIndexResponse: {
+            /**
+             * Evals
+             * @description One entry per eval that has a default judge config and resolves the requested split. An eval missing either is omitted rather than reported: this payload feeds a comparison basis, and an eval that cannot supply rows cannot contribute to one. The summary endpoints are where an eval's absence is explained.
+             */
+            evals: components["schemas"]["EvalRunIndexEval"][];
+            /**
+             * Split
+             * @description The split these rows were scoped to, echoed back. None means the request did not ask for one and got each eval's own set.
+             */
+            split?: string | null;
+        };
+        /**
+         * EvalRunIndexRow
+         * @description One eval run, stripped to what a comparison basis needs.
+         *
+         *     The full EvalRun carries its input, its output and the whole task run
+         *     trace, which is why /results is fetched one cell at a time by the
+         *     inspector. This is the same run with all of that dropped: the item it
+         *     scored, the scores, and the usage the run cost. Small enough to fetch every
+         *     row of every eval for a dozen run configs at once, which is what matching
+         *     run configs on the conversations they actually share requires.
+         */
+        EvalRunIndexRow: {
+            /**
+             * Item Id
+             * @description The item this run scored: an EvalInput id on a V2 eval, a TaskRun (dataset) id on a V1 one. Unique within an eval's rows.
+             */
+            item_id: string | null;
+            /**
+             * Scores
+             * @description The run's scores, keyed by output_score_key, exactly as stored. A key an eval declares can be absent here, the same way it is absent from the per-key counts in the summary.
+             */
+            scores?: {
+                [key: string]: number;
+            };
+            /**
+             * Input Tokens
+             * @description Input tokens this run used. None when unrecorded.
+             */
+            input_tokens?: number | null;
+            /**
+             * Output Tokens
+             * @description Output tokens this run used. None when unrecorded.
+             */
+            output_tokens?: number | null;
+            /**
+             * Total Tokens
+             * @description Total tokens this run used. None when unrecorded.
+             */
+            total_tokens?: number | null;
+            /**
+             * Cost
+             * @description Cost of this run in USD. None when unrecorded.
+             */
+            cost?: number | null;
+            /**
+             * Total Llm Latency Ms
+             * @description End-to-end LLM latency of this run in ms. None when unrecorded.
+             */
+            total_llm_latency_ms?: number | null;
         };
         /**
          * EvalRunResult
@@ -19798,6 +19921,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_config_eval_run_index_api_projects__project_id__tasks__task_id__run_configs__run_config_id__eval_run_index_get: {
+        parameters: {
+            query?: {
+                /** @description Scope the rows to one dataset split: 'train', 'val', 'test', or 'all' (every run that exists). Omit for each eval's own set, which is what 'test' means. An eval with no such split contributes no entry. */
+                split?: ("train" | "val" | "test" | "all") | null;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the run configuration. */
+                run_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalRunIndexResponse"];
                 };
             };
             /** @description Validation Error */
