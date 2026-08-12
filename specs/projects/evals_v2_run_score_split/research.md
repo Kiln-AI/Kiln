@@ -943,33 +943,28 @@ generation is skipped, and only scoring runs — free for the 7 deterministic V2
 There is no "score existing runs with this judge" button to build. The existing button
 just becomes fast. That is the whole feature.
 
-### The one thing that is work: reuse visibility
+### Reuse visibility — not needed (scosman)
 
-A Run that finishes in two seconds reads as a bug. Users need to see *"reused N existing
-runs, generated M new"*.
+Considered and dropped. Fast is fine; a Run that finishes quickly does not read as a
+bug. No `Progress` change, no SSE field, no UI label.
 
-Cheap, and the plumbing already exists end to end:
+### Two are pre-existing, and one is not a thing at all — out of scope
 
-- `Progress` is a 3-field dataclass — `complete`, `total`, `errors`
-  (`async_job_runner.py:12-15`). Add a `reused` counter.
-- It already streams over SSE and the client already destructures it —
-  `run_eval.svelte:106-108` reads `data.progress` / `data.total` / `data.errors`. One
-  more field, one more label.
+**Force-fresh generation.** Scope creep. Also not a regression: `_already_run` already
+skips any item run for `(eval_config, run_config, item)`, so there is no force-fresh
+today either.
 
-**Recommend: in scope.** It is the only thing standing between the storage change and a
-user noticing the benefit.
+**Stale-on-config-edit — not a thing.** EvalConfigs are designed to be immutable, and
+this is **enforced by construction**: `eval_api.py` exposes only *create* / *get* /
+*list* for eval configs — there is no PATCH and no DELETE endpoint (contrast `Eval`,
+which has both, and `TaskRunConfig`, which has a PATCH).
 
-### Two are pre-existing gaps, not regressions — defer
-
-**Force-fresh generation.** Not available today either: `_already_run` already skips any
-item already run for `(eval_config, run_config, item)`, so re-running is already
-idempotent and there is already no way to force a fresh generation. This project does not
-take anything away. Adding it is a new feature; scope it separately if variance
-re-measurement becomes a real ask (it pairs naturally with D8's "many traces possible").
-
-**Stale-on-config-edit.** Editing an eval config already invalidates its existing scores
-today, with no invalidation or warning. Unchanged by this project. Worth a note in the
-handoff, not a phase here.
+This is worth stating as a load-bearing invariant rather than a passing note. The whole
+reuse design rests on it: **a score can never go stale relative to its config, because
+its config cannot change.** Combined with D9 (provenance is `(ItemKey,
+task_run_config_id)`) and D15 (`scored_run_id`), every EvalRun is fully described by
+three immutable things — the item, the run config, and the eval config. Nothing in that
+triple can be edited out from under a stored score.
 
 ### Delete protection is the one *new* surface obligation
 
@@ -982,10 +977,13 @@ dataset surfaces — so it belongs in this project, not deferred.
 | Surface | In scope? |
 |---|---|
 | "Score existing runs with this judge" action | **No** — the existing Run button does it |
-| Reuse visibility (`reused` count through `Progress` → SSE → `run_eval.svelte`) | **Yes** |
-| Delete protection on eval-flagged TaskRuns (D16) | **Yes** — new obligation this project creates |
-| Force-fresh escape hatch | **No** — pre-existing absence, not a regression |
-| Stale-on-config-edit handling | **No** — pre-existing, unchanged |
+| Delete protection on eval-flagged TaskRuns (D16) | **Yes** — the only new surface obligation |
+| Reuse visibility | **No** — fast is fine |
+| Force-fresh escape hatch | **No** — scope creep, and no regression |
+| Stale-on-config-edit handling | **No** — EvalConfigs are immutable by construction |
+
+**Net: this project ships one new surface — delete protection.** Everything else is
+storage and runner work behind existing UI.
 
 ## 5. Decision status
 
@@ -1002,7 +1000,8 @@ dataset surfaces — so it belongs in this project, not deferred.
 | D15 | No new score class | **Reuse the existing `EvalRun` class as the score record.** *Deprecate* the trace fields (keep declared and loadable), add `scored_run_id`. Legacy inline records stay a valid mode forever. C10 and the C8 back-compat problem both dissolve (4f) |
 | D17 | Two-mode validator | `input` becomes optional. `scored_run_id is None` → `input` required, trace fields allowed. `scored_run_id` set → `input` and all trace fields **must be None**, so the two representations can't drift (4f) |
 | D19 | Vocabulary | Adopt **scoring** vs **calibration** in new code, docs, comments and UI. The stored `eval_config_eval` field keeps its name (4f) |
-| D20 | Product-surface scope | **Reuse visibility + delete protection only.** The main win needs no new action — the existing Run button becomes fast. Force-fresh and stale-on-config-edit are pre-existing gaps, deferred (4g) |
+| D20 | Product-surface scope | **Delete protection only.** The main win needs no new action — the existing Run button becomes fast. Reuse visibility dropped (fast is fine); force-fresh is scope creep; stale-on-config-edit is not a thing (4g) |
+| D21 | EvalConfigs are immutable | Verified by construction — no PATCH or DELETE endpoint exists for eval configs. Load-bearing: a score can never go stale relative to its config (4g) |
 | D18 | `eval_config_eval` | **Leave as-is.** Provably redundant, but shipped on `origin/main` — removing it is unrelated back-compat churn (4f) |
 | D16 | Eval traces are delete-protected | Refuse deletion of eval-flagged TaskRuns: *"This is needed for an eval."* No reverse reference scan needed (4f) |
 | D13 | EvalScore links | `scored_run_id` → TaskRun, single-typed. `source_item_key` → `ItemKey`, denormalized for join-free aggregation (4e) |
