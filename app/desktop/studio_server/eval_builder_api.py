@@ -1,6 +1,6 @@
 """Eval Builder review-pipeline API (studio side).
 
-Four streams, one frame contract (see api_models/eval_builder_models.py):
+Three streams, one frame contract (see api_models/eval_builder_models.py):
 
   multi_turn_pipeline (multi-turn) — runs [drive → judge] as one unit of work
   per case. The await order inside each case's coroutine IS the stage
@@ -21,14 +21,11 @@ Four streams, one frame contract (see api_models/eval_builder_models.py):
   single-turn eval judges; the run's structured trace is echoed on the
   frame for the UI only.
 
-  judge_traces (multi-turn) — re-judge previously driven conversations:
-  the same judge unit and frames as multi_turn_pipeline, with the drive
-  replaced by a disk reload of each chain's stored trace by leaf run id.
-  Nothing is driven or written; the judge input is identical to drive
-  time and to what the saved eval will judge.
-
-  review_traces (single-turn) — judge + claims over already-generated I/O
-  pairs, fanned out per trace.
+  judge_traces (both arms) — re-judge previously driven results: the same
+  judge unit and frames as the driving streams, with the drive replaced by
+  a disk reload of each stored run by id. Multi-turn judges the chain
+  leaf's stored trace; single-turn judges the run's I/O pair. Nothing is
+  driven or written; the judge input matches what the saved eval judges.
 
 Only the claim builder reaches the remote kiln_server; the judge runs
 locally via the Eval V2 llm_judge adapter (the user's keys).
@@ -59,10 +56,6 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     PipelineTurnCompletedEvent,
     RefineJudgeApiInput,
     RefineJudgeApiOutput,
-    ReviewTracesRequest,
-    TraceErrorEvent,
-    TraceInput,
-    TraceReviewedEvent,
     spec_name_must_have_a_json_key,
 )
 from app.desktop.studio_server.multiturn_sdg_api import (
@@ -134,8 +127,7 @@ logger = logging.getLogger(__name__)
 #                        multi-turn pipeline, one-shot task runs on the
 #                        single-turn one (the most expensive stage either way).
 #   REVIEW_CONCURRENCY — concurrent review units: judge calls on the merged
-#                        pipelines; [judge → remote claim-builder] pairs on
-#                        the single-turn review.
+#                        pipelines and the judge_traces re-judge.
 DRIVE_CONCURRENCY = 10
 REVIEW_CONCURRENCY = 8
 
@@ -256,18 +248,21 @@ class MultiTurnPipelineRequest(RunCasesBatchApiInput, ReplaceBatchTagsField):
 
 
 class JudgeTracesRequest(BaseModel):
-    """The re-judge request: score previously driven conversations with a
-    (typically refined) judge. No drive fields — the conversations already
-    exist on disk, identified by the leaf run ids the pipeline stream echoed
-    on its case_driven/case_judged frames.
+    """The re-judge request, both arms: score previously driven results with
+    a (typically refined) judge. No drive fields — the runs already exist on
+    disk, identified by the ids the pipeline streams echoed on their
+    case_driven/case_judged frames (the chain leaf on multi-turn, the run
+    itself on single-turn).
     """
 
     leaf_run_ids: list[str] = Field(
         min_length=1,
         max_length=NUM_CASES_MAX,
         description=(
-            "Leaf TaskRun ids of the driven chains to judge. Frames "
-            "reference each case by its position in this list (case_index)."
+            "TaskRun ids of the driven results to judge: chain-leaf ids on "
+            "a multi-turn task, the pipeline's run ids on a single-turn "
+            "one. Frames reference each case by its position in this list "
+            "(case_index)."
         ),
     )
     spec_name: FilenameStringShort = Field(
@@ -364,44 +359,6 @@ class SingleTurnPipelineRequest(TargetRunConfigFields, ReplaceBatchTagsField):
             if not input_text.strip():
                 raise ValueError("inputs must not contain empty entries.")
         return value
-
-
-async def review_one_trace(
-    project_id: str,
-    task_id: str,
-    index: int,
-    trace: TraceInput,
-    judge: JudgeConfig,
-    spec_name: str,
-) -> TraceReviewedEvent:
-    """One single-turn unit of work: judge the I/O pair (local), then build
-    claims (remote). The claim builder's eval_rubric is the judge's actual
-    prompt: it pressure-tests the rubric the verdict was produced under.
-    """
-    verdict = await run_judge_for_trace(
-        project_id,
-        task_id,
-        trace.raw_input,
-        trace.raw_output,
-        judge,
-        spec_name=spec_name,
-    )
-    claims_output = await build_claims_for_trace(
-        raw_input=trace.raw_input,
-        raw_output=trace.raw_output,
-        eval_rubric=judge.prompt,
-        judge_score=verdict.judge_score,
-        judge_reasoning=verdict.judge_reasoning,
-    )
-    return TraceReviewedEvent(
-        trace_index=index,
-        raw_input=trace.raw_input,
-        raw_output=trace.raw_output,
-        judge_score=verdict.judge_score,
-        judge_reasoning=verdict.judge_reasoning,
-        claims=claims_output.claims,
-        final_judgement=claims_output.final_judgement,
-    )
 
 
 class JudgeStreamBase:
@@ -835,11 +792,13 @@ class MultiTurnPipelineRun(JudgeStreamBase):
 class JudgeTracesRun(JudgeStreamBase):
     """One judge_traces execution: [reload → judge] per case.
 
-    The calibration loop's re-judge stream: the same judge unit and frame
-    contract as MultiTurnPipelineRun, with the drive replaced by a disk reload.
-    Each chain's leaf TaskRun already stores the full cumulative trace, so
-    the judge scores exactly the conversation the drive-time judge saw and
-    the saved eval will judge. Nothing is driven and nothing is written.
+    The calibration loop's re-judge stream, both arms: the same judge unit
+    and frame contract as the driving streams, with the drive replaced by a
+    disk reload of each stored run by id. Multi-turn judges the chain leaf's
+    stored cumulative trace — exactly the conversation the drive-time judge
+    saw and the saved eval will judge. Single-turn judges the run's stored
+    I/O pair — the same final_answer reading as its pipeline and its saved
+    eval. Nothing is driven and nothing is written.
     """
 
     _stream_name = "judge_traces"
@@ -863,36 +822,57 @@ class JudgeTracesRun(JudgeStreamBase):
         # ran, so there is no new batch tag and no new drive spend to report.
         self._task = task
         self._leaf_run_ids = input.leaf_run_ids
+        self._single_turn = task.turn_mode != TurnMode.multiturn
+        # Single-turn arm: each case's stored (input, output) pair — what
+        # the judge scores and the frames echo (the SingleTurnPipelineRun
+        # convention).
+        self._case_io: dict[int, tuple[str, str]] = {}
+
+    def _judge_view(
+        self, case_index: int, trace: list[dict[str, Any]] | None
+    ) -> tuple[str, str, list[dict[str, Any]] | None]:
+        # Single-turn judges the run's I/O pair with no judge trace (the
+        # trace on the frame is a UI echo), matching its pipeline and its
+        # saved final_answer eval; multi-turn keeps the base's full-trace
+        # reading.
+        if self._single_turn:
+            raw_input, raw_output = self._case_io[case_index]
+            return raw_input, raw_output, None
+        return super()._judge_view(case_index, trace)
 
     async def _produce(self) -> None:
-        """The producer: reload each chain's stored trace from disk and feed
-        it straight into its own judge task — the drive stage of the merged
+        """The producer: reload each stored run from disk and feed it
+        straight into its own judge task — the drive stage of the merged
         pipeline, swapped for a disk read."""
         await self._emit(
             PipelineBatchStartedEvent(
-                # No drive, no new batch: the chains keep their original tags.
+                # No drive, no new batch: the runs keep their original tags.
                 batch_tag="",
                 total_cases=len(self._leaf_run_ids),
             )
         )
         # Bulk load: one pass over the run corpus instead of a per-id scan.
-        # Sync file I/O, so off the event loop.
-        leaves = await asyncio.to_thread(
-            TaskRun.from_ids_and_parent_path,
-            set(self._leaf_run_ids),
-            self._task.path,
+        # Sync file I/O, so off the event loop. The lambda keeps the
+        # classmethod's TypeVar bound to TaskRun through to_thread.
+        leaves: dict[str, TaskRun] = await asyncio.to_thread(
+            lambda: TaskRun.from_ids_and_parent_path(
+                set(self._leaf_run_ids), self._task.path
+            )
         )
         for case_index, leaf_run_id in enumerate(self._leaf_run_ids):
             leaf = leaves.get(leaf_run_id)
             if leaf is None:
-                # Chains can vanish between rounds (delete-on-redrive, manual
+                # Runs can vanish between rounds (delete-on-redrive, manual
                 # dataset edits) — fail the case, keep the batch.
                 await self._fail_case(
                     case_index,
                     "judge",
                     "trace_not_found",
-                    f"No saved conversation found for run id {leaf_run_id}.",
+                    f"No saved result found for run id {leaf_run_id}.",
                 )
+                continue
+            if self._single_turn:
+                await self._produce_single_turn_case(case_index, leaf_run_id, leaf)
                 continue
             if not leaf.trace:
                 await self._fail_case(
@@ -913,6 +893,31 @@ class JudgeTracesRun(JudgeStreamBase):
                     name=f"judge_case_{case_index}",
                 )
             )
+
+    async def _produce_single_turn_case(
+        self, case_index: int, leaf_run_id: str, leaf: TaskRun
+    ) -> None:
+        """Feed one reloaded single-turn run into the judge unit: the stored
+        I/O pair is what the judge scores (the run's structured trace rides
+        the frame as a UI echo only). drive_cost is 0.0: the original
+        pipeline already reported this run's spend."""
+        output = leaf.output.output if leaf.output is not None else None
+        if not output:
+            await self._fail_case(
+                case_index,
+                "judge",
+                "missing_output",
+                "The saved run has no stored output to judge.",
+            )
+            return
+        self._case_io[case_index] = (leaf.input, output)
+        trace = [dict(message) for message in leaf.trace] if leaf.trace else None
+        self._review_tasks.append(
+            asyncio.create_task(
+                self._judge_case(case_index, leaf_run_id, trace, 0.0),
+                name=f"judge_case_{case_index}",
+            )
+        )
 
 
 class _RunFailure(Exception):
@@ -1383,10 +1388,10 @@ def connect_eval_builder_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/eval_builder/judge_traces",
         tags=["Eval Builder"],
-        summary="Judge Saved Multi-Turn Conversations",
+        summary="Judge Saved Eval-Builder Results",
         openapi_extra=agent_policy_require_approval(
-            "Re-judge saved multi-turn conversations with a judge prompt? "
-            "Invokes the judge model per conversation (cost)."
+            "Re-judge saved eval-builder results with a judge prompt? "
+            "Invokes the judge model per result (cost)."
         ),
     )
     @no_write_lock  # streaming route: lock would buffer the SSE and break cancel-on-disconnect
@@ -1397,13 +1402,14 @@ def connect_eval_builder_api(app: FastAPI):
         task_id: Annotated[str, Path(description="The unique identifier of the task.")],
         input: JudgeTracesRequest,
     ) -> CancellableStreamingResponse:
-        """Re-judge previously driven conversations: [reload → judge] per case.
+        """Re-judge previously driven results: [reload → judge] per case.
 
-        The judge calibration loop's re-score stream: after a refine produces
-        a new judge prompt, this scores the SAME saved conversations again.
-        Each chain's trace is reloaded from disk by leaf run id, so the judge
-        input is identical to drive time and to what the saved eval will
-        judge. Nothing is driven and nothing is written.
+        The judge calibration loop's re-score stream, both arms: after a
+        refine produces a new judge prompt, this scores the SAME saved
+        results again. Each run is reloaded from disk by id; multi-turn
+        judges the chain leaf's stored trace, single-turn judges the run's
+        stored I/O pair — either way the judge input matches what the saved
+        eval will judge. Nothing is driven and nothing is written.
 
         Emits (all frames `type`-discriminated; errors carry {code, message}):
           - batch_started   { batch_tag: "", total_cases }
@@ -1411,9 +1417,9 @@ def connect_eval_builder_api(app: FastAPI):
                               judge_score, judge_reasoning, total_cost: 0,
                               trace }
           - case_failed     { case_index, stage: "judge", code, message }
-                              (batch continues; a chain that cannot be
-                              reloaded fails with code trace_not_found or
-                              missing_trace)
+                              (batch continues; a run that cannot be
+                              reloaded fails with code trace_not_found,
+                              missing_trace, or missing_output)
           - batch_completed { judged, failed, batch_tag: "", total_cost: 0 }
           - batch_aborted   { error, stage: "judge" }  (in place of
                               batch_completed: a config-scoped judge failure
@@ -1432,7 +1438,6 @@ def connect_eval_builder_api(app: FastAPI):
         # user spends on judging every case.
         get_copilot_api_key()
         task = task_from_id(project_id, task_id)
-        guard_multiturn(task)
         run = JudgeTracesRun(
             project_id=project_id,
             task_id=task_id,
@@ -1441,84 +1446,6 @@ def connect_eval_builder_api(app: FastAPI):
         )
         return CancellableStreamingResponse(
             content=run.events(),
-            media_type="text/event-stream",
-        )
-
-    @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/review_traces",
-        tags=["Eval Builder"],
-        openapi_extra=agent_policy_require_approval(
-            "Run judge and build claims for alignment traces? "
-            "Invokes the judge model per trace (cost)."
-        ),
-    )
-    @no_write_lock  # streaming route: lock would buffer the SSE and break cancel-on-disconnect
-    async def review_traces(
-        project_id: Annotated[
-            str, Path(description="The unique identifier of the project.")
-        ],
-        task_id: Annotated[str, Path(description="The unique identifier of the task.")],
-        request: ReviewTracesRequest,
-    ) -> CancellableStreamingResponse:
-        """Per-trace `judge → claim builder` over single-turn I/O pairs,
-        fanned out (local) and streamed.
-
-        Emits one SSE event per trace as it completes:
-          - `trace_reviewed` { trace_index, raw_input, raw_output,
-                               judge_score, judge_reasoning, claims,
-                               final_judgement }
-          - `trace_error`    { trace_index, code, message }   (batch continues)
-        Bracketed by `{ "type": "batch_started", "total" }` and `data: complete`.
-        """
-
-        async def event_generator():
-            sem = asyncio.Semaphore(REVIEW_CONCURRENCY)
-
-            async def one(index: int, trace: TraceInput) -> str:
-                async with sem:
-                    try:
-                        event = await review_one_trace(
-                            project_id,
-                            task_id,
-                            index,
-                            trace,
-                            request.judge,
-                            request.spec_name,
-                        )
-                        return _sse(event)
-                    except Exception as e:  # noqa: BLE001 — surface per-trace, keep batch alive
-                        logger.exception(
-                            "review_trace failed for trace_index=%s", index
-                        )
-                        # The adapter's KilnRunError wrapper carries a
-                        # genericized message — surface the root provider error.
-                        root = unwrap_kiln_run_error(e)
-                        return _sse(
-                            TraceErrorEvent(
-                                trace_index=index,
-                                code="review_failed",
-                                message=f"{type(root).__name__}: {root}",
-                            )
-                        )
-
-            yield _sse({"type": "batch_started", "total": len(request.traces)})
-            tasks = [
-                asyncio.create_task(one(i, t)) for i, t in enumerate(request.traces)
-            ]
-            try:
-                for finished in asyncio.as_completed(tasks):
-                    yield await finished
-            finally:
-                # Consumer disconnect (or any exit): cancel the unfinished
-                # reviews so abandoned LLM calls stop spending. After a full
-                # run every task is done and this is a no-op.
-                for t in tasks:
-                    t.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
-            yield SSE_TERMINATOR
-
-        return CancellableStreamingResponse(
-            content=event_generator(),
             media_type="text/event-stream",
         )
 

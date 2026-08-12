@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  all_traces_reviewed,
   apply_rejudge_results,
-  apply_rereview_results,
   blind_final_judgement,
   build_claim_review_payload,
   build_graded_traces,
@@ -109,7 +107,6 @@ describe("is_trace_reviewed", () => {
     const review = build_trace_reviews([t])[0]
     review.final_judgement_verdict.agrees = true
     expect(is_trace_reviewed(t, review)).toBe(true)
-    expect(all_traces_reviewed([t], [review])).toBe(true)
   })
 })
 
@@ -731,95 +728,6 @@ describe("apply_rejudge_results", () => {
   })
 })
 
-describe("apply_rereview_results (single-turn round)", () => {
-  function rereview_result(judge_score: "pass" | "fail") {
-    return {
-      judge_score,
-      judge_reasoning: `Re-checked: ${judge_score}.`,
-      raw_input: "What's the return window?",
-      raw_output: "Our return window is 30 days.",
-      claims: [claim({ claim: "Fresh claim from the refined judge." })],
-      final_judgement: claim({ claim: "Fresh final judgement." }),
-    }
-  }
-
-  it("folds fresh verdicts AND claims in — no rebuild needed", () => {
-    // The single-turn re-check returns claims with the verdict, so unlike the
-    // multi-turn fold these land built and the review opens immediately.
-    const t = trace({ trace_id: "trace_0" })
-    const applied = apply_rereview_results(
-      [t],
-      new Map([[0, rereview_result("pass")]]),
-      "single_turn_r1",
-    )
-    expect(applied[0].judge_score).toBe("pass")
-    expect(applied[0].claims_state).toBe("built")
-    expect(applied[0].claims?.[0].claim).toBe(
-      "Fresh claim from the refined judge.",
-    )
-    expect(applied[0].final_judgement?.claim).toBe("Fresh final judgement.")
-    expect(applied[0].claims_error).toBeNull()
-    expect(applied[0].trace_id).toBe("single_turn_r1_case_0")
-  })
-
-  it("refuses a partial round rather than keeping a stale verdict", () => {
-    // Single-turn ships every example in the answer key, so one still holding
-    // the previous judge's verdict would be attributed to the refined judge.
-    // Naming the example makes a caller bug diagnosable.
-    const traces = [trace({ trace_id: "trace_0" }), trace({ trace_id: "t_1" })]
-    const partial = new Map([[0, rereview_result("pass")]])
-    expect(() =>
-      apply_rereview_results(traces, partial, "single_turn_r1"),
-    ).toThrow(/no result for example 2/)
-    expect(() =>
-      apply_rereview_results(traces, new Map(), "single_turn_r1"),
-    ).toThrow(/partial re-review/)
-  })
-
-  it("checks coverage, not count — a gap with the right total still throws", () => {
-    // Guards against simplifying the coverage scan back to a length compare:
-    // three results for three examples, but keyed 0, 1, 5 — example 3 would
-    // silently keep the previous judge's verdict.
-    const traces = [
-      trace(),
-      trace({ trace_id: "t_1" }),
-      trace({ trace_id: "t_2" }),
-    ]
-    const miskeyed = new Map([
-      [0, rereview_result("pass")],
-      [1, rereview_result("pass")],
-      [5, rereview_result("pass")],
-    ])
-    expect(miskeyed.size).toBe(traces.length)
-    expect(() =>
-      apply_rereview_results(traces, miskeyed, "single_turn_r1"),
-    ).toThrow(/no result for example 3/)
-  })
-
-  it("grades reset, so the reviewer re-grades against the refined judge", () => {
-    const t = trace()
-    const applied = apply_rereview_results(
-      [t],
-      new Map([[0, rereview_result("pass")]]),
-      "single_turn_r1",
-    )
-    const reviews = build_trace_reviews(applied)
-    expect(reviews[0].final_judgement_verdict.agrees).toBeNull()
-    // One slot per fresh claim: the old grades cannot carry over, because the
-    // refined judge rebuilt the claims they were made against.
-    expect(reviews[0].claim_verdicts).toHaveLength(1)
-  })
-
-  it("flips are detected against the pre-round verdicts", () => {
-    const t = trace({ judge_score: "fail" })
-    const results = new Map([[0, rereview_result("pass")]])
-    expect(flipped_indices([t], results)).toEqual([0])
-    expect(flipped_indices([trace({ judge_score: "pass" })], results)).toEqual(
-      [],
-    )
-  })
-})
-
 describe("plan_save_action — loop entry and exit", () => {
   it("disagreement enters a calibration round", () => {
     expect(plan_save_action({ has_disagreement: true })).toEqual({
@@ -913,16 +821,21 @@ describe("review_cta — primary action after a review", () => {
 
 describe("rejudge_shortfall_notice", () => {
   it("silent when every case re-judged", () => {
-    expect(rejudge_shortfall_notice(0)).toBeNull()
+    expect(rejudge_shortfall_notice(0, "conversation")).toBeNull()
   })
 
-  it("counts the stale cases honestly, singular and plural", () => {
-    expect(rejudge_shortfall_notice(1)).toContain("1 conversation ")
-    expect(rejudge_shortfall_notice(3)).toContain("3 conversations ")
-    expect(rejudge_shortfall_notice(3)).toContain(
+  it("counts the stale cases honestly, singular and plural, in the arm's noun", () => {
+    expect(rejudge_shortfall_notice(1, "conversation")).toContain(
+      "1 conversation ",
+    )
+    expect(rejudge_shortfall_notice(3, "conversation")).toContain(
+      "3 conversations ",
+    )
+    expect(rejudge_shortfall_notice(2, "test run")).toContain("2 test runs ")
+    expect(rejudge_shortfall_notice(3, "conversation")).toContain(
       "left out of this review round",
     )
-    expect(rejudge_shortfall_notice(3)).not.toMatch(/—/)
+    expect(rejudge_shortfall_notice(3, "conversation")).not.toMatch(/—/)
   })
 })
 

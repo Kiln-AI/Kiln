@@ -61,17 +61,17 @@ export type BuildClaimEvidenceInput = {
 
 // ── Client-side per-trace bundle ─────────────────────────────────────────
 
-// Claims build lazily for multi-turn traces (the pipeline stream stops at
-// the judge): "unbuilt" until the trace is selected/opened, then a
+// Claims build lazily on both arms (the pipeline streams stop at the
+// judge): "unbuilt" until the trace is selected/opened, then a
 // build_claims round trip moves it through "building" to "built" or "error".
-// Single-turn traces arrive "built" (review_traces builds claims eagerly).
 export type ClaimsBuildState = "unbuilt" | "building" | "built" | "error"
 
 // One generated trace + the claims built for it. raw_input/raw_output are kept
 // client-side so the trace modal can render them and resolve citation spans.
-// leaf_run_id is the durable TaskRun identity for multi-turn chains (from
-// run_cases_batch) — the save path writes the golden rating onto it; null for
-// single-turn traces (their TaskRuns are created at save time).
+// leaf_run_id is the durable TaskRun identity on both arms — the chain leaf
+// from run_cases_batch, or the single-turn pipeline's persisted run — that
+// the save path writes the golden rating onto and calibration rounds
+// re-judge through; null/"" when the runner emitted no id for a case.
 // claims/final_judgement are null until claims_state is "built".
 export type TraceClaims = {
   trace_id: string
@@ -84,10 +84,11 @@ export type TraceClaims = {
   final_judgement: FinalJudgement | null
   claims_state: ClaimsBuildState
   claims_error: string | null
-  // The structured conversation the judge saw (multi-turn only). raw_output is
-  // its lossy flattening; the trace modal renders THIS in the house chat UI and
-  // remaps output-source citation spans back onto it. Absent/null for
-  // single-turn traces and legacy data — the modal then keeps the raw view.
+  // The run's structured trace. On multi-turn it is what the judge saw and
+  // raw_output is its lossy flattening; the trace modal renders THIS in the
+  // house chat UI and remaps output-source citation spans back onto it. On
+  // single-turn it is a UI-only echo (the judge scores the I/O pair).
+  // Absent/null when the run recorded none — the modal keeps the raw view.
   trace?: TraceMessage[] | null
 }
 
@@ -413,14 +414,6 @@ export function is_trace_reviewed(
   )
 }
 
-export function all_traces_reviewed(
-  traces: TraceClaims[],
-  reviews: TraceReview[],
-): boolean {
-  if (traces.length === 0 || reviews.length !== traces.length) return false
-  return traces.every((t, i) => is_trace_reviewed(t, reviews[i]))
-}
-
 export function reviewed_trace_count(
   traces: TraceClaims[],
   reviews: TraceReview[],
@@ -428,10 +421,10 @@ export function reviewed_trace_count(
   return traces.filter((t, i) => is_trace_reviewed(t, reviews[i])).length
 }
 
-// ── Subset review (multi-turn) ───────────────────────────────────────────
+// ── Subset review (both arms) ────────────────────────────────────────────
 
 // How many traces the reviewer must rate: the human-rated golden answer key
-// is capped at 25% of the chains server-side, so rating N//4 fills it
+// is capped at 25% of the batch runs server-side, so rating N//4 fills it
 // exactly. Floor of 1 — a batch with no rated trace has no answer key.
 export function review_target(total: number): number {
   if (total <= 0) return 0
@@ -714,18 +707,18 @@ export function disagreed_trace_indices(reviews: TraceReview[]): number[] {
 //
 // After a review with disagreements, the judge is refined from the grades and
 // re-scores the eval data; the reviewer then re-grades against the refined
-// judge's verdicts. The arms differ only in what the re-check costs and
-// returns: multi-turn re-judges saved conversations (verdicts only, claims
-// rebuilt after) and re-grades a freshly picked subset, while single-turn
-// re-reviews its in-memory examples (verdicts AND claims in one pass) and
-// re-grades all of them. The helpers below are the loop's pure core — round
-// control, verdict flips, state rebuild — so the wizard component only wires
-// streams and screens around them.
+// judge's verdicts. Both arms run the same round: judge_traces re-judges the
+// saved runs by durable id (verdicts only — claims rebuilt lazily for the
+// next subset), select_calibration_subset picks what the reviewer re-grades,
+// and cases that failed to re-judge keep stale verdicts and sit the round
+// out. The helpers below are the loop's pure core — round control, verdict
+// flips, state rebuild — so the wizard component only wires streams and
+// screens around them.
 
-// One conversation's fresh verdict from a re-judge round. raw_input/
-// raw_output/trace are the stream's echoes of the reloaded conversation —
-// the same content as drive time, re-echoed so citations and the trace modal
-// stay anchored to exactly what this round's judge saw.
+// One case's fresh verdict from a re-judge round. raw_input/raw_output/
+// trace are the stream's echoes of the reloaded run — the same content as
+// drive time, re-echoed so citations and the trace modal stay anchored to
+// exactly what this round's judge saw.
 export type RejudgeCaseResult = {
   judge_score: ExpectedResult
   judge_reasoning: string
@@ -776,65 +769,10 @@ export function apply_rejudge_results(
   })
 }
 
-// One example's fresh result from a SINGLE-TURN re-review round. The
-// review_traces pass that produces it re-judges and rebuilds the claims
-// together, so unlike the multi-turn re-judge it already carries everything
-// the next review needs — there is no separate claims build to wait on.
-export type ReReviewCaseResult = {
-  judge_score: ExpectedResult
-  judge_reasoning: string
-  raw_input: string
-  raw_output: string
-  claims: Claim[]
-  final_judgement: FinalJudgement | null
-}
-
-// Fold a single-turn re-review round's results into the trace list. Mirrors
-// apply_rejudge_results, except the fresh claims arrive with the verdict, so
-// traces land BUILT rather than reset to unbuilt. The new trace_id (unique
-// per round) makes any still-in-flight claim build from the previous round
-// miss the identity guard instead of corrupting the fresh state.
-//
-// Requires a result for EVERY example and throws otherwise. Single-turn
-// grades and ships all of them, so an example left on the previous judge's
-// verdict would enter the golden answer key attributed to the refined judge
-// that never produced it. Checking coverage here rather than trusting a count
-// upstream keeps that invariant local to the fold that would break it.
-export function apply_rereview_results(
-  traces: TraceClaims[],
-  results: Map<number, ReReviewCaseResult>,
-  round_tag: string,
-): TraceClaims[] {
-  const missing = traces.findIndex((_, i) => !results.has(i))
-  if (missing !== -1) {
-    throw new Error(
-      `Cannot apply a partial re-review: no result for example ${missing + 1}.`,
-    )
-  }
-  return traces.map((t, i) => {
-    const result = results.get(i)
-    if (!result) return t // unreachable after the check above; narrows Map.get
-    return {
-      ...t,
-      trace_id: `${round_tag}_case_${i}`,
-      judge_score: result.judge_score,
-      judge_reasoning: result.judge_reasoning,
-      raw_input: result.raw_input,
-      raw_output: result.raw_output,
-      claims: result.claims,
-      final_judgement: result.final_judgement,
-      claims_state: "built",
-      claims_error: null,
-    }
-  })
-}
-
 // What a save request should do next. A save with disagreement enters a
 // calibration round on either arm — as many rounds as it takes, since the
 // loop only exits on convergence or the explicit save-without-refining link.
-// Arm-independent: the arms differ in HOW they re-check (multi-turn re-judges
-// saved conversations, single-turn re-reviews its examples), not in whether
-// unaddressed disagreement may ship.
+// Arm-independent: unaddressed disagreement may never ship unseen.
 export type SaveAction = { action: "save" } | { action: "calibrate" }
 
 export function plan_save_action(args: {
@@ -854,14 +792,16 @@ export function review_cta(args: { num_disagreements: number }): ReviewCta {
   return args.num_disagreements === 0 ? "save" : "refine"
 }
 
-// The honest shortfall notice when some conversations couldn't be
-// re-checked: they kept stale verdicts, so they were left out of the round.
-// Multi-turn only — a single-turn round is all-or-nothing, so it never
-// commits with a shortfall to report.
-export function rejudge_shortfall_notice(failed: number): string | null {
+// The honest shortfall notice when some cases couldn't be re-checked: they
+// kept stale verdicts, so they were left out of the round. case_noun is the
+// arm's word for one unit of eval data (conversation / test run).
+export function rejudge_shortfall_notice(
+  failed: number,
+  case_noun: string,
+): string | null {
   if (failed <= 0) return null
-  const conversations = failed === 1 ? "conversation" : "conversations"
-  return `${failed} ${conversations} couldn't be re-checked with the improved judge and kept their previous results. They were left out of this review round.`
+  const cases = failed === 1 ? case_noun : `${case_noun}s`
+  return `${failed} ${cases} couldn't be re-checked with the improved judge and kept their previous results. They were left out of this review round.`
 }
 
 // A judge prompt/rubric this long is almost certainly runaway model output,

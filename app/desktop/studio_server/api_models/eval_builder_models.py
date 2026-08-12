@@ -9,11 +9,10 @@ No SDK types leak to the UI.
 
 from typing import Any, Literal
 
-from kiln_ai.datamodel.basemodel import FilenameStringShort
 from kiln_ai.datamodel.claim_review import GradedClaim
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.json_schema import string_to_json_key
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 # The binary verdict vocabulary, shared by every judge_score/expected_result
 # field on this API surface (mirrors the server contract's enum).
@@ -33,23 +32,6 @@ def spec_name_must_have_a_json_key(value: str) -> str:
     return value
 
 
-class TraceInput(BaseModel):
-    """One single-turn example to review: the task's raw I/O pair.
-
-    Multi-turn conversations never ride this request — they are driven,
-    judged, and distilled server-side by the multi-turn pipeline, which
-    reads the runner's real trace directly. Structured traces therefore
-    have no wire shape here at all.
-    """
-
-    raw_input: str = Field(description="The task's raw input.")
-    raw_output: str = Field(description="The task's raw output.")
-
-    # forbid: an unexpected key (e.g. a structured `trace`) must fail loudly
-    # here, not be silently dropped.
-    model_config = ConfigDict(extra="forbid")
-
-
 class JudgeConfig(BaseModel):
     """The judge: a plain-text prompt plus the model that runs it.
 
@@ -65,27 +47,6 @@ class JudgeConfig(BaseModel):
     # model-lane field on this surface — a bad provider must 422 here, not
     # persist a judge config that fails deep inside every eval run.
     model_provider: ModelProviderName
-
-
-class ReviewTracesRequest(BaseModel):
-    """Batch request: judge + build claims for every trace, streamed back.
-
-    The claim builder's eval_rubric is the judge's ACTUAL prompt (from
-    `judge`), not a separate spec text — the builder pressure-tests the rubric
-    the verdict was really produced under.
-    """
-
-    traces: list[TraceInput] = Field(min_length=1, max_length=50)
-    spec_name: FilenameStringShort = Field(
-        description="The spec's name. The review judge scores under the same "
-        "output-score identity the saved eval will use, so the prompt the "
-        "user calibrates here is byte-identical to the one that ships."
-    )
-    judge: JudgeConfig
-
-    _spec_name_has_json_key = field_validator("spec_name")(
-        spec_name_must_have_a_json_key
-    )
 
 
 class CitationApi(BaseModel):
@@ -257,32 +218,6 @@ class AuthorJudgeApiOutput(BaseModel):
 # ONE frame contract across every eval_builder stream: each frame is a JSON
 # object under a `data:` line, discriminated by `type`; error-class frames
 # carry {code, message}; the stream terminator is the bare `data: complete`.
-
-
-class TraceReviewedEvent(BaseModel):
-    """Emitted once per trace as its judge+claims complete (single-turn).
-
-    raw_input/raw_output echo the exact text the claim builder saw — the UI
-    displays and resolves citations against these, never its own rendering.
-    """
-
-    type: Literal["trace_reviewed"] = "trace_reviewed"
-    trace_index: int
-    raw_input: str
-    raw_output: str
-    judge_score: JudgeScoreLiteral
-    judge_reasoning: str
-    claims: list[ClaimApi]
-    final_judgement: FinalJudgementApi
-
-
-class TraceErrorEvent(BaseModel):
-    """Emitted for a trace whose judge or claim step failed; batch continues."""
-
-    type: Literal["trace_error"] = "trace_error"
-    trace_index: int
-    code: str
-    message: str
 
 
 # ── Review-pipeline SSE events (the merged pipeline streams) ──────────────

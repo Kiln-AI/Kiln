@@ -68,6 +68,10 @@ const full_draft: BuilderDraft = {
     model_provider: "openai",
     inputs: ["What's your return window?", "Is my laptop under warranty?"],
   },
+  grounding_sample: {
+    input: "What's your return policy on opened electronics?",
+    output: "Opened electronics can be returned within 14 days.",
+  },
   multi_turn_batch_tag: "multi_turn_batch_1234",
   single_turn_batch_tag: "single_turn_batch_5678",
   undeleted_batch_tags: ["multi_turn_batch_1200", "multi_turn_batch_1234"],
@@ -342,27 +346,30 @@ describe("reset_draft_keeping_tags", () => {
 
 describe("reusable_minted_inputs — single-turn input reuse", () => {
   const prompts = ["input plan a", "input plan b"]
+  const guide = "A real example input from this task's dataset..."
   const cache = {
     prompts_json: JSON.stringify(prompts),
     model_name: "gpt_5_4_mini",
     model_provider: "openai",
+    data_guide: guide,
     inputs: ["What's your return window?", "Is my laptop under warranty?"],
   }
 
-  it("reuses when plan and input-generator model are byte-unchanged", () => {
+  it("reuses when plan, input-generator model, and guide are byte-unchanged", () => {
     expect(
       reusable_minted_inputs(
         cache,
         ["input plan a", "input plan b"],
         "gpt_5_4_mini",
         "openai",
+        guide,
       ),
     ).toBe(cache.inputs)
   })
 
   it("misses with no cache", () => {
     expect(
-      reusable_minted_inputs(null, prompts, "gpt_5_4_mini", "openai"),
+      reusable_minted_inputs(null, prompts, "gpt_5_4_mini", "openai", guide),
     ).toBeNull()
   })
 
@@ -373,19 +380,59 @@ describe("reusable_minted_inputs — single-turn input reuse", () => {
         ["input plan a EDITED", "input plan b"],
         "gpt_5_4_mini",
         "openai",
+        guide,
       ),
     ).toBeNull()
     expect(
-      reusable_minted_inputs(cache, ["input plan a"], "gpt_5_4_mini", "openai"),
+      reusable_minted_inputs(
+        cache,
+        ["input plan a"],
+        "gpt_5_4_mini",
+        "openai",
+        guide,
+      ),
     ).toBeNull()
   })
 
   it("misses when the input-generator model or provider changed", () => {
     expect(
-      reusable_minted_inputs(cache, prompts, "other_model", "openai"),
+      reusable_minted_inputs(cache, prompts, "other_model", "openai", guide),
     ).toBeNull()
     expect(
-      reusable_minted_inputs(cache, prompts, "gpt_5_4_mini", "openrouter"),
+      reusable_minted_inputs(
+        cache,
+        prompts,
+        "gpt_5_4_mini",
+        "openrouter",
+        guide,
+      ),
+    ).toBeNull()
+  })
+
+  it("misses when the grounding guide changed (a different sample minted these)", () => {
+    expect(
+      reusable_minted_inputs(cache, prompts, "gpt_5_4_mini", "openai", null),
+    ).toBeNull()
+    // An ungrounded cache reuses only for an ungrounded mint; a pre-guide
+    // draft (no key at all) behaves the same via the ?? null read.
+    const ungrounded = { ...cache, data_guide: null }
+    expect(
+      reusable_minted_inputs(
+        ungrounded,
+        prompts,
+        "gpt_5_4_mini",
+        "openai",
+        null,
+      ),
+    ).toBe(ungrounded.inputs)
+    expect(
+      reusable_minted_inputs(
+        ungrounded,
+        prompts,
+        "gpt_5_4_mini",
+        "openai",
+        guide,
+      ),
     ).toBeNull()
   })
 
@@ -396,6 +443,7 @@ describe("reusable_minted_inputs — single-turn input reuse", () => {
         prompts,
         "gpt_5_4_mini",
         "openai",
+        guide,
       ),
     ).toBeNull()
   })

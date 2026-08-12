@@ -1269,7 +1269,7 @@ class TestCreateSpecWithCopilotMultiTurn:
         from app.desktop.studio_server.utils import copilot_utils
 
         def rate_then_boom(*args, **kwargs):
-            copilot_utils.rate_multi_turn_chain_leaves(*args, **kwargs)
+            copilot_utils.rate_reviewed_batch_runs(*args, **kwargs)
             raise RuntimeError("disk full")
 
         with (
@@ -1278,7 +1278,7 @@ class TestCreateSpecWithCopilotMultiTurn:
                 return_value=task,
             ),
             patch(
-                "app.desktop.studio_server.copilot_api.rate_multi_turn_chain_leaves",
+                "app.desktop.studio_server.copilot_api.rate_reviewed_batch_runs",
                 side_effect=rate_then_boom,
             ),
             # The endpoint re-raises after rollback; TestClient propagates it.
@@ -1557,6 +1557,377 @@ class TestCreateSpecWithCopilotMultiTurn:
 
         assert response.status_code == 422
         assert "evaluate_full_trace" in str(response.json())
+
+
+class TestCreateSpecWithCopilotSingleTurnBatch:
+    """The wizard single-turn save path: tag the pipeline's existing
+    batch-tagged runs (golden/train, verdicts onto golden) and mint the eval
+    slice from the generated inputs. Nothing is generated at save time —
+    the sibling of the multi-turn path above, not of the legacy sdg one.
+    """
+
+    BATCH_TAG = "st1234abcd56"
+
+    @pytest.fixture
+    def project_and_task(self, tmp_path):
+        project_path = tmp_path / "test_project" / "project.kiln"
+        project_path.parent.mkdir()
+        project = Project(name="Test Project", path=project_path)
+        project.save_to_file()
+        task = Task(
+            name="Test Task",
+            instruction="Test instruction",
+            description="Test task",
+            parent=project,
+        )
+        task.save_to_file()
+        return project, task
+
+    @pytest.fixture
+    def batch_runs(self, project_and_task):
+        """Persist eight runs tagged like the single-turn pipeline leaves
+        them. Eight give the split room for a non-empty golden slice (caps
+        at 25% = 2); the rest are train."""
+        _, task = project_and_task
+        source = DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "haiku",
+                "model_provider": "openrouter",
+                "adapter_name": "kiln_eval_builder_single_turn",
+            },
+        )
+        runs = []
+        for i in range(8):
+            run = TaskRun(
+                parent=task,
+                input=f"input {i}",
+                input_source=source,
+                output=TaskOutput(output=f"output {i}", source=source),
+                tags=[
+                    "single_turn_drive",
+                    f"single_turn_drive_batch:{TestCreateSpecWithCopilotSingleTurnBatch.BATCH_TAG}",
+                ],
+            )
+            run.save_to_file()
+            runs.append(run)
+        return runs
+
+    @pytest.fixture
+    def single_turn_request_data(self):
+        return {
+            "name": "Single Turn Spec",
+            "definition": "The agent should not fabricate policies",
+            "properties": {
+                "spec_type": SpecType.issue.value,
+                "issue_description": "Don't make stuff up",
+            },
+            "evaluate_full_trace": False,
+            "judge_info": {
+                "prompt": "Test prompt",
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+            },
+            "single_turn": {
+                "batch_tag": TestCreateSpecWithCopilotSingleTurnBatch.BATCH_TAG,
+                "inputs": [f"input {i}" for i in range(8)],
+            },
+            "task_sample": {
+                "input": "What's your return window?",
+                "output": "Returns are accepted within 14 days.",
+            },
+        }
+
+    @staticmethod
+    def _reviewed_run(run_id: str, meets_spec: bool) -> dict:
+        return {
+            "leaf_run_id": run_id,
+            "user_says_meets_spec": meets_spec,
+            "feedback": "" if meets_spec else "Fabricated a return window.",
+            "claim_review": {
+                "judge_score": "pass" if meets_spec else "fail",
+                "judge_reasoning": "Judge reasoning here.",
+                "claims": [
+                    {
+                        "claim": "The agent stated a return window.",
+                        "evidence": "Gives 30 days [1].",
+                        "expected_result": "fail",
+                        "human_grade": "agree",
+                        "human_feedback": None,
+                    }
+                ],
+                "final_judgement": {
+                    "claim": "Overall verdict.",
+                    "evidence": "Decisive fact [1].",
+                    "expected_result": "pass" if meets_spec else "fail",
+                    "human_grade": "agree",
+                    "human_feedback": None,
+                },
+            },
+        }
+
+    def _post(self, client, project, task, request_data):
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_memorable_name",
+                return_value="single-turn-judge",
+            ),
+        ):
+            return client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=request_data,
+            )
+
+    def test_single_turn_save_tags_runs_and_creates_eval(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        project, task = project_and_task
+        # Two of the eight runs were reviewed: one pass, one fail.
+        single_turn_request_data["single_turn"]["reviewed_runs"] = [
+            self._reviewed_run(batch_runs[0].id, meets_spec=False),
+            self._reviewed_run(batch_runs[1].id, meets_spec=True),
+        ]
+
+        response = self._post(client, project, task, single_turn_request_data)
+
+        assert response.status_code == 200, response.text
+        res = response.json()
+        assert res["name"] == "Single Turn Spec"
+        assert res["eval_id"] is not None
+        # The wizard arm generates nothing, so no generation config snapshot
+        # lands on the spec; the picked grounding sample does.
+        assert res["synthetic_data_generation_session_config"] is None
+        assert res["task_sample"]["input"] == "What's your return window?"
+
+        # Eval: final_answer data type (the pipeline judged final answers),
+        # EvalInput-backed test split, TaskRun-backed train in the legacy
+        # field, no multi-turn drive config.
+        evals = task.evals()
+        assert len(evals) == 1
+        eval_obj = evals[0]
+        assert eval_obj.evaluation_data_type == EvalDataType.final_answer
+        assert eval_obj.eval_set_filter_id is None
+        assert eval_obj.splits["test"] == EvalInputSplit(
+            filter_id="tag::eval_single_turn_spec"
+        )
+        assert eval_obj.train_set_filter_id == "tag::train_single_turn_spec"
+        assert eval_obj.current_config_id is not None
+        assert eval_obj.multi_turn_drive_config is None
+
+        # The saved judge is a V2 config with the single-turn (I/O) template,
+        # never the trace one.
+        configs = eval_obj.configs()
+        assert len(configs) == 1
+        assert configs[0].config_type == EvalConfigType.v2
+        assert isinstance(configs[0].properties, LlmJudgeProperties)
+        assert "format_trace" not in configs[0].properties.prompt_template
+
+        # The eval slice: one inputs-only EvalInput per generated input,
+        # tagged with the eval slice + the drive batch it came from.
+        eval_inputs = task.eval_inputs()
+        assert len(eval_inputs) == 8
+        assert {ei.data.type for ei in eval_inputs} == {"single_turn"}
+        assert {ei.data.user_message.text for ei in eval_inputs} == {
+            f"input {i}" for i in range(8)
+        }
+        assert all(
+            set(ei.tags)
+            == {
+                "eval_single_turn_spec",
+                f"single_turn_drive_batch:{self.BATCH_TAG}",
+            }
+            for ei in eval_inputs
+        )
+
+        # Runs split into DISJOINT golden/train slices on top of their
+        # pipeline tags. Golden caps at 25% of 8 = 2 = the reviewed runs.
+        split_tags = {"train_single_turn_spec", "eval_golden_single_turn_spec"}
+        runs_by_id = {run.id: run for run in task.runs()}
+        for run in task.runs():
+            assert len(split_tags & set(run.tags)) == 1
+            assert "eval_single_turn_spec" not in run.tags
+            assert "single_turn_drive" in run.tags
+        for reviewed_run in (batch_runs[0], batch_runs[1]):
+            assert "eval_golden_single_turn_spec" in runs_by_id[reviewed_run.id].tags
+        unreviewed_tags = set(runs_by_id[batch_runs[2].id].tags)
+        assert "eval_golden_single_turn_spec" not in unreviewed_tags
+        assert "train_single_turn_spec" in unreviewed_tags
+
+        # Reviewed runs carry golden ratings matching the review clicks, plus
+        # feedback + per-claim grades; unreviewed runs stay unrated — REAL
+        # runs fill train now, so no synthesized TaskRuns exist anywhere.
+        rating_key = "named::Single Turn Spec"
+        failed = runs_by_id[batch_runs[0].id]
+        assert failed.output.rating.requirement_ratings[rating_key].value == 0.0
+        assert (
+            failed.output.rating.requirement_ratings[rating_key].type
+            == TaskOutputRatingType.pass_fail
+        )
+        assert failed.feedback()[0].feedback == "Fabricated a return window."
+        assert len(failed.claim_reviews()) == 1
+        assert failed.claim_reviews()[0].judge_score == "fail"
+
+        passed = runs_by_id[batch_runs[1].id]
+        assert passed.output.rating.requirement_ratings[rating_key].value == 1.0
+        assert passed.feedback() == []
+        assert len(passed.claim_reviews()) == 1
+
+        unreviewed = runs_by_id[batch_runs[2].id]
+        assert unreviewed.output.rating is None
+        assert unreviewed.claim_reviews() == []
+
+        # Save-time generation is DEAD on this path: the task's runs are
+        # exactly the eight the pipeline drove — nothing new was minted.
+        assert len(task.runs()) == 8
+
+    def test_single_turn_save_writes_splits_natively_to_disk(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        # Asserts on the SAVED BYTES, not the in-memory model, mirroring the
+        # multi-turn saved-bytes test: the wire shape is the compatibility
+        # contract older clients read.
+        project, task = project_and_task
+        response = self._post(client, project, task, single_turn_request_data)
+        assert response.status_code == 200, response.text
+
+        eval_path = task.evals()[0].path
+        first_bytes = eval_path.read_text()
+        on_disk = json.loads(first_bytes)
+
+        assert on_disk["splits"] == {
+            "test": {
+                "source": "eval_input",
+                "filter_id": "tag::eval_single_turn_spec",
+            }
+        }
+        assert on_disk["train_set_filter_id"] == "tag::train_single_turn_spec"
+        assert on_disk["eval_set_filter_id"] is None
+        assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_single_turn_spec"
+        assert on_disk.get("multi_turn_drive_config") is None
+        assert "eval_input_filter_id" not in first_bytes
+
+    def test_404_when_batch_tag_matches_nothing(
+        self, client, project_and_task, single_turn_request_data
+    ):
+        project, task = project_and_task
+        response = self._post(client, project, task, single_turn_request_data)
+        assert response.status_code == 404
+        assert "batch_tag" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+
+    def test_404_when_reviewed_run_not_in_batch(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        project, task = project_and_task
+        single_turn_request_data["single_turn"]["reviewed_runs"] = [
+            self._reviewed_run("no-such-run", meets_spec=True),
+        ]
+        response = self._post(client, project, task, single_turn_request_data)
+        assert response.status_code == 404
+        assert "no-such-run" in response.json()["message"]
+        assert len(task.evals()) == 0
+
+    def test_422_on_duplicate_reviewed_runs(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        project, task = project_and_task
+        single_turn_request_data["single_turn"]["reviewed_runs"] = [
+            self._reviewed_run(batch_runs[0].id, meets_spec=True),
+            self._reviewed_run(batch_runs[0].id, meets_spec=False),
+        ]
+        response = self._post(client, project, task, single_turn_request_data)
+        assert response.status_code == 422
+        assert "at most once" in response.json()["message"]
+
+    def test_validator_rejects_single_turn_with_full_trace(
+        self, client, project_and_task, single_turn_request_data
+    ):
+        project, task = project_and_task
+        single_turn_request_data["evaluate_full_trace"] = True
+        response = self._post(client, project, task, single_turn_request_data)
+        assert response.status_code == 422
+        assert "evaluate_full_trace" in str(response.json())
+
+    def test_validator_rejects_blank_eval_slice_input(
+        self, client, project_and_task, single_turn_request_data
+    ):
+        project, task = project_and_task
+        single_turn_request_data["single_turn"]["inputs"][3] = "   "
+        response = self._post(client, project, task, single_turn_request_data)
+        assert response.status_code == 422
+
+    def test_structured_task_rejects_non_schema_input(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        # A structured-input task's eval slice must parse against the input
+        # schema, or the saved eval would fail every job at run time.
+        project, task = project_and_task
+        task.input_json_schema = json.dumps(
+            {
+                "type": "object",
+                "properties": {"question": {"type": "string"}},
+                "required": ["question"],
+            }
+        )
+        single_turn_request_data["single_turn"]["inputs"] = [
+            json.dumps({"question": f"q {i}"}) for i in range(7)
+        ] + ["not json"]
+        response = self._post(client, project, task, single_turn_request_data)
+        assert response.status_code == 422
+        assert "not valid JSON" in response.json()["message"]
+        assert len(task.evals()) == 0
+
+    def test_save_failure_mid_rating_rolls_back(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        # A failure after the eval slice persisted, the runs were tagged, AND
+        # the ratings were written must reverse EVERYTHING: created models
+        # deleted, tags and ratings restored — the batch runs come out
+        # exactly as the pipeline left them.
+        project, task = project_and_task
+        single_turn_request_data["single_turn"]["reviewed_runs"] = [
+            self._reviewed_run(batch_runs[0].id, meets_spec=False),
+        ]
+
+        from app.desktop.studio_server.utils import copilot_utils
+
+        def rate_then_boom(*args, **kwargs):
+            copilot_utils.rate_reviewed_batch_runs(*args, **kwargs)
+            raise RuntimeError("disk full")
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.rate_reviewed_batch_runs",
+                side_effect=rate_then_boom,
+            ),
+            # The endpoint re-raises after rollback; TestClient propagates it.
+            pytest.raises(RuntimeError, match="disk full"),
+        ):
+            client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=single_turn_request_data,
+            )
+
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+        assert len(task.eval_inputs()) == 0
+        for run in task.runs():
+            assert set(run.tags) == {
+                "single_turn_drive",
+                f"single_turn_drive_batch:{self.BATCH_TAG}",
+            }
+            assert run.output.rating is None
+            assert run.feedback() == []
+            assert run.claim_reviews() == []
 
 
 _JOBS_API = "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs"

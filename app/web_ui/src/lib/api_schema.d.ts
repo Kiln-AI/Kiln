@@ -3156,16 +3156,22 @@ export interface paths {
          *     This endpoint uses Kiln Copilot to create:
          *     1. An Eval for the spec with the appropriate template
          *     2. A judge EvalConfig (LLM-as-judge)
-         *     3. Single-turn only: batch examples via copilot API, split into the
-         *        train dataset (persisted as TaskRuns) and the eval slice (persisted
-         *        as inputs-only EvalInputs); the golden dataset is the request's
-         *        human-reviewed examples
-         *     4. The Spec itself
-         *     Plus, for multi-turn: tag existing chain leaves with the golden/train
-         *     filter tags and mint one EvalInput per driven case.
+         *     3. The Spec itself
+         *     Plus, per synthesis path:
+         *     - Wizard arms (`single_turn` / `multi_turn`): tag the batch's
+         *       existing runs with the golden/train filter tags — reviewed runs
+         *       become golden with the human's ratings and claim reviews,
+         *       unreviewed runs become train — and mint the eval slice as one
+         *       EvalInput per generated input (single-turn) or driven case
+         *       (multi-turn). Nothing is generated at save time.
+         *     - Legacy v1 flow (`sdg_session_config`): batch examples via the
+         *       copilot API, split into the train dataset (persisted as TaskRuns)
+         *       and the eval slice; the golden dataset is the request's
+         *       human-reviewed examples.
          *
-         *     On both arms the eval slice is EvalInput items, which the runner runs
-         *     fresh per run config at eval time — nothing generated here is judged.
+         *     On every path the eval slice is EvalInput items, which the runner
+         *     runs fresh per run config at eval time — nothing stored there is
+         *     judged.
          *
          *     If you don't need copilot, use POST /spec instead.
          *
@@ -3272,14 +3278,15 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Judge Saved Multi-Turn Conversations
-         * @description Re-judge previously driven conversations: [reload → judge] per case.
+         * Judge Saved Eval-Builder Results
+         * @description Re-judge previously driven results: [reload → judge] per case.
          *
-         *     The judge calibration loop's re-score stream: after a refine produces
-         *     a new judge prompt, this scores the SAME saved conversations again.
-         *     Each chain's trace is reloaded from disk by leaf run id, so the judge
-         *     input is identical to drive time and to what the saved eval will
-         *     judge. Nothing is driven and nothing is written.
+         *     The judge calibration loop's re-score stream, both arms: after a
+         *     refine produces a new judge prompt, this scores the SAME saved
+         *     results again. Each run is reloaded from disk by id; multi-turn
+         *     judges the chain leaf's stored trace, single-turn judges the run's
+         *     stored I/O pair — either way the judge input matches what the saved
+         *     eval will judge. Nothing is driven and nothing is written.
          *
          *     Emits (all frames `type`-discriminated; errors carry {code, message}):
          *       - batch_started   { batch_tag: "", total_cases }
@@ -3287,9 +3294,9 @@ export interface paths {
          *                           judge_score, judge_reasoning, total_cost: 0,
          *                           trace }
          *       - case_failed     { case_index, stage: "judge", code, message }
-         *                           (batch continues; a chain that cannot be
-         *                           reloaded fails with code trace_not_found or
-         *                           missing_trace)
+         *                           (batch continues; a run that cannot be
+         *                           reloaded fails with code trace_not_found,
+         *                           missing_trace, or missing_output)
          *       - batch_completed { judged, failed, batch_tag: "", total_cost: 0 }
          *       - batch_aborted   { error, stage: "judge" }  (in place of
          *                           batch_completed: a config-scoped judge failure
@@ -3303,34 +3310,6 @@ export interface paths {
          *     are built afterwards, per opened trace, via build_claims.
          */
         post: operations["judge_traces_api_projects__project_id__tasks__task_id__eval_builder_judge_traces_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tasks/{task_id}/eval_builder/review_traces": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Review Traces
-         * @description Per-trace `judge → claim builder` over single-turn I/O pairs,
-         *     fanned out (local) and streamed.
-         *
-         *     Emits one SSE event per trace as it completes:
-         *       - `trace_reviewed` { trace_index, raw_input, raw_output,
-         *                            judge_score, judge_reasoning, claims,
-         *                            final_judgement }
-         *       - `trace_error`    { trace_index, code, message }   (batch continues)
-         *     Bracketed by `{ "type": "batch_started", "total" }` and `data: complete`.
-         */
-        post: operations["review_traces_api_projects__project_id__tasks__task_id__eval_builder_review_traces_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5907,18 +5886,28 @@ export interface components {
          * CreateSpecWithCopilotRequest
          * @description Request model for creating a spec with Kiln Copilot.
          *
-         *     Two synthesis paths are supported, exactly one must be set per request:
+         *     Three synthesis paths are supported, exactly one must be set per request:
          *
-         *     - **Single-turn:** caller supplies `sdg_session_config`. Endpoint calls
-         *       `generate_copilot_examples` for fresh I/O pairs, splits them into
-         *       eval/train/golden datasets, and tags new TaskRuns.
+         *     - **Single-turn (wizard):** caller supplies `single_turn` with a
+         *       `batch_tag` pointing at runs already on disk (created by the eval
+         *       builder's single_turn_pipeline) plus the review verdicts and the
+         *       generated inputs. Endpoint tags the existing runs with golden/train
+         *       filter tags (writing the verdicts onto the golden ones) and mints one
+         *       EvalInput per input as the eval slice; no new TaskRuns are created and
+         *       nothing is generated. `evaluate_full_trace` must be False — the
+         *       pipeline judged final answers, so the saved eval must too.
          *
-         *     - **Multi-turn:** caller supplies `multi_turn` with a `batch_tag` pointing
-         *       at chains already on disk (created earlier by the synthetic-user runner)
-         *       plus the driven cases and drive settings. Endpoint tags the existing
-         *       chain leaves with golden/train filter tags and mints one EvalInput per
-         *       driven case as the eval slice; no new TaskRuns are created.
-         *       `evaluate_full_trace` must be True.
+         *     - **Multi-turn (wizard):** caller supplies `multi_turn` with a `batch_tag`
+         *       pointing at chains already on disk (created earlier by the
+         *       synthetic-user runner) plus the driven cases and drive settings.
+         *       Endpoint tags the existing chain leaves with golden/train filter tags
+         *       and mints one EvalInput per driven case as the eval slice; no new
+         *       TaskRuns are created. `evaluate_full_trace` must be True.
+         *
+         *     - **Legacy single-turn (v1 manual flow):** caller supplies
+         *       `sdg_session_config`. Endpoint calls `generate_copilot_examples` for
+         *       fresh I/O pairs, splits them into eval/train/golden datasets, and tags
+         *       new TaskRuns.
          *
          *     If you don't want copilot at all, use POST /spec instead.
          *
@@ -5950,11 +5939,9 @@ export interface components {
             judge_info: components["schemas"]["JudgeConfig"];
             sdg_session_config?: components["schemas"]["SyntheticDataGenerationSessionConfigApi"] | null;
             multi_turn?: components["schemas"]["MultiTurnSaveInfo"] | null;
-            /**
-             * Task Prompt With Example
-             * @default
-             */
-            task_prompt_with_example: string;
+            single_turn?: components["schemas"]["SingleTurnSaveInfo"] | null;
+            /** Task Prompt With Example */
+            task_prompt_with_example?: string | null;
             task_sample?: components["schemas"]["TaskSample"] | null;
         };
         /**
@@ -8765,15 +8752,16 @@ export interface components {
         };
         /**
          * JudgeTracesRequest
-         * @description The re-judge request: score previously driven conversations with a
-         *     (typically refined) judge. No drive fields — the conversations already
-         *     exist on disk, identified by the leaf run ids the pipeline stream echoed
-         *     on its case_driven/case_judged frames.
+         * @description The re-judge request, both arms: score previously driven results with
+         *     a (typically refined) judge. No drive fields — the runs already exist on
+         *     disk, identified by the ids the pipeline streams echoed on their
+         *     case_driven/case_judged frames (the chain leaf on multi-turn, the run
+         *     itself on single-turn).
          */
         JudgeTracesRequest: {
             /**
              * Leaf Run Ids
-             * @description Leaf TaskRun ids of the driven chains to judge. Frames reference each case by its position in this list (case_index).
+             * @description TaskRun ids of the driven results to judge: chain-leaf ids on a multi-turn task, the pipeline's run ids on a single-turn one. Frames reference each case by its position in this list (case_index).
              */
             leaf_run_ids: string[];
             /**
@@ -10827,24 +10815,6 @@ export interface components {
             models: components["schemas"]["RerankerModelDetails"][];
         };
         /**
-         * ReviewTracesRequest
-         * @description Batch request: judge + build claims for every trace, streamed back.
-         *
-         *     The claim builder's eval_rubric is the judge's ACTUAL prompt (from
-         *     `judge`), not a separate spec text — the builder pressure-tests the rubric
-         *     the verdict was really produced under.
-         */
-        ReviewTracesRequest: {
-            /** Traces */
-            traces: components["schemas"]["TraceInput"][];
-            /**
-             * Spec Name
-             * @description The spec's name. The review judge scores under the same output-score identity the saved eval will use, so the prompt the user calibrates here is byte-identical to the one that ships.
-             */
-            spec_name: string;
-            judge: components["schemas"]["JudgeConfig"];
-        };
-        /**
          * ReviewedChainApi
          * @description A reviewer's verdict on one multi-turn chain, keyed by its leaf run.
          *
@@ -11408,6 +11378,33 @@ export interface components {
              */
             spec_name: string;
             judge: components["schemas"]["JudgeConfig"];
+        };
+        /**
+         * SingleTurnSaveInfo
+         * @description Identifies an existing single-turn pipeline batch to turn into an Eval.
+         *
+         *     The single-turn sibling of MultiTurnSaveInfo: the endpoint splits the
+         *     runs tagged with this batch_tag into golden and train slices (reviewed →
+         *     golden with ratings and claim reviews, unreviewed → train), and mints
+         *     the eval slice as inputs-only EvalInput items from `inputs`. Nothing is
+         *     generated at save time — the dataset is the runs the user just reviewed.
+         */
+        SingleTurnSaveInfo: {
+            /**
+             * Batch Tag
+             * @description The batch_tag emitted by the single-turn pipeline (eval_builder single_turn_pipeline). Identifies the set of batch-tagged TaskRuns already persisted to disk that this Eval's golden/train slices are split from.
+             */
+            batch_tag: string;
+            /**
+             * Reviewed Runs
+             * @description The human's review verdicts, one per reviewed run keyed by TaskRun id (the run itself is the leaf on this arm). Each becomes a golden RequirementRating on the run (plus Feedback / per-claim grades when present).
+             */
+            reviewed_runs?: components["schemas"]["ReviewedChainApi"][];
+            /**
+             * Inputs
+             * @description The generated task inputs the batch actually ran — one EvalInput each, the eval slice the runner executes fresh per run config at eval time. For tasks with an input schema, each entry is the input as a JSON string (the same encoding the pipeline ran).
+             */
+            inputs: string[];
         };
         /**
          * SkillContentResponse
@@ -12943,27 +12940,6 @@ export interface components {
             core_requirement: string;
             /** Toxicity Examples */
             toxicity_examples: string;
-        };
-        /**
-         * TraceInput
-         * @description One single-turn example to review: the task's raw I/O pair.
-         *
-         *     Multi-turn conversations never ride this request — they are driven,
-         *     judged, and distilled server-side by the multi-turn pipeline, which
-         *     reads the runner's real trace directly. Structured traces therefore
-         *     have no wire shape here at all.
-         */
-        TraceInput: {
-            /**
-             * Raw Input
-             * @description The task's raw input.
-             */
-            raw_input: string;
-            /**
-             * Raw Output
-             * @description The task's raw output.
-             */
-            raw_output: string;
         };
         /** TraceMessage */
         TraceMessage: {
@@ -20718,44 +20694,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["JudgeTracesRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    review_traces_api_projects__project_id__tasks__task_id__eval_builder_review_traces_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-                /** @description The unique identifier of the task. */
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ReviewTracesRequest"];
             };
         };
         responses: {

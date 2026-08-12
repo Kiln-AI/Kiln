@@ -60,13 +60,19 @@
   // plan-review surface across the app rather than a builder-local fork.
   import KilnProBatchPlan from "../../../../generate/[project_id]/[task_id]/kiln_pro_batch_plan.svelte"
   import {
+    grounding_data_guide,
     multiturn_plan_guidance,
     single_turn_plan_guidance,
   } from "./batch_plan_guidance"
+  // Dataset grounding (single-turn): auto-pick a real task run to anchor the
+  // planner's and input generator's sense of what an input looks like.
   import {
-    all_traces_reviewed,
+    fetch_task_sample_candidates,
+    is_five_star_rated,
+    type TaskSampleExample,
+  } from "$lib/utils/task_sample_example"
+  import {
     apply_rejudge_results,
-    apply_rereview_results,
     build_claim_review_payload,
     build_graded_traces,
     build_trace_reviews,
@@ -92,7 +98,6 @@
     type FinalJudgement,
     type RefineJudgeProposal,
     type RejudgeCaseResult,
-    type ReReviewCaseResult,
     type TraceClaims,
     type TraceReview,
   } from "./claim_evidence"
@@ -343,6 +348,7 @@
         batch_plan_edited,
         cached_su_cases,
         cached_minted_inputs,
+        grounding_sample,
         multi_turn_batch_tag,
         single_turn_batch_tag,
         undeleted_batch_tags,
@@ -416,6 +422,7 @@
       batch_plan_edited = saved.batch_plan_edited
       cached_su_cases = saved.cached_su_cases ?? null
       cached_minted_inputs = saved.cached_minted_inputs ?? null
+      grounding_sample = saved.grounding_sample ?? null
       multi_turn_batch_tag = saved.multi_turn_batch_tag
       single_turn_batch_tag = saved.single_turn_batch_tag ?? null
       undeleted_batch_tags = saved.undeleted_batch_tags
@@ -761,6 +768,14 @@
   // The single-turn arm's minted inputs, reused on a re-run while the plan
   // and input-generator model are byte-unchanged. Rides the persisted draft.
   let cached_minted_inputs: CachedMintedInputs | null = null
+  // The auto-picked task sample grounding the single-turn plan and input
+  // generation (dataset grounding, the V1 restore): picked once per plan
+  // (highly-rated run preferred, else most recent), folded into both calls'
+  // data-guide param, and persisted on the saved Spec for provenance. Rides
+  // the draft so a restored session mints with the same grounding its plan
+  // was drafted under. Null when the task has no runs — grounding is
+  // best-effort, never a gate.
+  let grounding_sample: TaskSampleExample | null = null
   // Approved plan length drives the batch size; NUM_CASES is the requested
   // plan size before any deletions.
   $: planned_total = batch_plan?.prompts.length ?? NUM_CASES
@@ -1311,6 +1326,29 @@
     reset_calibration_state()
     generation_phase = "planning"
     try {
+      // Single-turn grounding: re-pick with each plan (the dataset can have
+      // changed since the last one). Best-effort — a fetch failure just
+      // plans ungrounded, like a task with no runs yet. Machine-generated
+      // runs are excluded unless a human rated them 5-star: the wizard's own
+      // pipeline (and the generators) persist synthetic runs into this same
+      // dataset, and grounding on those would feed the planner its own
+      // output — the exact drift this rider exists to prevent.
+      if (!is_multi_turn) {
+        try {
+          grounding_sample = (
+            await fetch_task_sample_candidates(
+              project_id,
+              task_id,
+              (run) =>
+                run.input_source?.type !== "synthetic" ||
+                is_five_star_rated(run),
+            )
+          ).selected_example
+        } catch (e) {
+          console.warn("Could not pick a grounding sample:", e)
+          grounding_sample = null
+        }
+      }
       const { data, error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/copilot/batch_plan",
         {
@@ -1320,6 +1358,11 @@
               ? multiturn_plan_guidance(spec_text())
               : single_turn_plan_guidance(spec_text()),
             count: NUM_CASES,
+            // The grounding sample rides the planner's data-guide param
+            // (multi-turn plans scenarios, not inputs — no guide there).
+            data_guide: is_multi_turn
+              ? null
+              : grounding_data_guide(grounding_sample),
           },
           signal: new_copilot_abort_signal(),
         },
@@ -1837,6 +1880,7 @@
   async function mint_inputs_from_plan(
     approved_prompts: string[],
     input_gen: ModelChoice,
+    data_guide: string | null,
     signal: AbortSignal,
   ): Promise<string[]> {
     minting_total = approved_prompts.length
@@ -1847,9 +1891,10 @@
         params: { path: { project_id, task_id } },
         body: {
           prompts: approved_prompts,
-          // The wizard surfaces no data-guide toggle; null means "no guide",
-          // matching the batch planner call above.
-          data_guide: null,
+          // The same grounding guide the plan was drafted under, so the
+          // minted inputs match the dataset's real format and voice — and
+          // the cache key above can't drift from what actually minted.
+          data_guide,
           run_config_properties: {
             type: "kiln_agent" as const,
             model_name: input_gen.model_name,
@@ -2024,16 +2069,19 @@
       // A fresh run means fresh results: the loop starts over.
       reset_calibration_state()
 
-      // 5. The test inputs. Their generation depends only on the plan and
-      // the input-generator model — never the run config — so a re-run with
-      // both byte-unchanged (the fix-config-then-run-again recovery loop)
-      // reuses the cached inputs instead of re-paying one generation call
-      // per prompt. Any plan edit or new plan misses the cache.
+      // 5. The test inputs. Their generation depends only on the plan, the
+      // input-generator model, and the grounding guide — never the run
+      // config — so a re-run with all byte-unchanged (the fix-config-then-
+      // run-again recovery loop) reuses the cached inputs instead of
+      // re-paying one generation call per prompt. Any plan edit or new plan
+      // misses the cache.
+      const mint_data_guide = grounding_data_guide(grounding_sample)
       let inputs = reusable_minted_inputs(
         cached_minted_inputs,
         approved_prompts,
         chosen_input_gen.model_name,
         chosen_input_gen.model_provider,
+        mint_data_guide,
       )
       if (inputs) {
         posthog.capture("eval_v2_minted_inputs_reused", {
@@ -2044,6 +2092,7 @@
         inputs = await mint_inputs_from_plan(
           approved_prompts,
           chosen_input_gen,
+          mint_data_guide,
           new_copilot_abort_signal(),
         )
         // Cache only a COMPLETE mint: a partial set cached against the full
@@ -2055,6 +2104,7 @@
             prompts_json: JSON.stringify(approved_prompts),
             model_name: chosen_input_gen.model_name,
             model_provider: chosen_input_gen.model_provider,
+            data_guide: mint_data_guide,
             inputs,
           }
         }
@@ -2205,9 +2255,10 @@
       if (complete.length > 0) {
         trace_claims = complete
         trace_reviews = build_trace_reviews(complete)
-        // Single-turn still reviews every result; the judge-stratified
-        // subset math activates when the pooled review lands.
-        selected_trace_indices = complete.map((_, i) => i)
+        // The review subset is decided the moment all verdicts are in —
+        // the same deterministic judge-stratified pick as multi-turn, so
+        // both classes calibrate.
+        selected_trace_indices = select_review_subset(complete)
       }
       if (generation_error) return
       if (batch_abort) {
@@ -2307,18 +2358,17 @@
   let trace_claims: TraceClaims[] = []
   let trace_reviews: TraceReview[] = []
   // Which traces the reviewer is asked to review (indices into trace_claims):
-  // a judge-stratified subset for multi-turn batches, everything for
-  // single-turn. The review surfaces exactly this subset — unselected traces
-  // are not shown; they land in the train split unrated.
+  // a judge-stratified subset on both arms. The review surfaces exactly this
+  // subset — unselected traces are not shown; they land in the train split
+  // unrated.
   let selected_trace_indices: number[] = []
-  $: all_reviewed = all_traces_reviewed(trace_claims, trace_reviews)
-  // Multi-turn save gate: the human-rated golden answer key caps at 25% of
-  // chains server-side, so the reviewer must rate at least N//4 traces —
-  // reviewing more is welcome, fewer starves the answer key. Calibration
-  // rounds cap the demand at the round's actual subset size: a re-judge
-  // shortfall can surface fewer traces than the standard target, and the
-  // gate must never demand reviews of traces it didn't show.
-  $: multi_turn_review_target =
+  // Save gate (both arms): the human-rated golden answer key caps at 25% of
+  // the batch runs server-side, so the reviewer must rate at least N//4
+  // traces — reviewing more is welcome, fewer starves the answer key.
+  // Calibration rounds cap the demand at the round's actual subset size: a
+  // re-judge shortfall can surface fewer traces than the standard target,
+  // and the gate must never demand reviews of traces it didn't show.
+  $: review_target_count =
     calibration_rounds_completed > 0
       ? calibration_gate_target(
           trace_claims.length,
@@ -2326,9 +2376,8 @@
         )
       : review_target(trace_claims.length)
   $: reviewed_count = reviewed_trace_count(trace_claims, trace_reviews)
-  $: save_gate_met = is_multi_turn
-    ? trace_claims.length > 0 && reviewed_count >= multi_turn_review_target
-    : all_reviewed
+  $: save_gate_met =
+    trace_claims.length > 0 && reviewed_count >= review_target_count
   // The review CTA says what clicking it does: with any graded disagreement
   // a save enters a refine round, so the button reads Refine Judge (with a
   // tooltip naming the count). It flips back to Save the moment the last
@@ -2527,42 +2576,35 @@
   // ── Judge calibration loop (both arms). A save with disagreement never
   // ships a judge the reviewer hasn't seen judge: it refines EXPLICITLY,
   // re-checks the eval data with the refined prompt, and asks the reviewer to
-  // grade the result — round after round. Multi-turn re-judges its driven
-  // conversations (judge_traces) and re-opens a smart-picked subset;
-  // single-turn re-reviews all its examples (review_traces). Save happens
-  // only when a review carries zero disagreement (the judge that ships is the
-  // one whose verdicts were graded) or when the user opts out via the
-  // save-without-refining link under the review CTA.
+  // grade the result — round after round. Both arms re-judge their driven
+  // runs by durable id (judge_traces) and re-open a smart-picked subset.
+  // Save happens only when a review carries zero disagreement (the judge
+  // that ships is the one whose verdicts were graded) or when the user opts
+  // out via the save-without-refining link under the review CTA.
   type CalibrationPhase = "idle" | "refining" | "rejudging" | "building_claims"
   let calibration_phase: CalibrationPhase = "idle"
   // Completed refine+re-judge rounds this batch — round tags, the gate
   // target, and convergence telemetry all key off it.
   let calibration_rounds_completed = 0
-  // Retryable round failure (the re-check stream died, or single-turn
-  // couldn't re-review every example); Retry resumes at the re-check without
-  // re-paying the refine call.
+  // Retryable round failure (the re-check stream died); Retry resumes at
+  // the re-check without re-paying the refine call.
   let calibration_error: string | null = null
   // Refine-attempt failure (request died, timeout, unusable prompt): shown
   // inline under the review actions. The CTA stays Refine Judge and re-fires
   // the refine; the save-without-refining link remains the way out.
   let calibration_refine_error: string | null = null
-  // MULTI-TURN only: conversations without a fresh verdict last round —
-  // surfaced honestly above the review; they keep stale results and sit the
-  // round out. Pinned to 0 for single-turn, whose re-review is
-  // all-or-nothing, so a committed round has no shortfall to report.
+  // Cases without a fresh verdict last round — surfaced honestly above the
+  // review; they keep stale results and sit the round out.
   let calibration_failed_count = 0
-  // MULTI-TURN only: durable ids (leaf run ids) of traces graded in ANY
-  // round — the fresh top-up must never re-serve them as "never reviewed".
-  // Single-turn re-opens every example each round, so it has no top-up and
-  // leaves this empty.
+  // Durable run ids of traces graded in ANY round — the fresh top-up must
+  // never re-serve them as "never reviewed".
   let calibration_reviewed_keys = new Set<string>()
   // The refined judge awaiting a successful re-check, plus the disagreement
   // snapshot it was refined from — kept so a Retry resumes here.
   let calibration_pending_judge: JudgeConfig | null = null
   let calibration_pending_disagreed: number[] = []
   // Live re-check progress (the pipeline progress surface, without the
-  // drive). Multi-turn counts re-judged conversations; single-turn counts
-  // examples that came back judged AND re-claimed.
+  // drive): re-judged case counts off the judge_traces stream.
   let rejudged_done = 0
   let rejudge_failed_live = 0
   let rejudge_total = 0
@@ -2662,8 +2704,9 @@
     return { ...judge, prompt: proposal.refined_judge_prompt }
   }
 
-  // Re-judge every driven conversation with the refined judge over the
-  // judge_traces stream. Returns fresh verdicts keyed by trace index; cases
+  // Re-judge every driven case with the refined judge over the judge_traces
+  // stream (both arms — the server reloads each run by id and applies the
+  // arm's judge reading). Returns fresh verdicts keyed by trace index; cases
   // that failed to re-judge are simply absent. Throws on stream-level
   // failure (bad response, batch_failed, batch_aborted, or nothing judged) —
   // partial results from a broken stream are never applied.
@@ -2671,14 +2714,14 @@
     judge: JudgeConfig,
   ): Promise<Map<number, RejudgeCaseResult>> {
     // Every driven case with a durable run id, in plan order. The runner
-    // emits "" for a leaf without an id — such a chain can't be reloaded, so
+    // emits "" for a run without an id — such a case can't be reloaded, so
     // it sits the round out like a failed case.
     const entries = trace_claims
       .map((tc, i) => ({ i, id: tc.leaf_run_id }))
       .filter((e): e is { i: number; id: string } => Boolean(e.id))
     if (entries.length === 0) {
       throw new KilnError(
-        "None of the conversations have saved ids to re-check. Create your eval data again.",
+        `None of the ${case_noun}s have saved ids to re-check. Create your eval data again.`,
       )
     }
     rejudge_total = entries.length
@@ -2747,97 +2790,7 @@
     }
     if (results.size === 0) {
       throw new KilnError(
-        "None of the conversations could be re-checked. Try again.",
-      )
-    }
-    return results
-  }
-
-  // Re-review every SINGLE-TURN example with the refined judge over the
-  // review_traces stream — the same route the first review ran on, which
-  // re-judges and rebuilds claims in one pass.
-  //
-  // ALL-OR-NOTHING, like the first-pass build on this same route: single-turn
-  // grades every example and ships every one in the golden answer key, so an
-  // example that fails to re-review has nowhere to hide. Keeping it would
-  // either re-present the previous judge's verdict as if the refined judge
-  // produced it, or leave it ungraded and wedge the save gate. Failing the
-  // round instead costs a Retry (which resumes at the re-check without paying
-  // for the refine again) and keeps the answer key honest. Multi-turn can
-  // afford the partial round because it re-reviews a subset it picks from the
-  // cases that actually came back.
-  async function rereview_all_examples(
-    judge: JudgeConfig,
-  ): Promise<Map<number, ReReviewCaseResult>> {
-    // Re-send what the current review is showing (not the original generation
-    // output), so a round always re-checks exactly the text on screen.
-    const ios = trace_claims.map((tc) => ({
-      raw_input: tc.raw_input,
-      raw_output: tc.raw_output,
-    }))
-    if (ios.length === 0) {
-      throw new KilnError("There are no examples to re-check.")
-    }
-    rejudge_total = ios.length
-    rejudged_done = 0
-    rejudge_failed_live = 0
-    const url = `${base_url}/api/projects/${project_id}/tasks/${task_id}/eval_builder/review_traces`
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "text/event-stream",
-      },
-      body: JSON.stringify({ traces: ios, spec_name: name, judge }),
-      signal: new_copilot_abort_signal(),
-    })
-    if (!response.ok || !response.body) {
-      throw new KilnError(
-        `Re-checking your eval data failed (${response.status}): ${await error_detail(response)}`,
-      )
-    }
-    const results = new Map<number, ReReviewCaseResult>()
-    let case_error: string | null = null
-    const reader = response.body.getReader()
-    for await (const payload of sse_data_payloads(reader)) {
-      if (payload === "complete") break
-      let event: ReviewTraceEvent
-      try {
-        event = JSON.parse(payload) as ReviewTraceEvent
-      } catch {
-        continue
-      }
-      if (event.type === "trace_reviewed") {
-        results.set(event.trace_index, {
-          judge_score: event.judge_score,
-          judge_reasoning: event.judge_reasoning,
-          raw_input: event.raw_input,
-          raw_output: event.raw_output,
-          claims: event.claims ?? [],
-          final_judgement: event.final_judgement,
-        })
-        rejudged_done += 1
-      } else if (event.type === "trace_error") {
-        // Keep draining so the progress count stays honest; the first error
-        // is the one reported, and the round fails once the stream ends.
-        // phase separates a re-check failure from a first-pass one: same
-        // route, but one costs a whole calibration round.
-        posthog.capture("eval_v2_review_trace_error", {
-          code: event.code,
-          phase: "rereview",
-        })
-        rejudge_failed_live += 1
-        case_error = case_error ?? event.message
-      }
-    }
-    if (case_error) {
-      throw new KilnError(`Re-checking your eval data failed: ${case_error}`)
-    }
-    if (results.size !== rejudge_total) {
-      // Short stream (connection dropped mid-batch): the missing examples
-      // never reported either way, which is the same problem as an error.
-      throw new KilnError(
-        "Some examples weren't re-checked with the improved judge. Try again.",
+        `None of the ${case_noun}s could be re-checked. Try again.`,
       )
     }
     return results
@@ -2845,11 +2798,9 @@
 
   // One calibration round: refine → re-check the eval data → re-grade against
   // the refined judge's verdicts. Every grade resets (a refined judge can flip
-  // previously-agreed verdicts too, and nothing unseen ships). Multi-turn then
-  // smart-picks a new subset and waits on a claims rebuild; single-turn
-  // re-opens all its examples, whose claims already came back with the
-  // verdicts. `resume` restarts at the re-check with the already-refined judge
-  // (the Retry path).
+  // previously-agreed verdicts too, and nothing unseen ships). Both arms then
+  // smart-pick a new subset and wait on a claims rebuild. `resume` restarts
+  // at the re-check with the already-refined judge (the Retry path).
   async function run_calibration_round(resume = false) {
     if (calibration_phase !== "idle") return
     calibration_error = null
@@ -2871,9 +2822,8 @@
       let disagreed = resume ? calibration_pending_disagreed : []
       if (!refined) {
         // Snapshot who was reviewed and who was disagreed with BEFORE the
-        // grades reset. Multi-turn consumes both (its smart pick and fresh
-        // top-up); single-turn re-reviews everything, so it only carries the
-        // disagreements to the refine.
+        // grades reset — the smart pick prioritizes the disagreements and
+        // the fresh top-up excludes everyone already graded.
         disagreed = disagreed_trace_indices(trace_reviews)
         trace_claims.forEach((tc, i) => {
           if (tc.leaf_run_id && is_trace_reviewed(tc, trace_reviews[i])) {
@@ -2891,40 +2841,6 @@
         calibration_pending_disagreed = disagreed
       }
       calibration_phase = "rejudging"
-      if (!is_multi_turn) {
-        const results = await rereview_all_examples(refined)
-        const flipped = flipped_indices(trace_claims, results)
-        // Computed before anything commits, same as multi-turn below: a round
-        // that throws leaves the previous grades and verdicts intact.
-        const applied = apply_rereview_results(
-          trace_claims,
-          results,
-          `single_turn_r${round}`,
-        )
-        // Always zero here: the re-review is all-or-nothing, so a round that
-        // commits re-checked every example.
-        calibration_failed_count = 0
-        posthog.capture("eval_v2_judge_calibration_round_completed", {
-          is_multi_turn: false,
-          round,
-          num_flips: flipped.length,
-          num_judged: results.size,
-          num_failed: 0,
-        })
-        // Single-turn grades every example — the save path builds the golden
-        // answer key from all of them, so there is no subset to pick and the
-        // round re-opens the whole set. Claims arrived with the verdicts, so
-        // the review opens straight away with no claims-build wait.
-        trace_claims = applied
-        trace_reviews = build_trace_reviews(applied)
-        review_judge = refined
-        selected_trace_indices = applied.map((_, i) => i)
-        calibration_rounds_completed = round
-        calibration_pending_judge = null
-        calibration_pending_disagreed = []
-        calibration_phase = "idle"
-        return
-      }
       const results = await rejudge_all_traces(refined)
       const flipped = flipped_indices(trace_claims, results)
       // Compute the whole round outcome BEFORE committing any of it, so a
@@ -2932,7 +2848,7 @@
       const applied = apply_rejudge_results(
         trace_claims,
         results,
-        `${multi_turn_batch_tag}_r${round}`,
+        `${is_multi_turn ? multi_turn_batch_tag : single_turn_batch_tag}_r${round}`,
       )
       const reviewed = applied
         .map((tc, i) => ({ tc, i }))
@@ -2953,12 +2869,12 @@
         // the gate. Fail the round on the retryable surface instead; Retry
         // resumes at the re-judge, same as a stream failure.
         throw new KilnError(
-          "None of the re-checked conversations could be selected for review. Try again.",
+          `None of the re-checked ${case_noun}s could be selected for review. Try again.`,
         )
       }
       calibration_failed_count = trace_claims.length - results.size
       posthog.capture("eval_v2_judge_calibration_round_completed", {
-        is_multi_turn: true,
+        is_multi_turn,
         round,
         num_flips: flipped.length,
         num_judged: results.size,
@@ -3030,31 +2946,6 @@
     goto_step("save")
     on_save()
   }
-
-  // SSE events from the eval_builder review_traces endpoint — the
-  // single-turn calibration loop's re-review stream. The judge runs
-  // server-side (local, in-app) via the Eval V2 llm_judge adapter; the
-  // claim step calls the remote claim builder.
-  type ReviewTraceEvent =
-    | { type: "batch_started"; total: number }
-    | {
-        type: "trace_reviewed"
-        trace_index: number
-        // The exact text the claim builder saw — the UI displays and
-        // resolves citations against these.
-        raw_input: string
-        raw_output: string
-        judge_score: TraceClaims["judge_score"]
-        judge_reasoning: string
-        claims: TraceClaims["claims"]
-        final_judgement: TraceClaims["final_judgement"]
-      }
-    | {
-        type: "trace_error"
-        trace_index: number
-        code: string
-        message: string
-      }
 
   // Generation → review: advance to existing results, re-driving when
   // stale. Pushes (not replaces) so Back from review returns here — this
@@ -3193,7 +3084,6 @@
               definition: issue_description,
               properties: spec_properties,
               evaluate_full_trace: true,
-              reviewed_examples: [],
               judge_info: save_judge,
               multi_turn: {
                 batch_tag: saved_batch_tag,
@@ -3208,7 +3098,6 @@
                   turns: TURNS_PER_CASE,
                 },
               },
-              task_prompt_with_example: task?.instruction ?? "",
             },
             signal: new_copilot_abort_signal(),
           },
@@ -3247,19 +3136,97 @@
         return
       }
 
-      // Single-turn save path — being rebuilt around the locally-driven
-      // runs. The retired writer sent the review pairs plus a kiln_server
-      // generation session it minted the dataset from; that session no
-      // longer exists (generation moved onto the local pipeline), and the
-      // replacement writer — golden/train tags on the batch-tagged runs,
-      // like the multi-turn branch above — lands with the save-writer
-      // rework. Refuse loudly rather than silently generating server-side
-      // data that ignores the runs the user just reviewed. save_judge is
-      // unused until then; reference it so the shared judge resolution
-      // above stays live for this branch.
-      void save_judge
-      save_error =
-        "Saving single-turn evals from locally-run eval data isn't wired up yet."
+      // Single-turn save: golden/train tags and the human's ratings land on
+      // the batch-tagged runs the pipeline persisted; the eval slice is
+      // minted server-side as inputs-only EvalInputs from the inputs those
+      // runs were driven on. Nothing is generated at save time — the
+      // dataset IS the runs the user just reviewed.
+      if (single_turn_batch_tag === null || trace_claims.length === 0) {
+        save_error = "No test runs were generated. Go back to Step 4."
+        return
+      }
+      // The saved batch's own tag: its runs become the eval's dataset, so
+      // it must be excluded from any future cleanup (below).
+      const saved_batch_tag = single_turn_batch_tag
+      // Carry the human's review through save: each reviewed trace maps to
+      // its persisted run (leaf_run_id from the pipeline); the studio
+      // writes the golden rating + per-claim grades onto that run. Only
+      // traces the human actually reviewed ride along (subset review:
+      // unreviewed runs land in the train split, unrated).
+      const reviewed_runs = trace_claims
+        .map((tc, i) => ({ tc, review: trace_reviews[i] }))
+        // Truthy check: the pipeline emits "" (not null) when a run has no
+        // id — such a run can't be rated, so skip it.
+        .filter(
+          ({ tc, review }) =>
+            tc.leaf_run_id && review && is_trace_reviewed(tc, review),
+        )
+        .map(({ tc, review }) => ({
+          leaf_run_id: tc.leaf_run_id as string,
+          user_says_meets_spec: user_says_meets_spec(tc, review),
+          feedback: disagreement_feedback(review),
+          // A trace can be reviewed on the blind verdict alone when its
+          // claims build failed — the rating stands, the grades don't.
+          claim_review:
+            tc.claims_state === "built"
+              ? build_claim_review_payload(tc, review)
+              : null,
+        }))
+      const { data, error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
+        {
+          params: { path: { project_id, task_id } },
+          body: {
+            name,
+            definition: issue_description,
+            properties: spec_properties,
+            // The pipeline judged final answers, so the saved eval must
+            // too (the server refuses a full-trace single-turn save).
+            evaluate_full_trace: false,
+            judge_info: save_judge,
+            single_turn: {
+              batch_tag: saved_batch_tag,
+              reviewed_runs,
+              // The eval slice: the inputs the surviving runs were driven
+              // on, byte-identical to what the judge scored (raw_input
+              // echoes the request input on every round).
+              inputs: trace_claims.map((tc) => tc.raw_input),
+            },
+            // The auto-picked sample that grounded planning and input
+            // minting, recorded on the Spec for provenance (v1 parity).
+            task_sample: grounding_sample,
+          },
+          signal: new_copilot_abort_signal(),
+        },
+      )
+      if (error || !data) {
+        save_error = createKilnError(error).getMessage()
+        posthog.capture("eval_v2_save_error", {
+          is_multi_turn: false,
+          error_code: (error as { status?: number } | undefined)?.status,
+        })
+        return
+      }
+      posthog.capture("eval_v2_save_success", {
+        is_multi_turn: false,
+        num_cases: trace_claims.length,
+      })
+      const saved = data as { id?: string }
+      // Persisted — same draft retirement as multi-turn: carry only
+      // stranded cleanup tags (never the just-saved batch's) so a later
+      // run on this task deletes them instead of orphaning them forever.
+      await clear_builder_draft(
+        draft_after_save_keeping_stranded_tags(
+          saved_batch_tag,
+          undeleted_batch_tags,
+        ),
+      )
+      if (saved.id) {
+        leave_guard_suppressed = true
+        goto(`/specs/${project_id}/${task_id}/${saved.id}`)
+      } else {
+        replace_step("done")
+      }
       return
     } catch (e) {
       if (is_abort_error(e)) return
@@ -3365,8 +3332,8 @@
         // passes by design (balanced plan + stratified sample), so the
         // per-conversation surface stays verdict-neutral.
         return is_multi_turn
-          ? `A judge reviewed each test conversation in your eval data and flagged possible mistakes. Keep the real ones, dismiss the false alarms. You're reviewing ${multi_turn_review_target} of ${trace_claims.length}. Click a citation number to see the moment it happened.`
-          : "A judge flagged possible mistakes. Keep the real ones, dismiss the false alarms. Click a citation number to see the moment it happened."
+          ? `A judge reviewed each test conversation in your eval data and flagged possible mistakes. Keep the real ones, dismiss the false alarms. You're reviewing ${review_target_count} of ${trace_claims.length}. Click a citation number to see the moment it happened.`
+          : `A judge reviewed each test run in your eval data and flagged possible mistakes. Keep the real ones, dismiss the false alarms. You're reviewing ${review_target_count} of ${trace_claims.length}. Click a citation number to see the moment it happened.`
       case "save":
         return "Saving your eval and its test data."
       case "done":
@@ -3999,7 +3966,7 @@
               warning_message="There is nothing to review yet. Create your eval data first."
             />
           {:else}
-            {#if calibration_rounds_completed > 0 && rejudge_shortfall_notice(calibration_failed_count)}
+            {#if calibration_rounds_completed > 0 && rejudge_shortfall_notice(calibration_failed_count, case_noun)}
               <!-- Cases without a fresh verdict sat the round out — say so
                    instead of letting the smaller subset pass unremarked. -->
               <div class="mb-4">
@@ -4008,6 +3975,7 @@
                   warning_icon="info"
                   warning_message={rejudge_shortfall_notice(
                     calibration_failed_count,
+                    case_noun,
                   )}
                 />
               </div>

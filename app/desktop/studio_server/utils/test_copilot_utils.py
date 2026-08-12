@@ -17,6 +17,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     KILN_COPILOT_MODEL_NAME,
     KILN_COPILOT_MODEL_PROVIDER,
     build_multi_turn_eval_inputs,
+    build_single_turn_batch_eval_inputs,
     build_single_turn_eval_inputs,
     create_single_turn_dataset,
     create_task_run_from_reviewed,
@@ -27,11 +28,11 @@ from app.desktop.studio_server.utils.copilot_utils import (
     get_copilot_api_key,
     persist_eval_slice,
     tag_single_turn_drive_run,
-    rate_multi_turn_chain_leaves,
-    select_golden_leaves,
-    split_and_tag_multi_turn_chains,
+    rate_reviewed_batch_runs,
+    select_golden_runs,
+    split_and_tag_batch_runs,
     split_pool_train_eval,
-    unrate_multi_turn_chain_leaves,
+    unrate_reviewed_batch_runs,
     warn_if_golden_below_target,
 )
 from fastapi import HTTPException
@@ -113,13 +114,13 @@ class TestSplitPoolTrainEval:
 
 
 class TestSelectGoldenLeaves:
-    """select_golden_leaves carves golden (rated-only, capped at 25%) off the
+    """select_golden_runs carves golden (rated-only, capped at 25%) off the
     leaves; the remainder feeds the train/eval split."""
 
     def test_all_rated_golden_capped_at_quarter(self, multiturn_task):
         leaves = _make_su_leaves(multiturn_task, 8)
         rated = {leaf.id for leaf in leaves}
-        golden, remaining = select_golden_leaves(leaves, rated, random.Random(0))
+        golden, remaining = select_golden_runs(leaves, rated, random.Random(0))
         assert len(golden) == 2  # 8 // 4
         assert len(remaining) == 6
         # Golden is drawn from rated; disjoint from remaining; covers all.
@@ -130,13 +131,13 @@ class TestSelectGoldenLeaves:
     def test_rated_below_cap_golden_is_all_rated(self, multiturn_task):
         leaves = _make_su_leaves(multiturn_task, 8)
         rated = {leaves[0].id}  # 1 rated, cap is 2
-        golden, remaining = select_golden_leaves(leaves, rated, random.Random(0))
+        golden, remaining = select_golden_runs(leaves, rated, random.Random(0))
         assert {leaf.id for leaf in golden} == {leaves[0].id}
         assert len(remaining) == 7
 
     def test_unrated_never_enters_golden(self, multiturn_task):
         leaves = _make_su_leaves(multiturn_task, 8)
-        golden, remaining = select_golden_leaves(leaves, set(), random.Random(0))
+        golden, remaining = select_golden_runs(leaves, set(), random.Random(0))
         assert golden == []
         assert len(remaining) == 8
 
@@ -144,7 +145,7 @@ class TestSelectGoldenLeaves:
         # All 8 rated, cap 2 → 6 rated leaves land in remaining (still held out).
         leaves = _make_su_leaves(multiturn_task, 8)
         rated = {leaf.id for leaf in leaves}
-        golden, remaining = select_golden_leaves(leaves, rated, random.Random(1))
+        golden, remaining = select_golden_runs(leaves, rated, random.Random(1))
         assert len(golden) == 2
         assert all(leaf.id in rated for leaf in remaining)
 
@@ -462,11 +463,11 @@ class TestCreateSingleTurnDataset:
 
 
 class TestBuildSingleTurnEvalInputs:
-    def test_carries_the_input_verbatim_and_drops_the_output(self):
-        # Inputs only: the generated output is discarded because the runner
-        # produces a fresh one per run config and judges that instead.
+    def test_carries_the_input_verbatim(self):
+        # Inputs only, by construction: the builder takes input strings and
+        # the runner produces a fresh output per run config at eval time.
         eval_inputs = build_single_turn_eval_inputs(
-            _samples(2), "eval_myspec", ["synthetic_session_7"]
+            ["input_0", "input_1"], "eval_myspec", ["synthetic_session_7"]
         )
         assert len(eval_inputs) == 2
         assert [ei.data.type for ei in eval_inputs] == ["single_turn", "single_turn"]
@@ -478,13 +479,44 @@ class TestBuildSingleTurnEvalInputs:
 
     def test_tags_carry_the_eval_slice_and_session(self):
         eval_inputs = build_single_turn_eval_inputs(
-            _samples(1), "eval_myspec", ["synthetic_session_7"]
+            ["input_0"], "eval_myspec", ["synthetic_session_7"]
         )
         assert eval_inputs[0].tags == ["eval_myspec", "synthetic_session_7"]
 
     def test_builds_unsaved_models(self):
         # Built and validated here, persisted inside the save unit of work.
-        eval_inputs = build_single_turn_eval_inputs(_samples(3), "eval_myspec", [])
+        eval_inputs = build_single_turn_eval_inputs(
+            ["input_0", "input_1", "input_2"], "eval_myspec", []
+        )
+        assert all(ei.path is None for ei in eval_inputs)
+
+
+class TestBuildSingleTurnBatchEvalInputs:
+    """The wizard save's eval-slice builder: same inputs-only items, with
+    drive-batch provenance and the task parented on."""
+
+    def test_carries_batch_provenance_and_parents_the_task(self, tmp_path):
+        project_path = tmp_path / "p" / "project.kiln"
+        project_path.parent.mkdir()
+        project = Project(name="P", path=project_path)
+        project.save_to_file()
+        task = Task(name="T", instruction="i", parent=project)
+        task.save_to_file()
+
+        eval_inputs = build_single_turn_batch_eval_inputs(
+            ["input_0", "input_1"], "batch123", task, "eval_myspec"
+        )
+        assert len(eval_inputs) == 2
+        assert [ei.data.user_message.text for ei in eval_inputs] == [
+            "input_0",
+            "input_1",
+        ]
+        assert all(
+            ei.tags == ["eval_myspec", "single_turn_drive_batch:batch123"]
+            for ei in eval_inputs
+        )
+        assert all(ei.parent is task for ei in eval_inputs)
+        # Built unsaved — persistence happens in the save unit of work.
         assert all(ei.path is None for ei in eval_inputs)
 
 
@@ -557,7 +589,7 @@ class TestRateMultiTurnChainLeaves:
         ]
 
         rated_out: list = []
-        rate_multi_turn_chain_leaves(
+        rate_reviewed_batch_runs(
             leaves, reviewed, spec_name="My Spec", rated_out=rated_out
         )
 
@@ -596,7 +628,7 @@ class TestRateMultiTurnChainLeaves:
             ReviewedChainApi(leaf_run_id="no_such_run", user_says_meets_spec=True)
         ]
         with pytest.raises(HTTPException) as exc:
-            rate_multi_turn_chain_leaves(leaves, reviewed, spec_name="My Spec")
+            rate_reviewed_batch_runs(leaves, reviewed, spec_name="My Spec")
         assert exc.value.status_code == 404
 
     def test_unrate_restores_prior_state(self, task_with_leaves):
@@ -624,14 +656,14 @@ class TestRateMultiTurnChainLeaves:
             ),
         ]
         rated_out: list = []
-        rate_multi_turn_chain_leaves(
+        rate_reviewed_batch_runs(
             leaves, reviewed, spec_name="My Spec", rated_out=rated_out
         )
         assert "named::My Spec" in leaves[0].output.rating.requirement_ratings
         assert len(leaves[0].feedback()) == 1
         assert len(leaves[0].claim_reviews()) == 1
 
-        unrate_multi_turn_chain_leaves(rated_out)
+        unrate_reviewed_batch_runs(rated_out)
 
         rating = leaves[0].output.rating
         assert rating is not None
@@ -659,7 +691,7 @@ class TestRateMultiTurnChainLeaves:
             side_effect=RuntimeError("disk full"),
         ):
             with pytest.raises(RuntimeError, match="disk full"):
-                rate_multi_turn_chain_leaves(
+                rate_reviewed_batch_runs(
                     leaves, reviewed, spec_name="My Spec", rated_out=rated_out
                 )
 
@@ -668,7 +700,7 @@ class TestRateMultiTurnChainLeaves:
         assert "named::My Spec" in leaves[0].output.rating.requirement_ratings
 
         # ...so rollback restores it (rating gone, feedback child deleted).
-        unrate_multi_turn_chain_leaves(rated_out)
+        unrate_reviewed_batch_runs(rated_out)
         assert leaves[0].output.rating is None
         assert leaves[0].feedback() == []
         assert leaves[0].claim_reviews() == []
@@ -744,7 +776,7 @@ class TestSplitAndTagMultiTurnChains:
         leaves = _make_su_leaves(multiturn_task, 8)
         reviewed_ids = {leaf.id for leaf in leaves}
 
-        split_and_tag_multi_turn_chains(
+        split_and_tag_batch_runs(
             leaves,
             reviewed_ids,
             "train_tag",
@@ -761,7 +793,7 @@ class TestSplitAndTagMultiTurnChains:
 
     def test_each_leaf_gets_exactly_one_split_tag(self, multiturn_task):
         leaves = _make_su_leaves(multiturn_task, 5)
-        split_and_tag_multi_turn_chains(
+        split_and_tag_batch_runs(
             leaves,
             {leaves[0].id},
             "train_tag",
@@ -776,7 +808,7 @@ class TestSplitAndTagMultiTurnChains:
         # 4 leaves all reviewed → golden caps at 1 (not 4); train is never
         # starved to empty (the bug the cap fixes).
         leaves = _make_su_leaves(multiturn_task, 4)
-        split_and_tag_multi_turn_chains(
+        split_and_tag_batch_runs(
             leaves,
             {leaf.id for leaf in leaves},
             "train_tag",
@@ -789,7 +821,7 @@ class TestSplitAndTagMultiTurnChains:
 
     def test_zero_rated_no_golden(self, multiturn_task):
         leaves = _make_su_leaves(multiturn_task, 3)
-        split_and_tag_multi_turn_chains(
+        split_and_tag_batch_runs(
             leaves,
             set(),
             "train_tag",
@@ -802,7 +834,7 @@ class TestSplitAndTagMultiTurnChains:
 
     def test_preserves_existing_runner_tags(self, multiturn_task):
         leaves = _make_su_leaves(multiturn_task, 4)
-        split_and_tag_multi_turn_chains(
+        split_and_tag_batch_runs(
             leaves,
             {leaf.id for leaf in leaves},
             "train_tag",
@@ -816,7 +848,7 @@ class TestSplitAndTagMultiTurnChains:
     def test_tagged_out_captures_additions_for_rollback(self, multiturn_task):
         leaves = _make_su_leaves(multiturn_task, 4)
         tagged_out: list = []
-        split_and_tag_multi_turn_chains(
+        split_and_tag_batch_runs(
             leaves,
             {leaf.id for leaf in leaves},
             "train_tag",

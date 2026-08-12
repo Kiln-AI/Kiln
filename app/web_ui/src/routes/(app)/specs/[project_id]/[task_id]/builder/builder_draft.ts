@@ -46,14 +46,18 @@ export function reusable_cached_cases(
 }
 
 // The single-turn arm's minted test inputs, cached against exactly what
-// produced them: the approved plan prompts and the input-generator model
-// (the spec plays no part — it already shaped the PLAN). A re-run with both
-// unchanged reuses the inputs instead of re-paying one generation call per
-// prompt, which makes the fix-config-then-run-again recovery loop fast.
+// produced them: the approved plan prompts, the input-generator model, and
+// the grounding data-guide the mint ran under (the spec plays no part — it
+// already shaped the PLAN). A re-run with all three unchanged reuses the
+// inputs instead of re-paying one generation call per prompt, which makes
+// the fix-config-then-run-again recovery loop fast.
 export type CachedMintedInputs = {
   prompts_json: string
   model_name: string
   model_provider: string
+  // The grounding guide passed to the mint (null = ungrounded). Pre-guide
+  // drafts restore without the key and simply miss the cache.
+  data_guide?: string | null
   // Each input as the string the pipeline runs on (structured-task inputs
   // are JSON strings — the same encoding the saved eval's items store).
   inputs: string[]
@@ -64,10 +68,12 @@ export function reusable_minted_inputs(
   approved_prompts: string[],
   model_name: string,
   model_provider: string,
+  data_guide: string | null,
 ): string[] | null {
   if (!cache || cache.inputs.length === 0) return null
   if (cache.model_name !== model_name) return null
   if (cache.model_provider !== model_provider) return null
+  if ((cache.data_guide ?? null) !== data_guide) return null
   if (cache.prompts_json !== JSON.stringify(approved_prompts)) return null
   return cache.inputs
 }
@@ -90,6 +96,10 @@ export type BuilderDraft = {
   // The single-turn arm's minted inputs — reused on a re-run while
   // plan+model are byte-unchanged, revalidated in reusable_minted_inputs.
   cached_minted_inputs: CachedMintedInputs | null
+  // The auto-picked task sample grounding single-turn planning and input
+  // minting — persisted beside the plan it grounded, so a restored session
+  // mints with the same grounding (and saves the same provenance record).
+  grounding_sample: { input: string; output: string } | null
   // Batch-tag bookkeeping — a CORRECTNESS carry, not convenience: these
   // name runs already on disk. The per-arm live-batch tag plus
   // undeleted_batch_tags, the delete-on-next-drive cleanup list (shared —
@@ -117,6 +127,7 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   batch_plan_edited: false,
   cached_su_cases: null,
   cached_minted_inputs: null,
+  grounding_sample: null,
   multi_turn_batch_tag: null,
   single_turn_batch_tag: null,
   undeleted_batch_tags: [],

@@ -82,13 +82,14 @@ NUM_TOPICS = 15
 # human-rated answer key, filled from RATED items only (never padded with
 # unrated ones). On both arms the eval slice is EvalInput items — inputs the
 # runner executes fresh per run config — so only golden and train are stored
-# as TaskRuns. Multi-turn: golden is capped at GOLDEN_TARGET_FRACTION of the
-# chains (select_golden_leaves) and the remainder is all train. Single-turn:
-# golden is the reviewed examples (structurally small, no cap needed) and the
-# generated pool splits train:eval at 2:1 (the 50:25). If fewer than the
-# target fraction are rated the answer key is simply smaller (warned). One
-# owner so the golden fraction can't drift between the single-turn and
-# multi-turn splitters.
+# as TaskRuns. Both wizard arms split their batch runs the same way: golden
+# is capped at GOLDEN_TARGET_FRACTION of the batch (select_golden_runs) and
+# the remainder is all train. The legacy v1 manual flow's single-turn save
+# instead takes its reviewed examples as golden (structurally small, no cap
+# needed) and splits the generated pool train:eval at 2:1 (the 50:25). If
+# fewer than the target fraction are rated the answer key is simply smaller
+# (warned). One owner so the golden fraction can't drift between the
+# splitters.
 TRAIN_SPLIT_WEIGHT = 2
 EVAL_SPLIT_WEIGHT = 1
 GOLDEN_SPLIT_WEIGHT = 1
@@ -408,7 +409,10 @@ def create_single_turn_dataset(
     # cap — no cap needed here, unlike the multi-turn all-rated case.
     train_examples, eval_examples = split_pool_train_eval(all_examples, rng)
     result.eval_inputs = build_single_turn_eval_inputs(
-        eval_examples, eval_tag, extra_tags
+        # model_dump for the input read: SampleApi keeps it behind an alias.
+        [example.model_dump(by_alias=True)["input"] for example in eval_examples],
+        eval_tag,
+        extra_tags,
     )
     for example in train_examples:
         result.add_run(create_task_run_from_sample(example, train_tag, extra_tags))
@@ -420,16 +424,17 @@ def create_single_turn_dataset(
 
 
 def build_single_turn_eval_inputs(
-    eval_examples: list[SampleApi],
+    inputs: list[str],
     eval_tag: str,
     extra_tags: list[str],
 ) -> list[EvalInput]:
-    """Mint one EvalInput per eval-slice example — the single-turn eval slice.
+    """Mint one EvalInput per input string — the single-turn eval slice.
 
-    Each carries the example's INPUT only, tagged with the eval-slice tag and
-    the generation session it came from. The generated output is dropped on
-    purpose: the runner produces a fresh output per run config at eval time
-    and judges that, so a stored output would only be a misleading artifact of
+    Each carries a generated task INPUT only (structured-task inputs as JSON
+    strings), tagged with the eval-slice tag plus provenance (the drive
+    batch, or the legacy flow's generation session). No output on purpose:
+    the runner produces a fresh output per run config at eval time and
+    judges that, so a stored output would only be a misleading artifact of
     the machine that wrote the input.
 
     Models are built and validated here, unsaved — persistence happens in
@@ -438,11 +443,31 @@ def build_single_turn_eval_inputs(
     """
     return [
         EvalInput(
-            data=SingleTurnEvalInputData(user_message=UserMessage(text=example.input)),
+            data=SingleTurnEvalInputData(user_message=UserMessage(text=input_text)),
             tags=[eval_tag, *extra_tags],
         )
-        for example in eval_examples
+        for input_text in inputs
     ]
+
+
+def build_single_turn_batch_eval_inputs(
+    inputs: list[str],
+    batch_tag: str,
+    task: Task,
+    eval_tag: str,
+) -> list[EvalInput]:
+    """The wizard single-turn save's eval slice: one EvalInput per generated
+    input the pipeline ran, tagged with the eval-slice tag plus the drive
+    batch it came from — the single-turn sibling of
+    build_multi_turn_eval_inputs, with the same build-unsaved contract
+    (persistence happens in persist_eval_slice inside the save
+    unit-of-work)."""
+    eval_inputs = build_single_turn_eval_inputs(
+        inputs, eval_tag, [f"{_TAG_PREFIX_SINGLE_TURN_DRIVE_BATCH}{batch_tag}"]
+    )
+    for eval_input in eval_inputs:
+        eval_input.parent = task
+    return eval_inputs
 
 
 def find_multi_turn_chain_leaves(task: Task, batch_tag: str) -> list[TaskRun]:
@@ -597,7 +622,7 @@ def delete_single_turn_batch_runs(task: Task, batch_tag: str) -> int:
     return deleted
 
 
-def split_and_tag_multi_turn_chains(
+def split_and_tag_batch_runs(
     leaves: list[TaskRun],
     reviewed_leaf_ids: set[str],
     train_tag: str,
@@ -605,45 +630,47 @@ def split_and_tag_multi_turn_chains(
     rng: random.Random | None = None,
     tagged_out: list[tuple[TaskRun, set[str]]] | None = None,
 ) -> None:
-    """Assign each chain leaf to exactly ONE split (golden XOR train).
+    """Assign each batch run to exactly ONE split (golden XOR train).
 
-    Golden = the human-rated leaves (the answer key), capped at the target
-    fraction; every remaining leaf is train. Chains carry no eval slice —
-    the eval set is EvalInput items minted from the driven cases
-    (build_multi_turn_eval_inputs) and re-driven fresh at eval time, so
-    reusing a golden chain's scenario there is not circular: golden
-    validates the judge on the STORED conversation while the eval set
-    scores NEW ones.
+    Both arms' save writer: `leaves` are the multi-turn chain leaves or the
+    single-turn pipeline's batch-tagged runs. Golden = the human-rated runs
+    (the answer key), capped at the target fraction; every remaining run is
+    train. The runs carry no eval slice — the eval set is EvalInput items
+    minted separately (from the driven cases or the generated inputs) and
+    re-run fresh at eval time, so reusing a golden run's input there is not
+    circular: golden validates the judge on the STORED result while the
+    eval set scores NEW ones.
 
     `rng` is injected for deterministic tests. If `tagged_out` is provided,
-    each leaf actually mutated is appended as `(leaf, {tag_added})` so the
+    each run actually mutated is appended as `(run, {tag_added})` so the
     caller can reverse the mutation on failure via
-    `untag_multi_turn_chains_for_eval` without disturbing pre-existing tags.
-    Mutates each leaf in place and persists via save_to_file.
+    `untag_batch_runs_for_eval` without disturbing pre-existing tags.
+    Mutates each run in place and persists via save_to_file.
     """
     rng = rng or random.Random()
-    golden, pool = select_golden_leaves(leaves, reviewed_leaf_ids, rng)
+    golden, pool = select_golden_runs(leaves, reviewed_leaf_ids, rng)
 
-    tag_chain_leaves(golden, golden_tag, tagged_out)
-    tag_chain_leaves(pool, train_tag, tagged_out)
+    tag_batch_runs(golden, golden_tag, tagged_out)
+    tag_batch_runs(pool, train_tag, tagged_out)
 
     warn_if_golden_below_target(len(golden), len(leaves))
 
 
-def select_golden_leaves(
+def select_golden_runs(
     leaves: list[TaskRun],
     reviewed_leaf_ids: set[str],
     rng: random.Random,
 ) -> tuple[list[TaskRun], list[TaskRun]]:
-    """Carve the golden answer-key slice off the chain leaves.
+    """Carve the golden answer-key slice off the batch runs.
 
-    Golden is up to GOLDEN_TARGET_FRACTION of the leaves, drawn from RATED
-    leaves only (the answer key is human-rated by definition). Because the UI
-    requires every chain reviewed before save, in practice all leaves are rated
-    and golden is a random 25%. Returns (golden, remaining): remaining holds
-    the rated leaves beyond the cap plus any unrated leaves — the train slice.
-    Every remaining leaf keeps whatever rating it has; only the golden slice
-    is the answer key the judge is calibrated against.
+    Golden is up to GOLDEN_TARGET_FRACTION of the runs, drawn from RATED
+    runs only (the answer key is human-rated by definition). Under the
+    pooled stratified review both arms rate ~25% of the batch, so golden is
+    normally every reviewed run; a reviewer who grades extra runs beyond the
+    cap sends the extras to train with their ratings kept. Returns
+    (golden, remaining): remaining holds the rated runs beyond the cap plus
+    the unrated runs — the train slice. Only the golden slice is the answer
+    key the judge is calibrated against.
     """
     golden_target = (
         len(leaves)
@@ -658,12 +685,12 @@ def select_golden_leaves(
     return golden, remaining
 
 
-def tag_chain_leaves(
+def tag_batch_runs(
     leaves: list[TaskRun],
     tag: str,
     tagged_out: list[tuple[TaskRun, set[str]]] | None = None,
 ) -> None:
-    """Add one split tag to each leaf, recording the addition for rollback."""
+    """Add one split tag to each run, recording the addition for rollback."""
     for leaf in leaves:
         current = set(leaf.tags or [])
         if tag in current:
@@ -733,13 +760,13 @@ def persist_eval_slice(
         saved_out.append(eval_input)
 
 
-def untag_multi_turn_chains_for_eval(
+def untag_batch_runs_for_eval(
     tagged_leaves: list[tuple[TaskRun, set[str]]],
 ) -> None:
-    """Reverse the tagging done by split_and_tag_multi_turn_chains.
+    """Reverse the tagging done by split_and_tag_batch_runs.
 
-    Removes only the tags that THIS run added (passed in via `tagged_out`),
-    so pre-existing tags on the leaf are preserved. Best-effort: a per-leaf
+    Removes only the tags that THIS save added (passed in via `tagged_out`),
+    so pre-existing tags on the run are preserved. Best-effort: a per-run
     save failure is logged and the loop continues — the original save error
     that triggered cleanup is the one the user needs to see.
     """
@@ -751,7 +778,7 @@ def untag_multi_turn_chains_for_eval(
             logger.exception(f"Failed to untag leaf {leaf.id} during cleanup")
 
 
-def rate_multi_turn_chain_leaves(
+def rate_reviewed_batch_runs(
     leaves: list[TaskRun],
     reviewed_chains: list[ReviewedChainApi],
     spec_name: str,
@@ -760,19 +787,20 @@ def rate_multi_turn_chain_leaves(
     ]
     | None = None,
 ) -> None:
-    """Write the human's review verdicts onto the chain-leaf TaskRuns.
+    """Write the human's review verdicts onto the batch runs, both arms.
 
-    Each reviewed chain becomes a golden RequirementRating (pass_fail under
-    `named::{spec_name}`) on its leaf, plus a Feedback for the disagree-why
-    text and a ClaimReview child carrying the per-claim grades — the same
-    answer-key shape single-turn golden runs get.
+    Each reviewed run (a chain leaf on multi-turn, the run itself on
+    single-turn) gets a golden RequirementRating (pass_fail under
+    `named::{spec_name}`), plus a Feedback for the disagree-why text and a
+    ClaimReview child carrying the per-claim grades — ONE answer-key shape
+    across the arms.
 
-    If `rated_out` is provided, each mutated leaf is appended as
-    `(leaf, rating_before_this_call, children_added)` so a failed save can
-    be reversed via `unrate_multi_turn_chain_leaves`.
+    If `rated_out` is provided, each mutated run is appended as
+    `(run, rating_before_this_call, children_added)` so a failed save can
+    be reversed via `unrate_reviewed_batch_runs`.
 
-    Raises HTTPException(404) when a reviewed chain references a leaf id not
-    in `leaves` — the review must describe the batch being saved.
+    Raises HTTPException(404) when a review references a run id not in
+    `leaves` — the review must describe the batch being saved.
     """
     leaves_by_id = {leaf.id: leaf for leaf in leaves if leaf.id}
     rating_key = spec_rating_key(spec_name)
@@ -820,15 +848,15 @@ def rate_multi_turn_chain_leaves(
             added_children.append(save_claim_review(leaf, reviewed.claim_review))
 
 
-def unrate_multi_turn_chain_leaves(
+def unrate_reviewed_batch_runs(
     rated_leaves: list[
         tuple[TaskRun, TaskOutputRating | None, list[Feedback | ClaimReview]]
     ],
 ) -> None:
-    """Reverse the mutations done by rate_multi_turn_chain_leaves.
+    """Reverse the mutations done by rate_reviewed_batch_runs.
 
-    Restores each leaf's prior rating and deletes the Feedback/ClaimReview
-    children this run added. Best-effort like the untag path: per-leaf
+    Restores each run's prior rating and deletes the Feedback/ClaimReview
+    children this save added. Best-effort like the untag path: per-run
     failures are logged and the loop continues so the original error stays
     visible.
     """

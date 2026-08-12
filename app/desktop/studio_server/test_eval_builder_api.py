@@ -20,8 +20,6 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     ClaimApi,
     FinalJudgementApi,
     JudgeConfig,
-    ReviewTracesRequest,
-    TraceReviewedEvent,
 )
 from app.desktop.studio_server.eval_builder_api import connect_eval_builder_api
 from app.desktop.studio_server.utils.eval_builder_utils import (
@@ -54,7 +52,6 @@ from kiln_ai.synthetic_user.runner import NUM_CASES_MAX
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.utils.spec_utils import spec_eval_output_score
 
-REVIEW_URL = "/api/projects/p1/tasks/t1/eval_builder/review_traces"
 BUILD_CLAIMS_URL = "/api/projects/p1/tasks/t1/eval_builder/build_claims"
 
 
@@ -122,225 +119,6 @@ def _claims_output(claims: list[ClaimApi] | None = None) -> BuildClaimsApiOutput
         claims=claims if claims is not None else [_claim_with_citation()],
         final_judgement=_final_judgement(),
     )
-
-
-# ───────────────────────── review_traces (SSE) ─────────────────────────
-
-
-@pytest.fixture
-def review_request():
-    return {
-        "traces": [
-            {"raw_input": "in-1", "raw_output": "out-1"},
-            {"raw_input": "in-2", "raw_output": "out-2"},
-        ],
-        "spec_name": "Test Spec",
-        "judge": {
-            "prompt": "Judge whether the output fabricates policy.",
-            "model_name": "claude_sonnet_4_6",
-            "model_provider": "anthropic",
-        },
-    }
-
-
-def test_review_traces_streams_reviewed_events(client, review_request):
-    with (
-        patch(
-            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
-            new=AsyncMock(return_value=JudgeVerdict("fail", "fabricated a policy")),
-        ),
-        patch(
-            "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
-            new=AsyncMock(return_value=_claims_output()),
-        ),
-    ):
-        resp = client.post(REVIEW_URL, json=review_request)
-
-    assert resp.status_code == 200
-    assert resp.headers["content-type"].startswith("text/event-stream")
-    events = _parse_sse(resp.text)
-
-    # batch_started + 2 trace_reviewed + complete
-    started = [
-        e for e in events if isinstance(e, dict) and e.get("type") == "batch_started"
-    ]
-    reviewed = [
-        e for e in events if isinstance(e, dict) and e.get("type") == "trace_reviewed"
-    ]
-    assert started and started[0]["total"] == 2
-    assert len(reviewed) == 2
-    assert {e["trace_index"] for e in reviewed} == {0, 1}
-    assert events[-1] == "complete"
-
-    # every reviewed event carries the verdict + claims + the top-level final
-    # judgement, and the citation key is the literal `from` (the UI greps it),
-    # not `from_`.
-    for e in reviewed:
-        assert e["judge_score"] == "fail"
-        # The event echoes the exact text the claim builder saw.
-        assert e["raw_input"] in {"in-1", "in-2"}
-        assert e["raw_output"] in {"out-1", "out-2"}
-        assert e["claims"][0]["expected_result"] == "fail"
-        assert e["final_judgement"]["expected_result"] == "fail"
-        citation = e["claims"][0]["citations"][0]
-        assert citation["from"] == "30 days" and "from_" not in citation
-        assert citation["source"] == "output"
-        fj_citation = e["final_judgement"]["citations"][0]
-        assert fj_citation["from"] == "30 days" and "from_" not in fj_citation
-
-
-def test_review_traces_supports_empty_claims(client, review_request):
-    # claims may be EMPTY (trivial single-property evals) — the final
-    # judgement alone carries the review.
-    with (
-        patch(
-            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
-            new=AsyncMock(return_value=JudgeVerdict("fail", "fabricated a policy")),
-        ),
-        patch(
-            "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
-            new=AsyncMock(return_value=_claims_output(claims=[])),
-        ),
-    ):
-        resp = client.post(REVIEW_URL, json=review_request)
-
-    assert resp.status_code == 200
-    reviewed = [
-        e
-        for e in _parse_sse(resp.text)
-        if isinstance(e, dict) and e.get("type") == "trace_reviewed"
-    ]
-    assert len(reviewed) == 2
-    for e in reviewed:
-        assert e["claims"] == []
-        assert e["final_judgement"]["expected_result"] == "fail"
-
-
-def test_review_traces_emits_trace_error_and_still_completes(client, review_request):
-    # Judge succeeds; the claim step fails → each trace becomes a trace_error,
-    # but the batch keeps going and still terminates cleanly.
-    with (
-        patch(
-            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
-            new=AsyncMock(return_value=JudgeVerdict("pass", "fine")),
-        ),
-        patch(
-            "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
-            new=AsyncMock(side_effect=RuntimeError("boom")),
-        ),
-    ):
-        resp = client.post(REVIEW_URL, json=review_request)
-
-    assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    errors = [
-        e for e in events if isinstance(e, dict) and e.get("type") == "trace_error"
-    ]
-    assert len(errors) == 2
-    assert all(e["code"] == "review_failed" for e in errors)
-    assert all("boom" in e["message"] for e in errors)
-    assert events[-1] == "complete"
-
-
-def test_review_traces_unwraps_wrapped_judge_error(client, review_request):
-    """A KilnRunError-wrapped judge failure must put the ROOT provider error
-    on the wire, not the wrapper's genericized message."""
-    root = litellm.BadRequestError(
-        message="max_tokens too large for this model",
-        model="claude_sonnet_4_6",
-        llm_provider="anthropic",
-    )
-    with (
-        patch(
-            "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
-            new=AsyncMock(
-                side_effect=KilnRunError(
-                    "An unexpected error occurred.",
-                    partial_trace=None,
-                    original=root,
-                )
-            ),
-        ),
-        patch(
-            "app.desktop.studio_server.eval_builder_api.build_claims_for_trace",
-            new=AsyncMock(return_value=_claims_output()),
-        ),
-    ):
-        resp = client.post(REVIEW_URL, json=review_request)
-
-    errors = [
-        e
-        for e in _parse_sse(resp.text)
-        if isinstance(e, dict) and e.get("type") == "trace_error"
-    ]
-    assert len(errors) == 2
-    for e in errors:
-        assert "BadRequestError" in e["message"]
-        assert "max_tokens too large" in e["message"]
-        assert "KilnRunError" not in e["message"]
-        assert "unexpected error" not in e["message"]
-
-
-@pytest.mark.asyncio
-async def test_review_traces_disconnect_cancels_pending_reviews(app, review_request):
-    """Cancelling the stream mid-iteration must cancel every unfinished
-    review task — abandoned judge/claim-builder calls stop spending."""
-    review_request["traces"] = [
-        {"raw_input": f"in-{i}", "raw_output": f"out-{i}"} for i in range(3)
-    ]
-    cancelled: set[int] = set()
-    first_frames = asyncio.Event()
-
-    async def fake_review(project_id, task_id, index, trace, judge, spec_name):
-        if index == 0:
-            return TraceReviewedEvent(
-                trace_index=index,
-                raw_input=trace.raw_input,
-                raw_output=trace.raw_output,
-                judge_score="fail",
-                judge_reasoning="fabricated a policy",
-                claims=[],
-                final_judgement=_final_judgement(),
-            )
-        try:
-            await asyncio.sleep(30)
-        except asyncio.CancelledError:
-            cancelled.add(index)
-            raise
-        raise AssertionError("slow review was never cancelled")
-
-    endpoint = next(
-        route.endpoint
-        for route in app.routes
-        if getattr(route, "path", "").endswith("/review_traces")
-    )
-    with patch(
-        "app.desktop.studio_server.eval_builder_api.review_one_trace",
-        new=fake_review,
-    ):
-        response = await endpoint(
-            project_id="p1",
-            task_id="t1",
-            request=ReviewTracesRequest.model_validate(review_request),
-        )
-        frames: list[str] = []
-
-        async def consume():
-            async for frame in response.body_iterator:
-                frames.append(frame)
-                if len(frames) == 2:  # batch_started + the fast trace_reviewed
-                    first_frames.set()
-
-        consumer = asyncio.create_task(consume())
-        await asyncio.wait_for(first_frames.wait(), timeout=5)
-        # The consumer goes away mid-stream (client disconnect); the
-        # generator's teardown must cancel both still-running reviews.
-        consumer.cancel()
-        await asyncio.gather(consumer, return_exceptions=True)
-
-    assert '"batch_started"' in frames[0]
-    assert '"trace_reviewed"' in frames[1]
-    assert cancelled == {1, 2}
 
 
 # ───────────────────────── run_judge_for_trace ─────────────────────────
@@ -560,55 +338,6 @@ class TestRunJudgeForTrace:
                 await run_judge_for_trace(
                     "p1", "t1", "in", "out", judge_config, spec_name="Test Spec"
                 )
-
-
-def test_review_traces_judge_skip_streams_trace_error(
-    client, review_request, in_memory_task
-):
-    # End-to-end through review_one_trace: a skipping judge becomes a trace_error
-    # SSE event (never a fabricated verdict) and the batch still completes.
-    adapter = _judge_adapter(
-        V2EvalResult(
-            skipped_reason=SkippedReason.missing_trace,
-            skipped_detail="no trace on input",
-        )
-    )
-    task_patch, registry_patch = _patch_judge_seam(in_memory_task, adapter)
-    with task_patch, registry_patch:
-        resp = client.post(REVIEW_URL, json=review_request)
-
-    assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    errors = [
-        e for e in events if isinstance(e, dict) and e.get("type") == "trace_error"
-    ]
-    assert len(errors) == 2
-    assert all("Judge skipped this trace" in e["message"] for e in errors)
-    assert all("missing_trace" in e["message"] for e in errors)
-    assert events[-1] == "complete"
-
-
-def test_review_traces_rejects_retired_trace_key(client, review_request):
-    # Multi-turn traces never ride this request (the review pipeline drives
-    # and reviews them server-side); a stale client sending `trace` must
-    # fail loudly, not have its trace silently dropped.
-    review_request["traces"][0]["trace"] = [{"role": "user", "content": "hi"}]
-    resp = client.post(REVIEW_URL, json=review_request)
-    assert resp.status_code == 422
-
-
-def test_review_traces_rejects_sourceless_trace(client, review_request):
-    review_request["traces"][0] = {}
-    resp = client.post(REVIEW_URL, json=review_request)
-    assert resp.status_code == 422
-
-
-def test_review_traces_rejects_oversized_batch(client, review_request):
-    review_request["traces"] = [
-        {"raw_input": f"in-{i}", "raw_output": f"out-{i}"} for i in range(51)
-    ]
-    resp = client.post(REVIEW_URL, json=review_request)
-    assert resp.status_code == 422
 
 
 # ───────────────────────── build_claims primitive ─────────────────────────
@@ -2051,16 +1780,6 @@ class TestJudgeTraces:
         resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
         assert resp.status_code == 422
 
-    def test_rejects_single_turn_task(
-        self, client, judge_traces_request, judge_traces_seams
-    ):
-        from kiln_ai.datamodel.datamodel_enums import TurnMode
-
-        judge_traces_seams["task"].return_value.turn_mode = TurnMode.single_turn
-        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
-        assert resp.status_code == 400
-        assert resp.json()["message"]["code"] == "task_not_multiturn"
-
     def test_missing_copilot_key_is_401_before_any_load(
         self, client, judge_traces_request, judge_traces_seams
     ):
@@ -2076,6 +1795,128 @@ class TestJudgeTraces:
         assert resp.status_code == 401
         assert "API key not configured" in resp.json()["message"]
         judge_traces_seams["loader"].assert_not_called()
+
+
+def _stored_single_turn_run(i: int, with_trace: bool = True) -> Mock:
+    """A stored single-turn pipeline run as reloaded from disk: the I/O pair
+    the judge scores plus the structured trace the frames echo."""
+    run = Mock()
+    run.input = f"question {i}"
+    run.output = Mock()
+    run.output.output = f"answer {i}"
+    run.trace = _real_trace(i) if with_trace else None
+    return run
+
+
+@pytest.fixture
+def judge_traces_single_turn_seams(judge_traces_seams):
+    """The re-judge seams pointed at a single-turn task: the loader returns
+    the pipeline's stored runs instead of chain leaves."""
+    from kiln_ai.datamodel.datamodel_enums import TurnMode
+
+    judge_traces_seams["task"].return_value.turn_mode = TurnMode.single_turn
+    judge_traces_seams["loader"].return_value = {
+        "leaf-0": _stored_single_turn_run(0),
+        "leaf-1": _stored_single_turn_run(1),
+    }
+    yield judge_traces_seams
+
+
+class TestJudgeTracesSingleTurn:
+    """The single-turn arm of the re-judge stream: same frames, same judge
+    unit, but the judge scores the stored run's I/O pair — the final_answer
+    reading its pipeline and its saved eval use — never the trace."""
+
+    def test_happy_path_judges_stored_io_pair(
+        self, client, judge_traces_request, judge_traces_single_turn_seams
+    ):
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+
+        assert resp.status_code == 200
+        events = _parse_sse(resp.text)
+        assert events[0] == {
+            "type": "batch_started",
+            "batch_tag": "",
+            "total_cases": 2,
+        }
+        judged = _events_of(events, "case_judged")
+        assert len(judged) == 2
+        for e in judged:
+            # The frame echoes the STORED run's I/O pair verbatim — no
+            # transcript flattening on this arm.
+            assert e["raw_input"] == f"question {e['case_index']}"
+            assert e["raw_output"] == f"answer {e['case_index']}"
+            assert e["leaf_run_id"] == f"leaf-{e['case_index']}"
+            assert e["total_cost"] == 0.0
+            # The structured trace still rides along for the chat modal.
+            assert e["trace"] == _real_trace(e["case_index"])
+        completed = _events_of(events, "batch_completed")[0]
+        assert completed["judged"] == 2 and completed["failed"] == 0
+        assert events[-1] == "complete"
+
+        # The judge scored the I/O pair with NO judge trace (final_answer
+        # reading) — passing the trace here would silently flip the judge to
+        # the full-trace reading the saved eval never uses.
+        for call in judge_traces_single_turn_seams["judge"].call_args_list:
+            assert call.kwargs["trace"] is None
+            assert call.args[2].startswith("question ")
+            assert call.args[3].startswith("answer ")
+
+    def test_traceless_run_still_judges(
+        self, client, judge_traces_request, judge_traces_single_turn_seams
+    ):
+        """A stored run without a structured trace is still judgeable on this
+        arm — the trace is a UI echo, not the judge input."""
+        judge_traces_single_turn_seams["loader"].return_value = {
+            "leaf-0": _stored_single_turn_run(0, with_trace=False),
+            "leaf-1": _stored_single_turn_run(1),
+        }
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+
+        events = _parse_sse(resp.text)
+        assert _events_of(events, "case_failed") == []
+        judged = {e["case_index"]: e for e in _events_of(events, "case_judged")}
+        assert judged[0]["trace"] is None
+        assert judged[0]["raw_output"] == "answer 0"
+
+    def test_outputless_run_fails_case_and_batch_continues(
+        self, client, judge_traces_request, judge_traces_single_turn_seams
+    ):
+        """A run with no stored output cannot be judged — honest per-case
+        failure, never a fabricated empty answer."""
+        bare = _stored_single_turn_run(0)
+        bare.output.output = None
+        judge_traces_single_turn_seams["loader"].return_value = {
+            "leaf-0": bare,
+            "leaf-1": _stored_single_turn_run(1),
+        }
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+
+        events = _parse_sse(resp.text)
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 1
+        assert failed[0]["case_index"] == 0
+        assert failed[0]["stage"] == "judge"
+        assert failed[0]["code"] == "missing_output"
+        assert [e["case_index"] for e in _events_of(events, "case_judged")] == [1]
+        assert events[-1] == "complete"
+
+    def test_missing_run_fails_case_and_batch_continues(
+        self, client, judge_traces_request, judge_traces_single_turn_seams
+    ):
+        """Runs vanish between rounds too (delete-on-redrive, manual dataset
+        edits) — same trace_not_found isolation as the multi-turn arm."""
+        judge_traces_single_turn_seams["loader"].return_value = {
+            "leaf-1": _stored_single_turn_run(1),
+        }
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+
+        events = _parse_sse(resp.text)
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 1
+        assert failed[0]["code"] == "trace_not_found"
+        assert "leaf-0" in failed[0]["message"]
+        assert [e["case_index"] for e in _events_of(events, "case_judged")] == [1]
 
 
 # ───────────────────────── single_turn_pipeline (SSE) ─────────────────────
