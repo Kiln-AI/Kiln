@@ -4,6 +4,7 @@ import {
   format_cost_tick,
   latency_seconds,
   pareto_frontier,
+  quality_gate_cuts,
   split_by_gate,
   type PricePoint,
 } from "./price_latency"
@@ -176,6 +177,109 @@ describe("split_by_gate", () => {
     const original = [...points]
     split_by_gate(points, 0.5)
     expect(points).toEqual(original)
+  })
+})
+
+describe("quality_gate_cuts", () => {
+  /** How many of `values` a gate at `cut` would leave in the comparison. */
+  function clearing(values: number[], cut: number): number {
+    return values.filter((value) => value >= cut).length
+  }
+
+  it("cuts five spread-out configs into quintiles, one dropped per row", () => {
+    const values = [0.52, 0.55, 0.58, 0.61, 0.64]
+    const cuts = quality_gate_cuts(values)
+    expect(cuts).toEqual([0.54, 0.57, 0.59, 0.62])
+    expect(cuts.map((cut) => clearing(values, cut))).toEqual([4, 3, 2, 1])
+  })
+
+  it("cuts a bunched-up set too - the old fixed ladder's dead case", () => {
+    // The complaint that prompted this: every config between 50% and 70%, so
+    // 70/80/90 gated out all five and 50% gated out none.
+    const values = [0.51, 0.55, 0.6, 0.62, 0.64]
+    const cuts = quality_gate_cuts(values)
+    expect(cuts.length).toBeGreaterThan(0)
+    for (const cut of cuts) {
+      const cleared = clearing(values, cut)
+      expect(cleared).toBeGreaterThan(0)
+      expect(cleared).toBeLessThan(values.length)
+    }
+  })
+
+  it("returns whole percents, ascending", () => {
+    const cuts = quality_gate_cuts([0.5123, 0.6478, 0.7311, 0.8899, 0.9012])
+    for (const cut of cuts) {
+      expect(cut).toBeCloseTo(Math.round(cut * 100) / 100, 10)
+    }
+    expect([...cuts].sort((a, b) => a - b)).toEqual(cuts)
+  })
+
+  it("drops a cut that clears the same set as the one below it", () => {
+    // Two clusters with a gulf between them: the 60th percentile lands inside
+    // the upper cluster and gates out exactly what the 40th already did.
+    const values = [0.5, 0.51, 0.9, 0.91, 0.92]
+    const cuts = quality_gate_cuts(values)
+    expect(cuts).toEqual([0.51, 0.74, 0.91])
+    expect(cuts.map((cut) => clearing(values, cut))).toEqual([4, 3, 2])
+  })
+
+  it("never offers a gate nothing clears, or one everything clears", () => {
+    const sets = [
+      [0.5, 0.5, 0.5, 0.5, 0.9],
+      [0.1, 0.9],
+      [0.996, 0.997, 0.998, 0.999, 1],
+      [0, 0.001, 0.002, 0.5, 1],
+    ]
+    for (const values of sets) {
+      for (const cut of quality_gate_cuts(values)) {
+        expect(clearing(values, cut)).toBeGreaterThan(0)
+        expect(clearing(values, cut)).toBeLessThan(values.length)
+      }
+    }
+  })
+
+  it("falls back to no cuts when every config scores the same", () => {
+    expect(quality_gate_cuts([0.62, 0.62, 0.62, 0.62])).toEqual([])
+    expect(quality_gate_cuts([1, 1])).toEqual([])
+    expect(quality_gate_cuts([0, 0, 0])).toEqual([])
+  })
+
+  it("falls back to no cuts below two scored configs", () => {
+    expect(quality_gate_cuts([])).toEqual([])
+    expect(quality_gate_cuts([0.7])).toEqual([])
+    expect(quality_gate_cuts([null, 0.7, null])).toEqual([])
+  })
+
+  it("ignores nulls and non-finite values", () => {
+    const scored = [0.5, 0.9]
+    expect(
+      quality_gate_cuts([null, 0.5, null, 0.9, NaN, Infinity, -Infinity]),
+    ).toEqual(quality_gate_cuts(scored))
+  })
+
+  it("does not care what order the qualities arrive in", () => {
+    const values = [0.52, 0.55, 0.58, 0.61, 0.64]
+    expect(quality_gate_cuts([...values].reverse())).toEqual(
+      quality_gate_cuts(values),
+    )
+    expect(quality_gate_cuts([0.61, 0.52, 0.64, 0.58, 0.55])).toEqual(
+      quality_gate_cuts(values),
+    )
+  })
+
+  it("handles ties without offering a row that changes nothing", () => {
+    const values = [0.6, 0.6, 0.6, 0.9, 0.9]
+    const cuts = quality_gate_cuts(values)
+    // Only one boundary exists in this data, so only one row is offered.
+    expect(cuts).toEqual([0.72])
+    expect(clearing(values, cuts[0])).toBe(2)
+  })
+
+  it("leaves the input alone", () => {
+    const values = [0.9, 0.5, 0.7]
+    const original = [...values]
+    quality_gate_cuts(values)
+    expect(values).toEqual(original)
   })
 })
 

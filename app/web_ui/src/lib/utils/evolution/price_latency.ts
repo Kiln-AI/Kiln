@@ -186,6 +186,91 @@ export function split_by_gate(
 }
 
 /**
+ * Where the gate menu takes its cuts: the quintile boundaries of the plotted
+ * configs' quality.
+ *
+ * Four percentiles rather than four fixed thresholds, because a fixed ladder is
+ * a claim about what quality LOOKS like on a task, and no page knows that. A
+ * menu of 50/70/80/90 against a task whose configs all sit between 51% and 64%
+ * offers one gate that changes nothing and three that gate out everything - a
+ * control with four dead positions, which reads as a broken chart rather than
+ * as a task whose configs are close together.
+ */
+export const GATE_PERCENTILES = [0.2, 0.4, 0.6, 0.8] as const
+
+/** Linear-interpolated percentile of an ASCENDING-sorted, non-empty array. */
+function percentile(sorted: number[], p: number): number {
+  const index = p * (sorted.length - 1)
+  const lower = Math.floor(index)
+  const upper = Math.ceil(index)
+  if (lower === upper) return sorted[lower]
+  return sorted[lower] + (index - lower) * (sorted[upper] - sorted[lower])
+}
+
+/**
+ * A cut, rounded to the percent it is shown as.
+ *
+ * The menu labels a cut "58%" and the gate applies the raw float, so unless the
+ * two are the same number a config sitting exactly on the labelled percent can
+ * fail the gate it appears to clear. Rounding the CUT rather than only the
+ * label keeps the gate honest at the precision it is stated in - and precision
+ * finer than a percent is noise in a decision phrased as "good enough to ship".
+ */
+function round_to_percent(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+/**
+ * Up to four quality cuts for the gate menu, ascending, each a 0..1 floor.
+ *
+ * Takes the numbers rather than the configs, and knows nothing about which
+ * quality metric produced them: whatever the page's aggregate happens to be
+ * this month, the cuts are the quintiles of what it yielded.
+ *
+ * DEDUPE RULE - a cut earns a row only when it changes the answer:
+ *   - it must gate out at least one config MORE than the row above it (Off is
+ *     the row above the first cut, and gates out none), and
+ *   - it must leave at least one config standing.
+ * Two percentiles that round to the same percent, or that clear the same set
+ * because no config's quality falls between them, therefore collapse to one
+ * row; a cut that clears everything is dropped as a second Off; and a cut that
+ * rounded up past the best config is dropped rather than offered as a gate
+ * nothing clears. The menu that results has no dead positions - every row
+ * removes at least one config from the comparison, and none empties it.
+ *
+ * Fewer than two scored configs, or all of them on the same quality, produce no
+ * cuts at all: there is nothing to cut BETWEEN, and the menu says so rather
+ * than offering an arbitrary number. Nulls and non-finite values are not
+ * quality scores and take no part in the percentiles.
+ */
+export function quality_gate_cuts(qualities: (number | null)[]): number[] {
+  const values = qualities
+    .filter(
+      (value): value is number => value !== null && Number.isFinite(value),
+    )
+    .sort((a, b) => a - b)
+  // One number has no percentiles worth the name, and zero would index off the
+  // end of the array.
+  if (values.length < 2) return []
+
+  const cuts: number[] = []
+  // What the row above clears. Off clears everything, so the first cut has to
+  // beat that to be worth a row.
+  let clearing = values.length
+  for (const p of GATE_PERCENTILES) {
+    const cut = round_to_percent(percentile(values, p))
+    const count = values.filter((value) => value >= cut).length
+    if (count > 0 && count < clearing) {
+      cuts.push(cut)
+      clearing = count
+    }
+  }
+  // Ascending by construction: percentile is monotonic in p and rounding is
+  // monotonic in its argument.
+  return cuts
+}
+
+/**
  * The Pareto frontier on (latency, cost), both lower-better: the points no
  * other point beats on one axis without losing on the other.
  *

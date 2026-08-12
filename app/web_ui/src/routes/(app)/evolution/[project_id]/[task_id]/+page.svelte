@@ -96,6 +96,7 @@
   } from "$lib/utils/evolution/score_families"
   import {
     build_price_latency_points,
+    quality_gate_cuts,
     split_by_gate,
   } from "$lib/utils/evolution/price_latency"
   import { spec_descriptions_by_eval } from "$lib/utils/evolution/axis_help"
@@ -1892,12 +1893,19 @@
   // numbers. A slider would also invite tuning the gate until the preferred
   // config is the only one left, which is the one thing this chart must not
   // make easy.
-  const QUALITY_FLOORS = [0.5, 0.7, 0.8, 0.9]
+  //
+  // The numbers on offer come from the DATA, not from a fixed ladder. A menu of
+  // 50/70/80/90 is a claim about where quality lands on a task, and it was
+  // wrong on the first real one: five configs between 51% and 64% meant 50%
+  // gated out nobody and 70/80/90 gated out everybody - four positions, none of
+  // which drew a different chart. The quintiles of the plotted configs' quality
+  // always cut BETWEEN them. See quality_gate_cuts for the rule that decides
+  // which of the four earn a row.
   $: quality_floor_label =
     quality_floor === null ? "Off" : `${Math.round(quality_floor * 100)}%`
 
   // What each floor would leave standing, so the reader can see what a gate
-  // costs them before setting it rather than by trying all five. The same two
+  // costs them before setting it rather than by trying all of them. The same
   // pure functions the chart draws from, over the same inputs, so the menu
   // cannot disagree with the picture beside it.
   $: price_latency_plotted = build_price_latency_points(
@@ -1905,6 +1913,38 @@
     get_metric_value,
     get_quality,
   ).plotted
+  // Only the configs actually ON the plane feed the cuts - a config with no
+  // cost has no dot to gate. The getter is whatever the page calls quality
+  // today; the cuts take the numbers and ask nothing about where they came
+  // from.
+  $: quality_gate_cut_values = quality_gate_cuts(
+    price_latency_plotted.map((point) => point.quality),
+  )
+  $: quality_scored_count = price_latency_plotted.filter(
+    (point) => point.quality !== null,
+  ).length
+  // Why the menu is Off-only, in the words of the data that made it so.
+  $: no_gate_cuts_reason =
+    quality_scored_count < 2
+      ? `Only ${quality_scored_count} of these has a quality score, so there is nothing to cut between.`
+      : "Every scored config here is at the same quality, so any gate would keep all of them or none."
+  // A floor from a shared link that no current cut matches still applies - the
+  // gate travelled with the argument someone sent, and dropping it would change
+  // their chart out from under them. It gets its own row so the menu shows a
+  // checked option rather than four unchecked ones over a gated chart.
+  $: custom_quality_floor = floor_off_the_menu(
+    quality_floor,
+    quality_gate_cut_values,
+  )
+  function floor_off_the_menu(
+    floor: number | null,
+    cuts: number[],
+  ): number | null {
+    if (floor === null) return null
+    // Both sides are whole percents by construction, so this is an equality
+    // test written to survive the float arithmetic that produced them.
+    return cuts.some((cut) => Math.abs(cut - floor) < 1e-9) ? null : floor
+  }
   $: quality_floor_menu_items = [
     { label: "Quality gate", header: true },
     {
@@ -1912,17 +1952,40 @@
       // as ordinary text, where a leading run of spaces collapses to one, so an
       // unmarked row would sit a glyph to the left of its neighbours.
       label: `${quality_floor === null ? "✓" : "○"}  Off`,
-      description: `Compare all ${price_latency_plotted.length} plotted on price and speed`,
-      onclick: () => (quality_floor = null),
+      description:
+        quality_gate_cut_values.length === 0
+          ? `Compare all ${price_latency_plotted.length} plotted on price and speed. ${no_gate_cuts_reason}`
+          : `Compare all ${price_latency_plotted.length} plotted on price and speed`,
+      onclick: () => set_quality_floor(null),
     },
-    ...QUALITY_FLOORS.map((floor) => ({
+    ...quality_gate_cut_values.map((floor) => ({
       label: `${quality_floor === floor ? "✓" : "○"}  ${Math.round(floor * 100)}%`,
       description: `${
         split_by_gate(price_latency_plotted, floor).qualifying.length
       } of ${price_latency_plotted.length} clear it`,
-      onclick: () => (quality_floor = floor),
+      onclick: () => set_quality_floor(floor),
     })),
+    ...(custom_quality_floor === null
+      ? []
+      : [
+          {
+            label: `✓  Custom: ${Math.round(custom_quality_floor * 100)}%`,
+            description: `${
+              split_by_gate(price_latency_plotted, custom_quality_floor)
+                .qualifying.length
+            } of ${price_latency_plotted.length} clear it — from the link this page was opened with`,
+            onclick: () => set_quality_floor(custom_quality_floor),
+          },
+        ]),
   ] as FloatingMenuItem[]
+
+  // Through a function rather than assigned in the menu block above: the menu
+  // now READS a value derived from the floor (the custom row), and a reactive
+  // block that both reads that derivation and writes the floor is a cycle the
+  // Svelte compiler rejects. The write is the same one either way.
+  function set_quality_floor(floor: number | null) {
+    quality_floor = floor
+  }
 
   function toggle_pin(id: string) {
     if (pins.includes(id)) {
