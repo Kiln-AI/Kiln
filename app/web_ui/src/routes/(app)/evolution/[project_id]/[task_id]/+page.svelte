@@ -108,6 +108,23 @@
     reconcile_visibility,
     visible_ids,
   } from "$lib/utils/evolution/visibility_store"
+  import {
+    MATCH_LABELS,
+    MATCH_PREDICATES,
+    build_matched_lens_data,
+    build_matched_usage,
+    match_param,
+    matched_items_by_eval,
+    parse_match_param,
+    tool_call_source,
+    type MatchPredicate,
+    type MatchedUsage,
+    type RunIndexes,
+  } from "$lib/utils/evolution/run_matching"
+  import ComparisonBasis, {
+    type BasisError,
+    type BasisEval,
+  } from "./comparison_basis.svelte"
   import EvolutionLegend from "./evolution_legend.svelte"
   import EvolutionCanvas from "./evolution_canvas.svelte"
   import NodeDetailPanel from "./node_detail_panel.svelte"
@@ -128,6 +145,7 @@
   type Spec = components["schemas"]["Spec"]
   type RunConfigEvalScoresSummary =
     components["schemas"]["RunConfigEvalScoresSummary"]
+  type EvalRunIndexResponse = components["schemas"]["EvalRunIndexResponse"]
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -159,6 +177,13 @@
   let eval_scores_cache: Record<string, RunConfigEvalScoresSummary> = {}
   let eval_scores_loading: Record<string, boolean> = {}
   let eval_scores_errors: Record<string, string> = {}
+
+  // Per-run rows for the configs being compared, fetched only while a matching
+  // predicate is active. Keyed and emptied exactly like eval_scores_cache
+  // above, for the same reason: the split scopes the whole page.
+  let eval_run_index_cache: RunIndexes = {}
+  let eval_run_index_loading: Record<string, boolean> = {}
+  let eval_run_index_errors: Record<string, string> = {}
 
   // Which dataset split the page is reading.
   //
@@ -233,6 +258,17 @@
   // the floor they argued under.
   let quality_floor: number | null = null
 
+  // Which conversations the comparison is made over. See run_matching: at "all"
+  // every config is measured on whatever runs it happens to have, which is what
+  // this page has always done and what makes two configs on one axis not
+  // necessarily a comparison at all.
+  //
+  // "all" stays the default, and absent-means-all keeps the URL identical to
+  // every link written before this existed. It is in the URL for the same
+  // reason quality_floor is: a Compare V2 link is an argument someone sends,
+  // and the basis it was argued under has to travel with it.
+  let match_predicate: MatchPredicate = "all"
+
   // Drill-down UI state (not round-tripped)
   let inspector: {
     eval_id: string
@@ -277,6 +313,10 @@
     if (urlSplit && (SPLIT_VIEWS as readonly string[]).includes(urlSplit)) {
       split_view = urlSplit as SplitView
     }
+    // Validated against the enum inside parse_match_param, where an unknown
+    // value is the default rather than an error - a hand-edited URL must not be
+    // able to put the page in a basis it cannot name.
+    match_predicate = parse_match_param(urlParams.get("match"))
     starred_only = urlParams.get("starred") === "1"
     unlinked_expanded = urlParams.get("unlinked") === "1"
 
@@ -420,6 +460,14 @@
     } else {
       urlParams.delete("split")
     }
+    // Same omitted-default discipline as the split: "all" is what an absent
+    // parameter has always meant, so it stays absent.
+    const serialized_match = match_param(match_predicate)
+    if (serialized_match !== null) {
+      urlParams.set("match", serialized_match)
+    } else {
+      urlParams.delete("match")
+    }
     if (starred_only) {
       urlParams.set("starred", "1")
     } else {
@@ -478,6 +526,7 @@
     lens_selected,
     selected_id,
     split_view,
+    match_predicate,
     starred_only,
     unlinked_expanded,
     pins,
@@ -626,6 +675,9 @@
     eval_scores_cache = {}
     eval_scores_loading = {}
     eval_scores_errors = {}
+    eval_run_index_cache = {}
+    eval_run_index_loading = {}
+    eval_run_index_errors = {}
     get_summary(true)
   }
 
@@ -669,6 +721,56 @@
     } finally {
       if (requested_split === split_view) {
         eval_scores_loading[run_config_id] = false
+      }
+    }
+  }
+
+  // The per-run rows a matching predicate needs, fetched lazily and never at
+  // the default predicate: at "all" the page's network cost is exactly what it
+  // was before this feature existed. Activation fetches the current basis;
+  // pinning a config while a predicate is active fetches the newcomer.
+  //
+  // Same stale-split guard as fetch_eval_scores above, for the same reason: a
+  // split toggle empties the caches, and a request in flight when that happened
+  // would file one split's rows under another.
+  async function fetch_eval_run_index(run_config_id: string) {
+    if (
+      eval_run_index_cache[run_config_id] ||
+      eval_run_index_loading[run_config_id] ||
+      eval_run_index_errors[run_config_id]
+    ) {
+      return // Already cached, loading, or errored
+    }
+    const requested_split = split_view
+    try {
+      eval_run_index_loading[run_config_id] = true
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/eval_run_index",
+        {
+          params: {
+            path: { project_id, task_id, run_config_id },
+            query: split_query(requested_split),
+          },
+        },
+      )
+      if (fetch_error) {
+        throw fetch_error
+      }
+      if (requested_split !== split_view) {
+        return
+      }
+      eval_run_index_cache[run_config_id] = data as EvalRunIndexResponse
+      delete eval_run_index_errors[run_config_id]
+    } catch (err) {
+      if (requested_split !== split_view) {
+        return
+      }
+      const kilnError = createKilnError(err)
+      eval_run_index_errors[run_config_id] =
+        kilnError.getMessage() || "Failed to fetch eval runs"
+    } finally {
+      if (requested_split === split_view) {
+        eval_run_index_loading[run_config_id] = false
       }
     }
   }
@@ -719,10 +821,18 @@
   // train than on test - so that card states the lane unconditionally, and
   // this is the label it states. "All runs" is already a phrase; the others
   // are named for the split they are.
-  $: stated_scope_label =
+  // ...and it has to state the matching basis for exactly the same reason: over
+  // 23 matched conversations "$0.31 a conversation" is a different claim than
+  // over every run a config ever had.
+  $: stated_scope_label = `${
     split_view === "all"
       ? SPLIT_LABELS.all
       : `${SPLIT_LABELS[split_view]} split`
+  }${
+    matching_active
+      ? ` · ${MATCH_LABELS[match_result.applied].toLowerCase()}${matched_conversation_phrase}`
+      : ""
+  }`
 
   $: selected_node = selected_id ? forest.nodes.get(selected_id) ?? null : null
 
@@ -783,6 +893,130 @@
   // The matrix's usage rows and the inspector need per-config eval scores
   $: pinned_nodes.forEach((node) => fetch_eval_scores(node.id))
   $: pinned_ids = pinned_nodes.map((node) => node.id)
+
+  // ---- The comparison basis ------------------------------------------------
+  // Stage 2 of the composition: the split (stage 1, server-side) scopes each
+  // eval's item universe, matching then filters items per eval over the PINNED
+  // set, aggregation follows, and only then does the legend decide what is
+  // drawn. Legend visibility deliberately does NOT feed this - hiding a chip is
+  // documented on this page as decluttering an image, not as removing a config
+  // from the comparison (both tables still show hidden configs), and a legend
+  // toggle that silently moved every mean and every N would make that false.
+
+  $: if (match_predicate !== "all") {
+    pinned_ids.forEach((id) => fetch_eval_run_index(id))
+  }
+
+  // A config whose rows could not be read is left OUT of the basis rather than
+  // treated as a config that ran nothing: the latter would empty every
+  // intersection on the page and blame the data. Its own cells still gap (it
+  // has no matched rows), and the banner names the failure.
+  $: basis_ids = pinned_ids.filter((id) => !eval_run_index_errors[id])
+
+  // Every basis config has to have answered - or failed - before a predicate
+  // can be applied. Until then the page keeps showing what it was showing and
+  // the banner says it is matching; the alternative is charts that empty and
+  // refill, or worse, pooled numbers presented under a matched banner.
+  $: basis_indexes_ready = basis_ids.every(
+    (id) => !!eval_run_index_cache[id] || !!eval_run_index_errors[id],
+  )
+  $: matching_pending = match_predicate !== "all" && !basis_indexes_ready
+
+  $: tool_source = tool_call_source(lens_data.keyMetas, eval_run_index_cache)
+  $: match_result = matched_items_by_eval(
+    eval_run_index_cache,
+    basis_ids,
+    matching_pending ? "all" : match_predicate,
+    tool_source,
+  )
+  $: matching_active = match_result.applied !== "all"
+
+  // The swap that carries the whole feature: every chart and both tables read
+  // their numbers through page-level getters, so pointing those getters at
+  // matched data filters the entire page without a single chart knowing.
+  $: effective_lens_data = matching_active
+    ? build_matched_lens_data(
+        lens_data,
+        eval_run_index_cache,
+        basis_ids,
+        match_result.items_by_eval,
+      )
+    : lens_data
+  $: matched_usage = matching_active
+    ? build_matched_usage(
+        eval_run_index_cache,
+        basis_ids,
+        match_result.items_by_eval,
+      )
+    : null
+
+  // What the banner states. Names rather than ids: an id is not a fact the
+  // reader can act on.
+  $: eval_names_by_id = new Map(
+    lens_data.keyMetas.map((meta) => [meta.evalId, meta.evalName]),
+  )
+  $: config_label = (id: string): string =>
+    series_labels[id] ?? forest.nodes.get(id)?.name ?? id
+  $: basis_evals = match_result.evals.map((entry): BasisEval => {
+    const universes = Object.values(entry.universe_by_config)
+    return {
+      evalId: entry.evalId,
+      name: eval_names_by_id.get(entry.evalId) ?? "Eval",
+      matched: entry.matched,
+      shared: entry.shared,
+      universe_min: universes.length > 0 ? Math.min(...universes) : 0,
+      universe_max: universes.length > 0 ? Math.max(...universes) : 0,
+    }
+  })
+  // The default predicate's N range, over the cells the page actually draws.
+  // This is the number that was never on screen: it is what says two configs
+  // side by side were measured 11 times and 148 times.
+  $: basis_n_range = (() => {
+    let min = Infinity
+    let max = -Infinity
+    for (const id of pinned_ids) {
+      for (const n of effective_lens_data.counts.get(id)?.values() ?? []) {
+        min = Math.min(min, n)
+        max = Math.max(max, n)
+      }
+    }
+    return min <= max ? { min, max } : null
+  })()
+  $: basis_errors = pinned_ids
+    .filter((id) => !!eval_run_index_errors[id])
+    .map(
+      (id): BasisError => ({
+        label: config_label(id),
+        message: eval_run_index_errors[id],
+      }),
+    )
+  $: basis_missing_shape_labels =
+    match_result.configs_missing_shape.map(config_label)
+
+  // Matched conversations behind the cost/latency numbers, as one phrase. The
+  // price/latency card states its lane unconditionally, so under a predicate it
+  // has to state the basis too - "$0.31 a conversation" is a different claim
+  // over 23 matched conversations than over every run a config ever had.
+  // How the charts name the basis in their own subtitles. "Among conversations
+  // of similar length" - never "controlled for length", which is a claim these
+  // predicates cannot support (see run_matching's header on r = 0.26).
+  $: match_basis_phrase =
+    match_result.applied === "length"
+      ? "similar length, run by every config here"
+      : match_result.applied === "tools"
+        ? "similar tool use, run by every config here"
+        : "run by every config here"
+
+  $: matched_conversation_phrase = (() => {
+    if (!matched_usage) return ""
+    const counts = visible_pinned_ids
+      .map((id) => matched_usage?.get(id)?.n_conversations ?? 0)
+      .filter((n) => n > 0)
+    if (counts.length === 0) return ""
+    const min = Math.min(...counts)
+    const max = Math.max(...counts)
+    return min === max ? ` (n=${min})` : ` (n=${min}–${max})`
+  })()
 
   // ---- One legend for the charts ------------------------------------------
   // The three plots below - the quality radar, the performance bars, and the
@@ -988,8 +1222,9 @@
     }))
   }
 
-  // Rebuilt when lens_data changes so the radar's reactive blocks notice
-  $: get_model_value_raw = make_value_getter(lens_data)
+  // Rebuilt when the effective lens data changes so the radar's reactive blocks
+  // notice - which is also how a predicate change reaches the chart at all.
+  $: get_model_value_raw = make_value_getter(effective_lens_data)
   function make_value_getter(data: LensData) {
     return (modelKey: string | null, dataKey: string): number | null => {
       if (!modelKey) {
@@ -1041,7 +1276,9 @@
       type: meta.type,
     }),
   )
-  $: get_sample_size = make_sample_size_getter(lens_data)
+  // Reads the effective data, so the parallel chart's Wilson bands widen with
+  // the filtered N without the chart knowing a predicate exists.
+  $: get_sample_size = make_sample_size_getter(effective_lens_data)
   function make_sample_size_getter(data: LensData) {
     return (runConfigId: string, dataKey: string): number | null =>
       data.counts.get(runConfigId)?.get(dataKey) ?? null
@@ -1152,10 +1389,15 @@
   $: parallel_metrics_note = (() => {
     const parts: string[] = []
     if (parallel_metric_empty.length > 0) {
+      // Under a predicate the absence is attributable: the metric is not
+      // missing, the conversations it would have been read over are. Saying
+      // "no values" there would read as "this config was never run".
       parts.push(
-        `No values on the configs shown: ${parallel_metric_empty
-          .map((axis) => axis.valueLabel)
-          .join(", ")}.`,
+        `${
+          matching_active
+            ? "No matched conversations on the configs shown"
+            : "No values on the configs shown"
+        }: ${parallel_metric_empty.map((axis) => axis.valueLabel).join(", ")}.`,
       )
     }
     if (parallel_metric_hidden_count > 0) {
@@ -1251,7 +1493,7 @@
   // Depends on the pinned set and the lazily fetched usage, so it is rebuilt
   // whenever either changes.
   $: metric_axis_has_value = make_metric_axis_has_value(
-    get_metric_value,
+    get_metric_value_unfiltered,
     pinned_ids,
   )
   function make_metric_axis_has_value(
@@ -1544,16 +1786,54 @@
   )
 
   // Score keys come from the lens; the usage rollup comes from the lazily
-  // fetched per-config summary. Both caches are passed in as arguments so the
-  // getter is rebuilt (and the chart redrawn) when either arrives.
-  $: get_metric_value = make_metric_value_getter(lens_data, eval_scores_cache)
+  // fetched per-config summary, or - under a matching predicate - from the
+  // matched rollup, so the cost and speed axes are over the same conversations
+  // the quality axes are. All three sources are passed in as arguments so the
+  // getter is rebuilt (and the charts redrawn) when any of them arrives.
+  $: get_metric_value = make_metric_value_getter(
+    effective_lens_data,
+    eval_scores_cache,
+    matched_usage,
+  )
+  // The same getter over UNFILTERED data, for deciding which axes the catalog
+  // has at all. build_metric_axes uses "has a value" to settle which SOURCE
+  // wins a quantity (the usage rollup or an eval's own cost_usd key), so
+  // feeding it filtered values would let a predicate silently re-point an axis
+  // - a different number under an unchanged label. What is IN the comparison is
+  // a property of the task; what the numbers are is where the predicate acts.
+  $: get_metric_value_unfiltered = make_metric_value_getter(
+    lens_data,
+    eval_scores_cache,
+    null,
+  )
   function make_metric_value_getter(
     data: LensData,
     cache: Record<string, RunConfigEvalScoresSummary>,
+    matched: Map<string, MatchedUsage> | null,
   ) {
     return (run_config_id: string, key: string): number | null => {
       if (!key.startsWith(USAGE_KEY_PREFIX)) {
         return data.raw.get(run_config_id)?.get(key) ?? null
+      }
+      if (matched) {
+        const usage = matched.get(run_config_id)
+        if (!usage) {
+          return null
+        }
+        switch (key) {
+          case COST_KEY:
+            return usage.mean_cost
+          case TOTAL_TOKENS_KEY:
+            return usage.mean_total_tokens
+          case LATENCY_KEY:
+            return usage.mean_latency_ms
+          case INPUT_TOKENS_KEY:
+            return usage.mean_input_tokens
+          case OUTPUT_TOKENS_KEY:
+            return usage.mean_output_tokens
+          default:
+            return null
+        }
       }
       const usage = cache[run_config_id]?.mean_usage
       if (!usage) {
@@ -1576,6 +1856,23 @@
     }
   }
 
+  // What the matrices' usage rows print. Null keeps them on the native rollup,
+  // which is what they have always shown.
+  $: matrix_usage_getter = matched_usage
+    ? (run_config_id: string, key: UsageRowKey): number | null => {
+        const usage = matched_usage?.get(run_config_id)
+        if (!usage) return null
+        switch (key) {
+          case "cost":
+            return usage.mean_cost
+          case "tokens":
+            return usage.mean_total_tokens
+          case "latency":
+            return usage.mean_latency_ms
+        }
+      }
+    : null
+
   // ---- Price vs latency ---------------------------------------------------
   // The one chart on this page whose question is "which of these do we ship".
   // It needs a single number for quality, which is exactly what the aggregate
@@ -1584,7 +1881,7 @@
   // `current_lens`, because the gate is not a lens - a reader looking at one
   // criterion on the graph has not said they want their shipping decision made
   // on that one criterion.
-  $: get_quality = make_quality_getter(lens_data)
+  $: get_quality = make_quality_getter(effective_lens_data)
   function make_quality_getter(data: LensData) {
     return (run_config_id: string): number | null =>
       normalized_lens_value(data, run_config_id, { kind: "aggregate" })
@@ -1854,6 +2151,30 @@
           </span>
         {/if}
       </div>
+      <!-- Which conversations the pinned configs are compared ON. One control
+           for the whole page, beside the split for the same reason: the charts
+           are one comparison drawn several ways, and a radar over matched runs
+           above a table over pooled ones is a lie of composition. See
+           run_matching for what each option does and, more importantly, what
+           the shape ones are not. -->
+      <div class="flex flex-row items-center gap-2">
+        <span class="text-sm text-gray-500">Matching:</span>
+        <div class="join" role="group" aria-label="Run matching">
+          {#each MATCH_PREDICATES as predicate_option}
+            <button
+              type="button"
+              class="join-item btn btn-sm font-normal {match_predicate ===
+              predicate_option
+                ? 'btn-active'
+                : ''}"
+              aria-pressed={match_predicate === predicate_option}
+              on:click={() => (match_predicate = predicate_option)}
+            >
+              {MATCH_LABELS[predicate_option]}
+            </button>
+          {/each}
+        </div>
+      </div>
       <div class="flex-grow"></div>
       {#if forest.edges.length > 0}
         <div class="join">
@@ -1970,6 +2291,26 @@
       />
     </div>
 
+    <!-- What every number under here is over. Between the legend and the
+         charts because it governs all of them, and rendered at every
+         predicate - including the default, where the fact worth stating is
+         that the configs are NOT on the same conversations. -->
+    {#if pinned_nodes.length > 0}
+      <div class="mt-3">
+        <ComparisonBasis
+          applied={match_result.applied}
+          requested={match_predicate}
+          basis_count={basis_ids.length}
+          evals={basis_evals}
+          n_range={basis_n_range}
+          missing_shape_labels={basis_missing_shape_labels}
+          tool_source_available={tool_source !== null}
+          errors={basis_errors}
+          loading={matching_pending}
+        />
+      </div>
+    {/if}
+
     <!-- Section 2: the two charts, side by side - quality on the left, what it
          cost to get it on the right. They only pair up once there is room for
          the radar's ring plus its axis names and the bars plus their gutter
@@ -2007,9 +2348,14 @@
             scoreDirections={score_directions}
             axisFamilies={quality_axis_families}
             specDescriptions={spec_descriptions}
+            getSampleSize={get_sample_size}
             title="Quality Scores"
             subtitle={`Eval scores for the selected run configurations.${
               split_scope_label ? ` ${split_scope_label} only.` : ""
+            }${
+              matching_active
+                ? ` Among conversations of ${match_basis_phrase}.`
+                : ""
             } Higher is better on every axis.`}
             table_location="below"
             legend_position="bottom"
@@ -2040,7 +2386,9 @@
                 Some are hidden — use “Hidden” above the table below to restore them.
               {:else}
                 A radar chart needs at least {MIN_RADAR_AXES} higher-is-better scores.
-                Every score is still in the comparison table below.
+                Every score is still in the comparison table below.{#if matching_active}
+                  Matching is on — switch it back to “{MATCH_LABELS.all}” above
+                  to compare on every run instead.{/if}
               {/if}
             </div>
           </div>
@@ -2049,9 +2397,10 @@
 
       <div class="min-w-0 min-h-[800px] flex flex-col">
         <CompareMetricsBarChart
-          scopeLabel={split_scope_label}
+          scopeLabel={matching_active ? stated_scope_label : split_scope_label}
           axes={shown_metric_axes}
           getMetricValue={get_metric_value}
+          getSampleSize={get_sample_size}
           run_configs={run_configs ?? []}
           model_info={$model_info}
           selectedRunConfigIds={visible_pinned_ids}
@@ -2201,9 +2550,10 @@
         </div>
         <CompareMatrix
           {pinned_nodes}
-          {lens_data}
+          lens_data={effective_lens_data}
           {eval_scores_cache}
           {eval_scores_loading}
+          get_usage_value={matrix_usage_getter}
           groups={quality_table_groups}
           respect_visibility={false}
           empty_message="Every quality score is hidden. Use “Hidden” above to restore them."
@@ -2237,9 +2587,10 @@
         </div>
         <CompareMatrix
           {pinned_nodes}
-          {lens_data}
+          lens_data={effective_lens_data}
           {eval_scores_cache}
           {eval_scores_loading}
+          get_usage_value={matrix_usage_getter}
           groups={performance_table_groups}
           respect_visibility={false}
           empty_message="Every performance metric is hidden. Use “Hidden” above to restore them."

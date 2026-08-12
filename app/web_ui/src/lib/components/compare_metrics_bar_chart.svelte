@@ -76,6 +76,12 @@
   // Raw value of a metric for a run config, in its own units. Null when the
   // config has no number for it.
   export let getMetricValue: (runConfigId: string, key: string) => number | null
+  // Runs behind each (config, key) number, appended to the row tooltip.
+  // Optional and null by default - the usage rollup keys have no per-key count
+  // at all, so a row simply prints without one.
+  export let getSampleSize:
+    | ((runConfigId: string, key: string) => number | null)
+    | null = null
   export let run_configs: TaskRunConfig[] = []
   export let model_info: ProviderModels | null = null
   // Only what the page's legend has left switched on. This chart draws no
@@ -321,9 +327,15 @@ Because it is a comparison, at least two run configs are needed.`
               axis.unit,
               rawValue,
             )})</span>`
+      const n =
+        getSampleSize && config.id ? getSampleSize(config.id, axis.key) : null
+      const nText =
+        n === null || rawValue === null
+          ? ""
+          : ` <span style="color: #888;">· n=${n}</span>`
       html += `<div>${tooltipMarker(
         seriesColorFor(config.id ?? null, index),
-      )}${name}: ${shown}</div>`
+      )}${name}: ${shown}${nText}</div>`
     })
     return html
   }

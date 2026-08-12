@@ -61,6 +61,13 @@
   export let model_info: ProviderModels | null
   export let prompts: PromptResponse | null = null
   export let selectedRunConfigIds: string[]
+  // How many runs are behind each (config, key) mean, appended to the per-axis
+  // tooltip. Optional, and null is today's tooltip exactly: not every page that
+  // draws this chart knows its sample sizes, and a point estimate with no n is
+  // still the number this chart has always drawn.
+  export let getSampleSize:
+    | ((runConfigId: string, dataKey: string) => number | null)
+    | null = null
   // Full-range maximum for a data key (eg 1 for pass/fail, 5 for 5-star), used by
   // the "Full Scale" axis mode. Keys without an entry (unbounded custom scores)
   // fall back to the data-relative max.
@@ -813,10 +820,18 @@ Related criteria sit together: the axes are grouped into the families the task's
         shown = rawValue.toFixed(3)
       }
 
+      // A mean over 3 runs and a mean over 300 read identically without this.
+      const n =
+        getSampleSize && entry.configId
+          ? getSampleSize(entry.configId, key)
+          : null
+      const nText =
+        n === null ? "" : ` <span style="color: #888;">· n=${n}</span>`
+
       const weight = entry.name === hoveredName ? "600" : "400"
       html += `<div style="font-weight: ${weight};">${tooltipMarker(
         seriesColorFor(entry.configId, index),
-      )}${entry.name}: ${shown}</div>`
+      )}${entry.name}: ${shown}${nText}</div>`
     })
     return html
   }
