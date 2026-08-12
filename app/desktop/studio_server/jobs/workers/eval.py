@@ -77,6 +77,24 @@ class _EvalErrorLogObserver(AsyncJobRunnerObserver[EvalJob]):
         )
 
 
+# TODO (ship blocker): these params carry no `split`, so this job can only ever run an
+# eval's default (test) set. Eval datasets are being divided into test/train/val, and every
+# other read and run path is becoming split-aware; until this one is too, there is simply no
+# way to run an eval over its train or val split through the background job system.
+#
+# It is only a TODO today because the splits datamodel does not exist on this branch:
+# `kiln_ai.datamodel.eval_splits` (`resolve_split`, `ResolvedSplit`) arrives with
+# `scosman/evals_v2`. The real change has to wait until this branch syncs with that.
+#
+# Reference implementation: commit 369a32ef8 on `claude/eval-splits-v1-v2-q38412`. It adds
+# `split` to EvalJobParams and resolves it through a single `_resolve_split` helper shared by
+# the runner and `compute_state`, so progress is measured against exactly the items the runner
+# processes; `jobs/api.py` pre-resolves the split at request time so an unknown or
+# unconfigured one returns 422 instead of failing later inside a background job.
+#
+# Design is specified in `specs/projects/eval_splits_v1_v2/` (functional spec §4,
+# architecture §5) — those spec files are not on this branch either, and land with the same
+# merge.
 class EvalJobParams(BaseModel):
     project_id: str = Field(description="Id of the project the eval belongs to.")
     task_id: str = Field(description="Id of the task the eval belongs to.")

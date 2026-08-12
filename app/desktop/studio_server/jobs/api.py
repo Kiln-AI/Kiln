@@ -168,6 +168,13 @@ def connect_jobs_api(app: FastAPI) -> None:
         response_model=CreateJobResponse,
         openapi_extra=_EVAL_JOB_APPROVAL,
     )
+    # TODO (ship blocker): this route has no `split` handling, so an eval started here always
+    # runs its default (test) set — its train and val splits are unreachable through the job
+    # system. Blocked on the splits datamodel (`kiln_ai.datamodel.eval_splits`), which lands
+    # with `scosman/evals_v2`; once it does, the split should be resolved here, at request
+    # time, so an unknown or unconfigured one 422s instead of becoming a doomed background
+    # job. See the fuller note on `EvalJobParams` in `workers/eval.py`, and reference commit
+    # 369a32ef8 on `claude/eval-splits-v1-v2-q38412`.
     async def run_eval_job(params: EvalJobParams) -> CreateJobResponse:
         """Kick off an eval as a background job and return immediately.
 
