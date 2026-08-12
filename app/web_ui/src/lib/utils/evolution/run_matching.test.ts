@@ -25,6 +25,12 @@ type ScoreDirection = components["schemas"]["ScoreDirection"]
 
 type RowSpec = {
   item: string
+  /**
+   * Which conversation this row scored. Defaults to one execution per item,
+   * which is the common case (one drive, judged by several evals) and the case
+   * every test that does not name one is about.
+   */
+  exec?: string
   scores?: Record<string, number>
   total_tokens?: number
   input_tokens?: number
@@ -43,6 +49,8 @@ function index(
       eval_config_id: `${entry.eval_id}_ec`,
       rows: entry.rows.map((row) => ({
         item_id: row.item,
+        eval_run_id: `${entry.eval_id}_${row.item}_run`,
+        execution_id: row.exec ?? `exec_${row.item}`,
         scores: row.scores ?? {},
         input_tokens: row.input_tokens ?? null,
         output_tokens: row.output_tokens ?? null,

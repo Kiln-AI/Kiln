@@ -1,3 +1,4 @@
+import hashlib
 import json
 from collections import defaultdict
 from typing import Annotated, Any, Dict, List, Literal, Set, Tuple
@@ -675,6 +676,16 @@ class EvalRunIndexRow(BaseModel):
         description="The item this run scored: an EvalInput id on a V2 eval, a "
         "TaskRun (dataset) id on a V1 one. Unique within an eval's rows."
     )
+    eval_run_id: ID_TYPE = Field(
+        description="The EvalRun this row is. One record, one row - not an "
+        "identity for the conversation behind it, which is what execution_id is."
+    )
+    execution_id: str = Field(
+        description="Which CONVERSATION this row's scores were computed over. "
+        "Equal across two rows exactly when they scored the same run of the "
+        "task, so a caller can join rows from different evals and know it is "
+        "reading one execution rather than two."
+    )
     scores: Dict[str, float] = Field(
         default_factory=dict,
         description="The run's scores, keyed by output_score_key, exactly as "
@@ -796,6 +807,44 @@ def eval_run_item_id(eval_run: EvalRun) -> ID_TYPE:
         if eval_run.dataset_id is not None
         else eval_run.eval_input_id
     )
+
+
+def eval_run_execution_id(eval_run: EvalRun) -> str:
+    """Which CONVERSATION an EvalRun's scores were computed over.
+
+    An item id is NOT this. Two evals can hold a row for the same item under
+    the same run config and mean two different runs of the task: trace reuse
+    makes them one conversation judged twice, but a second drive - a resample,
+    or two jobs racing - makes them two. A caller that joins rows across evals
+    by item id (say, to read a metrics eval's tool_calls for a judge's item)
+    reads the wrong conversation's number whenever it is the second case, and
+    has no way to tell from the payload which case it got.
+
+    Nothing stored on the record is that identity:
+
+    - `drive_fingerprint` is the drive's INPUTS (drive config + run config +
+      scenario), which is what makes reuse safe to look up. It is equal by
+      construction across two independent drives of the same scenario.
+      Measured on a real task: 756 of 756 cross-eval (config, item) pairs
+      shared a fingerprint while 85 of them held demonstrably different
+      conversations.
+    - there is no task-run id to borrow. A V2 run stores its conversation
+      inline as `task_run_trace` and a V1 run stores its output inline; neither
+      points at a persisted TaskRun.
+
+    So the identity is the conversation's own content: a hash of the stored
+    trace. Rows that reused a trace hash equal, rows from separate drives do
+    not, and the only cost is a digest over a string already in memory.
+
+    A run with no trace (V1 evals, final-answer evals) falls back to the
+    record's own id, which makes every such row its own execution. That is the
+    conservative direction: a cross-eval join finds no match and reports a
+    missing value instead of quietly reading a different run's number.
+    """
+    trace = eval_run.task_run_trace
+    if trace is None:
+        return f"run:{eval_run.id}"
+    return f"trace:{hashlib.sha256(trace.encode('utf-8')).hexdigest()}"
 
 
 # ---------------------------------------------------------------------------
@@ -2619,6 +2668,17 @@ def connect_evals_api(app: FastAPI):
                 item_id = eval_run_item_id(eval_run)
                 if item_id not in remaining_expected_item_ids:
                     continue
+                # The item's slot is consumed HERE, before the skip test, so a
+                # skipped run and a scored one for the same item leave exactly
+                # one row - the first in iteration order - and a skipped first
+                # takes the item off the index entirely. That is deliberate,
+                # and it is deliberate because compute_score_summary does the
+                # same thing at the same point (:1099-1110): these rows exist
+                # to be intersected with numbers that endpoint produced, so a
+                # different dedupe here would make a matched mean and an
+                # unfiltered mean disagree about a config nobody filtered out.
+                # No behavior change - stated so the next reader does not
+                # "fix" it into a divergence.
                 remaining_expected_item_ids.remove(item_id)
 
                 if eval_run.skipped_reason is not None:
@@ -2628,6 +2688,8 @@ def connect_evals_api(app: FastAPI):
                 rows.append(
                     EvalRunIndexRow(
                         item_id=item_id,
+                        eval_run_id=eval_run.id,
+                        execution_id=eval_run_execution_id(eval_run),
                         scores=dict(eval_run.scores),
                         input_tokens=usage.input_tokens if usage else None,
                         output_tokens=usage.output_tokens if usage else None,

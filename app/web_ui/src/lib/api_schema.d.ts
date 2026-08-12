@@ -7762,6 +7762,16 @@ export interface components {
              */
             item_id: string | null;
             /**
+             * Eval Run Id
+             * @description The EvalRun this row is. One record, one row - not an identity for the conversation behind it, which is what execution_id is.
+             */
+            eval_run_id: string | null;
+            /**
+             * Execution Id
+             * @description Which CONVERSATION this row's scores were computed over. Equal across two rows exactly when they scored the same run of the task, so a caller can join rows from different evals and know it is reading one execution rather than two.
+             */
+            execution_id: string;
+            /**
              * Scores
              * @description The run's scores, keyed by output_score_key, exactly as stored. A key an eval declares can be absent here, the same way it is absent from the per-key counts in the summary.
              */

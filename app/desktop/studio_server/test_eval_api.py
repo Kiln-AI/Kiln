@@ -5486,6 +5486,170 @@ async def test_eval_run_index_skips_archived_spec_evals(client):
     assert body["evals"] == []
 
 
+def _index_two_eval_task(
+    judge_traces: dict[str, str | None],
+    metrics_traces: dict[str, str | None],
+) -> Mock:
+    """Two evals over the same items, so a caller can join their rows.
+
+    Each eval's run for an item carries whatever trace the caller names, which
+    is how a reused conversation (same trace) is told from two separate drives
+    of the same scenario (different traces).
+    """
+
+    def runs(traces: dict[str, str | None], score: float) -> list[EvalRun]:
+        return [
+            EvalRun(
+                task_run_config_id="rc1",
+                scores={"accuracy": score},
+                input="i",
+                output="o",
+                eval_input_id=item,
+                task_run_trace=trace,
+                # Equal on every row: the fingerprint is the drive's inputs,
+                # so two independent drives of one scenario share it.
+                drive_fingerprint="fp_v1_same_for_every_row",
+            )
+            for item, trace in traces.items()
+        ]
+
+    judge = _build_mock_v2_eval(
+        eval_id="judge",
+        name="Judge",
+        current_config_id="ec_judge",
+        eval_input_filter_id="tag::ix_test",
+        output_scores=_index_output_scores(),
+        configs=[_build_mock_eval_config("ec_judge", "J", runs(judge_traces, 1.0))],
+    )
+    metrics = _build_mock_v2_eval(
+        eval_id="metrics",
+        name="Metrics",
+        current_config_id="ec_metrics",
+        eval_input_filter_id="tag::ix_test",
+        output_scores=_index_output_scores(),
+        configs=[_build_mock_eval_config("ec_metrics", "M", runs(metrics_traces, 0.0))],
+    )
+    rc1_mock = Mock(spec=TaskRunConfig, id="rc1")
+    rc1_mock.name = "RC1"
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = [rc1_mock]
+    mock_task.finetunes.return_value = []
+    mock_task.evals.return_value = [judge, metrics]
+    mock_task.specs.return_value = []
+    return mock_task
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_execution_id_matches_across_a_reused_trace(client):
+    """Two evals judging ONE conversation report one execution id.
+
+    This is the join a caller makes to read a metrics eval's numbers for a
+    judge's item, and it has to succeed whenever the two really are the same
+    run of the task.
+    """
+    body = _get_index(
+        client,
+        _index_two_eval_task(
+            judge_traces={"ei1": '[{"role":"user","content":"a"}]'},
+            metrics_traces={"ei1": '[{"role":"user","content":"a"}]'},
+        ),
+        None,
+    )
+    judge = _rows_by_item(body, "judge")["ei1"]
+    metrics = _rows_by_item(body, "metrics")["ei1"]
+
+    assert judge["execution_id"] == metrics["execution_id"]
+    assert judge["execution_id"].startswith("trace:")
+    # ...and it is the conversation's identity, not the record's
+    assert judge["eval_run_id"] != metrics["eval_run_id"]
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_execution_id_separates_two_drives_of_one_item(client):
+    """The same item under the same run config, driven twice: two conversations.
+
+    The item id is equal and the drive fingerprint is equal - measured on a
+    real task, 756 of 756 cross-eval pairs shared a fingerprint while 85 held
+    different conversations - so this is the only field that can tell a caller
+    it is looking at two runs rather than one.
+    """
+    body = _get_index(
+        client,
+        _index_two_eval_task(
+            judge_traces={"ei1": '[{"role":"user","content":"first drive"}]'},
+            metrics_traces={"ei1": '[{"role":"user","content":"second drive"}]'},
+        ),
+        None,
+    )
+    judge = _rows_by_item(body, "judge")["ei1"]
+    metrics = _rows_by_item(body, "metrics")["ei1"]
+
+    assert judge["item_id"] == metrics["item_id"] == "ei1"
+    assert judge["execution_id"] != metrics["execution_id"]
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_execution_id_falls_back_to_the_record(client):
+    """A run with no stored trace (V1, final-answer) is its own execution.
+
+    The conservative direction: a cross-eval join finds no match and reports a
+    missing value, rather than reading a different run's number as if it were
+    this one's.
+    """
+    body = _get_index(
+        client,
+        _index_two_eval_task(
+            judge_traces={"ei1": None},
+            metrics_traces={"ei1": None},
+        ),
+        None,
+    )
+    judge = _rows_by_item(body, "judge")["ei1"]
+    metrics = _rows_by_item(body, "metrics")["ei1"]
+
+    assert judge["execution_id"] == f"run:{judge['eval_run_id']}"
+    assert judge["execution_id"] != metrics["execution_id"]
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_execution_id_is_stable_and_row_identity_is_not(client):
+    """Two different items driven identically would collide on trace alone -
+    they do not here because they are different conversations, but the point
+    of the assertion is that the id is a pure function of the trace: the same
+    conversation text always yields the same id, so a caller can compare ids
+    from two payloads fetched at different times."""
+    first = _get_index(
+        client,
+        _index_two_eval_task(
+            judge_traces={"ei1": "same-text", "ei2": "other-text"},
+            metrics_traces={"ei1": "same-text", "ei2": "other-text"},
+        ),
+        None,
+    )
+    second = _get_index(
+        client,
+        _index_two_eval_task(
+            judge_traces={"ei1": "same-text", "ei2": "other-text"},
+            metrics_traces={"ei1": "same-text", "ei2": "other-text"},
+        ),
+        None,
+    )
+    a = _rows_by_item(first, "judge")
+    b = _rows_by_item(second, "judge")
+    assert a["ei1"]["execution_id"] == b["ei1"]["execution_id"]
+    assert a["ei1"]["execution_id"] != a["ei2"]["execution_id"]
+
+
+@pytest.mark.asyncio
+async def test_eval_run_index_carries_the_run_id(client):
+    """Every row names the record it came from, so a caller can go back to it."""
+    body = _get_index(client, _index_v2_task(), None)
+    rows = _rows_by_item(body)
+    ids = {row["eval_run_id"] for row in rows.values()}
+    assert len(ids) == len(rows)
+    assert all(isinstance(value, str) and value for value in ids)
+
+
 @pytest.mark.asyncio
 async def test_eval_run_index_empty_for_a_run_config_with_no_runs(client):
     """An eval the config was never run against is present with no rows, not
