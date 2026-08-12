@@ -238,11 +238,28 @@ field the **score** math touches stays on `EvalRun`, so that code is untouched.
 Completeness is still `EvalRun` presence per `(eval_config, run_config, item)`: an
 unscored trace is incomplete, which is correct.
 
-**One exception.** The per-run-config summary rolls up tokens, cost and latency from
+**One exception.** The per-run-config summary rolls up tokens, cost **and latency** from
 `eval_run.task_run_usage` (`eval_api.py:1862-1878`). With that field deprecated, the
-rollup reads `TaskRun.usage` through the join instead. Eval traces are always freshly
-generated (never seeded), so `usage` is the right field — `cumulative_usage` equals it
-for non-seeded runs.
+rollup reads from the joined TaskRun instead.
+
+**Read `TaskRun.usage`, not `cumulative_usage`.** Two verified reasons:
+
+1. **`usage` already covers every LLM call in the run.** It is a running accumulator,
+   not a per-turn value: `litellm_adapter.py:163` (`usage += call_usage`, inside the
+   tool-call loop) and `:308` (`usage += turn_result.usage`, across turns). A 5-turn
+   agentic run reports all 5 turns. `TaskRun.cumulative_usage`'s own docstring agrees —
+   *"For a fresh (non-seeded) run, the token / cost fields equal those of `usage`."*
+2. **`cumulative_usage` would silently drop latency.** It is typed `MessageUsage`, which
+   deliberately omits `total_llm_latency_ms` — *"aggregating it across the full trace
+   would mix latencies from different points in time."* `Usage` is the subclass that adds
+   it, and the summary reports it today (`eval_api.py:1877`).
+
+The two fields differ only when a run continues from a **seeded prior trace** —
+`cumulative_usage` sums the whole message list, `usage` counts only calls this run made.
+Freshly generated eval traces have no seeded prior trace, so they are equal. If seeded
+eval traces ever appear (a multi-turn concern owned by eb-v2), the right answer is not to
+swap fields but to read tokens/cost from `cumulative_usage` and latency from `usage` —
+they answer different questions.
 
 Legacy records still carry `task_run_usage`, so the rollup falls back to it when
 `scored_run_id` is unset.
@@ -345,9 +362,9 @@ name:
   `resolve_split()`, `ItemKey`, and `eval_run_item_key()` are reused, not reimplemented.
   Membership always resolves through `resolve_split()`.
 - **eb-v2 / multi-turn branch** — `multi_turn_drive_config` moves onto `EvalInput`
-  before ship. Until it does, multi-turn traces must not be reused across evals. Note:
-  `eb_v2_splits_alignment` §9 currently leans toward keeping it eval-level; the two
-  projects need to agree.
+  before ship. **Agreed with eb-v2.** Once it lands, the reuse key covers it with no
+  extra term, since the drive config becomes part of the item. Until it lands, multi-turn
+  traces must not be reused across evals.
 
 ## 12. Constraints
 
