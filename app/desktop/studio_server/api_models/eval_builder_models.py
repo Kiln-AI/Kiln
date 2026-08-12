@@ -20,10 +20,11 @@ JudgeScoreLiteral = Literal["pass", "fail"]
 
 
 def spec_name_must_have_a_json_key(value: str) -> str:
-    """Shared spec_name rule for every review request: the judge's score key
-    is derived from the name, so a name with no [a-z0-9_] characters would
-    produce an empty key and fail every trace deep inside the judge — reject
-    it up front instead.
+    """Name rule for the spec-save request: the saved eval's score key is
+    derived from the name, so a name with no [a-z0-9_] characters would
+    produce an empty key and fail every eval job deep inside the judge —
+    reject it up front instead. (The review streams no longer carry a name;
+    their transient judge scores under a constant draft key.)
     """
     if not string_to_json_key(value):
         raise ValueError(

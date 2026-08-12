@@ -50,7 +50,6 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.synthetic_user.runner import NUM_CASES_MAX
 from kiln_server.custom_errors import connect_custom_errors
-from kiln_server.utils.spec_utils import spec_eval_output_score
 
 BUILD_CLAIMS_URL = "/api/projects/p1/tasks/t1/eval_builder/build_claims"
 
@@ -196,7 +195,7 @@ class TestBuildJudgePromptTemplate:
 class TestBuildTransientJudgeEvalConfig:
     def test_single_turn_config_shape(self, in_memory_task, judge_config):
         config = build_transient_judge_eval_config(
-            in_memory_task, judge_config, multi_turn=False, spec_name="Test Spec"
+            in_memory_task, judge_config, multi_turn=False
         )
         assert config.config_type == EvalConfigType.v2
         properties = config.properties
@@ -212,15 +211,17 @@ class TestBuildTransientJudgeEvalConfig:
         assert eval_obj.evaluation_data_type == EvalDataType.final_answer
         assert len(eval_obj.output_scores) == 1
         assert eval_obj.output_scores[0].type == TaskOutputRatingType.pass_fail
-        # The review judge scores under the SAME identity the saved eval uses
-        # (spec_eval_output_score), so the calibrated prompt is the shipped one.
-        assert eval_obj.output_scores[0] == spec_eval_output_score("Test Spec")
-        assert eval_obj.output_scores[0].json_key() == "test_spec"
+        # The CONSTANT draft score: the eval's name is a save-time identity
+        # the wizard keeps out of the pre-save flow, so the transient judge
+        # never sees it — renames stay free until save.
+        assert eval_obj.output_scores[0].name == "Meets Spec"
+        assert eval_obj.output_scores[0].json_key() == "meets_spec"
+        assert "Test Spec" not in eval_obj.output_scores[0].instruction
         assert eval_obj.parent_task() is in_memory_task
 
     def test_multi_turn_scores_full_trace(self, in_memory_task, judge_config):
         config = build_transient_judge_eval_config(
-            in_memory_task, judge_config, multi_turn=True, spec_name="Test Spec"
+            in_memory_task, judge_config, multi_turn=True
         )
         eval_obj = config.parent_eval()
         assert eval_obj is not None
@@ -235,15 +236,13 @@ class TestRunJudgeForTrace:
     async def test_pass_verdict_with_reasoning(self, in_memory_task, judge_config):
         adapter = _judge_adapter(
             V2EvalResult(
-                scores={"test_spec": 1.0},
+                scores={"meets_spec": 1.0},
                 intermediate_outputs={"reasoning": "The reply follows the policy."},
             )
         )
         task_patch, registry_patch = _patch_judge_seam(in_memory_task, adapter)
         with task_patch, registry_patch:
-            verdict = await run_judge_for_trace(
-                "p1", "t1", "in", "out", judge_config, spec_name="Test Spec"
-            )
+            verdict = await run_judge_for_trace("p1", "t1", "in", "out", judge_config)
 
         assert verdict.judge_score == "pass"
         assert verdict.judge_reasoning == "The reply follows the policy."
@@ -252,12 +251,10 @@ class TestRunJudgeForTrace:
     async def test_fail_verdict_falls_back_when_no_reasoning(
         self, in_memory_task, judge_config
     ):
-        adapter = _judge_adapter(V2EvalResult(scores={"test_spec": 0.0}))
+        adapter = _judge_adapter(V2EvalResult(scores={"meets_spec": 0.0}))
         task_patch, registry_patch = _patch_judge_seam(in_memory_task, adapter)
         with task_patch, registry_patch:
-            verdict = await run_judge_for_trace(
-                "p1", "t1", "in", "out", judge_config, spec_name="Test Spec"
-            )
+            verdict = await run_judge_for_trace("p1", "t1", "in", "out", judge_config)
 
         assert verdict.judge_score == "fail"
         assert "FAIL" in verdict.judge_reasoning  # honest placeholder, not fabricated
@@ -268,15 +265,13 @@ class TestRunJudgeForTrace:
     ):
         adapter = _judge_adapter(
             V2EvalResult(
-                scores={"test_spec": 1.0},
+                scores={"meets_spec": 1.0},
                 intermediate_outputs={"chain_of_thought": "Step by step it holds."},
             )
         )
         task_patch, registry_patch = _patch_judge_seam(in_memory_task, adapter)
         with task_patch, registry_patch:
-            verdict = await run_judge_for_trace(
-                "p1", "t1", "in", "out", judge_config, spec_name="Test Spec"
-            )
+            verdict = await run_judge_for_trace("p1", "t1", "in", "out", judge_config)
 
         assert verdict.judge_reasoning == "Step by step it holds."
 
@@ -284,7 +279,7 @@ class TestRunJudgeForTrace:
     async def test_multi_turn_passes_trace_and_final_message(
         self, in_memory_task, judge_config
     ):
-        adapter = _judge_adapter(V2EvalResult(scores={"test_spec": 1.0}))
+        adapter = _judge_adapter(V2EvalResult(scores={"meets_spec": 1.0}))
         trace = [
             {"role": "user", "content": "Can I return opened items?"},
             {"role": "assistant", "content": "Let me check the policy."},
@@ -299,7 +294,6 @@ class TestRunJudgeForTrace:
                 "in",
                 "flattened transcript",
                 judge_config,
-                spec_name="Test Spec",
                 trace=trace,
             )
 
@@ -325,9 +319,7 @@ class TestRunJudgeForTrace:
         task_patch, registry_patch = _patch_judge_seam(in_memory_task, adapter)
         with task_patch, registry_patch:
             with pytest.raises(ValueError, match="Judge skipped this trace"):
-                await run_judge_for_trace(
-                    "p1", "t1", "in", "out", judge_config, spec_name="Test Spec"
-                )
+                await run_judge_for_trace("p1", "t1", "in", "out", judge_config)
 
     @pytest.mark.asyncio
     async def test_missing_score_raises(self, in_memory_task, judge_config):
@@ -335,9 +327,7 @@ class TestRunJudgeForTrace:
         task_patch, registry_patch = _patch_judge_seam(in_memory_task, adapter)
         with task_patch, registry_patch:
             with pytest.raises(ValueError, match="no score"):
-                await run_judge_for_trace(
-                    "p1", "t1", "in", "out", judge_config, spec_name="Test Spec"
-                )
+                await run_judge_for_trace("p1", "t1", "in", "out", judge_config)
 
 
 # ───────────────────────── build_claims primitive ─────────────────────────
@@ -780,7 +770,6 @@ def pipeline_request():
             "model_name": "claude_4_5_haiku",
             "model_provider": "openrouter",
         },
-        "spec_name": "Test Spec",
         "judge": {
             "prompt": "Judge whether the output fabricates policy.",
             "model_name": "claude_sonnet_4_6",
@@ -1265,10 +1254,12 @@ class TestMultiTurnPipeline:
         resp = client.post(PIPELINE_URL, json=pipeline_request)
         assert resp.status_code == 422
 
-    def test_rejects_unkeyable_spec_name(
+    def test_rejects_retired_spec_name_field(
         self, client, pipeline_request, pipeline_seams
     ):
-        pipeline_request["spec_name"] = "!!!"
+        # spec_name left this contract when the judge moved to the constant
+        # draft score — a stale client still sending it must 422 loudly.
+        pipeline_request["spec_name"] = "Test Spec"
         resp = client.post(PIPELINE_URL, json=pipeline_request)
         assert resp.status_code == 422
 
@@ -1496,7 +1487,6 @@ JUDGE_TRACES_URL = "/api/projects/p1/tasks/t1/eval_builder/judge_traces"
 def judge_traces_request():
     return {
         "leaf_run_ids": ["leaf-0", "leaf-1"],
-        "spec_name": "Test Spec",
         "judge": {
             "prompt": "Judge whether the output fabricates policy.",
             "model_name": "claude_sonnet_4_6",
@@ -1764,10 +1754,12 @@ class TestJudgeTraces:
         resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
         assert resp.status_code == 422
 
-    def test_rejects_unkeyable_spec_name(
+    def test_rejects_retired_spec_name_field(
         self, client, judge_traces_request, judge_traces_seams
     ):
-        judge_traces_request["spec_name"] = "!!!"
+        # spec_name left this contract when the judge moved to the constant
+        # draft score — a stale client still sending it must 422 loudly.
+        judge_traces_request["spec_name"] = "Test Spec"
         resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
         assert resp.status_code == 422
 
@@ -1956,7 +1948,6 @@ def single_turn_request():
             "prompt_id": "simple_prompt_builder",
             "structured_output_mode": "default",
         },
-        "spec_name": "Test Spec",
         "judge": {
             "prompt": "Judge whether the output fabricates policy.",
             "model_name": "claude_sonnet_4_6",
@@ -2089,7 +2080,6 @@ class TestSingleTurnPipeline:
         assert judge.await_count == 2
         for call in judge.await_args_list:
             assert call.kwargs["trace"] is None
-            assert call.kwargs["spec_name"] == "Test Spec"
 
     def test_runs_are_batch_tagged_and_saved(
         self, client, single_turn_request, single_turn_seams

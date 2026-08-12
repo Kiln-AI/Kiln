@@ -803,9 +803,14 @@
   // arms author it per-drive (author_judge; the server picks the rubric
   // framing from the task's turn mode).
   let review_judge: JudgeConfig | null = null
-  // Identity snapshot of what the review judged (spec name + spec text).
-  // Save is refused when it no longer matches: renaming or editing the spec
-  // after review would ship a judge the review never calibrated.
+  // Identity snapshot of what the review judged: the SPEC TEXT only. The
+  // judge prompt is authored from it and every graded claim argues it, so
+  // editing it after review invalidates the review — the staleness gate
+  // below then blocks (never destroys) until the user reverts or explicitly
+  // re-creates. The NAME is deliberately absent: it is a save-time identity
+  // (score column, dataset tags) that nothing pre-save depends on — the
+  // transient judge scores under a constant draft key — so renames are
+  // always free.
   let reviewed_identity: string | null = null
 
   // Number of cases in one batch (conversations to drive, or single-turn
@@ -1352,12 +1357,22 @@
   // synthetic-user generation, the default judge prompt, and the saved Spec),
   // so no two stages can see different text. Step 3's refined values win;
   // property_values covers a skipped refine; Step 1's free text is the floor.
+  // Declared reactively, referencing the three state vars DIRECTLY so
+  // Svelte's compile-time dependency tracking sees them — the staleness
+  // gate derives from this, and a plain function call inside a `$:`
+  // statement would track nothing (a hoisted function's reads are invisible
+  // to the compiler), leaving the gate frozen across description edits.
+  $: current_spec_text =
+    ((Object.keys(refined_property_values).length > 0
+      ? refined_property_values
+      : property_values
+    ).issue_description as string | null) ?? description
+
+  // Callable form for the imperative sites (drive snapshots, save, plan
+  // guidance). Delegates so the two can't drift; reactive statements run at
+  // component init, before any of those sites can fire.
   function spec_text(): string {
-    const values =
-      Object.keys(refined_property_values).length > 0
-        ? refined_property_values
-        : property_values
-    return (values.issue_description as string | null) ?? description
+    return current_spec_text
   }
 
   // Step 4 part 1 — plan (both arms). Ask the batch planner for one prompt
@@ -1738,7 +1753,7 @@
       // save alike, resolved at step 2) and identity BEFORE the pipeline
       // runs so save can verify nothing changed under the results.
       review_judge = judge
-      reviewed_identity = JSON.stringify({ name, spec: spec_text() })
+      reviewed_identity = spec_text()
 
       // 7. One SSE stream runs the whole pipeline: [drive → judge → claims]
       // per case. POST endpoint, so fetch + shared SSE reader (EventSource
@@ -1757,7 +1772,6 @@
           target_run_config_id,
           su_driver: chosen_su,
           replace_batch_tags: tags_to_replace,
-          spec_name: name,
           judge,
         }),
         signal: new_copilot_abort_signal(),
@@ -2182,7 +2196,7 @@
       // save alike) and identity BEFORE the pipeline runs so save can
       // verify nothing changed under the results.
       review_judge = judge
-      reviewed_identity = JSON.stringify({ name, spec: spec_text() })
+      reviewed_identity = spec_text()
 
       // 7. One SSE stream runs the whole pipeline: [run → judge] per input.
       // POST endpoint, so fetch + shared SSE reader (EventSource is
@@ -2201,7 +2215,6 @@
           input_provider: chosen_input_gen.model_provider,
           target_run_config_id,
           replace_batch_tags: tags_to_replace,
-          spec_name: name,
           judge,
         }),
         signal: new_copilot_abort_signal(),
@@ -2801,7 +2814,6 @@
       },
       body: JSON.stringify({
         leaf_run_ids: entries.map((e) => e.id),
-        spec_name: name,
         judge,
       }),
       signal: new_copilot_abort_signal(),
@@ -3012,27 +3024,44 @@
     on_save()
   }
 
+  // ── The staleness gate (non-destructive). Results judged under an old
+  // spec text are stale — the judge prompt was authored from that text and
+  // every graded claim argues it — but stale-relative-to-an-edit is not
+  // invalid: reverting the edit makes them exactly as good as before. So a
+  // mismatch BLOCKS the review render (below) instead of clearing anything;
+  // results are discarded only by the explicit action, a re-drive, or a new
+  // plan. Derived (not checked at a transition) so browser Forward can't
+  // slip into a stale review either.
+  $: review_results_stale =
+    trace_claims.length > 0 &&
+    reviewed_identity !== null &&
+    reviewed_identity !== current_spec_text
+
+  // The gate's explicit way out: throw the results away and return to the
+  // plan screen to re-create under the edited description. history.back()
+  // (not replace_step) because the gate's review entry was PUSHED over the
+  // plan screen — replacing would leave two adjacent generate entries and a
+  // dead first Back press.
+  function discard_stale_results() {
+    const msg = driven_data_confirm(
+      "Discarding",
+      trace_claims.length,
+      drive_stop === null,
+    )
+    if (!confirm(msg)) return
+    discard_driven_results()
+    history.back()
+  }
+
   // Generation → review: advance to existing results, re-driving when
-  // stale. Pushes (not replaces) so Back from review returns here — this
+  // needed. Pushes (not replaces) so Back from review returns here — this
   // path is only reachable when Step 4 has real content to come back to.
   function continue_to_review() {
-    // Results reviewed under an old name/spec text are stale — the judge
-    // identity changed, so the review must be re-run, not presented.
-    const stale =
-      trace_claims.length > 0 &&
-      reviewed_identity !== JSON.stringify({ name, spec: spec_text() })
-    if (stale) {
-      trace_claims = []
-      trace_reviews = []
-      selected_trace_indices = []
-      // Rounds belong to the discarded review, not to whatever replaces it —
-      // without this the next review would inherit a round count it never
-      // earned.
-      reset_calibration_state()
-      // Both arms' results come from a merged pipeline (the judge rides the
-      // drive), so a stale review means re-driving the plan.
-      generation_error =
-        "The eval's name or description changed since the review. Create your eval data again."
+    if (review_results_stale) {
+      // Land on the review step, where the gate renders instead of the
+      // review: it explains the mismatch and offers revert-or-discard.
+      // Nothing is cleared here — a revert restores the review as-is.
+      goto_step("review")
       return
     }
     if (trace_claims.length === 0) {
@@ -3057,9 +3086,12 @@
     saving = true
     save_error = null
     try {
-      if (reviewed_identity !== JSON.stringify({ name, spec: spec_text() })) {
+      if (reviewed_identity !== spec_text()) {
+        // Backstop for the staleness gate: the gate blocks the review
+        // render, but save must independently refuse to persist a judge
+        // calibrated against different spec text.
         save_error =
-          "The eval's name or description changed since the review. Go back and re-run the review."
+          "The eval's description changed since the review. Go back and revert it, or create your eval data again."
         return
       }
       // Source of truth for the saved spec is refined_property_values —
@@ -3960,7 +3992,26 @@
           {/if}
         {:else if current_step === "review"}
           <!-- ── Step 5 — Claim/Evidence review (trace hidden in a modal) ── -->
-          {#if calibration_phase === "refining"}
+          {#if review_results_stale}
+            <!-- The staleness gate, FIRST so no review or calibration screen
+                 can render over results whose spec text changed. Blocking,
+                 never destroying: reverting the description restores the
+                 review exactly; only the explicit action discards. Derived
+                 state, so this also covers browser Forward straight into
+                 the review step. -->
+            <Warning
+              warning_color="warning"
+              warning_message="Your eval's description changed since this eval data was created and reviewed. The judge was built from the previous description, so the results below no longer match. Revert the description (Back) to continue reviewing, or discard the results and create your eval data again."
+            />
+            <div class="flex justify-center gap-2 py-4">
+              <button class="btn" on:click={() => history.back()}>
+                ← Back
+              </button>
+              <button class="btn btn-primary" on:click={discard_stale_results}>
+                Discard Results &amp; Create Again
+              </button>
+            </div>
+          {:else if calibration_phase === "refining"}
             <!-- The refine, as a visible stage the reviewer can watch and
                  abort rather than something that happens at save. -->
             <RefiningAnimation

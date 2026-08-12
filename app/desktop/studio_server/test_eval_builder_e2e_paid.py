@@ -463,8 +463,8 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     # ONE stream runs [drive → judge] per case. The SU driver plays the
     # customer for TURNS_PER_CASE turns; chains persist to disk (the leaf
     # run id is the durable identity the save path rates); the judge runs
-    # locally under the SAME output-score identity the saved eval will use
-    # (spec_name). Each case_judged event echoes the canonical transcript
+    # locally under the constant draft score (the eval's name binds only at
+    # save). Each case_judged event echoes the canonical transcript
     # of the runner's REAL trace — claims built later cite into that text.
     num_driven = len(cases)
     resp = client.post(
@@ -474,7 +474,6 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             "turns": TURNS_PER_CASE,
             "target_run_config": TARGET_RUN_CONFIG,
             "su_driver": SU_DRIVER,
-            "spec_name": SPEC_NAME,
             "judge": JUDGE,
         },
     )
@@ -1059,7 +1058,6 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
 
 TOOL_NUM_CASES = 2
 TOOL_TURNS_PER_CASE = 2
-TOOL_SPEC_NAME = "E2E Tool Harness Spec"
 
 TOOL_TASK_INSTRUCTION = (
     "You are an arithmetic assistant for a bookkeeping team. For EVERY "
@@ -1179,7 +1177,6 @@ def test_eval_builder_pipeline_tools_e2e(preflight, temp_tool_task, client):
             "turns": TOOL_TURNS_PER_CASE,
             "target_run_config_id": run_config.id,
             "su_driver": SU_DRIVER,
-            "spec_name": TOOL_SPEC_NAME,
             "judge": TOOL_JUDGE,
         },
     )

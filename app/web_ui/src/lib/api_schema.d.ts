@@ -8810,11 +8810,6 @@ export interface components {
              * @description TaskRun ids of the driven results to judge: chain-leaf ids on a multi-turn task, the pipeline's run ids on a single-turn one. Frames reference each case by its position in this list (case_index).
              */
             leaf_run_ids: string[];
-            /**
-             * Spec Name
-             * @description The spec's name. The review judge scores under the same output-score identity the saved eval will use, so the prompt the user calibrates here is byte-identical to the one that ships.
-             */
-            spec_name: string;
             judge: components["schemas"]["JudgeConfig"];
         };
         /**
@@ -9560,11 +9555,6 @@ export interface components {
              * @description Optional user-supplied batch label. Constrained to [A-Za-z0-9_-]{1,64} so it can safely be used as a tag on leaf TaskRuns. Auto-generated if not provided.
              */
             batch_tag?: string | null;
-            /**
-             * Spec Name
-             * @description The spec's name. The review judge scores under the same output-score identity the saved eval will use, so the prompt the user calibrates here is byte-identical to the one that ships.
-             */
-            spec_name: string;
             judge: components["schemas"]["JudgeConfig"];
         };
         /**
@@ -11418,11 +11408,6 @@ export interface components {
              * @description Optional user-supplied batch label. Constrained to [A-Za-z0-9_-]{1,64} so it can safely be used as a tag on the driven TaskRuns. Auto-generated if not provided.
              */
             batch_tag?: string | null;
-            /**
-             * Spec Name
-             * @description The spec's name. The review judge scores under the same output-score identity the saved eval will use, so the prompt the user calibrates here is byte-identical to the one that ships.
-             */
-            spec_name: string;
             judge: components["schemas"]["JudgeConfig"];
         };
         /**

@@ -43,18 +43,19 @@ from fastapi import HTTPException
 from kiln_ai.adapters.eval.base_eval import conditionally_raw_wrap
 from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
 from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
     Eval,
     EvalConfig,
     EvalConfigType,
     EvalDataType,
+    EvalOutputScore,
     EvalTaskInput,
     LlmJudgeProperties,
     TaskRunSplit,
 )
 from kiln_ai.datamodel.task import Task
 from kiln_server.task_api import task_from_id
-from kiln_server.utils.spec_utils import spec_eval_output_score
 
 
 @dataclass
@@ -121,21 +122,33 @@ def build_judge_prompt_template(judge_prompt: str, multi_turn: bool) -> str:
 
 
 def build_transient_judge_eval_config(
-    task: Task, judge: JudgeConfig, multi_turn: bool, spec_name: str
+    task: Task, judge: JudgeConfig, multi_turn: bool
 ) -> EvalConfig:
     """Throwaway in-memory Eval + V2 EvalConfig for one review-judge call.
 
     The alignment review runs before the user saves anything, so the parent
-    Eval is transient too — but its single pass/fail output score carries the
-    SAME name/instruction the saved eval will use (spec_eval_output_score), so
-    the adapter renders an identical judge prompt at review and at run time.
+    Eval is transient too, and its single pass/fail output score is the
+    CONSTANT draft score below — the eval's name is a save-time identity the
+    wizard deliberately keeps out of the pre-save flow (it stays freely
+    editable until save; nothing durable references it earlier). The saved
+    eval's score key will carry the real name; the delta the judge model
+    sees is the score's label and one boilerplate sentence — the rubric,
+    verdict vocabulary, and structure are identical.
     """
     eval_obj = Eval(
         name="Eval Builder Review Judge",
         parent=task,
         # Eval requires a test split; this eval never runs via filters.
         splits={"test": TaskRunSplit(filter_id="tag::transient_eval_builder_review")},
-        output_scores=[spec_eval_output_score(spec_name)],
+        output_scores=[
+            EvalOutputScore(
+                name="Meets Spec",
+                type=TaskOutputRatingType.pass_fail,
+                instruction=(
+                    "Evaluate if the model's behaviour meets the specification."
+                ),
+            )
+        ],
         evaluation_data_type=(
             EvalDataType.full_trace if multi_turn else EvalDataType.final_answer
         ),
@@ -185,7 +198,6 @@ async def run_judge_for_trace(
     raw_input: str,
     raw_output: str,
     judge: JudgeConfig,
-    spec_name: str,
     trace: list[dict[str, Any]] | None = None,
 ) -> JudgeVerdict:
     """Run the candidate judge over one trace, LOCALLY (the user's keys).
@@ -197,7 +209,7 @@ async def run_judge_for_trace(
     """
     task = task_from_id(project_id, task_id)
     eval_config = build_transient_judge_eval_config(
-        task, judge, multi_turn=trace is not None, spec_name=spec_name
+        task, judge, multi_turn=trace is not None
     )
     adapter = v2_eval_adapter_from_config(eval_config)
 

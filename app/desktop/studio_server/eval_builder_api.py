@@ -37,7 +37,8 @@ import json
 import logging
 import re
 import uuid
-from typing import Annotated, Any, AsyncIterator, Callable, Literal, cast
+from collections.abc import AsyncIterator, Callable
+from typing import Annotated, Any, Literal, cast
 
 from app.desktop.studio_server.api_models.eval_builder_models import (
     AuthorJudgeApiInput,
@@ -45,8 +46,6 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     BuildClaimsApiInput,
     BuildClaimsApiOutput,
     JudgeConfig,
-    PreflightModelApiInput,
-    PreflightModelApiOutput,
     PipelineBatchAbortedEvent,
     PipelineBatchCompletedEvent,
     PipelineBatchStartedEvent,
@@ -54,9 +53,10 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     PipelineCaseFailedEvent,
     PipelineCaseJudgedEvent,
     PipelineTurnCompletedEvent,
+    PreflightModelApiInput,
+    PreflightModelApiOutput,
     RefineJudgeApiInput,
     RefineJudgeApiOutput,
-    spec_name_must_have_a_json_key,
 )
 from app.desktop.studio_server.multiturn_sdg_api import (
     RunCasesBatchApiInput,
@@ -94,7 +94,6 @@ from kiln_ai.datamodel.datamodel_enums import (
 )
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.basemodel import FilenameStringShort
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.datamodel.task_run import TaskRun
@@ -107,13 +106,13 @@ from kiln_ai.synthetic_user.runner import (
     TurnCompletedEvent,
     run_cases_batch,
 )
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_ai.utils.async_job_runner import (
     AsyncJobRunner,
     AsyncJobRunnerObserver,
     RetryableError,
 )
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
@@ -235,16 +234,7 @@ class MultiTurnPipelineRequest(RunCasesBatchApiInput, ReplaceBatchTagsField):
     # batch cleanup with no signal anywhere).
     model_config = ConfigDict(extra="forbid")
 
-    spec_name: FilenameStringShort = Field(
-        description="The spec's name. The review judge scores under the same "
-        "output-score identity the saved eval will use, so the prompt the "
-        "user calibrates here is byte-identical to the one that ships."
-    )
     judge: JudgeConfig
-
-    _spec_name_has_json_key = field_validator("spec_name")(
-        spec_name_must_have_a_json_key
-    )
 
 
 class JudgeTracesRequest(BaseModel):
@@ -265,20 +255,11 @@ class JudgeTracesRequest(BaseModel):
             "(case_index)."
         ),
     )
-    spec_name: FilenameStringShort = Field(
-        description="The spec's name. The review judge scores under the same "
-        "output-score identity the saved eval will use, so the prompt the "
-        "user calibrates here is byte-identical to the one that ships."
-    )
     judge: JudgeConfig
 
     # forbid: a retired or misspelled field on this request must 422, not be
     # silently dropped.
     model_config = ConfigDict(extra="forbid")
-
-    _spec_name_has_json_key = field_validator("spec_name")(
-        spec_name_must_have_a_json_key
-    )
 
     @field_validator("leaf_run_ids")
     @classmethod
@@ -339,16 +320,7 @@ class SingleTurnPipelineRequest(TargetRunConfigFields, ReplaceBatchTagsField):
             "driven TaskRuns. Auto-generated if not provided."
         ),
     )
-    spec_name: FilenameStringShort = Field(
-        description="The spec's name. The review judge scores under the same "
-        "output-score identity the saved eval will use, so the prompt the "
-        "user calibrates here is byte-identical to the one that ships."
-    )
     judge: JudgeConfig
-
-    _spec_name_has_json_key = field_validator("spec_name")(
-        spec_name_must_have_a_json_key
-    )
 
     @field_validator("inputs")
     @classmethod
@@ -384,12 +356,10 @@ class JudgeStreamBase:
         project_id: str,
         task_id: str,
         judge: JudgeConfig,
-        spec_name: str,
     ) -> None:
         self._project_id = project_id
         self._task_id = task_id
         self._judge = judge
-        self._spec_name = spec_name
         # `None` is the end-of-stream sentinel.
         self._queue: asyncio.Queue[str | None] = asyncio.Queue()
         self._review_sem = asyncio.Semaphore(REVIEW_CONCURRENCY)
@@ -463,7 +433,7 @@ class JudgeStreamBase:
                         total_cost=self._total_cost,
                     )
                 )
-        except Exception as e:  # noqa: BLE001 — last-resort surface for developer bugs
+        except Exception as e:
             # Per-case failures never reach here (they become case_failed
             # frames); this catches orchestration bugs only.
             logger.exception("%s failed mid-stream", self._stream_name)
@@ -528,7 +498,7 @@ class JudgeStreamBase:
                     deleted,
                     tag,
                 )
-            except Exception:  # noqa: BLE001 — cleanup must not fail the batch
+            except Exception:
                 logger.exception(
                     "%s: failed to delete superseded batch %s",
                     self._stream_name,
@@ -555,7 +525,6 @@ class JudgeStreamBase:
                     raw_input,
                     raw_output,
                     self._judge,
-                    spec_name=self._spec_name,
                     trace=judge_trace,
                 )
                 # Frame construction/serialization is inside the try: a
@@ -673,7 +642,6 @@ class MultiTurnPipelineRun(JudgeStreamBase):
             project_id=project_id,
             task_id=task_id,
             judge=input.judge,
-            spec_name=input.spec_name,
         )
         self._task = task
         self._cases = cases
@@ -816,7 +784,6 @@ class JudgeTracesRun(JudgeStreamBase):
             project_id=project_id,
             task_id=task_id,
             judge=input.judge,
-            spec_name=input.spec_name,
         )
         # The base's neutral batch_tag ""/total_cost 0.0 are kept: no drive
         # ran, so there is no new batch tag and no new drive spend to report.
@@ -998,7 +965,6 @@ class SingleTurnPipelineRun(JudgeStreamBase):
             project_id=project_id,
             task_id=task_id,
             judge=input.judge,
-            spec_name=input.spec_name,
         )
         self._task = task
         self._input = input
@@ -1228,7 +1194,7 @@ class SingleTurnPipelineRun(JudgeStreamBase):
         try:
             async with self._save_context():
                 run.delete()
-        except Exception:  # noqa: BLE001 — cleanup must not mask the case failure
+        except Exception:
             logger.exception(
                 "single_turn_pipeline: failed to clean up a failed case's run"
             )
@@ -1297,7 +1263,7 @@ def connect_eval_builder_api(app: FastAPI):
         guard_multiturn(task)
         try:
             runner_cases = [RunnerCase.model_validate(c) for c in input.cases]
-        except Exception as exc:  # noqa: BLE001 — Pydantic ValidationError + any future shape drift
+        except Exception as exc:
             raise HTTPException(
                 status_code=400,
                 detail={
@@ -1522,7 +1488,7 @@ def connect_eval_builder_api(app: FastAPI):
                 base_adapter_config=AdapterConfig(allow_saving=False),
             )
             await adapter.invoke(input="Say OK")
-        except Exception as e:  # noqa: BLE001 — any failure IS the diagnosis
+        except Exception as e:
             root = unwrap_kiln_run_error(e)
             # litellm exceptions already lead with their class name
             # ("litellm.APIError: …") — prefixing the type again would
