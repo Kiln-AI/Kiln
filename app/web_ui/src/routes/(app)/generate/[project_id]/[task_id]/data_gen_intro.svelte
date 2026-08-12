@@ -25,6 +25,7 @@
   import { encode_splits_for_url } from "$lib/utils/splits_util"
   import { eval_split } from "$lib/utils/eval_splits"
   import { build_eval_options } from "./eval_options"
+  import { build_eval_generation_splits } from "./data_gen_splits"
 
   export let generate_subtopics: () => void
   export let generate_samples: () => void
@@ -128,29 +129,11 @@
       )
       return
     }
-    const eval_set_filter_id = test_split?.filter_id
-    if (!eval_set_filter_id) {
-      alert(
-        "We can't generate synthetic data for this eval as its eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
-      )
-      return
-    }
-    const eval_configs_filter_id = evaluator.eval_configs_filter_id ?? null
-    const splits: Record<string, number> = {}
-    if (
-      eval_set_filter_id.startsWith("tag::") &&
-      (eval_configs_filter_id === null ||
-        eval_configs_filter_id.startsWith("tag::"))
-    ) {
-      const eval_set_tag = eval_set_filter_id.split("::")[1]
-      if (eval_configs_filter_id) {
-        const eval_configs_tag = eval_configs_filter_id.split("::")[1]
-        splits[eval_set_tag] = 0.8
-        splits[eval_configs_tag] = 0.2
-      } else {
-        splits[eval_set_tag] = 1.0
-      }
-    } else {
+    // Generated data is spread over whichever of the eval's splits can receive it. The test
+    // split is the one we can't do without: no tag to write the runs into means there is
+    // nothing to generate for.
+    const splits = build_eval_generation_splits(evaluator)
+    if (!splits) {
       alert(
         "We can't generate synthetic data for this eval as its eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
       )
