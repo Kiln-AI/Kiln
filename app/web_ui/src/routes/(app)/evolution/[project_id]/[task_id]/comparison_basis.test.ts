@@ -6,6 +6,7 @@ import ComparisonBasis, {
   basis_line,
   basis_notes,
   small_set_warning,
+  unavailable_lens_lines,
   type BasisEval,
 } from "./comparison_basis.svelte"
 import {
@@ -21,8 +22,10 @@ function basis_eval(overrides: Partial<BasisEval> = {}): BasisEval {
     name: "Answer matches the data",
     matched: 25,
     shared: 25,
-    universe_min: 25,
-    universe_max: 74,
+    universe: 25,
+    shape_matched: null,
+    missing_shape: 0,
+    is_metric: false,
     ...overrides,
   }
 }
@@ -47,25 +50,93 @@ describe("basis_line", () => {
     )
   })
 
-  it("explains a predicate that cannot apply to one config", () => {
-    expect(basis_line("all", "shared", 1, [], { min: 5, max: 5 })).toBe(
-      "All runs · Shared inputs needs at least 2 pinned configs",
+  it("explains a SHAPE predicate that cannot apply to one config", () => {
+    expect(basis_line("all", "tools", 1, [], { min: 5, max: 5 })).toBe(
+      "All runs · n=5 by eval and config — Similar tool use needs at least 2 pinned configs",
     )
   })
 
-  it("states matched against the universe it came out of", () => {
+  it("does not nag about the default predicate on a single config", () => {
+    // `shared` arriving here is not a choice anybody made - it is the default,
+    // and matching is the identity on one config. Saying it "needs 2 configs"
+    // would report a failure the reader never asked for.
+    expect(basis_line("all", "shared", 1, [], { min: 5, max: 5 })).toBe(
+      "All runs · n=5 by eval and config",
+    )
+  })
+
+  it("states retention per eval, out of that eval's own universe", () => {
+    // Never a range against a range: "22–25 (of 25–74)" pairs the smallest
+    // matched count on one eval with the largest universe on another, and 22
+    // of 74 describes no eval that exists.
     const line = basis_line(
       "shared",
       "shared",
       3,
       [
-        basis_eval({ matched: 22, universe_min: 25, universe_max: 74 }),
-        basis_eval({ evalId: "e2", matched: 25, universe_min: 25 }),
+        basis_eval({ matched: 22, shared: 22, universe: 74 }),
+        basis_eval({ evalId: "e2", matched: 25, shared: 25, universe: 25 }),
       ],
       null,
     )
     expect(line).toBe(
-      "Shared inputs · 3 configs · 22–25 matched conversations per eval (of 25–74)",
+      "Shared inputs · 3 configs · kept 47/99 across 2 graded evals (22/74 · 25/25)",
+    )
+  })
+
+  it("names the one eval rather than counting to one", () => {
+    const line = basis_line(
+      "shared",
+      "shared",
+      2,
+      [basis_eval({ name: "Write Correctness", matched: 17, universe: 25 })],
+      null,
+    )
+    expect(line).toBe(
+      "Shared inputs · 2 configs · 17/25 conversations on “Write Correctness”",
+    )
+  })
+
+  it("summarises the spread once there are more evals than fit", () => {
+    const line = basis_line(
+      "shared",
+      "shared",
+      6,
+      [
+        basis_eval({ evalId: "a", matched: 14, universe: 25 }),
+        basis_eval({ evalId: "b", matched: 23, universe: 25 }),
+        basis_eval({ evalId: "c", matched: 5, universe: 25 }),
+        basis_eval({ evalId: "d", matched: 25, universe: 25 }),
+      ],
+      null,
+    )
+    expect(line).toContain(
+      "kept 67/100 across 4 graded evals (5/25 to 25/25 each)",
+    )
+  })
+
+  it("keeps the measurement lane out of the graded fraction", () => {
+    // The metrics eval scores every conversation on the task; pooling its 175
+    // items with the graded evals' 25 states a denominator that belongs to
+    // neither.
+    const line = basis_line(
+      "shared",
+      "shared",
+      6,
+      [
+        basis_eval({ matched: 14, universe: 25 }),
+        basis_eval({
+          evalId: "eff",
+          name: "Efficiency metrics",
+          matched: 114,
+          universe: 175,
+          is_metric: true,
+        }),
+      ],
+      null,
+    )
+    expect(line).toBe(
+      "Shared inputs · 6 configs · 14/25 conversations on “Answer matches the data” · Efficiency metrics: 114/175",
     )
   })
 
@@ -78,23 +149,117 @@ describe("basis_line", () => {
     ).toContain("similar length (within 1.5×)")
   })
 
-  it("ignores evals nobody has run when quoting the range", () => {
+  it("ignores evals nobody has run when quoting retention", () => {
     const line = basis_line(
       "shared",
       "shared",
       2,
       [
-        basis_eval({ matched: 20, universe_min: 20, universe_max: 20 }),
+        basis_eval({ matched: 20, shared: 20, universe: 20 }),
         basis_eval({
           evalId: "never_run",
           matched: 0,
-          universe_min: 0,
-          universe_max: 0,
+          shared: 0,
+          universe: 0,
         }),
       ],
       null,
     )
-    expect(line).toContain("20 matched conversations per eval (of 20)")
+    expect(line).toContain("20/20 conversations")
+  })
+
+  it("says so when there is nothing to match on at all", () => {
+    expect(basis_line("shared", "shared", 2, [], null)).toBe(
+      "Shared inputs · 2 configs · no runs to match on",
+    )
+  })
+})
+
+describe("unavailable_lens_lines", () => {
+  const thin = [
+    basis_eval({
+      evalId: "a",
+      name: "A",
+      matched: 23,
+      shared: 23,
+      shape_matched: 6,
+    }),
+    basis_eval({
+      evalId: "b",
+      name: "B",
+      matched: 25,
+      shared: 25,
+      shape_matched: 0,
+    }),
+    basis_eval({
+      evalId: "c",
+      name: "C",
+      matched: 14,
+      shared: 14,
+      shape_matched: 0,
+    }),
+    basis_eval({
+      evalId: "eff",
+      name: "Efficiency",
+      matched: 114,
+      shared: 114,
+      shape_matched: 100,
+      is_metric: true,
+    }),
+  ]
+
+  it("says nothing when the predicate applied", () => {
+    expect(unavailable_lens_lines(null, "tools", 6, thin, [])).toEqual([])
+    expect(
+      unavailable_lens_lines("single_config", "tools", 1, thin, []),
+    ).toEqual([])
+  })
+
+  it("quotes the retention the predicate actually produced, over graded evals", () => {
+    // 6 of 62 shared graded conversations = 10%. The metrics eval's 100/114
+    // does not soften it.
+    const lines = unavailable_lens_lines("shape_too_thin", "tools", 6, thin, [])
+    expect(lines[0]).toBe(
+      "Similar tool use is unavailable at this basis: across 6 mutually-matched configs it keeps about 10% of the shared conversations, and this lens is built for 2–3. Showing shared inputs instead.",
+    )
+  })
+
+  it("offers the two measurable exits, the recovery first", () => {
+    const lines = unavailable_lens_lines("shape_too_thin", "tools", 6, thin, [
+      {
+        name: "Skill read returns an error",
+        config: "DeepSeek V4 Pro",
+        from: 5,
+        to: 12,
+      },
+      {
+        name: "Tool call returned an error",
+        config: "DeepSeek V4 Pro",
+        from: 6,
+        to: 14,
+      },
+      { name: "A third one that does not fit", config: "X", from: 7, to: 9 },
+    ])
+    expect(lines[1]).toBe(
+      "Dropping DeepSeek V4 Pro takes “Skill read returns an error” from 5 to 12 matched conversations.",
+    )
+    expect(lines[2]).toContain("Tool call returned an error")
+    expect(lines).toHaveLength(4)
+    expect(lines[3]).toBe(
+      "Or compare 2–3 configs, which is what these predicates hold up at.",
+    )
+  })
+
+  it("still offers the basis-size exit when no single config is the reason", () => {
+    const lines = unavailable_lens_lines(
+      "shape_too_thin",
+      "length",
+      5,
+      thin,
+      [],
+    )
+    expect(lines).toHaveLength(2)
+    expect(lines[1]).toContain("compare 2–3 configs")
   })
 })
 
@@ -144,10 +309,10 @@ describe("basis_notes", () => {
 
 describe("basis_diagnostics", () => {
   it("is silent at the default predicate, except about fetch failures", () => {
-    expect(basis_diagnostics("all", [basis_eval()], ["X"], false, [])).toEqual(
-      [],
-    )
-    const withError = basis_diagnostics("all", [], [], true, [
+    expect(
+      basis_diagnostics("all", "all", [basis_eval()], ["X"], false, []),
+    ).toEqual([])
+    const withError = basis_diagnostics("all", "all", [], [], true, [
       { label: "Luna", message: "500" },
     ])
     expect(withError).toHaveLength(1)
@@ -155,26 +320,32 @@ describe("basis_diagnostics", () => {
     expect(withError[0]).toContain("rather than pooled in")
   })
 
-  it("names the evals with nothing matched", () => {
+  it("names every eval with nothing matched, rather than counting them", () => {
+    // These are the evals that used to hide behind "(and 5 other evals)" on
+    // the small-set chip. An eval with no cells at all is a different fact
+    // from one with few, and it is the more serious one.
     const lines = basis_diagnostics(
+      "shared",
       "shared",
       [
         basis_eval({ name: "Write Correctness", matched: 0 }),
-        basis_eval({ evalId: "e2", name: "Answer matches", matched: 25 }),
+        basis_eval({ evalId: "e2", name: "Skill read", matched: 0 }),
+        basis_eval({ evalId: "e3", name: "Answer matches", matched: 25 }),
       ],
       [],
       true,
       [],
     )
     expect(lines[0]).toBe(
-      "No matched conversations on Write Correctness — that eval's cells are empty for this basis.",
+      "No matched conversations at all on “Write Correctness”, “Skill read” — those evals' cells are empty for this basis.",
     )
   })
 
   it("does not blame the predicate for an eval nobody has run", () => {
     const lines = basis_diagnostics(
       "shared",
-      [basis_eval({ matched: 0, universe_min: 0, universe_max: 0 })],
+      "shared",
+      [basis_eval({ matched: 0, shared: 0, universe: 0 })],
       [],
       true,
       [],
@@ -182,9 +353,71 @@ describe("basis_diagnostics", () => {
     expect(lines).toEqual([])
   })
 
+  it("says which eval lost its conversations to a missing shape record", () => {
+    // The number the reader needs is per eval: "17 of 17" is the whole reason
+    // Write Correctness went blank, and pooling it across evals would read as
+    // bad luck spread thinly.
+    const lines = basis_diagnostics(
+      "shared",
+      "tools",
+      [
+        basis_eval({
+          name: "Write Correctness",
+          matched: 0,
+          shared: 17,
+          missing_shape: 17,
+        }),
+      ],
+      [],
+      true,
+      [],
+    )
+    expect(lines).toContain(
+      "“Write Correctness”: 17 of 17 shared conversations lack a same-run tool-call record.",
+    )
+  })
+
+  it("names the missing shape for length matching in its own terms", () => {
+    const lines = basis_diagnostics(
+      "shared",
+      "length",
+      [basis_eval({ matched: 20, shared: 25, missing_shape: 5 })],
+      [],
+      true,
+      [],
+    )
+    expect(lines[0]).toContain(
+      "5 of 25 shared conversations have no recorded token count",
+    )
+  })
+
+  it("caps the per-eval list and counts the rest", () => {
+    const lines = basis_diagnostics(
+      "shared",
+      "tools",
+      ["a", "b", "c", "d", "e"].map((id, i) =>
+        basis_eval({
+          evalId: id,
+          name: id.toUpperCase(),
+          matched: 1,
+          shared: 20,
+          missing_shape: 20 - i,
+        }),
+      ),
+      [],
+      true,
+      [],
+    )
+    expect(
+      lines.filter((line) => line.includes("lack a same-run")),
+    ).toHaveLength(3)
+    expect(lines).toContain("2 other evals lost conversations the same way.")
+  })
+
   it("names the config that has no shape data, per predicate", () => {
     expect(
       basis_diagnostics(
+        "tools",
         "tools",
         [basis_eval()],
         ["Motivated Stag"],
@@ -195,14 +428,42 @@ describe("basis_diagnostics", () => {
       "Motivated Stag has no tool-call metrics — Similar tool use is unavailable for this basis.",
     )
     expect(
-      basis_diagnostics("length", [basis_eval()], ["A", "B"], true, [])[0],
+      basis_diagnostics(
+        "length",
+        "length",
+        [basis_eval()],
+        ["A", "B"],
+        true,
+        [],
+      )[0],
     ).toBe(
       "A, B have no token counts — Similar length is unavailable for this basis.",
     )
   })
 
+  it("still explains the shape data after falling back to shared", () => {
+    // applied is `shared` but the reader asked for `tools`, and why they did
+    // not get it is the whole point of these lines.
+    const lines = basis_diagnostics(
+      "shared",
+      "tools",
+      [basis_eval()],
+      ["Motivated Stag"],
+      true,
+      [],
+    )
+    expect(lines[0]).toContain("has no tool-call metrics")
+  })
+
   it("says when the task itself records no tool calls", () => {
-    const lines = basis_diagnostics("tools", [basis_eval()], ["A"], false, [])
+    const lines = basis_diagnostics(
+      "tools",
+      "tools",
+      [basis_eval()],
+      ["A"],
+      false,
+      [],
+    )
     expect(lines).toEqual([
       "No eval on this task records tool calls, so Similar tool use has nothing to match on.",
     ])
@@ -243,10 +504,23 @@ describe("small_set_warning", () => {
     expect(warning?.text).toContain("(and 1 other eval)")
   })
 
+  it("leaves the empty evals to the diagnostics that name them", () => {
+    // n=0 is not a small sample, it is no sample: a resolution figure on it
+    // would be nonsense, and it used to be what pushed the genuinely small
+    // eval out of the chip.
+    const warning = small_set_warning("shared", [
+      basis_eval({ evalId: "a", name: "A", matched: 0 }),
+      basis_eval({ evalId: "b", name: "B", matched: 0 }),
+      basis_eval({ evalId: "c", name: "C", matched: 4 }),
+    ])
+    expect(warning?.text).toContain("“C” n=4")
+    expect(warning?.text).not.toContain("other eval")
+  })
+
   it("does not warn about an eval nobody has run", () => {
     expect(
       small_set_warning("shared", [
-        basis_eval({ matched: 0, universe_min: 0, universe_max: 0 }),
+        basis_eval({ matched: 0, shared: 0, universe: 0 }),
       ]),
     ).toBeNull()
   })
@@ -284,6 +558,30 @@ describe("ComparisonBasis component", () => {
     )
     const notes = getAllByTestId("basis-note").map((el) => el.textContent ?? "")
     expect(notes.some((note) => note.includes("each counted once"))).toBe(true)
+  })
+
+  it("leads with the unavailable-lens explanation when it fell back", () => {
+    const { getAllByTestId } = render(ComparisonBasis, {
+      props: {
+        applied: "shared",
+        requested: "tools",
+        fallback: "shape_too_thin",
+        basis_count: 6,
+        evals: [basis_eval({ matched: 23, shared: 23, shape_matched: 2 })],
+        n_range: null,
+        recovery: [
+          { name: "Skill read", config: "DeepSeek V4 Pro", from: 5, to: 12 },
+        ],
+      },
+    })
+    const lines = getAllByTestId("basis-diagnostic").map(
+      (el) => el.textContent?.trim() ?? "",
+    )
+    expect(lines[0]).toContain("Similar tool use is unavailable at this basis")
+    expect(lines[1]).toContain("Dropping DeepSeek V4 Pro")
+    expect(lines.some((line) => line.includes("compare 2–3 configs"))).toBe(
+      true,
+    )
   })
 
   it("says it is matching, and hides the stale line, while indexes load", () => {

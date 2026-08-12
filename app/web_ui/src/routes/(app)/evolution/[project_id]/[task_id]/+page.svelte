@@ -110,13 +110,16 @@
     visible_ids,
   } from "$lib/utils/evolution/visibility_store"
   import {
+    DEFAULT_MATCH_PREDICATE,
     MATCH_LABELS,
     MATCH_PREDICATES,
+    MIN_MATCHED_N,
     build_matched_lens_data,
     build_matched_usage,
     match_param,
     matched_items_by_eval,
     parse_match_param,
+    recovery_hints,
     tool_call_source,
     type MatchPredicate,
     type MatchedUsage,
@@ -125,6 +128,7 @@
   import ComparisonBasis, {
     type BasisError,
     type BasisEval,
+    type BasisRecovery,
   } from "./comparison_basis.svelte"
   import EvolutionLegend from "./evolution_legend.svelte"
   import EvolutionCanvas from "./evolution_canvas.svelte"
@@ -261,14 +265,19 @@
 
   // Which conversations the comparison is made over. See run_matching: at "all"
   // every config is measured on whatever runs it happens to have, which is what
-  // this page has always done and what makes two configs on one axis not
-  // necessarily a comparison at all.
+  // this page used to do and what makes two configs on one axis not necessarily
+  // a comparison at all.
   //
-  // "all" stays the default, and absent-means-all keeps the URL identical to
-  // every link written before this existed. It is in the URL for the same
-  // reason quality_floor is: a Compare V2 link is an argument someone sends,
-  // and the basis it was argued under has to travel with it.
-  let match_predicate: MatchPredicate = "all"
+  // The default is `shared` (DEFAULT_MATCH_PREDICATE), so the page opens on the
+  // basis where a difference between two means is a difference between the
+  // CONFIGS. On a single pinned config every predicate is the identity and the
+  // banner reports "All runs", so nothing about a one-config view changes.
+  // "all" is the explicit opt-out and is what serializes into the URL now.
+  //
+  // It is in the URL for the same reason quality_floor is: a Compare V2 link is
+  // an argument someone sends, and the basis it was argued under has to travel
+  // with it.
+  let match_predicate: MatchPredicate = DEFAULT_MATCH_PREDICATE
 
   // Drill-down UI state (not round-tripped)
   let inspector: {
@@ -461,8 +470,9 @@
     } else {
       urlParams.delete("split")
     }
-    // Same omitted-default discipline as the split: "all" is what an absent
-    // parameter has always meant, so it stays absent.
+    // Same omitted-default discipline as the split, around the new default:
+    // `shared` stays absent and `all` is written, because pooling every run is
+    // now the position a link has to state.
     const serialized_match = match_param(match_predicate)
     if (serialized_match !== null) {
       urlParams.set("match", serialized_match)
@@ -924,11 +934,18 @@
   $: matching_pending = match_predicate !== "all" && !basis_indexes_ready
 
   $: tool_source = tool_call_source(lens_data.keyMetas, eval_run_index_cache)
+  // The metrics partition goes in because two of the matcher's decisions are
+  // about the CRITERIA: whether a shape predicate has left them readable, and
+  // what denominator the banner quotes. A metrics eval scores every
+  // conversation on the task and would carry both votes on its own.
+  $: is_metric_eval_id = (evalId: string): boolean =>
+    metric_eval_id_set.has(evalId)
   $: match_result = matched_items_by_eval(
     eval_run_index_cache,
     basis_ids,
     matching_pending ? "all" : match_predicate,
     tool_source,
+    is_metric_eval_id,
   )
   $: matching_active = match_result.applied !== "all"
 
@@ -958,17 +975,63 @@
   )
   $: config_label = (id: string): string =>
     series_labels[id] ?? forest.nodes.get(id)?.name ?? id
-  $: basis_evals = match_result.evals.map((entry): BasisEval => {
-    const universes = Object.values(entry.universe_by_config)
-    return {
+  $: basis_evals = match_result.evals.map(
+    (entry): BasisEval => ({
       evalId: entry.evalId,
       name: eval_names_by_id.get(entry.evalId) ?? "Eval",
       matched: entry.matched,
       shared: entry.shared,
-      universe_min: universes.length > 0 ? Math.min(...universes) : 0,
-      universe_max: universes.length > 0 ? Math.max(...universes) : 0,
-    }
-  })
+      universe: entry.universe,
+      shape_matched: entry.shape_matched,
+      missing_shape: entry.missing_shape,
+      is_metric: entry.is_metric,
+    }),
+  )
+
+  // The measurable way out of a matched set nobody can read: which config is
+  // costing the most on which eval, and what dropping it recovers. Computed
+  // only when there is something to recover from - it re-runs the matcher once
+  // per basis config, which is cheap but not free, and pointless while every
+  // eval is healthy.
+  $: basis_recovery = compute_basis_recovery(
+    match_result,
+    eval_run_index_cache,
+    basis_ids,
+    match_predicate,
+    tool_source,
+    is_metric_eval_id,
+    eval_names_by_id,
+    config_label,
+  )
+  function compute_basis_recovery(
+    result: typeof match_result,
+    indexes: RunIndexes,
+    ids: string[],
+    predicate: MatchPredicate,
+    source: ReturnType<typeof tool_call_source>,
+    is_metric: (evalId: string) => boolean,
+    names: Map<string, string>,
+    label_of: (id: string) => string,
+  ): BasisRecovery[] {
+    if (result.applied === "all") return []
+    const worth_asking =
+      result.fallback === "shape_too_thin" ||
+      result.evals.some(
+        (entry) =>
+          !entry.is_metric &&
+          entry.universe > 0 &&
+          entry.matched < MIN_MATCHED_N,
+      )
+    if (!worth_asking) return []
+    return recovery_hints(indexes, ids, predicate, source, is_metric).map(
+      (hint) => ({
+        name: names.get(hint.evalId) ?? "Eval",
+        config: label_of(hint.configId),
+        from: hint.from,
+        to: hint.to,
+      }),
+    )
+  }
   // The default predicate's N range, over the cells the page actually draws.
   // This is the number that was never on screen: it is what says two configs
   // side by side were measured 11 times and 148 times.
@@ -2368,12 +2431,14 @@
         <ComparisonBasis
           applied={match_result.applied}
           requested={match_predicate}
+          fallback={match_result.fallback}
           basis_count={basis_ids.length}
           evals={basis_evals}
           n_range={basis_n_range}
           missing_shape_labels={basis_missing_shape_labels}
           tool_source_available={tool_source !== null}
           errors={basis_errors}
+          recovery={basis_recovery}
           loading={matching_pending}
         />
       </div>

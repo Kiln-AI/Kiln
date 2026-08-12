@@ -4,6 +4,7 @@
     MIN_MATCHED_N,
     SHAPE_RATIO_LIMIT,
     undetectable_difference_pp,
+    type MatchFallback,
     type MatchPredicate,
   } from "$lib/utils/evolution/run_matching"
 
@@ -15,14 +16,29 @@
     matched: number
     /** Items every basis config ran, before any shape filtering */
     shared: number
-    /** Rows the basis configs have for this eval, smallest and largest */
-    universe_min: number
-    universe_max: number
+    /** Items at least one basis config ran — the denominator */
+    universe: number
+    /** What the requested shape predicate would have kept; null if none asked */
+    shape_matched: number | null
+    /** Shared items with no usable shape value, or one from another run */
+    missing_shape: number
+    /** A metrics eval, which runs over its own much larger item universe */
+    is_metric: boolean
   }
 
   export interface BasisError {
     label: string
     message: string
+  }
+
+  /** One eval's cheapest way out of a matched set too small to read. */
+  export interface BasisRecovery {
+    /** The eval, named */
+    name: string
+    /** The config to drop, named */
+    config: string
+    from: number
+    to: number
   }
 
   function range_phrase(min: number, max: number): string {
@@ -34,6 +50,43 @@
     return `${items.slice(0, limit).join(", ")} and ${items.length - limit} more`
   }
 
+  function count_phrase(n: number, noun: string): string {
+    return `${n} ${noun}${n === 1 ? "" : "s"}`
+  }
+
+  /**
+   * What one lane of evals kept, as a fraction of what it had.
+   *
+   * A ratio and not a range, because a range is not a denominator: "22–25
+   * matched (of 25–74)" pairs the smallest matched count on one eval with the
+   * largest universe on another, and 22 of 74 is a sentence about no eval that
+   * exists. Summing per eval - each eval's matched over its OWN union - is a
+   * number every part of which came from the same place, and the per-eval
+   * spread rides along beside it rather than being folded in.
+   */
+  function retention_phrase(evals: BasisEval[]): string {
+    const scored = evals.filter((entry) => entry.universe > 0)
+    if (scored.length === 0) return ""
+    const kept = scored.reduce((total, entry) => total + entry.matched, 0)
+    const universe = scored.reduce((total, entry) => total + entry.universe, 0)
+    if (scored.length === 1) {
+      return `${kept}/${universe} conversations on “${scored[0].name}”`
+    }
+    // Every eval's own ratio while they fit; past that the two ends of the
+    // spread, which is what a reader scanning a line of eight would take from
+    // it anyway.
+    const share = (entry: BasisEval) => entry.matched / entry.universe
+    const worst = scored.reduce((a, b) => (share(a) <= share(b) ? a : b))
+    const best = scored.reduce((a, b) => (share(a) >= share(b) ? a : b))
+    const spread =
+      scored.length <= 3
+        ? scored
+            .map((entry) => `${entry.matched}/${entry.universe}`)
+            .join(" · ")
+        : `${worst.matched}/${worst.universe} to ${best.matched}/${best.universe} each`
+    return `kept ${kept}/${universe} across ${count_phrase(scored.length, "graded eval")} (${spread})`
+  }
+
   /**
    * The one line that states what the numbers on this page are over.
    *
@@ -41,6 +94,11 @@
    * complaint this whole feature exists to answer, and "n varies by eval and
    * config" is exactly the fact that makes a pooled comparison worth
    * questioning.
+   *
+   * The measurement lane is stated SEPARATELY rather than pooled into the
+   * graded retention. A metrics eval scores every conversation on the task
+   * (175 items where the graded evals hold 25 each), so folding it in produces
+   * a fraction dominated by a lane nobody is reading criteria off.
    */
   export function basis_line(
     applied: MatchPredicate,
@@ -50,45 +108,93 @@
     n_range: { min: number; max: number } | null,
   ): string {
     if (applied === "all") {
-      // A predicate was asked for but cannot mean anything yet. Said rather
-      // than silently ignored - the picker still shows the reader's choice.
-      if (requested !== "all") {
-        return `All runs · ${MATCH_LABELS[requested]} needs at least 2 pinned configs`
+      const n = n_range
+        ? `n=${range_phrase(n_range.min, n_range.max)} by eval and config`
+        : "no scores yet on the pinned configs"
+      if (basis_count < 2) {
+        // Matching is the identity on one config, so there is nothing to
+        // report unless the reader explicitly picked a shape predicate - the
+        // default one arriving here is not a choice anybody made.
+        const asked =
+          requested === "length" || requested === "tools"
+            ? ` — ${MATCH_LABELS[requested]} needs at least 2 pinned configs`
+            : ""
+        return `${MATCH_LABELS.all} · ${n}${asked}`
       }
+      // The caveat is about numbers that exist. With none, "these are not the
+      // same conversations" would be a claim about nothing.
       if (!n_range) {
-        return "All runs · no scores yet on the pinned configs"
+        return `${MATCH_LABELS.all} · ${n}`
       }
       return (
-        `All runs · n=${range_phrase(n_range.min, n_range.max)} ` +
-        `by eval and config — configs are not compared on the same conversations`
+        `${MATCH_LABELS.all} · ${n} — configs are not compared on the ` +
+        `same conversations`
       )
     }
 
-    const scored = evals.filter((entry) => entry.universe_max > 0)
     const shape =
       applied === "shared"
         ? ""
         : ` · ${MATCH_LABELS[applied].toLowerCase()} (within ${SHAPE_RATIO_LIMIT}×)`
-    const configs = `${basis_count} ${basis_count === 1 ? "config" : "configs"}`
+    const configs = count_phrase(basis_count, "config")
 
-    if (scored.length === 0) {
-      return `${MATCH_LABELS.shared}${shape} · ${configs} · no runs to match on`
+    const graded = evals.filter((entry) => !entry.is_metric)
+    const metrics = evals.filter(
+      (entry) => entry.is_metric && entry.universe > 0,
+    )
+    const parts = [`${MATCH_LABELS.shared}${shape}`, configs]
+
+    const retention = retention_phrase(graded)
+    if (retention) parts.push(retention)
+    for (const entry of metrics) {
+      parts.push(`${entry.name}: ${entry.matched}/${entry.universe}`)
     }
+    if (!retention && metrics.length === 0) {
+      parts.push("no runs to match on")
+    }
+    return parts.join(" · ")
+  }
 
-    const matched = range_phrase(
-      Math.min(...scored.map((entry) => entry.matched)),
-      Math.max(...scored.map((entry) => entry.matched)),
+  /**
+   * Why a shape predicate is not the one being shown, and what to do instead.
+   *
+   * Both exits are measurable rather than advisory: the retention figure is
+   * the one the predicate actually produced, and the recovery lines name a
+   * config and the n that dropping it recovers. "Try fewer configs" on its own
+   * is a shrug.
+   */
+  export function unavailable_lens_lines(
+    fallback: MatchFallback | null,
+    requested: MatchPredicate,
+    basis_count: number,
+    evals: BasisEval[],
+    recovery: BasisRecovery[],
+  ): string[] {
+    if (fallback !== "shape_too_thin") return []
+    const graded = evals.filter((entry) => !entry.is_metric && entry.shared > 0)
+    const shared_total = graded.reduce((total, e) => total + e.shared, 0)
+    const shaped_total = graded.reduce(
+      (total, e) => total + (e.shape_matched ?? 0),
+      0,
     )
-    const universe = range_phrase(
-      Math.min(...scored.map((entry) => entry.universe_min)),
-      Math.max(...scored.map((entry) => entry.universe_max)),
+    const percent =
+      shared_total > 0 ? Math.round((shaped_total / shared_total) * 100) : 0
+    const lines = [
+      `${MATCH_LABELS[requested]} is unavailable at this basis: across ` +
+        `${count_phrase(basis_count, "mutually-matched config")} it keeps about ` +
+        `${percent}% of the shared conversations, and this lens is built for ` +
+        `2–3. Showing ${MATCH_LABELS.shared.toLowerCase()} instead.`,
+    ]
+    for (const hint of recovery.slice(0, 2)) {
+      lines.push(
+        `Dropping ${hint.config} takes “${hint.name}” from ${hint.from} to ` +
+          `${hint.to} matched conversations.`,
+      )
+    }
+    lines.push(
+      "Or compare 2–3 configs, which is what these predicates hold up at.",
     )
-    // "of" is what makes a predicate change NOTICEABLE: it states what
-    // tightening the basis cost, in the same breath as what it bought.
-    return (
-      `${MATCH_LABELS.shared}${shape} · ${configs} · ` +
-      `${matched} matched conversations per eval (of ${universe})`
-    )
+    return lines
   }
 
   /**
@@ -127,6 +233,7 @@
   /** What the predicate could not do, and why - never left to be inferred. */
   export function basis_diagnostics(
     applied: MatchPredicate,
+    requested: MatchPredicate,
     evals: BasisEval[],
     missing_shape_labels: string[],
     tool_source_available: boolean,
@@ -144,27 +251,56 @@
       return lines
     }
 
+    // Named individually rather than counted, and up to four of them: "and 5
+    // other evals" is where four evals with NOTHING matched were hiding, and
+    // an eval with no cells at all is a different fact from one with few.
     const empty = evals
-      .filter((entry) => entry.universe_max > 0 && entry.matched === 0)
-      .map((entry) => entry.name)
+      .filter((entry) => entry.universe > 0 && entry.matched === 0)
+      .map((entry) => `“${entry.name}”`)
     if (empty.length > 0) {
       lines.push(
-        `No matched conversations on ${list_phrase(empty)} — ${
+        `No matched conversations at all on ${list_phrase(empty, 4)} — ${
           empty.length === 1 ? "that eval's" : "those evals'"
         } cells are empty for this basis.`,
       )
     }
 
-    if (applied === "tools" && !tool_source_available) {
+    // Where a shape value was missing rather than out of tolerance. Per eval,
+    // because "17 of 17" is a fact about Write Correctness and about nothing
+    // else - it is the whole reason that eval went blank, and a count pooled
+    // across evals would read as bad luck spread thinly.
+    if (requested === "length" || requested === "tools") {
+      const what =
+        requested === "tools"
+          ? "lack a same-run tool-call record"
+          : "have no recorded token count"
+      const missing = evals
+        .filter((entry) => entry.missing_shape > 0)
+        .sort((a, b) => b.missing_shape - a.missing_shape)
+      for (const entry of missing.slice(0, 3)) {
+        lines.push(
+          `“${entry.name}”: ${entry.missing_shape} of ${entry.shared} shared conversations ${what}.`,
+        )
+      }
+      if (missing.length > 3) {
+        lines.push(
+          `${missing.length - 3} other ${
+            missing.length - 3 === 1 ? "eval" : "evals"
+          } lost conversations the same way.`,
+        )
+      }
+    }
+
+    if (requested === "tools" && !tool_source_available) {
       lines.push(
         `No eval on this task records tool calls, so ${MATCH_LABELS.tools} has nothing to match on.`,
       )
     } else if (missing_shape_labels.length > 0) {
-      const what = applied === "tools" ? "tool-call metrics" : "token counts"
+      const what = requested === "tools" ? "tool-call metrics" : "token counts"
       lines.push(
         `${list_phrase(missing_shape_labels)} ${
           missing_shape_labels.length === 1 ? "has" : "have"
-        } no ${what} — ${MATCH_LABELS[applied]} is unavailable for this basis.`,
+        } no ${what} — ${MATCH_LABELS[requested]} is unavailable for this basis.`,
       )
     }
 
@@ -180,6 +316,12 @@
    * The whole overfitting guardrail: one chip, nothing blocked, nothing
    * recolored. The resolution figure is DERIVED from the actual n rather than
    * quoted, so it cannot drift from the sample it describes.
+   *
+   * SMALL, not empty. An eval with nothing matched has no interval to be too
+   * wide - it has no cells - and it belongs in the diagnostics that name it,
+   * where the four evals that used to hide inside "(and 5 other evals)" are
+   * each stated. Mixing the two put a resolution figure on a sample of zero
+   * and buried the more serious fact behind the less serious one.
    */
   export function small_set_warning(
     applied: MatchPredicate,
@@ -187,9 +329,7 @@
   ): SmallSetWarning | null {
     if (applied === "all") return null
     const small = evals
-      .filter(
-        (entry) => entry.universe_max > 0 && entry.matched < MIN_MATCHED_N,
-      )
+      .filter((entry) => entry.matched > 0 && entry.matched < MIN_MATCHED_N)
       .sort((a, b) => a.matched - b.matched)
     const worst = small[0]
     if (!worst) return null
@@ -227,6 +367,8 @@
   // the reader who has not.
   export let applied: MatchPredicate = "all"
   export let requested: MatchPredicate = "all"
+  /** Why applied is not requested, when it is not */
+  export let fallback: MatchFallback | null = null
   export let basis_count: number = 0
   export let evals: BasisEval[] = []
   /** n across (eval, config) cells at the default predicate; null when none */
@@ -235,18 +377,32 @@
   export let missing_shape_labels: string[] = []
   export let tool_source_available: boolean = true
   export let errors: BasisError[] = []
+  /** What dropping one config would recover, per eval, worst first */
+  export let recovery: BasisRecovery[] = []
   /** True while the per-run indexes a predicate needs are still arriving */
   export let loading: boolean = false
 
   $: line = basis_line(applied, requested, basis_count, evals, n_range)
   $: notes = basis_notes(applied)
-  $: diagnostics = basis_diagnostics(
-    applied,
-    evals,
-    missing_shape_labels,
-    tool_source_available,
-    errors,
-  )
+  // The unavailable-lens explanation leads the diagnostics: it is the reason
+  // the rest of them read the way they do.
+  $: diagnostics = [
+    ...unavailable_lens_lines(
+      fallback,
+      requested,
+      basis_count,
+      evals,
+      recovery,
+    ),
+    ...basis_diagnostics(
+      applied,
+      requested,
+      evals,
+      missing_shape_labels,
+      tool_source_available,
+      errors,
+    ),
+  ]
   $: warning = small_set_warning(applied, evals)
 </script>
 
