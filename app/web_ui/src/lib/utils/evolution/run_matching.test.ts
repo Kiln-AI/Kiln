@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import type { components } from "$lib/api_schema"
 import type { Eval } from "$lib/types"
 import {
+  DEFAULT_MATCH_PREDICATE,
   MATCH_LABELS,
   MIN_MATCHED_N,
   SHAPE_RATIO_LIMIT,
@@ -10,8 +11,11 @@ import {
   match_param,
   matched_items_by_eval,
   parse_match_param,
+  recovery_hints,
+  shape_basis_usable,
   tool_call_source,
   undetectable_difference_pp,
+  type MatchEvalSummary,
   type RunIndexes,
 } from "./run_matching"
 import { build_lens_data, score_key_id } from "./score_lens"
@@ -89,20 +93,34 @@ function summary_of(matched: ReturnType<typeof matched_items_by_eval>) {
 }
 
 describe("parse_match_param / match_param", () => {
-  it("round-trips the three non-default predicates", () => {
-    for (const value of ["shared", "length", "tools"] as const) {
+  it("round-trips every predicate that is not the default", () => {
+    for (const value of ["all", "length", "tools"] as const) {
       expect(parse_match_param(value)).toBe(value)
       expect(match_param(value)).toBe(value)
     }
   })
 
   it("keeps the default out of the URL and treats anything unknown as it", () => {
-    expect(match_param("all")).toBeNull()
-    expect(parse_match_param(null)).toBe("all")
-    expect(parse_match_param("")).toBe("all")
+    // `shared` is the default now, so it is the one that stays absent - and an
+    // absent parameter, including on every link written before this existed,
+    // opens on it.
+    expect(match_param("shared")).toBeNull()
+    expect(parse_match_param(null)).toBe("shared")
+    expect(parse_match_param("")).toBe("shared")
+    expect(parse_match_param("shared")).toBe("shared")
+    expect(parse_match_param("SHARED")).toBe("shared")
+    expect(parse_match_param("similar_vibes")).toBe("shared")
+  })
+
+  it("serializes the opt-out, so pooling every run is something a link says", () => {
     expect(parse_match_param("all")).toBe("all")
-    expect(parse_match_param("SHARED")).toBe("all")
-    expect(parse_match_param("similar_vibes")).toBe("all")
+    expect(match_param("all")).toBe("all")
+  })
+
+  it("takes the default from the one constant that decides it", () => {
+    expect(DEFAULT_MATCH_PREDICATE).toBe("shared")
+    expect(parse_match_param(null)).toBe(DEFAULT_MATCH_PREDICATE)
+    expect(match_param(DEFAULT_MATCH_PREDICATE)).toBeNull()
   })
 
   it("names every predicate", () => {
@@ -340,29 +358,33 @@ describe("tool_call_source and the tools predicate", () => {
     expect(tool_call_source([...metas].reverse())?.evalId).toBe("m_fat")
   })
 
-  it("reads tool_calls from the metrics eval when matching a judge's items", () => {
-    const with_tools = (
-      configId: string,
-      judge: Record<string, number>,
-      tools: Record<string, number>,
-    ) => ({
-      [configId]: index([
-        {
-          eval_id: "judge",
-          rows: Object.entries(judge).map(([item, score]) => ({
-            item,
-            scores: { passed: score },
-          })),
-        },
-        {
-          eval_id: "metrics",
-          rows: Object.entries(tools).map(([item, calls]) => ({
-            item,
-            scores: { tool_calls: calls },
-          })),
-        },
-      ]),
-    })
+  const with_tools = (
+    configId: string,
+    judge: Record<string, number>,
+    tools: Record<string, number>,
+    execs: Record<string, { judge?: string; metrics?: string }> = {},
+  ) => ({
+    [configId]: index([
+      {
+        eval_id: "judge",
+        rows: Object.entries(judge).map(([item, score]) => ({
+          item,
+          exec: execs[item]?.judge,
+          scores: { passed: score },
+        })),
+      },
+      {
+        eval_id: "metrics",
+        rows: Object.entries(tools).map(([item, calls]) => ({
+          item,
+          exec: execs[item]?.metrics,
+          scores: { tool_calls: calls },
+        })),
+      },
+    ]),
+  })
+
+  it("reads tool_calls from the metrics eval when it scored the same conversation", () => {
     const indexes: RunIndexes = {
       ...with_tools("a", { i1: 1, i2: 1 }, { i1: 10, i2: 10 }),
       ...with_tools("b", { i1: 0, i2: 0 }, { i1: 12, i2: 40 }),
@@ -373,6 +395,56 @@ describe("tool_call_source and the tools predicate", () => {
     })
     // i1 is 10 vs 12 (1.2x, in); i2 is 10 vs 40 (4x, out)
     expect([...(result.items_by_eval.get("judge") ?? [])]).toEqual(["i1"])
+  })
+
+  it("will not read tool_calls from a DIFFERENT conversation on the same item", () => {
+    // One item, one run config, two driven conversations: the judge scored one
+    // and the metrics eval measured the other. Measured on a real task this is
+    // 18% of the lookups on one eval, and reading across would pass or fail the
+    // ratio on evidence from a run nobody is looking at.
+    const indexes: RunIndexes = {
+      ...with_tools(
+        "a",
+        { i1: 1, i2: 1 },
+        { i1: 10, i2: 10 },
+        { i1: { judge: "conv_a1", metrics: "conv_a1_second_drive" } },
+      ),
+      ...with_tools("b", { i1: 0, i2: 0 }, { i1: 12, i2: 11 }),
+    }
+    const result = matched_items_by_eval(indexes, ["a", "b"], "tools", {
+      evalId: "metrics",
+      scoreKey: "tool_calls",
+    })
+    // i1 would have matched on 10 vs 12; it is dropped instead, and counted
+    expect([...(result.items_by_eval.get("judge") ?? [])]).toEqual(["i2"])
+    expect(summary_of(result)["judge"].missing_shape).toBe(1)
+  })
+
+  it("counts a shared item with no metrics row at all as a missing shape", () => {
+    const indexes: RunIndexes = {
+      ...with_tools("a", { i1: 1, i2: 1 }, { i1: 10 }),
+      ...with_tools("b", { i1: 0, i2: 0 }, { i1: 11 }),
+    }
+    const result = matched_items_by_eval(indexes, ["a", "b"], "tools", {
+      evalId: "metrics",
+      scoreKey: "tool_calls",
+    })
+    expect([...(result.items_by_eval.get("judge") ?? [])]).toEqual(["i1"])
+    const judge = summary_of(result)["judge"]
+    expect(judge.shared).toBe(2)
+    expect(judge.missing_shape).toBe(1)
+  })
+
+  it("matches the metrics eval against its own rows without any join", () => {
+    const indexes: RunIndexes = {
+      ...with_tools("a", {}, { i1: 10 }),
+      ...with_tools("b", {}, { i1: 12 }),
+    }
+    const result = matched_items_by_eval(indexes, ["a", "b"], "tools", {
+      evalId: "metrics",
+      scoreKey: "tool_calls",
+    })
+    expect([...(result.items_by_eval.get("metrics") ?? [])]).toEqual(["i1"])
   })
 
   it("names a basis config with no tool-call rows and matches nothing", () => {
@@ -766,6 +838,54 @@ describe("build_matched_usage", () => {
     expect(usage.get("a")?.mean_latency_ms).toBeCloseTo(200)
   })
 
+  it("counts two drives of one item as the two conversations they are", () => {
+    // Measured on a real task: 11% of the (config, item) pairs covered by more
+    // than one eval held two genuinely different driven conversations, and
+    // collapsing them by item threw away half the recorded spend on them.
+    const indexes: RunIndexes = {
+      a: index([
+        {
+          eval_id: "e1",
+          rows: [{ item: "i1", exec: "first_drive", cost: 1, latency: 100 }],
+        },
+        {
+          eval_id: "e2",
+          rows: [{ item: "i1", exec: "second_drive", cost: 3, latency: 300 }],
+        },
+      ]),
+    }
+    const usage = build_matched_usage(
+      indexes,
+      ["a"],
+      new Map([
+        ["e1", new Set(["i1"])],
+        ["e2", new Set(["i1"])],
+      ]),
+    )
+    expect(usage.get("a")?.n_conversations).toBe(2)
+    expect(usage.get("a")?.mean_cost).toBeCloseTo(2)
+    expect(usage.get("a")?.mean_latency_ms).toBeCloseTo(200)
+  })
+
+  it("still weighs a reused conversation once when two evals matched it", () => {
+    const indexes: RunIndexes = {
+      a: index([
+        { eval_id: "e1", rows: [{ item: "i1", exec: "one_drive", cost: 4 }] },
+        { eval_id: "e2", rows: [{ item: "i1", exec: "one_drive", cost: 4 }] },
+      ]),
+    }
+    const usage = build_matched_usage(
+      indexes,
+      ["a"],
+      new Map([
+        ["e1", new Set(["i1"])],
+        ["e2", new Set(["i1"])],
+      ]),
+    )
+    expect(usage.get("a")?.n_conversations).toBe(1)
+    expect(usage.get("a")?.mean_cost).toBeCloseTo(4)
+  })
+
   it("nulls a metric fewer than half the matched conversations recorded", () => {
     const indexes: RunIndexes = {
       a: index([
@@ -819,6 +939,280 @@ describe("build_matched_usage", () => {
     const usage = build_matched_usage({}, ["a", "b"], new Map())
     expect([...usage.keys()].sort()).toEqual(["a", "b"])
     expect(usage.get("a")?.n_conversations).toBe(0)
+  })
+})
+
+describe("shape_basis_usable", () => {
+  const summary = (
+    evalId: string,
+    shared: number,
+    shape_matched: number | null,
+    is_metric = false,
+  ): MatchEvalSummary => ({
+    evalId,
+    universe_by_config: {},
+    universe: shared,
+    shared,
+    matched: shape_matched ?? shared,
+    shape_matched,
+    missing_shape: 0,
+    is_metric,
+  })
+
+  it("calls the lens unusable when it cut a majority of readable evals below the floor", () => {
+    expect(
+      shape_basis_usable([
+        summary("e1", 23, 6),
+        summary("e2", 25, 0),
+        summary("e3", 14, 0),
+        summary("e4", 25, 20),
+      ]),
+    ).toBe(false)
+  })
+
+  it("keeps it when most readable evals survive it", () => {
+    expect(
+      shape_basis_usable([
+        summary("e1", 23, 13),
+        summary("e2", 25, 14),
+        summary("e3", 14, 2),
+      ]),
+    ).toBe(true)
+  })
+
+  it("gives no vote to an eval that was already too thin to read", () => {
+    // shared=5 cannot reach MIN_MATCHED_N under any predicate, so falling back
+    // on its account would remove a drill-down and give nothing back.
+    expect(
+      shape_basis_usable([summary("e1", 5, 0), summary("e2", 25, 20)]),
+    ).toBe(true)
+    expect(shape_basis_usable([summary("e1", 5, 0)])).toBe(true)
+  })
+
+  it("does not let a metrics eval carry a vote about the criteria", () => {
+    // The metrics eval has its own much larger universe; on its own it must
+    // neither trigger the fallback nor veto it.
+    expect(
+      shape_basis_usable([
+        summary("metrics", 114, 8, true),
+        summary("e1", 25, 20),
+      ]),
+    ).toBe(true)
+    expect(
+      shape_basis_usable([
+        summary("metrics", 114, 100, true),
+        summary("e1", 25, 2),
+      ]),
+    ).toBe(false)
+  })
+
+  it("is usable when nothing was readable to begin with", () => {
+    expect(shape_basis_usable([])).toBe(true)
+  })
+})
+
+describe("matched_items_by_eval - falling back from a shape predicate", () => {
+  /** k configs, one eval, `n` items, each config's shape value from a map. */
+  const spread_indexes = (values: Record<string, number[]>, n: number) => {
+    const items = Array.from({ length: n }, (_, i) => `i${i}`)
+    const indexes: RunIndexes = {}
+    for (const [configId, per_item] of Object.entries(values)) {
+      indexes[configId] = index([
+        {
+          eval_id: "e1",
+          rows: items.map((item, i) => ({
+            item,
+            scores: { accuracy: 1 },
+            total_tokens: per_item[i],
+          })),
+        },
+      ])
+    }
+    return indexes
+  }
+
+  it("shows shared instead, and says that is what happened", () => {
+    // 12 shared items; the shape gate keeps 2 of them, which is below the
+    // floor on the only readable eval there is.
+    const a = Array.from({ length: 12 }, () => 100)
+    const b = Array.from({ length: 12 }, (_, i) => (i < 2 ? 110 : 900))
+    const result = matched_items_by_eval(
+      spread_indexes({ a, b }, 12),
+      ["a", "b"],
+      "length",
+    )
+    expect(result.requested).toBe("length")
+    expect(result.applied).toBe("shared")
+    expect(result.fallback).toBe("shape_too_thin")
+    expect(result.items_by_eval.get("e1")?.size).toBe(12)
+
+    // ...and what the shape predicate WOULD have kept is still reported, which
+    // is the number the banner quotes as the reason.
+    const e1 = summary_of(result)["e1"]
+    expect(e1.shape_matched).toBe(2)
+    expect(e1.matched).toBe(12)
+    expect(e1.universe).toBe(12)
+  })
+
+  it("never falls back to `all`, which would widen what nobody asked to widen", () => {
+    const a = Array.from({ length: 12 }, () => 100)
+    const b = Array.from({ length: 12 }, () => 900)
+    const indexes = spread_indexes({ a, b }, 12)
+    // Give `a` an item `b` never ran, so shared and all differ
+    indexes["a"].evals[0].rows.push({
+      item_id: "solo",
+      eval_run_id: "solo_run",
+      execution_id: "exec_solo",
+      scores: { accuracy: 1 },
+      input_tokens: null,
+      output_tokens: null,
+      total_tokens: 100,
+      cost: null,
+      total_llm_latency_ms: null,
+    })
+    const result = matched_items_by_eval(indexes, ["a", "b"], "length")
+    expect(result.applied).toBe("shared")
+    expect(result.items_by_eval.get("e1")?.has("solo")).toBe(false)
+  })
+
+  it("applies the shape predicate when it leaves enough behind", () => {
+    const a = Array.from({ length: 12 }, () => 100)
+    const b = Array.from({ length: 12 }, (_, i) => (i < 11 ? 110 : 900))
+    const result = matched_items_by_eval(
+      spread_indexes({ a, b }, 12),
+      ["a", "b"],
+      "length",
+    )
+    expect(result.applied).toBe("length")
+    expect(result.fallback).toBeNull()
+    expect(result.items_by_eval.get("e1")?.size).toBe(11)
+  })
+
+  it("reports a basis of one as the identity it is", () => {
+    const result = matched_items_by_eval(
+      simple_indexes(["i1"], []),
+      ["a"],
+      "shared",
+    )
+    expect(result.applied).toBe("all")
+    expect(result.fallback).toBe("single_config")
+  })
+
+  it("has no fallback to report when the predicate is what ran", () => {
+    const result = matched_items_by_eval(
+      simple_indexes(["i1"], ["i1"]),
+      ["a", "b"],
+      "shared",
+    )
+    expect(result.applied).toBe("shared")
+    expect(result.fallback).toBeNull()
+  })
+})
+
+describe("recovery_hints", () => {
+  /** One eval; each config runs the item ids given. */
+  const shared_indexes = (items_by_config: Record<string, string[]>) => {
+    const indexes: RunIndexes = {}
+    for (const [configId, items] of Object.entries(items_by_config)) {
+      indexes[configId] = index([
+        {
+          eval_id: "e1",
+          rows: items.map((item) => ({ item, scores: { accuracy: 1 } })),
+        },
+      ])
+    }
+    return indexes
+  }
+
+  const many = (n: number, from = 0) =>
+    Array.from({ length: n }, (_, i) => `i${i + from}`)
+
+  it("names the config costing the most and what dropping it recovers", () => {
+    // a and b share 12 items; c ran only 4 of them, so the three-way shared set
+    // is 4 and dropping c takes it to 12.
+    const hints = recovery_hints(
+      shared_indexes({ a: many(12), b: many(12), c: many(4) }),
+      ["a", "b", "c"],
+      "shared",
+    )
+    expect(hints).toEqual([{ evalId: "e1", configId: "c", from: 4, to: 12 }])
+  })
+
+  it("says nothing when the matched set is already readable", () => {
+    expect(
+      recovery_hints(
+        shared_indexes({ a: many(12), b: many(12), c: many(12) }),
+        ["a", "b", "c"],
+        "shared",
+      ),
+    ).toEqual([])
+  })
+
+  it("says nothing when dropping anybody would leave a basis of one", () => {
+    expect(
+      recovery_hints(
+        shared_indexes({ a: many(12), b: many(2) }),
+        ["a", "b"],
+        "shared",
+      ),
+    ).toEqual([])
+  })
+
+  it("says nothing when no single config is the reason", () => {
+    // Every pair overlaps on 2 items, so dropping any one of the three leaves
+    // the eval just as thin.
+    const hints = recovery_hints(
+      shared_indexes({
+        a: [...many(2), "a1", "a2"],
+        b: [...many(2), "b1", "b2"],
+        c: [...many(2), "c1", "c2"],
+      }),
+      ["a", "b", "c"],
+      "shared",
+    )
+    expect(hints).toEqual([])
+  })
+
+  it("leaves the metrics lane out of it", () => {
+    const indexes: RunIndexes = {
+      a: index([
+        { eval_id: "metrics", rows: many(12).map((item) => ({ item })) },
+      ]),
+      b: index([
+        { eval_id: "metrics", rows: many(12).map((item) => ({ item })) },
+      ]),
+      c: index([
+        { eval_id: "metrics", rows: many(2).map((item) => ({ item })) },
+      ]),
+    }
+    const hints = recovery_hints(
+      indexes,
+      ["a", "b", "c"],
+      "shared",
+      null,
+      (evalId) => evalId === "metrics",
+    )
+    expect(hints).toEqual([])
+  })
+
+  it("puts the worst eval first", () => {
+    const indexes: RunIndexes = {
+      a: index([
+        { eval_id: "thin", rows: many(12).map((item) => ({ item })) },
+        { eval_id: "thinner", rows: many(12).map((item) => ({ item })) },
+      ]),
+      b: index([
+        { eval_id: "thin", rows: many(12).map((item) => ({ item })) },
+        { eval_id: "thinner", rows: many(12).map((item) => ({ item })) },
+      ]),
+      c: index([
+        { eval_id: "thin", rows: many(5).map((item) => ({ item })) },
+        { eval_id: "thinner", rows: many(1).map((item) => ({ item })) },
+      ]),
+    }
+    const hints = recovery_hints(indexes, ["a", "b", "c"], "shared")
+    expect(hints.map((hint) => hint.evalId)).toEqual(["thinner", "thin"])
+    expect(hints.every((hint) => hint.configId === "c")).toBe(true)
   })
 })
 
