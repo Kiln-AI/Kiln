@@ -57,7 +57,15 @@ import {
   type FamilyBand,
 } from "./family_bands"
 import type { ScoreKeyMeta } from "./score_lens"
-import { score_key_id } from "./score_lens"
+import { is_metric_eval, metric_eval_ids, score_key_id } from "./score_lens"
+
+// Re-exported from where they now live. The partition moved to score_lens when
+// the aggregate lens turned out to need it too: it is a fact about score keys,
+// the aggregate has to agree with these two charts about it, and a rule this
+// consequential gets one definition. Callers importing it from here are not
+// wrong - this module is where the partition is USED to draw two charts - so
+// the name stays available.
+export { is_metric_eval, metric_eval_ids }
 
 /** Where an axis gets its numbers from */
 export type MetricAxisSource = "usage" | "score"
@@ -535,50 +543,6 @@ export function infer_metric_unit(scoreKey: string): MetricAxisUnit {
   if (key.includes("token")) return "tokens"
   if (key.endsWith("_rate") || key.endsWith("_ratio")) return "ratio"
   return "count"
-}
-
-/**
- * Whether an eval's score keys are metrics rather than criteria.
- *
- * The test is the score TYPE, because that is the structural difference the two
- * charts are built on rather than a naming convention. A criterion is graded on
- * a bounded scale the type itself defines - pass/fail is 0..1, five star is
- * 1..5 - which is what lets the eval-score radar plot it against an absolute
- * axis and call one end "best". A metric is `custom`: unbounded, no maximum
- * cost or latency to normalize against, so the only scale it has is position
- * among the run configs being compared, which is what this chart does.
- *
- * So: an eval whose scores are ALL custom is a metrics eval. One with any
- * bounded score is a criterion eval, and every key on it - including a custom
- * one sitting beside the graded ones - belongs to the quality radar.
- *
- * Deliberately not the direction. Routing on direction was the bug: it holds
- * only while every metric is better small, and `cache_hit_rate` is not.
- */
-export function is_metric_eval(evalKeyMetas: ScoreKeyMeta[]): boolean {
-  return (
-    evalKeyMetas.length > 0 &&
-    evalKeyMetas.every((meta) => meta.type === "custom")
-  )
-}
-
-function group_by_eval(keyMetas: ScoreKeyMeta[]): Map<string, ScoreKeyMeta[]> {
-  const by_eval = new Map<string, ScoreKeyMeta[]>()
-  for (const meta of keyMetas) {
-    const group = by_eval.get(meta.evalId) ?? []
-    group.push(meta)
-    by_eval.set(meta.evalId, group)
-  }
-  return by_eval
-}
-
-/** The ids of the evals whose keys this chart owns */
-export function metric_eval_ids(keyMetas: ScoreKeyMeta[]): Set<string> {
-  const ids = new Set<string>()
-  for (const [evalId, metas] of group_by_eval(keyMetas)) {
-    if (is_metric_eval(metas)) ids.add(evalId)
-  }
-  return ids
 }
 
 /**
