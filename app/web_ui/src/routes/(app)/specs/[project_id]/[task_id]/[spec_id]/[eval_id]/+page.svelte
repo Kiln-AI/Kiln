@@ -282,7 +282,9 @@
     const test_filter_id = eval_split_filter_id(evaluator, "test")
     if (test_filter_id) {
       properties.push({
-        name: "Eval Dataset",
+        name: "Test Dataset",
+        tooltip:
+          "Held-out data for measuring final quality. Not used for training or tuning. Shown in the 'Compare' view metrics.",
         value: test_filter_id + eval_set_size,
         link: linkFromFilterId(
           project_id,
@@ -317,8 +319,7 @@
       properties.push({
         name: "Training Dataset",
         value: train_filter_id + train_dataset_size,
-        tooltip:
-          "The dataset used as training examples during prompt optimization.",
+        tooltip: "The dataset used during optimization.",
         link: linkFromFilterId(
           project_id,
           task_id,
@@ -334,7 +335,7 @@
     // link to, so the row says so instead.
     const val_filter_id = eval_split_filter_id(evaluator, "val")
     const val_tooltip =
-      "The dataset held out for validation. Not scored by 'Run Eval', which runs the eval dataset."
+      "Held out validation dataset for optimization. Not scored by 'Run Eval', which runs the test dataset."
     if (val_filter_id) {
       let val_dataset_size = ""
       if (eval_progress) {
