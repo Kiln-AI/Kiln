@@ -2343,16 +2343,21 @@
 
     <!-- One legend for everything under it. Above the charts rather than
          inside any of them: it governs all three, and a control that belongs
-         to three things cannot live in one of them. See evolution_legend. -->
-    <div class="mt-6">
-      <EvolutionLegend
-        run_configs={run_configs ?? []}
-        {pinned_ids}
-        model_info={$model_info}
-        {prompts}
-        colors={series_colors}
-      />
-    </div>
+         to three things cannot live in one of them. See evolution_legend.
+
+         Mounted bare, with no wrapper: it is sticky, and a sticky box travels
+         inside its containing block, so a div wrapped tight around it would pin
+         it to a 100px-tall box and it would never move. Its containing block is
+         this page body instead, which is why it stays on screen for the whole
+         comparison. It carries its own top margin as padding for the same
+         reason - see the component. -->
+    <EvolutionLegend
+      run_configs={run_configs ?? []}
+      {pinned_ids}
+      model_info={$model_info}
+      {prompts}
+      colors={series_colors}
+    />
 
     <!-- What every number under here is over. Between the legend and the
          charts because it governs all of them, and rendered at every
