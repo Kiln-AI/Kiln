@@ -282,3 +282,7 @@ if __name__ == "__main__":
     print(f"\n{len(results) - len(bad)}/{len(results)} killed")
     for r in bad:
         print("  NOT KILLED:", r[0], r[2])
+    # Exit nonzero when anything survived. Without this the sweep reports SURVIVED
+    # and PATTERN-MISS and still exits 0, so a caller reading only the status sees a
+    # clean sweep and a hollowed-out one as identical.
+    raise SystemExit(1 if bad else 0)

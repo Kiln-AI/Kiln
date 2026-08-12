@@ -1618,7 +1618,7 @@ def connect_evals_api(app: FastAPI):
         if len(test_split) == 0:
             raise HTTPException(
                 status_code=400,
-                detail="No dataset ids in eval set filter. Add items to your dataset matching the eval set filter.",
+                detail="This eval's test split is empty. Add items matching the test split's filter — dataset runs, or eval inputs, depending on which backs the split.",
             )
 
         return compute_score_summary(eval, eval_config, task_run_configs, test_split)

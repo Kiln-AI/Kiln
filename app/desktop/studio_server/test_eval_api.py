@@ -2539,7 +2539,7 @@ class TestScoreSummarySplits:
         )
 
         assert response.status_code == 400
-        assert "No dataset ids in eval set filter" in response.json()["message"]
+        assert "test split is empty" in response.json()["message"]
 
     def test_does_not_average_another_stores_score_into_a_split(
         self,

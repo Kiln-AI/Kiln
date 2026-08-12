@@ -787,8 +787,10 @@ is exactly the shape this project is replacing elsewhere.
 
 Spec eval creation gains a TaskRun-backed val split, per functional spec §3.3.
 
-Both callers must construct `splits=` rather than passing legacy kwargs, since §2.4 makes those
-computed and therefore not `__init__` arguments.
+Both callers construct `splits=` rather than passing legacy kwargs. Not because the legacy kwargs
+are rejected — §2.4 keeps those fields declared and constructible, and the create-eval endpoint
+still passes `eval_set_filter_id=` — but because `splits=` is the format new creation paths should
+author, and a caller that names a legacy field can only express a TaskRun-backed split.
 
 **Decided in phase 3: a new spec eval's TaskRun-backed test and train splits ARE moved into their
 legacy homes with `set_split`; its val split has no legacy field and stays in `splits`.** So a new

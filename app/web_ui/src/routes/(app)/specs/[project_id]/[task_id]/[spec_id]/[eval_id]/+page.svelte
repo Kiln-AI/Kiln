@@ -326,7 +326,15 @@
         ),
       })
     }
+    // Unlike the rows above, this one always renders. An eval only has a val split if
+    // something explicitly wrote one (functional spec 3.2 — unconfigured splits stay
+    // unconfigured), so most pre-existing evals have none. Hiding the row would make
+    // "this eval has no val set" indistinguishable from "this page doesn't show val
+    // sets". With no split there is no filter to show, no items to count and nothing to
+    // link to, so the row says so instead.
     const val_filter_id = eval_split_filter_id(evaluator, "val")
+    const val_tooltip =
+      "The dataset held out for validation. Not scored by 'Run Eval', which runs the eval dataset."
     if (val_filter_id) {
       let val_dataset_size = ""
       if (eval_progress) {
@@ -335,13 +343,18 @@
       properties.push({
         name: "Validation Dataset",
         value: val_filter_id + val_dataset_size,
-        tooltip:
-          "The dataset held out for validation. Not scored by 'Run Eval', which runs the eval dataset.",
+        tooltip: val_tooltip,
         link: linkFromFilterId(
           project_id,
           task_id,
           task_run_split_filter_id(evaluator, "val"),
         ),
+      })
+    } else {
+      properties.push({
+        name: "Validation Dataset",
+        value: "Not configured",
+        tooltip: val_tooltip,
       })
     }
 

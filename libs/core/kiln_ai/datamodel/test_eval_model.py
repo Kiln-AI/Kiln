@@ -3576,6 +3576,28 @@ class TestEvalSplits:
         loaded.save_to_file()
         assert eval_path.read_text(encoding="utf-8") == original
 
+    def test_model_construct_keeps_a_legacy_field_it_could_not_fold(self, scores):
+        """An unvalidated instance must not lose the only copy of its split.
+
+        model_construct skips validation, so fold_legacy_filter_fields never runs and
+        `splits` stays empty. The flat field is then the sole record of the test split,
+        and a serializer that derives legacy fields purely from `splits` would write
+        null over it — silent data loss on a path that looks like a plain round trip.
+        """
+        eval = Eval.model_construct(
+            name="Unvalidated",
+            eval_set_filter_id="tag::eval_set_x",
+            train_set_filter_id="tag::train_x",
+            eval_configs_filter_id="tag::golden_x",
+            output_scores=scores,
+            splits={},
+        )
+
+        dumped = eval.model_dump()
+
+        assert dumped["eval_set_filter_id"] == "tag::eval_set_x"
+        assert dumped["train_set_filter_id"] == "tag::train_x"
+
     def test_splits_native_eval_does_not_acquire_legacy_fields(
         self, saved_task, scores
     ):

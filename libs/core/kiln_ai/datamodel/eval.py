@@ -1212,8 +1212,16 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
 
         homed = self._legacy_homed_splits
         serialized_splits = data.get("splits") or {}
+        # Seeded from what the handler serialized, but only for splits `splits` doesn't
+        # describe. Those are unreachable by the loop below, and nulling them destroys
+        # data: `model_construct` skips validation, so the fold never runs, and an
+        # instance built that way carries its split only in the flat field.
+        # A split that IS in `splits` is left to the loop, so re-pointing a legacy test
+        # split at an EvalInputSplit still clears the stale legacy field (§2.6) rather
+        # than writing both homes.
         legacy_values: Dict[str, str | None] = {
-            name: None for name in LEGACY_SPLIT_FIELDS
+            name: (data.get(field_name) if name not in self.splits else None)
+            for name, field_name in LEGACY_SPLIT_FIELDS.items()
         }
         splits_remainder: Dict[str, Any] = {}
 

@@ -291,7 +291,11 @@ describe("eval detail page — dataset rows", () => {
     expect(row(properties, "Training Dataset")?.value).toBe(
       "tag::train (7 items)",
     )
-    expect(row(properties, "Validation Dataset")).toBeUndefined()
+    // A legacy eval has no val split, and nothing mints one on load. The row still
+    // renders so "no val set" is visible rather than absent, with no filter id, no
+    // item count and no dataset link to point at.
+    expect(row(properties, "Validation Dataset")?.value).toBe("Not configured")
+    expect(row(properties, "Validation Dataset")?.link).toBeUndefined()
   })
 
   it("renders a splits-only eval's dataset rows, including val", async () => {
