@@ -286,8 +286,8 @@ describe("eval detail page — dataset rows", () => {
 
     const properties = await rendered_properties()
 
-    expect(row(properties, "Eval Dataset")?.value).toBe("tag::test (30 items)")
-    expect(row(properties, "Eval Dataset")?.link).toContain("tags=test")
+    expect(row(properties, "Test Dataset")?.value).toBe("tag::test (30 items)")
+    expect(row(properties, "Test Dataset")?.link).toContain("tags=test")
     expect(row(properties, "Training Dataset")?.value).toBe(
       "tag::train (7 items)",
     )
@@ -327,14 +327,14 @@ describe("eval detail page — dataset rows", () => {
 
     const properties = await rendered_properties()
 
-    expect(row(properties, "Eval Dataset")?.value).toBe(
+    expect(row(properties, "Test Dataset")?.value).toBe(
       "tag::inputs (30 items)",
     )
     // The filter id is worth showing; a /dataset link built from it is not, because the
     // items are EvalInputs and that page lists task runs. This is the whole reason
     // task_run_split_filter_id exists next to eval_split_filter_id — swapping the two
     // would leave every value assertion here passing.
-    expect(row(properties, "Eval Dataset")?.link).toBeUndefined()
+    expect(row(properties, "Test Dataset")?.link).toBeUndefined()
     expect(row(properties, "Training Dataset")?.value).toBe(
       "tag::train_x (7 items)",
     )

@@ -624,7 +624,7 @@
                   : undefined,
               },
               {
-                name: "Eval Dataset",
+                name: "Test Dataset",
                 value: eval_progress
                   ? eval_progress.dataset_size + " items"
                   : "Loading...",
