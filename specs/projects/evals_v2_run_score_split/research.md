@@ -525,6 +525,56 @@ include the surface.
 
 ---
 
+## 4b. Generation provenance — the reuse key
+
+**Proposed (scosman):** provenance is `(item, run_config)` — `(eval_input, run_config)`
+for V2, `(task_run, run_config)` for legacy. Per R1 the item half is an `ItemKey`
+(source + id), so the key is `(ItemSource, item_id, task_run_config_id)`.
+
+**This is right, and it is not a new invention** — it is the invariant the datamodel
+already claims. `TaskRunConfig` (`task.py:65-71`) and `KilnAgentRunConfigProperties`
+(`run_config.py:48-50`) both state: *"includes everything needed to run a task, except
+the input. Running the same RunConfig with the same input should make identical calls to
+the model."* Reuse just cashes that in. No hash or fingerprint needed — two ids.
+
+**The prompt-name concern is correctly dismissed.** `TaskRunConfig.prompt: BasePrompt`
+is the frozen prompt, and the PATCH only rewrites `prompt.name`
+(`eval_api.py:1009-1017`). The model never sees the name.
+
+### One gap this project creates
+
+**`multi_turn_drive_config` on `Eval`.** It is a generation input that lives on the one
+entity the key deliberately drops. Under task-level storage, Eval B would reuse Eval A's
+multi-turn trace even when they drive the synthetic user differently — a wrong answer,
+not a stale one. This is the only case where reuse *introduces* the bug rather than
+extending a pre-existing one.
+
+So: **the key is complete if and only if drive config moves off `Eval`** (onto the
+run-config side, or its own addressable entity the run config references). That
+promotes the D5 "note only" item to a prerequisite for cross-eval reuse of multi-turn
+traces. Fallback if it can't move in time: exclude multi-turn traces from cross-eval
+reuse until it does.
+
+### Three pre-existing holes it inherits and extends
+
+None of these are created here — but reuse makes traces long-lived, so the exposure
+window grows from "until the next eval config" to "indefinitely".
+
+| Hole | Why the key doesn't cover it |
+|---|---|
+| **Unfrozen dynamic prompts** | Freezing is optional (`prompt: BasePrompt \| None`). If `prompt is None` and `prompt_id` is dataset-derived, the prompt text drifts as runs accumulate (`prompt_builders.py:206` reads `task.runs()`) — with no id change and **no user action at all**. The worst of the three |
+| **Tools referenced by id** | `ToolsRunConfig.tools: List[ToolId]` stores ids only; tool definitions are separately mutable (`tool_api.py:685/759/882`, `code_tool_api.py:341`). Note `MCPToolReference` already snapshots `input_schema`/`output_schema` — the drift risk is recognised there but not in `ToolsRunConfig` |
+| **`task.instruction`** | Mutable, goes into every prompt, sits above the run config entirely |
+
+**Recommendation: don't fix these here.** Two cheap mitigations instead:
+
+1. Surface trace age — `created_at` is already on the base model — wherever reuse
+   happens, so a stale trace is visible rather than silent (pairs with the C11 reuse
+   indicator).
+2. Optionally refuse cross-eval reuse when `run_config.prompt is None` and `prompt_id`
+   is a dynamic type. That closes the only hole that drifts without user action, and
+   it's a two-line predicate.
+
 ## 5. Decision status
 
 ### Settled
@@ -532,6 +582,9 @@ include the surface.
 | # | Decision | Outcome |
 |---|---|---|
 | D1 | Where EvalRun lives | **Task level**, sibling of `eval_inputs/`. Gated on a directory-scan benchmark as a phase-1 spike (C2b) |
+| D7 | Where EvalScore lives | **Child of `EvalConfig`**, with an `eval_run_id` pointer and a denormalized `ItemKey` + `task_run_config_id`. Scores are tied to the config (C3, R1) |
+| D8 | Traces per `(ItemKey, run_config)` | **Many possible, first wins.** Sync means uniqueness can never be guaranteed; the system is already robust to duplicates and selects the first found. Never intentionally create more than one. Leaves the door open to N-sampling later (C4) |
+| D9 | Generation provenance key | **`(ItemSource, item_id, task_run_config_id)`** — no hash. Conditional on drive config moving off `Eval` (4b) |
 | D2 | Cross-eval reuse mechanism | Pointer-EvalInput option **dropped** — it re-implements tag membership (C2b) |
 | D3 | Metrics concept | **Deferred**, as a read-side concept. Commit now only to scoping it by a split ref so adding it later stays cheap (C2b, R2) |
 | D4 | Internal V2 data | **Migration script**, sequenced as the final phase. A lazy load-time fold is not available for file relocation (C2c) |
@@ -542,31 +595,25 @@ include the surface.
 
 **Blocking the functional spec:**
 
-1. **Where does EvalScore live** — child of `EvalConfig` with an `eval_run_id` pointer
-   (recommended, C3), or child of `EvalRun`? This one gates the read-path design and
-   most of the aggregation work.
-2. **Golden-set conflict (new).** §2.2 treats unblocking EvalInput-sourced
+1. **Golden-set conflict (new).** §2.2 treats unblocking EvalInput-sourced
    `eval_config_eval` as a win of the split. `eval_splits.py` deliberately holds the
    opposite: golden is TaskRun-only *by definition*, routed around `resolve_split` on
    purpose. Both are coherent; one has to give (C2c).
-3. **One trace per `(ItemKey, run_config)`, or many?** One-way door — "exactly one"
-   forecloses variance sampling later (C4).
-4. **V1 back-compat approach** — deprecate `scores` in place, new entity names for
+2. **V1 back-compat approach** — deprecate `scores` in place, new entity names for
    V2's trace record, or an on-read adapter (C8). The splits branch's two-homed /
    `extra="allow"` / lazy-fold precedents lean toward preserve-don't-break.
-5. **Is the re-score product surface in scope** for this project, or a follow-up?
+3. **Is the re-score product surface in scope** for this project, or a follow-up?
    Storage-only ships zero user-visible benefit (C11).
 
 **Design detail, low risk, needs ratification:**
 
-6. **Generation-provenance fingerprint (new)** — what it covers and whether it's a hash
-   or structured. Must at minimum cover the mutable-`prompt_name` case, which already
-   breaks `task_run_config_id` as a complete description today (C2c).
-7. **Field placement** — `reference_data` → score side (C5); `intermediate_outputs` →
+4. **Reuse-safety mitigations** — surface trace age at reuse points, and optionally
+   refuse cross-eval reuse of unfrozen dynamic prompts (4b).
+5. **Field placement** — `reference_data` → score side (C5); `intermediate_outputs` →
    score side, coordinate with D31 in `evals_v2_cleanup` (C7); judge `usage` → new on
    EvalScore (C7); `SkippedReason` partition across the two entities (C6).
-8. **Failed generations** — persist a terminal "generation failed" EvalRun, or leave
+6. **Failed generations** — persist a terminal "generation failed" EvalRun, or leave
    absent so it retries? (2.4)
-9. **Retry granularity** — confirm `RetryableError` retries only the failed phase
+7. **Retry granularity** — confirm `RetryableError` retries only the failed phase
    rather than the whole job (2.4).
-10. **Naming** — `EvalScore` collides with the existing `EvalScores` alias (C10).
+8. **Naming** — `EvalScore` collides with the existing `EvalScores` alias (C10).
