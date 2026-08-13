@@ -6234,7 +6234,8 @@ export interface components {
             current_config_id?: string | null;
             /**
              * Eval Set Filter Id
-             * @description Legacy storage for a TaskRun-backed test split, kept so older Kiln builds can still read this eval. It is written from the eval's splits, and is null when the test split has no legacy representation. The eval's splits are the authoritative source: see `splits`.
+             * @deprecated
+             * @description Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['test'] once, and the field is then cleared. It is always saved as null. Read splits['test'] instead.
              */
             eval_set_filter_id?: string | null;
             /**
@@ -6244,12 +6245,13 @@ export interface components {
             eval_configs_filter_id?: string | null;
             /**
              * Train Set Filter Id
-             * @description Legacy storage for a TaskRun-backed train split, kept so older Kiln builds can still read this eval. It is written from the eval's splits, and is null when the train split has no legacy representation. The eval's splits are the authoritative source: see `splits`.
+             * @deprecated
+             * @description Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['train'] once, and the field is then cleared. It is always saved as null. Read splits['train'] instead.
              */
             train_set_filter_id?: string | null;
             /**
              * Splits
-             * @description The eval's dataset splits, keyed by split name ('test', 'train', 'val'). Each split names the store its items come from and the filter that selects them. Keys this build doesn't know are preserved but not exposed. In Python, prefer Eval.set_split() to assigning into this dict: it stores a split where older Kiln builds can still read it, and marks the field as set so exclude_unset dumps keep it.
+             * @description The eval's dataset splits, keyed by split name ('test', 'train', 'val'), and the only place they are stored. Each split names the store its items come from and the filter that selects them. Keys this build doesn't know are preserved but not exposed. In Python, prefer Eval.set_split() to assigning into this dict: it refuses to mutate a readonly (cached) eval, and marks the field as set so exclude_unset dumps keep it.
              */
             splits?: {
                 [key: string]: components["schemas"]["TaskRunSplit"] | components["schemas"]["EvalInputSplit"];

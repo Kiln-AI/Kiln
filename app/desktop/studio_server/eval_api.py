@@ -937,9 +937,8 @@ def connect_evals_api(app: FastAPI):
                     status_code=400,
                     detail="Train set filter is already set and cannot be changed. Please create a new eval if you need a different train set.",
                 )
-            # set_split, not a direct splits write: this train split is being created on
-            # behalf of a user whose eval predates `splits`, and prompt optimization reads
-            # it out of the packaged project file, so it has to land in the legacy field.
+            # set_split, not a direct splits write: it refuses to mutate a readonly
+            # (cached) eval, which a direct `eval.splits[...] = ...` would do silently.
             eval.set_split("train", TaskRunSplit(filter_id=request.train_set_filter_id))
 
         eval.save_to_file()

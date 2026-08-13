@@ -1,7 +1,7 @@
 import json
 from enum import Enum
 from threading import Lock
-from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Set, Union
+from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Union
 
 from pydantic import (
     BaseModel,
@@ -10,7 +10,6 @@ from pydantic import (
     Field,
     GetJsonSchemaHandler,
     JsonValue,
-    PrivateAttr,
     SerializationInfo,
     SerializerFunctionWrapHandler,
     ValidationInfo,
@@ -971,27 +970,14 @@ class EvalDataType(str, Enum):
     reference_answer = "reference_answer"
 
 
-def _without_model_serializer(schema: CoreSchema) -> CoreSchema:
-    """A copy of a model's core schema with its own model serializer removed.
-
-    The serializer sits on the innermost 'model' schema, under one wrapper per
-    model validator. Only that one is dropped: serializers on fields and on nested
-    models are left alone.
-    """
-    if schema.get("type") == "model":
-        return {key: value for key, value in schema.items() if key != "serialization"}  # type: ignore[return-value]
-    stripped = dict(schema)
-    stripped["schema"] = _without_model_serializer(schema["schema"])  # type: ignore[typeddict-item]
-    return stripped  # type: ignore[return-value]
-
-
 class TaskRunSplit(BaseModel):
     """A split whose items are TaskRuns, selected by a dataset filter."""
 
     # Fields a future build adds are preserved rather than dropped, for the same reason
-    # Eval.splits keeps unknown split names: these files sync between app versions. This
-    # only holds for splits stored in `splits` — a split projected into a legacy flat
-    # field becomes a bare filter-id string, which has no room for anything else.
+    # Eval.splits keeps unknown split names: these files sync between app versions. It is
+    # also why the legacy-field migration never overwrites a split that `splits` already
+    # describes — rebuilding one from a bare filter-id string would drop everything else
+    # on it.
     model_config = ConfigDict(extra="allow")
 
     source: Literal["task_run"] = "task_run"
@@ -1023,15 +1009,10 @@ LEGACY_SPLIT_FIELDS: Dict[str, str] = {
     "test": "eval_set_filter_id",
     "train": "train_set_filter_id",
 }
-"""Split name -> the flat `Eval` field that is its on-disk home for older Kiln builds.
-Only TaskRun-backed splits can live in these fields; every other split is stored in
-`Eval.splits`.
-
-MIRRORED IN TYPESCRIPT: `app/web_ui/src/lib/utils/eval_splits.ts` has its own copy of this
-map and of the fold below, because the serializer hands the web client the same two-homed
-format it writes to disk. Change one and the other must change with it — nothing enforces
-it, and a one-sided change fails silently in the UI (a dataset row rendering `undefined`,
-a `/dataset` link pointing at the wrong tag)."""
+"""Split name -> the deprecated flat `Eval` field a Kiln build predating `splits` stored it
+in. These fields are an input format and nothing else: `Eval.migrate_legacy_split_fields`
+reads each one once, on the way in, and clears it. Nothing else in the codebase reads or
+writes them, and they are never written to disk again — see `Eval.splits`."""
 
 
 class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}):
@@ -1051,7 +1032,8 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     )
     eval_set_filter_id: DatasetFilterId | None = Field(
         default=None,
-        description="Legacy storage for a TaskRun-backed test split, kept so older Kiln builds can still read this eval. It is written from the eval's splits, and is null when the test split has no legacy representation. The eval's splits are the authoritative source: see `splits`.",
+        deprecated=True,
+        description="Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['test'] once, and the field is then cleared. It is always saved as null. Read splits['test'] instead.",
     )
     eval_configs_filter_id: DatasetFilterId | None = Field(
         default=None,
@@ -1059,11 +1041,12 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     )
     train_set_filter_id: DatasetFilterId | None = Field(
         default=None,
-        description="Legacy storage for a TaskRun-backed train split, kept so older Kiln builds can still read this eval. It is written from the eval's splits, and is null when the train split has no legacy representation. The eval's splits are the authoritative source: see `splits`.",
+        deprecated=True,
+        description="Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['train'] once, and the field is then cleared. It is always saved as null. Read splits['train'] instead.",
     )
     splits: Dict[str, SplitRef] = Field(
         default_factory=dict,
-        description="The eval's dataset splits, keyed by split name ('test', 'train', 'val'). Each split names the store its items come from and the filter that selects them. Keys this build doesn't know are preserved but not exposed. In Python, prefer Eval.set_split() to assigning into this dict: it stores a split where older Kiln builds can still read it, and marks the field as set so exclude_unset dumps keep it.",
+        description="The eval's dataset splits, keyed by split name ('test', 'train', 'val'), and the only place they are stored. Each split names the store its items come from and the filter that selects them. Keys this build doesn't know are preserved but not exposed. In Python, prefer Eval.set_split() to assigning into this dict: it refuses to mutate a readonly (cached) eval, and marks the field as set so exclude_unset dumps keep it.",
     )
     output_scores: List[EvalOutputScore] = Field(
         description="The scores this evaluator should produce."
@@ -1081,14 +1064,15 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         description="The output of the task run to evaluate. Can be final answer, full trace, or None for V2 evals.",
     )
 
-    # Which splits arrived in a legacy field, so serialization can put them back where
-    # they came from. None means "provenance unknown" (see serialize_preserving_split_format).
-    _legacy_homed_splits: Set[str] | None = PrivateAttr(default=None)
-
     @model_validator(mode="before")
     @classmethod
     def migrate_eval_input_filter_id(cls, data: Any) -> Any:
-        """Fold the pre-`splits` `eval_input_filter_id` key into an EvalInput-backed test split.
+        """Migrate the pre-`splits` `eval_input_filter_id` key into an EvalInput-backed test split.
+
+        A third legacy input for the test split, so it follows the same rule as the two
+        declared legacy fields: it fills the test split only when `splits` does not
+        already describe one, and is dropped either way (it is not a declared field, so
+        it is never written back).
 
         TODO: Remove before shipping. Only internal projects contain this key; no public
         project file has ever had it, so this never becomes a compatibility commitment.
@@ -1099,181 +1083,81 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         if filter_id is None:
             return data
         if data.get("eval_set_filter_id") is not None:
-            # The invariant the deleted validate_filter_fields enforced, kept for as long
-            # as two legacy inputs can name the same split. Folding both would silently
-            # discard one of them.
+            # Two legacy inputs naming one split with two different backings. `splits`
+            # winning resolves legacy-vs-`splits` disagreements, but not this one: both
+            # sides here are legacy, so there is no rule that picks between them, and
+            # silently dropping either is worse than refusing the file.
             raise ValueError(
                 "An eval cannot set both eval_set_filter_id and eval_input_filter_id: they are two backings for the same test split."
             )
         data = dict(data)
         data.pop("eval_input_filter_id")
         splits = dict(data.get("splits") or {})
-        splits["test"] = {"source": "eval_input", "filter_id": filter_id}
+        if "test" not in splits:
+            splits["test"] = {"source": "eval_input", "filter_id": filter_id}
         data["splits"] = splits
         return data
 
     @model_validator(mode="after")
-    def fold_legacy_filter_fields(self) -> Self:
-        """Copy the legacy flat fields into `splits`, recording that they came from there.
+    def migrate_legacy_split_fields(self) -> Self:
+        """Migrate the deprecated flat filter fields into `splits`, once, and clear them.
 
-        Runs once, when the eval is first validated — loaded, or constructed. It must not
-        run again: `validate_assignment` re-runs after-validators on every attribute set
-        (including `self.path = path` at the end of save_to_file), and a second pass would
-        re-derive `splits` from the legacy fields, reverting any split the caller had
-        written and undoing it on disk at the next save. Legacy fields are a storage
-        format, not state, so they get read exactly once.
+        `splits` is the only home a split has. These fields are an input format for evals
+        written before it existed, so each one is read exactly once — here — and only for
+        a split `splits` doesn't already describe. `splits` winning is what makes the
+        migration one-way: once a value is in `splits` it is the eval's answer, and a
+        legacy field left over beside it (a hand-edited file, or one an older build wrote
+        after a newer one) is ignored rather than allowed to overwrite it. Overwriting
+        would also drop any extra fields on the existing split object, which
+        `TaskRunSplit`/`EvalInputSplit` keep on purpose (`extra="allow"`).
+
+        Both fields are then cleared, unconditionally. That is what makes this a
+        migration rather than a second home: nothing downstream can read a stale value,
+        the eval saves with both fields null, and re-running the validator — which
+        `validate_assignment` does on every attribute set, including `self.path = path`
+        at the end of save_to_file — has nothing left to do. An older Kiln build reading
+        the saved file sees no test set rather than the wrong one; that is the accepted
+        cost of a single home, and the eval list surfaces the evals it can't read.
+
+        Reads and writes go through `__dict__` because the fields are
+        `deprecated=True`: attribute access on them emits a DeprecationWarning, which is
+        meant for callers, not for the one place that is supposed to touch them.
 
         Must stay declared before validate_splits, which requires a test split: an eval
         that carries only legacy fields gets its test split from here.
-
-        A populated legacy field wins over a `splits` entry for the same split. At most
-        one of the two is ever written for a given split, so a conflict means a
-        hand-edited file, and preferring the legacy field keeps old and new Kiln builds
-        agreeing on what the eval's test and train splits are.
-
-        MIRRORED IN TYPESCRIPT: `app/web_ui/src/lib/utils/eval_splits.ts`'s `eval_split`
-        is this fold, precedence included. The web client needs it because
-        serialize_preserving_split_format sends the same two-homed format over the API
-        that it writes to disk. Changes here have to be made there too — see
-        LEGACY_SPLIT_FIELDS.
         """
-        if self._legacy_homed_splits is not None:
-            return self
-
-        homed: Set[str] = set()
-        if self.eval_set_filter_id is not None:
-            self.splits["test"] = TaskRunSplit(filter_id=self.eval_set_filter_id)
-            homed.add("test")
-        if self.train_set_filter_id is not None:
-            self.splits["train"] = TaskRunSplit(filter_id=self.train_set_filter_id)
-            homed.add("train")
-        self._legacy_homed_splits = homed
+        for name, field_name in LEGACY_SPLIT_FIELDS.items():
+            filter_id = self.__dict__.get(field_name)
+            if filter_id is not None and name not in self.splits:
+                self.splits[name] = TaskRunSplit(filter_id=filter_id)
+                # The split now lives only in `splits`, so an exclude_unset dump has to
+                # carry it: on a legacy eval `splits` was never explicitly set.
+                self.__pydantic_fields_set__.add("splits")
+            self.__dict__[field_name] = None
         return self
 
     @model_validator(mode="after")
     def validate_splits(self) -> Self:
         if "test" not in self.splits:
-            raise ValueError(
-                "An eval must have a test split. Set splits['test'] (or the legacy eval_set_filter_id field)."
-            )
+            raise ValueError("An eval must have a test split. Set splits['test'].")
         return self
 
     def set_split(self, name: str, split: SplitRef) -> None:
-        """Set one of the eval's splits, storing it where the most Kiln builds can read it.
+        """Set one of the eval's splits.
 
-        Use this rather than `eval.splits[name] = ...` when adding a split to an eval that
-        a user already has, and the split is one older builds understand: a TaskRun-backed
-        test or train split is written to its legacy flat field, so an older Kiln client —
-        and anything else reading the file directly, like the project zip handed to the
-        remote prompt-optimization service — still sees it.
-
-        Assigning `eval.splits[name]` directly is the way to author a split in the new
-        format only. Both are legitimate; this one is the compatible default for splits
-        created on behalf of a user.
+        Equivalent to `eval.splits[name] = split` plus the two things item assignment on
+        a dict can't do for itself, because it never reaches `__setattr__`: refusing to
+        mutate a readonly (cached) eval, and marking `splits` as set so an
+        exclude_unset dump still carries it.
         """
-        # Dict and set mutation don't go through __setattr__, so the readonly check has to
-        # be explicit here: readonly instances are the cached ones, shared with every other
-        # holder of the same file.
+        # Readonly instances are the cached ones, shared with every other holder of the
+        # same file, so this check has to be explicit here.
         self._ensure_not_readonly("splits")
         self.splits[name] = split
-        # Item assignment leaves `splits` looking unset, which would hide the split from a
-        # model_dump(exclude_unset=True) that has no legacy field to fall back on.
+        # Validated evals always have `splits` marked already (their test split came from
+        # `splits` or from the legacy migration, which marks it), so this is for instances
+        # built by model_construct, where nothing did.
         self.__pydantic_fields_set__.add("splits")
-
-        homed = self._legacy_homed_splits
-        if homed is None:
-            # Provenance unknown (model_construct): serialization is content-determined
-            # and already writes TaskRun-backed test/train splits to their legacy fields.
-            return
-        if name in LEGACY_SPLIT_FIELDS and isinstance(split, TaskRunSplit):
-            homed.add(name)
-        else:
-            # No legacy field can hold this split; §2.6's "backing changes force a format
-            # change" case if it previously had one.
-            homed.discard(name)
-
-    @model_serializer(mode="wrap")
-    def serialize_preserving_split_format(
-        self, handler: SerializerFunctionWrapHandler
-    ) -> Dict[str, Any]:
-        """Write each split back to the format it arrived in.
-
-        A split that arrived in a legacy field is written to that field and omitted from
-        the serialized `splits`, so an untouched legacy eval round-trips byte-identically
-        and older Kiln builds keep reading it. A split that arrived in (or was created
-        in) `splits` is written there, with its legacy field null.
-
-        When provenance is unknown — an instance built by `model_construct`, which skips
-        validation and so never records it — this falls back to content: any TaskRun-backed
-        test or train split is written to its legacy field. That degrades toward old-client
-        compatibility rather than toward a silent format flip.
-        """
-        data: Dict[str, Any] = handler(self)
-
-        homed = self._legacy_homed_splits
-        serialized_splits = data.get("splits") or {}
-        # Seeded from what the handler serialized, but only when provenance is unknown
-        # and only for splits `splits` doesn't describe. That pair is exactly the
-        # `model_construct` case: validation was skipped, so the fold never ran, and the
-        # instance carries its split only in the flat field — nulling it would destroy
-        # the sole copy.
-        # A validated instance is never seeded, even for a name missing from `splits`.
-        # The fold's postcondition is that every non-null legacy field has its key in
-        # `splits`, so a missing key there means the caller deleted the split, and
-        # seeding would resurrect it from the stale flat field (and would let a bare
-        # legacy field assignment conjure a split, which §2.6.2 forbids).
-        # A split that IS in `splits` is left to the loop, so re-pointing a legacy test
-        # split at an EvalInputSplit still clears the stale legacy field (§2.6) rather
-        # than writing both homes.
-        seed_legacy = homed is None
-        legacy_values: Dict[str, str | None] = {
-            name: (
-                data.get(field_name)
-                if (seed_legacy and name not in self.splits)
-                else None
-            )
-            for name, field_name in LEGACY_SPLIT_FIELDS.items()
-        }
-        splits_remainder: Dict[str, Any] = {}
-
-        for name, split in self.splits.items():
-            legacy_field = LEGACY_SPLIT_FIELDS.get(name)
-            # A field the caller excluded from this dump can't be the split's home, so
-            # the split stays in `splits` rather than being written nowhere at all.
-            legacy_homed = (
-                legacy_field is not None
-                and legacy_field in data
-                and isinstance(split, TaskRunSplit)
-                and (homed is None or name in homed)
-            )
-            if legacy_homed:
-                legacy_values[name] = split.filter_id
-            elif name in serialized_splits:
-                splits_remainder[name] = serialized_splits[name]
-
-        for name, field_name in LEGACY_SPLIT_FIELDS.items():
-            if field_name in data:
-                data[field_name] = legacy_values[name]
-        if "splits" in data:
-            if splits_remainder:
-                data["splits"] = splits_remainder
-            else:
-                del data["splits"]
-
-        return data
-
-    @classmethod
-    def __get_pydantic_json_schema__(
-        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
-    ) -> JsonSchemaValue:
-        """Describe Eval by its fields, even in serialization mode.
-
-        A model serializer makes pydantic describe the serialized form as a bare object,
-        which would erase Eval from the generated OpenAPI client. The serializer only
-        chooses which of two homes each split is written to — every key it can emit is a
-        declared field — so the field-derived schema is the accurate one.
-        """
-        return handler(_without_model_serializer(core_schema))
 
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:

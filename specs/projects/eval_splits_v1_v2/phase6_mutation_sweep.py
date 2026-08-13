@@ -234,6 +234,9 @@ def run(label, edits, tests):
             [
                 "uv",
                 "run",
+                # --frozen: a bare `uv run` re-resolves and can rewrite the lockfile
+                # mid-sweep, which has corrupted the venv in a sandboxed run before.
+                "--frozen",
                 "python",
                 "-m",
                 "pytest",

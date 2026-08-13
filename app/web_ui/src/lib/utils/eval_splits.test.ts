@@ -11,7 +11,7 @@ function make_eval(fields: Partial<Eval>): Eval {
 }
 
 describe("eval_split", () => {
-  it("reads a split the server wrote to its legacy flat field", () => {
+  it("falls back to a legacy flat field on an unmigrated eval", () => {
     const evaluator = make_eval({
       eval_set_filter_id: "tag::test_x",
       train_set_filter_id: "tag::train_x",
@@ -53,13 +53,13 @@ describe("eval_split", () => {
     })
   })
 
-  it("prefers the legacy field when both are populated, as the datamodel does", () => {
+  it("prefers the splits entry when both are populated, as the datamodel does", () => {
     const evaluator = make_eval({
       eval_set_filter_id: "tag::legacy",
       splits: { test: { source: "task_run", filter_id: "tag::native" } },
     })
 
-    expect(eval_split(evaluator, "test")?.filter_id).toBe("tag::legacy")
+    expect(eval_split(evaluator, "test")?.filter_id).toBe("tag::native")
   })
 
   it("is undefined for a split the eval does not have", () => {

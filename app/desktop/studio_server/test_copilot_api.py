@@ -486,15 +486,17 @@ class TestCreateSpecWithCopilot:
         # tag, eval-config comparison would score against test items instead of golden.
         assert evals[0].eval_configs_filter_id == "tag::eval_golden_test_spec"
 
-        # Check the raw saved eval file, not the loaded model: where each split is
-        # stored is invisible in eval.splits and visible only in the bytes. Test and
-        # train belong in their legacy fields, where older Kiln builds and the
-        # prompt-optimization zip reader look for them; val belongs in splits.
+        # Check the raw saved eval file, not the loaded model: what reaches the bytes
+        # is invisible in eval.splits. All three splits go to `splits`, and the
+        # deprecated flat filter fields are written null rather than left for an older
+        # build to read.
         saved_eval = json.loads(evals[0].path.read_text())
-        assert saved_eval["eval_set_filter_id"] == "tag::eval_test_spec"
-        assert saved_eval["train_set_filter_id"] == "tag::train_test_spec"
+        assert saved_eval["eval_set_filter_id"] is None
+        assert saved_eval["train_set_filter_id"] is None
         assert saved_eval["splits"] == {
-            "val": {"source": "task_run", "filter_id": "tag::val_test_spec"}
+            "test": {"source": "task_run", "filter_id": "tag::eval_test_spec"},
+            "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
+            "val": {"source": "task_run", "filter_id": "tag::val_test_spec"},
         }
 
         specs = task.specs()

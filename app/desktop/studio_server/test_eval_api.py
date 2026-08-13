@@ -367,7 +367,9 @@ async def test_create_evaluator(
     assert saved_eval.name == valid_evaluator_request.name
     assert saved_eval.description == valid_evaluator_request.description
     assert saved_eval.output_scores == valid_evaluator_request.output_scores
-    assert saved_eval.eval_set_filter_id == valid_evaluator_request.eval_set_filter_id
+    assert saved_eval.splits["test"] == TaskRunSplit(
+        filter_id=valid_evaluator_request.eval_set_filter_id
+    )
     assert (
         saved_eval.eval_configs_filter_id
         == valid_evaluator_request.eval_configs_filter_id
@@ -2178,17 +2180,19 @@ def test_update_eval_train_set_filter_id_when_none(
 
     assert response.status_code == 200
     updated_eval = response.json()
-    # Created through set_split, so it lands in the legacy field: this split exists for
-    # prompt optimization, which reads it out of the packaged project file.
-    assert updated_eval["train_set_filter_id"] == "tag::train_my_eval"
-    assert "splits" not in updated_eval
+    # `splits` is the only home: the response carries the new split there, and the
+    # deprecated flat field stays null.
+    assert updated_eval["splits"]["train"] == {
+        "source": "task_run",
+        "filter_id": "tag::train_my_eval",
+    }
+    assert updated_eval["train_set_filter_id"] is None
 
-    # Verify the eval was saved, and that `splits` is the model's read surface either way
+    # Verify the eval was saved
     eval_from_disk = mock_task.evals()[0]
     assert eval_from_disk.splits["train"] == TaskRunSplit(
         filter_id="tag::train_my_eval"
     )
-    assert eval_from_disk.train_set_filter_id == "tag::train_my_eval"
 
 
 def test_update_eval_train_set_filter_id_when_already_set(
@@ -2241,8 +2245,12 @@ def test_update_eval_partial_update(client, mock_task_from_id, mock_eval, mock_t
     # Name and description should remain unchanged
     assert updated_eval["name"] == original_name
     assert updated_eval["description"] == original_description
-    # the train split should be updated, in the format older builds can read
-    assert updated_eval["train_set_filter_id"] == "tag::train_set"
+    # the train split should be updated, in `splits` — the only home
+    assert updated_eval["splits"]["train"] == {
+        "source": "task_run",
+        "filter_id": "tag::train_set",
+    }
+    assert updated_eval["train_set_filter_id"] is None
 
 
 def test_update_eval_not_found(client):
@@ -2269,7 +2277,7 @@ def test_update_eval_empty_request(client, mock_task_from_id, mock_eval, mock_ta
     """Test that update_eval succeeds with empty request (no fields to update)."""
     original_name = mock_eval.name
     original_description = mock_eval.description
-    original_train_set_filter_id = mock_eval.train_set_filter_id
+    original_splits = dict(mock_eval.splits)
 
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
@@ -2288,7 +2296,9 @@ def test_update_eval_empty_request(client, mock_task_from_id, mock_eval, mock_ta
     # All fields should remain unchanged
     assert updated_eval["name"] == original_name
     assert updated_eval["description"] == original_description
-    assert updated_eval["train_set_filter_id"] == original_train_set_filter_id
+    assert updated_eval["splits"] == {
+        name: split.model_dump() for name, split in original_splits.items()
+    }
 
 
 def test_runs_in_filter():
@@ -3081,7 +3091,7 @@ async def test_get_run_config_eval_scores_with_usage(
     mock_eval_for_api = MagicMock()
     mock_eval_for_api.configs.return_value = [mock_eval_config_for_api]
     mock_eval_for_api.id = mock_eval.id
-    mock_eval_for_api.eval_set_filter_id = mock_eval.eval_set_filter_id
+    mock_eval_for_api.splits = mock_eval.splits
     mock_eval_for_api.output_scores = mock_eval.output_scores
 
     mock_eval.current_config_id = mock_eval_config.id
@@ -3257,7 +3267,7 @@ async def test_get_run_config_eval_scores_latency_below_threshold(
     mock_eval_for_api = MagicMock()
     mock_eval_for_api.configs.return_value = [mock_eval_config_for_api]
     mock_eval_for_api.id = mock_eval.id
-    mock_eval_for_api.eval_set_filter_id = mock_eval.eval_set_filter_id
+    mock_eval_for_api.splits = mock_eval.splits
     mock_eval_for_api.output_scores = mock_eval.output_scores
 
     mock_eval.current_config_id = mock_eval_config.id
@@ -3353,7 +3363,7 @@ async def test_get_run_config_eval_scores_inline_aggregation(
     mock_eval_api = MagicMock()
     mock_eval_api.configs.return_value = [mock_ec_api]
     mock_eval_api.id = mock_eval.id
-    mock_eval_api.eval_set_filter_id = mock_eval.eval_set_filter_id
+    mock_eval_api.splits = mock_eval.splits
     mock_eval_api.output_scores = mock_eval.output_scores
     mock_eval_api.name = mock_eval.name
 
@@ -3440,7 +3450,7 @@ async def test_get_run_config_eval_scores_all_skipped(
     mock_eval_api = MagicMock()
     mock_eval_api.configs.return_value = [mock_ec_api]
     mock_eval_api.id = mock_eval.id
-    mock_eval_api.eval_set_filter_id = mock_eval.eval_set_filter_id
+    mock_eval_api.splits = mock_eval.splits
     mock_eval_api.output_scores = mock_eval.output_scores
     mock_eval_api.name = mock_eval.name
 
@@ -3581,7 +3591,7 @@ async def test_get_run_config_eval_scores_includes_spec_id(
     mock_eval_for_api.configs.return_value = [mock_eval_config_for_api]
     mock_eval_for_api.id = mock_eval.id
     mock_eval_for_api.name = mock_eval.name
-    mock_eval_for_api.eval_set_filter_id = mock_eval.eval_set_filter_id
+    mock_eval_for_api.splits = mock_eval.splits
     mock_eval_for_api.output_scores = mock_eval.output_scores
     mock_eval_for_api.current_config_id = mock_eval_config.id
 
@@ -3593,7 +3603,7 @@ async def test_get_run_config_eval_scores_includes_spec_id(
     legacy_eval_for_api.configs.return_value = [legacy_eval_config_for_api]
     legacy_eval_for_api.id = legacy_eval.id
     legacy_eval_for_api.name = legacy_eval.name
-    legacy_eval_for_api.eval_set_filter_id = legacy_eval.eval_set_filter_id
+    legacy_eval_for_api.splits = legacy_eval.splits
     legacy_eval_for_api.output_scores = legacy_eval.output_scores
     legacy_eval_for_api.current_config_id = legacy_eval_config.id
 
@@ -3716,7 +3726,7 @@ async def test_get_run_config_eval_scores_excludes_archived_specs(
     mock_eval_for_api = MagicMock()
     mock_eval_for_api.id = mock_eval.id
     mock_eval_for_api.name = mock_eval.name
-    mock_eval_for_api.eval_set_filter_id = mock_eval.eval_set_filter_id
+    mock_eval_for_api.splits = mock_eval.splits
     mock_eval_for_api.output_scores = mock_eval.output_scores
     mock_eval_for_api.current_config_id = mock_eval_config.id
     mock_eval_for_api.configs.return_value = [mock_eval_config_for_api]
@@ -3728,7 +3738,7 @@ async def test_get_run_config_eval_scores_excludes_archived_specs(
     archived_eval_for_api = MagicMock()
     archived_eval_for_api.id = archived_eval.id
     archived_eval_for_api.name = archived_eval.name
-    archived_eval_for_api.eval_set_filter_id = archived_eval.eval_set_filter_id
+    archived_eval_for_api.splits = archived_eval.splits
     archived_eval_for_api.output_scores = archived_eval.output_scores
     archived_eval_for_api.current_config_id = archived_eval_config.id
     archived_eval_for_api.configs.return_value = [archived_eval_config_for_api]

@@ -188,15 +188,16 @@ def test_create_spec_success(client, project_and_task):
         "val": TaskRunSplit(filter_id="tag::val_test_spec"),
     }
 
-    # Check the raw saved file, not the loaded model: where each split is stored is
-    # invisible in eval.splits and visible only in the bytes. Test and train belong in
-    # their legacy fields, where older Kiln builds and the prompt-optimization zip
-    # reader look for them; val has no legacy field and belongs in splits.
+    # Check the raw saved file, not the loaded model: what reaches the bytes is
+    # invisible in eval.splits. All three splits go to `splits`, and the deprecated flat
+    # filter fields are written null rather than left for an older build to read.
     saved_eval = json.loads(evals[0].path.read_text())
-    assert saved_eval["eval_set_filter_id"] == "tag::eval_test_spec"
-    assert saved_eval["train_set_filter_id"] == "tag::train_test_spec"
+    assert saved_eval["eval_set_filter_id"] is None
+    assert saved_eval["train_set_filter_id"] is None
     assert saved_eval["splits"] == {
-        "val": {"source": "task_run", "filter_id": "tag::val_test_spec"}
+        "test": {"source": "task_run", "filter_id": "tag::eval_test_spec"},
+        "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
+        "val": {"source": "task_run", "filter_id": "tag::val_test_spec"},
     }
 
 
