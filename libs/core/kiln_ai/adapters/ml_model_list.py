@@ -169,6 +169,7 @@ class ModelName(str, Enum):
     gemini_3_1_flash_lite_preview = "gemini_3_1_flash_lite_preview"
     gemini_3_1_pro_preview = "gemini_3_1_pro_preview"
     gemini_3_pro_preview = "gemini_3_pro_preview"
+    gemini_3_7_flash = "gemini_3_7_flash"
     gemini_3_6_flash = "gemini_3_6_flash"
     gemini_3_5_flash = "gemini_3_5_flash"
     gemini_3_flash = "gemini_3_flash"
@@ -3074,6 +3075,116 @@ built_in_models: List[KilnModel] = [
                 gemini_reasoning_enabled=True,
                 available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
                 default_thinking_level="high",
+            ),
+        ],
+    ),
+    # Gemini 3.7 Flash
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_3_7_flash,
+        friendly_name="Gemini 3.7 Flash",
+        featured_rank=6,
+        editorial_notes="Google's latest Flash model. Stronger agentic and multimodal performance at a lower cost than Gemini 3.6 Flash.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-3.7-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                # 3.7 Flash exposes low/medium/high thinking levels (default medium)
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-3.7-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-3.7-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
             ),
         ],
     ),
