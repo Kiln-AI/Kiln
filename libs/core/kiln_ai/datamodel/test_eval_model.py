@@ -3727,6 +3727,75 @@ class TestEvalSplits:
             "test": {"source": "eval_input", "filter_id": "tag::inputs"}
         }
 
+    def test_whole_dict_assignment_dropping_a_split_removes_it(
+        self, saved_task, scores
+    ):
+        """A key left out of the new dict is gone — including from its legacy field.
+
+        The replace case above only ever rewrote a split's value. Dropping one is the
+        case where a serializer that re-seeds legacy fields from the raw dump writes the
+        deleted split straight back to disk.
+        """
+        eval = self.build_eval(
+            scores,
+            parent=saved_task,
+            eval_set_filter_id="tag::test_x",
+            train_set_filter_id="tag::train_x",
+        )
+        eval.splits = {"test": TaskRunSplit(filter_id="tag::test_x")}
+
+        data = self.saved_json(eval)
+        assert data["eval_set_filter_id"] == "tag::test_x"
+        assert data["train_set_filter_id"] is None
+
+        assert eval.path is not None
+        assert "train" not in Eval.load_from_file(eval.path).splits
+
+    def test_removing_a_split_clears_its_legacy_field(self, saved_task, scores):
+        """Deleting a split deletes it from the file, not just from memory.
+
+        After a validated load every non-null legacy field has a matching `splits` key,
+        so a missing key is a deletion. The legacy field is that split's storage, and
+        leaving it set would make the removal a no-op that the next load undoes.
+        """
+        eval = self.build_eval(
+            scores,
+            parent=saved_task,
+            eval_set_filter_id="tag::test_x",
+            train_set_filter_id="tag::train_x",
+        )
+        del eval.splits["train"]
+
+        data = self.saved_json(eval)
+        assert data["eval_set_filter_id"] == "tag::test_x"
+        assert data["train_set_filter_id"] is None
+
+        assert eval.path is not None
+        reloaded = Eval.load_from_file(eval.path)
+        assert "train" not in reloaded.splits
+        assert reloaded.splits["test"] == TaskRunSplit(filter_id="tag::test_x")
+
+    def test_assigning_a_legacy_field_does_not_create_a_split(self, saved_task, scores):
+        """Setting a bare legacy field on a splits-native eval adds nothing (§2.6.2).
+
+        The eval has no train split, so there is nothing for the assignment to be an
+        edit of. If it created one, a legacy field would be state again, and the write
+        would round-trip into `splits` on the next load.
+        """
+        eval = self.build_eval(
+            scores,
+            parent=saved_task,
+            splits={"test": TaskRunSplit(filter_id="tag::test_x")},
+        )
+        eval.train_set_filter_id = "tag::sneak"
+
+        assert "train" not in eval.splits
+        data = self.saved_json(eval)
+        assert data["train_set_filter_id"] is None
+
+        assert eval.path is not None
+        assert "train" not in Eval.load_from_file(eval.path).splits
+
     def test_clearing_a_legacy_field_does_not_move_its_split(self, saved_task, scores):
         """Writing a legacy field is not how you edit a split — and it doesn't half-do it.
 

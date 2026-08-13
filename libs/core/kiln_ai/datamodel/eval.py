@@ -1212,15 +1212,26 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
 
         homed = self._legacy_homed_splits
         serialized_splits = data.get("splits") or {}
-        # Seeded from what the handler serialized, but only for splits `splits` doesn't
-        # describe. Those are unreachable by the loop below, and nulling them destroys
-        # data: `model_construct` skips validation, so the fold never runs, and an
-        # instance built that way carries its split only in the flat field.
+        # Seeded from what the handler serialized, but only when provenance is unknown
+        # and only for splits `splits` doesn't describe. That pair is exactly the
+        # `model_construct` case: validation was skipped, so the fold never ran, and the
+        # instance carries its split only in the flat field — nulling it would destroy
+        # the sole copy.
+        # A validated instance is never seeded, even for a name missing from `splits`.
+        # The fold's postcondition is that every non-null legacy field has its key in
+        # `splits`, so a missing key there means the caller deleted the split, and
+        # seeding would resurrect it from the stale flat field (and would let a bare
+        # legacy field assignment conjure a split, which §2.6.2 forbids).
         # A split that IS in `splits` is left to the loop, so re-pointing a legacy test
         # split at an EvalInputSplit still clears the stale legacy field (§2.6) rather
         # than writing both homes.
+        seed_legacy = homed is None
         legacy_values: Dict[str, str | None] = {
-            name: (data.get(field_name) if name not in self.splits else None)
+            name: (
+                data.get(field_name)
+                if (seed_legacy and name not in self.splits)
+                else None
+            )
             for name, field_name in LEGACY_SPLIT_FIELDS.items()
         }
         splits_remainder: Dict[str, Any] = {}
