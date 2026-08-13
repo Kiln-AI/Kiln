@@ -3118,6 +3118,7 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
                 ],
+                multimodal_requires_pdf_as_image=True,
                 gemini_reasoning_enabled=True,
             ),
             KilnModelProvider(
