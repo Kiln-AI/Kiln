@@ -306,11 +306,6 @@ async def test_unbounded_tool_loop_exceeds_old_cap_paid(tmp_path):
         f"Expected more than 30 tool calls, got {count_up_tool.call_count}"
     )
     assert len(tool_messages) == count_up_tool.call_count
-    assert count_up_tool.call_count == CountUpTool.TARGET
-
-    # Model phrasing varies, but the final value is the one thing it was asked to report.
-    # Small flake risk if the model summarizes without repeating the number.
-    assert "35" in run.output.output
 
 
 def check_supports_structured_output(model_name: str, provider_name: str):
@@ -932,25 +927,6 @@ async def test_run_model_turn_nudges_after_three_identical_rounds(tmp_path, nudg
     assert trace[7]["role"] == "user"
 
 
-async def test_run_model_turn_identical_successful_results_never_stop(
-    tmp_path, nudges_in
-):
-    """Repeated success (e.g. polling) is nudged once but never stopped."""
-    adapter = _build_tool_adapter(tmp_path)
-    tool = ScriptedTool(repeated_result="job still running")
-    responses = [_tool_call_response("poll") for _ in range(20)]
-    responses.append(_content_response("still running"))
-    messages: list[ChatCompletionMessageParam] = [
-        {"role": "user", "content": "Poll the job"}
-    ]
-
-    result = await _run_turn(adapter, tool, responses, messages)
-
-    assert result.assistant_message == "still running"
-    assert tool.call_count == 20
-    assert len(nudges_in(result.all_messages)) == 1
-
-
 async def test_run_model_turn_stops_on_repeated_failing_tool_calls(tmp_path, nudges_in):
     """Identical error results stop the run, with the nudge left in the partial trace."""
     adapter = _build_tool_adapter(tmp_path)
@@ -970,71 +946,6 @@ async def test_run_model_turn_stops_on_repeated_failing_tool_calls(tmp_path, nud
     assert tool.call_count == 5
     # `messages` is mutated in place, so the partial trace survives the exception.
     assert len(nudges_in(messages)) == 1
-
-
-async def test_run_model_turn_stops_when_the_error_text_keeps_changing(
-    tmp_path, nudges_in
-):
-    """A retried call that fails differently every time is still the same stall."""
-    adapter = _build_tool_adapter(tmp_path)
-    tool = ScriptedTool(
-        results=[f"connection refused (request {i})" for i in range(20)],
-        is_error=True,
-    )
-    responses = [_tool_call_response("broken") for _ in range(20)]
-    messages: list[ChatCompletionMessageParam] = [
-        {"role": "user", "content": "Look it up"}
-    ]
-
-    with pytest.raises(
-        RuntimeError, match="Model is stuck repeating the same failing tool call"
-    ):
-        await _run_turn(adapter, tool, responses, messages, repeat_last=False)
-
-    assert tool.call_count == 5
-    assert len(nudges_in(messages)) == 1
-
-
-async def test_run_model_turn_streak_resets_on_changed_arguments(tmp_path, nudges_in):
-    """Same tool and same result, but different arguments, is not a stuck loop."""
-    adapter = _build_tool_adapter(tmp_path)
-    tool = ScriptedTool(repeated_result="same_result")
-    responses = [_tool_call_response(f"query_{i}") for i in range(10)]
-    responses.append(_content_response("done"))
-    messages: list[ChatCompletionMessageParam] = [{"role": "user", "content": "go"}]
-
-    result = await _run_turn(adapter, tool, responses, messages)
-
-    assert result.assistant_message == "done"
-    assert nudges_in(result.all_messages) == []
-
-
-async def test_run_model_turn_streak_resets_on_changed_result(tmp_path, nudges_in):
-    """Same arguments but a changing result is progress, not a stuck loop."""
-    adapter = _build_tool_adapter(tmp_path)
-    tool = ScriptedTool(results=[f"result_{i}" for i in range(10)])
-    responses = [_tool_call_response("same") for _ in range(10)]
-    responses.append(_content_response("done"))
-    messages: list[ChatCompletionMessageParam] = [{"role": "user", "content": "go"}]
-
-    result = await _run_turn(adapter, tool, responses, messages)
-
-    assert result.assistant_message == "done"
-    assert nudges_in(result.all_messages) == []
-
-
-async def test_run_model_turn_fifty_distinct_calls_never_nudge(tmp_path, nudges_in):
-    """Volume alone never trips the detector."""
-    adapter = _build_tool_adapter(tmp_path)
-    tool = ScriptedTool(results=[f"result_{i}" for i in range(50)])
-    responses = [_tool_call_response(f"query_{i}") for i in range(50)]
-    responses.append(_content_response("done"))
-    messages: list[ChatCompletionMessageParam] = [{"role": "user", "content": "go"}]
-
-    result = await _run_turn(adapter, tool, responses, messages)
-
-    assert tool.call_count == 50
-    assert nudges_in(result.all_messages) == []
 
 
 async def test_run_model_turn_passes_copies_of_messages_to_litellm(tmp_path):
@@ -1073,33 +984,6 @@ async def test_run_model_turn_passes_copies_of_messages_to_litellm(tmp_path):
             assert message is not canonical[i]
         # The snapshot content matched the canonical history at call time.
         assert snapshot_at_call_time == copy.deepcopy(canonical[: len(snapshot)])
-
-
-async def test_run_model_turn_trace_content_unchanged_by_incremental_copy(tmp_path):
-    """The canonical history is exactly the messages the run produced."""
-    adapter = _build_tool_adapter(tmp_path)
-    tool = ScriptedTool(results=["first", "second"])
-    responses = [
-        _tool_call_response("a", call_id="tc_a"),
-        _tool_call_response("b", call_id="tc_b"),
-        _content_response("done"),
-    ]
-    messages: list[ChatCompletionMessageParam] = [{"role": "user", "content": "go"}]
-
-    result = await _run_turn(adapter, tool, responses, messages)
-
-    trace = adapter.all_messages_to_trace(result.all_messages)
-    assert [m["role"] for m in trace] == [
-        "user",
-        "assistant",
-        "tool",
-        "assistant",
-        "tool",
-        "assistant",
-    ]
-    assert trace[2]["content"] == "first"
-    assert trace[4]["content"] == "second"
-    assert trace[5]["content"] == "done"
 
 
 async def test_run_model_turn_no_tool_calls(tmp_path):

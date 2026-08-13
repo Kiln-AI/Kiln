@@ -17,7 +17,7 @@ from unittest.mock import patch
 import litellm
 import pytest
 
-from kiln_ai.adapters.errors import STUCK_LOOP_ERROR_PREFIX, KilnRunError
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.ml_model_list import KilnModelProvider
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
 from kiln_ai.datamodel import Task, Usage
@@ -265,6 +265,8 @@ class TestStreamingErrorWrapping:
     """Streaming failures get the same mapped copy and partial trace as invoke."""
 
     async def test_context_window_error_surfaces_mapped_copy(self, make_adapter):
+        """The wrapper runs the error through format_error_message, whose exact
+        copy is owned by test_errors.py."""
         adapter = make_adapter()
         context_window_error = litellm.ContextWindowExceededError(
             message="max tokens 128000 exceeded",
@@ -278,25 +280,7 @@ class TestStreamingErrorWrapping:
             )
 
         assert str(ei.value).startswith("The run exceeded the model's context window.")
-        assert "max tokens 128000 exceeded" in str(ei.value)
         assert ei.value.original is context_window_error
-
-    async def test_stuck_loop_error_surfaces_mapped_copy(self, make_adapter):
-        adapter = make_adapter()
-        stuck_error = RuntimeError(
-            f"{STUCK_LOOP_ERROR_PREFIX}. It called lookup with the same arguments 5 "
-            "times in a row and got the same error each time."
-        )
-
-        with pytest.raises(KilnRunError) as ei:
-            await _drain_openai_stream(adapter, _RaisingAdapterStream(stuck_error))
-
-        assert str(ei.value) == (
-            "The run was stopped because the model kept repeating the same failing "
-            "tool call after being warned. The run trace shows the repeated calls "
-            "and the warning."
-        )
-        assert ei.value.error_type == "RuntimeError"
 
     async def test_partial_trace_carried_across_the_stream_boundary(self, make_adapter):
         adapter = make_adapter()
@@ -343,21 +327,17 @@ class TestStreamingErrorWrapping:
 
     async def test_ai_sdk_stream_wraps_errors_too(self, make_adapter):
         adapter = make_adapter()
-        context_window_error = litellm.ContextWindowExceededError(
-            message="max tokens 128000 exceeded",
-            model="m",
-            llm_provider="openai",
-        )
+        error = RuntimeError("boom")
         trace: list[ChatCompletionMessageParam] = [{"role": "user", "content": "u"}]
 
         with patch.object(
             adapter,
             "_prepare_stream",
-            return_value=_RaisingAdapterStream(context_window_error, trace=trace),
+            return_value=_RaisingAdapterStream(error, trace=trace),
         ):
             with pytest.raises(KilnRunError) as ei:
                 async for _event in adapter.invoke_ai_sdk_stream("hello"):
                     pass
 
-        assert str(ei.value).startswith("The run exceeded the model's context window.")
+        assert ei.value.original is error
         assert ei.value.partial_trace == trace

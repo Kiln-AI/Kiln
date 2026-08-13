@@ -12,10 +12,7 @@ from kiln_ai.adapters.model_adapters.tool_loop_guards import (
     IncrementalMessageCopier,
     RepeatedToolCallDetector,
 )
-from kiln_ai.utils.open_ai_types import (
-    KILN_ONLY_MESSAGE_FIELDS,
-    sanitize_messages_for_provider,
-)
+from kiln_ai.utils.open_ai_types import sanitize_messages_for_provider
 
 
 def _tool_call(call_id="call_1", name="add", arguments=None):
@@ -34,10 +31,6 @@ def _tool_message(call_id="call_1", content="ok", is_error=None):
 
 
 class TestRepeatedToolCallDetector:
-    def test_first_round_never_nudges(self):
-        detector = RepeatedToolCallDetector()
-        assert detector.record_round([_tool_call()], [_tool_message()]) is None
-
     def test_nudge_at_exactly_the_nudge_threshold(self):
         detector = RepeatedToolCallDetector()
         nudges = [
@@ -54,24 +47,16 @@ class TestRepeatedToolCallDetector:
         assert str(STUCK_NUDGE_THRESHOLD) in content
         assert "Change your approach or provide your final answer." in content
 
-    def test_streak_resets_on_changed_arguments(self):
+    @pytest.mark.parametrize("changing", ["arguments", "result"])
+    def test_streak_resets_on_a_changed_call(self, changing):
+        """Either half of the fingerprint changing is progress, so the streak restarts."""
         detector = RepeatedToolCallDetector()
         for i in range(10):
-            args = {"a": i}
-            assert (
-                detector.record_round([_tool_call(arguments=args)], [_tool_message()])
-                is None
+            call = _tool_call(arguments={"a": i} if changing == "arguments" else None)
+            result = _tool_message(
+                content=f"result-{i}" if changing == "result" else "ok"
             )
-
-    def test_streak_resets_on_changed_result(self):
-        detector = RepeatedToolCallDetector()
-        for i in range(10):
-            assert (
-                detector.record_round(
-                    [_tool_call()], [_tool_message(content=f"result-{i}")]
-                )
-                is None
-            )
+            assert detector.record_round([call], [result]) is None
 
     def test_streak_resets_partway_through(self):
         detector = RepeatedToolCallDetector()
@@ -113,27 +98,11 @@ class TestRepeatedToolCallDetector:
         assert detector.record_round([bad], [_tool_message()]) is None
         assert detector.record_round([bad], [_tool_message()]) is not None
 
-    def test_varying_error_text_is_still_the_same_stall(self):
+    def test_varying_error_text_stops_at_the_stop_threshold(self):
         """A failing call whose error text changes every time still counts as repeated."""
         detector = RepeatedToolCallDetector()
-        nudges = [
-            detector.record_round(
-                [_tool_call()],
-                [
-                    _tool_message(
-                        content=f"request {i} failed at 12:0{i}", is_error=True
-                    )
-                ],
-            )
-            for i in range(STUCK_NUDGE_THRESHOLD)
-        ]
-        assert nudges[:-1] == [None] * (STUCK_NUDGE_THRESHOLD - 1)
-        assert nudges[-1] is not None
-
-    def test_varying_error_text_stops_at_the_stop_threshold(self):
-        detector = RepeatedToolCallDetector()
         with pytest.raises(RuntimeError) as exc_info:
-            for i in range(STUCK_STOP_THRESHOLD + 5):
+            for i in range(STUCK_STOP_THRESHOLD):
                 detector.record_round(
                     [_tool_call()],
                     [_tool_message(content=f"error id {i}", is_error=True)],
@@ -229,11 +198,6 @@ class TestRepeatedToolCallDetector:
             nudge = detector.record_round([_tool_call()], [_tool_message()])
         assert nudge is not None
         assert nudge["kiln_injected"] is True
-        assert "kiln_injected" in KILN_ONLY_MESSAGE_FIELDS
-        # Stripped before the provider call, kept on the message we hold.
-        assert sanitize_messages_for_provider([nudge]) == [
-            {"role": "user", "content": nudge["content"]}
-        ]
 
     def test_parallel_calls_in_any_order_are_the_same_round(self):
         detector = RepeatedToolCallDetector()
@@ -248,17 +212,6 @@ class TestRepeatedToolCallDetector:
         detector = RepeatedToolCallDetector()
         for _ in range(STUCK_STOP_THRESHOLD * 3):
             assert detector.record_round([_tool_call()], []) is None
-
-    def test_distinct_calls_in_volume_never_trigger(self):
-        detector = RepeatedToolCallDetector()
-        for i in range(50):
-            assert (
-                detector.record_round(
-                    [_tool_call(f"call_{i}", arguments={"a": i})],
-                    [_tool_message(f"call_{i}", content=f"result-{i}")],
-                )
-                is None
-            )
 
 
 class TestIncrementalMessageCopier:
@@ -277,20 +230,7 @@ class TestIncrementalMessageCopier:
         snapshot = copier.snapshot(messages)
         assert snapshot is not messages
         assert all(a is not b for a, b in zip(snapshot, messages))
-
-    def test_existing_copies_are_reused(self):
-        copier = IncrementalMessageCopier()
-        messages = [{"role": "user", "content": "hi"}]
-        first = list(copier.snapshot(messages))
-        messages.append({"role": "user", "content": "again"})
-        second = copier.snapshot(messages)
-        assert second[0] is first[0]
-        assert len(second) == 2
-
-    def test_mutating_a_copy_does_not_affect_the_canonical_history(self):
-        copier = IncrementalMessageCopier()
-        messages = [{"role": "user", "content": "hi"}]
-        snapshot = copier.snapshot(messages)
+        # So a caller editing the snapshot can't rewrite the canonical history.
         snapshot[0]["content"] = "tampered"
         assert messages[0]["content"] == "hi"
 

@@ -121,48 +121,39 @@ class TestFormatUserMessage:
             format_error_message(exc) == "The run exceeded the maximum number of turns."
         )
 
-    def test_context_window_exceeded(self):
-        exc = _make_litellm_error(
-            litellm.ContextWindowExceededError, message="max tokens 128000 exceeded"
-        )
-        message = format_error_message(exc)
-        assert message.startswith("The run exceeded the model's context window.")
-        assert "grew too large for this model." in message
-        assert "max tokens 128000 exceeded" in message
+    @pytest.mark.parametrize(
+        "cls,prefix,detail",
+        [
+            (
+                litellm.ContextWindowExceededError,
+                "The run exceeded the model's context window.",
+                "grew too large for this model.",
+            ),
+            (
+                litellm.ContentPolicyViolationError,
+                "The model provider's safety filter blocked",
+                "false positive on some models",
+            ),
+            (
+                litellm.BadRequestError,
+                "The model provider rejected the request.",
+                None,
+            ),
+        ],
+    )
+    def test_bad_request_family(self, cls, prefix, detail):
+        """Each 400 gets its own lead-in, and all of them keep the provider's message.
 
-    def test_context_window_exceeded_matches_before_bad_request(self):
-        # ContextWindowExceededError subclasses BadRequestError, so ordering matters.
-        exc = _make_litellm_error(litellm.ContextWindowExceededError)
+        The narrower classes subclass BadRequestError, so format_error_message has to
+        match them before the generic case.
+        """
+        exc = _make_litellm_error(cls, message="the provider's own words")
         assert isinstance(exc, litellm.BadRequestError)
-        assert format_error_message(exc).startswith(
-            "The run exceeded the model's context window."
-        )
-
-    def test_bad_request_keeps_the_provider_detail(self):
-        """Unmapped 400s are more useful with the provider's own message."""
-        exc = _make_litellm_error(
-            litellm.BadRequestError, message="tool 'search' has an invalid schema"
-        )
         message = format_error_message(exc)
-        assert message.startswith("The model provider rejected the request.")
-        assert "tool 'search' has an invalid schema" in message
-
-    def test_content_policy_violation(self):
-        exc = _make_litellm_error(
-            litellm.ContentPolicyViolationError, message="prompt was blocked"
-        )
-        message = format_error_message(exc)
-        assert message.startswith("The model provider's safety filter blocked")
-        assert "false positive on some models" in message
-        assert "prompt was blocked" in message
-
-    def test_content_policy_violation_matches_before_bad_request(self):
-        # ContentPolicyViolationError subclasses BadRequestError, so ordering matters.
-        exc = _make_litellm_error(litellm.ContentPolicyViolationError)
-        assert isinstance(exc, litellm.BadRequestError)
-        assert format_error_message(exc).startswith(
-            "The model provider's safety filter blocked"
-        )
+        assert message.startswith(prefix)
+        assert "the provider's own words" in message
+        if detail is not None:
+            assert detail in message
 
     def test_stuck_tool_call_loop(self):
         exc = RuntimeError(
