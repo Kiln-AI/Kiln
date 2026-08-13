@@ -404,6 +404,15 @@ class UpdateEvalRequest(BaseModel):
     )
 
 
+class EvalsResponse(BaseModel):
+    """The evals of a task, plus how many eval files this version of Kiln couldn't read."""
+
+    evals: List[Eval] = Field(description="The evals which loaded successfully.")
+    load_error_count: int = Field(
+        description="How many eval files failed to load. Usually because they were written by a newer version of Kiln."
+    )
+
+
 class EvalProgress(BaseModel):
     """Progress information for an eval."""
 
@@ -950,10 +959,13 @@ def connect_evals_api(app: FastAPI):
             str,
             Path(description="The unique identifier of the task within the project."),
         ],
-    ) -> list[Eval]:
+    ) -> EvalsResponse:
         """List all evals for a task."""
         task = task_from_id(project_id, task_id)
-        return task.evals()
+        # Partial load: a project folder synced from a newer Kiln can contain an eval this
+        # build can't parse. Return the readable evals rather than failing the whole list.
+        evals, load_errors = Eval.all_children_of_parent_path_with_errors(task.path)
+        return EvalsResponse(evals=evals, load_error_count=len(load_errors))
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",

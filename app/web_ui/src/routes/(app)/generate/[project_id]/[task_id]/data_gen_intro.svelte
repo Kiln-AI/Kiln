@@ -93,7 +93,7 @@
         throw error
       }
       evals_by_id = {}
-      for (const eval_item of data) {
+      for (const eval_item of data.evals) {
         if (eval_item.id) {
           evals_by_id[eval_item.id] = eval_item
         }

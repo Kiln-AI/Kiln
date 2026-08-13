@@ -6787,6 +6787,22 @@ export interface components {
          * @enum {string}
          */
         EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
+        /**
+         * EvalsResponse
+         * @description The evals of a task, plus how many eval files this version of Kiln couldn't read.
+         */
+        EvalsResponse: {
+            /**
+             * Evals
+             * @description The evals which loaded successfully.
+             */
+            evals: components["schemas"]["Eval"][];
+            /**
+             * Load Error Count
+             * @description How many eval files failed to load. Usually because they were written by a newer version of Kiln.
+             */
+            load_error_count: number;
+        };
         /** ExactMatchProperties */
         ExactMatchProperties: {
             /**
@@ -16968,7 +16984,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Eval"][];
+                    "application/json": components["schemas"]["EvalsResponse"];
                 };
             };
             /** @description Validation Error */

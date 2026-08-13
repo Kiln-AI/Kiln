@@ -245,10 +245,55 @@ def test_get_evals_success(client, mock_task, mock_task_from_id, mock_eval):
 
     assert response.status_code == 200
     result = response.json()
-    assert len(result) == 1
-    assert result[0]["id"] == "eval1"
-    assert result[0]["name"] == "Test Eval"
+    assert result["load_error_count"] == 0
+    assert len(result["evals"]) == 1
+    assert result["evals"][0]["id"] == "eval1"
+    assert result["evals"][0]["name"] == "Test Eval"
     mock_task_from_id.assert_called_once_with("project1", "task1")
+
+
+def test_get_evals_partial_load(client, mock_task, mock_task_from_id, mock_eval):
+    """Evals this build can't parse are counted, and the readable ones still load."""
+    mock_task_from_id.return_value = mock_task
+
+    readable = Eval(
+        id="eval2",
+        name="Readable Eval",
+        output_scores=[
+            EvalOutputScore(
+                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
+            )
+        ],
+        eval_set_filter_id="tag::eval_set",
+        eval_configs_filter_id="tag::golden",
+        parent=mock_task,
+    )
+    readable.save_to_file()
+
+    # Two evals written by a hypothetical newer Kiln: this build refuses to load them.
+    for unreadable_id in ["eval3", "eval4"]:
+        unreadable_dir = mock_task.path.parent / "evals" / unreadable_id
+        unreadable_dir.mkdir(parents=True)
+        (unreadable_dir / Eval.base_filename()).write_text(
+            json.dumps(
+                {
+                    "v": mock_eval.max_schema_version() + 1,
+                    "id": unreadable_id,
+                    "name": "Future Eval",
+                    "model_type": "eval",
+                    "output_scores": [],
+                    "eval_set_filter_id": "tag::eval_set",
+                    "eval_configs_filter_id": "tag::golden",
+                }
+            )
+        )
+
+    response = client.get("/api/projects/project1/tasks/task1/evals")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["load_error_count"] == 2
+    assert {e["id"] for e in result["evals"]} == {"eval1", "eval2"}
 
 
 def test_get_eval_success(client, mock_task, mock_task_from_id, mock_eval):
