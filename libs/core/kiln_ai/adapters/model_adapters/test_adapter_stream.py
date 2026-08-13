@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -65,6 +66,74 @@ def _make_tool_call(
         type="function",
         function=Function(name=name, arguments=args),
     )
+
+
+def _stream_sequence(responses: list[ModelResponse], repeat_last: bool = True):
+    """StreamingCompletion factory that walks `responses`, repeating the last forever.
+
+    With `repeat_last=False` the script is a hard bound: a loop that should have
+    stopped fails the test instead of hanging.
+    """
+    iterator = iter(responses)
+    last: list[ModelResponse] = []
+
+    def make_stream(**kwargs):
+        try:
+            response = next(iterator)
+            last.clear()
+            last.append(response)
+        except StopIteration:
+            if not repeat_last:
+                raise AssertionError(
+                    f"loop did not stop: asked for more than {len(responses)} responses"
+                ) from None
+            response = last[0]
+        has_tool_calls = bool(response.choices[0].message.tool_calls)  # type: ignore[union-attr]
+        return FakeStreamingCompletion(
+            response,
+            [
+                _make_streaming_chunk(
+                    finish_reason="tool_calls" if has_tool_calls else "stop"
+                )
+            ],
+        )
+
+    return make_stream
+
+
+def _tool_results_side_effect(results: list[str], is_error: bool = False):
+    """process_tool_calls mock returning one tool message per round from `results`."""
+    iterator = iter(results)
+
+    async def process(tool_calls):
+        content = next(iterator)
+        message: dict[str, Any] = {
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "content": content,
+        }
+        if is_error:
+            message["is_error"] = True
+        return None, [message]
+
+    return AsyncMock(side_effect=process)
+
+
+async def _drain_stream(mock_adapter, mock_provider, make_stream) -> AdapterStream:
+    stream = AdapterStream(
+        adapter=mock_adapter,
+        provider=mock_provider,
+        chat_formatter=FakeChatFormatter(),
+        initial_messages=[],
+        top_logprobs=None,
+    )
+    with patch(
+        "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+        side_effect=make_stream,
+    ):
+        async for _ in stream:
+            pass
+    return stream
 
 
 class FakeChatFormatter(ChatFormatter):
@@ -279,44 +348,222 @@ class TestAdapterStreamToolCalls:
         assert stream.result.run_output.output == '{"result": "42"}'
 
     @pytest.mark.asyncio
-    async def test_too_many_tool_calls_raises(self, mock_adapter, mock_provider):
-        tool_call = _make_tool_call()
-        response = _make_model_response(content=None, tool_calls=[tool_call])
-
-        mock_adapter.process_tool_calls = AsyncMock(
-            return_value=(
-                None,
-                [{"role": "tool", "tool_call_id": "call_1", "content": "ok"}],
+    async def test_unbounded_tool_call_rounds(
+        self, mock_adapter, mock_provider, nudges_in
+    ):
+        """Distinct tool rounds are not capped; the run ends on the final answer."""
+        rounds = 45
+        responses = [
+            _make_model_response(
+                content=None,
+                tool_calls=[_make_tool_call(arguments={"a": i, "b": i})],
             )
+            for i in range(rounds)
+        ]
+        responses.append(_make_model_response(content="all done"))
+        mock_adapter.process_tool_calls = _tool_results_side_effect(
+            [f"result_{i}" for i in range(rounds)]
         )
 
-        def make_stream(**kw):
-            return FakeStreamingCompletion(
-                response,
-                [_make_streaming_chunk(finish_reason="tool_calls")],
-            )
+        stream = await _drain_stream(
+            mock_adapter, mock_provider, _stream_sequence(responses)
+        )
 
-        with (
-            patch(
-                "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
-                side_effect=make_stream,
-            ),
-            patch(
-                "kiln_ai.adapters.model_adapters.adapter_stream.MAX_TOOL_CALLS_PER_TURN",
-                2,
-            ),
+        assert stream.result.run_output.output == "all done"
+        assert nudges_in(stream._messages) == []
+
+    @pytest.mark.asyncio
+    async def test_nudge_after_three_identical_rounds(
+        self, mock_adapter, mock_provider, nudges_in
+    ):
+        """Exactly one nudge, right after the third round, and it reaches the trace."""
+        tool_response = _make_model_response(
+            content=None, tool_calls=[_make_tool_call()]
+        )
+        responses = [tool_response] * 8 + [_make_model_response(content="done")]
+        mock_adapter.process_tool_calls = _tool_results_side_effect(["ok"] * 8)
+        mock_adapter.all_messages_to_trace = MagicMock(
+            side_effect=lambda messages, *args, **kwargs: list(messages)
+        )
+
+        stream = await _drain_stream(
+            mock_adapter, mock_provider, _stream_sequence(responses)
+        )
+
+        assert stream.result.run_output.output == "done"
+        nudges = nudges_in(stream._messages)
+        assert len(nudges) == 1
+        assert "You have called add with the same arguments 3 times" in nudges[0]
+
+        # Injected after the third round's tool result: user + 3 * (assistant + tool).
+        trace = stream.result.run_output.trace
+        assert trace is not None
+        assert trace[7]["role"] == "user"
+        assert trace[7]["content"] == nudges[0]
+        # The marker survives into the trace so a reader can tell it from user input.
+        assert trace[7]["kiln_injected"] is True
+
+    @pytest.mark.asyncio
+    async def test_repeated_failing_tool_calls_stop_the_run(
+        self, mock_adapter, mock_provider, nudges_in
+    ):
+        """Identical error results stop the run, with the nudge in the partial trace."""
+        tool_response = _make_model_response(
+            content=None, tool_calls=[_make_tool_call()]
+        )
+        mock_adapter.process_tool_calls = _tool_results_side_effect(
+            ["connection refused"] * 20, is_error=True
+        )
+
+        stream = AdapterStream(
+            adapter=mock_adapter,
+            provider=mock_provider,
+            chat_formatter=FakeChatFormatter(),
+            initial_messages=[],
+            top_logprobs=None,
+        )
+        # Bounded script: a loop that fails to stop fails the test instead of hanging.
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            side_effect=_stream_sequence([tool_response] * 20, repeat_last=False),
         ):
-            stream = AdapterStream(
-                adapter=mock_adapter,
-                provider=mock_provider,
-                chat_formatter=FakeChatFormatter(),
-                initial_messages=[],
-                top_logprobs=None,
-            )
-
-            with pytest.raises(RuntimeError, match="Too many tool calls"):
+            with pytest.raises(
+                RuntimeError,
+                match="Model is stuck repeating the same failing tool call",
+            ):
                 async for _ in stream:
                     pass
+
+        assert len(nudges_in(stream._messages)) == 1
+
+    @pytest.mark.asyncio
+    async def test_repeated_failing_tool_calls_with_changing_error_text_stop_the_run(
+        self, mock_adapter, mock_provider, nudges_in
+    ):
+        """A retried call that fails differently every time is still the same stall."""
+        tool_response = _make_model_response(
+            content=None, tool_calls=[_make_tool_call()]
+        )
+        mock_adapter.process_tool_calls = _tool_results_side_effect(
+            [f"connection refused (request {i})" for i in range(20)], is_error=True
+        )
+
+        stream = AdapterStream(
+            adapter=mock_adapter,
+            provider=mock_provider,
+            chat_formatter=FakeChatFormatter(),
+            initial_messages=[],
+            top_logprobs=None,
+        )
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            side_effect=_stream_sequence([tool_response] * 20, repeat_last=False),
+        ):
+            with pytest.raises(
+                RuntimeError,
+                match="Model is stuck repeating the same failing tool call",
+            ):
+                async for _ in stream:
+                    pass
+
+        assert len(nudges_in(stream._messages)) == 1
+
+    @pytest.mark.asyncio
+    async def test_identical_successful_rounds_never_stop(
+        self, mock_adapter, mock_provider, nudges_in
+    ):
+        """Repeated success (e.g. polling) is nudged once but never stopped."""
+        tool_response = _make_model_response(
+            content=None, tool_calls=[_make_tool_call()]
+        )
+        responses = [tool_response] * 20 + [_make_model_response(content="done")]
+        mock_adapter.process_tool_calls = _tool_results_side_effect(
+            ["job still running"] * 20
+        )
+
+        stream = await _drain_stream(
+            mock_adapter, mock_provider, _stream_sequence(responses)
+        )
+
+        assert stream.result.run_output.output == "done"
+        assert len(nudges_in(stream._messages)) == 1
+
+    @pytest.mark.asyncio
+    async def test_streak_resets_on_changed_result(
+        self, mock_adapter, mock_provider, nudges_in
+    ):
+        """Same arguments but a changing result is progress, not a stuck loop."""
+        tool_response = _make_model_response(
+            content=None, tool_calls=[_make_tool_call()]
+        )
+        responses = [tool_response] * 10 + [_make_model_response(content="done")]
+        mock_adapter.process_tool_calls = _tool_results_side_effect(
+            [f"result_{i}" for i in range(10)]
+        )
+
+        stream = await _drain_stream(
+            mock_adapter, mock_provider, _stream_sequence(responses)
+        )
+
+        assert stream.result.run_output.output == "done"
+        assert nudges_in(stream._messages) == []
+
+    @pytest.mark.asyncio
+    async def test_streak_resets_on_changed_arguments(
+        self, mock_adapter, mock_provider, nudges_in
+    ):
+        """Same tool and same result, but different arguments, is not a stuck loop."""
+        responses = [
+            _make_model_response(
+                content=None, tool_calls=[_make_tool_call(arguments={"a": i, "b": i})]
+            )
+            for i in range(10)
+        ]
+        responses.append(_make_model_response(content="done"))
+        mock_adapter.process_tool_calls = _tool_results_side_effect(
+            ["same_result"] * 10
+        )
+
+        stream = await _drain_stream(
+            mock_adapter, mock_provider, _stream_sequence(responses)
+        )
+
+        assert stream.result.run_output.output == "done"
+        assert nudges_in(stream._messages) == []
+
+    @pytest.mark.asyncio
+    async def test_litellm_gets_copies_of_the_messages(
+        self, mock_adapter, mock_provider
+    ):
+        """litellm never receives the canonical message objects, on any round."""
+        responses = [
+            _make_model_response(
+                content=None, tool_calls=[_make_tool_call(arguments={"a": i, "b": i})]
+            )
+            for i in range(3)
+        ]
+        responses.append(_make_model_response(content="done"))
+        mock_adapter.process_tool_calls = _tool_results_side_effect(
+            [f"result_{i}" for i in range(3)]
+        )
+
+        snapshots = []
+
+        async def capture_kwargs(provider, msgs, top_logprobs, skip_response_format):
+            snapshots.append(list(msgs))
+            return {"model": "test"}
+
+        mock_adapter.build_completion_kwargs = AsyncMock(side_effect=capture_kwargs)
+
+        stream = await _drain_stream(
+            mock_adapter, mock_provider, _stream_sequence(responses)
+        )
+
+        assert len(snapshots) == 4
+        canonical = stream._messages
+        for snapshot in snapshots:
+            for i, message in enumerate(snapshot):
+                assert message is not canonical[i]
 
     @pytest.mark.asyncio
     async def test_unparseable_tool_call_arguments(self, mock_adapter, mock_provider):
@@ -596,6 +843,39 @@ class TestAdapterStreamEdgeCases:
         assert "no content or tool calls" not in str(exc_info.value)
         # The actual finish_reason is interpolated (repr renders as 'content_filter').
         assert "finish_reason='content_filter'" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_round_with_no_tool_results_stops(self, mock_adapter, mock_provider):
+        """A round that yields no tool messages must terminate, not loop forever.
+
+        A task_response call with no arguments gives no answer to return and no tool
+        message to feed back, so the loop has nothing new to send the model.
+        """
+        empty_task_response = SimpleNamespace(
+            id="call_1",
+            type="function",
+            function=SimpleNamespace(name="task_response", arguments=None),
+        )
+        response = _make_model_response(content=None, tool_calls=None)
+        response.choices[0].message.content = None
+        response.choices[0].message.tool_calls = [empty_task_response]
+        mock_adapter.process_tool_calls = AsyncMock(return_value=(None, []))
+
+        stream = AdapterStream(
+            adapter=mock_adapter,
+            provider=mock_provider,
+            chat_formatter=FakeChatFormatter(),
+            initial_messages=[],
+            top_logprobs=None,
+        )
+        # repeat_last=False: a loop that fails to stop fails the test instead of hanging.
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            side_effect=_stream_sequence([response], repeat_last=False),
+        ):
+            with pytest.raises(RuntimeError, match="neither content nor tool calls"):
+                async for _ in stream:
+                    pass
 
 
 class TestRaiseForEmptyModelResponse:

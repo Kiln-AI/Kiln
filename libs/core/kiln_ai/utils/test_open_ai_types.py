@@ -11,6 +11,7 @@ from openai.types.chat import (
 from openai.types.chat import (
     ChatCompletionToolMessageParam as OpenAIChatCompletionToolMessageParam,
 )
+from pydantic import TypeAdapter
 
 from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.utils.open_ai_types import (
@@ -93,7 +94,8 @@ def test_tool_message_param_properties_match():
 def test_chat_completion_message_param_union_compatibility():
     """
     Test that our ChatCompletionMessageParam union contains the same types as OpenAI's,
-    except with our wrappers instead of the original assistant and tool message params.
+    except with our wrappers instead of the original user, assistant and tool message
+    params.
     """
     # Get the union members for both types
     openai_union_args = get_args(OpenAIChatCompletionMessageParam)
@@ -115,13 +117,15 @@ def test_chat_completion_message_param_union_compatibility():
     openai_type_names = {arg.__name__ for arg in openai_union_args}
     kiln_type_names = {arg.__name__ for arg in kiln_union_args}
 
-    # Expected differences: OpenAI has ChatCompletionAssistantMessageParam and ChatCompletionToolMessageParam,
-    # Kiln has ChatCompletionAssistantMessageParamWrapper and ChatCompletionToolMessageParamWrapper
+    # Expected differences: where OpenAI has the plain user, assistant and tool message
+    # params, Kiln has its wrappers (same fields plus the Kiln-only ones).
     expected_openai_only = {
+        "ChatCompletionUserMessageParam",
         "ChatCompletionAssistantMessageParam",
         "ChatCompletionToolMessageParam",
     }
     expected_kiln_only = {
+        "ChatCompletionUserMessageParamWrapper",
         "ChatCompletionAssistantMessageParamWrapper",
         "ChatCompletionToolMessageParamWrapper",
     }
@@ -141,7 +145,6 @@ def test_chat_completion_message_param_union_compatibility():
     expected_common_types = {
         "ChatCompletionDeveloperMessageParam",
         "ChatCompletionSystemMessageParam",
-        "ChatCompletionUserMessageParam",
         "ChatCompletionFunctionMessageParam",
     }
 
@@ -220,8 +223,44 @@ def test_tool_message_wrapper_can_be_instantiated():
 
 def test_kiln_only_message_fields_set():
     assert KILN_ONLY_MESSAGE_FIELDS == frozenset(
-        {"latency_ms", "is_error", "error_message", "kiln_task_tool_data", "usage"}
+        {
+            "latency_ms",
+            "is_error",
+            "error_message",
+            "kiln_task_tool_data",
+            "usage",
+            "kiln_injected",
+        }
     )
+
+
+def test_kiln_injected_marker_survives_trace_validation():
+    """Traces are validated as this union, which drops keys no member declares."""
+    trace = TypeAdapter(list[KilnChatCompletionMessageParam]).validate_python(
+        [
+            {"role": "user", "content": "a nudge Kiln added", "kiln_injected": True},
+            {"role": "user", "content": "real user input"},
+        ]
+    )
+    assert trace[0]["kiln_injected"] is True
+    assert "kiln_injected" not in trace[1]
+
+
+def test_sanitize_strips_kiln_injected_marker():
+    """The nudge marker is Kiln-only: providers reject unknown message keys."""
+    messages = [
+        {"role": "user", "content": "real user input"},
+        {"role": "user", "content": "a nudge Kiln added", "kiln_injected": True},
+    ]
+
+    sanitized = sanitize_messages_for_provider(messages)
+
+    assert sanitized == [
+        {"role": "user", "content": "real user input"},
+        {"role": "user", "content": "a nudge Kiln added"},
+    ]
+    # The caller's messages keep the marker for the trace.
+    assert messages[1]["kiln_injected"] is True
 
 
 def test_sanitize_messages_strips_kiln_only_fields():

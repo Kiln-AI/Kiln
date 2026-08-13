@@ -228,9 +228,11 @@ class BaseAdapter(metaclass=ABCMeta):
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
-        # Pre-run validation: these checks run before any model call, so
-        # there is no trace to preserve. They stay outside the
-        # exception-wrapping block and surface as plain exceptions.
+        # Pre-run validation: these checks run before any model call, so there is no
+        # trace to preserve. On this path they stay outside the exception-wrapping
+        # block and surface as plain exceptions. The streaming path runs the same
+        # checks from inside its wrapper (`_prepare_stream` sits in the try), so there
+        # they arrive as a KilnRunError with no trace.
         prior_trace = self._normalize_prior_trace(prior_trace)
         self._reject_multiturn_with_structured_input(prior_trace)
 
@@ -850,6 +852,29 @@ class BaseAdapter(metaclass=ABCMeta):
         return tools
 
 
+def _stream_error_to_kiln_run_error(
+    adapter_stream: AdapterStream | None, exc: Exception
+) -> KilnRunError:
+    """Wrap a streaming failure the way `_run_returning_run_output` wraps a blocking run.
+
+    Streaming has the same two needs as invoke: user-friendly copy for known failures,
+    and the partial trace carried across the exception boundary.
+    """
+    partial_trace: list[ChatCompletionMessageParam] | None = None
+    if adapter_stream is not None:
+        try:
+            partial_trace = adapter_stream.partial_trace()
+        except Exception:
+            # Trace conversion can itself throw (e.g., a malformed partial assistant
+            # message). Never let that swallow the original exception.
+            partial_trace = None
+    return KilnRunError(
+        message=format_error_message(exc),
+        partial_trace=partial_trace,
+        original=exc,
+    )
+
+
 class OpenAIStreamResult:
     """Async-iterable wrapper around the OpenAI streaming flow.
 
@@ -890,6 +915,7 @@ class OpenAIStreamResult:
         if is_root_agent:
             set_agent_run_id(generate_agent_run_id())
 
+        adapter_stream: AdapterStream | None = None
         try:
             adapter_stream = self._adapter._prepare_stream(
                 self._input, self._prior_trace
@@ -902,6 +928,11 @@ class OpenAIStreamResult:
             self._task_run = self._adapter._finalize_stream(
                 adapter_stream, self._input, self._input_source, self._parent_task_run
             )
+        except KilnRunError:
+            # Already wrapped — pass through so we don't double-wrap.
+            raise
+        except Exception as e:
+            raise _stream_error_to_kiln_run_error(adapter_stream, e) from e
         finally:
             if is_root_agent:
                 try:
@@ -953,6 +984,7 @@ class AiSdkStreamResult:
         if is_root_agent:
             set_agent_run_id(generate_agent_run_id())
 
+        adapter_stream: AdapterStream | None = None
         try:
             adapter_stream = self._adapter._prepare_stream(
                 self._input, self._prior_trace
@@ -993,6 +1025,11 @@ class AiSdkStreamResult:
             else:
                 for ai_event in converter.finalize():
                     yield ai_event
+        except KilnRunError:
+            # Already wrapped — pass through so we don't double-wrap.
+            raise
+        except Exception as e:
+            raise _stream_error_to_kiln_run_error(adapter_stream, e) from e
         finally:
             if is_root_agent:
                 try:

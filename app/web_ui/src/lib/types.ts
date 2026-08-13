@@ -130,7 +130,7 @@ export type AvailableProviderInfo =
 export type TraceMessage =
   | components["schemas"]["ChatCompletionDeveloperMessageParam"]
   | components["schemas"]["ChatCompletionSystemMessageParam"]
-  | components["schemas"]["ChatCompletionUserMessageParam"]
+  | components["schemas"]["ChatCompletionUserMessageParamWrapper"]
   | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"]
   | components["schemas"]["ChatCompletionToolMessageParamWrapper"]
   | components["schemas"]["ChatCompletionFunctionMessageParam"]

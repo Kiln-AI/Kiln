@@ -99,6 +99,20 @@ class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
     """
 
 
+class ChatCompletionUserMessageParamWrapper(
+    ChatCompletionUserMessageParam, total=False
+):
+    """ChatCompletionUserMessageParam plus Kiln-only fields."""
+
+    kiln_injected: Optional[bool]
+    """True when Kiln added this message itself rather than the user writing it.
+
+    Set on messages the adapter injects mid-run (e.g. the stuck-tool-loop nudge) so a
+    trace reader can tell them apart from real user input. Stripped before sending
+    messages back to providers via KILN_ONLY_MESSAGE_FIELDS.
+    """
+
+
 class ChatCompletionToolMessageParamWrapper(TypedDict, total=False):
     content: Required[Union[str, Iterable[ChatCompletionContentPartTextParam]]]
     """The contents of the tool message."""
@@ -125,7 +139,7 @@ class ChatCompletionToolMessageParamWrapper(TypedDict, total=False):
 ChatCompletionMessageParam: TypeAlias = Union[
     ChatCompletionDeveloperMessageParam,
     ChatCompletionSystemMessageParam,
-    ChatCompletionUserMessageParam,
+    ChatCompletionUserMessageParamWrapper,
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionToolMessageParamWrapper,
     ChatCompletionFunctionMessageParam,
@@ -139,6 +153,7 @@ KILN_ONLY_MESSAGE_FIELDS: frozenset[str] = frozenset(
         "error_message",
         "kiln_task_tool_data",
         "usage",
+        "kiln_injected",
     }
 )
 """Per-message fields kept on traces for UI/diagnostics. Providers reject unknown

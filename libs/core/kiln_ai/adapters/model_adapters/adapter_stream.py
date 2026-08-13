@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import json
 import logging
 import time
@@ -18,14 +17,18 @@ from kiln_ai.adapters.model_adapters.stream_events import (
     ToolCallEvent,
     ToolCallEventType,
 )
+from kiln_ai.adapters.model_adapters.tool_loop_guards import (
+    IncrementalMessageCopier,
+    RepeatedToolCallDetector,
+)
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import MessageUsage, Usage
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 
 MAX_CALLS_PER_TURN = 10
-MAX_TOOL_CALLS_PER_TURN = 30
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +140,18 @@ class AdapterStream:
             raise RuntimeError("AdapterStream completed without producing a result")
         return self._result
 
+    def partial_trace(self) -> list[ChatCompletionMessageParam] | None:
+        """The conversation built so far, for attaching to a failed run's error.
+
+        Mirrors the non-streaming path, which exports the partial trace when a run
+        throws part way through. Returns None when nothing was sent yet.
+        """
+        if not self._messages:
+            return None
+        return self._adapter.all_messages_to_trace(
+            self._messages, self._message_latency, self._message_usage
+        )
+
     async def __aiter__(self) -> AsyncIterator[AdapterStreamEvent]:
         self._result = None
         self._iterated = False
@@ -214,12 +229,15 @@ class AdapterStream:
         top_logprobs: int | None,
     ) -> AsyncIterator[AdapterStreamEvent | _ModelTurnComplete]:
         usage = Usage()
-        tool_calls_count = 0
+        # Unbounded tool loop: the stuck detector is the only repetition control.
+        stuck_detector = RepeatedToolCallDetector()
+        message_copier = IncrementalMessageCopier()
 
-        while tool_calls_count < MAX_TOOL_CALLS_PER_TURN:
+        while True:
             completion_kwargs = await self._adapter.build_completion_kwargs(
                 self._provider,
-                copy.deepcopy(self._messages),
+                # Pass a copy, as acompletion mutates objects and breaks types.
+                message_copier.snapshot(self._messages),
                 top_logprobs,
                 skip_response_format,
             )
@@ -280,8 +298,10 @@ class AdapterStream:
                         return
 
                 # Existing flow: handle tool calls internally
+                messages_before_tools = len(self._messages)
                 async for event in self._handle_tool_calls(tool_calls):
                     yield event
+                tool_messages = self._messages[messages_before_tools:]
 
                 assistant_msg = self._extract_task_response(tool_calls)
                 if assistant_msg is not None:
@@ -292,8 +312,16 @@ class AdapterStream:
                     )
                     return
 
-                tool_calls_count += 1
-                continue
+                # Mirrors the blocking loop: only loop again when the round produced
+                # tool results to feed back. A round that produced none (e.g. only a
+                # task_response call with no arguments to return) would otherwise
+                # re-send an unchanged conversation forever, so it falls through to
+                # the terminating raise below.
+                if tool_messages:
+                    nudge = stuck_detector.record_round(tool_calls, tool_messages)
+                    if nudge:
+                        self._messages.append(nudge)
+                    continue
 
             if content:
                 yield _ModelTurnComplete(
@@ -306,10 +334,6 @@ class AdapterStream:
             raise RuntimeError(
                 "Model returned neither content nor tool calls. It must return at least one of these."
             )
-
-        raise RuntimeError(
-            f"Too many tool calls ({tool_calls_count}). Stopping iteration to avoid using too many tokens."
-        )
 
     async def _handle_tool_calls(
         self,

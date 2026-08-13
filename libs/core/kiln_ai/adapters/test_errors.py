@@ -7,6 +7,7 @@ import litellm
 import pytest
 
 from kiln_ai.adapters.errors import (
+    STUCK_LOOP_ERROR_PREFIX,
     ErrorWithTrace,
     KilnRunError,
     format_error_message,
@@ -120,13 +121,59 @@ class TestFormatUserMessage:
             format_error_message(exc) == "The run exceeded the maximum number of turns."
         )
 
-    def test_too_many_tool_calls(self):
-        exc = RuntimeError(
-            "Too many tool calls (31). Stopping iteration to avoid using too many tokens."
+    def test_context_window_exceeded(self):
+        exc = _make_litellm_error(
+            litellm.ContextWindowExceededError, message="max tokens 128000 exceeded"
         )
-        assert (
-            format_error_message(exc)
-            == "The run exceeded the maximum number of tool calls in one turn."
+        message = format_error_message(exc)
+        assert message.startswith("The run exceeded the model's context window.")
+        assert "grew too large for this model." in message
+        assert "max tokens 128000 exceeded" in message
+
+    def test_context_window_exceeded_matches_before_bad_request(self):
+        # ContextWindowExceededError subclasses BadRequestError, so ordering matters.
+        exc = _make_litellm_error(litellm.ContextWindowExceededError)
+        assert isinstance(exc, litellm.BadRequestError)
+        assert format_error_message(exc).startswith(
+            "The run exceeded the model's context window."
+        )
+
+    def test_bad_request_keeps_the_provider_detail(self):
+        """Unmapped 400s are more useful with the provider's own message."""
+        exc = _make_litellm_error(
+            litellm.BadRequestError, message="tool 'search' has an invalid schema"
+        )
+        message = format_error_message(exc)
+        assert message.startswith("The model provider rejected the request.")
+        assert "tool 'search' has an invalid schema" in message
+
+    def test_content_policy_violation(self):
+        exc = _make_litellm_error(
+            litellm.ContentPolicyViolationError, message="prompt was blocked"
+        )
+        message = format_error_message(exc)
+        assert message.startswith("The model provider's safety filter blocked")
+        assert "false positive on some models" in message
+        assert "prompt was blocked" in message
+
+    def test_content_policy_violation_matches_before_bad_request(self):
+        # ContentPolicyViolationError subclasses BadRequestError, so ordering matters.
+        exc = _make_litellm_error(litellm.ContentPolicyViolationError)
+        assert isinstance(exc, litellm.BadRequestError)
+        assert format_error_message(exc).startswith(
+            "The model provider's safety filter blocked"
+        )
+
+    def test_stuck_tool_call_loop(self):
+        exc = RuntimeError(
+            f"{STUCK_LOOP_ERROR_PREFIX}. It called search with the same arguments 5 "
+            "times in a row and got the same error each time, including after being "
+            "asked to change approach."
+        )
+        assert format_error_message(exc) == (
+            "The run was stopped because the model kept repeating the same failing "
+            "tool call after being warned. The run trace shows the repeated calls "
+            "and the warning."
         )
 
     def test_tool_not_available_passes_through(self):

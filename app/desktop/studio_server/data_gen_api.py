@@ -34,6 +34,7 @@ from kiln_ai.utils.async_job_runner import AsyncJobRunner
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionMessageParam,
+    ChatCompletionUserMessageParamWrapper,
 )
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
@@ -43,7 +44,6 @@ from kiln_server.utils.agent_checks.policy import (
 )
 from openai.types.chat import (
     ChatCompletionSystemMessageParam,
-    ChatCompletionUserMessageParam,
 )
 from pydantic import BaseModel, Field
 
@@ -1024,7 +1024,7 @@ The topic path for this sample is:
             "role": "system",
             "content": task.instruction,
         }
-        user_msg: ChatCompletionUserMessageParam = {
+        user_msg: ChatCompletionUserMessageParamWrapper = {
             "role": "user",
             "content": input.query,
         }

@@ -6,6 +6,7 @@ Verifies that:
 - Already-wrapped KilnRunErrors pass through unmodified
 - The original exception is accessible via `.original` and `__cause__`
 - `format_error_message` is applied to the wrapped message
+- The streaming entry points wrap failures the same way
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from unittest.mock import patch
 import litellm
 import pytest
 
-from kiln_ai.adapters.errors import KilnRunError
+from kiln_ai.adapters.errors import STUCK_LOOP_ERROR_PREFIX, KilnRunError
 from kiln_ai.adapters.ml_model_list import KilnModelProvider
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
 from kiln_ai.datamodel import Task, Usage
@@ -231,3 +232,132 @@ async def test_messages_to_trace_hook_called(make_adapter):
             await adapter._run_returning_run_output("hello")
     hook.assert_called_once()
     assert ei.value.partial_trace == converted
+
+
+class _RaisingAdapterStream:
+    """Stands in for `AdapterStream`: yields nothing, then raises `to_raise`."""
+
+    def __init__(
+        self,
+        to_raise: Exception,
+        trace: list[ChatCompletionMessageParam] | None = None,
+    ) -> None:
+        self._to_raise = to_raise
+        self._trace = trace
+
+    def partial_trace(self) -> list[ChatCompletionMessageParam] | None:
+        return self._trace
+
+    async def __aiter__(self):
+        # An async generator needs a yield to be one; nothing is ever emitted.
+        if False:
+            yield None
+        raise self._to_raise
+
+
+async def _drain_openai_stream(adapter, adapter_stream):
+    with patch.object(adapter, "_prepare_stream", return_value=adapter_stream):
+        async for _chunk in adapter.invoke_openai_stream("hello"):
+            pass
+
+
+class TestStreamingErrorWrapping:
+    """Streaming failures get the same mapped copy and partial trace as invoke."""
+
+    async def test_context_window_error_surfaces_mapped_copy(self, make_adapter):
+        adapter = make_adapter()
+        context_window_error = litellm.ContextWindowExceededError(
+            message="max tokens 128000 exceeded",
+            model="m",
+            llm_provider="openai",
+        )
+
+        with pytest.raises(KilnRunError) as ei:
+            await _drain_openai_stream(
+                adapter, _RaisingAdapterStream(context_window_error)
+            )
+
+        assert str(ei.value).startswith("The run exceeded the model's context window.")
+        assert "max tokens 128000 exceeded" in str(ei.value)
+        assert ei.value.original is context_window_error
+
+    async def test_stuck_loop_error_surfaces_mapped_copy(self, make_adapter):
+        adapter = make_adapter()
+        stuck_error = RuntimeError(
+            f"{STUCK_LOOP_ERROR_PREFIX}. It called lookup with the same arguments 5 "
+            "times in a row and got the same error each time."
+        )
+
+        with pytest.raises(KilnRunError) as ei:
+            await _drain_openai_stream(adapter, _RaisingAdapterStream(stuck_error))
+
+        assert str(ei.value) == (
+            "The run was stopped because the model kept repeating the same failing "
+            "tool call after being warned. The run trace shows the repeated calls "
+            "and the warning."
+        )
+        assert ei.value.error_type == "RuntimeError"
+
+    async def test_partial_trace_carried_across_the_stream_boundary(self, make_adapter):
+        adapter = make_adapter()
+        trace: list[ChatCompletionMessageParam] = [
+            {"role": "user", "content": "u"},
+            {"role": "assistant", "content": "partial"},
+        ]
+
+        with pytest.raises(KilnRunError) as ei:
+            await _drain_openai_stream(
+                adapter, _RaisingAdapterStream(RuntimeError("boom"), trace=trace)
+            )
+
+        assert ei.value.partial_trace == trace
+
+    async def test_trace_conversion_failure_does_not_swallow_the_error(
+        self, make_adapter
+    ):
+        adapter = make_adapter()
+        adapter_stream = _RaisingAdapterStream(RuntimeError("boom"))
+        with patch.object(
+            _RaisingAdapterStream,
+            "partial_trace",
+            side_effect=ValueError("malformed assistant message"),
+        ):
+            with pytest.raises(KilnRunError) as ei:
+                await _drain_openai_stream(adapter, adapter_stream)
+
+        assert str(ei.value) == "boom"
+        assert ei.value.partial_trace is None
+
+    async def test_already_wrapped_error_passes_through(self, make_adapter):
+        adapter = make_adapter()
+        pre_wrapped = KilnRunError(
+            message="already wrapped",
+            partial_trace=None,
+            original=RuntimeError("inner"),
+        )
+
+        with pytest.raises(KilnRunError) as ei:
+            await _drain_openai_stream(adapter, _RaisingAdapterStream(pre_wrapped))
+
+        assert ei.value is pre_wrapped
+
+    async def test_ai_sdk_stream_wraps_errors_too(self, make_adapter):
+        adapter = make_adapter()
+        context_window_error = litellm.ContextWindowExceededError(
+            message="max tokens 128000 exceeded",
+            model="m",
+            llm_provider="openai",
+        )
+        trace: list[ChatCompletionMessageParam] = [{"role": "user", "content": "u"}]
+
+        with patch.object(
+            adapter,
+            "_prepare_stream",
+            return_value=_RaisingAdapterStream(context_window_error, trace=trace),
+        ):
+            with pytest.raises(KilnRunError) as ei:
+                async for _event in adapter.invoke_ai_sdk_stream("hello"):
+                    pass
+
+        assert str(ei.value).startswith("The run exceeded the model's context window.")
+        assert ei.value.partial_trace == trace

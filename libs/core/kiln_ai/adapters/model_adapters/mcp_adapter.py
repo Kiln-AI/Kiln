@@ -25,7 +25,7 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionMessageParam,
-    ChatCompletionUserMessageParam,
+    ChatCompletionUserMessageParamWrapper,
 )
 
 
@@ -225,7 +225,7 @@ class MCPAdapter(BaseAdapter):
     def _build_single_turn_trace(
         input: InputType, output: str | dict
     ) -> list[ChatCompletionMessageParam]:
-        user_message: ChatCompletionUserMessageParam = {
+        user_message: ChatCompletionUserMessageParamWrapper = {
             "role": "user",
             "content": input
             if isinstance(input, str)

@@ -4394,11 +4394,10 @@ export interface components {
             error_message?: string | null;
         };
         /**
-         * ChatCompletionUserMessageParam
-         * @description Messages sent by an end user, containing prompts or additional context
-         *     information.
+         * ChatCompletionUserMessageParamWrapper
+         * @description ChatCompletionUserMessageParam plus Kiln-only fields.
          */
-        ChatCompletionUserMessageParam: {
+        ChatCompletionUserMessageParamWrapper: {
             /** Content */
             content: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartImageParam"] | components["schemas"]["ChatCompletionContentPartInputAudioParam"] | components["schemas"]["File"])[];
             /**
@@ -4408,6 +4407,8 @@ export interface components {
             role: "user";
             /** Name */
             name?: string;
+            /** Kiln Injected */
+            kiln_injected?: boolean | null;
         };
         /** ChatRequest */
         ChatRequest: {
@@ -5791,7 +5792,7 @@ export interface components {
             /** Error Type */
             error_type: string;
             /** Trace */
-            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParamWrapper"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
         };
         /**
          * Eval
@@ -10680,7 +10681,7 @@ export interface components {
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
-            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParamWrapper"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
             /**
              * Parent Task Run Id
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
@@ -10759,7 +10760,7 @@ export interface components {
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
-            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParamWrapper"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
             /**
              * Parent Task Run Id
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.

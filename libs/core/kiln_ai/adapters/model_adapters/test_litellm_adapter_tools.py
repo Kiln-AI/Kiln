@@ -1,3 +1,4 @@
+import copy
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
@@ -203,6 +204,113 @@ async def test_tools_gpt_4_1_mini_simplified(tmp_path):
     await run_simple_task_with_tools(
         task, "gpt_4_1_mini", ModelProviderName.openai, simplified=True
     )
+
+
+class CountUpTool(UnmanagedKilnTool):
+    """Chained counter tool: each result tells the model the next call to make.
+
+    The chaining lives in the tool output rather than the task instruction so the run
+    needs many tool rounds without the model having to plan them all up front.
+    """
+
+    TARGET = 35
+
+    def __init__(self):
+        super().__init__(
+            tool_id="kiln_unmanaged::count_up",
+            name="count_up",
+            description="Increment a counter by one. Returns the new value and what to do next.",
+            parameters_schema={
+                "type": "object",
+                "properties": {
+                    "current": {
+                        "type": "integer",
+                        "description": "The current counter value",
+                    },
+                },
+                "required": ["current"],
+            },
+        )
+        self.call_count = 0
+
+    async def run(
+        self, context: ToolCallContext | None = None, **kwargs
+    ) -> ToolCallResult:
+        self.call_count += 1
+        next_value = int(kwargs["current"]) + 1
+        if next_value >= self.TARGET:
+            return ToolCallResult(
+                output=(
+                    f"Current value is {self.TARGET}. DONE. "
+                    "Report the final value as your answer."
+                )
+            )
+        return ToolCallResult(
+            output=(
+                f"Current value is {next_value}. Not done. "
+                f"Call count_up again with current={next_value}."
+            )
+        )
+
+
+def build_counting_task(tmp_path: Path) -> datamodel.Task:
+    project = datamodel.Project(name="test", path=tmp_path / "test.kiln")
+    project.save_to_file()
+    task = datamodel.Task(
+        parent=project,
+        name="counting task",
+        instruction=(
+            "You are an assistant with one tool: count_up.\n\n"
+            "Call count_up starting with current=0, then follow the tool's instructions "
+            "exactly, calling it again with the value it gives you, until it says DONE. "
+            "Never stop early and never guess ahead: the only way to advance is to call "
+            "the tool. When the tool says DONE, reply with the final value."
+        ),
+    )
+    task.save_to_file()
+    return task
+
+
+@pytest.mark.paid
+async def test_unbounded_tool_loop_exceeds_old_cap_paid(tmp_path):
+    """End-to-end regression for removing the hard 30-tool-call-per-turn cap.
+
+    The chained count_up tool forces 35 sequential tool rounds, which the old
+    MAX_TOOL_CALLS_PER_TURN=30 limit would have failed with a "Too many tool calls" error.
+    """
+    task = build_counting_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        KilnAgentRunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        ),
+    )
+
+    count_up_tool = CountUpTool()
+
+    with patch.object(adapter, "available_tools", return_value=[count_up_tool]):
+        run = await adapter.invoke(
+            "Call count_up starting with current=0 and follow the tool's instructions "
+            "exactly until it says DONE, then answer with the final value."
+        )
+
+    trace = run.trace
+    assert trace is not None
+    tool_messages = [message for message in trace if message["role"] == "tool"]
+
+    # The real assertion: the loop ran past the old cap without erroring.
+    assert count_up_tool.call_count > 30, (
+        f"Expected more than 30 tool calls, got {count_up_tool.call_count}"
+    )
+    assert len(tool_messages) == count_up_tool.call_count
+    assert count_up_tool.call_count == CountUpTool.TARGET
+
+    # Model phrasing varies, but the final value is the one thing it was asked to report.
+    # Small flake risk if the model summarizes without repeating the number.
+    assert "35" in run.output.output
 
 
 def check_supports_structured_output(model_name: str, provider_name: str):
@@ -646,22 +754,62 @@ async def test_run_model_turn_sequential_tools(tmp_path):
     assert len(result.all_messages) == 6
 
 
-async def test_run_model_turn_max_tool_calls_exceeded(tmp_path):
-    """Test _run_model_turn raises error when MAX_TOOL_CALLS_PER_TURN is exceeded."""
-    task = build_test_task(tmp_path)
-    # Cast to LiteLlmAdapter to access _run_model_turn
-    config = LiteLlmConfig(
-        run_config_properties=KilnAgentRunConfigProperties(
-            structured_output_mode=StructuredOutputMode.json_schema,
-            model_name="gpt_4_1_mini",
-            model_provider_name=ModelProviderName.openai,
-            prompt_id="simple_prompt_builder",
-        )
-    )
-    litellm_adapter = LiteLlmAdapter(config=config, kiln_task=task)
+class ScriptedTool:
+    """Tool that returns a caller-controlled sequence of results (or one repeated)."""
 
-    # Mock response that always returns a tool call (creates infinite loop)
-    mock_response = ModelResponse(
+    def __init__(
+        self,
+        name: str = "lookup",
+        results: list[str] | None = None,
+        repeated_result: str = "same_result",
+        is_error: bool = False,
+    ):
+        self._name = name
+        self._results = results
+        self._repeated_result = repeated_result
+        self._is_error = is_error
+        self.call_count = 0
+
+    async def name(self) -> str:
+        return self._name
+
+    async def toolcall_definition(self) -> dict:
+        return {
+            "type": "function",
+            "function": {
+                "name": self._name,
+                "description": "Scripted test tool",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                },
+            },
+        }
+
+    async def id(self) -> ToolId:
+        return f"scripted_tool_{self._name}"
+
+    async def description(self) -> str:
+        return "Scripted test tool"
+
+    async def run(
+        self, context: ToolCallContext | None = None, **kwargs
+    ) -> ToolCallResult:
+        index = self.call_count
+        self.call_count += 1
+        output = (
+            self._results[index] if self._results is not None else self._repeated_result
+        )
+        return ToolCallResult(
+            output=output,
+            is_error=self._is_error,
+            error_message=output if self._is_error else None,
+        )
+
+
+def _tool_call_response(query: str, call_id: str = "tc_1") -> ModelResponse:
+    """A model response asking for one `lookup` call with the given query argument."""
+    return ModelResponse(
         model="gpt-4o-mini",
         choices=[
             {
@@ -669,11 +817,11 @@ async def test_run_model_turn_max_tool_calls_exceeded(tmp_path):
                     "content": None,
                     "tool_calls": [
                         {
-                            "id": "tool_call_add",
+                            "id": call_id,
                             "type": "function",
                             "function": {
-                                "name": "add",
-                                "arguments": '{"a": 1, "b": 1}',
+                                "name": "lookup",
+                                "arguments": json.dumps({"query": query}),
                             },
                         }
                     ],
@@ -682,35 +830,276 @@ async def test_run_model_turn_max_tool_calls_exceeded(tmp_path):
         ],
     )
 
-    provider = KilnModelProvider(name=ModelProviderName.openai, model_id="gpt_4_1_mini")
 
-    prior_messages: list[ChatCompletionMessageParam] = [
-        {"role": "user", "content": "Keep adding 1+1"}
+def _content_response(content: str = "final answer") -> ModelResponse:
+    return ModelResponse(
+        model="gpt-4o-mini",
+        choices=[{"message": {"content": content, "tool_calls": None}}],
+    )
+
+
+def _build_tool_adapter(tmp_path) -> LiteLlmAdapter:
+    task = build_test_task(tmp_path)
+    config = LiteLlmConfig(
+        run_config_properties=KilnAgentRunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        )
+    )
+    return LiteLlmAdapter(config=config, kiln_task=task)
+
+
+def _responses_side_effect(responses: list[ModelResponse], repeat_last: bool = True):
+    """Feed `responses` to acompletion_checking_response, repeating the last forever.
+
+    With `repeat_last=False` the script is a hard bound: a loop that should have
+    stopped fails the test instead of hanging.
+    """
+    iterator = iter(responses)
+    last: list[ModelResponse] = []
+
+    async def side_effect(**kwargs):
+        try:
+            response = next(iterator)
+            last.clear()
+            last.append(response)
+        except StopIteration:
+            if not repeat_last:
+                raise AssertionError(
+                    f"loop did not stop: asked for more than {len(responses)} responses"
+                ) from None
+            response = last[0]
+        return response, response.choices[0]
+
+    return side_effect
+
+
+async def _run_turn(adapter, tool, responses, messages, repeat_last: bool = True):
+    provider = KilnModelProvider(name=ModelProviderName.openai, model_id="gpt_4_1_mini")
+    with patch.object(adapter, "cached_available_tools", return_value=[tool]):
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                side_effect=_responses_side_effect(responses, repeat_last=repeat_last),
+            ):
+                return await adapter._run_model_turn(provider, messages, None, False)
+
+
+async def test_run_model_turn_unbounded_tool_calls(tmp_path, nudges_in):
+    """A long run of distinct tool rounds completes normally with no cap."""
+    adapter = _build_tool_adapter(tmp_path)
+    rounds = 45
+    tool = ScriptedTool(results=[f"result_{i}" for i in range(rounds)])
+    responses = [_tool_call_response(f"query_{i}") for i in range(rounds)]
+    responses.append(_content_response("all done"))
+    messages: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "Look things up"}
     ]
 
-    # Create tool with spy
-    add_tool = AddTool()
-    add_spy = Mock(wraps=add_tool)
+    result = await _run_turn(adapter, tool, responses, messages)
 
-    with patch.object(
-        litellm_adapter, "cached_available_tools", return_value=[add_spy]
+    assert result.assistant_message == "all done"
+    assert tool.call_count == rounds
+    # user + (assistant + tool) per round + final assistant
+    assert len(result.all_messages) == 1 + (rounds * 2) + 1
+    assert nudges_in(result.all_messages) == []
+
+
+async def test_run_model_turn_nudges_after_three_identical_rounds(tmp_path, nudges_in):
+    """Identical rounds get exactly one nudge, injected right after the third round."""
+    adapter = _build_tool_adapter(tmp_path)
+    tool = ScriptedTool()
+    responses = [_tool_call_response("same") for _ in range(6)]
+    responses.append(_content_response("gave up and answered"))
+    messages: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "Look it up"}
+    ]
+
+    result = await _run_turn(adapter, tool, responses, messages)
+
+    assert result.assistant_message == "gave up and answered"
+    nudges = nudges_in(result.all_messages)
+    assert len(nudges) == 1
+    assert "You have called lookup with the same arguments 3 times" in nudges[0]
+    # Injected after the third round's tool result: user + 3 * (assistant + tool).
+    assert result.all_messages[7]["content"] == nudges[0]
+    # The nudge is marked as Kiln's, and the marker survives into the trace.
+    trace = adapter.all_messages_to_trace(result.all_messages)
+    assert trace[7]["kiln_injected"] is True
+    assert trace[7]["role"] == "user"
+
+
+async def test_run_model_turn_identical_successful_results_never_stop(
+    tmp_path, nudges_in
+):
+    """Repeated success (e.g. polling) is nudged once but never stopped."""
+    adapter = _build_tool_adapter(tmp_path)
+    tool = ScriptedTool(repeated_result="job still running")
+    responses = [_tool_call_response("poll") for _ in range(20)]
+    responses.append(_content_response("still running"))
+    messages: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "Poll the job"}
+    ]
+
+    result = await _run_turn(adapter, tool, responses, messages)
+
+    assert result.assistant_message == "still running"
+    assert tool.call_count == 20
+    assert len(nudges_in(result.all_messages)) == 1
+
+
+async def test_run_model_turn_stops_on_repeated_failing_tool_calls(tmp_path, nudges_in):
+    """Identical error results stop the run, with the nudge left in the partial trace."""
+    adapter = _build_tool_adapter(tmp_path)
+    tool = ScriptedTool(repeated_result="connection refused", is_error=True)
+    # The model never stops asking for the same call, so the detector has to end the
+    # run. The script is bounded so a regression fails here instead of looping forever.
+    responses = [_tool_call_response("broken") for _ in range(20)]
+    messages: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "Look it up"}
+    ]
+
+    with pytest.raises(
+        RuntimeError, match="Model is stuck repeating the same failing tool call"
     ):
-        with patch(
-            "litellm.acompletion",
-            return_value=mock_response,
+        await _run_turn(adapter, tool, responses, messages, repeat_last=False)
+
+    assert tool.call_count == 5
+    # `messages` is mutated in place, so the partial trace survives the exception.
+    assert len(nudges_in(messages)) == 1
+
+
+async def test_run_model_turn_stops_when_the_error_text_keeps_changing(
+    tmp_path, nudges_in
+):
+    """A retried call that fails differently every time is still the same stall."""
+    adapter = _build_tool_adapter(tmp_path)
+    tool = ScriptedTool(
+        results=[f"connection refused (request {i})" for i in range(20)],
+        is_error=True,
+    )
+    responses = [_tool_call_response("broken") for _ in range(20)]
+    messages: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "Look it up"}
+    ]
+
+    with pytest.raises(
+        RuntimeError, match="Model is stuck repeating the same failing tool call"
+    ):
+        await _run_turn(adapter, tool, responses, messages, repeat_last=False)
+
+    assert tool.call_count == 5
+    assert len(nudges_in(messages)) == 1
+
+
+async def test_run_model_turn_streak_resets_on_changed_arguments(tmp_path, nudges_in):
+    """Same tool and same result, but different arguments, is not a stuck loop."""
+    adapter = _build_tool_adapter(tmp_path)
+    tool = ScriptedTool(repeated_result="same_result")
+    responses = [_tool_call_response(f"query_{i}") for i in range(10)]
+    responses.append(_content_response("done"))
+    messages: list[ChatCompletionMessageParam] = [{"role": "user", "content": "go"}]
+
+    result = await _run_turn(adapter, tool, responses, messages)
+
+    assert result.assistant_message == "done"
+    assert nudges_in(result.all_messages) == []
+
+
+async def test_run_model_turn_streak_resets_on_changed_result(tmp_path, nudges_in):
+    """Same arguments but a changing result is progress, not a stuck loop."""
+    adapter = _build_tool_adapter(tmp_path)
+    tool = ScriptedTool(results=[f"result_{i}" for i in range(10)])
+    responses = [_tool_call_response("same") for _ in range(10)]
+    responses.append(_content_response("done"))
+    messages: list[ChatCompletionMessageParam] = [{"role": "user", "content": "go"}]
+
+    result = await _run_turn(adapter, tool, responses, messages)
+
+    assert result.assistant_message == "done"
+    assert nudges_in(result.all_messages) == []
+
+
+async def test_run_model_turn_fifty_distinct_calls_never_nudge(tmp_path, nudges_in):
+    """Volume alone never trips the detector."""
+    adapter = _build_tool_adapter(tmp_path)
+    tool = ScriptedTool(results=[f"result_{i}" for i in range(50)])
+    responses = [_tool_call_response(f"query_{i}") for i in range(50)]
+    responses.append(_content_response("done"))
+    messages: list[ChatCompletionMessageParam] = [{"role": "user", "content": "go"}]
+
+    result = await _run_turn(adapter, tool, responses, messages)
+
+    assert tool.call_count == 50
+    assert nudges_in(result.all_messages) == []
+
+
+async def test_run_model_turn_passes_copies_of_messages_to_litellm(tmp_path):
+    """litellm never receives the canonical message objects, on any round."""
+    adapter = _build_tool_adapter(tmp_path)
+    tool = ScriptedTool(results=[f"result_{i}" for i in range(3)])
+    responses = [_tool_call_response(f"query_{i}") for i in range(3)]
+    responses.append(_content_response("done"))
+    messages: list[ChatCompletionMessageParam] = [{"role": "user", "content": "go"}]
+
+    seen_snapshots = []
+
+    async def capture_kwargs(provider, msgs, top_logprobs, skip_response_format=False):
+        seen_snapshots.append((list(msgs), copy.deepcopy(list(msgs))))
+        return {}
+
+    provider = KilnModelProvider(name=ModelProviderName.openai, model_id="gpt_4_1_mini")
+    with patch.object(adapter, "cached_available_tools", return_value=[tool]):
+        with patch.object(
+            adapter, "build_completion_kwargs", side_effect=capture_kwargs
         ):
             with patch.object(
-                litellm_adapter, "build_completion_kwargs", return_value={}
+                adapter,
+                "acompletion_checking_response",
+                side_effect=_responses_side_effect(responses),
             ):
-                with patch.object(
-                    litellm_adapter,
-                    "acompletion_checking_response",
-                    return_value=(mock_response, mock_response.choices[0]),
-                ):
-                    with pytest.raises(RuntimeError, match="Too many tool calls"):
-                        await litellm_adapter._run_model_turn(
-                            provider, prior_messages, None, False
-                        )
+                result = await adapter._run_model_turn(provider, messages, None, False)
+
+    assert len(seen_snapshots) == 4
+    canonical = result.all_messages
+    for round_index, (snapshot, snapshot_at_call_time) in enumerate(seen_snapshots):
+        # Each round sees the history as it stood then, and none of the objects
+        # handed to litellm are the canonical ones.
+        assert len(snapshot) == 1 + (round_index * 2)
+        for i, message in enumerate(snapshot):
+            assert message is not canonical[i]
+        # The snapshot content matched the canonical history at call time.
+        assert snapshot_at_call_time == copy.deepcopy(canonical[: len(snapshot)])
+
+
+async def test_run_model_turn_trace_content_unchanged_by_incremental_copy(tmp_path):
+    """The canonical history is exactly the messages the run produced."""
+    adapter = _build_tool_adapter(tmp_path)
+    tool = ScriptedTool(results=["first", "second"])
+    responses = [
+        _tool_call_response("a", call_id="tc_a"),
+        _tool_call_response("b", call_id="tc_b"),
+        _content_response("done"),
+    ]
+    messages: list[ChatCompletionMessageParam] = [{"role": "user", "content": "go"}]
+
+    result = await _run_turn(adapter, tool, responses, messages)
+
+    trace = adapter.all_messages_to_trace(result.all_messages)
+    assert [m["role"] for m in trace] == [
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+        "tool",
+        "assistant",
+    ]
+    assert trace[2]["content"] == "first"
+    assert trace[4]["content"] == "second"
+    assert trace[5]["content"] == "done"
 
 
 async def test_run_model_turn_no_tool_calls(tmp_path):

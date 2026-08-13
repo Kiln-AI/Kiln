@@ -10,6 +10,7 @@ from litellm.types.utils import (
     StreamingChoices,
 )
 
+from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
@@ -1334,14 +1335,20 @@ class TestStreamMethods:
     async def test_invoke_openai_stream_raises_for_unsupported_adapter(
         self, stream_adapter
     ):
-        """MockAdapter does not implement _create_run_stream."""
+        """MockAdapter does not implement _create_run_stream.
+
+        Like the blocking path, streaming failures come out as KilnRunError with the
+        original exception attached.
+        """
         provider = MagicMock()
         provider.formatter = None
         stream_adapter.model_provider = MagicMock(return_value=provider)
 
-        with pytest.raises(NotImplementedError, match="Streaming is not supported"):
+        with pytest.raises(KilnRunError) as exc_info:
             async for _chunk in stream_adapter.invoke_openai_stream("test input"):
                 pass
+        assert isinstance(exc_info.value.original, NotImplementedError)
+        assert "Streaming is not supported" in str(exc_info.value.original)
 
     @pytest.mark.asyncio
     async def test_invoke_ai_sdk_stream_raises_for_unsupported_adapter(
@@ -1352,9 +1359,11 @@ class TestStreamMethods:
         provider.formatter = None
         stream_adapter.model_provider = MagicMock(return_value=provider)
 
-        with pytest.raises(NotImplementedError, match="Streaming is not supported"):
+        with pytest.raises(KilnRunError) as exc_info:
             async for _event in stream_adapter.invoke_ai_sdk_stream("test input"):
                 pass
+        assert isinstance(exc_info.value.original, NotImplementedError)
+        assert "Streaming is not supported" in str(exc_info.value.original)
 
     @pytest.mark.asyncio
     async def test_invoke_ai_sdk_stream_resets_converter_between_tool_rounds(

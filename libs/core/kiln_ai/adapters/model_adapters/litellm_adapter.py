@@ -40,6 +40,10 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
     Usage,
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
+from kiln_ai.adapters.model_adapters.tool_loop_guards import (
+    IncrementalMessageCopier,
+    RepeatedToolCallDetector,
+)
 from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.json_schema import (
     close_object_schemas,
@@ -66,7 +70,6 @@ from kiln_ai.utils.open_ai_types import (
 )
 
 MAX_CALLS_PER_TURN = 10
-MAX_TOOL_CALLS_PER_TURN = 30
 
 logger = logging.getLogger(__name__)
 
@@ -135,18 +138,20 @@ class LiteLlmAdapter(BaseAdapter):
         """
 
         usage = Usage()
-        tool_calls_count = 0
         # Per-LLM-call latency / usage, keyed by index in the messages list.
         # Kept separate because we don't own the LiteLLM message objects.
         message_latency: dict[int, int] = {}
         message_usage: dict[int, MessageUsage] = {}
+        # Unbounded tool loop: the stuck detector is the only repetition control.
+        stuck_detector = RepeatedToolCallDetector()
+        message_copier = IncrementalMessageCopier()
 
-        while tool_calls_count < MAX_TOOL_CALLS_PER_TURN:
+        while True:
             # Build completion kwargs for tool calls
             completion_kwargs = await self.build_completion_kwargs(
                 provider,
                 # Pass a copy, as acompletion mutates objects and breaks types.
-                copy.deepcopy(messages),
+                message_copier.snapshot(messages),
                 top_logprobs,
                 skip_response_format,
             )
@@ -223,9 +228,11 @@ class LiteLlmAdapter(BaseAdapter):
                         message_usage=message_usage,
                     )
 
-                # If there were tool calls, increment counter and continue
+                # If there were tool calls, check for a stuck loop and continue
                 if tool_call_messages:
-                    tool_calls_count += 1
+                    nudge = stuck_detector.record_round(tool_calls, tool_call_messages)
+                    if nudge:
+                        messages.append(nudge)
                     continue
 
             # If no tool calls, return the content as final output
@@ -244,10 +251,6 @@ class LiteLlmAdapter(BaseAdapter):
             raise RuntimeError(
                 "Model returned neither content nor tool calls. It must return at least one of these."
             )
-
-        raise RuntimeError(
-            f"Too many tool calls ({tool_calls_count}). Stopping iteration to avoid using too many tokens."
-        )
 
     async def _run(
         self,
