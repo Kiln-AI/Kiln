@@ -304,20 +304,6 @@
         : undefined,
     })
 
-    const golden_filter_id = evaluator.eval_configs_filter_id
-    properties.push({
-      name: "Golden Dataset",
-      value: golden_filter_id
-        ? golden_filter_id +
-          item_count_suffix(eval_progress?.golden_dataset_size)
-        : NOT_CONFIGURED,
-      tooltip:
-        "This is the dataset that we use to evaluate the quality of judge models. Items in this set need human ratings so we can compare judge ratings to human ratings.",
-      link: golden_filter_id
-        ? linkFromFilterId(project_id, task_id, golden_filter_id)
-        : undefined,
-    })
-
     const train_filter_id = eval_split_filter_id(evaluator, "train")
     properties.push({
       name: "Training Dataset",
@@ -347,6 +333,24 @@
             task_id,
             task_run_split_filter_id(evaluator, "val"),
           )
+        : undefined,
+    })
+
+    // Golden comes after the three `splits` datasets rather than beside the test one.
+    // Test/training/validation are the eval's own splits and read as a set; golden is a
+    // different kind of thing (human-rated items for judging the judge), so it sits at
+    // the end instead of interrupting them.
+    const golden_filter_id = evaluator.eval_configs_filter_id
+    properties.push({
+      name: "Golden Dataset",
+      value: golden_filter_id
+        ? golden_filter_id +
+          item_count_suffix(eval_progress?.golden_dataset_size)
+        : NOT_CONFIGURED,
+      tooltip:
+        "This is the dataset that we use to evaluate the quality of judge models. Items in this set need human ratings so we can compare judge ratings to human ratings.",
+      link: golden_filter_id
+        ? linkFromFilterId(project_id, task_id, golden_filter_id)
         : undefined,
     })
 
@@ -572,7 +576,7 @@
     // creates eval inputs, so there is no action to point at.
     if (eval_split(evaluator, "test")?.source === "eval_input") {
       alert(
-        "This eval's dataset is made of eval inputs, and this flow adds task runs to your dataset.",
+        "This eval uses our new eval dataset format, which can't be generated from this UI.",
       )
       return
     }
@@ -756,10 +760,12 @@
                         <div class="mb-1">
                           {#if eval_progress && !required_more_eval_data && !required_more_golden_data}
                             {#if evaluator?.template === "rag"}
-                              You have {eval_progress?.dataset_size} eval items.
+                              You have {eval_progress?.dataset_size} test dataset
+                              items.
                             {:else}
-                              You have {eval_progress?.dataset_size} eval items and
-                              {eval_progress?.golden_dataset_size} golden items.
+                              You have {eval_progress?.dataset_size} test dataset
+                              items and {eval_progress?.golden_dataset_size} golden
+                              items.
                             {/if}
                           {:else if eval_progress && eval_progress.dataset_size == 0 && eval_progress.golden_dataset_size == 0 && evaluator.template === "rag"}
                             Create a query & answer dataset for this eval.
@@ -768,12 +774,14 @@
                           {:else if eval_progress && (required_more_eval_data || required_more_golden_data)}
                             You require additional eval data. You only have
                             {#if required_more_eval_data && required_more_golden_data}
-                              {eval_progress?.dataset_size} eval items and {eval_progress?.golden_dataset_size}
+                              {eval_progress?.dataset_size} test dataset items and
+                              {eval_progress?.golden_dataset_size}
                               golden items. We suggest at least {MIN_DATASET_SIZE}
-                              eval items and {MIN_GOLDEN_DATASET_SIZE} golden items.
+                              test dataset items and {MIN_GOLDEN_DATASET_SIZE} golden
+                              items.
                             {:else if required_more_eval_data}
-                              {eval_progress?.dataset_size} eval items. We suggest
-                              at least {MIN_DATASET_SIZE} items.
+                              {eval_progress?.dataset_size} test dataset items. We
+                              suggest at least {MIN_DATASET_SIZE} items.
                             {:else if required_more_golden_data}
                               {eval_progress?.golden_dataset_size} golden items.
                               We suggest at least {MIN_GOLDEN_DATASET_SIZE} items.

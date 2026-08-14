@@ -125,7 +125,7 @@
     const test_split = eval_split(evaluator, "test")
     if (test_split?.source === "eval_input") {
       alert(
-        "We can't generate synthetic data for this eval. Its test set is made of eval inputs, and synthetic data generation adds task runs to your dataset.",
+        "This eval uses our new eval dataset format, which can't be generated from this UI.",
       )
       return
     }

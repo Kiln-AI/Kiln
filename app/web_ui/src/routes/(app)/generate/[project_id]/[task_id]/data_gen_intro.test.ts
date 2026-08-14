@@ -89,8 +89,7 @@ const NOT_READY =
   "This eval is not ready yet. Please configure its judge first."
 
 const EVAL_INPUTS_BACKED =
-  "We can't generate synthetic data for this eval. Its test set is made of eval " +
-  "inputs, and synthetic data generation adds task runs to your dataset."
+  "This eval uses our new eval dataset format, which can't be generated from this UI."
 
 const NOT_TAG_SHAPED =
   "We can't generate synthetic data for this eval because its test set isn't " +

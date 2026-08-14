@@ -359,9 +359,9 @@ describe("eval detail page — dataset rows", () => {
 
   const DATASET_ROWS = [
     "Test Dataset",
-    "Golden Dataset",
     "Training Dataset",
     "Validation Dataset",
+    "Golden Dataset",
   ]
 
   it("renders every dataset row when the eval has all four", async () => {
@@ -434,6 +434,18 @@ describe("eval detail page — dataset rows", () => {
       expect(row(properties, name)?.link).toBeUndefined()
       expect(row(properties, name)?.tooltip).toBeTruthy()
     }
+  })
+
+  it("orders the dataset rows test, training, validation, golden", async () => {
+    // The order is a choice, not an accident: the three `splits` datasets read as a set
+    // and golden — a different kind of thing — sits after them rather than between test
+    // and training. Assert it so a reorder is a decision someone makes on purpose.
+    const properties = await rendered_properties()
+
+    const dataset_rows = properties
+      .map((property) => property.name ?? "")
+      .filter((name) => DATASET_ROWS.includes(name))
+    expect(dataset_rows).toEqual(DATASET_ROWS)
   })
 
   it("keeps each dataset's tooltip distinct and specific", async () => {
@@ -535,11 +547,13 @@ describe("eval detail page — add eval data", () => {
     return alerts
   }
 
-  it("refuses an eval-input-backed test split, naming the store as the problem", async () => {
+  it("refuses an eval-input-backed test split with the new-format wording", async () => {
     // This flow adds TaskRuns, so an EvalInput-backed test split has no tag it can write
     // under. It gets its own wording rather than the tag-filter one below: "use a tag
-    // filter instead" is not advice that helps when the store is the problem. Untested
-    // copy is how this branch already shipped one swapped-description bug (f191e0574).
+    // filter instead" is not advice that helps when the store is the problem. The copy
+    // names the format rather than the internal types behind it — "eval inputs" and
+    // "task runs" appear nowhere else in the UI. Untested copy is how this branch
+    // already shipped one swapped-description bug (f191e0574).
     setEvalResponse({
       id: "eval1",
       name: "Test Eval",
@@ -551,7 +565,7 @@ describe("eval detail page — add eval data", () => {
     })
 
     expect(await alert_from_add_eval_data()).toEqual([
-      "This eval's dataset is made of eval inputs, and this flow adds task runs to your dataset.",
+      "This eval uses our new eval dataset format, which can't be generated from this UI.",
     ])
     expect(mockGoto).not.toHaveBeenCalled()
   })
@@ -593,14 +607,16 @@ describe("eval detail page — eval data goals", () => {
     }
   }
 
-  it("is satisfied at 25 eval items and 12 golden items", async () => {
+  it("is satisfied at 25 test dataset items and 12 golden items", async () => {
     // Golden's goal is lower than the test set's because golden takes the smallest share
     // of generated data — at the same 25 it, not the test set, gates this step.
     setProgressResponse(progress(25, 12))
 
     const text = visible_text(await render_page())
 
-    expect(text).toContain("You have 25 eval items and 12 golden items.")
+    expect(text).toContain(
+      "You have 25 test dataset items and 12 golden items.",
+    )
     expect(text).not.toContain("You require additional eval data")
   })
 
@@ -614,13 +630,13 @@ describe("eval detail page — eval data goals", () => {
     )
   })
 
-  it("asks for more eval data below 25", async () => {
+  it("asks for more test dataset data below 25", async () => {
     setProgressResponse(progress(24, 30))
 
     const text = visible_text(await render_page())
 
     expect(text).toContain(
-      "You require additional eval data. You only have 24 eval items. We suggest at least 25 items.",
+      "You require additional eval data. You only have 24 test dataset items. We suggest at least 25 items.",
     )
   })
 
@@ -632,7 +648,7 @@ describe("eval detail page — eval data goals", () => {
     const text = visible_text(await render_page())
 
     expect(text).toContain(
-      "You only have 5 eval items and 2 golden items. We suggest at least 25 eval items and 12 golden items.",
+      "You only have 5 test dataset items and 2 golden items. We suggest at least 25 test dataset items and 12 golden items.",
     )
     expect(text).not.toContain("items in each set")
   })

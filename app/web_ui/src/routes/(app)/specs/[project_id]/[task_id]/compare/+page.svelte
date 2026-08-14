@@ -675,10 +675,10 @@
     if (!evalData) return
 
     // Same refusal the eval detail page and the data-gen dialog make: this flow adds
-    // TaskRuns, and an EvalInput-backed eval set can't receive them.
+    // TaskRuns, and an EvalInput-backed test dataset can't receive them.
     if (eval_split(evalData, "test")?.source === "eval_input") {
       alert(
-        "This eval's dataset is made of eval inputs, and this flow adds task runs to your dataset.",
+        "This eval uses our new eval dataset format, which can't be generated from this UI.",
       )
       return
     }

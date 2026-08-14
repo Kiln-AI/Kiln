@@ -1074,8 +1074,9 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         already describe one, and is dropped either way (it is not a declared field, so
         it is never written back).
 
-        TODO: Remove before shipping. Only internal projects contain this key; no public
-        project file has ever had it, so this never becomes a compatibility commitment.
+        FUTURE: Safe to delete whenever someone wants to. Only internal projects contained
+        this key and none of them still exist; no public project file has ever had it, so
+        this never becomes a compatibility commitment.
         """
         if not isinstance(data, dict):
             return data
