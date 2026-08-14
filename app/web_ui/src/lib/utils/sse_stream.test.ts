@@ -46,6 +46,27 @@ afterEach(() => {
 })
 
 describe("stream_sse", () => {
+  it("requests the caller's url, asking for an event stream", async () => {
+    // The request itself, not just what comes back: a server that content-negotiates
+    // would hand this client HTML with every other test here still green.
+    const fetch_mock = mock_fetch(streaming_response(["data: complete\n\n"]))
+
+    stream_sse("/api/run?all=true", {
+      on_message: () => {},
+      on_error: () => {},
+    })
+    await settle()
+
+    expect(fetch_mock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetch_mock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ]
+    expect(url).toBe("/api/run?all=true")
+    expect(init.headers).toEqual({ Accept: "text/event-stream" })
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+  })
+
   it("dispatches each event's data payload in order", async () => {
     mock_fetch(
       streaming_response(['data: {"progress":1}\n\n', "data: complete\n\n"]),

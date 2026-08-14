@@ -4,7 +4,7 @@ Apply a mutation to the source, run the tests named for it, restore the source. 
 that SURVIVES means no test discriminates that line, which is the failure this phase kept
 producing (see phase_plans/phase_2.md). Run from anywhere:
 
-    uv run python specs/projects/eval_splits_v1_v2/phase2_mutation_sweep.py
+    uv run --frozen python specs/projects/eval_splits_v1_v2/phase2_mutation_sweep.py
 
 Pass substrings to run a subset. Expected result: every mutation killed.
 """

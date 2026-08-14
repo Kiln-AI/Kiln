@@ -4045,7 +4045,16 @@ class TestEvalSplits:
         )
 
     @pytest.mark.parametrize(
-        "filter_id", ["multi_filter::high_rating&all", "high_rating"]
+        "filter_id",
+        [
+            "multi_filter::high_rating&all",
+            "high_rating",
+            # All four TaskRun-only forms functional spec 7 names, not just the two that
+            # happen to differ in prefix: each is a rating or trace predicate over a
+            # TaskRun, which an EvalInput has nothing to answer.
+            "thinking_model",
+            "thinking_model_high_rated",
+        ],
     )
     def test_eval_input_split_rejects_task_run_only_filters(self, filter_id):
         """Functional spec 7, made structural: unrepresentable, not validator-enforced."""

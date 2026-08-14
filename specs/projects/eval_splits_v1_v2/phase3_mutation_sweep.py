@@ -4,7 +4,7 @@ Same harness as phase2_mutation_sweep.py: apply a mutation to the source, run th
 named for it, restore the source. A mutation that SURVIVES means no test discriminates
 that line. Run from anywhere:
 
-    uv run python specs/projects/eval_splits_v1_v2/phase3_mutation_sweep.py
+    uv run --frozen python specs/projects/eval_splits_v1_v2/phase3_mutation_sweep.py
 
 Pass substrings to run a subset. Expected result: every mutation killed.
 """

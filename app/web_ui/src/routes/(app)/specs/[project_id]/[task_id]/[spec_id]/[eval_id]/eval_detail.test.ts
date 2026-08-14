@@ -517,6 +517,61 @@ describe("eval detail page — add eval data", () => {
 
     expect(await splits_param_from_add_eval_data()).toBe("test_x:1")
   })
+
+  async function alert_from_add_eval_data(): Promise<string[]> {
+    const alerts: string[] = []
+    vi.stubGlobal("alert", (message: string) => alerts.push(message))
+    try {
+      const container = await render_page()
+      const button = Array.from(container.querySelectorAll("button")).find(
+        (b) => b.textContent?.trim() === "Add Eval Data",
+      )
+      expect(button).toBeDefined()
+      await fireEvent.click(button!)
+      await tick()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    return alerts
+  }
+
+  it("refuses an eval-input-backed test split, naming the store as the problem", async () => {
+    // This flow adds TaskRuns, so an EvalInput-backed test split has no tag it can write
+    // under. It gets its own wording rather than the tag-filter one below: "use a tag
+    // filter instead" is not advice that helps when the store is the problem. Untested
+    // copy is how this branch already shipped one swapped-description bug (f191e0574).
+    setEvalResponse({
+      id: "eval1",
+      name: "Test Eval",
+      eval_set_filter_id: null,
+      eval_configs_filter_id: "tag::golden_x",
+      splits: { test: { source: "eval_input", filter_id: "tag::inputs" } },
+      eval_configs: [],
+      output_scores: [{ name: "accuracy", type: "five_star" }],
+    })
+
+    expect(await alert_from_add_eval_data()).toEqual([
+      "This eval's dataset is made of eval inputs, and this flow adds task runs to your dataset.",
+    ])
+    expect(mockGoto).not.toHaveBeenCalled()
+  })
+
+  it("refuses a test split whose filter isn't a tag", async () => {
+    setEvalResponse({
+      id: "eval1",
+      name: "Test Eval",
+      eval_set_filter_id: null,
+      eval_configs_filter_id: "tag::golden_x",
+      splits: { test: { source: "task_run", filter_id: "high_rating" } },
+      eval_configs: [],
+      output_scores: [{ name: "accuracy", type: "five_star" }],
+    })
+
+    expect(await alert_from_add_eval_data()).toEqual([
+      "No eval or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
+    ])
+    expect(mockGoto).not.toHaveBeenCalled()
+  })
 })
 
 describe("eval detail page — eval data goals", () => {

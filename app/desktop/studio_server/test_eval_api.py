@@ -1754,9 +1754,17 @@ class TestGetEvalRunResultsSplits:
     def test_unknown_split_name_is_rejected_before_anything_loads(
         self, client, mock_task_from_id, mock_eval
     ):
+        """FastAPI's enum validation runs before the endpoint body, so no disk is read.
+
+        The name claims "before anything loads", so assert it: a status code alone would
+        also pass if the split name were validated after the task and eval were pulled
+        off disk, which is a different — and slower, and 404-before-422 — contract.
+        """
         response = client.get(RUN_RESULTS_PATH, params={"split": "holdout"})
 
         assert response.status_code == 422
+        assert "holdout" in response.text
+        mock_task_from_id.assert_not_called()
 
     def test_422s_for_a_split_this_eval_does_not_have(
         self, client, mock_task_from_id, mock_eval, mock_eval_config, mock_run_config
@@ -2152,8 +2160,9 @@ async def test_run_eval_config_eval_422s_without_a_golden_set(
     This is an SSE endpoint, so anything raised once the generator is running is emitted
     after a 200 status and an empty body. Asserting the status alone would not be enough
     either: this pins the whole HTTP contract functional spec 9 asks for, status and
-    reason. What the *web UI* shows is unchanged for now — its EventSource can't read a
-    non-200 response — so this is an API-contract test, not a UX one.
+    reason. The web UI reads these endpoints with `$lib/utils/sse_stream`'s fetch-based
+    reader, so this reason is also what the user sees — the last mile is covered by
+    `app/web_ui/src/lib/components/run_eval.component.test.ts`.
     """
     mock_task_from_id.return_value = mock_task
     no_golden_eval = Eval(
@@ -2636,11 +2645,14 @@ async def test_get_eval_progress(client, mock_task_from_id, mock_task, mock_eval
 
         # Verify the function calls
         mock_eval_from_id.assert_called_once_with("project1", "task1", "eval1")
-        assert [c.args[2] for c in mock_resolve_split.call_args_list] == [
+        # Which splits it asks for, not the order it asks in: resolving val before train
+        # is not a behavior change, and TestEvalProgressSplitSizes already pins the
+        # outcome against real data.
+        assert {c.args[2] for c in mock_resolve_split.call_args_list} == {
             "test",
             "train",
             "val",
-        ]
+        }
         mock_runs_in_filter.assert_called_once_with(
             mock_task, mock_eval.eval_configs_filter_id, readonly=True
         )
@@ -2705,6 +2717,21 @@ class TestEvalProgressSplitSizes:
         assert result["dataset_size"] == 2
         assert result["golden_dataset_size"] == 0
 
+    def test_an_eval_input_backed_split_matching_nothing_is_zero_not_an_error(
+        self, client, mock_task_from_id, mock_task, mock_eval
+    ):
+        """The other backing's empty case. A configured split that matches nothing is a
+        real, empty split — the same 0 an absent split reports, but reached by resolving
+        rather than by not finding one."""
+        mock_eval.set_split("test", EvalInputSplit(filter_id="tag::inputs"))
+        mock_eval.save_to_file()
+        _tagged_eval_input(mock_task, "some_other_tag")
+
+        response = client.get(PROGRESS_PATH)
+
+        assert response.status_code == 200
+        assert response.json()["dataset_size"] == 0
+
 
 class TestSplitSize:
     def test_absent_split_is_zero(self):
@@ -2745,9 +2772,31 @@ class TestScoreSummarySplits:
         assert body["dataset_size"] == 1
         assert body["results"]["run_config1"]["score1"]["n_used"] == 1
 
+    @pytest.mark.parametrize(
+        "test_split_factory",
+        [
+            lambda: TaskRunSplit(filter_id="tag::eval_set"),
+            lambda: EvalInputSplit(filter_id="tag::inputs"),
+        ],
+        ids=["task_run", "eval_input"],
+    )
     def test_400s_on_an_empty_test_split(
-        self, client, mock_task_from_id, mock_task, mock_eval, mock_eval_config
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        test_split_factory,
     ):
+        """A split whose filter matches nothing is empty in either store, and refused the
+        same way. The model layer already parametrizes this; the API layer only ever
+        exercised the TaskRun backing, so a guard written as "no task runs" rather than
+        "no items" would have passed. Nothing is tagged for either filter, so both splits
+        resolve to zero items."""
+        mock_eval.set_split("test", test_split_factory())
+        mock_eval.save_to_file()
+
         response = client.get(
             "/api/projects/project1/tasks/task1/evals/eval1"
             "/eval_config/eval_config1/score_summary"
@@ -4418,10 +4467,15 @@ async def test_eval_results_summary_no_evals(client):
     }
 
 
-@pytest.mark.asyncio
-async def test_eval_results_summary_dataset_ids_cached_per_filter(client):
-    """A split is resolved once per unique (source, filter id), not once per eval."""
-    output_scores = [
+class TestEvalResultsSummaryResolutionCaching:
+    """A split is resolved once per unique (source, filter id), not once per eval.
+
+    One case per scenario rather than one test that mutates `eval2.splits` between three
+    requests: the source-awareness case is the newest and most valuable of the three, and
+    sequencing it behind the other two means it only ever runs if they pass.
+    """
+
+    OUTPUT_SCORES = [
         EvalOutputScore(
             name="accuracy",
             instruction="Test accuracy",
@@ -4429,92 +4483,219 @@ async def test_eval_results_summary_dataset_ids_cached_per_filter(client):
         ),
     ]
 
-    eval_runs = [
-        EvalRun(
-            task_run_config_id="rc1",
-            scores={"accuracy": 0.8},
-            input="i",
-            output="o",
-            dataset_id="ds1",
-        ),
-    ]
-
-    ec1a = _build_mock_eval_config("ec1a", "Judge A1", eval_runs)
-    ec2a = _build_mock_eval_config("ec2a", "Judge B1", eval_runs)
-
-    eval1 = _build_mock_eval(
-        eval_id="eval1",
-        name="Eval One",
-        current_config_id="ec1a",
-        output_scores=output_scores,
-        configs=[ec1a],
-        test_split=TaskRunSplit(filter_id="tag::set1"),
-    )
-    eval2 = _build_mock_eval(
-        eval_id="eval2",
-        name="Eval Two",
-        current_config_id="ec2a",
-        output_scores=output_scores,
-        configs=[ec2a],
-        test_split=TaskRunSplit(filter_id="tag::set2"),
-    )
-
-    rc1_mock = Mock(spec=TaskRunConfig, id="rc1")
-    rc1_mock.name = "RC1"
-
-    mock_task = Mock(spec=Task)
-    mock_task.run_configs.return_value = [rc1_mock]
-    mock_task.finetunes.return_value = []
-    mock_task.evals.return_value = [eval1, eval2]
-
-    def resolutions(items_by_ref):
-        return patch_resolve_split_by_ref(items_by_ref)
-
-    all_ds1 = {
+    # Every (source, filter) pair used below resolves to the same single item, so a
+    # resolution count is the only thing that varies between the cases.
+    ALL_DS1 = {
         ("task_run", "tag::set1"): {"ds1"},
         ("task_run", "tag::set2"): {"ds1"},
         ("eval_input", "tag::set1"): {"ds1"},
     }
 
-    with (
-        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
-        resolutions(all_ds1) as mock_resolve,
+    def _task_with_two_evals(self, eval2_test_split) -> Mock:
+        eval_runs = [
+            EvalRun(
+                task_run_config_id="rc1",
+                scores={"accuracy": 0.8},
+                input="i",
+                output="o",
+                dataset_id="ds1",
+            ),
+        ]
+        eval1 = _build_mock_eval(
+            eval_id="eval1",
+            name="Eval One",
+            current_config_id="ec1a",
+            output_scores=self.OUTPUT_SCORES,
+            configs=[_build_mock_eval_config("ec1a", "Judge A1", eval_runs)],
+            test_split=TaskRunSplit(filter_id="tag::set1"),
+        )
+        eval2 = _build_mock_eval(
+            eval_id="eval2",
+            name="Eval Two",
+            current_config_id="ec2a",
+            output_scores=self.OUTPUT_SCORES,
+            configs=[_build_mock_eval_config("ec2a", "Judge B1", eval_runs)],
+            test_split=eval2_test_split,
+        )
+
+        rc1_mock = Mock(spec=TaskRunConfig, id="rc1")
+        rc1_mock.name = "RC1"
+
+        mock_task = Mock(spec=Task)
+        mock_task.run_configs.return_value = [rc1_mock]
+        mock_task.finetunes.return_value = []
+        mock_task.evals.return_value = [eval1, eval2]
+        return mock_task
+
+    def _resolution_count(self, client, eval2_test_split) -> int:
+        mock_task = self._task_with_two_evals(eval2_test_split)
+        with (
+            patch(
+                "app.desktop.studio_server.eval_api.task_from_id"
+            ) as mock_task_from_id,
+            patch_resolve_split_by_ref(self.ALL_DS1) as mock_resolve,
+        ):
+            mock_task_from_id.return_value = mock_task
+            response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+
+        assert response.status_code == 200
+        return mock_resolve.call_count
+
+    def test_different_filters_are_resolved_separately(self, client):
+        assert self._resolution_count(client, TaskRunSplit(filter_id="tag::set2")) == 2
+
+    def test_the_same_filter_over_the_same_store_is_resolved_once(self, client):
+        assert self._resolution_count(client, TaskRunSplit(filter_id="tag::set1")) == 1
+
+    def test_the_same_filter_over_a_different_store_is_resolved_again(self, client):
+        """Same filter id over a DIFFERENT store is a different item set, so it must not
+        share a resolution: the `tag::` grammar is identical in both (spec 5.3)."""
+        assert (
+            self._resolution_count(client, EvalInputSplit(filter_id="tag::set1")) == 2
+        )
+
+
+class TestEvalResultsSummaryRealEvals:
+    """The endpoint against evals loaded off disk, with `resolve_split` left alone.
+
+    Every other case in this block builds its evals with `_build_mock_eval` *and* patches
+    `resolve_split`, so both halves of "eval -> its test split -> its items" are stubbed
+    and only the aggregation arithmetic is real. That leaves the read the endpoint is
+    built on untested: `_cached_test_split` asks for `eval.splits["test"]`, which on a
+    pre-existing project is populated only because `Eval.migrate_legacy_split_fields` ran
+    at load. Hand-setting `.splits` on a `Mock` manufactures that postcondition, so if the
+    migration stopped running — or ran after `validate_splits` — this endpoint would
+    return an empty results table for every shipped project with the whole suite green.
+    """
+
+    def _write_legacy_eval_file(
+        self,
+        task: Task,
+        eval_id: str,
+        name: str,
+        eval_set_filter_id: str,
+        current_config_id: str | None = None,
+    ) -> Eval:
+        """An eval file in the pre-`splits` shape a shipped project actually has on disk.
+
+        Built through the model and then rewound, rather than hand-writing a whole eval
+        dict: the point is the legacy split fields, and every other key should be
+        whatever this build writes so the file doesn't rot into an unloadable shape when
+        an unrelated field is added.
+        """
+        eval = Eval(
+            id=eval_id,
+            name=name,
+            description="Legacy eval",
+            output_scores=[
+                EvalOutputScore(
+                    name="accuracy",
+                    instruction="Test accuracy",
+                    type=TaskOutputRatingType.pass_fail,
+                ),
+            ],
+            eval_set_filter_id=eval_set_filter_id,
+            eval_configs_filter_id="tag::golden",
+            current_config_id=current_config_id,
+            parent=task,
+        )
+        eval.save_to_file()
+        assert eval.path is not None
+        # save_to_file writes the migrated shape (splits populated, legacy fields null).
+        # Put the file back the way a build predating `splits` wrote it, which is what
+        # every existing project's file still looks like until this app rewrites it.
+        saved = json.loads(eval.path.read_text(encoding="utf-8"))
+        saved.pop("splits", None)
+        saved["eval_set_filter_id"] = eval_set_filter_id
+        eval.path.write_text(json.dumps(saved), encoding="utf-8")
+        return eval
+
+    def test_summarizes_a_legacy_eval_read_from_disk(
+        self, client, mock_task_from_id, mock_task, mock_run_config, data_source
     ):
-        mock_task_from_id.return_value = mock_task
+        """The whole path, unmocked: legacy file -> migration -> splits['test'] -> items."""
+        eval = self._write_legacy_eval_file(
+            mock_task,
+            eval_id="legacy_eval",
+            name="Legacy Eval",
+            eval_set_filter_id="tag::eval_set",
+            current_config_id="legacy_config",
+        )
+        eval_config = EvalConfig(
+            id="legacy_config",
+            name="Legacy Judge",
+            config_type=EvalConfigType.g_eval,
+            properties={"eval_steps": ["step1"]},
+            parent=eval,
+            model_name="gpt-4",
+            model_provider="openai",
+        )
+        eval_config.save_to_file()
 
-        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+        scored = _tagged_task_run(mock_task, data_source, "eval_set")
+        _tagged_task_run(mock_task, data_source, "eval_set")
+        _tagged_task_run(mock_task, data_source, "not_the_eval_set")
+        EvalRun(
+            task_run_config_id="run_config1",
+            scores={"accuracy": 1.0},
+            input="i",
+            output="o",
+            dataset_id=scored.id,
+            parent=eval_config,
+        ).save_to_file()
 
-    assert response.status_code == 200
-    assert mock_resolve.call_count == 2
+        response = client.get("/api/projects/project1/tasks/task1/eval_results_summary")
 
-    # Same filter id over the same store: one resolution, reused.
-    eval2.splits = {"test": TaskRunSplit(filter_id="tag::set1")}
+        assert response.status_code == 200
+        data = response.json()
+        # 2 of the 3 runs carry the tag the legacy `eval_set_filter_id` named. A
+        # migration that stopped populating splits['test'] answers 0 here, and drops the
+        # eval from the table entirely.
+        assert data["evals_by_id"]["legacy_eval"]["dataset_size"] == 2
+        assert data["evals_by_id"]["legacy_eval"]["name"] == "Legacy Eval"
+        assert data["evals_by_id"]["legacy_eval"]["output_score_keys"] == ["accuracy"]
+        cell = data["scores_by_run_config_by_eval"]["run_config1"]["legacy_eval"]
+        assert cell["mean_scores"]["accuracy"] == pytest.approx(1.0)
+        assert cell["percent_complete"] == pytest.approx(0.5)
 
-    with (
-        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
-        resolutions(all_ds1) as mock_resolve,
+    def test_summarizes_an_eval_input_backed_eval_read_from_disk(
+        self, client, mock_task_from_id, mock_task, mock_eval, mock_run_config
     ):
-        mock_task_from_id.return_value = mock_task
+        """The other backing, also off disk: the split's items come from `task.eval_inputs`."""
+        mock_eval.set_split("test", EvalInputSplit(filter_id="tag::inputs"))
+        mock_eval.current_config_id = "eval_config1"
+        mock_eval.save_to_file()
+        eval_config = EvalConfig(
+            id="eval_config1",
+            name="Test Eval Config",
+            config_type=EvalConfigType.g_eval,
+            properties={"eval_steps": ["step1"]},
+            parent=mock_eval,
+            model_name="gpt-4",
+            model_provider="openai",
+        )
+        eval_config.save_to_file()
 
-        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+        scored_input = _tagged_eval_input(mock_task, "inputs")
+        _tagged_eval_input(mock_task, "inputs")
+        _tagged_eval_input(mock_task, "other")
+        EvalRun(
+            task_run_config_id="run_config1",
+            scores={"score1": 4.0, "overall_rating": 5.0},
+            input="i",
+            output="o",
+            eval_input_id=scored_input.id,
+            parent=eval_config,
+        ).save_to_file()
 
-    assert response.status_code == 200
-    assert mock_resolve.call_count == 1
+        response = client.get("/api/projects/project1/tasks/task1/eval_results_summary")
 
-    # Same filter id over a DIFFERENT store is a different item set, so it must not
-    # share a resolution: the `tag::` grammar is identical in both (spec 5.3).
-    eval2.splits = {"test": EvalInputSplit(filter_id="tag::set1")}
-
-    with (
-        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
-        resolutions(all_ds1) as mock_resolve,
-    ):
-        mock_task_from_id.return_value = mock_task
-
-        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
-
-    assert response.status_code == 200
-    assert mock_resolve.call_count == 2
+        assert response.status_code == 200
+        data = response.json()
+        assert data["evals_by_id"]["eval1"]["dataset_size"] == 2
+        cell = data["scores_by_run_config_by_eval"]["run_config1"]["eval1"]
+        assert cell["mean_scores"]["score1"] == pytest.approx(4.0)
+        assert cell["percent_complete"] == pytest.approx(0.5)
 
 
 class TestCachedTestSplit:

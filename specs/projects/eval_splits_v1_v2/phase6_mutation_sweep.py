@@ -4,7 +4,7 @@ Same harness as phase2/phase3/phase4_mutation_sweep.py: each mutation applies on
 or more textual edits to the tree, runs a test file, and expects it to fail. Run from
 anywhere:
 
-    uv run python specs/projects/eval_splits_v1_v2/phase6_mutation_sweep.py
+    uv run --frozen python specs/projects/eval_splits_v1_v2/phase6_mutation_sweep.py
 
 Pass substrings to run a subset. Expected result: every mutation killed.
 

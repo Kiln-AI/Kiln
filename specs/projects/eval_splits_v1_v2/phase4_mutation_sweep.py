@@ -5,7 +5,7 @@ several edits at once. Phase 4's headline change is a *deletion* whose effect is
 observable together with the routing that used to reach it, so re-inserting the deleted
 branch alone mutates unreachable code and could never be killed. Run from anywhere:
 
-    uv run python specs/projects/eval_splits_v1_v2/phase4_mutation_sweep.py
+    uv run --frozen python specs/projects/eval_splits_v1_v2/phase4_mutation_sweep.py
 
 Pass substrings to run a subset. Expected result: every mutation killed.
 
