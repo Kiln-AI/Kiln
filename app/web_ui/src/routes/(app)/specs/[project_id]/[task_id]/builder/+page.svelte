@@ -483,11 +483,6 @@
 
   onMount(async () => {
     await router_ready_promise
-        replaceState("", { builder_step: "generate" })
-        goto_step("review")
-      }
-    }
-    await router_ready_promise
     // Seed the first history entry with the starting step so Back from Step 2
     // returns to Step 1 rather than leaving the builder.
     replaceState("", { builder_step: current_step })
