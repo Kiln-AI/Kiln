@@ -39,6 +39,7 @@
   import { prompt_link } from "$lib/utils/link_builder"
   import { tagFromFilterId } from "../spec_utils"
   import { eval_split, task_run_split_filter_id } from "$lib/utils/eval_splits"
+  import { build_eval_generation_splits_param } from "$lib/utils/eval_generation_splits"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import RunEval from "$lib/components/run_eval.svelte"
@@ -719,10 +720,11 @@
       `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}`,
     )
 
-    if (evalData.template === "rag") {
-      params.set("splits", `${eval_tag}:1.0`)
-    } else {
-      params.set("splits", `${eval_tag}:0.8,${golden_tag}:0.2`)
+    // Every entry into this flow allocates generated data the same way, so the eval's
+    // splits decide the allocation rather than which button reached here.
+    const splits_param = build_eval_generation_splits_param(evalData)
+    if (splits_param) {
+      params.set("splits", splits_param)
     }
 
     if (evalData.template === "tool_call") {

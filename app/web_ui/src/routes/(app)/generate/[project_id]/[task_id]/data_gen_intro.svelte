@@ -25,7 +25,7 @@
   import { encode_splits_for_url } from "$lib/utils/splits_util"
   import { eval_split } from "$lib/utils/eval_splits"
   import { build_eval_options } from "./eval_options"
-  import { build_eval_generation_splits } from "./data_gen_splits"
+  import { build_eval_generation_splits_param } from "$lib/utils/eval_generation_splits"
 
   export let generate_subtopics: () => void
   export let generate_samples: () => void
@@ -132,8 +132,8 @@
     // Generated data is spread over whichever of the eval's splits can receive it. The test
     // split is the one we can't do without: no tag to write the runs into means there is
     // nothing to generate for.
-    const splits = build_eval_generation_splits(evaluator)
-    if (!splits) {
+    const splits_param = build_eval_generation_splits_param(evaluator)
+    if (!splits_param) {
       alert(
         "We can't generate synthetic data for this eval because its test set isn't defined by a tag filter. Select an eval which uses tags to define its datasets.",
       )
@@ -155,7 +155,7 @@
     }
 
     // .set will automatically URL encode
-    params.set("splits", encode_splits_for_url(splits))
+    params.set("splits", splits_param)
 
     // For reference answer evals, redirect to QnA page instead of synth page
     if (template_id === "rag") {

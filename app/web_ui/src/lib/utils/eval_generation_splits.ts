@@ -1,6 +1,10 @@
 import type { Eval } from "$lib/types"
 import { eval_split } from "$lib/utils/eval_splits"
-import { allocate_splits, type WeightedSplit } from "$lib/utils/splits_util"
+import {
+  allocate_splits,
+  encode_splits_for_url,
+  type WeightedSplit,
+} from "$lib/utils/splits_util"
 
 // How generated data is divided between an eval's splits. These are relative weights, not
 // percentages: whichever splits the eval can't receive data for are dropped and the rest are
@@ -70,10 +74,33 @@ export function build_eval_generation_splits(
   weighted.push({ tag: test_tag, weight: TEST_SPLIT_WEIGHT })
   // Golden is a plain filter id on the eval rather than a split — it's deliberately absent
   // from the splits dict, so it's read directly.
-  const golden_tag = tag_from_filter_id(evaluator.eval_configs_filter_id)
+  //
+  // Rag evals are given a golden tag at creation like every other eval, but the rag flow has
+  // no human-ratings step and never reads it. Allocating to it would write the user's
+  // generated data into a tag nothing can consume, so rag skips golden and its weight goes to
+  // the other splits.
+  const golden_tag =
+    evaluator.template === "rag"
+      ? undefined
+      : tag_from_filter_id(evaluator.eval_configs_filter_id)
   if (golden_tag) {
     weighted.push({ tag: golden_tag, weight: GOLDEN_SPLIT_WEIGHT })
   }
 
   return allocate_splits(weighted)
+}
+
+/**
+ * The same allocation as build_eval_generation_splits, encoded for the `splits` URL param.
+ *
+ * Every flow that sends the user off to add data for an eval goes through here, so the
+ * allocation an eval gets doesn't depend on which button was pressed to reach it. Returns
+ * undefined for the same reason build_eval_generation_splits does — no targetable test
+ * split — so callers can refuse rather than navigating with no allocation.
+ */
+export function build_eval_generation_splits_param(
+  evaluator: Eval,
+): string | undefined {
+  const splits = build_eval_generation_splits(evaluator)
+  return splits ? encode_splits_for_url(splits) : undefined
 }

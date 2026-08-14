@@ -30,6 +30,7 @@
     eval_split_filter_id,
     task_run_split_filter_id,
   } from "$lib/utils/eval_splits"
+  import { build_eval_generation_splits_param } from "$lib/utils/eval_generation_splits"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -232,6 +233,12 @@
     }
   }
 
+  // Progress is a separate request from the eval itself, so until it lands there is no
+  // count to append.
+  function item_count_suffix(count: number | null | undefined): string {
+    return count === null || count === undefined ? "" : ` (${count} items)`
+  }
+
   function get_eval_properties(
     evaluator: Eval | null,
     eval_progress: EvalProgress | null,
@@ -272,92 +279,76 @@
       value: evaluator.id || "unknown",
     })
 
-    let eval_set_size = ""
-    if (eval_progress) {
-      eval_set_size = " (" + eval_progress.dataset_size + " items)"
-    }
-    // Guarded like the train and val rows below, even though an eval cannot validate
-    // without a test split: an unguarded concat renders "undefined (30 items)", which is
-    // the same shape as the "null (30 items)" this page used to show for V2 evals.
+    // Every dataset row renders whether or not the eval has that dataset. A dataset is
+    // only there if something explicitly wrote one (functional spec 3.2 — unconfigured
+    // splits stay unconfigured), so most pre-existing evals are missing several. Hiding a
+    // row would make "this eval has no val set" indistinguishable from "this page doesn't
+    // show val sets". With no dataset there is no filter to show, no items to count and
+    // nothing to link to, so the row says so instead.
+    const NOT_CONFIGURED = "Not configured"
+
     const test_filter_id = eval_split_filter_id(evaluator, "test")
-    if (test_filter_id) {
-      properties.push({
-        name: "Test Dataset",
-        tooltip:
-          "Held-out data for measuring final quality. Not used for training or tuning. Shown in the 'Compare' view metrics.",
-        value: test_filter_id + eval_set_size,
-        link: linkFromFilterId(
-          project_id,
-          task_id,
-          task_run_split_filter_id(evaluator, "test"),
-        ),
-      })
-    }
-    let golden_dataset_size = ""
-    if (eval_progress) {
-      golden_dataset_size = " (" + eval_progress.golden_dataset_size + " items)"
-    }
-    if (evaluator.eval_configs_filter_id) {
-      properties.push({
-        name: "Golden Dataset",
-        value: evaluator.eval_configs_filter_id + golden_dataset_size,
-        tooltip:
-          "This is the dataset that we use to evaluate the quality of judge models. Items in this set need human ratings so we can compare judge ratings to human ratings.",
-        link: linkFromFilterId(
-          project_id,
-          task_id,
-          evaluator.eval_configs_filter_id,
-        ),
-      })
-    }
+    properties.push({
+      name: "Test Dataset",
+      tooltip:
+        "Held-out data for measuring final quality. Not used for training or tuning. Shown in the 'Compare' view metrics.",
+      value: test_filter_id
+        ? test_filter_id + item_count_suffix(eval_progress?.dataset_size)
+        : NOT_CONFIGURED,
+      link: test_filter_id
+        ? linkFromFilterId(
+            project_id,
+            task_id,
+            task_run_split_filter_id(evaluator, "test"),
+          )
+        : undefined,
+    })
+
+    const golden_filter_id = evaluator.eval_configs_filter_id
+    properties.push({
+      name: "Golden Dataset",
+      value: golden_filter_id
+        ? golden_filter_id +
+          item_count_suffix(eval_progress?.golden_dataset_size)
+        : NOT_CONFIGURED,
+      tooltip:
+        "This is the dataset that we use to evaluate the quality of judge models. Items in this set need human ratings so we can compare judge ratings to human ratings.",
+      link: golden_filter_id
+        ? linkFromFilterId(project_id, task_id, golden_filter_id)
+        : undefined,
+    })
+
     const train_filter_id = eval_split_filter_id(evaluator, "train")
-    if (train_filter_id) {
-      let train_dataset_size = ""
-      if (eval_progress) {
-        train_dataset_size = " (" + eval_progress.train_dataset_size + " items)"
-      }
-      properties.push({
-        name: "Training Dataset",
-        value: train_filter_id + train_dataset_size,
-        tooltip: "The dataset used during optimization.",
-        link: linkFromFilterId(
-          project_id,
-          task_id,
-          task_run_split_filter_id(evaluator, "train"),
-        ),
-      })
-    }
-    // Unlike the rows above, this one always renders. An eval only has a val split if
-    // something explicitly wrote one (functional spec 3.2 — unconfigured splits stay
-    // unconfigured), so most pre-existing evals have none. Hiding the row would make
-    // "this eval has no val set" indistinguishable from "this page doesn't show val
-    // sets". With no split there is no filter to show, no items to count and nothing to
-    // link to, so the row says so instead.
+    properties.push({
+      name: "Training Dataset",
+      value: train_filter_id
+        ? train_filter_id + item_count_suffix(eval_progress?.train_dataset_size)
+        : NOT_CONFIGURED,
+      tooltip: "The training set used for optimization.",
+      link: train_filter_id
+        ? linkFromFilterId(
+            project_id,
+            task_id,
+            task_run_split_filter_id(evaluator, "train"),
+          )
+        : undefined,
+    })
+
     const val_filter_id = eval_split_filter_id(evaluator, "val")
-    const val_tooltip =
-      "Held out validation dataset for optimization. Not scored by 'Run Eval', which runs the test dataset."
-    if (val_filter_id) {
-      let val_dataset_size = ""
-      if (eval_progress) {
-        val_dataset_size = " (" + eval_progress.val_dataset_size + " items)"
-      }
-      properties.push({
-        name: "Validation Dataset",
-        value: val_filter_id + val_dataset_size,
-        tooltip: val_tooltip,
-        link: linkFromFilterId(
-          project_id,
-          task_id,
-          task_run_split_filter_id(evaluator, "val"),
-        ),
-      })
-    } else {
-      properties.push({
-        name: "Validation Dataset",
-        value: "Not configured",
-        tooltip: val_tooltip,
-      })
-    }
+    properties.push({
+      name: "Validation Dataset",
+      value: val_filter_id
+        ? val_filter_id + item_count_suffix(eval_progress?.val_dataset_size)
+        : NOT_CONFIGURED,
+      tooltip: "The validation set used for optimization.",
+      link: val_filter_id
+        ? linkFromFilterId(
+            project_id,
+            task_id,
+            task_run_split_filter_id(evaluator, "val"),
+          )
+        : undefined,
+    })
 
     if (eval_progress?.current_eval_method) {
       if (eval_progress.current_eval_method.config_type === "v2") {
@@ -396,6 +387,10 @@
   let edit_dialog: EditDialog | null = null
 
   const MIN_DATASET_SIZE = 25
+  // Lower than the test goal because golden takes the smallest share of generated data
+  // (GOLDEN_SPLIT_WEIGHT is 10 of 100). Held to the same 25, golden — not the test set —
+  // is what this step waits on.
+  const MIN_GOLDEN_DATASET_SIZE = 12
   let current_step: 0 | 1 | 2 | 3 | 4 | 5 | 6 = 0
   let current_step_id:
     | "goals"
@@ -508,7 +503,7 @@
     required_more_eval_data = progress.dataset_size < MIN_DATASET_SIZE
     required_more_golden_data =
       evaluator?.template !== "rag" &&
-      progress.golden_dataset_size < MIN_DATASET_SIZE
+      progress.golden_dataset_size < MIN_GOLDEN_DATASET_SIZE
     if (required_more_eval_data || required_more_golden_data) {
       return
     }
@@ -608,16 +603,11 @@
     params.set("eval_id", `${project_id}::${task_id}::${eval_id}`)
     params.set("eval_link", window.location.pathname)
 
-    if (evaluator.template === "rag") {
-      // No golden set for rag evals
-      if (eval_tag) {
-        params.set("splits", `${eval_tag}:1.0`)
-      }
-    } else {
-      // For other templates, use the default splits approach
-      if (golden_tag) {
-        params.set("splits", `${eval_tag}:0.8,${golden_tag}:0.2`)
-      }
+    // Every entry into this flow allocates generated data the same way, so the eval's
+    // splits decide the allocation rather than which button reached here.
+    const splits_param = build_eval_generation_splits_param(evaluator)
+    if (splits_param) {
+      params.set("splits", splits_param)
     }
 
     // Add tool_id for tool call evals
@@ -780,13 +770,13 @@
                             {#if required_more_eval_data && required_more_golden_data}
                               {eval_progress?.dataset_size} eval items and {eval_progress?.golden_dataset_size}
                               golden items. We suggest at least {MIN_DATASET_SIZE}
-                              items in each set.
+                              eval items and {MIN_GOLDEN_DATASET_SIZE} golden items.
                             {:else if required_more_eval_data}
                               {eval_progress?.dataset_size} eval items. We suggest
                               at least {MIN_DATASET_SIZE} items.
                             {:else if required_more_golden_data}
                               {eval_progress?.golden_dataset_size} golden items.
-                              We suggest at least {MIN_DATASET_SIZE} items.
+                              We suggest at least {MIN_GOLDEN_DATASET_SIZE} items.
                             {/if}
                           {/if}
                         </div>
