@@ -17,7 +17,7 @@ Depends on `claude/eval-splits-evals-v2` being merged first.
       *Additive and protective — nothing writes the new fields yet. Must land before
       Phase 3 (architecture §10).*
 
-- [ ] **Phase 2: `TraceIndex`.** New `adapters/eval/trace_index.py` plus its tests,
+- [x] **Phase 2: `TraceIndex`.** New `adapters/eval/trace_index.py` plus its tests,
       including the 25-way concurrency test. Architecture §2.2, §9.2.
       *Standalone and unused until Phase 3.*
 
