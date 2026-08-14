@@ -650,20 +650,62 @@ class EvalOutputScore(BaseModel):
         return self
 
 
+LEGACY_TRACE_FIELDS = ("output", "task_run_trace", "task_run_usage", "reference_answer")
+"""The EvalRun fields that hold a copy of the trace a score was computed over.
+
+Deprecated: new records point at a TaskRun with `scored_run_id` instead. Kept declared
+and loadable forever - every record written before the split still carries them. A
+pointer-mode record must leave all of them None, which `validate_record_mode` enforces.
+`input` is deprecated alongside these but is not in this tuple: it is the one a legacy
+record is *required* to have, so it is checked separately.
+
+Three ways to mark a pydantic field deprecated; these fields use two of them:
+
+1. A `DEPRECATED:` prefix in the `description`. Reaches a human reading the SDK docs or
+   the OpenAPI schema, and nothing else. Used.
+2. `json_schema_extra={"deprecated": True}`. Puts `"deprecated": true` in the JSON
+   schema, which `openapi-typescript` turns into a `/** @deprecated */` JSDoc tag, so
+   the TS compiler and editors strike through every web call site. No runtime effect.
+   Used.
+3. `Field(deprecated=True)`. Same schema output as (2), but pydantic also raises a
+   DeprecationWarning on every attribute *read* — and reading these is the correct,
+   permanent way to render a legacy record, so it would be a warning storm. Not used.
+   Do not "fix" this to (3) without silencing that first; (2) already provides the
+   tooling signal (3) would be reached for."""
+
+
 class EvalRun(KilnParentedModel):
     """
-    The results of running an eval on a single dataset item.
+    The scores an eval produced for a single dataset item.
 
     This is a child of an EvalConfig, which specifies how the scores were generated.
 
     Eval runs can be one of 2 types:
-    1) eval_config_eval=False: we were evaluating a task run (a method of running the task). We get the task input from the dataset_id.input, run the task with the task_run_config, then ran the evaluator on that output. task_run_config_id must be set. The output saved in this model is the output of the task run.
-    2) eval_config_eval=True: we were evaluating an eval config (a method of evaluating the task). We used the existing dataset item input/output, and ran the evaluator on it. task_run_config_id must be None. The input/output saved in this model is the input/output of the dataset item.
+    1) eval_config_eval=False (scoring): we were evaluating a task run config (a method of running the task). We take the item's input, run the task with the task_run_config, then run the evaluator on that output. task_run_config_id must be set.
+    2) eval_config_eval=True (calibration): we were evaluating an eval config (a method of evaluating the task). We used an existing human-rated dataset item's input/output, and ran the evaluator on it. task_run_config_id must be None.
+
+    A record is described by two independent facts — whether it points at a TaskRun, and
+    whether it was skipped — which `validate_record_mode` constrains to three legal
+    shapes. What is exclusive is where the trace lives: on the record, or on the TaskRun,
+    never both.
+
+    - **Pointer** (new): `scored_run_id` names the TaskRun that holds the trace. All
+      inline trace fields must be None.
+    - **Skipped**: `skipped_reason` set, so scores are not required. It also carries a
+      `scored_run_id` if the trace existed and only scoring was skipped — so a skip can
+      be a pointer record too — and none if the skip happened before generation.
+    - **Legacy inline**: no `scored_run_id`; the trace lives on this record, and `input`
+      is required unless the record was skipped. Every record written before the
+      trace/score split is in this state, and it stays valid forever.
     """
 
     dataset_id: ID_TYPE | None = Field(
         default=None,
         description="The ID of the dataset item (TaskRun) that was used for this run. Mutually exclusive with eval_input_id.",
+    )
+    scored_run_id: ID_TYPE | None = Field(
+        default=None,
+        description="The ID of the TaskRun this score was computed over. None for legacy records that carry their trace inline. A dangling reference is tolerated: the score still renders and still aggregates, only the trace drill-through is unavailable.",
     )
     task_run_config_id: ID_TYPE | None = Field(
         description="The ID of the TaskRunConfig that was run, if this eval run was based on a task run. Must belong to the same Task as this eval. Can be None if this eval run is based on an eval config."
@@ -672,16 +714,20 @@ class EvalRun(KilnParentedModel):
         description="Whether this eval run to evaluate the parent eval config (evaluating the config using an existing dataset item). If true, task_run_config_id must be None, as we're not running the task.",
         default=False,
     )
-    input: str = Field(
-        description="The input to the task. JSON formatted for structured input, plaintext for unstructured input."
+    input: str | None = Field(
+        default=None,
+        json_schema_extra={"deprecated": True},
+        description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.input instead. The input to the task. JSON formatted for structured input, plaintext for unstructured input. Required on legacy records (those with neither a scored_run_id nor a skipped_reason), never set on new ones.",
     )
     output: str | None = Field(
         default=None,
-        description="The output of the task. None for skipped-before-execution runs.",
+        json_schema_extra={"deprecated": True},
+        description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.output.output instead. The output of the task. None for skipped-before-execution runs.",
     )
     reference_answer: str | None = Field(
         default=None,
-        description="The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.",
+        json_schema_extra={"deprecated": True},
+        description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id. The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.",
     )
     intermediate_outputs: Dict[str, str] | None = Field(
         default=None,
@@ -689,7 +735,8 @@ class EvalRun(KilnParentedModel):
     )
     task_run_trace: str | None = Field(
         default=None,
-        description="The JSON formatted trace of the task run that produced the output.",
+        json_schema_extra={"deprecated": True},
+        description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.trace instead. The JSON formatted trace of the task run that produced the output.",
     )
     scores: EvalScores = Field(
         default={},
@@ -697,7 +744,12 @@ class EvalRun(KilnParentedModel):
     )
     task_run_usage: Usage | None = Field(
         default=None,
-        description="The usage of the task run that produced this eval run output (not the usage by the evaluation model).",
+        json_schema_extra={"deprecated": True},
+        description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.usage instead. The usage of the task run that produced this eval run output (not the usage by the evaluation model).",
+    )
+    eval_usage: Usage | None = Field(
+        default=None,
+        description="The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field.",
     )
 
     eval_input_id: ID_TYPE | None = Field(
@@ -732,8 +784,45 @@ class EvalRun(KilnParentedModel):
         return self
 
     @model_validator(mode="after")
+    def validate_record_mode(self) -> Self:
+        """Keep the three record states (pointer / skipped / legacy inline) exclusive.
+
+        The forbidding half of the pointer rule is the one that earns its keep: a record
+        that points at a TaskRun must never also carry a second copy of what it scored,
+        which nothing would keep in sync.
+        """
+        inline_set = [f for f in LEGACY_TRACE_FIELDS if getattr(self, f) is not None]
+
+        if self.scored_run_id is not None:
+            # Checked before the skip branch on purpose: a record skipped at *scoring*
+            # time still has a scored_run_id, and still must not carry inline data.
+            if self.input is not None or inline_set:
+                carried = (["input"] if self.input is not None else []) + inline_set
+                raise ValueError(
+                    "An EvalRun with scored_run_id must not carry inline trace data "
+                    f"(set: {', '.join(carried)}). "
+                    "The trace lives on the referenced TaskRun."
+                )
+            return self
+
+        if self.skipped_reason is not None:
+            # Skipped before generation: there is nothing to point at, and nothing to
+            # require. Legacy skipped records that do carry inline data stay valid.
+            return self
+
+        if self.input is None:
+            raise ValueError("A legacy EvalRun (no scored_run_id) requires input.")
+        return self
+
+    @model_validator(mode="after")
     def validate_output_fields(self) -> Self:
+        # Resolved before the pointer bypass below, so the pointer path can't skip the
+        # parent-type check.
         parent_eval_config = self.parent_eval_config()
+        if self.scored_run_id is not None:
+            # Pointer mode: the output lives on the referenced TaskRun, and
+            # validate_record_mode has already required it to be absent here.
+            return self
         if parent_eval_config and parent_eval_config.config_type == EvalConfigType.v2:
             return self
         parent_eval = parent_eval_config.parent_eval() if parent_eval_config else None

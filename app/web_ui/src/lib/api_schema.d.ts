@@ -6445,6 +6445,26 @@ export interface components {
             [key: string]: unknown;
         };
         /**
+         * EvalItemSource
+         * @description The eval dataset item a TaskRun was generated for.
+         *
+         *     Not the run config — that lives on the same TaskRun at
+         *     `output.source.run_config_id`.
+         */
+        EvalItemSource: {
+            /**
+             * Source Type
+             * @description Which store the dataset item came from: an EvalInput (V2) or a TaskRun (V1-backed split).
+             * @enum {string}
+             */
+            source_type: "eval_input" | "task_run";
+            /**
+             * Source Id
+             * @description The id of the dataset item this run was generated for. Interpreted within the store named by source_type — ids are only unique within a store.
+             */
+            source_id: string;
+        };
+        /**
          * EvalOutputScore
          * @description A definition of a score that an evaluator will produce.
          *
@@ -6620,13 +6640,27 @@ export interface components {
         };
         /**
          * EvalRun
-         * @description The results of running an eval on a single dataset item.
+         * @description The scores an eval produced for a single dataset item.
          *
          *     This is a child of an EvalConfig, which specifies how the scores were generated.
          *
          *     Eval runs can be one of 2 types:
-         *     1) eval_config_eval=False: we were evaluating a task run (a method of running the task). We get the task input from the dataset_id.input, run the task with the task_run_config, then ran the evaluator on that output. task_run_config_id must be set. The output saved in this model is the output of the task run.
-         *     2) eval_config_eval=True: we were evaluating an eval config (a method of evaluating the task). We used the existing dataset item input/output, and ran the evaluator on it. task_run_config_id must be None. The input/output saved in this model is the input/output of the dataset item.
+         *     1) eval_config_eval=False (scoring): we were evaluating a task run config (a method of running the task). We take the item's input, run the task with the task_run_config, then run the evaluator on that output. task_run_config_id must be set.
+         *     2) eval_config_eval=True (calibration): we were evaluating an eval config (a method of evaluating the task). We used an existing human-rated dataset item's input/output, and ran the evaluator on it. task_run_config_id must be None.
+         *
+         *     A record is described by two independent facts — whether it points at a TaskRun, and
+         *     whether it was skipped — which `validate_record_mode` constrains to three legal
+         *     shapes. What is exclusive is where the trace lives: on the record, or on the TaskRun,
+         *     never both.
+         *
+         *     - **Pointer** (new): `scored_run_id` names the TaskRun that holds the trace. All
+         *       inline trace fields must be None.
+         *     - **Skipped**: `skipped_reason` set, so scores are not required. It also carries a
+         *       `scored_run_id` if the trace existed and only scoring was skipped — so a skip can
+         *       be a pointer record too — and none if the skip happened before generation.
+         *     - **Legacy inline**: no `scored_run_id`; the trace lives on this record, and `input`
+         *       is required unless the record was skipped. Every record written before the
+         *       trace/score split is in this state, and it stays valid forever.
          */
         EvalRun: {
             /**
@@ -6662,6 +6696,11 @@ export interface components {
              */
             dataset_id?: string | null;
             /**
+             * Scored Run Id
+             * @description The ID of the TaskRun this score was computed over. None for legacy records that carry their trace inline. A dangling reference is tolerated: the score still renders and still aggregates, only the trace drill-through is unavailable.
+             */
+            scored_run_id?: string | null;
+            /**
              * Task Run Config Id
              * @description The ID of the TaskRunConfig that was run, if this eval run was based on a task run. Must belong to the same Task as this eval. Can be None if this eval run is based on an eval config.
              */
@@ -6674,17 +6713,20 @@ export interface components {
             eval_config_eval: boolean;
             /**
              * Input
-             * @description The input to the task. JSON formatted for structured input, plaintext for unstructured input.
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.input instead. The input to the task. JSON formatted for structured input, plaintext for unstructured input. Required on legacy records (those with neither a scored_run_id nor a skipped_reason), never set on new ones.
              */
-            input: string;
+            input?: string | null;
             /**
              * Output
-             * @description The output of the task. None for skipped-before-execution runs.
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.output.output instead. The output of the task. None for skipped-before-execution runs.
              */
             output?: string | null;
             /**
              * Reference Answer
-             * @description The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id. The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.
              */
             reference_answer?: string | null;
             /**
@@ -6696,7 +6738,8 @@ export interface components {
             } | null;
             /**
              * Task Run Trace
-             * @description The JSON formatted trace of the task run that produced the output.
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.trace instead. The JSON formatted trace of the task run that produced the output.
              */
             task_run_trace?: string | null;
             /**
@@ -6707,8 +6750,13 @@ export interface components {
             scores: {
                 [key: string]: number;
             };
-            /** @description The usage of the task run that produced this eval run output (not the usage by the evaluation model). */
+            /**
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.usage instead. The usage of the task run that produced this eval run output (not the usage by the evaluation model).
+             */
             task_run_usage?: components["schemas"]["Usage"] | null;
+            /** @description The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field. */
+            eval_usage?: components["schemas"]["Usage"] | null;
             /**
              * Eval Input Id
              * @description ID of the EvalInput used for this run (V2 evals). Mutually exclusive with dataset_id.
@@ -11327,6 +11375,8 @@ export interface components {
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
              */
             parent_task_run_id?: string | null;
+            /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
+            eval_source?: components["schemas"]["EvalItemSource"] | null;
         };
         /**
          * TaskRun
@@ -11406,6 +11456,8 @@ export interface components {
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
              */
             parent_task_run_id?: string | null;
+            /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
+            eval_source?: components["schemas"]["EvalItemSource"] | null;
             /** Model Type */
             readonly model_type: string;
         };
