@@ -2162,7 +2162,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Eval Run Results */
+        /**
+         * Get Eval Run Results
+         * @description Results for one run config, scoped to one of the eval's splits.
+         */
         get: operations["get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get"];
         put?: never;
         post?: never;
@@ -6231,7 +6234,8 @@ export interface components {
             current_config_id?: string | null;
             /**
              * Eval Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included when running this eval (V1 TaskRun-typed).
+             * @deprecated
+             * @description Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['test'] once, and the field is then cleared. It is always saved as null. Read splits['test'] instead.
              */
             eval_set_filter_id?: string | null;
             /**
@@ -6241,14 +6245,17 @@ export interface components {
             eval_configs_filter_id?: string | null;
             /**
              * Train Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning.
+             * @deprecated
+             * @description Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['train'] once, and the field is then cleared. It is always saved as null. Read splits['train'] instead.
              */
             train_set_filter_id?: string | null;
             /**
-             * Eval Input Filter Id
-             * @description Filter ID for EvalInput-backed datasets (V2). Mutually exclusive with eval_set_filter_id.
+             * Splits
+             * @description The eval's dataset splits, keyed by split name ('test', 'train', 'val'), and the only place they are stored. Each split names the store its items come from and the filter that selects them. Keys this build doesn't know are preserved but not exposed. 'golden' is not a split and does not belong here: the golden set must be dataset (TaskRun) based, because human ratings only exist on dataset items, so it is stored in eval_configs_filter_id instead. Nothing reads splits['golden'] — writing it is accepted and silently ignored. In Python, prefer Eval.set_split() to assigning into this dict: it refuses to mutate a readonly (cached) eval, and marks the field as set so exclude_unset dumps keep it.
              */
-            eval_input_filter_id?: string | null;
+            splits?: {
+                [key: string]: components["schemas"]["TaskRunSplit"] | components["schemas"]["EvalInputSplit"];
+            };
             /**
              * Output Scores
              * @description The scores this evaluator should produce.
@@ -6423,6 +6430,21 @@ export interface components {
          */
         EvalDataType: "final_answer" | "full_trace" | "reference_answer";
         /**
+         * EvalInputSplit
+         * @description A split whose items are EvalInputs, selected by an eval-input filter.
+         */
+        EvalInputSplit: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            source: "eval_input";
+            /** Filter Id */
+            filter_id: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
          * EvalOutputScore
          * @description A definition of a score that an evaluator will produce.
          *
@@ -6474,9 +6496,14 @@ export interface components {
             golden_dataset_fully_rated_count: number;
             /**
              * Train Dataset Size
-             * @description The total size of the train dataset.
+             * @description The total size of the train split. 0 when the eval has no train split.
              */
             train_dataset_size: number;
+            /**
+             * Val Dataset Size
+             * @description The total size of the val split. 0 when the eval has no val split.
+             */
+            val_dataset_size: number;
             /** @description The currently selected eval config. */
             current_eval_method?: components["schemas"]["EvalConfig"] | null;
         };
@@ -6762,6 +6789,22 @@ export interface components {
          * @enum {string}
          */
         EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
+        /**
+         * EvalsResponse
+         * @description The evals of a task, plus how many eval files this version of Kiln couldn't read.
+         */
+        EvalsResponse: {
+            /**
+             * Evals
+             * @description The evals which loaded successfully.
+             */
+            evals: components["schemas"]["Eval"][];
+            /**
+             * Load Error Count
+             * @description How many eval files failed to load. Usually because they were written by a newer version of Kiln.
+             */
+            load_error_count: number;
+        };
         /** ExactMatchProperties */
         ExactMatchProperties: {
             /**
@@ -11432,6 +11475,21 @@ export interface components {
         TaskRunSnapshot: {
             /** Trace */
             trace?: components["schemas"]["TraceMessage"][] | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * TaskRunSplit
+         * @description A split whose items are TaskRuns, selected by a dataset filter.
+         */
+        TaskRunSplit: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            source: "task_run";
+            /** Filter Id */
+            filter_id: string;
         } & {
             [key: string]: unknown;
         };
@@ -16928,7 +16986,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Eval"][];
+                    "application/json": components["schemas"]["EvalsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -17331,7 +17389,10 @@ export interface operations {
     };
     get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get: {
         parameters: {
-            query?: never;
+            query: {
+                /** @description Which of the eval's dataset splits to return results for. Required: every response about eval results is scoped to exactly one split, and reading has no obvious default the way running does. */
+                split: "train" | "val" | "test";
+            };
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Union
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Discriminator,
     Field,
     GetJsonSchemaHandler,
@@ -969,6 +970,51 @@ class EvalDataType(str, Enum):
     reference_answer = "reference_answer"
 
 
+class TaskRunSplit(BaseModel):
+    """A split whose items are TaskRuns, selected by a dataset filter."""
+
+    # Fields a future build adds are preserved rather than dropped, for the same reason
+    # Eval.splits keeps unknown split names: these files sync between app versions. It is
+    # also why the legacy-field migration never overwrites a split that `splits` already
+    # describes — rebuilding one from a bare filter-id string would drop everything else
+    # on it.
+    model_config = ConfigDict(extra="allow")
+
+    source: Literal["task_run"] = "task_run"
+    filter_id: DatasetFilterId
+
+
+class EvalInputSplit(BaseModel):
+    """A split whose items are EvalInputs, selected by an eval-input filter."""
+
+    model_config = ConfigDict(extra="allow")
+
+    source: Literal["eval_input"] = "eval_input"
+    filter_id: EvalInputFilterId
+
+
+SplitRef = Annotated[
+    Union[TaskRunSplit, EvalInputSplit],
+    Discriminator("source"),
+]
+"""One of an eval's splits: which store its items come from, and which filter selects them.
+Discriminated on `source`, so a split's backing is part of its value rather than a
+convention a reader has to know."""
+
+EvalSplitName = Literal["train", "val", "test"]
+"""The split names the API exposes. `Eval.splits` is keyed by plain `str` so a file
+written by a build that knows a fourth split still loads here (see Eval.splits)."""
+
+LEGACY_SPLIT_FIELDS: Dict[str, str] = {
+    "test": "eval_set_filter_id",
+    "train": "train_set_filter_id",
+}
+"""Split name -> the deprecated flat `Eval` field a Kiln build predating `splits` stored it
+in. These fields are an input format and nothing else: `Eval.migrate_legacy_split_fields`
+reads each one once, on the way in, and clears it. Nothing else in the codebase reads or
+writes them, and they are never written to disk again — see `Eval.splits`."""
+
+
 class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}):
     """An evaluator definition that specifies what to evaluate and how scores should be produced."""
 
@@ -986,7 +1032,8 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     )
     eval_set_filter_id: DatasetFilterId | None = Field(
         default=None,
-        description="The id of the dataset filter which defines which dataset items are included when running this eval (V1 TaskRun-typed).",
+        deprecated=True,
+        description="Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['test'] once, and the field is then cleared. It is always saved as null. Read splits['test'] instead.",
     )
     eval_configs_filter_id: DatasetFilterId | None = Field(
         default=None,
@@ -994,11 +1041,12 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     )
     train_set_filter_id: DatasetFilterId | None = Field(
         default=None,
-        description="The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning.",
+        deprecated=True,
+        description="Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['train'] once, and the field is then cleared. It is always saved as null. Read splits['train'] instead.",
     )
-    eval_input_filter_id: EvalInputFilterId | None = Field(
-        default=None,
-        description="Filter ID for EvalInput-backed datasets (V2). Mutually exclusive with eval_set_filter_id.",
+    splits: Dict[str, SplitRef] = Field(
+        default_factory=dict,
+        description="The eval's dataset splits, keyed by split name ('test', 'train', 'val'), and the only place they are stored. Each split names the store its items come from and the filter that selects them. Keys this build doesn't know are preserved but not exposed. 'golden' is not a split and does not belong here: the golden set must be dataset (TaskRun) based, because human ratings only exist on dataset items, so it is stored in eval_configs_filter_id instead. Nothing reads splits['golden'] — writing it is accepted and silently ignored. In Python, prefer Eval.set_split() to assigning into this dict: it refuses to mutate a readonly (cached) eval, and marks the field as set so exclude_unset dumps keep it.",
     )
     output_scores: List[EvalOutputScore] = Field(
         description="The scores this evaluator should produce."
@@ -1015,6 +1063,102 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         default=EvalDataType.final_answer,
         description="The output of the task run to evaluate. Can be final answer, full trace, or None for V2 evals.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_eval_input_filter_id(cls, data: Any) -> Any:
+        """Migrate the pre-`splits` `eval_input_filter_id` key into an EvalInput-backed test split.
+
+        A third legacy input for the test split, so it follows the same rule as the two
+        declared legacy fields: it fills the test split only when `splits` does not
+        already describe one, and is dropped either way (it is not a declared field, so
+        it is never written back).
+
+        FUTURE: Safe to delete whenever someone wants to. Only internal projects contained
+        this key and none of them still exist; no public project file has ever had it, so
+        this never becomes a compatibility commitment.
+        """
+        if not isinstance(data, dict):
+            return data
+        filter_id = data.get("eval_input_filter_id")
+        if filter_id is None:
+            return data
+        if data.get("eval_set_filter_id") is not None:
+            # Two legacy inputs naming one split with two different backings. `splits`
+            # winning resolves legacy-vs-`splits` disagreements, but not this one: both
+            # sides here are legacy, so there is no rule that picks between them, and
+            # silently dropping either is worse than refusing the file.
+            raise ValueError(
+                "An eval cannot set both eval_set_filter_id and eval_input_filter_id: they are two backings for the same test split."
+            )
+        data = dict(data)
+        data.pop("eval_input_filter_id")
+        splits = dict(data.get("splits") or {})
+        if "test" not in splits:
+            splits["test"] = {"source": "eval_input", "filter_id": filter_id}
+        data["splits"] = splits
+        return data
+
+    @model_validator(mode="after")
+    def migrate_legacy_split_fields(self) -> Self:
+        """Migrate the deprecated flat filter fields into `splits`, once, and clear them.
+
+        `splits` is the only home a split has. These fields are an input format for evals
+        written before it existed, so each one is read exactly once — here — and only for
+        a split `splits` doesn't already describe. `splits` winning is what makes the
+        migration one-way: once a value is in `splits` it is the eval's answer, and a
+        legacy field left over beside it (a hand-edited file, or one an older build wrote
+        after a newer one) is ignored rather than allowed to overwrite it. Overwriting
+        would also drop any extra fields on the existing split object, which
+        `TaskRunSplit`/`EvalInputSplit` keep on purpose (`extra="allow"`).
+
+        Both fields are then cleared, unconditionally. That is what makes this a
+        migration rather than a second home: nothing downstream can read a stale value,
+        the eval saves with both fields null, and re-running the validator — which
+        `validate_assignment` does on every attribute set, including `self.path = path`
+        at the end of save_to_file — has nothing left to do. An older Kiln build reading
+        the saved file sees no test set rather than the wrong one; that is the accepted
+        cost of a single home, and the eval list surfaces the evals it can't read.
+
+        Reads and writes go through `__dict__` because the fields are
+        `deprecated=True`: attribute access on them emits a DeprecationWarning, which is
+        meant for callers, not for the one place that is supposed to touch them.
+
+        Must stay declared before validate_splits, which requires a test split: an eval
+        that carries only legacy fields gets its test split from here.
+        """
+        for name, field_name in LEGACY_SPLIT_FIELDS.items():
+            filter_id = self.__dict__.get(field_name)
+            if filter_id is not None and name not in self.splits:
+                self.splits[name] = TaskRunSplit(filter_id=filter_id)
+                # The split now lives only in `splits`, so an exclude_unset dump has to
+                # carry it: on a legacy eval `splits` was never explicitly set.
+                self.__pydantic_fields_set__.add("splits")
+            self.__dict__[field_name] = None
+        return self
+
+    @model_validator(mode="after")
+    def validate_splits(self) -> Self:
+        if "test" not in self.splits:
+            raise ValueError("An eval must have a test split. Set splits['test'].")
+        return self
+
+    def set_split(self, name: str, split: SplitRef) -> None:
+        """Set one of the eval's splits.
+
+        Equivalent to `eval.splits[name] = split` plus the two things item assignment on
+        a dict can't do for itself, because it never reaches `__setattr__`: refusing to
+        mutate a readonly (cached) eval, and marking `splits` as set so an
+        exclude_unset dump still carries it.
+        """
+        # Readonly instances are the cached ones, shared with every other holder of the
+        # same file, so this check has to be explicit here.
+        self._ensure_not_readonly("splits")
+        self.splits[name] = split
+        # Validated evals always have `splits` marked already (their test split came from
+        # `splits` or from the legacy migration, which marks it), so this is for instances
+        # built by model_construct, where nothing did.
+        self.__pydantic_fields_set__.add("splits")
 
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:
@@ -1105,27 +1249,6 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         return self
 
     @model_validator(mode="after")
-    def migrate_train_set_filter_id(self) -> Self:
-        """
-        Migration: Auto-create a train_set_filter_id for legacy evals that don't have one.
-
-        Generates a tag-based filter ID from the eval name following the convention
-        used by spec-based evals (e.g., "train_{name_slug}").
-        """
-        if self.id is None:
-            return self
-
-        if not self._loaded_from_file:
-            return self
-
-        if self.train_set_filter_id is not None:
-            return self
-
-        tag_suffix = self.name.lower().replace(" ", "_")
-        self.train_set_filter_id = f"tag::train_{tag_suffix}"
-        return self
-
-    @model_validator(mode="after")
     def validate_scores(self) -> Self:
         if self.output_scores is None or len(self.output_scores) == 0:
             raise ValueError(
@@ -1137,16 +1260,6 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         if len(output_score_keys) != len(set(output_score_keys)):
             raise ValueError(
                 f"output_scores must have unique names (once transformed to JSON keys). Got: [{', '.join(output_score_keys)}]"
-            )
-        return self
-
-    @model_validator(mode="after")
-    def validate_filter_fields(self) -> Self:
-        has_v1 = self.eval_set_filter_id is not None
-        has_v2 = self.eval_input_filter_id is not None
-        if has_v1 == has_v2:
-            raise ValueError(
-                "Exactly one of eval_set_filter_id or eval_input_filter_id must be set"
             )
         return self
 
