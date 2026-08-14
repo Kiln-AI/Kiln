@@ -54,6 +54,9 @@ const { mockPage, mockGoto, mockClientGET, mockLoadTask, mockLoadModels } =
             id: "eval1",
             name: "Test Eval",
             eval_set_filter_id: null,
+            splits: {
+              test: { source: "eval_input", filter_id: "tag::inputs" },
+            },
             eval_configs: [],
             eval_config_type: "v2",
             output_scores: [],

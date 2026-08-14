@@ -4,9 +4,21 @@ This module contains helper functions for creating specs and their associated ev
 These functions are used by both the core spec API and the desktop copilot API.
 """
 
+from typing import NamedTuple
+
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
-from kiln_ai.datamodel.eval import EvalDataType, EvalOutputScore, EvalTemplateId
+from kiln_ai.datamodel.dataset_filters import DatasetFilterId
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalDataType,
+    EvalOutputScore,
+    EvalSplitName,
+    EvalTemplateId,
+    SplitRef,
+    TaskRunSplit,
+)
 from kiln_ai.datamodel.spec_properties import SpecType
+from kiln_ai.datamodel.task import Task
 
 
 def spec_eval_output_score(spec_name: str) -> EvalOutputScore:
@@ -65,33 +77,98 @@ def spec_eval_template(spec_type: SpecType) -> EvalTemplateId | None:
             return None
 
 
-def generate_spec_eval_tags(spec_name: str) -> tuple[str, str, str]:
-    """Generate eval, train, and golden tags for a spec.
+class SpecEvalTags(NamedTuple):
+    """The dataset tags a new spec eval's items carry.
 
-    Args:
-        spec_name: The name of the spec
+    A NamedTuple so existing positional unpacking keeps working, while callers that only
+    want one of four same-typed strings can name it instead of counting positions.
+    """
 
-    Returns:
-        Tuple of (eval_tag, train_tag, golden_tag)
+    eval_tag: str
+    train_tag: str
+    val_tag: str
+    golden_tag: str
+
+
+def generate_spec_eval_tags(spec_name: str) -> SpecEvalTags:
+    """Generate eval, train, val, and golden tags for a spec.
+
+    `eval_tag` names the TEST set; see spec_eval_splits for why that name persists.
     """
     tag_suffix = spec_name.lower().replace(" ", "_")
-    eval_tag = f"eval_{tag_suffix}"
-    train_tag = f"train_{tag_suffix}"
-    golden_tag = f"eval_golden_{tag_suffix}"
-    return eval_tag, train_tag, golden_tag
+    return SpecEvalTags(
+        eval_tag=f"eval_{tag_suffix}",
+        train_tag=f"train_{tag_suffix}",
+        val_tag=f"val_{tag_suffix}",
+        golden_tag=f"eval_golden_{tag_suffix}",
+    )
 
 
-def generate_spec_eval_filter_ids(
-    eval_tag: str, train_tag: str, golden_tag: str
-) -> tuple[str, str, str]:
-    """Generate filter IDs for eval set, train set, and eval configs.
+def tag_filter_id(tag: str) -> DatasetFilterId:
+    """The dataset filter that selects the items carrying a tag."""
+    return f"tag::{tag}"
 
-    Args:
-        eval_tag: The eval dataset tag
-        train_tag: The train dataset tag
-        golden_tag: The golden dataset tag
 
-    Returns:
-        Tuple of (eval_set_filter_id, train_set_filter_id, eval_configs_filter_id)
+def spec_eval_splits(
+    *, eval_tag: str, train_tag: str, val_tag: str
+) -> dict[EvalSplitName, SplitRef]:
+    """The splits a new spec eval is created with, all backed by tagged TaskRuns.
+
+    Keyword-only: three same-typed tag strings whose order has to be memorized is the
+    hazard this function exists to remove, so swapping two of them is made unrepresentable
+    rather than left to a reader.
+
+    `eval_tag` names the TEST split. "eval_" is the historical prefix for the test set's
+    tag, kept because it is on dataset items in shipped projects; nothing else in this
+    signature carries the legacy vocabulary.
+
+    The golden set is not a split and is not returned here: it is TaskRun-only by
+    definition, and keeping it out of the splits dict is what keeps that true at the type
+    level.
     """
-    return f"tag::{eval_tag}", f"tag::{train_tag}", f"tag::{golden_tag}"
+    return {
+        "test": TaskRunSplit(filter_id=tag_filter_id(eval_tag)),
+        "train": TaskRunSplit(filter_id=tag_filter_id(train_tag)),
+        "val": TaskRunSplit(filter_id=tag_filter_id(val_tag)),
+    }
+
+
+def build_spec_eval(
+    *,
+    task: Task,
+    name: str,
+    spec_type: SpecType,
+    evaluate_full_trace: bool,
+) -> tuple[Eval, SpecEvalTags]:
+    """A new spec eval, with its test, train and val splits already set.
+
+    Returns the eval alongside the dataset tags its items must carry, so a caller that
+    generates those items can tag them. The eval is not saved.
+
+    Every spec-eval creation path goes through here, so the three splits and the tags
+    naming their items are derived from the eval's name in one place rather than being
+    reassembled per caller.
+    """
+    tags = generate_spec_eval_tags(name)
+    splits = spec_eval_splits(
+        eval_tag=tags.eval_tag, train_tag=tags.train_tag, val_tag=tags.val_tag
+    )
+    # Eval.splits is keyed by str, and dict key types are invariant, so the narrower
+    # mapping has to be widened rather than passed through.
+    widened_splits: dict[str, SplitRef] = {
+        split_name: split for split_name, split in splits.items()
+    }
+
+    eval = Eval(
+        parent=task,
+        name=name,
+        description=None,
+        template=spec_eval_template(spec_type),
+        output_scores=[spec_eval_output_score(name)],
+        splits=widened_splits,
+        eval_configs_filter_id=tag_filter_id(tags.golden_tag),
+        template_properties=None,
+        evaluation_data_type=spec_eval_data_type(spec_type, evaluate_full_trace),
+    )
+
+    return eval, tags

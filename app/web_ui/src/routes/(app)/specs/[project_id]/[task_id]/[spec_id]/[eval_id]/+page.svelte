@@ -25,6 +25,12 @@
   import { getDetailedModelNameFromParts } from "$lib/utils/run_config_formatters"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { tagFromFilterId, linkFromFilterId } from "../../spec_utils"
+  import {
+    eval_split,
+    eval_split_filter_id,
+    task_run_split_filter_id,
+  } from "$lib/utils/eval_splits"
+  import { build_eval_generation_splits_param } from "$lib/utils/eval_generation_splits"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -227,6 +233,12 @@
     }
   }
 
+  // Progress is a separate request from the eval itself, so until it lands there is no
+  // count to append.
+  function item_count_suffix(count: number | null | undefined): string {
+    return count === null || count === undefined ? "" : ` (${count} items)`
+  }
+
   function get_eval_properties(
     evaluator: Eval | null,
     eval_progress: EvalProgress | null,
@@ -267,49 +279,80 @@
       value: evaluator.id || "unknown",
     })
 
-    let eval_set_size = ""
-    if (eval_progress) {
-      eval_set_size = " (" + eval_progress.dataset_size + " items)"
-    }
+    // Every dataset row renders whether or not the eval has that dataset. A dataset is
+    // only there if something explicitly wrote one (functional spec 3.2 — unconfigured
+    // splits stay unconfigured), so most pre-existing evals are missing several. Hiding a
+    // row would make "this eval has no val set" indistinguishable from "this page doesn't
+    // show val sets". With no dataset there is no filter to show, no items to count and
+    // nothing to link to, so the row says so instead.
+    const NOT_CONFIGURED = "Not configured"
+
+    const test_filter_id = eval_split_filter_id(evaluator, "test")
     properties.push({
-      name: "Eval Dataset",
-      value: evaluator.eval_set_filter_id + eval_set_size,
-      link: linkFromFilterId(project_id, task_id, evaluator.eval_set_filter_id),
+      name: "Test Dataset",
+      tooltip:
+        "Held-out data for measuring final quality. Not used for training or tuning. Shown in the 'Compare' view metrics.",
+      value: test_filter_id
+        ? test_filter_id + item_count_suffix(eval_progress?.dataset_size)
+        : NOT_CONFIGURED,
+      link: test_filter_id
+        ? linkFromFilterId(
+            project_id,
+            task_id,
+            task_run_split_filter_id(evaluator, "test"),
+          )
+        : undefined,
     })
-    let golden_dataset_size = ""
-    if (eval_progress) {
-      golden_dataset_size = " (" + eval_progress.golden_dataset_size + " items)"
-    }
-    if (evaluator.eval_configs_filter_id) {
-      properties.push({
-        name: "Golden Dataset",
-        value: evaluator.eval_configs_filter_id + golden_dataset_size,
-        tooltip:
-          "This is the dataset that we use to evaluate the quality of judge models. Items in this set need human ratings so we can compare judge ratings to human ratings.",
-        link: linkFromFilterId(
-          project_id,
-          task_id,
-          evaluator.eval_configs_filter_id,
-        ),
-      })
-    }
-    if (evaluator.train_set_filter_id) {
-      let train_dataset_size = ""
-      if (eval_progress) {
-        train_dataset_size = " (" + eval_progress.train_dataset_size + " items)"
-      }
-      properties.push({
-        name: "Training Dataset",
-        value: evaluator.train_set_filter_id + train_dataset_size,
-        tooltip:
-          "The dataset used as training examples during prompt optimization.",
-        link: linkFromFilterId(
-          project_id,
-          task_id,
-          evaluator.train_set_filter_id,
-        ),
-      })
-    }
+
+    const train_filter_id = eval_split_filter_id(evaluator, "train")
+    properties.push({
+      name: "Training Dataset",
+      value: train_filter_id
+        ? train_filter_id + item_count_suffix(eval_progress?.train_dataset_size)
+        : NOT_CONFIGURED,
+      tooltip: "The training set used for optimization.",
+      link: train_filter_id
+        ? linkFromFilterId(
+            project_id,
+            task_id,
+            task_run_split_filter_id(evaluator, "train"),
+          )
+        : undefined,
+    })
+
+    const val_filter_id = eval_split_filter_id(evaluator, "val")
+    properties.push({
+      name: "Validation Dataset",
+      value: val_filter_id
+        ? val_filter_id + item_count_suffix(eval_progress?.val_dataset_size)
+        : NOT_CONFIGURED,
+      tooltip: "The validation set used for optimization.",
+      link: val_filter_id
+        ? linkFromFilterId(
+            project_id,
+            task_id,
+            task_run_split_filter_id(evaluator, "val"),
+          )
+        : undefined,
+    })
+
+    // Golden comes after the three `splits` datasets rather than beside the test one.
+    // Test/training/validation are the eval's own splits and read as a set; golden is a
+    // different kind of thing (human-rated items for judging the judge), so it sits at
+    // the end instead of interrupting them.
+    const golden_filter_id = evaluator.eval_configs_filter_id
+    properties.push({
+      name: "Golden Dataset",
+      value: golden_filter_id
+        ? golden_filter_id +
+          item_count_suffix(eval_progress?.golden_dataset_size)
+        : NOT_CONFIGURED,
+      tooltip:
+        "This is the dataset that we use to evaluate the quality of judge models. Items in this set need human ratings so we can compare judge ratings to human ratings.",
+      link: golden_filter_id
+        ? linkFromFilterId(project_id, task_id, golden_filter_id)
+        : undefined,
+    })
 
     if (eval_progress?.current_eval_method) {
       if (eval_progress.current_eval_method.config_type === "v2") {
@@ -348,6 +391,10 @@
   let edit_dialog: EditDialog | null = null
 
   const MIN_DATASET_SIZE = 25
+  // Lower than the test goal because golden takes the smallest share of generated data
+  // (GOLDEN_SPLIT_WEIGHT is 10 of 100). Held to the same 25, golden — not the test set —
+  // is what this step waits on.
+  const MIN_GOLDEN_DATASET_SIZE = 12
   let current_step: 0 | 1 | 2 | 3 | 4 | 5 | 6 = 0
   let current_step_id:
     | "goals"
@@ -422,7 +469,7 @@
     } else {
       return {
         1: "Each eval needs a set of quality goals to measure (aka 'eval scores'). You can add separate evals for different goals, or multiple goals to the same eval.",
-        2: "Each eval needs two datasets: one for ensuring the eval works (eval set), and another to help find the best way of running your task (golden set). We'll help you create both with synthetic data!",
+        2: "Evals need datasets for training, validating and evaluating. Import a dataset, or use synthetic data generation.",
         3: "A 'golden' dataset is a dataset of items that are rated by humans. Rating a 'golden' dataset lets us determine if the judge is working by checking how well it aligns to human preferences. ",
         4: "Benchmark various judge methods (model+prompt+algorithm). We'll compare judges to your golden dataset to find the judge which best matches your human preferences.",
         5: "This tool will help you compare a variety of options for running this task and find the best one for your eval's goals. You can compare different models, prompts, tools, or fine-tunes.",
@@ -460,7 +507,7 @@
     required_more_eval_data = progress.dataset_size < MIN_DATASET_SIZE
     required_more_golden_data =
       evaluator?.template !== "rag" &&
-      progress.golden_dataset_size < MIN_DATASET_SIZE
+      progress.golden_dataset_size < MIN_GOLDEN_DATASET_SIZE
     if (required_more_eval_data || required_more_golden_data) {
       return
     }
@@ -522,8 +569,20 @@
       alert("Unable to add eval data. Please try again later.")
       return
     }
-    const eval_tag = evaluator?.eval_set_filter_id
-      ? tagFromFilterId(evaluator.eval_set_filter_id)
+    // Adding eval data writes TaskRuns, so only a TaskRun-backed test split has a tag
+    // it can add under. An EvalInput-backed one gets its own message: "use a tag filter
+    // instead" is not advice that helps when the store, not the filter's form, is what
+    // this flow can't reach. The message diagnoses and stops there — nothing in this app
+    // creates eval inputs, so there is no action to point at.
+    if (eval_split(evaluator, "test")?.source === "eval_input") {
+      alert(
+        "This eval uses our new eval dataset format, which can't be generated from this UI.",
+      )
+      return
+    }
+    const test_filter_id = task_run_split_filter_id(evaluator, "test")
+    const eval_tag = test_filter_id
+      ? tagFromFilterId(test_filter_id)
       : undefined
     let golden_tag: string | undefined = undefined
     if (evaluator?.eval_configs_filter_id) {
@@ -548,16 +607,11 @@
     params.set("eval_id", `${project_id}::${task_id}::${eval_id}`)
     params.set("eval_link", window.location.pathname)
 
-    if (evaluator.template === "rag") {
-      // No golden set for rag evals
-      if (eval_tag) {
-        params.set("splits", `${eval_tag}:1.0`)
-      }
-    } else {
-      // For other templates, use the default splits approach
-      if (golden_tag) {
-        params.set("splits", `${eval_tag}:0.8,${golden_tag}:0.2`)
-      }
+    // Every entry into this flow allocates generated data the same way, so the eval's
+    // splits decide the allocation rather than which button reached here.
+    const splits_param = build_eval_generation_splits_param(evaluator)
+    if (splits_param) {
+      params.set("splits", splits_param)
     }
 
     // Add tool_id for tool call evals
@@ -706,10 +760,12 @@
                         <div class="mb-1">
                           {#if eval_progress && !required_more_eval_data && !required_more_golden_data}
                             {#if evaluator?.template === "rag"}
-                              You have {eval_progress?.dataset_size} eval items.
+                              You have {eval_progress?.dataset_size} test dataset
+                              items.
                             {:else}
-                              You have {eval_progress?.dataset_size} eval items and
-                              {eval_progress?.golden_dataset_size} golden items.
+                              You have {eval_progress?.dataset_size} test dataset
+                              items and {eval_progress?.golden_dataset_size} golden
+                              items.
                             {/if}
                           {:else if eval_progress && eval_progress.dataset_size == 0 && eval_progress.golden_dataset_size == 0 && evaluator.template === "rag"}
                             Create a query & answer dataset for this eval.
@@ -718,15 +774,17 @@
                           {:else if eval_progress && (required_more_eval_data || required_more_golden_data)}
                             You require additional eval data. You only have
                             {#if required_more_eval_data && required_more_golden_data}
-                              {eval_progress?.dataset_size} eval items and {eval_progress?.golden_dataset_size}
+                              {eval_progress?.dataset_size} test dataset items and
+                              {eval_progress?.golden_dataset_size}
                               golden items. We suggest at least {MIN_DATASET_SIZE}
-                              items in each set.
+                              test dataset items and {MIN_GOLDEN_DATASET_SIZE} golden
+                              items.
                             {:else if required_more_eval_data}
-                              {eval_progress?.dataset_size} eval items. We suggest
-                              at least {MIN_DATASET_SIZE} items.
+                              {eval_progress?.dataset_size} test dataset items. We
+                              suggest at least {MIN_DATASET_SIZE} items.
                             {:else if required_more_golden_data}
                               {eval_progress?.golden_dataset_size} golden items.
-                              We suggest at least {MIN_DATASET_SIZE} items.
+                              We suggest at least {MIN_GOLDEN_DATASET_SIZE} items.
                             {/if}
                           {/if}
                         </div>
