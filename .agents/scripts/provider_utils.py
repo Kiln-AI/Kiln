@@ -76,6 +76,11 @@ PROVIDER_CONFIG = {
         "url": "https://api.featherless.ai/v1/models",
         "env": "FEATHERLESS_AI_API_KEY",
     },
+    "orcarouter": {
+        "type": "openai_compat",
+        "url": "https://api.orcarouter.ai/v1/models",
+        "env": "ORCAROUTER_API_KEY",
+    },
     "groq": {
         "type": "openai_compat",
         "url": "https://api.groq.com/openai/v1/models",

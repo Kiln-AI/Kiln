@@ -557,6 +557,7 @@ const provider_name_map: Record<ModelProviderName, string> = {
   cerebras: "Cerebras",
   docker_model_runner: "Docker Model Runner",
   featherless_ai: "Featherless AI",
+  orcarouter: "OrcaRouter",
 }
 
 export function provider_name_from_id(provider_id: string): string {

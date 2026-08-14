@@ -24,6 +24,7 @@ const provider_image_map: Record<
   siliconflow_cn: "/images/siliconflow.svg",
   cerebras: "/images/cerebras.svg",
   featherless_ai: "/images/featherless.svg",
+  orcarouter: "/images/orcarouter.svg",
   kiln_copilot: "/images/kiln_logo_black.svg",
 }
 

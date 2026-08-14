@@ -117,6 +117,7 @@ class ModelProviderName(str, Enum):
     cerebras = "cerebras"
     docker_model_runner = "docker_model_runner"
     featherless_ai = "featherless_ai"
+    orcarouter = "orcarouter"
 
 
 class KilnMimeType(str, Enum):

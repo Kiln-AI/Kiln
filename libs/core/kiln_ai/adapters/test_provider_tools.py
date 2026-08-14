@@ -209,6 +209,7 @@ def test_provider_name_from_id_case_sensitivity():
         (ModelProviderName.fireworks_ai, "Fireworks AI"),
         (ModelProviderName.siliconflow_cn, "SiliconFlow"),
         (ModelProviderName.featherless_ai, "Featherless AI"),
+        (ModelProviderName.orcarouter, "OrcaRouter"),
         (ModelProviderName.kiln_fine_tune, "Fine Tuned Models"),
         (ModelProviderName.kiln_custom_registry, "Custom Models"),
     ],
@@ -1008,6 +1009,7 @@ def mock_config_for_lite_llm_core_config():
         config_instance.azure_openai_api_key = "test-azure-key"
         config_instance.azure_openai_endpoint = "https://test.openai.azure.com"
         config_instance.huggingface_api_key = "test-hf-key"
+        config_instance.orcarouter_api_key = "test-orcarouter-key"
 
         yield mock
 
@@ -1095,6 +1097,19 @@ def mock_config_for_lite_llm_core_config():
         (
             ModelProviderName.huggingface,
             LiteLlmCoreConfig(additional_body_options={"api_key": "test-hf-key"}),
+        ),
+        (
+            ModelProviderName.orcarouter,
+            LiteLlmCoreConfig(
+                base_url="https://api.orcarouter.ai/v1",
+                additional_body_options={
+                    "api_key": "test-orcarouter-key",
+                },
+                default_headers={
+                    "HTTP-Referer": "https://kiln.tech/orcarouter",
+                    "X-Title": "KilnAI",
+                },
+            ),
         ),
         (ModelProviderName.kiln_fine_tune, None),
         (ModelProviderName.kiln_custom_registry, None),

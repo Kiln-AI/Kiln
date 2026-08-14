@@ -49,6 +49,7 @@ def mock_config():
         )
         mock.shared.return_value.siliconflow_cn_api_key = "test-siliconflow-key"
         mock.shared.return_value.featherless_ai_api_key = "test-featherless-key"
+        mock.shared.return_value.orcarouter_api_key = "test-orcarouter-key"
         mock.shared.return_value.docker_model_runner_base_url = (
             "http://localhost:12434/engines/llama.cpp"
         )
@@ -212,6 +213,33 @@ def test_featherless_adapter_creation(mock_config, basic_task):
     }
     # Featherless uses LiteLLM's native provider, not a custom base URL
     assert adapter.config.base_url is None
+
+
+def test_orcarouter_adapter_creation(mock_config, basic_task):
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="anthropic/claude-sonnet-4.6",
+            model_provider_name=ModelProviderName.orcarouter,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+    )
+
+    assert isinstance(adapter, LiteLlmAdapter)
+    assert (
+        adapter.config.run_config_properties.model_name == "anthropic/claude-sonnet-4.6"
+    )
+    assert adapter.config.additional_body_options == {"api_key": "test-orcarouter-key"}
+    assert (
+        adapter.config.run_config_properties.model_provider_name
+        == ModelProviderName.orcarouter
+    )
+    assert adapter.config.default_headers == {
+        "HTTP-Referer": "https://kiln.tech/orcarouter",
+        "X-Title": "KilnAI",
+    }
+    assert adapter.config.base_url == "https://api.orcarouter.ai/v1"
 
 
 @pytest.mark.parametrize(

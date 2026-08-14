@@ -908,6 +908,8 @@ def connect_provider_api(app: FastAPI):
                 return await connect_cerebras(parse_api_key(key_data))
             case ModelProviderName.featherless_ai:
                 return await connect_featherless(parse_api_key(key_data))
+            case ModelProviderName.orcarouter:
+                return await connect_orcarouter(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -983,6 +985,8 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().cerebras_api_key = None
                 case ModelProviderName.featherless_ai:
                     Config.shared().featherless_ai_api_key = None
+                case ModelProviderName.orcarouter:
+                    Config.shared().orcarouter_api_key = None
                 case (
                     ModelProviderName.kiln_custom_registry
                     | ModelProviderName.kiln_fine_tune
@@ -1167,6 +1171,46 @@ async def connect_siliconflow(key: str):
         return JSONResponse(
             status_code=400,
             content={"message": f"Failed to connect to SiliconFlow. Error: {e!s}"},
+        )
+
+
+async def connect_orcarouter(key: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+
+        response = requests.get(
+            "https://api.orcarouter.ai/v1/models",
+            headers=headers,
+        )
+
+        if response.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Failed to connect to OrcaRouter. Invalid API key."
+                },
+            )
+        elif response.status_code == 200:
+            Config.shared().orcarouter_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to OrcaRouter"},
+            )
+        else:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "message": f"Failed to connect to OrcaRouter. Error: [{response.status_code}] {response.text}"
+                },
+            )
+    except Exception as e:
+        # unexpected error
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to OrcaRouter. Error: {e!s}"},
         )
 
 
