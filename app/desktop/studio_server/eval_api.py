@@ -662,12 +662,16 @@ def judge_needs_dataset_runs_message(eval: Eval, config_type: EvalConfigType) ->
     Shared between the creation guard and the run guard so the refusal a user gets when
     they attach the judge and the refusal they get when an already-attached one is run say
     the same thing, the way `no_golden_set_message` is shared with EvalRunner.
+
+    Says "new eval dataset format" rather than naming EvalInputs and TaskRuns: those are
+    model names, not words the UI uses anywhere, and the distinction between the two
+    stores isn't one the user made or can act on. The UI's own refusals for the same
+    situation were rewritten the same way.
     """
     return (
-        f"Eval '{eval.name}' has a test split that isn't backed by dataset runs. The "
-        f"'{config_type.value}' judge type scores the output stored on a dataset run, so "
-        "this eval needs a judge type that scores eval inputs, or a test split backed by "
-        "dataset runs."
+        f"Eval '{eval.name}' uses our new eval dataset format, which the "
+        f"'{config_type.value}' judge type can't score. Choose a judge type that supports "
+        "the new format."
     )
 
 

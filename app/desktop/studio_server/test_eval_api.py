@@ -983,9 +983,8 @@ class TestResolvedSplitOr422:
 # Asserted in full rather than by substring: this project has shipped user-facing strings
 # that were wrong because nothing read them. 'V2 Test Eval' is mock_v2_eval's name.
 V1_JUDGE_ON_EVAL_INPUTS_MESSAGE = (
-    "Eval 'V2 Test Eval' has a test split that isn't backed by dataset runs. The "
-    "'{judge_type}' judge type scores the output stored on a dataset run, so this eval "
-    "needs a judge type that scores eval inputs, or a test split backed by dataset runs."
+    "Eval 'V2 Test Eval' uses our new eval dataset format, which the '{judge_type}' "
+    "judge type can't score. Choose a judge type that supports the new format."
 )
 
 

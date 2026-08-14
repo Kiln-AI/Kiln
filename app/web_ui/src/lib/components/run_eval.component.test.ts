@@ -119,9 +119,8 @@ function visible_text(container: HTMLElement): string {
 // The wording the API refuses a V1 judge with, verbatim from
 // `judge_needs_dataset_runs_message` in app/desktop/studio_server/eval_api.py.
 const V1_JUDGE_REFUSAL =
-  "Eval 'My Eval' has a test split that isn't backed by dataset runs. The " +
-  "'g_eval' judge type scores the output stored on a dataset run, so this eval " +
-  "needs a judge type that scores eval inputs, or a test split backed by dataset runs."
+  "Eval 'My Eval' uses our new eval dataset format, which the 'g_eval' judge type " +
+  "can't score. Choose a judge type that supports the new format."
 
 describe("run_eval — an up-front refusal reaches the user", () => {
   it("shows the server's own 400 message, not a generic error", async () => {
