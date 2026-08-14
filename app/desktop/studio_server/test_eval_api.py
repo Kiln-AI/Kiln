@@ -980,6 +980,166 @@ class TestResolvedSplitOr422:
         assert mock_eval.id in exc_info.value.detail
 
 
+# Asserted in full rather than by substring: this project has shipped user-facing strings
+# that were wrong because nothing read them. 'V2 Test Eval' is mock_v2_eval's name.
+V1_JUDGE_ON_EVAL_INPUTS_MESSAGE = (
+    "Eval 'V2 Test Eval' has a test split that isn't backed by dataset runs. The "
+    "'{judge_type}' judge type scores the output stored on a dataset run, so this eval "
+    "needs a judge type that scores eval inputs, or a test split backed by dataset runs."
+)
+
+
+class TestLegacyJudgeNeedsDatasetRuns:
+    """V1 judges (g_eval, llm_as_judge) score a stored task output, so they need TaskRuns.
+
+    Without these refusals the mismatch only surfaces as `_run_legacy_job`'s ValueError,
+    once per job, which AsyncJobRunner turns into a bare `errors: N` on an HTTP 200 SSE
+    stream — no status code, no reason, nothing the UI can render.
+    """
+
+    CREATE_URL = "/api/projects/project1/tasks/task1/evals/eval_v2/create_eval_config"
+
+    def _v1_request(self, judge_type: str) -> dict:
+        return {
+            "name": "V1 Judge",
+            "type": judge_type,
+            "properties": {"eval_steps": ["step1"]},
+            "model_name": "gpt-4",
+            "provider": "openai",
+        }
+
+    @pytest.mark.parametrize("judge_type", ["g_eval", "llm_as_judge"])
+    def test_create_refuses_v1_judge_on_eval_input_backed_eval(
+        self, client, mock_task_from_id, mock_task, mock_v2_eval, judge_type
+    ):
+        with patch(
+            "app.desktop.studio_server.eval_api.eval_from_id"
+        ) as mock_eval_from_id:
+            mock_eval_from_id.return_value = mock_v2_eval
+            response = client.post(self.CREATE_URL, json=self._v1_request(judge_type))
+
+        assert response.status_code == 400
+        assert response.json()["message"] == V1_JUDGE_ON_EVAL_INPUTS_MESSAGE.format(
+            judge_type=judge_type
+        )
+        # Refused before anything was written.
+        assert len(mock_v2_eval.configs()) == 0
+
+    def test_create_allows_v2_judge_on_eval_input_backed_eval(
+        self, client, mock_task_from_id, mock_task, mock_v2_eval
+    ):
+        with patch(
+            "app.desktop.studio_server.eval_api.eval_from_id"
+        ) as mock_eval_from_id:
+            mock_eval_from_id.return_value = mock_v2_eval
+            response = client.post(
+                self.CREATE_URL,
+                json={
+                    "name": "V2 Judge",
+                    "type": "v2",
+                    "properties": {"type": "exact_match", "expected_value": "hello"},
+                },
+            )
+
+        assert response.status_code == 200
+        assert len(mock_v2_eval.configs()) == 1
+
+    @pytest.mark.parametrize("judge_type", ["g_eval", "llm_as_judge"])
+    def test_create_allows_v1_judge_on_task_run_backed_eval(
+        self, client, mock_task_from_id, mock_task, mock_eval, judge_type
+    ):
+        assert isinstance(mock_eval.splits["test"], TaskRunSplit)
+
+        with patch(
+            "app.desktop.studio_server.eval_api.eval_from_id"
+        ) as mock_eval_from_id:
+            mock_eval_from_id.return_value = mock_eval
+            response = client.post(
+                "/api/projects/project1/tasks/task1/evals/eval1/create_eval_config",
+                json=self._v1_request(judge_type),
+            )
+
+        assert response.status_code == 200
+        assert len(mock_eval.configs()) == 1
+
+    def _run_comparison(self, client, eval_id: str, eval_config_id: str):
+        return client.get(
+            f"/api/projects/project1/tasks/task1/evals/{eval_id}"
+            f"/eval_config/{eval_config_id}/run_comparison",
+            params={"run_config_ids": ["run_config1"]},
+        )
+
+    @pytest.mark.parametrize(
+        "judge_type", [EvalConfigType.g_eval, EvalConfigType.llm_as_judge]
+    )
+    def test_run_refuses_a_config_created_before_the_creation_guard(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_v2_eval,
+        mock_run_config,
+        judge_type,
+    ):
+        """The creation guard can't reach an eval config already on disk."""
+        EvalConfig(
+            id="legacy_config",
+            name="Legacy Judge",
+            config_type=judge_type,
+            properties={"eval_steps": ["step1"]},
+            model_name="gpt-4",
+            model_provider="openai",
+            parent=mock_v2_eval,
+        ).save_to_file()
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_api.task_run_config_from_id"
+            ) as mock_run_config_from_id,
+            patch("app.desktop.studio_server.eval_api.EvalRunner") as MockEvalRunner,
+        ):
+            mock_run_config_from_id.return_value = mock_run_config
+            response = self._run_comparison(client, "eval_v2", "legacy_config")
+
+        assert response.status_code == 400
+        assert response.json()["message"] == V1_JUDGE_ON_EVAL_INPUTS_MESSAGE.format(
+            judge_type=judge_type.value
+        )
+        # Refused before the runner exists, so before the StreamingResponse starts.
+        MockEvalRunner.assert_not_called()
+
+    def test_run_allows_a_v2_config_on_an_eval_input_backed_eval(
+        self, client, mock_task_from_id, mock_task, mock_v2_eval, mock_run_config
+    ):
+        EvalConfig(
+            id="v2_config",
+            name="V2 Judge",
+            config_type=EvalConfigType.v2,
+            properties={"type": "exact_match", "expected_value": "hello"},
+            parent=mock_v2_eval,
+        ).save_to_file()
+
+        async def no_progress():
+            return
+            yield  # pragma: no cover — makes this an async generator; return runs first
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_api.task_run_config_from_id"
+            ) as mock_run_config_from_id,
+            patch("app.desktop.studio_server.eval_api.EvalRunner") as MockEvalRunner,
+        ):
+            mock_run_config_from_id.return_value = mock_run_config
+            mock_eval_runner = Mock()
+            mock_eval_runner.run.return_value = no_progress()
+            MockEvalRunner.return_value = mock_eval_runner
+
+            response = self._run_comparison(client, "eval_v2", "v2_config")
+
+            assert response.status_code == 200
+            assert MockEvalRunner.call_args.kwargs["split"].source == "eval_input"
+
+
 @pytest.mark.asyncio
 async def test_eval_config_from_id(
     client, mock_task_from_id, mock_task, mock_eval, mock_eval_config

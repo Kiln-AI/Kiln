@@ -263,8 +263,8 @@ MUTATIONS = [
         [
             (
                 EVAL_API,
-                '            split=resolved_split_or_422(task, eval, "test"),',
-                '            split=resolved_split_or_422(task, eval, "train"),',
+                '        split = resolved_split_or_422(task, eval, "test")',
+                '        split = resolved_split_or_422(task, eval, "train")',
             )
         ],
         TEVAL_API,

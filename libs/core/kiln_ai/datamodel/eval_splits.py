@@ -42,6 +42,22 @@ ItemKey = Tuple[ItemSource, ID_TYPE]
 generator shared by every model type, so a TaskRun and an EvalInput can collide."""
 
 
+def _item_type_for_source(source: ItemSource) -> type:
+    """The model type a split declaring this source must hold.
+
+    A match rather than a dict so a new ItemSource that nothing here knows how to check is
+    a type error at authoring time and a ValueError at runtime, not a source that quietly
+    validates against nothing.
+    """
+    match source:
+        case "task_run":
+            return TaskRun
+        case "eval_input":
+            return EvalInput
+        case _:
+            raise_exhaustive_enum_error(source)
+
+
 @dataclass(frozen=True)
 class ResolvedSplit:
     """The items in one of an eval's splits, from a single store."""
@@ -49,6 +65,14 @@ class ResolvedSplit:
     name: str
     source: ItemSource
     items: List[TaskRun] | List[EvalInput]
+    """The split's items, all from the store `source` names. `__post_init__` checks that
+    against the first item only, not every item: the annotation is a list of one type, so
+    "do the items match the declared source" is one bit that any item answers, and every
+    producer fills the list from a single store's iterator. A split can hold every run in
+    a dataset, and an O(n) isinstance sweep would re-derive per item what the annotation
+    already claims for the list. The cost is that a hand-built list mixing both types is
+    caught only if its first item is the wrong one — a shape the annotation already
+    forbids, and a narrower hole than the unchecked source this replaces."""
     eval_id: ID_TYPE
     """The eval this was resolved from. Carried so a consumer handed a split can check it
     belongs to the eval it is working on: once a split is a value passed between layers,
@@ -56,6 +80,15 @@ class ResolvedSplit:
     _item_keys: Set[ItemKey] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
+        expected_type = _item_type_for_source(self.source)
+        if self.items and not isinstance(self.items[0], expected_type):
+            raise ValueError(
+                f"Split '{self.name}' declares source '{self.source}' but holds "
+                f"{type(self.items[0]).__name__} items. A split's source is what every "
+                "consumer keys its items on, while an EvalRun records the id field the "
+                "item's own type picks, so a split whose two disagree writes results "
+                "under one identity and looks them up under another."
+            )
         object.__setattr__(
             self, "_item_keys", {(self.source, item.id) for item in self.items}
         )
@@ -82,6 +115,19 @@ class ResolvedSplit:
         choice free.
         """
         return len(self._item_keys)
+
+    def __bool__(self) -> bool:
+        """Always True: a resolved split exists, however many items it holds.
+
+        Without this, `__len__` decides truthiness and an empty split is falsy, which
+        collapses "this split exists but has no items yet" into "this eval has no such
+        split" — the one distinction this module is built to preserve, and the difference
+        between telling a user to generate data and telling them to configure a split.
+        Absence is `resolve_split` returning None; emptiness is `len(...) == 0`. Every
+        caller tests absence with `is None` today, so this defends the next one rather
+        than fixing a live bug.
+        """
+        return True
 
 
 def resolve_split(task: Task, eval: Eval, split: EvalSplitName) -> ResolvedSplit | None:

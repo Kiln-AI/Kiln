@@ -645,6 +645,82 @@ def require_golden_set_or_422(eval: Eval) -> None:
         raise HTTPException(status_code=422, detail=no_golden_set_message(eval))
 
 
+def judge_scores_dataset_runs(config_type: EvalConfigType) -> bool:
+    """Whether a judge of this type scores the output stored on a dataset run (TaskRun).
+
+    Spelled as "anything that isn't v2" to match `EvalRunner.run_job`'s dispatch exactly:
+    every type it sends to `_run_legacy_job` needs a TaskRun item, so a judge type added
+    to the enum later is refused by the guards below rather than reaching that job's
+    `ValueError` — which `AsyncJobRunner` turns into an unexplained per-job error count.
+    """
+    return config_type != EvalConfigType.v2
+
+
+def judge_needs_dataset_runs_message(eval: Eval, config_type: EvalConfigType) -> str:
+    """Why a V1 judge can't score this eval. One wording, two raisers.
+
+    Shared between the creation guard and the run guard so the refusal a user gets when
+    they attach the judge and the refusal they get when an already-attached one is run say
+    the same thing, the way `no_golden_set_message` is shared with EvalRunner.
+    """
+    return (
+        f"Eval '{eval.name}' has a test split that isn't backed by dataset runs. The "
+        f"'{config_type.value}' judge type scores the output stored on a dataset run, so "
+        "this eval needs a judge type that scores eval inputs, or a test split backed by "
+        "dataset runs."
+    )
+
+
+def require_dataset_run_test_split_or_400(
+    eval: Eval, config_type: EvalConfigType
+) -> None:
+    """400 when a V1 judge is being attached to an eval whose test split isn't TaskRun-backed.
+
+    Refusing at creation is the primary fix: without it the mismatch is only discovered
+    once per job at run time, where every job raises inside `_run_legacy_job` and
+    `AsyncJobRunner` reports them as a bare error count with no reason.
+
+    Phrased as "present but not usable" rather than "is an EvalInputSplit" — the same
+    choice, for the same reason, as `reject_unusable_train_splits` in
+    prompt_optimization_job_api: a SplitRef variant added later is refused by default
+    instead of slipping through into the failure this exists to prevent. A missing test
+    split is left alone: `Eval.validate_splits` already requires one, and this guard is
+    not where that is re-litigated.
+    """
+    if not judge_scores_dataset_runs(config_type):
+        return
+    test_split = eval.splits.get("test")
+    if test_split is not None and not isinstance(test_split, TaskRunSplit):
+        raise HTTPException(
+            status_code=400,
+            detail=judge_needs_dataset_runs_message(eval, config_type),
+        )
+
+
+def require_dataset_run_items_or_400(
+    eval: Eval, config_type: EvalConfigType, split: ResolvedSplit
+) -> None:
+    """400 when the split about to be run holds items a V1 judge can't score.
+
+    The creation guard can't help an eval that already carries such a config — written by
+    a build predating that guard, or straight into a project file — so the run path checks
+    the same thing again, against the items it actually resolved rather than the split ref
+    it declared.
+
+    Checked here rather than left to EvalRunner for the reason spelled out on
+    require_golden_set_or_422: this is an SSE endpoint, so anything raised once the
+    StreamingResponse's generator is running arrives after a 200 and never appears as a
+    status code at all. Tested as "not task_run" so a new ItemSource fails closed.
+    """
+    if not judge_scores_dataset_runs(config_type):
+        return
+    if split.source != "task_run":
+        raise HTTPException(
+            status_code=400,
+            detail=judge_needs_dataset_runs_message(eval, config_type),
+        )
+
+
 def build_score_key_to_task_requirement_id(task: Task) -> Dict[str, ID_TYPE]:
     # Create a map of score_key -> Task requirement ID
     score_key_to_task_requirement_id: Dict[str, ID_TYPE] = {}
@@ -1154,6 +1230,7 @@ def connect_evals_api(app: FastAPI):
                 )
 
         eval = eval_from_id(project_id, task_id, eval_id)
+        require_dataset_run_test_split_or_400(eval, request.type)
         name = request.name or generate_memorable_name()
 
         try:
@@ -1391,11 +1468,14 @@ def connect_evals_api(app: FastAPI):
         eval = eval_from_id(project_id, task_id, eval_id)
         task = task_from_id(project_id, task_id)
 
+        split = resolved_split_or_422(task, eval, "test")
+        require_dataset_run_items_or_400(eval, eval_config.config_type, split)
+
         eval_runner = EvalRunner(
             eval_configs=[eval_config],
             run_configs=run_configs,
             eval_run_type="task_run_eval",
-            split=resolved_split_or_422(task, eval, "test"),
+            split=split,
             save_context=build_save_context(request),
         )
 
