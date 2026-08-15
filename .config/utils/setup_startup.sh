@@ -277,14 +277,25 @@ fi
 # the mv would then copy 601 MB and drop every link it just made.
 WEB_UI_DIR="$PROJECT_ROOT/app/web_ui"
 
-# One fixed staging path, cleared unconditionally — not inside the seed block below,
-# which is skipped as soon as node_modules exists. A run killed mid-copy leaves up
-# to 601 MB here, and cleanup that only runs when a seed is about to happen would
-# never reach it. The name is fixed rather than PID-suffixed because a glob would
-# delete a concurrent run's staging anyway, and two of these running in one checkout
-# is already unsupported — they would fight over the npm install below.
-warm_staging="$WEB_UI_DIR/.node_modules.warm"
-rm -rf "$warm_staging"
+# Staging is per-PID, and no run ever touches a path that is not its own. A shared
+# name loses badly here: two runs racing on one name corrupt each other silently —
+# one `rm -rf` unlinks entries out of the other's tree mid-`cp -al` and the survivors
+# get renamed into place, or the `rm -rf` fails against a directory still being
+# created and the second `cp -al` copies *into* it, nesting a whole tree. Measured
+# 57 corruptions in 60 races, every one of them reporting a successful seed.
+#
+# That is not a supported scenario — two of these in one checkout also collide on
+# the npm install below, destructively and unconditionally — but a name that cannot
+# collide costs nothing and keeps the failure to the one place it is already known.
+#
+# The price of per-PID names is that a killed run leaks its staging under a name no
+# later run will reuse, so sweep by age instead: anything older than an hour cannot
+# be in flight, since a seed takes about half a second. Unconditional, because the
+# seed block below is skipped as soon as node_modules exists, which is exactly the
+# state a leaked 601 MB directory would sit in forever.
+warm_staging="$WEB_UI_DIR/.node_modules.warm.$$"
+find "$WEB_UI_DIR" -maxdepth 1 -name '.node_modules.warm.*' -mmin +60 \
+  -exec rm -rf {} + 2>/dev/null
 
 # Everything happens in the staging directory, and node_modules only ever appears
 # by a single rename of a finished tree. A partially copied — or still fully
@@ -292,6 +303,9 @@ rm -rf "$warm_staging"
 # node_modules already present, skip seeding, and let npm install write straight
 # through the hardlinks into the pristine tree.
 seed_warm_node_modules() {
+  # Only this run's own path — a PID can be reused after a reboot, and cp -al onto
+  # a surviving directory of that name would copy into it rather than replace it.
+  rm -rf "$warm_staging"
   cp -al "$WARM_NODE_MODULES" "$warm_staging" || return 1
 
   # Hardlinks mean a write through one path is a write to the other, so a tool
@@ -322,9 +336,10 @@ seed_warm_node_modules() {
     mv -f "$shared_file.unshared" "$shared_file" || return 1
   done
 
-  # -T so the rename is unconditional: without it, a node_modules that appeared
-  # since the guard above would silently swallow staging as a subdirectory instead
-  # of failing, which is the one outcome worse than not seeding.
+  # -T so a node_modules that appeared since the guard above makes this fail rather
+  # than silently swallow staging as a subdirectory, which is the one outcome worse
+  # than not seeding. (-T does not make the rename always succeed; it makes it
+  # refuse the wrong thing.)
   mv -T "$warm_staging" "$WEB_UI_DIR/node_modules" || return 1
 }
 
@@ -334,8 +349,12 @@ seed_warm_node_modules() {
 # a file and only its first lines are ever printed.
 print_seed_output() {
   # $1 = file, $2 = how many lines to show.
+  #
+  # grep -c '' rather than wc -l: wc counts newlines, so a single error line without
+  # a trailing one would count as zero and print nothing — silence in the function
+  # that exists to break silence.
   local total
-  total="$(wc -l <"$1")"
+  total="$(grep -c '' <"$1")"
   [ "$total" -eq 0 ] && return 0
   head -"$2" "$1" | sed 's/^/      /'
   [ "$total" -gt "$2" ] && echo "      ...and $((total - $2)) more lines like that."

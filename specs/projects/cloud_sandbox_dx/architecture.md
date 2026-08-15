@@ -400,12 +400,27 @@ Order is load-bearing:
    tree's filesystem and the `mv` would then copy 601 MB and drop every link it just
    made.
 
-   Staging has one fixed name, is gitignored, and is cleared **unconditionally**,
-   outside the seed block — the block is skipped as soon as `node_modules` exists, so
-   cleanup living inside it would never reach the up-to-601 MB directory a killed
-   run leaves behind. The name is fixed rather than PID-suffixed because a glob
-   cleanup would delete a concurrent run's staging anyway, and two of these in one
-   checkout is already unsupported: they would fight over the `npm install` below.
+   Staging is gitignored and **per-PID**, and no run deletes or writes a staging path
+   that is not its own. A shared name is measurably worse: racing two seed blocks on
+   one name corrupted `node_modules` in **57 of 60** runs, each of them reporting a
+   successful seed and exiting 0. Two shapes, both silent — one run's `rm -rf`
+   unlinking entries out of the other's tree mid-`cp -al`, so the `mv -T` renames the
+   survivors into place (1 to 3,225 entries against 12,402 expected); or that
+   `rm -rf` failing against a directory still being created, after which the second
+   `cp -al SRC DEST` copies *into* it and nests a whole tree (up to 24,805 entries).
+
+   Concurrent runs in one checkout are not supported either way — they also collide
+   on the `npm install` below, destructively and unconditionally — but a name that
+   cannot collide costs nothing and keeps the damage in the one place already known
+   to be broken.
+
+   The cost of per-PID names is a leak: a killed run's staging keeps up to 601 MB
+   under a name no later run will reuse. So the reclaim is an **age-based sweep** of
+   `.node_modules.warm.*` older than an hour, which cannot be in flight since a seed
+   takes about half a second. It runs unconditionally, outside the seed block, since
+   that block is skipped as soon as `node_modules` exists — which is precisely the
+   state a leaked directory would otherwise sit in forever. The seed itself clears
+   only its own path, because a PID can be reused across a reboot.
 
    Order inside `seed_warm_node_modules`, which is load-bearing:
 
@@ -419,7 +434,9 @@ Order is load-bearing:
       seed, an `npm install` and a full `npm run build`, it was the only changed
       inode of 46,375; a review manifest of 52,031 entries across the full check
       suite found none.
-   3. `mv` staging into place.
+   3. `mv -T` staging into place. `-T` does not make the rename always succeed — it
+      makes a `node_modules` that appeared since the guard produce a failure rather
+      than a staging directory silently nested inside it.
 
    Step 2 must precede step 3. If the tree were renamed first, there would be a
    window in which `node_modules` exists and is fully shared — and a run killed
@@ -440,7 +457,10 @@ Order is load-bearing:
    cross-device warm tree fails once per file, measured at 46,436 lines and 15 MB,
    and this path's reader is usually an agent whose context that would bury. A
    *successful* seed prints the same capped summary when it had anything to say, so
-   a warning is not swallowed by the happy path.
+   a warning is not swallowed by the happy path. The line count comes from
+   `grep -c ''`, not `wc -l`: `wc` counts newlines, so a single unterminated error
+   line would count as zero and print nothing — silence from the code written to
+   break silence.
 
 4. **Sync**, both in parallel, same `wait`-both pattern as §1.4:
    `uv sync --frozen --all-packages` and `npm install --no-fund --no-audit`.

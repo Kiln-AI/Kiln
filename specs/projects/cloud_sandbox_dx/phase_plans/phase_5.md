@@ -113,6 +113,12 @@ Three supporting pieces come with it:
    once per file: 46,436 lines, so three and a count, from a temp file rather than a
    shell variable.
 
+   Staging is per-PID, and the leak that creates — a killed run's directory under a
+   name nothing reuses — is reclaimed by an age-based sweep of anything older than
+   an hour, run unconditionally so it is not skipped once `node_modules` exists. A
+   shared staging name was tried and reverted: racing two seeds on one name
+   corrupted `node_modules` in 57 of 60 runs, silently.
+
 8. **Documentation.** `AGENTS.md` and `CONTRIBUTING.md` must stop implying that
    `setup_startup.sh` syncs dependencies everywhere, since outside a container it is
    now a no-op, and must say what local contributors do instead. `functional_spec.md`
@@ -160,5 +166,10 @@ each case runnable without touching `/opt` or the network.
 - **Unshare failure**: the seed fails, the staging tree is removed, and the run
   falls back to `npm install` rather than reporting a seed that did not happen.
 - **`IS_CONTAINERIZED=no`**: treated as unset.
+- **Two seeds racing on one checkout**: 30 races against a 52,037-entry warm tree
+  leave a correct `node_modules` every time and no staging behind, where a shared
+  staging name corrupts it in 10 of 10.
+- **Age sweep**: a two-hour-old `.node_modules.warm.*` is reclaimed on a run that
+  skips seeding entirely; a fresh one is left alone.
 - `uv run ./checks.sh --agent-mode` green, suite still 6369 passed / 10020 skipped,
   and `git status --porcelain` empty apart from the intended edits.
