@@ -1,21 +1,33 @@
 import os
 import shutil
+import sys
 import uuid
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 from unittest.mock import patch
 
-import litellm
 import pytest
 from dotenv import load_dotenv
-from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
 from kiln_ai.pytest_test_output import make_test_output_dir
 from kiln_ai.utils.config import Config
 
+if TYPE_CHECKING:
+    from kiln_ai.datamodel.basemodel import KilnAttachmentModel
+
 
 @pytest.fixture(autouse=True)
 def _clear_httpx_clients() -> None:
+    # Importing litellm costs several seconds, and pytest imports this conftest on
+    # every invocation. Most test modules never touch litellm, so do its setup and
+    # teardown only once something else has already imported it.
+    litellm = sys.modules.get("litellm")
+    if litellm is None:
+        return
+
+    from kiln_ai.utils.logging import setup_litellm_logging
+
+    setup_litellm_logging("test_model_calls.log")
     litellm.in_memory_llm_clients_cache.flush_cache()
 
 
@@ -49,14 +61,6 @@ def use_temp_settings_dir(tmp_path):
         Config, "settings_path", return_value=str(tmp_path / "settings.yaml")
     ):
         yield
-
-
-@pytest.fixture(scope="session", autouse=True)
-def setup_test_logging():
-    from kiln_ai.utils.logging import setup_litellm_logging
-
-    setup_litellm_logging("test_model_calls.log")
-    yield
 
 
 def pytest_addoption(parser):
@@ -233,7 +237,9 @@ def mock_attachment_factory(mock_file_factory):
     def create_attachment(
         mime_type: MockFileFactoryMimeType,
         text: str | None = None,
-    ) -> KilnAttachmentModel:
+    ) -> "KilnAttachmentModel":
+        from kiln_ai.datamodel.basemodel import KilnAttachmentModel
+
         if text is not None:
             return KilnAttachmentModel.from_data(text, mime_type)
 

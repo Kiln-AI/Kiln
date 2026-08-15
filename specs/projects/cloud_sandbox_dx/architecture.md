@@ -11,7 +11,8 @@ detail that no design decisions remain for the implementer.
 
 | File | Change | Feature |
 |---|---|---|
-| `.config/utils/setup_env.sh` | Rewrite: flags, uv check, py3.13, parallel installs, agent config | F1–F5 |
+| `.config/utils/setup_env.sh` | Rewrite: config block, flags, uv check, py3.13, parallel installs, agent config | F1–F5 |
+| `.config/utils/setup_startup.sh` | New: per-session verify + dependency top-up | F8 |
 | `pyproject.toml` | Add `required-version = ">=0.10"` to `[tool.uv]` | F2 |
 | `.gitignore` | Add `.python-version` | F3 |
 | `conftest.py` | Defer the `litellm` import | F6 |
@@ -23,21 +24,41 @@ calls become correct once uv ≥ 0.10 is enforced — 0.07 s, no lockfile churn.
 
 ## 1. `.config/utils/setup_env.sh`
 
-Structure, in order. `set -euo pipefail` at the top, with explicit exceptions
-noted below.
+Structure, in order. `set -uo pipefail` at the top — deliberately **not** `set -e`,
+because `--best-effort` has to control the exit code, which means failures are
+recorded explicitly rather than aborting the shell.
+
+### 1.0 The `CONFIGURATION` block
+
+A clearly delimited block of four assignments at the very top of the file, above
+everything else, holding the defaults for `HUMAN_MODE`, `UPGRADE_TOOLS`, `AGENT`
+and `BEST_EFFORT`. Flags override it.
+
+This block is the file's contract with the cloud environment: the whole script is
+pasted into the environment dialog and only this block is edited. Keep it a
+contiguous run of plain assignments with a comment naming the cloud values, so
+editing it in a web form is unambiguous. Nothing below it may need changing to
+make the script correct in the cloud.
 
 ### 1.1 Argument parsing
 
 ```
---human            human_mode=true
---upgrade-tools    upgrade_tools=true
---agent VALUE      agent=VALUE   (all|claude|cursor|none, default all)
+--human            HUMAN_MODE=true
+--upgrade-tools    UPGRADE_TOOLS=true
+--best-effort      BEST_EFFORT=true
+--agent VALUE      AGENT=VALUE   (all|claude|cursor|none, default all)
 --help             usage; exit 0
 *                  usage to stderr; exit 2
 ```
 
 Validate `--agent` against the four allowed values; anything else is exit 2.
 `--agent` also accepts `--agent=VALUE`.
+
+### 1.1b Failure accounting
+
+`fail <message>` prints to stderr and sets `FAILED=1`. `finish` exits 1 when
+`FAILED` is set, unless `BEST_EFFORT=true`, in which case it says so on stderr and
+exits 0. Every exit path goes through `finish`.
 
 ### 1.2 uv version gate
 
@@ -134,6 +155,31 @@ The existing worktrunk/zellij block, moved behind `if [ "$human_mode" = true ]`.
 It keeps its current `read -rp` prompt; that is the one place interactivity is
 correct. Nothing else in the script may block on input except the uv prompt in
 §1.2, which is bounded by its 10 s timeout.
+
+## 1B. `.config/utils/setup_startup.sh`
+
+New file. `set -uo pipefail`. Order is load-bearing:
+
+1. **Hard dependency gate.** `uv` on `PATH`; `uv --version` ≥ `UV_MIN` using the
+   same `sort -V` comparison as §1.2; `npm` on `PATH`. Any failure calls
+   `bad_environment`, which prints the repair command and exits 1.
+
+   This must run **before** the sync. A too-old uv is what rewrites `uv.lock`, so
+   a check placed after the sync would fire only once the damage was done.
+
+2. **Sync**, both in parallel, same `wait`-both pattern as §1.4:
+   `uv sync --frozen --all-packages` and `npm install --no-fund --no-audit`.
+   `npm install`, not `npm ci` — see F4.
+
+3. **Post-sync verification**, via a single `uv run --frozen python -c` that prints
+   the major version, minor version, and whether `tkinter` resolves. Placed after
+   the sync because both facts are properties of `.venv`. A `tkinter` check uses
+   `importlib.util.find_spec` rather than a real import, so it does not need a
+   display.
+
+`bad_environment` is the single failure path for "this VM is wrong", so the repair
+instructions are written once and every check gets the same message. It names both
+the local and sandbox cases, since the same script serves both.
 
 ## 2. `pyproject.toml`
 

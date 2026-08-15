@@ -34,6 +34,13 @@ The same script serves both, differing only by flags.
 `.config/utils/setup_env.sh` is reworked. Its default mode is fully
 non-interactive and safe to run unattended.
 
+It has two jobs. Locally it is the command a contributor runs to build an
+environment. It is also **the cloud environment's setup script**: its contents are
+pasted verbatim into the environment dialog, with only a clearly delimited
+`CONFIGURATION` block at the top edited (there `UPGRADE_TOOLS=true` and
+`BEST_EFFORT=true`). Keeping one file means the cloud path is version-controlled,
+reviewable, and testable locally, instead of living only in a web form.
+
 **Command contract:**
 
 | Invocation | Behavior |
@@ -42,9 +49,16 @@ non-interactive and safe to run unattended.
 | `setup_env.sh --human` | Adds the interactive worktrunk/zellij install offer. |
 | `setup_env.sh --upgrade-tools` | Upgrades a too-old uv without asking. |
 | `setup_env.sh --agent <all\|claude\|cursor\|none>` | Which agent configs to write. Default `all`. |
+| `setup_env.sh --best-effort` | Never exit non-zero. |
 | `setup_env.sh --help` | Usage. |
 
-Unknown flags are an error with usage and a non-zero exit.
+Unknown flags, and an unrecognized `--agent` value, are an error with usage and
+exit 2.
+
+`--best-effort` exists because a cloud setup script that exits non-zero stops the
+session from starting (research §12). Without it, one flaky `npm` fetch would mean
+a sandbox that will not boot. Errors are still reported on stderr; only the exit
+code is suppressed.
 
 **What it does, in order:**
 
@@ -105,7 +119,10 @@ No repo source changes for `tkinter`. The imports in `desktop_server.py` and
   used as-is and never rewritten.
 - Node: `npm ci` in `app/web_ui`, not `npm install`. `npm ci` cannot rewrite
   `package-lock.json` — the same class of bug as the uv problem — and measured
-  faster (25.6 s vs 27.3 s).
+  faster (25.6 s vs 27.3 s) on a from-scratch install. The per-session top-up in
+  F8 uses `npm install` instead, because `npm ci` empties `node_modules` before
+  refilling it and so throws away exactly the cached state that makes the top-up
+  fast.
 - The two run **in parallel with each other, in the foreground**. Measured: ~37 s
   serial → ~26 s parallel, since npm dominates.
 
@@ -163,6 +180,33 @@ set up an environment, what the flags do, the `uv lock` caveat from F4, and a no
 that `CLAUDE.md` is generated from `AGENTS.md` and overwritten on every run — so
 personal agent notes belong in user-scope `~/.claude/CLAUDE.md`, not the repo copy.
 
+### F8 — `setup_startup.sh`, the per-session startup check
+
+`setup_env.sh` builds an environment, but it runs once per cloud environment and
+is then snapshotted and skipped (research §12). Nothing repo-aware runs per
+session, and a session can also land on a stale or wrong VM. `AGENTS.md` therefore
+instructs agents to run `.config/utils/setup_startup.sh` before their first build
+or test — on a new branch, and at the start of every sandbox session.
+
+It does two things, in this order:
+
+1. **Verify the hard dependencies the environment was supposed to provide.** `uv`
+   present and ≥ 0.10, `npm` present, the virtualenv on Python 3.13 or newer, and
+   `tkinter` importable. On failure it prints the exact repair command
+   (`setup_env.sh --upgrade-tools`) and notes that in a sandbox this usually means
+   the VM setup script did not run. Exit 1.
+2. **Sync dependencies for the current branch**, `uv sync --frozen --all-packages`
+   and `npm install` in parallel, so a branch that changed a lockfile is not run
+   against stale packages.
+
+The uv check must come **before** the sync, not after: a too-old uv is precisely
+the thing that would rewrite `uv.lock` during that sync, so checking afterwards
+would do the damage the check exists to prevent.
+
+It is cheap and idempotent by design — measured **5.9 s** warm — so re-running it
+costs little and there is no reason for an agent to try to guess whether it is
+needed.
+
 ## Out of Scope
 
 - **Dependency caching / an R2-style artifact cache.** Measured cold vs warm:
@@ -190,18 +234,27 @@ personal agent notes belong in user-scope `~/.claude/CLAUDE.md`, not the repo co
 These cannot be fixed by repo code and belong in the Claude Code cloud environment
 configuration. They are documented here so they are not lost:
 
-1. **Setup command** — a deliberately dumb, repo-agnostic wrapper, since the same
-   command is shared across repos:
+1. **Setup script** — paste the contents of `.config/utils/setup_env.sh` into the
+   environment's **Setup script** field, and edit only its `CONFIGURATION` block:
 
    ```bash
-   #!/usr/bin/env bash
-   set -uo pipefail
-   cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" || exit 0
-   if [ -f .config/utils/setup_env.sh ]; then
-     bash .config/utils/setup_env.sh --upgrade-tools \
-       || echo "cloud-setup: WARNING setup_env.sh exited $?"
-   fi
+   HUMAN_MODE=false
+   UPGRADE_TOOLS=true  # was false
+   AGENT=all
+   BEST_EFFORT=true    # was false
    ```
+
+   An earlier draft of this spec used a small repo-agnostic wrapper that called
+   `.config/utils/setup_env.sh` from the checkout. That does not work: the setup
+   script is snapshotted and shared across every repo using the environment, so a
+   repo-specific path cannot be relied on to exist when it runs (research §12).
+   Pasting the contents keeps the script version-controlled and locally testable
+   while removing the dependency on the checkout being there.
+
+   Re-paste when the script changes materially. Because the environment is shared
+   across repos, anything repo-specific that fails is expected to fail harmlessly
+   under `BEST_EFFORT`, and `setup_startup.sh` (F8) is what actually guarantees a
+   correct per-session state.
 
 2. **MCP trust.** A project `.mcp.json` is **never** auto-trusted. Tested: neither
    `.claude/settings.local.json` nor `~/.claude.json`'s `enabledMcpjsonServers`
@@ -229,8 +282,12 @@ This is not blocking: `CLAUDE.md` and skills work without MCP.
 
 ## Success Criteria
 
-On a fresh cloud sandbox, after the environment setup command runs:
+On a fresh cloud sandbox, after the environment setup script runs and the agent has
+run `setup_startup.sh`:
 
+0. `bash .config/utils/setup_startup.sh` exits 0 and reports the Python and uv
+   versions. On a deliberately broken environment it exits 1 and names the repair
+   command instead.
 1. `uv --version` reports ≥ 0.10.
 2. A plain `uv run python -c "print(1)"` completes in well under a second and
    leaves `uv.lock` unmodified.

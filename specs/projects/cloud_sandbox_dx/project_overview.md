@@ -120,5 +120,30 @@ Settled during planning:
    agent acting during setup would hit intermittent phantom import errors — the
    exact failure class this project exists to remove.
 
-A shared, repo-agnostic wrapper script (checking for the existence of both setup
-scripts) is configured as the Claude Code cloud environment setup command.
+9. **The cloud setup script is a copy of `setup_env.sh`, not a wrapper around it.**
+   Discovered after the first plan was written (research §12): a cloud setup script
+   runs once per environment and is then snapshotted and skipped, and the
+   environment is shared across repos — so it cannot depend on a particular
+   checkout being on disk. The original "dumb wrapper that calls
+   `.config/utils/setup_env.sh`" would have silently done nothing.
+
+   Instead the file's contents are pasted into the environment dialog, and only a
+   delimited `CONFIGURATION` block at the top is edited. The script stays in the
+   repo, reviewable and testable locally.
+
+   This also forces `--best-effort`/`BEST_EFFORT`: a setup script that exits
+   non-zero stops the session from starting, so a `set -e` script with hard
+   `exit 1` paths would turn one flaky `npm` fetch into a sandbox that will not
+   boot.
+10. **A new `setup_startup.sh` carries the per-session work.** Because the setup
+    script is snapshotted and skipped, nothing repo-aware runs per session.
+    `AGENTS.md` instructs agents to run it before their first build or test. It
+    verifies the hard dependencies the VM was supposed to provide — failing fast
+    with the repair command if the session landed on a bad VM — then tops up
+    `uv sync` and `npm install` for the current branch. Measured 5.9 s warm.
+
+    It uses `npm install` where `setup_env.sh` uses `npm ci`: the working directory
+    is on the snapshotted filesystem (measured — a container restart preserved
+    `node_modules`, `.venv`, and a 1.4 GB uv cache), and `npm ci` would empty
+    `node_modules` before refilling it, discarding exactly the cached state that
+    makes the top-up cheap.

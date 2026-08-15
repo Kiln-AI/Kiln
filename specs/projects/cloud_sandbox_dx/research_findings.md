@@ -364,3 +364,56 @@ setting it in the test environment is **hermeticity, not speed** — a suite tha
 makes an HTTP request to GitHub at import time is a latent flake, and with E4
 landed the inner loop does not import litellm at all, so the 0.6 s only applies to
 full-suite runs.
+
+## 12. How cloud environment setup scripts actually run (round 3)
+
+This was checked after planning, because the plan had assumed a setup script could
+call a script inside the repo. It cannot, and the reasons change the design.
+
+From the [cloud environments docs](https://code.claude.com/docs/en/cloud-environments#setup-scripts):
+
+1. **It is not a per-session hook.** "The setup script runs the *first time* you
+   start a session in an environment. After it completes, Anthropic snapshots the
+   filesystem... New sessions start with your dependencies... and **skip the setup
+   script step**." It re-runs only when the script or the network config changes,
+   or after roughly seven days.
+2. **A non-zero exit stops the session from starting.** "Exit zero: if the script
+   exits non-zero, the session fails to start." This makes a plain `set -e` script
+   with hard `exit 1` paths dangerous: one flaky `npm` fetch and the sandbox will
+   not boot.
+3. **Five minute budget**, with parallelism explicitly recommended.
+4. **The docs route project setup elsewhere:** "Use a setup script to provision
+   *the VM itself*... Use a SessionStart hook for project setup that should run
+   everywhere, cloud and local, like `npm install`."
+
+### The filesystem does persist — measured
+
+A container restart mid-session preserved every gitignored artifact — `.venv`,
+`app/web_ui/node_modules`, `CLAUDE.md`, `.mcp.json`, `.claude/skills` — plus a
+hand-upgraded `uv 0.12.5`, a 1.4 GB `~/.cache/uv`, and a 166 MB `~/.npm`. Nothing
+gitignored can come from a clone, so the working directory is on the snapshotted
+filesystem, not a tmpfs. **The cached-install win is real**, which is what makes
+`npm install` in the startup script near-free.
+
+Caveat on what this proves: it demonstrates persistence across a restart of one
+session's container. It does not by itself prove the snapshot taken for *new*
+sessions in the environment contains the repo.
+
+### Consequence for the design
+
+Because the script is snapshotted once and shared across every repo that uses the
+environment, a repo-specific clone cannot be relied on to be present when it runs.
+So the work is split in two:
+
+- `setup_env.sh` — the whole environment build. Pasted verbatim into the
+  environment's setup script field, with only its `CONFIGURATION` block edited.
+  Needs `BEST_EFFORT=true` there to satisfy constraint 2 above.
+- `setup_startup.sh` — run by the agent at the start of a session. Verifies the
+  hard dependencies the VM was supposed to provide, then tops up `uv sync` and
+  `npm install` for the current branch. Warm, this measured **5.9 s**.
+
+The `npm ci` / `npm install` split follows from the caching model: `npm ci` empties
+`node_modules` before refilling it, so it belongs in the from-scratch build, while
+the per-session top-up wants the incremental `npm install`. The `session-start-hook`
+skill gives the same guidance: "prefer dependency install methods that take
+advantage of [the cache] (i.e. prefer `npm install` over `npm ci`)."

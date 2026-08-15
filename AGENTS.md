@@ -23,6 +23,26 @@ This repo is a monorepo containing all of the source code, in the following stru
 - Backend: python (3.10+ for library, 3.13 for desktop), pytest, FastAPI, asyncio, pydantic (v2 not v1),
 - Frontend web: typescript, svelte (v4 not v5), tailwind, DaisyUI
 
+### Environment Setup
+
+Run `bash .config/utils/setup_startup.sh` before your first build or test run — on a new branch, and at the start of every cloud sandbox session. It syncs Python and Node dependencies for the branch you are on, and fails fast with instructions if the environment itself can't build Kiln. With a warm cache it is close to a no-op, so re-running it is cheap.
+
+To build or repair an environment from scratch, run `bash .config/utils/setup_env.sh`:
+
+| Flag | Effect |
+|---|---|
+| _(none)_ | Install dependencies and write configs for all agents. Non-interactive. |
+| `--human` | Also offer the worktrunk/Zellij workspace tools. |
+| `--upgrade-tools` | Upgrade `uv` without asking when it is older than the minimum. |
+| `--agent all\|claude\|cursor\|none` | Which agent configs to write. Defaults to `all`. |
+| `--best-effort` | Never exit non-zero. Required when used as a cloud setup script. |
+
+Notes:
+
+- `uv` must be 0.10 or newer. Older versions can't parse this repo's `exclude-newer` setting, and instead of failing they silently re-resolve and rewrite `uv.lock` with a broken dependency set. `required-version` in `pyproject.toml` now makes that fail loudly.
+- The Python sync uses `--frozen`, so run `uv lock` first if you changed dependencies in a `pyproject.toml`.
+- `CLAUDE.md` is generated from `AGENTS.md` and is overwritten on every setup run. Keep personal agent notes in `~/.claude/CLAUDE.md`, not in the repo copy.
+
 ### Agent Tools
 
 Agents have access to a range of tools for running tests, linting, formatting and typechecking. Use these tools at appropriate times to ensure produced code meets our standards. All checks must pass before merging. When iterating on a specific failure, use the targeted command before re-running the full suite.
