@@ -481,7 +481,6 @@ trace. No new user-facing error surfaces beyond the 409.
 - `output`, not `repaired_output`, is returned when the TaskRun has both.
 - Dangling `scored_run_id` → nulls, HTTP 200.
 - Usage rollup reads `TaskRun.usage` for pointer records, `task_run_usage` for legacy.
-- `compute_score_summary` characterization: unchanged output for unchanged input.
 
 ### 9.5 Delete protection (`test_run_api.py`)
 

@@ -347,7 +347,7 @@ class EvalRunner:
                 and parent_eval.evaluation_data_type == EvalDataType.full_trace
                 and result_task_run.trace
             ):
-                trace = json.dumps(result_task_run.trace, indent=2)
+                trace = json.dumps(result_task_run.trace, indent=2, ensure_ascii=False)
 
             if (
                 parent_eval

@@ -6791,13 +6791,44 @@ export interface components {
              * Results
              * @description The individual eval run results.
              */
-            results: components["schemas"]["EvalRun"][];
+            results: components["schemas"]["EvalRunWithTrace"][];
             /** @description The parent eval. */
             eval: components["schemas"]["Eval"];
             /** @description The eval config used. */
             eval_config: components["schemas"]["EvalConfig"];
             /** @description The run config used. */
             run_config: components["schemas"]["TaskRunConfig"];
+        };
+        /**
+         * EvalRunWithTrace
+         * @description An eval's scores for one item, plus the trace those scores were computed over.
+         *
+         *     Where the trace lives depends on the record: on a TaskRun named by `scored_run_id`,
+         *     inline on the EvalRun for records written before the trace/score split, or nowhere at
+         *     all for a run that was skipped before anything was generated. This resolves whichever
+         *     applies - falling back to the dataset item for the input of that last kind - so
+         *     callers see one shape regardless of which it is.
+         */
+        EvalRunWithTrace: {
+            /** @description The score record itself. */
+            eval_run: components["schemas"]["EvalRun"];
+            /**
+             * Input
+             * @description The input the task was run on. From the scored TaskRun, from the EvalRun itself for legacy records, or from the dataset item for records that were skipped before anything was generated.
+             */
+            input: string | null;
+            /**
+             * Output
+             * @description What the task produced. Always the original output, never a repaired one: a repair can happen after scoring, so it is not what was scored. None when nothing was generated, or when the scored TaskRun is missing.
+             */
+            output: string | null;
+            /**
+             * Task Run Trace
+             * @description The JSON formatted trace of the task run that produced the output, if it recorded one.
+             */
+            task_run_trace: string | null;
+            /** @description The usage of the task run that produced the output. Not the judge's own usage, which is on the EvalRun as eval_usage. */
+            task_run_usage: components["schemas"]["Usage"] | null;
         };
         /**
          * EvalTaskInput

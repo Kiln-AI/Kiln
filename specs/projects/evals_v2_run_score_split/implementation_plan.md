@@ -26,7 +26,7 @@ Depends on `claude/eval-splits-evals-v2` being merged first.
       Architecture §3, §9.3.
       *Where the behavior change lands. Reuse works at the end of this phase.*
 
-- [ ] **Phase 4: Server surfaces.** `EvalRunWithTrace` joined view model, usage rollup
+- [x] **Phase 4: Server surfaces.** `EvalRunWithTrace` joined view model, usage rollup
       from the joined trace, 409 delete protection (single + bulk), `api_schema.d.ts`
       regen. Architecture §5, §6, §9.4, §9.5.
       *Note from Phase 3 review: `EvalRunWithTrace` must resolve `input` for **skip

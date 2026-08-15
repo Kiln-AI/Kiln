@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Tuple
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -11,10 +12,15 @@ from app.desktop.studio_server.eval_api import (
     compute_score_summary,
     connect_evals_api,
     eval_config_from_id,
+    eval_item_input_text,
+    eval_run_task_usage,
     get_all_run_configs,
+    resolve_eval_run_traces,
     resolved_split_or_422,
     reusable_frozen_prompt_id,
+    scored_trace_usage_for_run_config,
     split_size,
+    summary_eval_config,
     task_run_config_from_id,
 )
 from fastapi import FastAPI, HTTPException
@@ -51,6 +57,7 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
+    MultiTurnSyntheticEvalInputData,
     SingleTurnEvalInputData,
     TaskRunSplit,
     UserMessage,
@@ -62,7 +69,7 @@ from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.adapters.run_output import RunOutput
-from kiln_ai.datamodel.task_run import Usage
+from kiln_ai.datamodel.task_run import EvalItemSource, Usage
 
 
 def stub_split(
@@ -1712,9 +1719,12 @@ async def test_get_eval_run_results(
 
     # Verify results content
     assert len(data["results"]) == 1
-    assert data["results"][0]["id"] == eval_run.id
-    assert data["results"][0]["task_run_config_id"] == mock_run_config.id
-    assert data["results"][0]["scores"] == {"score1": 3.0, "overall_rating": 1.0}
+    assert data["results"][0]["eval_run"]["id"] == eval_run.id
+    assert data["results"][0]["eval_run"]["task_run_config_id"] == mock_run_config.id
+    assert data["results"][0]["eval_run"]["scores"] == {
+        "score1": 3.0,
+        "overall_rating": 1.0,
+    }
 
     # Test with invalid eval ID
     response = client.get(
@@ -1797,8 +1807,8 @@ class TestGetEvalRunResultsSplits:
         test_results = client.get(RUN_RESULTS_PATH, params={"split": "test"}).json()
         train_results = client.get(RUN_RESULTS_PATH, params={"split": "train"}).json()
 
-        assert [r["id"] for r in test_results["results"]] == [test_run.id]
-        assert [r["id"] for r in train_results["results"]] == [train_run.id]
+        assert [r["eval_run"]["id"] for r in test_results["results"]] == [test_run.id]
+        assert [r["eval_run"]["id"] for r in train_results["results"]] == [train_run.id]
 
     def test_returns_eval_input_backed_results(
         self,
@@ -1818,7 +1828,9 @@ class TestGetEvalRunResultsSplits:
         response = client.get(RUN_RESULTS_PATH, params={"split": "test"})
 
         assert response.status_code == 200
-        assert [r["id"] for r in response.json()["results"]] == [eval_run.id]
+        assert [r["eval_run"]["id"] for r in response.json()["results"]] == [
+            eval_run.id
+        ]
 
     def test_does_not_credit_a_task_run_to_an_eval_inputs_id(
         self,
@@ -1853,6 +1865,556 @@ class TestGetEvalRunResultsSplits:
 
         assert response.status_code == 200
         assert response.json()["results"] == []
+
+
+def _eval_trace(
+    task: Task,
+    data_source: DataSource,
+    source: EvalItemSource,
+    output: str = "traced output",
+    **overrides,
+) -> TaskRun:
+    """A TaskRun the eval runner would have generated: flagged, with a trace and usage."""
+    run = TaskRun(
+        parent=task,
+        input="traced input",
+        input_source=data_source,
+        output=TaskOutput(output=output, source=data_source),
+        eval_source=source,
+        trace=[{"role": "user", "content": "traced input"}],
+        usage=Usage(input_tokens=11, output_tokens=7, total_tokens=18, cost=0.5),
+        **overrides,
+    )
+    run.save_to_file()
+    return run
+
+
+def _pointer_scored(eval_config: EvalConfig, scored_run_id: str, **item) -> EvalRun:
+    """A pointer-mode score record: it names a trace and carries no inline copy of it."""
+    item.setdefault("scores", {"score1": 3.0, "overall_rating": 1.0})
+    run = EvalRun(
+        task_run_config_id="run_config1",
+        scored_run_id=scored_run_id,
+        parent=eval_config,
+        **item,
+    )
+    run.save_to_file()
+    return run
+
+
+class TestResolveEvalRunTraces:
+    """`resolve_eval_run_traces` and its helpers, called directly.
+
+    The endpoint tests below cover the same join end to end; these pin the pieces the
+    endpoint can't isolate - how many times the directory is read, and what each helper
+    answers for an input the endpoint has no way to construct.
+    """
+
+    def test_reads_the_runs_directory_once_per_kind_of_lookup(
+        self, mock_task, mock_eval, mock_eval_config, data_source
+    ):
+        """Bulk, not per record: this is the invariant that silently rots into an N+1,
+        and the cost is a directory scan over every eval trace in the project."""
+        traces = []
+        skips = []
+        for _ in range(3):
+            item = _tagged_task_run(mock_task, data_source, "eval_set")
+            traces.append(
+                _pointer_scored(
+                    mock_eval_config,
+                    _eval_trace(
+                        mock_task,
+                        data_source,
+                        EvalItemSource(source_type="task_run", source_id=item.id),
+                    ).id,
+                    dataset_id=item.id,
+                )
+            )
+            skip_item = _tagged_task_run(mock_task, data_source, "eval_set")
+            skips.append(
+                EvalRun(
+                    parent=mock_eval_config,
+                    task_run_config_id="run_config1",
+                    scores={},
+                    skipped_reason="incompatible_input_shape",
+                    dataset_id=skip_item.id,
+                )
+            )
+
+        with patch.object(
+            TaskRun, "from_ids_and_parent_path", wraps=TaskRun.from_ids_and_parent_path
+        ) as bulk_load:
+            resolve_eval_run_traces(mock_task, traces + skips)
+
+        # One for the three pointer records' traces, one for the three skips' source
+        # items. Six records, two reads.
+        assert bulk_load.call_count == 2
+
+    def test_reads_nothing_when_no_record_needs_a_lookup(
+        self, mock_task, mock_eval, mock_eval_config
+    ):
+        """An all-legacy result set resolves entirely from its own fields. The empty
+        guard matters because from_ids_and_parent_path reads uncached children to check
+        them, so a no-op call would read the whole runs directory."""
+        legacy = EvalRun(
+            parent=mock_eval_config,
+            task_run_config_id="run_config1",
+            scores={"score1": 3.0, "overall_rating": 1.0},
+            dataset_id="500000000001",
+            input="in",
+            output="out",
+        )
+
+        with (
+            patch.object(TaskRun, "from_ids_and_parent_path") as load_runs,
+            patch.object(EvalInput, "from_ids_and_parent_path") as load_inputs,
+        ):
+            resolved = resolve_eval_run_traces(mock_task, [legacy])
+
+        load_runs.assert_not_called()
+        load_inputs.assert_not_called()
+        assert resolved[0].input == "in"
+
+    @pytest.mark.parametrize(
+        "item_factory,expected",
+        [
+            (
+                lambda: TaskRun(
+                    input="run input",
+                    input_source=DataSource(
+                        type=DataSourceType.human, properties={"created_by": "t"}
+                    ),
+                    output=TaskOutput(output="out"),
+                ),
+                "run input",
+            ),
+            (
+                lambda: EvalInput(
+                    data=SingleTurnEvalInputData(
+                        user_message=UserMessage(text="single turn")
+                    )
+                ),
+                "single turn",
+            ),
+            (
+                lambda: EvalInput(
+                    data=MultiTurnSyntheticEvalInputData(
+                        first_message=UserMessage(text="first turn")
+                    )
+                ),
+                "first turn",
+            ),
+            (
+                lambda: EvalInput(data=MultiTurnSyntheticEvalInputData()),
+                None,
+            ),
+        ],
+        ids=["task_run", "single_turn", "multi_turn", "multi_turn_no_first_message"],
+    )
+    def test_eval_item_input_text_reads_every_item_shape(self, item_factory, expected):
+        """A multi-turn item with no first message is the one shape with nothing to show,
+        and it is reachable: multi-turn is exactly what pre-generation skips are for."""
+        assert eval_item_input_text(item_factory()) == expected
+
+    def test_usage_comes_from_the_trace_for_a_pointer_and_inline_for_a_legacy_record(
+        self, mock_eval_config
+    ):
+        inline_usage = Usage(input_tokens=1, total_tokens=1)
+        trace_usage = Usage(input_tokens=2, total_tokens=2)
+        legacy = EvalRun(
+            parent=mock_eval_config,
+            task_run_config_id="run_config1",
+            scores={"score1": 3.0, "overall_rating": 1.0},
+            dataset_id="500000000001",
+            input="in",
+            output="out",
+            task_run_usage=inline_usage,
+        )
+        pointer = EvalRun(
+            parent=mock_eval_config,
+            task_run_config_id="run_config1",
+            scores={"score1": 3.0, "overall_rating": 1.0},
+            dataset_id="500000000002",
+            scored_run_id="900000000001",
+        )
+        usage_by_id = {"900000000001": trace_usage}
+
+        assert eval_run_task_usage(legacy, usage_by_id) == inline_usage
+        assert eval_run_task_usage(pointer, usage_by_id) == trace_usage
+        # A dangling pointer contributes nothing rather than counting as a zero.
+        assert eval_run_task_usage(pointer, {}) is None
+
+    def test_summary_eval_config_picks_the_only_config_or_the_named_one(
+        self, mock_task, mock_eval, mock_eval_config
+    ):
+        only_config = summary_eval_config(mock_eval)
+        assert only_config is not None
+        assert only_config.id == mock_eval_config.id
+
+        second = EvalConfig(
+            id="eval_config2",
+            name="Second",
+            config_type=EvalConfigType.g_eval,
+            properties={"eval_steps": ["step1"]},
+            parent=mock_eval,
+            model_name="gpt-4",
+            model_provider="openai",
+        )
+        second.save_to_file()
+
+        # Two configs and no default named: no non-arbitrary answer, so none is given.
+        assert summary_eval_config(mock_eval) is None
+
+        mock_eval.current_config_id = second.id
+        named_config = summary_eval_config(mock_eval)
+        assert named_config is not None
+        assert named_config.id == second.id
+
+    def test_a_dangling_trace_reference_is_logged_once_for_the_request(
+        self, mock_task, mock_eval, mock_eval_config, caplog
+    ):
+        """Delete protection means a missing trace is data lost out of band, so it is
+        worth a line - but one per request, not one per record."""
+        dangling = [
+            _pointer_scored(
+                mock_eval_config, f"90000000000{i}", dataset_id=f"50000000000{i}"
+            )
+            for i in range(1, 3)
+        ]
+
+        with caplog.at_level(
+            logging.WARNING, logger="app.desktop.studio_server.eval_api"
+        ):
+            resolve_eval_run_traces(mock_task, dangling)
+
+        warnings = [
+            record
+            for record in caplog.records
+            if record.name == "app.desktop.studio_server.eval_api"
+        ]
+        assert len(warnings) == 1
+        assert "2 of 2 eval traces" in warnings[0].message
+
+    def test_the_usage_pre_pass_reads_the_runs_directory_once_for_every_eval(
+        self, mock_task, mock_eval, mock_eval_config, data_source
+    ):
+        """The whole reason this pre-pass exists: a per-eval load would be one scan of
+        `runs/` per eval, over a directory that now holds every eval trace. Moving the
+        load back inside the loop passes every other test."""
+        second_eval = Eval(
+            id="eval2",
+            name="Second Eval",
+            description="Second",
+            template=EvalTemplateId.bias,
+            output_scores=mock_eval.output_scores,
+            eval_set_filter_id="tag::eval_set",
+            eval_configs_filter_id="tag::golden",
+            parent=mock_task,
+        )
+        second_eval.save_to_file()
+        second_config = EvalConfig(
+            name="Second Judge",
+            config_type=EvalConfigType.g_eval,
+            properties={"eval_steps": ["step1"]},
+            parent=second_eval,
+            model_name="gpt-4",
+            model_provider="openai",
+        )
+        second_config.save_to_file()
+
+        for eval_config in (mock_eval_config, second_config):
+            item = _tagged_task_run(mock_task, data_source, "eval_set")
+            trace = _eval_trace(
+                mock_task,
+                data_source,
+                EvalItemSource(source_type="task_run", source_id=item.id),
+            )
+            _pointer_scored(eval_config, trace.id, dataset_id=item.id)
+
+        with patch.object(
+            TaskRun, "from_ids_and_parent_path", wraps=TaskRun.from_ids_and_parent_path
+        ) as bulk_load:
+            usage_by_id = scored_trace_usage_for_run_config(
+                mock_task, [mock_eval, second_eval], "run_config1"
+            )
+
+        assert bulk_load.call_count == 1
+        assert len(usage_by_id) == 2
+
+    def test_the_usage_pre_pass_skips_records_that_never_reach_the_rollup(
+        self, mock_task, mock_eval, mock_eval_config, data_source
+    ):
+        """A skipped record is dropped before usage is read, so loading its trace would
+        be pure cost - and traces are the large field."""
+        scored_item = _tagged_task_run(mock_task, data_source, "eval_set")
+        scored_trace = _eval_trace(
+            mock_task,
+            data_source,
+            EvalItemSource(source_type="task_run", source_id=scored_item.id),
+        )
+        _pointer_scored(mock_eval_config, scored_trace.id, dataset_id=scored_item.id)
+
+        skipped_item = _tagged_task_run(mock_task, data_source, "eval_set")
+        skipped_trace = _eval_trace(
+            mock_task,
+            data_source,
+            EvalItemSource(source_type="task_run", source_id=skipped_item.id),
+        )
+        _pointer_scored(
+            mock_eval_config,
+            skipped_trace.id,
+            dataset_id=skipped_item.id,
+            scores={},
+            skipped_reason="missing_reference_key",
+        )
+
+        usage_by_id = scored_trace_usage_for_run_config(
+            mock_task, [mock_eval], "run_config1"
+        )
+
+        assert set(usage_by_id) == {scored_trace.id}
+
+
+class TestEvalRunTraceJoin:
+    """The results endpoint renders one shape whether the trace is inline or pointed at.
+
+    Records written since the trace/score split keep the trace on a TaskRun, so without
+    this join every new result would render blank input and output.
+    """
+
+    def _results(self, client) -> List[Dict]:
+        response = client.get(RUN_RESULTS_PATH, params={"split": "test"})
+        assert response.status_code == 200
+        return response.json()["results"]
+
+    def test_pointer_and_legacy_records_resolve_to_the_same_shape(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        # A V1 eval only stores a trace when it evaluates one, and the point of this
+        # test is that both records carry every field.
+        mock_eval.evaluation_data_type = EvalDataType.full_trace
+        mock_eval.save_to_file()
+        legacy_item = _tagged_task_run(mock_task, data_source, "eval_set")
+        pointer_item = _tagged_task_run(mock_task, data_source, "eval_set")
+        legacy = EvalRun(
+            parent=mock_eval_config,
+            task_run_config_id="run_config1",
+            scores={"score1": 3.0, "overall_rating": 1.0},
+            dataset_id=legacy_item.id,
+            input="traced input",
+            output="traced output",
+            task_run_trace=json.dumps(
+                [{"role": "user", "content": "traced input"}], ensure_ascii=False
+            ),
+            task_run_usage=Usage(
+                input_tokens=11, output_tokens=7, total_tokens=18, cost=0.5
+            ),
+        )
+        legacy.save_to_file()
+        trace = _eval_trace(
+            mock_task,
+            data_source,
+            EvalItemSource(source_type="task_run", source_id=pointer_item.id),
+        )
+        pointer = _pointer_scored(
+            mock_eval_config, trace.id, dataset_id=pointer_item.id
+        )
+
+        by_id = {r["eval_run"]["id"]: r for r in self._results(client)}
+
+        assert by_id[legacy.id]["input"] == by_id[pointer.id]["input"] == "traced input"
+        assert (
+            by_id[legacy.id]["output"] == by_id[pointer.id]["output"] == "traced output"
+        )
+        assert by_id[legacy.id]["task_run_usage"] == by_id[pointer.id]["task_run_usage"]
+        assert json.loads(by_id[pointer.id]["task_run_trace"]) == json.loads(
+            by_id[legacy.id]["task_run_trace"]
+        )
+
+    def test_returns_the_output_that_was_scored_not_a_later_repair(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        """A repair can happen after scoring, so it is not what the score describes."""
+        item = _tagged_task_run(mock_task, data_source, "eval_set")
+        trace = _eval_trace(
+            mock_task,
+            data_source,
+            EvalItemSource(source_type="task_run", source_id=item.id),
+            repaired_output=TaskOutput(output="repaired output", source=data_source),
+            repair_instructions="fix it",
+        )
+        _pointer_scored(mock_eval_config, trace.id, dataset_id=item.id)
+
+        assert self._results(client)[0]["output"] == "traced output"
+
+    def test_a_dangling_scored_run_id_still_renders_its_scores(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        """Only the drill-through is lost. Never raises, never drops the score."""
+        item = _tagged_task_run(mock_task, data_source, "eval_set")
+        _pointer_scored(mock_eval_config, "900000000001", dataset_id=item.id)
+
+        result = self._results(client)[0]
+
+        assert result["eval_run"]["scores"] == {"score1": 3.0, "overall_rating": 1.0}
+        assert result["output"] is None
+        assert result["task_run_trace"] is None
+        assert result["task_run_usage"] is None
+        # input alone falls back to the dataset item, which is still a true statement of
+        # what was asked.
+        assert result["input"] == "in"
+
+    def test_a_scoring_skip_resolves_from_its_trace(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        """A skip that happened after generation is a pointer record like any other."""
+        item = _tagged_task_run(mock_task, data_source, "eval_set")
+        trace = _eval_trace(
+            mock_task,
+            data_source,
+            EvalItemSource(source_type="task_run", source_id=item.id),
+        )
+        _pointer_scored(
+            mock_eval_config,
+            trace.id,
+            dataset_id=item.id,
+            scores={},
+            skipped_reason="missing_reference_key",
+        )
+
+        result = self._results(client)[0]
+
+        assert result["input"] == "traced input"
+        assert result["output"] == "traced output"
+
+
+class TestPreGenerationSkipInput:
+    """A run skipped before generation has no trace and no inline input.
+
+    It has neither a `scored_run_id` to join through nor the `input` pre-split records
+    carried, so without resolving the dataset item these rows render blank forever.
+    """
+
+    def _skip(self, eval_config: EvalConfig, **item) -> EvalRun:
+        run = EvalRun(
+            parent=eval_config,
+            task_run_config_id="run_config1",
+            scores={},
+            skipped_reason="incompatible_input_shape",
+            skipped_detail="V2 evals do not yet support multi-turn inputs",
+            **item,
+        )
+        run.save_to_file()
+        return run
+
+    def _input_of_only_result(self, client) -> str | None:
+        response = client.get(RUN_RESULTS_PATH, params={"split": "test"})
+        assert response.status_code == 200
+        results = response.json()["results"]
+        assert len(results) == 1
+        return results[0]["input"]
+
+    def test_resolves_input_from_a_task_run_item(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        item = _tagged_task_run(mock_task, data_source, "eval_set")
+        self._skip(mock_eval_config, dataset_id=item.id)
+
+        assert self._input_of_only_result(client) == "in"
+
+    def test_resolves_input_from_a_single_turn_eval_input(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+    ):
+        mock_eval.splits["test"] = EvalInputSplit(filter_id="tag::inputs")
+        mock_eval.eval_set_filter_id = None
+        mock_eval.save_to_file()
+        eval_input = _tagged_eval_input(mock_task, "inputs")
+        self._skip(mock_eval_config, eval_input_id=eval_input.id)
+
+        assert self._input_of_only_result(client) == "in"
+
+    def test_resolves_input_from_a_multi_turn_eval_input(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+    ):
+        """The case the runner actually writes: multi-turn items are skipped by V2."""
+        mock_eval.splits["test"] = EvalInputSplit(filter_id="tag::inputs")
+        mock_eval.eval_set_filter_id = None
+        mock_eval.save_to_file()
+        eval_input = EvalInput(
+            parent=mock_task,
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="first turn")
+            ),
+            tags=["inputs"],
+        )
+        eval_input.save_to_file()
+        self._skip(mock_eval_config, eval_input_id=eval_input.id)
+
+        assert self._input_of_only_result(client) == "first turn"
+
+    def test_a_missing_source_item_renders_no_input_rather_than_raising(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+    ):
+        """The item is gone but its skip record isn't. The split is stubbed because a
+        real one is resolved from the items themselves, so a deleted item leaves no
+        split to be in."""
+        self._skip(mock_eval_config, dataset_id="900000000002")
+
+        with patch_resolve_split(test=stub_split({"900000000002"})):
+            assert self._input_of_only_result(client) is None
 
 
 @pytest.mark.asyncio
@@ -3511,6 +4073,120 @@ async def test_get_run_config_eval_scores_latency_below_threshold(
     assert mean_usage["mean_cost"] is not None
     # Latency should be None (only 1/3 = 33% < 50% threshold)
     assert mean_usage["mean_total_llm_latency_ms"] is None
+
+
+EVAL_SCORES_PATH = (
+    "/api/projects/project1/tasks/task1/run_configs/run_config1/eval_scores"
+)
+
+
+class TestRunConfigUsageRollup:
+    """The evaluated task's usage moved onto the scored TaskRun.
+
+    Reading `eval_run.task_run_usage` alone would report zero usage for every eval run
+    since the split, because new records leave that field None.
+    """
+
+    def _mean_usage(self, client) -> Dict:
+        response = client.get(EVAL_SCORES_PATH)
+        assert response.status_code == 200
+        return response.json()["mean_usage"]
+
+    def test_reports_the_scored_task_runs_usage_for_a_pointer_record(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        """Including latency - the field cumulative_usage would have dropped."""
+        item = _tagged_task_run(mock_task, data_source, "eval_set")
+        trace = _eval_trace(
+            mock_task,
+            data_source,
+            EvalItemSource(source_type="task_run", source_id=item.id),
+        )
+        trace.usage = Usage(
+            input_tokens=100,
+            output_tokens=50,
+            total_tokens=150,
+            cost=0.005,
+            total_llm_latency_ms=500,
+        )
+        trace.save_to_file()
+        _pointer_scored(mock_eval_config, trace.id, dataset_id=item.id)
+
+        mean_usage = self._mean_usage(client)
+
+        assert mean_usage["mean_input_tokens"] == 100.0
+        assert mean_usage["mean_output_tokens"] == 50.0
+        assert mean_usage["mean_total_tokens"] == 150.0
+        assert mean_usage["mean_cost"] == 0.005
+        assert mean_usage["mean_total_llm_latency_ms"] == 500.0
+
+    def test_still_reports_task_run_usage_for_a_legacy_record(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        item = _tagged_task_run(mock_task, data_source, "eval_set")
+        legacy = EvalRun(
+            parent=mock_eval_config,
+            task_run_config_id="run_config1",
+            scores={"score1": 3.0, "overall_rating": 1.0},
+            dataset_id=item.id,
+            input="in",
+            output="out",
+            task_run_usage=Usage(
+                input_tokens=40,
+                output_tokens=20,
+                total_tokens=60,
+                cost=0.001,
+                total_llm_latency_ms=300,
+            ),
+        )
+        legacy.save_to_file()
+
+        mean_usage = self._mean_usage(client)
+
+        assert mean_usage["mean_input_tokens"] == 40.0
+        assert mean_usage["mean_total_llm_latency_ms"] == 300.0
+
+    def test_a_pointer_record_with_a_missing_trace_contributes_nothing(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        """It must not count as a zero, which would drag the average down."""
+        scored_item = _tagged_task_run(mock_task, data_source, "eval_set")
+        dangling_item = _tagged_task_run(mock_task, data_source, "eval_set")
+        trace = _eval_trace(
+            mock_task,
+            data_source,
+            EvalItemSource(source_type="task_run", source_id=scored_item.id),
+        )
+        trace.usage = Usage(input_tokens=100, output_tokens=50, total_tokens=150)
+        trace.save_to_file()
+        _pointer_scored(mock_eval_config, trace.id, dataset_id=scored_item.id)
+        _pointer_scored(mock_eval_config, "900000000003", dataset_id=dangling_item.id)
+
+        mean_usage = self._mean_usage(client)
+
+        assert mean_usage["mean_input_tokens"] == 100.0
+        assert mean_usage["mean_total_tokens"] == 150.0
 
 
 @pytest.mark.asyncio
@@ -5334,9 +6010,9 @@ class TestV1CoexistenceAPI:
 
         assert len(data["results"]) == 1
         result = data["results"][0]
-        assert result["scores"] == {"score1": 3.5, "overall_rating": 4.0}
-        assert result["dataset_id"] == in_split.id
-        assert result["task_run_config_id"] == "run_config1"
+        assert result["eval_run"]["scores"] == {"score1": 3.5, "overall_rating": 4.0}
+        assert result["eval_run"]["dataset_id"] == in_split.id
+        assert result["eval_run"]["task_run_config_id"] == "run_config1"
         assert result["input"] == "hello"
         assert result["output"] == "world"
 
@@ -5346,8 +6022,8 @@ class TestV1CoexistenceAPI:
             "skipped_reason",
             "skipped_detail",
         ):
-            assert v2_field in result
-            assert result[v2_field] is None
+            assert v2_field in result["eval_run"]
+            assert result["eval_run"][v2_field] is None
 
     def test_v1_llm_as_judge_config_accepted(
         self,
