@@ -37,7 +37,8 @@ Outside the repo, in the Claude Code cloud environment configuration:
       `.config/utils/setup_env.sh --upgrade-tools` (functional spec, "Environment-side changes").
 - [ ] `enableAllProjectMcpServers: true` in user-level `~/.claude/settings.json`,
       so the project `.mcp.json` is trusted. Nothing repo-side can do this.
-- [ ] Replace `UV_NATIVE_TLS` with `UV_SYSTEM_CERTS` in the environment variables.
+- [x] Replace `UV_NATIVE_TLS` with `UV_SYSTEM_CERTS` in the environment variables.
+      Done. Takes effect in new sessions.
 
 ## Follow-up, blocked on upstream
 
