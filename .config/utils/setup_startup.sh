@@ -289,12 +289,28 @@ WEB_UI_DIR="$PROJECT_ROOT/app/web_ui"
 # collide costs nothing and keeps the failure to the one place it is already known.
 #
 # The price of per-PID names is that a killed run leaks its staging under a name no
-# later run will reuse, so sweep by age instead: anything older than an hour cannot
-# be in flight, since a seed takes about half a second. Unconditional, because the
-# seed block below is skipped as soon as node_modules exists, which is exactly the
-# state a leaked 601 MB directory would sit in forever.
+# later run will reuse, so a sweep reclaims what is left behind. It runs
+# unconditionally, because the seed block below is skipped as soon as node_modules
+# exists — exactly the state a leaked 601 MB directory would otherwise sit in
+# forever.
+#
+# What makes deleting someone else's staging path safe here is that in every
+# supported configuration there is no one else: this runs before this run creates
+# its own staging, and a second concurrent process is already unsupported and
+# already destructive at the npm install below.
+#
+# It is specifically *not* safe because of the age filter. `cp -al` implies
+# --preserve=all, which stamps the warm tree's mtime onto the staging directory the
+# moment the copy finishes — on a snapshot-restored VM that is the image build date,
+# so a live staging directory can read as days old the instant it is complete. The
+# -mmin filter is a coarse guard against deleting a directory another run is still
+# filling (that one does bump its mtime per top-level entry), not a liveness proof.
 warm_staging="$WEB_UI_DIR/.node_modules.warm.$$"
-find "$WEB_UI_DIR" -maxdepth 1 -name '.node_modules.warm.*' -mmin +60 \
+# No dot before the wildcard: it must also match the fixed `.node_modules.warm`
+# name a previous version of this script used, or a tree left by a run of that
+# version is orphaned permanently and invisibly, since the name is gitignored. The
+# leading dot is what keeps this from ever matching node_modules itself.
+find "$WEB_UI_DIR" -maxdepth 1 -name '.node_modules.warm*' -mmin +60 \
   -exec rm -rf {} + 2>/dev/null
 
 # Everything happens in the staging directory, and node_modules only ever appears

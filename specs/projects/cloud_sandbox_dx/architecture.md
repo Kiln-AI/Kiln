@@ -415,12 +415,34 @@ Order is load-bearing:
    to be broken.
 
    The cost of per-PID names is a leak: a killed run's staging keeps up to 601 MB
-   under a name no later run will reuse. So the reclaim is an **age-based sweep** of
-   `.node_modules.warm.*` older than an hour, which cannot be in flight since a seed
-   takes about half a second. It runs unconditionally, outside the seed block, since
+   under a name no later run will reuse. So a sweep of `.node_modules.warm*` older
+   than an hour reclaims it. It runs unconditionally, outside the seed block, since
    that block is skipped as soon as `node_modules` exists — which is precisely the
    state a leaked directory would otherwise sit in forever. The seed itself clears
    only its own path, because a PID can be reused across a reboot.
+
+   **What makes the sweep safe is the absence of a second process, not the age
+   filter.** In every supported configuration there is nobody else to race: the
+   sweep runs before this run creates its own staging, and a concurrent second
+   process is already unsupported and already destructive at the `npm install`.
+
+   The age filter cannot carry that weight, and the earlier claim here that an
+   hour-old directory "cannot be in flight, since a seed takes about half a second"
+   was wrong. `cp -al` implies `--preserve=all`, which stamps the *warm tree's* mtime
+   onto the staging directory as soon as the copy completes — measured going from
+   "now" during the fill to five days old the instant it finished. On a
+   snapshot-restored VM that inherited timestamp is the image build date, so a
+   complete, live staging directory reads as sweepable. The window is from the end
+   of `cp -al` to the first `cp -p` of the unshare loop, ~10 ms, it needs a
+   concurrent run to be inside it, and the result is a failed `cp -p` and the
+   graceful fallback rather than corruption. The filter's real job is the narrower
+   one it can do: not deleting a directory another run is still *filling*, whose
+   mtime does bump per top-level entry.
+
+   The pattern has no dot before the wildcard, so it also matches the fixed
+   `.node_modules.warm` name an earlier revision used; without that, a tree left by a
+   killed run of that revision is orphaned permanently and invisibly, the name being
+   gitignored. The leading dot is what keeps the pattern off `node_modules` itself.
 
    Order inside `seed_warm_node_modules`, which is load-bearing:
 
