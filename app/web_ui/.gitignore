@@ -1,5 +1,8 @@
 .DS_Store
 node_modules
+# Staging for setup_startup.sh's hardlink seed of node_modules. Cleared on both
+# its paths; this covers a run that was killed mid-copy.
+.node_modules.warm*
 /build
 /.svelte-kit
 /package

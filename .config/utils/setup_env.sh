@@ -28,16 +28,33 @@ set -uo pipefail
 
 # ── CONFIGURATION ─────────────────────────────────────────────────────────────
 # Defaults for a local run. Command line flags override them.
-# For a Claude Code cloud setup script use: UPGRADE_TOOLS=true BEST_EFFORT=true
+# For a Claude Code cloud setup script use:
+#   UPGRADE_TOOLS=true BEST_EFFORT=true WARM_CACHE=true
 HUMAN_MODE=false    # true: also offer the worktrunk/Zellij workspace tools
 UPGRADE_TOOLS=false # true: upgrade uv without asking when it is too old
 AGENT=all           # all | claude | cursor | none
 BEST_EFFORT=false   # true: never exit non-zero (required for cloud setup scripts)
+WARM_CACHE=false    # true: warm the machine's caches from a throwaway clone (cloud VMs)
 # ──────────────────────────────────────────────────────────────────────────────
 
 UV_MIN=0.10.0
 PYTHON_PIN=3.13     # what .python-version gets pinned to; sync with setup_startup.sh
 PYTHON_MIN_MINOR=13 # the 3.x floor an existing pin is kept at or above
+
+# Where this script records that it provisioned the machine, and where it parks
+# the warm node_modules tree. Both live outside any checkout so they survive into
+# a VM snapshot; setup_startup.sh reads both and must use the same paths.
+#
+# The _v1 in the marker name is a contract version, not decoration: when what this
+# script provides changes incompatibly, bump it, so machines provisioned by the
+# older script are correctly reported as not set up rather than as ready.
+#
+# The two overrides exist so the behavior can be exercised without writing to /opt
+# or cloning over the network.
+VM_SETUP_DIR="${KILN_VM_SETUP_DIR:-/opt/kiln-vm-setup}"
+VM_SETUP_MARKER="$VM_SETUP_DIR/.setup_for_kiln_repo_v1"
+WARM_NODE_MODULES="$VM_SETUP_DIR/node_modules"
+KILN_REPO_URL="${KILN_REPO_URL:-https://github.com/Kiln-AI/Kiln.git}"
 
 # ── Project root discovery ────────────────────────────────────────────────────
 # Deriving the root from ${BASH_SOURCE[0]} only works when this file is running
@@ -88,6 +105,10 @@ Usage: setup_env.sh [options]
   --agent <name>      Which agent configs to write: all|claude|cursor|none (default all).
   --best-effort       Never exit non-zero. Required when used as a cloud setup script,
                       where a non-zero exit stops the session from starting.
+  --warm-cache        When there is no checkout, clone Kiln to a throwaway directory
+                      and sync it, to warm this machine's uv and npm caches and keep
+                      a pristine node_modules for later sessions. For cloud VMs whose
+                      disk is snapshotted after setup; a no-op with a checkout.
   -h, --help          Show this help.
 
 The Python sync uses --frozen, so run `uv lock` first if you changed dependencies.
@@ -99,6 +120,7 @@ while [ $# -gt 0 ]; do
     --human) HUMAN_MODE=true ;;
     --upgrade-tools) UPGRADE_TOOLS=true ;;
     --best-effort) BEST_EFFORT=true ;;
+    --warm-cache) WARM_CACHE=true ;;
     --agent) AGENT="${2:-}"; shift ;;
     --agent=*) AGENT="${1#*=}" ;;
     -h | --help) usage; exit 0 ;;
@@ -214,19 +236,180 @@ if ! uv python install "$PYTHON_PIN"; then
   finish
 fi
 
+# ── Warm this machine's caches ────────────────────────────────────────────────
+# A cloud VM runs this script once, then snapshots the disk, so anything cached
+# here is free for every later session. Without it a fresh session downloads ~300
+# MB of wheels, fetches a git dependency and builds an sdist before it can run a
+# test: measured 14.67 s of `uv sync`, against 428 ms once the cache is warm.
+#
+# npm is the reason a warm ~/.npm is not enough on the Node side. uv hardlinks out
+# of its cache; npm copies, so filling an empty node_modules still costs ~21 s of
+# the 24 s it took cold. So the tree itself is kept, outside any checkout, and
+# setup_startup.sh hardlinks it into the session's checkout in ~0.5 s.
+#
+# Only with no checkout, which is the cloud environment-build case. With a
+# checkout the sync below warms the same caches against the code actually in hand,
+# and copying that checkout's node_modules — mid-branch, possibly patched — into a
+# machine-global tree would be seeding later sessions from an unknown state.
+WARM_TREE_CREATED=false
+WARM_TREE_COMMIT=""
+
+# Failures here are warnings, not `fail`s. This is an optimization: the machine is
+# still usable without it, and marking the run failed would flip the closing line
+# to "Resolve the errors above" for a VM whose uv and Python are fine. Everything
+# that actually has to be true is re-checked per session by setup_startup.sh.
+warm_from_throwaway_clone() {
+  local clone py_status npm_status py_pid npm_pid
+
+  if ! mkdir -p "$VM_SETUP_DIR"; then
+    echo "warning: warm cache: could not create $VM_SETUP_DIR; skipping" >&2
+    return 1
+  fi
+
+  # Clone inside VM_SETUP_DIR so the node_modules move below is a rename on one
+  # device rather than a 600 MB copy across two.
+  clone="$VM_SETUP_DIR/throwaway-clone"
+  rm -rf "$clone"
+
+  echo "Warming caches from a throwaway clone of $KILN_REPO_URL..."
+  if ! git clone --depth 1 "$KILN_REPO_URL" "$clone"; then
+    echo "warning: warm cache: could not clone $KILN_REPO_URL; skipping" >&2
+    rm -rf "$clone"
+    return 1
+  fi
+  WARM_TREE_COMMIT="$(git -C "$clone" rev-parse HEAD 2>/dev/null)"
+
+  # Before the sync, so the cached wheels are the ones a session on this snapshot
+  # will actually use. Without the pin uv builds the clone's .venv on the system
+  # Python and caches a different interpreter's wheels — so a failed write here is
+  # not cosmetic, it warms the cache for the wrong interpreter.
+  if ! echo "$PYTHON_PIN" >"$clone/.python-version"; then
+    echo "warning: warm cache: could not pin Python in the throwaway clone;" >&2
+    echo "         skipping rather than caching wheels for the system Python" >&2
+    rm -rf "$clone"
+    return 1
+  fi
+
+  (cd "$clone" && uv sync --frozen --all-packages) &
+  py_pid=$!
+  (cd "$clone/app/web_ui" && npm ci --no-fund --no-audit) &
+  npm_pid=$!
+
+  py_status=0
+  wait "$py_pid" || py_status=$?
+  npm_status=0
+  wait "$npm_pid" || npm_status=$?
+
+  [ "$py_status" -ne 0 ] &&
+    echo "warning: warm cache: uv sync in the throwaway clone failed (exit $py_status); the uv cache may be cold" >&2
+
+  if [ "$npm_status" -ne 0 ] || [ ! -d "$clone/app/web_ui/node_modules" ]; then
+    echo "warning: warm cache: npm ci in the throwaway clone failed (exit $npm_status); no warm node_modules was kept" >&2
+    rm -rf "$clone"
+    return 1
+  fi
+
+  rm -rf "$WARM_NODE_MODULES"
+  if ! mv "$clone/app/web_ui/node_modules" "$WARM_NODE_MODULES"; then
+    echo "warning: warm cache: could not move node_modules to $WARM_NODE_MODULES" >&2
+    rm -rf "$clone"
+    return 1
+  fi
+
+  rm -rf "$clone"
+  echo "Warm node_modules kept at $WARM_NODE_MODULES."
+}
+
+# The marker is how setup_startup.sh tells a machine this script provisioned from
+# one that never ran it — and so whether the warm tree beside it has known
+# provenance. Its contents are for a human reading a broken VM, not for parsing.
+previous_marker_value() {
+  # $1 = key. Empty when the marker is absent or does not carry that key.
+  [ -f "$VM_SETUP_MARKER" ] || return 0
+  sed -n "s/^$1=//p" "$VM_SETUP_MARKER" 2>/dev/null | tail -1
+}
+
+write_vm_setup_marker() {
+  if ! mkdir -p "$VM_SETUP_DIR"; then
+    echo "note: could not create $VM_SETUP_DIR, so no provisioning marker was" >&2
+    echo "      written. That only matters on a VM whose disk is snapshotted." >&2
+    return 0
+  fi
+
+  # Describe the tree that is on disk now, not what this particular run did. The
+  # two come apart on a re-run: `setup_env.sh --upgrade-tools` is what AGENTS.md
+  # tells an agent to run to repair an environment, it carries no --warm-cache, and
+  # the warm tree it does not touch outlives it. A marker rewritten as
+  # "created=false, commit=none" would then be lying about the provenance of the
+  # 601 MB every session on this machine inherits — the one fact it exists to
+  # record. So carry the previous commit forward whenever the tree survives.
+  local tree_present=false tree_commit=none
+  [ -d "$WARM_NODE_MODULES" ] && tree_present=true
+
+  if [ "$WARM_TREE_CREATED" = true ]; then
+    tree_commit="${WARM_TREE_COMMIT:-unknown}"
+  elif [ "$tree_present" = true ]; then
+    tree_commit="$(previous_marker_value warm_node_modules_commit)"
+    # A tree with no marker to explain it: present, provenance unrecoverable.
+    tree_commit="${tree_commit:-unknown}"
+  fi
+
+  # Write beside the marker and rename over it. A redirect onto the marker itself
+  # truncates before it writes, so a failed write would leave a zero-byte file —
+  # and setup_startup.sh only tests that the marker exists. That would turn the one
+  # check standing between a session and an unattributable 601 MB tree into a false
+  # positive, with every field it reads back empty from then on.
+  local staged_marker="$VM_SETUP_MARKER.$$"
+  if ! cat >"$staged_marker" <<EOF
+# Written by .config/utils/setup_env.sh. Its presence means this machine was
+# provisioned for the Kiln repo. Delete it to force setup to be re-run.
+setup_version=1
+written_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+uv_version=${UV_VERSION:-unknown}
+python_pin=$PYTHON_PIN
+warm_node_modules=$WARM_NODE_MODULES
+warm_node_modules_present=$tree_present
+warm_node_modules_commit=$tree_commit
+warm_node_modules_created_this_run=$WARM_TREE_CREATED
+EOF
+  then
+    rm -f "$staged_marker"
+    echo "note: could not write $VM_SETUP_MARKER; the previous marker, if any," >&2
+    echo "      was left as it was." >&2
+    return 0
+  fi
+
+  mv -f "$staged_marker" "$VM_SETUP_MARKER" ||
+    echo "note: could not move the new marker into $VM_SETUP_MARKER." >&2
+}
+
+if [ "$WARM_CACHE" = true ]; then
+  if [ -n "$PROJECT_ROOT" ]; then
+    echo "Warm cache requested, but this run has a checkout at $PROJECT_ROOT;"
+    echo "the sync below warms the same caches, so no throwaway clone was made."
+  elif warm_from_throwaway_clone; then
+    WARM_TREE_CREATED=true
+  fi
+fi
+
+write_vm_setup_marker
+
 # ── Everything below here needs a checkout ────────────────────────────────────
 if [ -z "$PROJECT_ROOT" ]; then
   echo "No Kiln checkout found, so dependency install and agent configuration"
   echo "were skipped."
+  # Two readers land here. On a cloud VM this is the setup log, and the next step
+  # is setup_startup.sh in the session's checkout. Locally it is someone who ran
+  # this from the wrong directory — and setup_startup.sh would tell them only that
+  # they are not in a container, so pointing them there would be a dead end.
   if [ "$FAILED" -ne 0 ]; then
-    # This is the one line a cloud operator reads in the setup log; do not claim
-    # the tools are ready when a step above just failed.
-    echo "Resolve the errors above, then run .config/utils/setup_startup.sh"
-    echo "from a checkout to finish setup."
+    # Do not claim the tools are ready when a step above just failed.
+    echo "Resolve the errors above, then finish setup from inside a checkout:"
   else
-    echo "uv and Python $PYTHON_PIN are ready; run"
-    echo ".config/utils/setup_startup.sh from a checkout to finish setup."
+    echo "uv and Python $PYTHON_PIN are ready. To finish setup, from a checkout:"
   fi
+  echo "  in a container or cloud sandbox: .config/utils/setup_startup.sh"
+  echo "  on a development machine:        .config/utils/setup_env.sh"
   finish "Environment tools ready. Repo-specific setup was skipped."
 fi
 

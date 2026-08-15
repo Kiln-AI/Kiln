@@ -50,6 +50,7 @@ reviewable, and testable locally, instead of living only in a web form.
 | `setup_env.sh --upgrade-tools` | Upgrades a too-old uv without asking. |
 | `setup_env.sh --agent <all\|claude\|cursor\|none>` | Which agent configs to write. Default `all`. |
 | `setup_env.sh --best-effort` | Never exit non-zero. |
+| `setup_env.sh --warm-cache` | With no checkout, warm this machine's caches from a throwaway clone and keep its `node_modules` (F9). |
 | `setup_env.sh --help` | Usage. |
 
 Unknown flags, and an unrecognized `--agent` value, are an error with usage and
@@ -64,9 +65,12 @@ code is suppressed.
 
 1. Check uv version; upgrade or prompt or warn (F2).
 2. Ensure Python 3.13 is available and pinned (F3).
-3. Install Python and Node dependencies **in parallel** (F4).
-4. Write agent configuration (F5).
-5. `--human` only: offer the worktrunk/zellij extras.
+3. `--warm-cache` and no checkout only: warm the machine's caches and keep a
+   pristine `node_modules` (F9).
+4. Write the provisioning marker (F9) — always, on every run.
+5. Install Python and Node dependencies **in parallel** (F4).
+6. Write agent configuration (F5).
+7. `--human` only: offer the worktrunk/zellij extras.
 
 ### F2 — uv version handling
 
@@ -274,12 +278,32 @@ session, and a session can also land on a stale or wrong VM. `AGENTS.md` therefo
 instructs agents to run `.config/utils/setup_startup.sh` before their first build
 or test — on a new branch, and at the start of every sandbox session.
 
-It does five things, in this order:
+**Containers only.** The premise above is a container's premise: a fresh
+filesystem, nothing repo-aware run yet, possibly no `.venv` or `node_modules` at
+all. On a development machine none of it holds — the environment is set up once
+and shared across checkouts — and the steps below would re-do that work every
+session and seed `node_modules` from a machine-global tree. So the first thing the
+script does, after parsing arguments and before it looks for a checkout, is decide
+whether it is containerized: `CLAUDE_CODE_REMOTE` (Claude Code sets it to `true` in
+cloud sessions) or `IS_CONTAINERIZED` (the manual escape hatch for other
+containerized setups), each counted as set when non-empty and not `false` or `0`.
+With neither, it prints that it is not running in a VM/container, names what a
+local contributor should do instead, and **exits 0**. That is a normal outcome, not
+an error.
 
+It then does seven things, in this order:
+
+0. **Report whether the VM was provisioned** by checking for F9's marker. Absent,
+   it prints a prominent notice that the VM setup script should have run and did
+   not, and disables the `node_modules` hardlink in step 4 — a tree of unknown
+   provenance is never linked into a checkout. Everything else still runs: a
+   missing marker is a warning, not a fatal error, since an unprovisioned machine
+   with a working uv and npm can still do all of this, just slower. It comes first
+   because it usually explains the failures reported below it.
 1. **Gate on the tools the environment was supposed to provide** — `uv` present and
    ≥ 0.10, `npm` present. These come first because they are prerequisites for
    everything below, and because a too-old uv is what would corrupt `uv.lock`
-   during step 4.
+   during step 5.
 2. **Write the agent configuration** (F5). Placed here because it is offline,
    sub-second, and the thing that makes the repo's own instructions readable — so
    it must not sit behind a sync that might fail. In the cloud this is the only
@@ -288,11 +312,18 @@ It does five things, in this order:
    the floor (F3), before the sync, so the sync builds `.venv` on 3.13 instead of
    the system Python. A pin at or above the floor is a deliberate choice and is
    left alone.
-4. **Sync dependencies for the current branch**, `uv sync --frozen --all-packages`
+4. **Seed `node_modules` from the VM's warm tree** (F9), when the checkout has none
+   and step 0 found the marker. `cp -al` shares inodes instead of copying bytes:
+   measured **0.54 s** for the 601 MB tree, against ~21 s for npm to materialize it
+   from a warm `~/.npm`. Every failure — no warm tree, a tree on another
+   filesystem, a filesystem without hardlinks — falls through to step 5 populating
+   `node_modules` from scratch, which is what happened before this existed.
+5. **Sync dependencies for the current branch**, `uv sync --frozen --all-packages`
    and `npm install` in parallel, so a branch that changed a lockfile is not run
-   against stale packages.
-5. **Verify the virtualenv** — Python 3.13 or newer and `tkinter` importable. These
-   are properties of `.venv`, so they can only be checked once step 4 has built it.
+   against stale packages. This is also what reconciles a seeded tree with the
+   branch's `package.json`.
+6. **Verify the virtualenv** — Python 3.13 or newer and `tkinter` importable. These
+   are properties of `.venv`, so they can only be checked once step 5 has built it.
 
 Every *environment* failure — the nine that mean "this VM is wrong" — prints one
 repair line and notes that in a sandbox this usually means the VM setup script did
@@ -305,7 +336,7 @@ uv in order to upgrade uv, so those two point at the upstream installers instead
 failed `.python-version` write points at the checkout's permissions, and a missing
 checkout points at changing directory.
 
-The two step-4 failures are not in that set and deliberately read differently: a
+The two sync failures are not in that set and deliberately read differently: a
 failed `uv sync` or `npm install` says which one failed and exits 1, without the
 sandbox note, because a lockfile the branch changed is a normal development
 situation rather than a broken VM. The `uv sync` message names `uv lock`, since an
@@ -319,9 +350,94 @@ The uv check must come **before** the sync, not after: a too-old uv is precisely
 the thing that would rewrite `uv.lock` during that sync, so checking afterwards
 would do the damage the check exists to prevent.
 
-It is cheap and idempotent by design — measured **5.9 s** warm — so re-running it
-costs little and there is no reason for an agent to try to guess whether it is
-needed.
+It is cheap and idempotent by design — measured **5.9 s** warm, and **2.2 s** on a
+session seeded from a warm `node_modules` — so re-running it costs little and there
+is no reason for an agent to try to guess whether it is needed.
+
+### F9 — Warm the VM once, so every session on it starts warm
+
+A cloud environment's setup script runs once and the disk is then snapshotted, so
+anything it caches is free for every session afterwards. Measured on a live
+sandbox, warming the caches from a throwaway clone before the snapshot took
+`setup_startup.sh`'s Python half from `Prepared 182 packages in 14.67s` to
+`Prepared 3 packages in 428ms`: the ~300 MB download, the `together` git fetch and
+the `google-crc32c` sdist build all disappear, leaving only the three local
+workspace packages, which is irreducible because they build from the checkout's
+own source.
+
+The Node half barely moved — 24 s → 21 s. A warm `~/.npm` saves the download, but
+npm **copies** out of its cache where uv **hardlinks**, so filling an empty
+`node_modules` with 748 packages still costs ~21 s. The fix is to not fill it: keep
+the tree the warm-up already built and hardlink it into the session's checkout.
+
+Three parts:
+
+1. **`setup_env.sh --warm-cache` / `WARM_CACHE=true`.** Default false, so local runs
+   and other repos sharing the environment are unaffected. When it is on **and
+   there is no checkout** — the cloud environment-build case — the script clones
+   Kiln shallowly to a throwaway directory, pins Python in it, syncs it to warm
+   `~/.cache/uv` and `~/.npm`, then keeps the resulting `node_modules` at a fixed
+   path outside any repo and deletes the clone. With a checkout it says so and does
+   nothing: that sync warms the same caches, and a checkout's mid-branch
+   `node_modules` is not a baseline to seed later sessions from.
+
+   The flag lives in the `CONFIGURATION` block for the same reason as the other
+   three: the cloud setup script must stay the repo file with only that block
+   edited (F1). A knob that exists only in the pasted copy breaks that contract and
+   cannot be reviewed or tested.
+
+2. **A provisioning marker**, `.setup_for_kiln_repo_v1`, written outside the repo on
+   every `setup_env.sh` run, beside the warm tree (`/opt/kiln-vm-setup/` by
+   default; `KILN_VM_SETUP_DIR` overrides both for testing). It records the
+   timestamp, uv version, Python pin, whether a warm tree is present and the commit
+   it was built from — enough to diagnose a stale VM. The `_v1` is a contract
+   version: bump it when what setup provides changes incompatibly, so machines
+   provisioned by the older script report as not set up rather than as ready.
+
+   The tree fields describe **the tree on disk now**, not what the current run did.
+   The two come apart on a re-run: the repair command in `AGENTS.md` carries no
+   `--warm-cache`, so it makes no tree, while the tree it does not touch survives
+   and every session keeps being seeded from it. A marker rewritten as "no tree,
+   no commit" would be lying about the one fact it exists to record, so the commit
+   is carried forward from the previous marker whenever the tree outlives the run
+   that made it, and reads `unknown` only when there is genuinely nothing left to
+   attribute it to.
+
+   Its absence is what makes the hardlink safe to attempt at all. `setup_startup.sh`
+   only links a tree it can attribute to this repo's setup script.
+
+3. **The hardlink**, in `setup_startup.sh` (F8 step 4).
+
+**The shared-inode risk, measured.** Hardlinks mean the session's `node_modules`
+and the pristine tree are the same bytes, so a tool that edits a file in place
+edits the baseline. That is not hypothetical: `npm install` rewrites
+`node_modules/.package-lock.json` in place — verified, same inode, new mtime — and
+that file is npm's record of what is installed, so letting it drift from the tree
+beside it is exactly the mutation that could make a later `npm install` skip a
+genuinely missing package.
+
+Everything else measured clean. After a seed, an `npm install` and a full
+`npm run build`, that one file was the *only* changed inode out of 46,375; vite's
+caches and every package npm added landed on new inodes in the checkout's own
+directory entries. Both halves were then re-derived independently: with that one
+file deliberately re-linked, `npm install prettier@3.3.3` rewrote the warm tree's
+copy through the hardlink; with the unshare in place, a 52,031-entry manifest —
+inode, size, mode, mtime, type, path — showed zero changes across `build`, `check`,
+`lint`, `format`, `format_check`, `test_run` and a package version swap.
+
+So `setup_startup.sh` unshares the regular files at the root of the tree — a few
+hundred KB — and leaves the ~46,000 package files linked. It does that **in the
+staging directory, before the tree is renamed into place**, so `node_modules` never
+exists in a fully shared state: if it did and the run were killed in that window,
+the next run would find `node_modules` present, skip seeding, and let its
+`npm install` write through to the baseline. A failed unshare is a failed seed, and
+falls back to a plain `npm install` like any other.
+
+The residual risk is a tool nobody has run yet that edits a package file in place.
+It is bounded: the exposure lasts one session, since sessions boot from the
+snapshot rather than writing back to it, and the worst case is a second checkout in
+the same session seeded from a mutated tree. Deleting the marker disables seeding
+entirely if that ever proves wrong.
 
 ## Out of Scope
 
@@ -358,6 +474,7 @@ configuration. They are documented here so they are not lost:
    UPGRADE_TOOLS=true  # was false
    AGENT=all
    BEST_EFFORT=true    # was false
+   WARM_CACHE=true     # was false
    ```
 
    The field must run the script with **bash**. `set -o pipefail` is not POSIX, so
@@ -436,7 +553,10 @@ run `setup_startup.sh`:
 
 0. `bash .config/utils/setup_startup.sh` exits 0 and reports the Python and uv
    versions. On a deliberately broken environment it exits 1 and names the repair
-   command instead.
+   command instead. It reports no missing-marker notice, and — on the session's
+   first run, before `node_modules` exists — says it seeded `node_modules` by
+   hardlink and finishes in a couple of seconds. Outside a container all of this
+   is replaced by one line and exit 0 (F8).
 1. `uv --version` reports ≥ 0.10.
 2. A plain `uv run python -c "print(1)"` completes in well under a second and
    leaves `uv.lock` unmodified.

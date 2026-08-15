@@ -36,7 +36,7 @@ npm install
 
 The setup script also writes a gitignored `.python-version` containing `3.13`. uv reads it on every sync, which is what keeps the virtualenv on a Python that bundles Tk (several tests and both OpenAPI schema scripts need `tkinter`). If you use pyenv, its shims read the same file — run `pyenv install 3.13` if you get "version 3.13 not installed".
 
-Before your first build or test run on a branch, `bash .config/utils/setup_startup.sh` syncs dependencies for that branch and checks the environment can build Kiln.
+There is a second script, `.config/utils/setup_startup.sh`, but it is for containers and cloud sandboxes, where every session starts on a fresh filesystem. On a development machine it prints one line and exits 0 — your environment is already set up and shared across checkouts. After switching to a branch that changed a lockfile, re-run `bash .config/utils/setup_env.sh`, which also refreshes the generated editor and agent config; `uv sync` plus `npm install` covers the dependencies alone.
 
 ### Environment Variables
 

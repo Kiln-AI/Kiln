@@ -4,6 +4,10 @@ status: complete
 
 # Phase 2: `setup_env.sh` Rewrite
 
+> Extended by [Phase 5](phase_5.md), which added the `WARM_CACHE` flag, the
+> throwaway-clone warm-up and the `.setup_for_kiln_repo_v1` provisioning marker.
+> This plan describes the file as of Phase 2.
+
 ## Overview
 
 Turn `.config/utils/setup_env.sh` into the single, non-interactive entry point for

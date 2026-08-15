@@ -4,6 +4,10 @@ status: complete
 
 # Phase 4: `AGENTS.md` Environment-Setup Section
 
+> Revised by [Phase 5](phase_5.md): `setup_startup.sh` now runs in containers only,
+> so both `AGENTS.md` and `CONTRIBUTING.md` had to stop telling every reader to run
+> it before a first build, and say what local contributors do instead.
+
 ## Overview
 
 Documents the interface Phases 2 and 2b created, so an agent landing in a fresh

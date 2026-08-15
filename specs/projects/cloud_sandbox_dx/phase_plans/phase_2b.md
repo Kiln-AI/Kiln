@@ -4,6 +4,12 @@ status: complete
 
 # Phase 2b: `setup_startup.sh`, the Per-Session Startup Check
 
+> Extended by [Phase 5](phase_5.md), which added the container gate, the
+> provisioning-marker check and the hardlink seed of `node_modules`. In particular,
+> the "run it on a new branch and at the start of every session" instruction below
+> now applies inside containers only: elsewhere the script prints one line and exits
+> 0. This plan describes the file as of Phase 2b.
+
 ## Overview
 
 Phase 2 builds an environment, but research §12 showed that a cloud environment's

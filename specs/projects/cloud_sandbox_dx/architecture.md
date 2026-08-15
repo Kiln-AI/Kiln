@@ -12,7 +12,9 @@ detail that no design decisions remain for the implementer.
 | File | Change | Feature |
 |---|---|---|
 | `.config/utils/setup_env.sh` | Rewrite: config block, flags, uv check, py3.13, parallel installs, agent config | F1–F5 |
+| `.config/utils/setup_env.sh` | `WARM_CACHE` / `--warm-cache`, the throwaway-clone warm-up, the provisioning marker | F9 |
 | `.config/utils/setup_startup.sh` | New: per-session verify + dependency top-up | F8 |
+| `.config/utils/setup_startup.sh` | Container gate, marker check, hardlink seed of `node_modules` | F8, F9 |
 | `pyproject.toml` | Add `required-version = ">=0.10"` to `[tool.uv]` | F2 |
 | `.gitignore` | Add `.python-version` | F3 |
 | `conftest.py` | Defer the `litellm` import | F6 |
@@ -38,9 +40,9 @@ therefore re-execs itself under bash when `BASH_VERSION` is unset.
 
 ### 1.0 The `CONFIGURATION` block
 
-A clearly delimited block of four assignments at the very top of the file, above
-everything else, holding the defaults for `HUMAN_MODE`, `UPGRADE_TOOLS`, `AGENT`
-and `BEST_EFFORT`. Flags override it.
+A clearly delimited block of five assignments at the very top of the file, above
+everything else, holding the defaults for `HUMAN_MODE`, `UPGRADE_TOOLS`, `AGENT`,
+`BEST_EFFORT` and `WARM_CACHE`. Flags override it.
 
 This block is the file's contract with the cloud environment: the whole script is
 pasted into the environment dialog and only this block is edited. Keep it a
@@ -87,6 +89,7 @@ the checkout, and the notice points at it.
 --human            HUMAN_MODE=true
 --upgrade-tools    UPGRADE_TOOLS=true
 --best-effort      BEST_EFFORT=true
+--warm-cache       WARM_CACHE=true
 --agent VALUE      AGENT=VALUE   (all|claude|cursor|none, default all)
 --help             usage; exit 0
 *                  usage to stderr; exit 2
@@ -191,6 +194,51 @@ consults it on every later sync. It is also written by `setup_startup.sh` (§1B)
 which is what establishes the pin in a fresh sandbox where this script ran against
 no checkout at all.
 
+### 1.3b Warming the machine, and the provisioning marker (F9)
+
+Both live between §1.3 and the "needs a checkout" branch, so they run on the
+no-checkout path that the cloud actually takes.
+
+Paths, overridable so the behavior is testable without `/opt` or the network:
+
+```bash
+VM_SETUP_DIR="${KILN_VM_SETUP_DIR:-/opt/kiln-vm-setup}"
+VM_SETUP_MARKER="$VM_SETUP_DIR/.setup_for_kiln_repo_v1"
+WARM_NODE_MODULES="$VM_SETUP_DIR/node_modules"
+KILN_REPO_URL="${KILN_REPO_URL:-https://github.com/Kiln-AI/Kiln.git}"
+```
+
+`warm_from_throwaway_clone` runs only when `WARM_CACHE=true` **and** `PROJECT_ROOT`
+is empty. It clones into `$VM_SETUP_DIR` — not `/tmp` — so the `node_modules` move
+at the end is a rename on one device rather than a 601 MB copy. It writes
+`.python-version` into the clone *before* syncing, or uv caches wheels for the
+wrong interpreter. Then the same parallel `uv sync` / `npm ci` pair as §1.4, an
+`mv` of `app/web_ui/node_modules` to `$WARM_NODE_MODULES`, and `rm -rf` of the
+clone.
+
+Every failure in it is a **warning, not a `fail`**. The warm-up is an optimization;
+routing it through `fail` would flip the closing line to "Resolve the errors above"
+for a machine whose uv and Python are fine, and `setup_startup.sh` re-checks
+per session everything that has to be true.
+
+`write_vm_setup_marker` runs on **every** invocation, both paths, after the warm-up
+so it can see whether a tree was made. Contents are for a human reading a broken
+VM: `setup_version`, timestamp, uv version, Python pin, warm tree path,
+`warm_node_modules_present`, `warm_node_modules_commit` and
+`warm_node_modules_created_this_run`.
+
+The first two of those describe **state**, not this run's history, and that
+distinction is the point. A re-run without `--warm-cache` — which is exactly what
+`AGENTS.md`'s repair command is — makes no tree while the existing one survives and
+keeps being seeded from. Recording `created=false, commit=none` there would make
+the marker lie about the provenance of the 601 MB every session inherits. So
+`previous_marker_value` reads the prior marker and carries its commit forward
+whenever the tree outlives the run that made it; `unknown` is reserved for a tree
+with no marker to explain it.
+
+If `$VM_SETUP_DIR` cannot be created — a local machine where `/opt` is not writable
+— print one low-key note and continue. The marker only means something on a VM.
+
 ### 1.4 Parallel dependency install
 
 ```bash
@@ -261,6 +309,37 @@ no root is fatal, not a skip.
 
 Order is load-bearing:
 
+0. **Container gate**, after argument parsing and before root discovery. Nothing
+   below this line should run on a development machine, so the check comes before
+   the script even looks for a checkout.
+
+   ```bash
+   is_flag_set() {
+     case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+       "" | false | f | 0 | no | n | off) return 1 ;;
+       *) return 0 ;;
+     esac
+   }
+   ```
+
+   The falsy list is lowercased first and covers `false`, `f`, `0`, `no`, `n` and
+   `off`: the documented rule is "non-empty and not falsy", and someone who sets
+   `IS_CONTAINERIZED=no` and silently gets the opposite is the one failure of this
+   gate that is impossible to notice.
+
+   Applied to `CLAUDE_CODE_REMOTE` (Claude Code sets it to `true` in cloud sessions;
+   confirmed live) and `IS_CONTAINERIZED` (manual escape hatch). Neither set: print
+   the "not running in a VM/container" line plus what to do locally, and `exit 0`.
+   Not `bad_environment` — this is a normal outcome, and a non-zero exit here would
+   make every local invocation look like a broken machine.
+
+0b. **Marker check**, right after root discovery and before the dependency gate,
+   because a missing marker usually explains the failures that follow. Sets
+   `VM_WAS_PROVISIONED=false` and prints a block naming the missing path and saying
+   the VM setup script should have run. It does not exit: the only thing it forbids
+   is step 3b's hardlink, since without the marker a tree at that path was not put
+   there by this repo.
+
 1. **Hard dependency gate.** `uv` on `PATH`; `uv --version` non-empty and ≥
    `UV_MIN` using the same `sort -V` comparison as §1.2; `npm` on `PATH`. Any
    failure calls `bad_environment` and exits 1.
@@ -310,6 +389,58 @@ Order is load-bearing:
    pyenv writes, and `AGENTS.md` tells pyenv users this file is shared with their
    shims, so a comparison that drops the patch and then fails to match would clobber
    precisely the pins most likely to be deliberate.
+
+3b. **Seed `node_modules` by hardlink**, immediately before the sync, and only when
+   all three hold: the checkout has no `node_modules`, `VM_WAS_PROVISIONED` is true,
+   and `$WARM_NODE_MODULES` exists.
+
+   All of it happens in a staging directory beside the target, and `node_modules`
+   appears only as the final `mv -T` of a finished tree. Staging must be a sibling of
+   the destination: staging inside `$VM_SETUP_DIR` would put the copy on the warm
+   tree's filesystem and the `mv` would then copy 601 MB and drop every link it just
+   made.
+
+   Staging has one fixed name, is gitignored, and is cleared **unconditionally**,
+   outside the seed block — the block is skipped as soon as `node_modules` exists, so
+   cleanup living inside it would never reach the up-to-601 MB directory a killed
+   run leaves behind. The name is fixed rather than PID-suffixed because a glob
+   cleanup would delete a concurrent run's staging anyway, and two of these in one
+   checkout is already unsupported: they would fight over the `npm install` below.
+
+   Order inside `seed_warm_node_modules`, which is load-bearing:
+
+   1. `cp -al` the warm tree into staging.
+   2. **Unshare the regular files at the root of staging**, `cp -p` + `mv -f` each.
+      Hardlinks make an in-place write to the checkout a write to the pristine tree,
+      and `npm install` does exactly that to `node_modules/.package-lock.json` —
+      same inode, new mtime, measured, and reproduced in review. That file is npm's
+      record of what is installed, so drift there is the one mutation that could
+      make a later seeded session skip a missing package. Measured scope: after a
+      seed, an `npm install` and a full `npm run build`, it was the only changed
+      inode of 46,375; a review manifest of 52,031 entries across the full check
+      suite found none.
+   3. `mv` staging into place.
+
+   Step 2 must precede step 3. If the tree were renamed first, there would be a
+   window in which `node_modules` exists and is fully shared — and a run killed
+   there leaves a checkout that the next run will *not* re-seed, since
+   `node_modules` now exists, so its `npm install` writes straight through to the
+   baseline. That is the exact corruption this step exists to prevent.
+
+   The unshare list is collected with `mapfile` before the loop runs. Streaming
+   `find` into it would have `find` reading the directory while `cp -p` and `mv -f`
+   create and remove `X.unshared` names in it, and a transient entry in its readdir
+   buffer would abort a seed that had nothing wrong with it.
+
+   Every failure — including a failed unshare, which leaves the baseline exposed and
+   so is not cosmetic — removes the staging directory and falls through to the sync
+   populating `node_modules` from scratch. A cross-device image and a filesystem
+   without hardlinks both land here. Diagnostics go to a temp file rather than a
+   variable, and only the **first three lines plus a count** are printed: a
+   cross-device warm tree fails once per file, measured at 46,436 lines and 15 MB,
+   and this path's reader is usually an agent whose context that would bury. A
+   *successful* seed prints the same capped summary when it had anything to say, so
+   a warning is not swallowed by the happy path.
 
 4. **Sync**, both in parallel, same `wait`-both pattern as §1.4:
    `uv sync --frozen --all-packages` and `npm install --no-fund --no-audit`.
@@ -463,6 +594,11 @@ Keep it brief. Do not paste the research numbers in; link the spec folder.
 | `uv sync` or `npm ci` fails | name which one, exit 1 |
 | Agent setup script missing | warn, continue |
 | `uv python install 3.13` fails | exit non-zero — everything downstream depends on it |
+| Warm-up clone or its installs fail | warn to stderr, continue — an optimization, and the marker records that no tree was made |
+| `$VM_SETUP_DIR` not writable | one note, continue — the marker only matters on a snapshotted VM |
+| Not containerized (`setup_startup.sh`) | print one line, exit 0 — a normal outcome |
+| Marker missing (`setup_startup.sh`) | prominent warning, skip the hardlink, continue |
+| `cp -al` of the warm tree fails | note with the `cp` error, continue — `npm install` fills `node_modules` instead |
 
 The script is not idempotency-sensitive: every step is safe to re-run.
 
@@ -479,6 +615,26 @@ session proves nothing:
 4. With a deliberately downgraded uv and no TTY, the script warns and continues;
    with `--upgrade-tools`, it upgrades.
 5. `git status --porcelain` empty after every variation.
+
+For F9, with `KILN_VM_SETUP_DIR` and `KILN_REPO_URL` standing in for `/opt` and the
+network so each case is executed rather than reasoned about:
+
+6. `setup_startup.sh` with neither container variable set, and with each of `false`,
+   `0` and empty: one line, exit 0, checkout untouched. With `IS_CONTAINERIZED=true`
+   alone: full run.
+7. Marker absent with a warm tree present: warning, no hardlink, exit 0. Marker
+   present with no warm tree: no warning, no seed. `node_modules` already present:
+   no seed.
+8. Marker and warm tree present with no `node_modules`: seeded, and `stat` shows the
+   **same inode** on both sides, with `du` of the two trees together showing one
+   copy's worth of blocks.
+9. Warm tree on another filesystem (`/dev/shm`): `cp -al` reports the cross-device
+   error, the note is printed, no staging directory is left, `npm install` runs.
+10. In-place-write probe: a full-tree inode/size/mtime manifest of the warm tree
+    before and after a seed plus `npm install` plus `npm run build`.
+11. `setup_env.sh --warm-cache` with no checkout: clone, sync, warm tree kept,
+    clone deleted, marker records the commit. With a checkout: no clone, marker
+    records `warm_node_modules_created_this_run=false`.
 
 For the `conftest.py` change specifically:
 

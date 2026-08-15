@@ -19,9 +19,16 @@ status: complete
 - [x] Phase 3: `conftest.py` deferred litellm import, including the log-path
       verification called out in the architecture.
 - [x] Phase 4: `AGENTS.md` environment-setup section.
+- [x] Phase 5: warm `node_modules` (F9) — `WARM_CACHE` in the repo's own
+      `setup_env.sh`, the `.setup_for_kiln_repo_v1` provisioning marker, the
+      hardlink seed and container gate in `setup_startup.sh`, and the doc updates
+      those force. Added after a live sandbox showed cache warming fixed the Python
+      half outright (14.67 s → 428 ms) and barely touched the Node half (24 s →
+      21 s), because npm copies out of its cache where uv hardlinks.
 
 Phases 2 and 3 are independent and can be reviewed separately. Phase 4 depends on
-Phases 2 and 2b being settled, since it documents that interface.
+Phases 2 and 2b being settled, since it documents that interface. Phase 5 extends
+both scripts and re-touches the same docs, so it comes last.
 
 ## Validation
 
@@ -38,9 +45,14 @@ rebuilt on Python 3.13 by hand during research.
 Outside the repo, in the Claude Code cloud environment configuration:
 
 - [ ] Setup script set to the **contents** of `.config/utils/setup_env.sh`, with
-      `UPGRADE_TOOLS=true` and `BEST_EFFORT=true` in its `CONFIGURATION` block
-      (functional spec, "Environment-side changes"). Not a wrapper that calls the
-      repo copy — see research §12 for why that cannot work.
+      `UPGRADE_TOOLS=true`, `BEST_EFFORT=true` and `WARM_CACHE=true` in its
+      `CONFIGURATION` block (functional spec, "Environment-side changes"). Not a
+      wrapper that calls the repo copy — see research §12 for why that cannot work.
+
+      Re-paste after Phase 5: `WARM_CACHE` is what warms the VM's caches and leaves
+      the `node_modules` tree that `setup_startup.sh` hardlinks, and until the paste
+      happens the marker is missing, so every session prints the "this VM was not
+      set up for Kiln" notice and skips the hardlink.
 - [ ] `UV_NATIVE_TLS` — **no action available; leave it alone.** The variable is
       deprecated and uv warns on every invocation, but Claude Code sets it in the
       image, so the user cannot remove it from the environment's variables.

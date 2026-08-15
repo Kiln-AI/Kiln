@@ -26,6 +26,14 @@ PYTHON_MIN_MINOR=13 # the 3.x floor; PYTHON_PIN must meet it
 
 REPAIR_SETUP="bash .config/utils/setup_env.sh --upgrade-tools"
 
+# Written by setup_env.sh outside any checkout, so it survives into a VM snapshot.
+# Keep these paths identical to that script's — they are the interface between the
+# two, and the scripts cannot share code because setup_env.sh gets pasted whole
+# into a cloud setup field.
+VM_SETUP_DIR="${KILN_VM_SETUP_DIR:-/opt/kiln-vm-setup}"
+VM_SETUP_MARKER="$VM_SETUP_DIR/.setup_for_kiln_repo_v1"
+WARM_NODE_MODULES="$VM_SETUP_DIR/node_modules"
+
 # No options. Take arguments anyway so a mistyped flag is not silently swallowed
 # into a full sync — `setup_startup.sh --help` used to just run.
 usage() {
@@ -36,6 +44,12 @@ Prepares the current checkout to build and test: verifies the environment can
 build Kiln, writes agent configuration, pins the Python version, and syncs Python
 and Node dependencies for the branch you are on. Takes no options other than
 --help.
+
+Only does anything inside a container or VM, where each session starts from a
+fresh filesystem. Elsewhere it prints a line and exits 0: a local environment is
+already set up and shared between checkouts, and this script would spend a session
+of yours re-doing work that is already done. Set IS_CONTAINERIZED=true to run it
+anyway.
 
 To build or repair an environment from scratch, see setup_env.sh --help.
 EOF
@@ -53,6 +67,35 @@ case "${1:-}" in
     exit 2
     ;;
 esac
+
+# ── Containers only ───────────────────────────────────────────────────────────
+# This script exists because a cloud session starts on a fresh filesystem: nothing
+# repo-aware has run there, and the checkout may have no .venv or node_modules at
+# all. On a development machine none of that is true — the environment is set up
+# once and shared across every checkout — and the steps below would re-do that work
+# every session, seed node_modules from a machine-global tree, and rewrite files a
+# contributor deliberately configured.
+#
+# CLAUDE_CODE_REMOTE is set to true by Claude Code in cloud sessions.
+# IS_CONTAINERIZED is the manual escape hatch for every other containerized setup.
+#
+# The rule is "non-empty and not falsy". The falsy list covers the spellings people
+# actually type — someone who sets IS_CONTAINERIZED=no means no, and reading it as
+# yes would be the one failure mode of this gate that is impossible to notice.
+is_flag_set() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    "" | false | f | 0 | no | n | off) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+if ! is_flag_set "${CLAUDE_CODE_REMOTE:-}" && ! is_flag_set "${IS_CONTAINERIZED:-}"; then
+  echo "Not running in a VM/container, will not run custom setup."
+  echo "  To set up or repair this environment: bash .config/utils/setup_env.sh --human"
+  echo "  Or, for just the dependencies: uv sync, and npm install in app/web_ui."
+  echo "  Set IS_CONTAINERIZED=true to run this script here anyway."
+  exit 0
+fi
 
 bad_environment() {
   # $1 = what is wrong, $2 = the one thing to do about it.
@@ -110,6 +153,33 @@ find_kiln_root() {
 PROJECT_ROOT="$(find_kiln_root)" || bad_environment \
   "no Kiln checkout found from $PWD, so there is nothing to set up." \
   "cd into a Kiln checkout and re-run this script"
+
+# ── Was this machine provisioned by setup_env.sh? ─────────────────────────────
+# Checked before the hard dependencies below, because a missing marker is usually
+# the reason they are about to fail, and knowing that first saves reading the
+# repair line for a machine that simply never got set up.
+#
+# Not fatal on its own: an unprovisioned machine with a working uv and npm can
+# still run everything below, just slower. What it does forbid is the node_modules
+# hardlink — without the marker, a tree at that path was not put there by this
+# repo's setup script, and linking an unknown 600 MB of JavaScript into a checkout
+# is not a risk worth a few seconds.
+VM_WAS_PROVISIONED=true
+if [ ! -f "$VM_SETUP_MARKER" ]; then
+  VM_WAS_PROVISIONED=false
+  cat >&2 <<EOF
+
+  ! This VM was not set up for Kiln: $VM_SETUP_MARKER is missing.
+
+    The environment's VM setup script — the contents of
+    .config/utils/setup_env.sh — should have run when this machine was built,
+    and either did not run, or was an older version of the script.
+
+    Continuing anyway. Expect this to be slow, and expect the checks below to
+    report anything the setup script was supposed to provide.
+
+EOF
+fi
 
 # ── Hard dependencies ─────────────────────────────────────────────────────────
 # Check uv before syncing, not after. uv older than $UV_MIN cannot parse this
@@ -191,6 +261,108 @@ if ! [[ "${pin_major:-}" =~ ^[0-9]+$ ]] ||
       "check the checkout is writable, then re-run this script"
 fi
 
+# ── Seed node_modules from the VM's warm tree ─────────────────────────────────
+# npm copies out of ~/.npm where uv hardlinks out of its cache, so even a warm npm
+# cache costs ~21 s to fill an empty node_modules. setup_env.sh leaves a pristine
+# tree outside the checkout for exactly this: `cp -al` of the 601 MB tree takes
+# ~0.5 s and shares inodes rather than copying bytes.
+#
+# This only pre-fills; the npm install below is still what reconciles the tree with
+# this branch's package.json. So every failure here is a note and a fall-through to
+# the behavior we had before: an image where the tree is on another filesystem, or
+# a filesystem without hardlinks, loses the speedup and nothing else.
+#
+# Staging is a sibling of the target so the mv is a rename on the same filesystem.
+# Staging inside VM_SETUP_DIR would put the copy on the warm tree's filesystem, and
+# the mv would then copy 601 MB and drop every link it just made.
+WEB_UI_DIR="$PROJECT_ROOT/app/web_ui"
+
+# One fixed staging path, cleared unconditionally — not inside the seed block below,
+# which is skipped as soon as node_modules exists. A run killed mid-copy leaves up
+# to 601 MB here, and cleanup that only runs when a seed is about to happen would
+# never reach it. The name is fixed rather than PID-suffixed because a glob would
+# delete a concurrent run's staging anyway, and two of these running in one checkout
+# is already unsupported — they would fight over the npm install below.
+warm_staging="$WEB_UI_DIR/.node_modules.warm"
+rm -rf "$warm_staging"
+
+# Everything happens in the staging directory, and node_modules only ever appears
+# by a single rename of a finished tree. A partially copied — or still fully
+# shared — tree must never be visible under that name: the next run would see
+# node_modules already present, skip seeding, and let npm install write straight
+# through the hardlinks into the pristine tree.
+seed_warm_node_modules() {
+  cp -al "$WARM_NODE_MODULES" "$warm_staging" || return 1
+
+  # Hardlinks mean a write through one path is a write to the other, so a tool
+  # that edits a file in place edits the pristine tree every later checkout is
+  # seeded from. `npm install` does exactly that to node_modules/.package-lock.json
+  # — same inode, new mtime, measured — and that file is npm's record of what is
+  # installed, so drift there is what could make a later npm install skip a package
+  # that is genuinely missing.
+  #
+  # Measured on this repo's current toolchain: after a seed, an npm install and a
+  # full npm run build, that file was the only changed inode out of 46,375, and
+  # everything else npm and vite wrote landed on new inodes in this checkout's own
+  # directory entries. So unsharing the regular files at the root of the tree — a
+  # few hundred KB — was enough, and the ~46,000 package files below stay linked.
+  # A failure here is a failed seed, not a cosmetic problem: it would leave the
+  # baseline exposed to exactly the write above.
+  #
+  # Collect the whole list before touching anything. Streaming `find` into the loop
+  # would have it reading the directory while `cp -p` and `mv -f` create and remove
+  # `X.unshared` names in it: a transient entry landing in find's readdir buffer
+  # makes the next `cp -p` fail on a file that no longer exists, and the seed aborts
+  # for no reason.
+  local shared_file
+  local -a warm_root_files
+  mapfile -t warm_root_files < <(find "$warm_staging" -maxdepth 1 -type f)
+  for shared_file in "${warm_root_files[@]}"; do
+    cp -p "$shared_file" "$shared_file.unshared" || return 1
+    mv -f "$shared_file.unshared" "$shared_file" || return 1
+  done
+
+  # -T so the rename is unconditional: without it, a node_modules that appeared
+  # since the guard above would silently swallow staging as a subdirectory instead
+  # of failing, which is the one outcome worse than not seeding.
+  mv -T "$warm_staging" "$WEB_UI_DIR/node_modules" || return 1
+}
+
+# A warm tree on another filesystem fails once per file — 46,436 lines, 15 MB,
+# measured — and this is the graceful path, whose reader is usually an agent.
+# Neither its context nor this shell should have to hold that, so the output goes to
+# a file and only its first lines are ever printed.
+print_seed_output() {
+  # $1 = file, $2 = how many lines to show.
+  local total
+  total="$(wc -l <"$1")"
+  [ "$total" -eq 0 ] && return 0
+  head -"$2" "$1" | sed 's/^/      /'
+  [ "$total" -gt "$2" ] && echo "      ...and $((total - $2)) more lines like that."
+  return 0
+}
+
+if [ ! -d "$WEB_UI_DIR/node_modules" ] &&
+  [ "$VM_WAS_PROVISIONED" = true ] &&
+  [ -d "$WARM_NODE_MODULES" ]; then
+  seed_errors="$(mktemp)"
+  if seed_warm_node_modules 2>"$seed_errors"; then
+    echo "Seeded node_modules by hardlink from $WARM_NODE_MODULES."
+    # A seed can succeed and still have had something to say — a `cp` that skipped
+    # an entry, say. Silence about it would be the same class of quiet as the note
+    # below exists to avoid.
+    print_seed_output "$seed_errors" 3 >&2
+  else
+    rm -rf "$warm_staging"
+    {
+      echo "note: could not seed node_modules from $WARM_NODE_MODULES, so"
+      echo "      npm install below will populate it from scratch."
+      print_seed_output "$seed_errors" 3
+    } >&2
+  fi
+  rm -f "$seed_errors"
+fi
+
 # ── Sync this branch ──────────────────────────────────────────────────────────
 branch="$(git -C "$PROJECT_ROOT" branch --show-current 2>/dev/null)"
 echo "Syncing dependencies for ${branch:-this checkout}..."
@@ -207,12 +379,12 @@ echo "Syncing dependencies for ${branch:-this checkout}..."
 #
 # The braces matter: `cksum <"$NPM_LOCK" 2>/dev/null` lets bash report the failed
 # input redirect on its own stderr, before the redirection applies.
-NPM_LOCK="$PROJECT_ROOT/app/web_ui/package-lock.json"
+NPM_LOCK="$WEB_UI_DIR/package-lock.json"
 npm_lock_before="$({ cksum <"$NPM_LOCK"; } 2>/dev/null)"
 
 (cd "$PROJECT_ROOT" && uv sync --frozen --all-packages) &
 py_pid=$!
-(cd "$PROJECT_ROOT/app/web_ui" && npm install --no-fund --no-audit) &
+(cd "$WEB_UI_DIR" && npm install --no-fund --no-audit) &
 npm_pid=$!
 
 py_status=0
