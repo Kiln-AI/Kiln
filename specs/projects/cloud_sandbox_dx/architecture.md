@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Architecture: Cloud Sandbox Developer Experience
@@ -17,6 +17,9 @@ detail that no design decisions remain for the implementer.
 | `.gitignore` | Add `.python-version` | F3 |
 | `conftest.py` | Defer the `litellm` import | F6 |
 | `AGENTS.md` | Add an environment-setup section | F7 |
+| `CONTRIBUTING.md` | Point its setup section at the script, the uv floor, and `.python-version` | F7 |
+| `.config/wt/README.md` | Point its setup line at `--human`, now that the workspace offer is behind that flag | F1 |
+| `.agents/mcp.json` | Add the `hooks-mcp>=0.2.5` floor | "Dependency on upstream" |
 
 No changes to `checks.sh`, the `Makefile`, `.config/hooks_mcp.yaml`, the schema
 scripts, `.agents/skills/*`, or any `app/`/`libs/` source. Their plain `uv run`
@@ -28,6 +31,11 @@ Structure, in order. `set -uo pipefail` at the top — deliberately **not** `set
 because `--best-effort` has to control the exit code, which means failures are
 recorded explicitly rather than aborting the shell.
 
+`pipefail` is not POSIX, so a runner that ignores the shebang and starts the file
+with `sh` would die on that line — before `--best-effort` could suppress the exit
+code, which as a cloud setup script means the session never starts. The file
+therefore re-execs itself under bash when `BASH_VERSION` is unset.
+
 ### 1.0 The `CONFIGURATION` block
 
 A clearly delimited block of four assignments at the very top of the file, above
@@ -37,8 +45,41 @@ and `BEST_EFFORT`. Flags override it.
 This block is the file's contract with the cloud environment: the whole script is
 pasted into the environment dialog and only this block is edited. Keep it a
 contiguous run of plain assignments with a comment naming the cloud values, so
-editing it in a web form is unambiguous. Nothing below it may need changing to
-make the script correct in the cloud.
+editing it in a web form is unambiguous.
+
+The block is the only thing a human edits, but that is a statement about the
+editing workflow, not a claim that the rest of the file is location-independent by
+default. It is not, unless the script discovers its project root at runtime — see
+§1.0b, which is what makes the "edit only this block" promise true.
+
+### 1.0b Project root discovery
+
+The script must not derive `PROJECT_ROOT` from `${BASH_SOURCE[0]}`. Pasted into a
+cloud setup field the file does not live in `<repo>/.config/utils/`, so that
+derivation points two directories above wherever the platform stashed the script —
+never the checkout. Fed on stdin, `BASH_SOURCE` is unset entirely, and under
+`set -u` the command substitution dies while the parent continues with
+`PROJECT_ROOT=/`; running as root, the `.python-version` write then lands at
+`/.python-version`.
+
+So: discover, then validate. A candidate is a Kiln root when it has both
+`pyproject.toml` and `libs/core/kiln_ai/`. Candidates, in order:
+
+1. `../..` from `${BASH_SOURCE[0]:-$0}` — the checkout the file lives in, when it
+   is running from one.
+2. `git rev-parse --show-toplevel` — the checkout we are standing in.
+3. Walking up from `$PWD`.
+
+If none validates, `PROJECT_ROOT` is empty and **that is not an error**. A cloud
+setup script runs once per environment, is snapshotted, and is shared across every
+repo using it (research §12), so no checkout is the normal case there. The script
+does the environment-level work it can — the uv gate and `uv python install 3.13`,
+both worth baking into a snapshot — then prints one notice naming what it skipped
+and exits through `finish`. It must not emit a series of `error:` lines for
+something that is not a failure.
+
+`setup_startup.sh` (§1B) is what then guarantees a correct per-session state in
+the checkout, and the notice points at it.
 
 ### 1.1 Argument parsing
 
@@ -58,7 +99,22 @@ Validate `--agent` against the four allowed values; anything else is exit 2.
 
 `fail <message>` prints to stderr and sets `FAILED=1`. `finish` exits 1 when
 `FAILED` is set, unless `BEST_EFFORT=true`, in which case it says so on stderr and
-exits 0. Every exit path goes through `finish`.
+exits 0.
+
+Every path that reaches the *work* goes through `finish`. There are exactly three
+direct exits, all of them before any work starts and none of them reachable from a
+correct invocation:
+
+| Where | Exit | Why not `finish` |
+|---|---|---|
+| Unknown flag, bad `--agent` | 2 | F1 makes the code unconditional, and `--best-effort` may not be parsed yet |
+| `--help` | 0 | Nothing ran |
+| Bash guard, `$0` unreadable | 1 | The shell cannot run the script at all; `fail`/`finish` are not defined yet |
+
+So the `--best-effort` guarantee is "no failure during setup produces a non-zero
+exit", not "this script can never exit non-zero". A malformed invocation or a shell
+that cannot run bash still can, which is correct: both are configuration errors a
+human must see, and the cloud environment's own invocation is fixed and reviewable.
 
 ### 1.2 uv version gate
 
@@ -74,6 +130,11 @@ uv_too_old() {
 `sort -V` semantics: the comparison asks whether `UV_MIN` sorts first. Equal
 versions sort to `UV_MIN`, so `uv_too_old` is false — correct. Verified against
 0.8.17 (too old), 0.10.0 (ok), 0.12.5 (ok).
+
+Check that uv exists *before* any of this. Every branch below runs uv, so none of
+them can help when it is absent — warning that `uv (not installed)` is "older than
+0.10.0" and then offering an upgrade command that cannot run is confusing rather
+than useful. Missing uv is its own `fail` + `finish`.
 
 Then branch exactly as F2 specifies:
 
@@ -107,23 +168,34 @@ Notes for the implementer:
   twice.
 - Do **not** use pip.
 - No version pin — always latest.
-- After upgrading, re-read `uv --version` if any later logic depends on it.
+- After upgrading, run `hash -r` and re-read `uv --version`. Bash has already
+  hashed the old `uv` from the version check, and the new binary usually lands at
+  a different path (`~/.local/bin/uv`), so without this the rest of the run keeps
+  calling the uv that was just replaced. If the re-read is still below `UV_MIN`
+  the new binary is shadowed on `PATH`; that is a `fail`, not a success.
 
 ### 1.3 Python 3.13
 
 ```bash
-uv python install 3.13
+uv python install 3.13          # not repo-specific: always run
+# ... then, only with a checkout:
 echo "3.13" > "$PROJECT_ROOT/.python-version"
 ```
 
-`uv python install` is idempotent and costs ~2.2 s on a cold cache.
-`.python-version` is what makes the pin survive `.venv` deletion.
+`uv python install` is idempotent and costs ~2.2 s on a cold cache. It runs even
+when no checkout was found, since a pre-installed interpreter is exactly what is
+worth capturing in an environment snapshot.
+
+`.python-version` is what makes the pin survive `.venv` deletion, because uv
+consults it on every later sync. It is also written by `setup_startup.sh` (§1B),
+which is what establishes the pin in a fresh sandbox where this script ran against
+no checkout at all.
 
 ### 1.4 Parallel dependency install
 
 ```bash
 uv sync --frozen --all-packages & py_pid=$!
-( cd "$PROJECT_ROOT/app/web_ui" && npm ci ) & npm_pid=$!
+( cd "$PROJECT_ROOT/app/web_ui" && npm ci --no-fund --no-audit ) & npm_pid=$!
 
 py_status=0;  wait "$py_pid"  || py_status=$?
 npm_status=0; wait "$npm_pid" || npm_status=$?
@@ -136,18 +208,33 @@ either is non-zero, print which failed and exit 1.
 `wait` needs `|| status=$?` under `set -e`. Interleaved output from the two jobs
 is acceptable; do not add log-capture machinery for it.
 
+`--no-fund --no-audit` on both npm calls: the funding block and the audit's
+vulnerability tally read like failures to anyone scanning a cloud setup log, and
+neither affects what gets installed.
+
 ### 1.5 Agent configuration
 
 For `all` run both; for `claude`/`cursor` run that one; for `none` skip. Each is
 guarded by a file-existence check — warn and continue if a script is missing, do
-not fail the run.
+not fail the run. A script that exists but fails is a `fail`, not a warning.
+
+The path must be absolute, off `$PROJECT_ROOT`. A relative `.agents/$1/setup.sh`
+would depend on the working directory, which is exactly the bug class §1.0b exists
+to remove.
 
 ```bash
 run_agent_setup() {  # $1 = claude|cursor
-  local s=".agents/$1/setup.sh"
-  if [ -f "$s" ]; then bash "$s"; else echo "warning: $s not found, skipping" >&2; fi
+  local script=".agents/$1/setup.sh"
+  if [ -f "$PROJECT_ROOT/$script" ]; then
+    bash "$PROJECT_ROOT/$script" || fail "$script failed"
+  else
+    echo "warning: $script not found, skipping" >&2
+  fi
 }
 ```
+
+This step is reachable only with a checkout (§1.0b). In the cloud that usually
+means it does not run here at all, which is why §1B repeats it.
 
 ### 1.6 `--human` extras
 
@@ -156,30 +243,107 @@ It keeps its current `read -rp` prompt; that is the one place interactivity is
 correct. Nothing else in the script may block on input except the uv prompt in
 §1.2, which is bounded by its 10 s timeout.
 
+The block cannot move over verbatim: it was written under `set -e`, where the
+first failing `brew install` aborted the script. There is no `set -e` now, so each
+install needs `|| fail ...` or it will report success after failing. Same for the
+worktrunk config symlink, and the closing "Workspaces ready!" line, which must not
+print when something failed.
+
 ## 1B. `.config/utils/setup_startup.sh`
 
-New file. `set -uo pipefail`. Order is load-bearing:
+New file. Same bash re-exec guard and `set -uo pipefail` as §1, and the same
+`is_kiln_root` / `find_kiln_root` discovery as §1.0b — the `${BASH_SOURCE[0]}`
+derivation is the identical bug here, and worse: `cd ""` succeeds as a no-op, so a
+body fed on stdin silently yields `PROJECT_ROOT=$PWD/../..` and the script writes
+and syncs two directories above the working directory. The one difference from §1
+is what a miss means: this script has nothing useful to do without a checkout, so
+no root is fatal, not a skip.
 
-1. **Hard dependency gate.** `uv` on `PATH`; `uv --version` ≥ `UV_MIN` using the
-   same `sort -V` comparison as §1.2; `npm` on `PATH`. Any failure calls
-   `bad_environment`, which prints the repair command and exits 1.
+Order is load-bearing:
+
+1. **Hard dependency gate.** `uv` on `PATH`; `uv --version` non-empty and ≥
+   `UV_MIN` using the same `sort -V` comparison as §1.2; `npm` on `PATH`. Any
+   failure calls `bad_environment` and exits 1.
 
    This must run **before** the sync. A too-old uv is what rewrites `uv.lock`, so
    a check placed after the sync would fire only once the damage was done.
 
-2. **Sync**, both in parallel, same `wait`-both pattern as §1.4:
+   The comparison is duplicated from §1.2 rather than shared, because §1.2's file
+   is pasted whole into a web form and cannot source anything. Both copies carry a
+   comment saying to keep them in sync. This copy needs the empty-version guard
+   too: without it an empty `uv --version` reads as `uv  is older than 0.10.0`.
+
+2. **Agent configuration**, the same work as §1.5, unconditional but not identical. This is the step
+   that makes F5 reachable at all in a sandbox: §1.0b means `setup_env.sh` usually
+   has no checkout to write into, so without this, `CLAUDE.md`, `.claude/skills/`
+   and `.mcp.json` never exist in a session.
+
+   It goes here, ahead of the pin and the sync, because it is offline and
+   sub-second and it is what makes the repo's instructions readable — it must not
+   be gated behind work that can fail. A per-agent script that is missing is
+   skipped silently; one that fails prints its captured output as a warning and
+   does not stop the run, since a stale `CLAUDE.md` still beats aborting.
+
+   Both differences from §1.5 are deliberate and worth a comment in the code, since
+   they otherwise read as drift. §1.5 warns about a missing script because `--agent`
+   named it explicitly and its absence is a surprise; here there is no selector and
+   the script runs every session, so silence is right. §1.5 treats a failure as a
+   `fail` because it is building an environment; here it is a warning, because
+   aborting a startup check over agent config would cost more than it saves.
+
+3. **Pin the Python version.** Write `PYTHON_PIN` to `.python-version` when it is
+   missing, malformed, or below `PYTHON_MIN_MINOR`, *before* the sync.
+
+   This is what gives F3 a path in a fresh sandbox. `setup_env.sh` is snapshotted
+   and shared across repos, so in the cloud it may never have run against this
+   checkout — and without the pin, the sync below builds `.venv` on the system
+   Python, whose build has no `tkinter`. Checking afterwards would only produce a
+   `bad_environment` round trip through a human. uv reads the file on every sync,
+   so writing it here is enough; the condition keeps the script a no-op on the warm
+   path.
+
+   Compare against the floor, not for equality. `PYTHON_MIN_MINOR` is a minimum, so
+   a contributor deliberately pinned to a *newer* 3.x must not have it reset — and
+   silently reset every run, since the next sync would then rebuild their venv.
+
+   Compare major and minor only, ignoring any patch component. `3.13.1` is the form
+   pyenv writes, and `AGENTS.md` tells pyenv users this file is shared with their
+   shims, so a comparison that drops the patch and then fails to match would clobber
+   precisely the pins most likely to be deliberate.
+
+4. **Sync**, both in parallel, same `wait`-both pattern as §1.4:
    `uv sync --frozen --all-packages` and `npm install --no-fund --no-audit`.
    `npm install`, not `npm ci` — see F4.
 
-3. **Post-sync verification**, via a single `uv run --frozen python -c` that prints
+   `npm install` can rewrite the tracked `package-lock.json`, which nothing else in
+   either script does. Hash the file with `cksum` before and after and warn, naming
+   it and the revert command, when it changed. Not a failure — the change may be
+   what the branch intended — but it must not be silent, since every other step is
+   careful not to touch a tracked file.
+
+5. **Post-sync verification**, via a single `uv run --frozen python -c` that prints
    the major version, minor version, and whether `tkinter` resolves. Placed after
    the sync because both facts are properties of `.venv`. A `tkinter` check uses
    `importlib.util.find_spec` rather than a real import, so it does not need a
-   display.
+   display. Capture the probe's stderr and print it on failure — "could not run
+   Python from .venv" alone gives the reader nothing to act on.
 
-`bad_environment` is the single failure path for "this VM is wrong", so the repair
-instructions are written once and every check gets the same message. It names both
-the local and sandbox cases, since the same script serves both.
+   Parse defensively: read the *last* line of the probe output and require the two
+   version fields to be digits. Anything uv prints on stdout would otherwise reach
+   an arithmetic test, which emits a raw bash `integer expression expected` and then
+   falls through to the misleading "no tkinter" verdict.
+
+`bad_environment` is the single failure path for "this VM is wrong", so the shape
+of the message is written once and every check gets the same framing, naming both
+the local and sandbox cases.
+
+It takes the repair line as an argument rather than hardcoding one. Of its nine
+reasons, five are fixed by `setup_env.sh --upgrade-tools` — an unreadable uv
+version, a too-old uv, and the three `.venv` verdicts — but a single global repair
+line would be wrong for the other four. `setup_env.sh` never installs npm and needs
+a working uv in order to upgrade uv, so those two point at the upstream installers;
+a failed `.python-version` write points at the checkout's permissions; and "no Kiln
+checkout found" points at changing directory.
 
 ## 2. `pyproject.toml`
 
@@ -211,9 +375,10 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture(autouse=True)
-def _clear_httpx_clients() -> None:
+def _litellm_per_test_setup() -> None:
     # Importing litellm costs ~4s. Most test modules never touch it, so only do
-    # litellm-specific setup and teardown once something has imported it.
+    # litellm-specific setup once something has imported it. The name says what it
+    # does now: it is no longer only an httpx-client clear, and it has no teardown.
     litellm = sys.modules.get("litellm")
     if litellm is None:
         return
@@ -250,15 +415,33 @@ quoted return annotation:
   test modules, and any module that uses litellm imports it at its own module
   scope, so by the time that module's tests run, `sys.modules` has it.
 
-### Open verification item
+### Log-path verification — confirmed, with a recorded ordering dependency
 
 `setup_litellm_logging` now resolves its log path lazily during a test, while the
 autouse `use_temp_settings_dir` fixture has `Config.settings_path` patched. The
-function reads `Config.settings_dir()` — a different method — so it is expected to
-be unaffected, but the implementer must **confirm** the model-calls log still
-lands where it did before, rather than assume. If it does move, keep a
-session-scoped fixture that only does the logging setup, still guarded on
-`sys.modules`.
+concern was that the log could follow the patched path into `tmp_path`.
+
+Verified by running a test module that imports `litellm` and inspecting the
+`ModelCalls` logger's handler: `baseFilename` is `~/.kiln_ai/logs/test_model_calls.log`,
+unchanged from before. `get_log_file_path` reads `Config.settings_dir()`
+(`config.py:288`), which builds its path from `Path.home()` and is not the method
+`use_temp_settings_dir` patches. No session-scoped fallback fixture is needed.
+
+That probe covers `settings_path`, but it is not the whole story, and the rest
+belongs on the record rather than in a "confirmed" one-liner. Moving path
+resolution from a session-scoped fixture into a function-scoped one makes it
+**order-dependent**: two modules —
+`libs/core/kiln_ai/adapters/vector_store/test_lancedb_adapter.py:47` and
+`test_vector_store_registry.py:16` — do patch `Config.settings_dir` itself to
+`tmp_path`, through their own autouse fixtures. If one of those ran first, its
+`tmp_path` would be baked into the rotating file handler and, because
+`setup_litellm_logging` is idempotent, stay there for the rest of the worker.
+
+This is correct today because pytest instantiates autouse fixtures from the root
+conftest before module-level ones, so the real path always wins the race. That is
+a documented pytest property rather than an accident, but it is load-bearing and
+now unobvious, so it is called out in a comment on the fixture. Anyone changing
+fixture scopes here should re-check it.
 
 ## 5. `AGENTS.md`
 

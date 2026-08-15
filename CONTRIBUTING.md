@@ -12,13 +12,31 @@ New contributors must agree to the [contributor license agreement](.config/CLA.m
 
 We use [uv](https://github.com/astral-sh/uv) to manage the Python environment and dependencies, and npm to manage the web UI.
 
+The quickest path is the setup script, which does all of the below and also pins the Python version and writes editor/agent config:
+
 ```
 # First install uv: https://github.com/astral-sh/uv
+# and Node if you don't have it already: https://nodejs.org
+bash .config/utils/setup_env.sh --human
+```
+
+Run `bash .config/utils/setup_env.sh --help` for the flags. `--human` adds an optional offer to install the [worktree workspace tools](.config/wt/README.md); without it the script is non-interactive.
+
+Or do it by hand. Write the Python pin first — `uv sync` on its own builds `.venv` against whatever Python it finds, and many system Pythons are built without `tkinter`, which several tests and both OpenAPI schema scripts need:
+
+```
+echo 3.13 > .python-version   # gitignored; uv reads it on every sync
+uv python install 3.13
 uv sync
 cd app/web_ui
-# install Node if you don't have it already
 npm install
 ```
+
+**uv must be 0.10 or newer.** The repo sets `required-version = ">=0.10"` in `pyproject.toml`, so an older uv refuses to run rather than silently rewriting `uv.lock` with a broken dependency set — which is what it did before the floor existed. If you hit that refusal, upgrade with `uv tool install --force uv`, or let `setup_env.sh --upgrade-tools` do it for you.
+
+The setup script also writes a gitignored `.python-version` containing `3.13`. uv reads it on every sync, which is what keeps the virtualenv on a Python that bundles Tk (several tests and both OpenAPI schema scripts need `tkinter`). If you use pyenv, its shims read the same file — run `pyenv install 3.13` if you get "version 3.13 not installed".
+
+Before your first build or test run on a branch, `bash .config/utils/setup_startup.sh` syncs dependencies for that branch and checks the environment can build Kiln.
 
 ### Environment Variables
 

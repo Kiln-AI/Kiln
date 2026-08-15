@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Cloud Sandbox Developer Experience
@@ -83,12 +83,13 @@ Settled during planning:
 5. **Restore agent config** by running the existing `.agents/claude/setup.sh` from
    the cloud setup script.
 
-   The MCP server currently fails to start: `hooks-mcp 0.2.4` resolves against
-   `mcp 2.0.0`, which dropped `Server.list_tools`. **This is being fixed upstream
-   in hooks-mcp**, so this repo pins nothing — a local `mcp<2` pin would only hold
-   back that fix. Once a fixed version ships, set a *floor* in `.agents/mcp.json`
-   (`--from "hooks-mcp>=<fixed version>"`), because `uvx` reuses cached tool
-   environments and could otherwise keep serving the broken 0.2.4 + mcp 2.0 pair.
+   The MCP server used to fail to start: `hooks-mcp 0.2.4` resolved against
+   `mcp 2.0.0`, which dropped `Server.list_tools`. This repo pinned nothing while
+   that was being fixed upstream — a local `mcp<2` pin would only have held back
+   the fix. **Resolved:** `hooks-mcp` 0.2.5 shipped, and `.agents/mcp.json` now
+   carries a *floor* (`--from "hooks-mcp>=0.2.5"`), not a pin, because `uvx` reuses
+   cached tool environments and could otherwise keep serving the broken
+   0.2.4 + mcp 2.0 pair.
 
    Separately, whether Claude Code on the web auto-trusts a project `.mcp.json` is
    still unverified. Verified working without a session restart: `CLAUDE.md` and
@@ -97,6 +98,11 @@ Settled during planning:
 6. **Test startup cost:** adopt the deferred-litellm change to the root
    `conftest.py` (research §10). Single test file goes from ~7.4 s to ~0.95 s
    (~7×), full suite 63.3 s → 58.9 s, identical pass/skip counts.
+
+   That ~7× is the number this decision was made on, and it did not generalize:
+   later measurements on other machines ranged down to ~2.3×, since litellm's
+   import is far cheaper warm. The decision still holds — the direction and the
+   identical counts reproduced everywhere — but see F6 for the real spread.
    **Rejected:** `--ignore`-ing the paid-heavy test files — saves only ~1.7 s and
    risks silently not running tests.
 
@@ -125,11 +131,21 @@ Settled during planning:
    runs once per environment and is then snapshotted and skipped, and the
    environment is shared across repos — so it cannot depend on a particular
    checkout being on disk. The original "dumb wrapper that calls
-   `.config/utils/setup_env.sh`" would have silently done nothing.
+   `.config/utils/setup_env.sh`" would have done nothing whenever that path was
+   absent.
 
    Instead the file's contents are pasted into the environment dialog, and only a
    delimited `CONFIGURATION` block at the top is edited. The script stays in the
    repo, reviewable and testable locally.
+
+   To be clear about what this does and does not buy: pasting removes the
+   dependency on a *fixed* path, but a pasted copy still has no idea where the
+   checkout is — and, run at environment-build time, usually has none to find. So
+   the script has to discover its project root at runtime and treat "no checkout"
+   as a normal outcome, doing the environment-level work and skipping the rest with
+   a notice. Without that it is no better off than the wrapper, only noisier about
+   it. The wrapper's one real advantage was that it knew the root; the replacement
+   has to earn that back rather than assume it.
 
    This also forces `--best-effort`/`BEST_EFFORT`: a setup script that exits
    non-zero stops the session from starting, so a `set -e` script with hard

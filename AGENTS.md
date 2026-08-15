@@ -41,6 +41,7 @@ Notes:
 
 - `uv` must be 0.10 or newer. Older versions can't parse this repo's `exclude-newer` setting, and instead of failing they silently re-resolve and rewrite `uv.lock` with a broken dependency set. `required-version` in `pyproject.toml` now makes that fail loudly.
 - The Python sync uses `--frozen`, so run `uv lock` first if you changed dependencies in a `pyproject.toml`.
+- Both scripts write an untracked, gitignored `.python-version` containing `3.13`, which is what keeps `.venv` on a uv-managed CPython (it bundles Tk, so `tkinter` works). If you use pyenv, its shims read the same file — run `pyenv install 3.13` if you get "version 3.13 not installed", or set `PYENV_VERSION` to override it.
 - `CLAUDE.md` is generated from `AGENTS.md` and is overwritten on every setup run. Keep personal agent notes in `~/.claude/CLAUDE.md`, not in the repo copy.
 
 ### Agent Tools

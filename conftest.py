@@ -17,16 +17,34 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture(autouse=True)
-def _clear_httpx_clients() -> None:
+def _litellm_per_test_setup() -> None:
     # Importing litellm costs several seconds, and pytest imports this conftest on
-    # every invocation. Most test modules never touch litellm, so do its setup and
-    # teardown only once something else has already imported it.
+    # every invocation. Most test modules never touch litellm, so this only runs
+    # once something else has already imported it. Skipping it is safe: with no
+    # litellm import there are no cached HTTP clients to flush.
+    #
+    # The tradeoff is that litellm logging is configured no earlier than the first
+    # test to run after litellm is in sys.modules. Two cases go unconfigured: a run
+    # that never imports litellm at all, and a test that imports it partway through
+    # its own body — this fixture has already run and returned by then, so that one
+    # test executes with the "LiteLLM" logger at its default level and no
+    # "ModelCalls" handler. Collection-time imports are covered, since pytest
+    # imports every test module before running any test. Nothing depends on either
+    # gap today.
+    #
+    # setup_litellm_logging resolves its log path here rather than at session
+    # scope, so it reads whatever Config.settings_dir() returns at this moment.
+    # Two vector-store test modules patch settings_dir to tmp_path via their own
+    # autouse fixtures; this stays correct because pytest instantiates autouse
+    # fixtures from the root conftest before module-level ones, so the real path
+    # is what gets cached in the handler.
     litellm = sys.modules.get("litellm")
     if litellm is None:
         return
 
     from kiln_ai.utils.logging import setup_litellm_logging
 
+    # Idempotent: returns immediately once a CustomLiteLLMLogger is registered.
     setup_litellm_logging("test_model_calls.log")
     litellm.in_memory_llm_clients_cache.flush_cache()
 
