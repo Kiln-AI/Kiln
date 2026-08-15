@@ -46,6 +46,19 @@ Settled during planning:
    worktrunk/zellij extras. Switch `uv sync` → `uv sync --frozen --all-packages`
    and `npm install` → `npm ci`. Mention the script in `AGENTS.md` as the way to
    set up an environment.
+
+   It also runs the agent config setup, via `--agent all|claude|cursor|none`,
+   **defaulting to `all`**. Everything both agent scripts write is gitignored
+   (`.claude/`, `.cursor/`, `CLAUDE.md`, `.mcp.json`, `.worktreeinclude`), they
+   write byte-identical `.mcp.json` and `.worktreeinclude`, and the whole copy is
+   176K with no network — so running both by default is free and avoids
+   privileging one editor. `--agent none` exists so the script stays usable in CI.
+   Because `all` is the default, `--human` does not need to ask which agent.
+
+   `.agents/claude/setup.sh` clobbers `CLAUDE.md` unconditionally (it is generated
+   from `AGENTS.md`), which now happens on every plain `setup_env.sh` run. Note in
+   `AGENTS.md` that personal agent notes belong in user-scope `~/.claude/CLAUDE.md`,
+   not the repo copy.
 2. **Enforce a uv floor:** add `required-version = ">=0.10"` to `[tool.uv]`, so a
    too-old uv fails loudly instead of silently rewriting `uv.lock`. (0.9.9 still
    fails to parse the relative `exclude-newer`; 0.10.0 is the first good version.)
