@@ -31,6 +31,7 @@
     | "asc"
     | "desc"
   let filter_tags = ($page.url.searchParams.getAll("tags") || []) as string[]
+  let filter_topic = ($page.url.searchParams.get("topic") || "") as string
   let page_number: number = parseInt(
     $page.url.searchParams.get("page") || "1",
     10,
@@ -44,6 +45,7 @@
     sortDirection = (url.searchParams.get("order") ||
       "desc") as typeof sortDirection
     filter_tags = url.searchParams.getAll("tags") as string[]
+    filter_topic = url.searchParams.get("topic") || ""
     page_number = parseInt(url.searchParams.get("page") || "1", 10)
     sortRuns()
   }
@@ -191,9 +193,21 @@
     if (!runs) return
     runs = runs ? [...runs].sort(sortFunction) : null
     filtered_runs = runs
-      ? [...runs].filter((run) =>
-          filter_tags.every((tag) => run.tags?.includes(tag)),
-        )
+      ? [...runs].filter((run) => {
+          const matches_tags = filter_tags.every((tag) =>
+            run.tags?.includes(tag),
+          )
+          if (!matches_tags) return false
+          if (filter_topic) {
+            const run_topic = run.input_source_properties?.topic_path
+            if (!run_topic || typeof run_topic !== "string") return false
+            return (
+              run_topic === filter_topic ||
+              run_topic.startsWith(filter_topic + ">>>>>")
+            )
+          }
+          return true
+        })
       : null
 
     // Clear the last selected id, as it's moved
@@ -276,6 +290,10 @@
 
     // Add new params to the URL (keep current params)
     Object.entries(params).forEach(([key, value]) => {
+      if (key === "topic" && value === "") {
+        url.searchParams.delete("topic")
+        return
+      }
       if (Array.isArray(value)) {
         value.forEach((v) => url.searchParams.append(key, v))
       } else {
@@ -293,6 +311,9 @@
     if (params.tags) {
       filter_tags = params.tags as string[]
     }
+    if (params.topic !== undefined) {
+      filter_topic = params.topic as string
+    }
     if (params.page) {
       page_number = params.page as number
     }
@@ -301,6 +322,32 @@
     replaceState(url, {})
 
     sortRuns()
+  }
+
+  function set_filter_topic(topic: string) {
+    select_mode = false
+    selected_runs = new Set()
+    updateURL({
+      topic: topic,
+      page: 1,
+    })
+  }
+
+  function get_available_topics(runs_list: RunSummary[] | null): string[] {
+    if (!runs_list) return []
+    const paths = new Set<string>()
+    runs_list.forEach((run) => {
+      const path_str = run.input_source_properties?.topic_path
+      if (path_str && typeof path_str === "string") {
+        paths.add(path_str)
+      }
+    })
+    return Array.from(paths).sort()
+  }
+
+  function get_topic_path(run: RunSummary): string | null {
+    const path_str = run.input_source_properties?.topic_path
+    return typeof path_str === "string" ? path_str : null
   }
 
   function open_dataset_run(run_id: string | null) {
@@ -583,6 +630,58 @@
           <button class="btn btn-mid" on:click={() => (select_mode = true)}>
             Select
           </button>
+          {#if get_available_topics(runs).length > 0}
+            <div class="dropdown dropdown-end">
+              <div
+                tabindex="0"
+                role="button"
+                class="btn btn-mid !px-3 {filter_topic ? 'btn-primary' : ''}"
+              >
+                <img
+                  alt="folder"
+                  src="/images/folder.svg"
+                  class="w-5 h-5 {filter_topic ? 'invert' : ''}"
+                />
+                {#if filter_topic}
+                  <span class="text-xs max-w-28 truncate"
+                    >{filter_topic.split(">>>>>").pop()}</span
+                  >
+                {/if}
+              </div>
+              <ul
+                tabindex="0"
+                role="menu"
+                class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow max-h-96 overflow-y-auto"
+              >
+                <li class="menu-title">Filter by Topic</li>
+                <li>
+                  <button
+                    class={filter_topic === "" ? "active" : ""}
+                    on:click={() => set_filter_topic("")}
+                  >
+                    All Topics
+                  </button>
+                </li>
+                {#each get_available_topics(runs) as topic}
+                  {@const parts = topic.split(">>>>>")}
+                  {@const depth = parts.length}
+                  {@const name = parts[parts.length - 1]}
+                  <li>
+                    <button
+                      class={filter_topic === topic ? "active" : ""}
+                      on:click={() => set_filter_topic(topic)}
+                      style="padding-left: {depth * 12}px"
+                    >
+                      {#if depth > 1}
+                        <span class="text-gray-400">⮑</span>
+                      {/if}
+                      {name}
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
           <button
             class="btn btn-mid !px-3"
             on:click={() => filter_tags_dialog?.show()}
@@ -661,7 +760,21 @@
                     : "Unrated"}
                 </td>
                 <td>{run.repair_state}</td>
-                <td>{run.input_source}</td>
+                <td>
+                  <div>{run.input_source}</div>
+                  {#if get_topic_path(run)}
+                    {@const topicPath = get_topic_path(run)}
+                    {#if topicPath}
+                      {@const lastTopic = topicPath.split(">>>>>").pop()}
+                      <div
+                        class="text-xs text-gray-400 mt-1 max-w-36 truncate"
+                        title={topicPath.replaceAll(">>>>>", " > ")}
+                      >
+                        {lastTopic}
+                      </div>
+                    {/if}
+                  {/if}
+                </td>
                 <td class="break-words max-w-36">
                   {model_name(run.model_name || undefined, $model_info)}
                 </td>

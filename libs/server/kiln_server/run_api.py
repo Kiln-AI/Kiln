@@ -105,6 +105,9 @@ class RunSummary(BaseModel):
     input_source: str | None = Field(
         default=None, description="The source of the input (human, synthetic, etc.)."
     )
+    input_source_properties: dict[str, Any] | None = Field(
+        default=None, description="The properties of the input source."
+    )
     tags: list[str] | None = Field(default=None, description="Tags applied to the run.")
 
     @classmethod
@@ -160,6 +163,9 @@ class RunSummary(BaseModel):
             repair_state=RunSummary.repair_status_display_name(run),
             model_name=model_name,
             input_source=run.input_source.type if run.input_source else None,
+            input_source_properties=run.input_source.properties
+            if run.input_source
+            else None,
         )
 
 
