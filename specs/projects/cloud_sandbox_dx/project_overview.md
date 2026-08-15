@@ -70,12 +70,19 @@ Settled during planning:
    uv-managed Python 3.13, which bundles Tk. `desktop_server.py` and
    `import_api.py` stay as they are.
 5. **Restore agent config** by running the existing `.agents/claude/setup.sh` from
-   the cloud setup script. This also requires fixing `.agents/mcp.json` to pin
-   `mcp<2` — `hooks-mcp 0.2.4` resolves against `mcp 2.0.0`, which dropped
-   `Server.list_tools`, so the MCP server currently fails to start for everyone.
-   Whether Claude Code on the web auto-trusts a project `.mcp.json` is still
-   unverified; if it does not, fall back to documenting direct shell commands in
-   `AGENTS.md`.
+   the cloud setup script.
+
+   The MCP server currently fails to start: `hooks-mcp 0.2.4` resolves against
+   `mcp 2.0.0`, which dropped `Server.list_tools`. **This is being fixed upstream
+   in hooks-mcp**, so this repo pins nothing — a local `mcp<2` pin would only hold
+   back that fix. Once a fixed version ships, set a *floor* in `.agents/mcp.json`
+   (`--from "hooks-mcp>=<fixed version>"`), because `uvx` reuses cached tool
+   environments and could otherwise keep serving the broken 0.2.4 + mcp 2.0 pair.
+
+   Separately, whether Claude Code on the web auto-trusts a project `.mcp.json` is
+   still unverified. Verified working without a session restart: `CLAUDE.md` and
+   `.claude/skills/`. If MCP turns out to need approval a cloud session cannot
+   give, fall back to documenting the direct shell commands in `AGENTS.md`.
 6. **Test startup cost** — under investigation.
 7. **Out of scope:** the `debug_detector` TODO-in-spec-markdown issue and the
    mutation-sweep scripts leaving mutated source on disk. Unrelated to sandboxes.
