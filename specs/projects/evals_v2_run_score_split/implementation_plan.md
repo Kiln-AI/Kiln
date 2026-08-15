@@ -44,5 +44,5 @@ Depends on `claude/eval-splits-evals-v2` being merged first.
       ordinary dataset run permanently undeletable. Decide there whether to reject the
       field on PATCH.*
 
-- [ ] **Phase 5: Migration.** `migrate-eval-runs` CLI command with dry-run, over internal
+- [x] **Phase 5: Migration.** `migrate-eval-runs` CLI command with dry-run, over internal
       V2 project data. Architecture §7, §9.6.
