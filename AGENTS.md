@@ -25,7 +25,7 @@ This repo is a monorepo containing all of the source code, in the following stru
 
 ### Environment Setup
 
-**In a container or cloud sandbox**, run `bash .config/utils/setup_startup.sh` before your first build or test run, and again on a new branch. Each session starts on a fresh filesystem, so it writes the agent config, pins Python, seeds `node_modules` from the VM's warm copy when there is one, and syncs Python and Node dependencies for the branch you are on — then fails fast with instructions if the environment itself can't build Kiln. It is cheap and safe to re-run.
+**In a container or cloud sandbox**, run `bash .config/utils/setup_startup.sh` before your first build or test run, and again on a new branch. Each session starts on a fresh filesystem, so it writes the agent config, pins Python, seeds `node_modules` from the VM's warm copy when there is one, and syncs Python and Node dependencies for the branch you are on — then fails fast with instructions if the environment itself can't build Kiln. It is cheap and safe to re-run. On a VM set up with `--create-startup-script` this already ran before your first turn, via a Claude Code `SessionStart` hook; re-run it yourself after switching branches.
 
 **Working locally, it isn't for you.** Outside a container it prints one line and exits 0, because a development environment is set up once and shared across checkouts. Use `bash .config/utils/setup_env.sh` (below) instead — it is the only command that also regenerates the agent config, so it is what you want after editing `AGENTS.md`. For dependencies alone, `uv sync` plus `npm install` in `app/web_ui` is enough. `IS_CONTAINERIZED=true` forces the startup script to run anyway.
 
@@ -39,6 +39,7 @@ To build or repair an environment from scratch, run `bash .config/utils/setup_en
 | `--agent all\|claude\|cursor\|none` | Which agent configs to write. Defaults to `all`. |
 | `--best-effort` | Never exit non-zero. Required when used as a cloud setup script. |
 | `--warm-cache` | Build a VM's caches from a throwaway clone, for images snapshotted after setup. No-op when a checkout is present. |
+| `--create-startup-script` | Register a Claude Code `SessionStart` hook that runs `setup_startup.sh` in every session on this machine. For cloud VMs; off by default. |
 
 Notes:
 
@@ -47,6 +48,7 @@ Notes:
 - Both scripts write an untracked, gitignored `.python-version` containing `3.13`, which is what keeps `.venv` on a uv-managed CPython (it bundles Tk, so `tkinter` works). If you use pyenv, its shims read the same file — run `pyenv install 3.13` if you get "version 3.13 not installed", or set `PYENV_VERSION` to override it.
 - `CLAUDE.md` is generated from `AGENTS.md` and is overwritten on every setup run. Keep personal agent notes in `~/.claude/CLAUDE.md`, not in the repo copy.
 - On a VM, `setup_env.sh` leaves a marker and a pristine `node_modules` outside the checkout (`/opt/kiln-vm-setup/` by default; `KILN_VM_SETUP_DIR` overrides it). Without that marker `setup_startup.sh` says so and skips the `node_modules` hardlink — it won't link a tree it didn't put there.
+- `--create-startup-script` puts a small shim beside them and **merges** a `SessionStart` entry for it into `~/.claude/settings.json` (`CLAUDE_CONFIG_DIR` overrides the location). Merged, not replaced: the file carries settings for the whole machine, and hooks from every settings source are combined, so hooks the environment already installed keep running. The shim exits immediately when the session isn't in a Kiln checkout, since it fires for every repo sharing the VM. It is off by default because on a development machine it would edit your own Claude Code settings. If the file isn't valid JSON, the run says so and leaves it untouched.
 
 ### Agent Tools
 

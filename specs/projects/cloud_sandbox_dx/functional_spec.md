@@ -189,25 +189,21 @@ would be unmeetable there. The work is offline, sub-second, and writes only
 gitignored files, so doing it every session is cheaper than reasoning about whether
 it is needed.
 
-**Known limitation — the bootstrap is circular.** The only thing that tells an
-agent to run `setup_startup.sh` is `AGENTS.md`, and the repo copies `AGENTS.md` to
-`CLAUDE.md` precisely because `CLAUDE.md` is the file Claude Code actually reads. In
-a fresh sandbox with no agent config, nothing has told the agent the script exists.
-So F5 in the cloud depends on a precondition outside the repo: the operator's task
-prompt, or a human, naming `setup_startup.sh` at least once. Once it has run, the
-loop is closed for that session and every later one on that filesystem.
+**The bootstrap is circular, and F10 breaks the circle.** The only thing that tells
+an agent to run `setup_startup.sh` is `AGENTS.md`, and the repo copies `AGENTS.md`
+to `CLAUDE.md` precisely because `CLAUDE.md` is the file Claude Code actually reads.
+In a fresh sandbox with no agent config, nothing has told the agent the script
+exists.
 
-Until that exists, the gap is covered by an item in the implementation plan's
-environment-side checklist rather than by anything in the repo.
+This was originally accepted as a limitation covered outside the repo — an
+operator's task prompt naming the script once — with a `SessionStart` hook noted as
+the real fix but deferred, because it was believed to need a tracked
+`.claude/settings.json` and so a change to a repo-wide convention.
 
-The candidate fix is a `SessionStart` hook, which Claude Code runs before the agent
-reads anything, so it does not depend on the agent having been told. It is not
-adopted here — but not because it is hard. It needs a tracked
-`.claude/settings.json`, and while `.claude/` is gitignored wholesale, that is two
-`!` negation lines away and nothing depends on the wholesale ignore. What makes it a
-decision rather than a task is that it would make part of `.claude/` source in a
-repo where everything under it is currently generated and disposable. Tracked as an
-open decision in the implementation plan.
+That belief was wrong. The hook can be installed **by the VM setup script**, into
+the user-level `~/.claude/settings.json` that Claude Code reads in cloud sessions,
+with no repo file and no human instruction involved. See F10. F5's cloud behavior
+therefore no longer depends on anything outside this project.
 
 ### F6 — Python test startup cost
 
@@ -314,8 +310,10 @@ It then does seven things, in this order:
    left alone.
 4. **Seed `node_modules` from the VM's warm tree** (F9), when the checkout has none
    and step 0 found the marker. `cp -al` shares inodes instead of copying bytes:
-   measured **0.54 s** for the 601 MB tree, against ~21 s for npm to materialize it
-   from a warm `~/.npm`. Every failure — no warm tree, a tree on another
+   0.54 s for the 601 MB tree with a hot page cache, against ~21 s for npm to
+   materialize it from a warm `~/.npm`. On a snapshot-cold session the seed is not
+   free — it is part of the 22.9 s below, and what it buys there is measured in F9:
+   **9.4 s**. Every failure — no warm tree, a tree on another
    filesystem, a filesystem without hardlinks — falls through to step 5 populating
    `node_modules` from scratch, which is what happened before this existed.
 5. **Sync dependencies for the current branch**, `uv sync --frozen --all-packages`
@@ -350,9 +348,16 @@ The uv check must come **before** the sync, not after: a too-old uv is precisely
 the thing that would rewrite `uv.lock` during that sync, so checking afterwards
 would do the damage the check exists to prevent.
 
-It is cheap and idempotent by design — measured **5.9 s** warm, and **2.2 s** on a
-session seeded from a warm `node_modules` — so re-running it costs little and there
-is no reason for an agent to try to guess whether it is needed.
+It is idempotent by design, and cheap to *re-run*: a second run inside the same
+session costs ~2 s. The first run of a session is not cheap, and the honest figure
+is a cold one — **22.9 s** on a snapshot-started session with the warm
+`node_modules` tree in place (`real 22.890s, user 3.495s, sys 5.398s`). Under 9 s
+of that is CPU, so it is disk-bound; roughly 16 s of it is `npm install` reporting
+`up to date` while stat-ing ~46,000 files. Earlier drafts quoted 5.9 s and 2.2 s;
+those were measured with a hot page cache and do not survive a snapshot-cold start.
+
+Either way there is no reason for an agent to guess whether it is needed: the cost
+of re-running is seconds, and the cost of skipping it is a broken build.
 
 ### F9 — Warm the VM once, so every session on it starts warm
 
@@ -369,6 +374,26 @@ The Node half barely moved — 24 s → 21 s. A warm `~/.npm` saves the download
 npm **copies** out of its cache where uv **hardlinks**, so filling an empty
 `node_modules` with 748 packages still costs ~21 s. The fix is to not fill it: keep
 the tree the warm-up already built and hardlink it into the session's checkout.
+
+**What the warm tree is actually worth: 9.4 s.** Measured end to end on real
+snapshot-started sessions, which is the only measurement that means anything here —
+the per-command figures above were taken with the caches already hot:
+
+| First `setup_startup.sh` of a session | |
+|---|---|
+| with the warm tree | **22.9 s** |
+| with the seed disabled (marker removed) | **32.3 s** |
+
+So this is a 29% cut, not the near-elimination the component figures suggest. The
+remaining 22.9 s is disk-bound (under 9 s of CPU), and roughly 16 s of it is
+`npm install` walking ~46,000 seeded files to conclude they are `up to date`.
+
+That trade is accepted deliberately: 9.4 s off every session, for 601 MB of VM
+image and the shared-inode risk analyzed below. The alternative worth noting is
+that the biggest remaining cost is npm re-verifying a tree that was correct when it
+was snapshotted — a cost that could only be removed by skipping `npm install`
+altogether, which would give up the branch-accuracy that is the whole point of F8
+step 5.
 
 Three parts:
 
@@ -439,6 +464,84 @@ snapshot rather than writing back to it, and the worst case is a second checkout
 the same session seeded from a mutated tree. Deleting the marker disables seeding
 entirely if that ever proves wrong.
 
+### F10 — Run `setup_startup.sh` from a `SessionStart` hook
+
+F5's circular bootstrap is closed by having the VM setup script register a Claude
+Code `SessionStart` hook. Claude Code runs the hook before the agent reads
+anything, so nothing depends on the agent having been told the script exists — and
+nothing depends on a human writing an operator prompt.
+
+`setup_env.sh --create-startup-script` / `CREATE_STARTUP_SCRIPT=true`, **default
+false**, does two things:
+
+1. **Writes a shim** beside the other VM state (`$VM_SETUP_DIR`, so it is on the
+   snapshotted filesystem). The shim looks for `.config/utils/setup_startup.sh`
+   from `CLAUDE_PROJECT_DIR` upward and **exits 0 immediately when it finds none**:
+   a user-level hook fires for every repo in a shared environment, and this
+   environment is shared. It captures both output streams and prints them on
+   stdout, because a `SessionStart` hook's stdout becomes context for the session
+   while its stderr does not — and a failed environment check the agent never sees
+   would be worse than no hook. It always exits 0; a hook must never be the reason
+   a session fails to start.
+
+2. **Merges** a `SessionStart` entry into the user-level `~/.claude/settings.json`
+   (`CLAUDE_CONFIG_DIR` honored). Merging is not a nicety: that file already
+   carries `enableAllProjectMcpServers: true` for the whole machine, and
+   overwriting it would silently disable the project's MCP servers. Re-running is
+   idempotent — the entry is keyed by the shim's repo-specific basename, so a
+   second run replaces rather than appends, including after `KILN_VM_SETUP_DIR`
+   moves. A `settings.json` that is not valid JSON, or whose `hooks` are not the
+   shape the schema expects, is **left exactly as it is** and reported; repairing
+   someone's settings is not this script's job and truncating them is worse than
+   not installing.
+
+The entry is scoped to `startup|resume|fork`. `SessionStart` also fires on `clear`
+and `compact`; re-running there would be a cheap no-op, but it would re-inject the
+hook's output into the context window, and a long session compacts repeatedly.
+`fork` is included because a forked session can start on a filesystem this has not
+run on.
+
+Default false because on a development machine this would edit a contributor's own
+Claude Code settings and make every session of theirs, in every repo, run a script
+for this one.
+
+**One environment assumption worth stating:** the settings path resolves `$HOME`
+when the VM is built. An image that runs its setup script as one user and its
+sessions as another would install the hook into the wrong home, and nothing later
+would notice — the sessions would simply behave as if the flag had never been set.
+Such an image must set `CLAUDE_CONFIG_DIR` explicitly. The Claude Code cloud images
+this targets build and run as the same user, so it holds there.
+
+**The displacement risk, settled by test.** Cloud sessions already run a
+`SessionStart` hook of their own, from `~/.claude/launcher-settings.json` — it pins
+the git committer identity that makes commits verify on GitHub. If adding
+`hooks.SessionStart` to `settings.json` replaced that, this feature would silently
+break commit signing in every later session. It does not:
+
+- **Measured.** A real session started with an isolated config directory, our hook
+  installed in `settings.json`, and a second `SessionStart` hook passed via
+  `--settings` (which is exactly how the launcher file reaches Claude Code — the
+  live session's process arguments show `--settings ~/.claude/launcher-settings.json`)
+  ran **both** hooks. The model also echoed a token printed by our hook, confirming
+  the stdout-becomes-context behavior above.
+- **In the implementation.** Settings sources are merged in the order
+  `userSettings, projectSettings, localSettings, flagSettings, policySettings`,
+  with an array rule of "concatenate and de-duplicate". Hook lists compose across
+  sources; they do not override.
+
+The one way to lose the launcher's hooks is `disableAllHooks: true` in repo
+settings, which this project does not set anywhere.
+
+**The cost, stated plainly.** The hook is synchronous, so a snapshot-cold session
+now pays F8's 22.9 s before the agent's first turn — every session, including ones
+where the agent would not have asked for it. Two things make that the right trade:
+the work had to happen anyway before any build or test, and an agent that skips it
+produces failures that cost far more than 23 s to diagnose. Claude Code's async
+hook mode (`{"async": true}`) would hide the latency and is deliberately not used:
+`CLAUDE.md`, `.claude/skills/` and `.mcp.json` are read while the session's context
+is assembled, so writing them in the background races the very thing the hook
+exists to guarantee.
+
 ## Out of Scope
 
 - **Dependency caching / an R2-style artifact cache.** Measured cold vs warm:
@@ -475,6 +578,7 @@ configuration. They are documented here so they are not lost:
    AGENT=all
    BEST_EFFORT=true    # was false
    WARM_CACHE=true     # was false
+   CREATE_STARTUP_SCRIPT=true # was false
    ```
 
    The field must run the script with **bash**. `set -o pipefail` is not POSIX, so
@@ -555,8 +659,9 @@ run `setup_startup.sh`:
    versions. On a deliberately broken environment it exits 1 and names the repair
    command instead. It reports no missing-marker notice, and — on the session's
    first run, before `node_modules` exists — says it seeded `node_modules` by
-   hardlink and finishes in a couple of seconds. Outside a container all of this
-   is replaced by one line and exit 0 (F8).
+   hardlink. Expect ~23 s for that first run of a session, and ~2 s for a re-run
+   inside it. Outside a container all of this is replaced by one line and exit 0
+   (F8).
 1. `uv --version` reports ≥ 0.10.
 2. A plain `uv run python -c "print(1)"` completes in well under a second and
    leaves `uv.lock` unmodified.
@@ -569,9 +674,9 @@ run `setup_startup.sh`:
    `setup_startup.sh`**, not by the environment setup script, which in a sandbox
    normally runs with no checkout in reach. This criterion therefore inherits the
    precondition in the preamble: it holds only once something has caused
-   `setup_startup.sh` to run at least once. See F5's known limitation — in a fresh
-   sandbox nothing in the repo can deliver that instruction, because the file that
-   would carry it is one of the files this step creates.
+   `setup_startup.sh` to run at least once. With F10's hook installed, that
+   something is the session start itself, so the criterion holds before the agent's
+   first turn.
 8. `git status --porcelain` is empty — setup mutates no tracked file, with one
    named exception: `setup_startup.sh` uses `npm install` (F4), which rewrites
    `app/web_ui/package-lock.json` if it disagrees with `package.json`. On a branch
@@ -583,9 +688,10 @@ run `setup_startup.sh`:
 Measured reference values for 4–6 on this hardware: suite 6369 passed / 10020
 skipped / 0 errors in ~59 s; `checks.sh` green in ~2 m 23 s.
 
-**On the preamble's second clause.** "the agent has run `setup_startup.sh`" is a
-genuine precondition, not a formality: nothing in a fresh sandbox tells the agent to
-run it. Until the `SessionStart` hook in F5 is adopted, closing that gap needs an
-operator-side prompt naming the script. Criteria 0–9 are written against the state
-after that has happened; before it, 7 fails and 3–6 fail or are slow depending on
-what the image happened to provide.
+**On the preamble's second clause.** "the agent has run `setup_startup.sh`" was a
+genuine precondition, not a formality: nothing in a fresh sandbox told the agent to
+run it. F10 turns it into a property of the environment — the `SessionStart` hook
+runs the script before the agent's first turn, so criteria 0–9 are evaluated
+against a session that has already been prepared. On a VM built without
+`CREATE_STARTUP_SCRIPT=true` the old reading still applies: 7 fails, and 3–6 fail
+or are slow depending on what the image happened to provide.

@@ -165,7 +165,10 @@ built from stubs and symlinks, and against the real environment:
   names `package-lock.json`, and still exits 0.
 - Healthy environment: exits 0 and prints
   `Ready. Python 3.13, uv 0.12.5, agent config written.`
-- Warm re-run: 1.5 s wall (the spec's 5.9 s reference was a colder machine), well
-  inside "cheap enough that there is no reason to guess whether it is needed".
+- Warm re-run: 1.5 s wall, well inside "cheap enough that there is no reason to
+  guess whether it is needed". (This compared against a 5.9 s figure the spec no
+  longer carries: Phase 6 replaced it, since both were hot-cache numbers. The
+  cold-start cost of a session's *first* run is 22.9 s — F9. A warm re-run really
+  is ~1.5–2 s, so what this bullet checked still holds.)
 - `git status --porcelain` empty and `uv.lock` / `package-lock.json` md5s unchanged
   after a run.

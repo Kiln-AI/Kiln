@@ -19,9 +19,17 @@ npm **copies** out of its cache where uv **hardlinks**, so materializing 748
 packages into an empty `node_modules` still costs ~21 s. The fix is to skip the
 materialization entirely: keep the pristine `node_modules` tree the warm-up run
 already built, outside the repo so it survives into the VM snapshot, and
-hardlink-copy it into the session's checkout. Measured on this machine: `cp -al`
-of the 601 MB tree takes **0.54 s** and shares inodes, and `/opt` and `/home/user`
-are the same device, so the link is possible.
+hardlink-copy it into the session's checkout. `cp -al` of the 601 MB tree takes
+0.54 s and shares inodes, and `/opt` and `/home/user` are the same device, so the
+link is possible.
+
+> **Corrected after Phase 6.** The 0.54 s above, and the per-command figures
+> throughout this plan, were measured with a hot page cache and are not what a
+> session on a fresh snapshot sees. End to end on real snapshot-started sessions,
+> the first `setup_startup.sh` costs **22.9 s** with the warm tree and **32.3 s**
+> without it: the tree is worth **9.4 s**, not the ~20 s these component numbers
+> imply. Kept anyway — see F9 for the trade — but read the cold numbers as the
+> headline. `functional_spec.md` F9 carries the corrected figures.
 
 Three supporting pieces come with it:
 

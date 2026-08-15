@@ -29,12 +29,13 @@ set -uo pipefail
 # ── CONFIGURATION ─────────────────────────────────────────────────────────────
 # Defaults for a local run. Command line flags override them.
 # For a Claude Code cloud setup script use:
-#   UPGRADE_TOOLS=true BEST_EFFORT=true WARM_CACHE=true
+#   UPGRADE_TOOLS=true BEST_EFFORT=true WARM_CACHE=true CREATE_STARTUP_SCRIPT=true
 HUMAN_MODE=false    # true: also offer the worktrunk/Zellij workspace tools
 UPGRADE_TOOLS=false # true: upgrade uv without asking when it is too old
 AGENT=all           # all | claude | cursor | none
 BEST_EFFORT=false   # true: never exit non-zero (required for cloud setup scripts)
 WARM_CACHE=false    # true: warm the machine's caches from a throwaway clone (cloud VMs)
+CREATE_STARTUP_SCRIPT=false # true: run setup_startup.sh from a Claude Code SessionStart hook (cloud VMs)
 # ──────────────────────────────────────────────────────────────────────────────
 
 UV_MIN=0.10.0
@@ -55,6 +56,15 @@ VM_SETUP_DIR="${KILN_VM_SETUP_DIR:-/opt/kiln-vm-setup}"
 VM_SETUP_MARKER="$VM_SETUP_DIR/.setup_for_kiln_repo_v1"
 WARM_NODE_MODULES="$VM_SETUP_DIR/node_modules"
 KILN_REPO_URL="${KILN_REPO_URL:-https://github.com/Kiln-AI/Kiln.git}"
+
+# The SessionStart hook of --create-startup-script, and the file it is registered
+# in. The shim's basename is deliberately repo-specific: it is what makes the
+# registration idempotent, and what keeps this from ever matching someone else's
+# hook. CLAUDE_CONFIG_DIR is the variable Claude Code itself honors for the user
+# settings location, so respecting it is both correct and what makes this testable
+# without writing to a real ~/.claude.
+STARTUP_HOOK_SHIM="$VM_SETUP_DIR/kiln_session_start_hook.sh"
+CLAUDE_USER_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
 
 # ── Project root discovery ────────────────────────────────────────────────────
 # Deriving the root from ${BASH_SOURCE[0]} only works when this file is running
@@ -109,6 +119,11 @@ Usage: setup_env.sh [options]
                       and sync it, to warm this machine's uv and npm caches and keep
                       a pristine node_modules for later sessions. For cloud VMs whose
                       disk is snapshotted after setup; a no-op with a checkout.
+  --create-startup-script
+                      Register a Claude Code SessionStart hook that runs
+                      setup_startup.sh in every session on this machine. For cloud
+                      VMs; off by default so a local run never edits your Claude
+                      Code settings. Merges into ~/.claude/settings.json.
   -h, --help          Show this help.
 
 The Python sync uses --frozen, so run `uv lock` first if you changed dependencies.
@@ -121,6 +136,7 @@ while [ $# -gt 0 ]; do
     --upgrade-tools) UPGRADE_TOOLS=true ;;
     --best-effort) BEST_EFFORT=true ;;
     --warm-cache) WARM_CACHE=true ;;
+    --create-startup-script) CREATE_STARTUP_SCRIPT=true ;;
     --agent) AGENT="${2:-}"; shift ;;
     --agent=*) AGENT="${1#*=}" ;;
     -h | --help) usage; exit 0 ;;
@@ -253,6 +269,9 @@ fi
 # machine-global tree would be seeding later sessions from an unknown state.
 WARM_TREE_CREATED=false
 WARM_TREE_COMMIT=""
+# Set only once the SessionStart hook is both written and registered. Declared
+# here, with the other marker inputs, because the marker is what reports it.
+STARTUP_HOOK_INSTALLED=false
 
 # Failures here are warnings, not `fail`s. This is an optimization: the machine is
 # still usable without it, and marking the run failed would flip the closing line
@@ -320,6 +339,235 @@ warm_from_throwaway_clone() {
   echo "Warm node_modules kept at $WARM_NODE_MODULES."
 }
 
+# ── Run setup_startup.sh from a Claude Code SessionStart hook ─────────────────
+# This is what closes the repo's circular bootstrap. The only thing that tells an
+# agent to run setup_startup.sh is AGENTS.md, copied to CLAUDE.md *by that script*,
+# so in a fresh sandbox nothing has told it the script exists. A user-level hook
+# runs before the agent reads anything, so it depends on nothing having been said.
+#
+# ~/.claude survives into the VM snapshot and Claude Code reads it in cloud
+# sessions, so no repo file and no human instruction are involved.
+#
+# Off by default. On a development machine this would edit a contributor's own
+# Claude Code settings and make every session of theirs — in every repo — run a
+# script for this one. That is not a dependency installer's business.
+#
+# CLAUDE_USER_SETTINGS resolves $HOME here, at VM-build time. An image that builds
+# as one user and runs sessions as another would register the hook in the wrong
+# home, and nothing later would notice. Set CLAUDE_CONFIG_DIR explicitly on such an
+# image.
+install_session_start_hook() {
+  local staged_shim
+
+  # Editing JSON with sed is how settings files get destroyed. This one holds
+  # enableAllProjectMcpServers for the whole machine.
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "warning: startup hook: python3 is not installed, so $CLAUDE_USER_SETTINGS" >&2
+    echo "         cannot be edited safely; skipping" >&2
+    return 1
+  fi
+
+  if ! mkdir -p "$VM_SETUP_DIR"; then
+    echo "warning: startup hook: could not create $VM_SETUP_DIR; skipping" >&2
+    return 1
+  fi
+
+  # Written beside the target and renamed over it: a session starting mid-write
+  # would otherwise run half a shell script.
+  staged_shim="$STARTUP_HOOK_SHIM.$$"
+  if ! cat >"$staged_shim" <<EOF
+#!/usr/bin/env bash
+# Claude Code SessionStart hook. Written by Kiln's .config/utils/setup_env.sh
+# --create-startup-script, and registered in $CLAUDE_USER_SETTINGS.
+#
+# The hook fires at the start of every session on this machine, whatever repo the
+# session is for, so this does nothing unless it can find a Kiln checkout.
+set -u
+
+# CLAUDE_PROJECT_DIR is set for SessionStart hooks, and is the session's working
+# directory — not necessarily the root of the checkout, hence the walk upward.
+# setup_startup.sh does its own root discovery too, so this only has to get close.
+#
+# Resolved to an absolute path first, so a relative one walks the real tree rather
+# than up to ".". The walk then stops when a directory is its own parent, which is
+# true of "/" and of "." — belt and braces against ever spinning here.
+dir="\${CLAUDE_PROJECT_DIR:-\$PWD}"
+dir="\$(cd "\$dir" 2>/dev/null && pwd)" || dir="\$PWD"
+while [ ! -f "\$dir/.config/utils/setup_startup.sh" ]; do
+  parent="\$(dirname "\$dir")"
+  [ "\$parent" = "\$dir" ] && exit 0
+  dir="\$parent"
+done
+script="\$dir/.config/utils/setup_startup.sh"
+
+# A SessionStart hook's stdout becomes context for the session and its stderr does
+# not, so both streams are captured and printed together: a failure the agent never
+# sees is worse than no hook at all. Always exit 0 — this must never be the reason
+# a session fails to start. stdin is the hook's event JSON; nothing below reads it.
+#
+# Capped, because this text is spent from the session's context window rather than
+# scrolled past: the normal run is ~15 lines, but a failing uv resolution or npm
+# install can be enormous, and the tail of such output is where the reason is.
+output="\$(bash "\$script" 2>&1 </dev/null)"
+status=\$?
+if [ "\${#output}" -gt 4000 ]; then
+  output="\$(printf '%s' "\$output" | head -c 1500)
+[...trimmed. Re-run .config/utils/setup_startup.sh to see all of it...]
+\$(printf '%s' "\$output" | tail -c 2000)"
+fi
+[ -n "\$output" ] && printf '%s\n' "\$output"
+[ "\$status" -ne 0 ] &&
+  printf '%s\n' "(\$script exited \$status. Fix the above before building or testing.)"
+exit 0
+EOF
+  then
+    rm -f "$staged_shim"
+    echo "warning: startup hook: could not write $STARTUP_HOOK_SHIM; skipping" >&2
+    return 1
+  fi
+
+  if ! chmod +x "$staged_shim" || ! mv -f "$staged_shim" "$STARTUP_HOOK_SHIM"; then
+    rm -f "$staged_shim"
+    echo "warning: startup hook: could not install $STARTUP_HOOK_SHIM; skipping" >&2
+    return 1
+  fi
+
+  # A shim on disk is not a hook: nothing runs it until the registration below
+  # succeeds. Only that sets the flag the marker reports.
+  register_session_start_hook || return 1
+  STARTUP_HOOK_INSTALLED=true
+}
+
+# Merge, never overwrite: this file already carries settings that belong to the
+# whole machine (enableAllProjectMcpServers, among others), and replacing it would
+# disable them silently. Anything unexpected in there is left exactly as it is —
+# repairing someone's malformed settings is not this script's business, and
+# truncating them is worse than not installing the hook.
+#
+# The entry is identified by the shim's repo-specific basename, so re-running is
+# idempotent and a moved KILN_VM_SETUP_DIR replaces its old entry rather than
+# adding a second one.
+register_session_start_hook() {
+  python3 - "$CLAUDE_USER_SETTINGS" "$STARTUP_HOOK_SHIM" <<'PY'
+import json
+import os
+import sys
+import tempfile
+
+settings_path, shim = sys.argv[1], sys.argv[2]
+key = os.path.basename(shim)
+
+
+def refuse(why):
+    sys.stderr.write("warning: %s %s,\n" % (settings_path, why))
+    sys.stderr.write("         so the SessionStart hook was not registered. "
+                     "Nothing was written.\n")
+    raise SystemExit(3)
+
+
+try:
+    with open(settings_path, encoding="utf-8") as handle:
+        raw = handle.read()
+except FileNotFoundError:
+    raw = ""
+except OSError as error:
+    refuse("could not be read (%s)" % error.strerror)
+
+if raw.strip():
+    try:
+        settings = json.loads(raw)
+    except ValueError as error:
+        refuse("is not valid JSON (%s)" % error)
+    if not isinstance(settings, dict):
+        refuse("does not hold a JSON object")
+else:
+    settings = {}
+
+hooks = settings.setdefault("hooks", {})
+if not isinstance(hooks, dict):
+    refuse('has a "hooks" value that is not an object')
+groups = hooks.setdefault("SessionStart", [])
+if not isinstance(groups, list):
+    refuse('has a "hooks.SessionStart" value that is not an array')
+
+before = json.dumps(settings, sort_keys=True)
+
+# Drop our own entry wherever it is, then append exactly one. A group left empty
+# by that goes with it; a group holding anything else keeps everything else.
+kept = []
+for group in groups:
+    if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
+        kept.append(group)
+        continue
+    others = [
+        entry for entry in group["hooks"]
+        if not (isinstance(entry, dict)
+                and isinstance(entry.get("command"), str)
+                and key in entry["command"])
+    ]
+    if len(others) == len(group["hooks"]):
+        kept.append(group)
+    elif others:
+        group["hooks"] = others
+        kept.append(group)
+
+kept.append({
+    # SessionStart also fires on "clear" and "compact", and this hook's output is
+    # spent from the context window. Re-running it on every compaction of a long
+    # session would re-inject it for no gain: the checkout is already prepared, and
+    # nothing about clearing or compacting can undo that. "fork" is in because a
+    # forked session can start on a filesystem this has not run on.
+    "matcher": "startup|resume|fork",
+    "hooks": [{
+        "type": "command",
+        "command": shim,
+        # Seconds. Generous on purpose: a VM with no warm node_modules tree pays
+        # ~32 s, and a branch that really changed dependencies pays more.
+        "timeout": 600,
+        "statusMessage": "Preparing the Kiln checkout",
+    }],
+})
+hooks["SessionStart"] = kept
+
+if json.dumps(settings, sort_keys=True) == before:
+    print("SessionStart hook already registered in %s." % settings_path)
+    raise SystemExit(0)
+
+directory = os.path.dirname(settings_path) or "."
+try:
+    os.makedirs(directory, exist_ok=True)
+except OSError as error:
+    refuse("could not be created (%s)" % error.strerror)
+
+mode = 0o600
+try:
+    mode = os.stat(settings_path).st_mode & 0o777
+except OSError:
+    pass
+
+# Same reason as the marker: a redirect onto the file itself truncates before it
+# writes, and a failed write would leave the machine's settings empty.
+handle, staged = tempfile.mkstemp(dir=directory, prefix=".settings.json.")
+try:
+    with os.fdopen(handle, "w", encoding="utf-8") as staged_file:
+        # ensure_ascii=False: the contract of this function is that it touches
+        # nothing but our own entry, and the default would rewrite every non-ASCII
+        # character in someone else's setting as an escape.
+        json.dump(settings, staged_file, indent=2, ensure_ascii=False)
+        staged_file.write("\n")
+    os.chmod(staged, mode)
+    os.replace(staged, settings_path)
+except OSError as error:
+    try:
+        os.unlink(staged)
+    except OSError:
+        pass
+    refuse("could not be written (%s)" % error.strerror)
+
+print("Registered the SessionStart hook in %s." % settings_path)
+PY
+}
+
 # The marker is how setup_startup.sh tells a machine this script provisioned from
 # one that never ran it — and so whether the warm tree beside it has known
 # provenance. Its contents are for a human reading a broken VM, not for parsing.
@@ -343,8 +591,23 @@ write_vm_setup_marker() {
   # "created=false, commit=none" would then be lying about the provenance of the
   # 601 MB every session on this machine inherits — the one fact it exists to
   # record. So carry the previous commit forward whenever the tree survives.
-  local tree_present=false tree_commit=none
+  local tree_present=false tree_commit=none hook_shim=none
   [ -d "$WARM_NODE_MODULES" ] && tree_present=true
+
+  # The shim file existing proves nothing — it is written before the registration
+  # that makes it a hook, and that registration refuses to touch a malformed
+  # settings.json. Reporting the path there would send whoever is debugging a VM
+  # with no hook looking anywhere but at the file that actually failed. So:
+  # installed reports the path, a refusal reports the refusal, and a run that did
+  # not try carries the previous marker's answer forward the way the warm tree does.
+  if [ "$STARTUP_HOOK_INSTALLED" = true ]; then
+    hook_shim="$STARTUP_HOOK_SHIM"
+  elif [ "$CREATE_STARTUP_SCRIPT" = true ]; then
+    hook_shim=registration_failed
+  else
+    hook_shim="$(previous_marker_value session_start_hook)"
+    hook_shim="${hook_shim:-none}"
+  fi
 
   if [ "$WARM_TREE_CREATED" = true ]; then
     tree_commit="${WARM_TREE_COMMIT:-unknown}"
@@ -371,6 +634,7 @@ warm_node_modules=$WARM_NODE_MODULES
 warm_node_modules_present=$tree_present
 warm_node_modules_commit=$tree_commit
 warm_node_modules_created_this_run=$WARM_TREE_CREATED
+session_start_hook=$hook_shim
 EOF
   then
     rm -f "$staged_marker"
@@ -391,6 +655,11 @@ if [ "$WARM_CACHE" = true ]; then
     WARM_TREE_CREATED=true
   fi
 fi
+
+# Before the marker, so the marker can record the outcome, and well before the
+# "everything below needs a checkout" exit: the cloud environment-build case has no
+# checkout, and is exactly the case this exists for.
+[ "$CREATE_STARTUP_SCRIPT" = true ] && install_session_start_hook
 
 write_vm_setup_marker
 

@@ -411,6 +411,9 @@ So the work is split in two:
 - `setup_startup.sh` — run by the agent at the start of a session. Verifies the
   hard dependencies the VM was supposed to provide, then tops up `uv sync` and
   `npm install` for the current branch. Warm, this measured **5.9 s**.
+  *(Superseded — that figure was taken with a hot page cache. On a snapshot-started
+  session the first run costs 22.9 s; see functional spec F9. This file is a dated
+  record of what was measured at the time, so the number is left as written.)*
 
 The `npm ci` / `npm install` split follows from the caching model: `npm ci` empties
 `node_modules` before refilling it, so it belongs in the from-scratch build, while

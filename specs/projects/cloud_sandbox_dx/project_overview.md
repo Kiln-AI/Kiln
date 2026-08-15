@@ -156,10 +156,26 @@ Settled during planning:
     `AGENTS.md` instructs agents to run it before their first build or test. It
     verifies the hard dependencies the VM was supposed to provide — failing fast
     with the repair command if the session landed on a bad VM — then tops up
-    `uv sync` and `npm install` for the current branch. Measured 5.9 s warm.
+    `uv sync` and `npm install` for the current branch. Measured **22.9 s** for the
+    first run of a snapshot-started session, and ~2 s for a re-run inside it. (An
+    earlier "5.9 s warm" here was a hot-page-cache figure and did not survive a
+    cold start.)
 
     It uses `npm install` where `setup_env.sh` uses `npm ci`: the working directory
     is on the snapshotted filesystem (measured — a container restart preserved
     `node_modules`, `.venv`, and a 1.4 GB uv cache), and `npm ci` would empty
     `node_modules` before refilling it, discarding exactly the cached state that
     makes the top-up cheap.
+11. **A `SessionStart` hook runs `setup_startup.sh`, installed by the VM setup
+    script itself.** Added late, once a live session showed that user-level hooks in
+    `~/.claude/settings.json` fire in cloud sandboxes and that `~/.claude` is on the
+    snapshotted filesystem. It closes the project's last circular dependency — the
+    instruction to run the script lived in a file the script writes — without a
+    tracked `.claude/settings.json` and without an operator-side prompt, which is
+    what the earlier framing assumed were the only options.
+
+    The registration **merges** into the user settings and was verified not to
+    displace the environment's own `SessionStart` hook, whose loss would have
+    broken commit signing. It costs the session's first ~23 s up front, and async
+    mode was rejected because the agent's context is assembled from files the hook
+    writes.

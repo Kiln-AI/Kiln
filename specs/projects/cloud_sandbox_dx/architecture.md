@@ -13,6 +13,7 @@ detail that no design decisions remain for the implementer.
 |---|---|---|
 | `.config/utils/setup_env.sh` | Rewrite: config block, flags, uv check, py3.13, parallel installs, agent config | F1–F5 |
 | `.config/utils/setup_env.sh` | `WARM_CACHE` / `--warm-cache`, the throwaway-clone warm-up, the provisioning marker | F9 |
+| `.config/utils/setup_env.sh` | `CREATE_STARTUP_SCRIPT` / `--create-startup-script`: the hook shim and its registration in the user-level `settings.json` | F10 |
 | `.config/utils/setup_startup.sh` | New: per-session verify + dependency top-up | F8 |
 | `.config/utils/setup_startup.sh` | Container gate, marker check, hardlink seed of `node_modules` | F8, F9 |
 | `pyproject.toml` | Add `required-version = ">=0.10"` to `[tool.uv]` | F2 |
@@ -238,6 +239,102 @@ with no marker to explain it.
 
 If `$VM_SETUP_DIR` cannot be created — a local machine where `/opt` is not writable
 — print one low-key note and continue. The marker only means something on a VM.
+
+The marker also carries `session_start_hook`, and it reports the *registration*,
+not the file: the shim is written before the merge that makes it a hook, and that
+merge refuses to touch a malformed `settings.json`, so keying the field off the
+file's existence would report a working hook on a VM that has none. It is the shim
+path when this run installed it, `registration_failed` when this run tried and
+could not, and otherwise the previous marker's value carried forward — the same
+state-not-history rule as the warm tree — defaulting to `none`.
+
+The `_v1` contract version does **not** move for it: `setup_startup.sh` only tests
+that the marker exists, and a VM without the hook is not a VM that is set up wrong.
+
+### 1.3c The `SessionStart` hook (F10)
+
+Two paths, beside the §1.3b block:
+
+```bash
+STARTUP_HOOK_SHIM="$VM_SETUP_DIR/kiln_session_start_hook.sh"
+CLAUDE_USER_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+```
+
+`CLAUDE_CONFIG_DIR` is what Claude Code itself honors for the user settings
+location, so respecting it is both correct and what makes every case below runnable
+against a temp directory. The shim's basename is repo-specific because it is the
+idempotency key.
+
+`install_session_start_hook` runs only with `CREATE_STARTUP_SCRIPT=true`, before
+`write_vm_setup_marker` so the marker can record it, and on both the checkout and
+no-checkout paths — the cloud environment-build case has no checkout and is the
+case this exists for. It writes the shim to a `$$`-suffixed staging name and
+renames it into place, for the same reason the marker is staged: a session starting
+mid-write would otherwise run half a shell script.
+
+The shim itself:
+
+```bash
+dir="${CLAUDE_PROJECT_DIR:-$PWD}"        # resolved to an absolute path
+# walk up until .config/utils/setup_startup.sh is found, stopping when a directory
+# is its own parent ("/" and "."), and exit 0 if it never is
+output="$(bash "$script" 2>&1 </dev/null)"
+```
+
+Three deliberate properties:
+
+- **It finds nothing and exits 0 in every repo but this one.** A user-level hook
+  fires for every session on the machine, and the environment is shared.
+  `CLAUDE_PROJECT_DIR` is set for `SessionStart` hooks and is the session's working
+  directory, *not* the git root (verified with a probe hook), so the walk upward
+  covers a session started in a subdirectory. `setup_startup.sh` re-discovers the
+  root itself, so an odd cwd is survivable regardless.
+- **Both streams are captured and printed on stdout, capped.** A `SessionStart`
+  hook's stdout becomes context for the session; its stderr does not. Since every
+  failure message in `setup_startup.sh` goes to stderr, not merging them would hide
+  exactly the output worth surfacing. Verified end to end: a token printed by the
+  hook came back from the model. Output over ~4 KB keeps its first 1500 and last
+  2000 bytes with a `[...trimmed...]` line between — the tail, because that is
+  where a failure's reason is. Same reasoning as the capped `cp -al` flood in
+  `setup_startup.sh`, with context window in place of terminal.
+- **It always exits 0**, appending one line naming the exit status when the script
+  failed. A hook must never be why a session fails to start.
+
+`register_session_start_hook` merges the entry with `python3`. Editing this file
+with `sed` is how settings get destroyed, and this one carries
+`enableAllProjectMcpServers` for the whole machine. The rules:
+
+| Input | Behavior |
+|---|---|
+| missing / empty file | start from `{}`, create the directory |
+| invalid JSON, non-object root, `hooks` or `hooks.SessionStart` of the wrong type | refuse, warn naming the file, **write nothing** |
+| our entry already present (matched by the shim basename) | drop it, re-append — one entry after any number of runs, including after `KILN_VM_SETUP_DIR` moves |
+| other `SessionStart` groups | untouched; ours is appended after them |
+| `python3` absent | one warning, skip |
+
+The written group carries `"matcher": "startup|resume|fork"` — a regex over the
+event's `source`, whose values are `startup, resume, clear, compact, fork`. `clear`
+and `compact` are left out: the re-run is a cheap no-op, but its output is spent
+from the context window, and long sessions compact repeatedly. Inside it,
+`{"type": "command", "command": <shim>, "timeout": 600, "statusMessage":
+"Preparing the Kiln checkout"}` — `timeout` in seconds, generous because a VM with
+no warm tree pays ~32 s and a branch that changed dependencies pays more.
+
+The file is written to a temp file in the same directory and `os.replace`d over the
+target, preserving the existing mode, so a failed write cannot truncate live
+settings, and dumped with `ensure_ascii=False` so non-ASCII in somebody else's
+setting is not rewritten as escapes.
+
+`CLAUDE_USER_SETTINGS` resolves `$HOME` at VM-build time. An image that builds as
+one user and runs sessions as another would register the hook in a home no session
+reads; such an image must set `CLAUDE_CONFIG_DIR`.
+
+**Why this does not displace the launcher's own `SessionStart` hook** — the one
+that pins the git committer identity, and whose loss would break commit
+verification — is settled in F10 by two independent checks: a live two-hook session
+in which both fired, and the merge rule in the implementation (sources merged
+`userSettings, projectSettings, localSettings, flagSettings, policySettings`, with
+arrays concatenated and de-duplicated rather than overridden).
 
 ### 1.4 Parallel dependency install
 
@@ -641,6 +738,9 @@ Keep it brief. Do not paste the research numbers in; link the spec folder.
 | Not containerized (`setup_startup.sh`) | print one line, exit 0 — a normal outcome |
 | Marker missing (`setup_startup.sh`) | prominent warning, skip the hardlink, continue |
 | `cp -al` of the warm tree fails | note with the `cp` error, continue — `npm install` fills `node_modules` instead |
+| Hook shim cannot be written, or `python3` is absent | warn to stderr, continue — the marker records `session_start_hook=registration_failed` |
+| `settings.json` is malformed | warn naming the file, leave it byte-identical, continue |
+| `setup_startup.sh` fails inside the hook | its output is printed into the session's context, hook still exits 0 |
 
 The script is not idempotency-sensitive: every step is safe to re-run.
 
@@ -677,6 +777,24 @@ network so each case is executed rather than reasoned about:
 11. `setup_env.sh --warm-cache` with no checkout: clone, sync, warm tree kept,
     clone deleted, marker records the commit. With a checkout: no clone, marker
     records `warm_node_modules_created_this_run=false`.
+
+For F10, with `CLAUDE_CONFIG_DIR` and `KILN_VM_SETUP_DIR` pointed at temp
+directories so the machine's real settings are never touched:
+
+12. Merge into a `settings.json` with existing keys: unrelated keys survive
+    verbatim, one `SessionStart` entry is added. A second run leaves exactly one.
+    No file at all: created, mode 600.
+13. Invalid JSON, and `hooks` of the wrong type: the file is byte-identical
+    afterwards, a warning names it, and `setup_env.sh` still exits 0.
+14. A pre-existing unrelated `SessionStart` hook survives, with ours appended after
+    it. A moved `KILN_VM_SETUP_DIR` replaces the stale entry rather than adding one.
+15. Without the flag: no shim, and `settings.json` is not read or written.
+16. Shim behavior: silent exit 0 outside a Kiln checkout; runs `setup_startup.sh`
+    from the root, from a subdirectory, and with `CLAUDE_PROJECT_DIR` unset; exits 0
+    and reports the status when the script fails; never consumes the hook's stdin.
+17. End to end with the real CLI: a session carrying our hook in `settings.json`
+    **and** a second `SessionStart` hook passed by `--settings` runs both, and the
+    model can quote a token the hook printed.
 
 For the `conftest.py` change specifically:
 

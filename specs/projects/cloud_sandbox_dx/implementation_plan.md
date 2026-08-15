@@ -24,11 +24,20 @@ status: complete
       hardlink seed and container gate in `setup_startup.sh`, and the doc updates
       those force. Added after a live sandbox showed cache warming fixed the Python
       half outright (14.67 s → 428 ms) and barely touched the Node half (24 s →
-      21 s), because npm copies out of its cache where uv hardlinks.
+      21 s), because npm copies out of its cache where uv hardlinks. End to end the
+      warm tree is worth **9.4 s** of a snapshot-cold session (32.3 s → 22.9 s);
+      the per-command figures above are hot-cache numbers.
+- [x] Phase 6: the `SessionStart` hook (F10) — `CREATE_STARTUP_SCRIPT` /
+      `--create-startup-script` in `setup_env.sh`, the hook shim in `$VM_SETUP_DIR`,
+      and its idempotent merge into the user-level `~/.claude/settings.json`, plus
+      the measurement corrections above. This closes F5's circular bootstrap, which
+      the plan previously carried as an operator-side prompt and an open decision —
+      both retired below.
 
 Phases 2 and 3 are independent and can be reviewed separately. Phase 4 depends on
 Phases 2 and 2b being settled, since it documents that interface. Phase 5 extends
-both scripts and re-touches the same docs, so it comes last.
+both scripts and re-touches the same docs, so it comes late. Phase 6 builds on
+Phase 5's `$VM_SETUP_DIR` and marker, so it comes last.
 
 ## Validation
 
@@ -45,14 +54,18 @@ rebuilt on Python 3.13 by hand during research.
 Outside the repo, in the Claude Code cloud environment configuration:
 
 - [ ] Setup script set to the **contents** of `.config/utils/setup_env.sh`, with
-      `UPGRADE_TOOLS=true`, `BEST_EFFORT=true` and `WARM_CACHE=true` in its
-      `CONFIGURATION` block (functional spec, "Environment-side changes"). Not a
-      wrapper that calls the repo copy — see research §12 for why that cannot work.
+      `UPGRADE_TOOLS=true`, `BEST_EFFORT=true`, `WARM_CACHE=true` and
+      `CREATE_STARTUP_SCRIPT=true` in its `CONFIGURATION` block (functional spec,
+      "Environment-side changes"). Not a wrapper that calls the repo copy — see
+      research §12 for why that cannot work.
 
       Re-paste after Phase 5: `WARM_CACHE` is what warms the VM's caches and leaves
       the `node_modules` tree that `setup_startup.sh` hardlinks, and until the paste
       happens the marker is missing, so every session prints the "this VM was not
       set up for Kiln" notice and skips the hardlink.
+
+      Re-paste again after Phase 6: `CREATE_STARTUP_SCRIPT` is what installs the
+      `SessionStart` hook, and it is the item below that it retires.
 - [ ] `UV_NATIVE_TLS` — **no action available; leave it alone.** The variable is
       deprecated and uv warns on every invocation, but Claude Code sets it in the
       image, so the user cannot remove it from the environment's variables.
@@ -74,36 +87,39 @@ Outside the repo, in the Claude Code cloud environment configuration:
       and is best left until either Claude Code stops setting it or uv drops it.
 - [ ] `enableAllProjectMcpServers: true` in user-level `~/.claude/settings.json`,
       so the project `.mcp.json` is trusted. Nothing repo-side can do this.
-- [ ] **Name `setup_startup.sh` in the operator-side prompt or environment
-      instructions.** This is the precondition success criterion 7 depends on, and
-      until it exists the primary audience — unattended cloud agents — still needs
-      the one piece of tribal knowledge this project set out to remove. The
-      bootstrap is circular: the repo's own instruction to run the script lives in
-      `AGENTS.md` → `CLAUDE.md`, and `CLAUDE.md` is created *by* the script. One
-      sentence somewhere the agent reads before the repo closes the loop for that
-      session and every later one on the same filesystem. See F5's known limitation.
+- [x] ~~**Name `setup_startup.sh` in the operator-side prompt or environment
+      instructions.**~~ **Retired by Phase 6 — no operator prompt is needed.**
+      `CREATE_STARTUP_SCRIPT=true` makes the setup script install a `SessionStart`
+      hook that runs `setup_startup.sh` before the agent's first turn, so the
+      circular bootstrap closes inside this project. Nothing to write by hand; the
+      only action is the re-paste in the first item.
 - [x] Add `UV_SYSTEM_CERTS` to the environment variables. Done — verified present
       in this session. Note this **added** the modern variable rather than
       replacing the deprecated one, since the image sets `UV_NATIVE_TLS` and the
       environment config cannot unset it; both are live. See the item above.
 
-## Open decision: a `SessionStart` hook
+## Settled: the `SessionStart` hook (was an open decision)
 
-- [ ] Decide whether to add a tracked `.claude/settings.json` with a `SessionStart`
-      hook that runs `setup_startup.sh`. This is the real fix for the circular
-      bootstrap above — Claude Code runs the hook before the agent reads anything,
-      so it does not depend on the agent having been told anything.
+Resolved in Phase 6, and the decision it was framed as never had to be taken. The
+question was whether to track a `.claude/settings.json` in the repo, which would
+have made part of a generated, disposable directory into source. It does not,
+because the hook does not have to come from the repo at all:
 
-      Not implemented here, and the earlier framing of it as *blocked* was wrong.
-      `.claude/` is gitignored wholesale, but that is two `!` negation lines away
-      (`!.claude/`, `!.claude/settings.json`) and nothing depends on the wholesale
-      ignore — `.agents/claude/setup.sh` only ever does `rm -rf .claude/skills`, so
-      a tracked sibling file under `.claude/` survives it untouched.
+- **User-level hooks fire in cloud sandboxes.** `~/.claude/settings.json` is read
+  in these sessions (it already carries `enableAllProjectMcpServers`), `~/.claude/`
+  is on the snapshotted filesystem, and the environment's own hooks —
+  `session-start-git-identity.sh` and the `Stop` git check, both registered in
+  `~/.claude/launcher-settings.json` — demonstrably run.
+- **So the VM setup script installs it**, with `--create-startup-script`. No repo
+  file, no tracked `.claude/`, no convention changed.
+- **Hooks merge across settings sources rather than override**, so the entry does
+  not displace the launcher's git-identity hook. Verified twice: a live session in
+  which a `settings.json` hook and a `--settings` hook both fired, and the merge
+  rule in Claude Code itself (arrays are concatenated and de-duplicated).
 
-      So the cost is small and known. What makes it a decision rather than a task is
-      that it changes a repo-wide convention: today everything under `.claude/` is
-      generated and disposable, and this would make part of it source. That is the
-      user's call, not one to make inside this project.
+The residual cost is honest and accepted: session start is ~23 s longer on a
+snapshot-cold VM, and `setup_startup.sh` now runs in sessions where no agent asked
+for it. See F10.
 
 ## Follow-up, was blocked on upstream
 
