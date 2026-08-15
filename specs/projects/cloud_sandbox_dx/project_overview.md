@@ -100,7 +100,10 @@ Settled during planning:
    **Rejected:** `--ignore`-ing the paid-heavy test files — saves only ~1.7 s and
    risks silently not running tests.
 
-   **P2, drop if the phase runs long:** set `LITELLM_LOCAL_MODEL_COST_MAP=True`
+   **Dropped — not implementing.** Enough wins are banked without it. Recorded
+   below for the record only:
+
+   ~~P2, drop if the phase runs long:~~ set `LITELLM_LOCAL_MODEL_COST_MAP=True`
    via `.env`, written by `setup_env.sh`. Worth ~0.6 s of a 3.9 s litellm import,
    which is ~1 % of a full-suite run and nothing at all on the inner loop once the
    conftest change lands — so the justification is hermeticity (no HTTP request to
