@@ -62,6 +62,17 @@ Settled during planning:
 2. **Enforce a uv floor:** add `required-version = ">=0.10"` to `[tool.uv]`, so a
    too-old uv fails loudly instead of silently rewriting `uv.lock`. (0.9.9 still
    fails to parse the relative `exclude-newer`; 0.10.0 is the first good version.)
+
+   **Upgrading uv lives in `setup_env.sh`, behind an opt-in `--upgrade-tools`
+   flag.** Not pinned to a version — always install latest. The command is
+   `uv tool install --force uv` (no pip; `uv self update` fails structurally here,
+   see research §8). Without the flag: detect a too-old uv and prompt
+   interactively with a 10 s `read -t` timeout, defaulting to yes on timeout;
+   with no TTY, warn only. The cloud env config passes `--upgrade-tools`.
+
+   No `cloud_env_setup.sh` — the shared cross-repo wrapper stays as dumb as
+   possible: check for `.config/utils/setup_env.sh` and call it with
+   `--upgrade-tools`. Nothing else.
 3. **Python 3.13 via a generated, gitignored `.python-version`**, written by both
    `setup_env.sh` and the cloud setup script. Preferred over a bare
    `uv sync --python 3.13` because uv consults the file on every later sync, so it
@@ -83,7 +94,22 @@ Settled during planning:
    still unverified. Verified working without a session restart: `CLAUDE.md` and
    `.claude/skills/`. If MCP turns out to need approval a cloud session cannot
    give, fall back to documenting the direct shell commands in `AGENTS.md`.
-6. **Test startup cost** — under investigation.
+6. **Test startup cost:** adopt the deferred-litellm change to the root
+   `conftest.py` (research §10). Single test file goes from ~7.4 s to ~0.95 s
+   (~7×), full suite 63.3 s → 58.9 s, identical pass/skip counts.
+   **Rejected:** `--ignore`-ing the paid-heavy test files — saves only ~1.7 s and
+   risks silently not running tests.
+
+   **P2, drop if the phase runs long:** set `LITELLM_LOCAL_MODEL_COST_MAP=True`
+   via `.env`, written by `setup_env.sh`. Worth ~0.6 s of a 3.9 s litellm import,
+   which is ~1 % of a full-suite run and nothing at all on the inner loop once the
+   conftest change lands — so the justification is hermeticity (no HTTP request to
+   GitHub at import time), not speed. Safe here because `load_dotenv()` is called
+   in exactly one place (`conftest.py:34`) and nothing in `libs/` or `app/` reads
+   `.env`, so it cannot reach production. Requires moving `load_dotenv()` to
+   conftest module scope — the current session-scoped fixture runs after
+   collection, by which time test modules have already imported litellm. That
+   needs `# ruff: noqa: E402`, for which `app/desktop/desktop.py:1` is precedent.
 7. **Out of scope:** the `debug_detector` TODO-in-spec-markdown issue and the
    mutation-sweep scripts leaving mutated source on disk. Unrelated to sandboxes.
 8. **Setup runs the two installs in parallel, in the foreground** (~37 s → ~26 s).
