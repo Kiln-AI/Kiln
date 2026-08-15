@@ -81,7 +81,7 @@ class EvalRunner:
     2) task_run_eval: evaluate a range of task run configs, generating new run output.
        Scoped by the `split` it is given, whose items may come from either store.
        Multi-turn synthetic EvalInputs are re-driven as a full conversation per run
-       config using the eval's multi_turn_drive_config; stored multi-turn TaskRun
+       config using the drive config stamped on each item; stored multi-turn TaskRun
        chains are judged on their stored trace instead.
     """
 
@@ -286,7 +286,20 @@ class EvalRunner:
         piles up duplicate tombstones.
         """
         if run.skipped_reason == SkippedReason.missing_drive_config.value:
-            return self.eval.multi_turn_drive_config is None
+            # Blocked until the ITEM carries a drive config, which only a
+            # replacement item can provide (items are immutable once minted).
+            # eval_config_eval has no split and never re-drives, so a stray
+            # record of this shape there stays a terminal verdict.
+            if self.split is None:
+                return True
+            for item in self.split.items:
+                if (
+                    isinstance(item, EvalInput)
+                    and item.id == run.eval_input_id
+                    and isinstance(item.data, MultiTurnSyntheticEvalInputData)
+                ):
+                    return item.data.drive_config is None
+            return True
         if run.skipped_reason == SkippedReason.type_not_available.value:
             return not v2_eval_type_available(eval_config)
         return True
@@ -295,36 +308,57 @@ class EvalRunner:
         self, check_run_configs: bool = True
     ) -> None:
         """Fail fast on config problems every multi-turn re-drive job would
-        hit: a drive config with an unknown model provider, or run configs
-        that aren't Kiln agent configs. Callers can invoke this before
-        starting a batch so the user gets one clear error up front instead
-        of one opaque error per job. The per-job checks stay as the backstop
-        for standalone runner use.
+        hit: no item carrying a synthetic-user drive config, a stamped
+        config with an unknown model provider, or run configs that aren't
+        Kiln agent configs. Callers can invoke this before starting a batch
+        so the user gets one clear error up front instead of one opaque
+        error per job. The per-job checks stay as the backstop for
+        standalone runner use.
 
-        `check_run_configs=False` limits validation to the drive config —
+        A partially stamped split is NOT an error here: the stamped items
+        can still run, and each unstamped item records a per-item skip
+        naming the fix. Only an entirely unstamped split fails up front,
+        because nothing could run and one clear error beats a page of
+        identical skips.
+
+        `check_run_configs=False` limits validation to the drive configs —
         for callers running a fleet the user didn't hand-pick, where one
         incompatible run config shouldn't block every other config's jobs.
 
         Raises ValueError listing every problem; no-op unless re-drive jobs
-        can actually occur (task_run_eval over an EvalInput source with a
-        multi_turn_drive_config — stored-TaskRun sources never re-drive).
+        can actually occur (task_run_eval over a split containing multi-turn
+        synthetic items — stored-TaskRun sources never re-drive, and a
+        single-turn split has nothing to drive).
         """
-        drive_config = self.eval.multi_turn_drive_config
-        if (
-            drive_config is None
-            or self.eval_run_type != "task_run_eval"
-            or self.split is None
-            or self.split.source != "eval_input"
-        ):
+        if self.eval_run_type != "task_run_eval" or self.split is None:
+            return
+        multi_turn_items = [
+            item.data
+            for item in self.split.items
+            if isinstance(item, EvalInput)
+            and isinstance(item.data, MultiTurnSyntheticEvalInputData)
+        ]
+        if not multi_turn_items:
             return
         problems: list[str] = []
-        try:
-            ModelProviderName(drive_config.model_provider)
-        except ValueError:
+        stamped_configs = [
+            data.drive_config
+            for data in multi_turn_items
+            if data.drive_config is not None
+        ]
+        if not stamped_configs:
             problems.append(
-                "the eval's synthetic-user drive config has unknown model "
-                f"provider '{drive_config.model_provider}'"
+                "none of this eval's multi-turn items has a synthetic user "
+                "configuration (create a new batch to mint items that carry one)"
             )
+        for provider in sorted({cfg.model_provider for cfg in stamped_configs}):
+            try:
+                ModelProviderName(provider)
+            except ValueError:
+                problems.append(
+                    "a multi-turn item's synthetic-user drive config has "
+                    f"unknown model provider '{provider}'"
+                )
         if check_run_configs:
             for run_config in self.run_configs or []:
                 try:
@@ -748,15 +782,15 @@ class EvalRunner:
     ) -> bool:
         """task_run_eval over a multi-turn synthetic input.
 
-        The run config under evaluation drives the agent while the eval's
-        multi_turn_drive_config plays the synthetic user, so each run config
-        gets its own fresh conversation — the property that makes run-config
-        comparison meaningful for multi-turn. The drive is transient (nothing
-        persisted); for full_trace evals the EvalRun record carries the
-        serialized conversation when scoring succeeds, otherwise the driven
-        conversation is not retained.
+        The run config under evaluation drives the agent while the drive
+        config stamped on the item plays the synthetic user, so each run
+        config gets its own fresh conversation — the property that makes
+        run-config comparison meaningful for multi-turn. The drive is
+        transient (nothing persisted); for full_trace evals the EvalRun
+        record carries the serialized conversation when scoring succeeds,
+        otherwise the driven conversation is not retained.
         """
-        drive_config = self.eval.multi_turn_drive_config
+        drive_config = data.drive_config
         if drive_config is None:
             async with self._save_context():
                 eval_run = EvalRun(
@@ -771,8 +805,8 @@ class EvalRunner:
                     input=seed,
                     output=None,
                     skipped_reason=SkippedReason.missing_drive_config.value,
-                    skipped_detail="Eval has no multi_turn_drive_config; "
-                    "re-driving a multi-turn synthetic input requires one",
+                    skipped_detail="This item has no synthetic user "
+                    "configuration. Create a new batch to replace it.",
                 )
                 eval_run.save_to_file()
             return True
@@ -812,8 +846,8 @@ class EvalRunner:
             su_provider = ModelProviderName(drive_config.model_provider)
         except ValueError as e:
             raise ValueError(
-                "Invalid synthetic-user model provider on the eval's "
-                f"multi_turn_drive_config: {drive_config.model_provider}"
+                "Invalid synthetic-user model provider on this item's "
+                f"drive config: {drive_config.model_provider}"
             ) from e
 
         drive_result = await drive_case_for_eval(

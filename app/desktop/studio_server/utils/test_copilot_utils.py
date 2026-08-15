@@ -37,6 +37,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
 )
 from fastapi import HTTPException
 from kiln_ai.datamodel import GradedClaim, Project, Task, TaskRun
+from kiln_ai.datamodel.eval import MultiTurnDriveConfig
 from kiln_ai.datamodel.datamodel_enums import (
     FeedbackSource,
     TaskOutputRatingType,
@@ -1144,11 +1145,16 @@ def _driven_case(idx: int, scenario_index: int | None = None) -> DrivenSynthetic
     )
 
 
+_DRIVE_CONFIG = MultiTurnDriveConfig(
+    model_name="claude_4_5_haiku", model_provider="openrouter", turns=5
+)
+
+
 class TestBuildMultiTurnEvalInputs:
     def test_mints_one_eval_input_per_case(self, multiturn_task):
         cases = [_driven_case(0, scenario_index=2), _driven_case(1)]
         eval_inputs = build_multi_turn_eval_inputs(
-            cases, "batch99", multiturn_task, "eval_myspec"
+            cases, "batch99", multiturn_task, "eval_myspec", _DRIVE_CONFIG
         )
 
         assert len(eval_inputs) == 2
@@ -1159,6 +1165,8 @@ class TestBuildMultiTurnEvalInputs:
         assert first.data.synthetic_user_info.persona == "persona 0"
         assert first.data.synthetic_user_info.goal == "goal 0"
         assert first.data.synthetic_user_info.behavior_guidance == "guidance 0"
+        # Every minted item is stamped with the batch's drive settings.
+        assert all(ei.data.drive_config == _DRIVE_CONFIG for ei in eval_inputs)
         # Slice tag + provenance: the synthetic-user batch the case was
         # driven in, and the batch-plan scenario it came from.
         assert first.tags == [
@@ -1177,7 +1185,7 @@ class TestBuildMultiTurnEvalInputs:
         )
         with pytest.raises(HTTPException) as exc:
             build_multi_turn_eval_inputs(
-                [_driven_case(0), bad], "b1", multiturn_task, "eval_x"
+                [_driven_case(0), bad], "b1", multiturn_task, "eval_x", _DRIVE_CONFIG
             )
         assert exc.value.status_code == 422
         assert "Case 1" in exc.value.detail
@@ -1187,7 +1195,11 @@ class TestBuildMultiTurnEvalInputs:
 class TestPersistEvalSlice:
     def test_persists_and_ledgers_each_item(self, multiturn_task):
         eval_inputs = build_multi_turn_eval_inputs(
-            [_driven_case(0), _driven_case(1)], "b1", multiturn_task, "eval_x"
+            [_driven_case(0), _driven_case(1)],
+            "b1",
+            multiturn_task,
+            "eval_x",
+            _DRIVE_CONFIG,
         )
         saved_out: list = []
         persist_eval_slice(eval_inputs, saved_out)

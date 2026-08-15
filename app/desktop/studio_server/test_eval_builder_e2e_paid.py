@@ -56,15 +56,14 @@ calls, so the harness starts at Step 4 with the spec text already "written":
                        chains ride in reviewed_chains; golden = rated
                        chains capped at 25%, everything else is train. The
                        EVAL slice is EvalInput items minted from the driven
-                       cases, with the drive settings persisted on the
-                       Eval.)
+                       cases, each stamped with the drive settings.)
   Step 7   RUN         GET .../evals/{id}/eval_config/{id}/run_comparison
                        GET .../evals/{id}/run_calibration          [SSE x2]
                        (What the user does AFTER the wizard: execute the
                        saved eval from the evals UI, via that UI's own
                        endpoints. run_comparison RE-DRIVES each EvalInput's
                        conversation per run config — the agent under test
-                       varies, the synthetic user is the eval's drive
+                       varies, the synthetic user is the item's drive
                        config — so two run configs produce two different
                        conversations per scenario and the scores attribute
                        per config. run_calibration validates the judge
@@ -736,18 +735,10 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         f"(eval_set={saved_eval_obj.eval_set_filter_id}, "
         f"test_split={test_split})",
     )
-    drive_config = saved_eval_obj.multi_turn_drive_config
-    _require(
-        drive_config is not None
-        and drive_config.model_name == SU_DRIVER["model_name"]
-        and drive_config.model_provider == SU_DRIVER["model_provider"]
-        and drive_config.turns == TURNS_PER_CASE,
-        f"saved eval's drive config is not the alignment drive settings: {drive_config}",
-    )
-
     # The eval slice on disk: one EvalInput per driven case, structured
-    # persona (no XML blob), seed = the case's opening message, provenance
-    # tags pointing back at the batch + plan scenario.
+    # persona (no XML blob), seed = the case's opening message, the stamped
+    # drive settings, provenance tags pointing back at the batch + plan
+    # scenario.
     eval_inputs = [ei for ei in temp_task.eval_inputs() if eval_tag in (ei.tags or [])]
     _require(
         len(eval_inputs) == num_driven,
@@ -763,6 +754,15 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         _require(
             bool(info.persona.strip()) and bool(info.goal.strip()),
             f"EvalInput {ei.id} persisted an empty persona/goal: {info}",
+        )
+        drive_config = ei.data.drive_config
+        _require(
+            drive_config is not None
+            and drive_config.model_name == SU_DRIVER["model_name"]
+            and drive_config.model_provider == SU_DRIVER["model_provider"]
+            and drive_config.turns == TURNS_PER_CASE,
+            f"EvalInput {ei.id} is not stamped with the alignment drive "
+            f"settings: {drive_config}",
         )
         _require(
             f"synthetic_user_batch:{batch_tag}" in ei.tags

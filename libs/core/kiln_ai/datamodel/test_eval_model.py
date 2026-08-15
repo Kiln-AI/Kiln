@@ -2779,52 +2779,108 @@ class TestMultiTurnDriveConfig:
             )
 
     def test_unknown_provider_string_accepted(self):
-        """model_provider is a plain string, not the enum — persisted evals
+        """model_provider is a plain string, not the enum — persisted items
         must load on builds that don't know the provider yet."""
         cfg = MultiTurnDriveConfig(
             model_name="m", model_provider="a_future_provider", turns=1
         )
         assert cfg.model_provider == "a_future_provider"
 
-    def test_persists_on_eval(self, mock_task, tmp_path):
+    def test_defaults_to_none_on_item(self):
+        """Items minted before drive settings were stamped load with None."""
+        data = MultiTurnSyntheticEvalInputData(
+            synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+        )
+        assert data.drive_config is None
+
+    def test_persists_on_eval_input(self, mock_task, tmp_path):
+        """The stamped drive config round-trips through disk on the item."""
         task_path = tmp_path / "task.kiln"
         mock_task.path = task_path
         mock_task.save_to_file()
 
-        eval = Eval(
-            name="drive config eval",
-            splits={"test": EvalInputSplit(filter_id="tag::eval_x")},
-            eval_configs_filter_id="tag::golden_x",
-            output_scores=[
-                EvalOutputScore(name="Overall", type=TaskOutputRatingType.pass_fail)
-            ],
-            multi_turn_drive_config=MultiTurnDriveConfig(
-                model_name="claude_4_5_haiku",
-                model_provider="openrouter",
-                turns=5,
-            ),
+        ei = EvalInput(
             parent=mock_task,
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="opening message"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+                drive_config=MultiTurnDriveConfig(
+                    model_name="claude_4_5_haiku",
+                    model_provider="openrouter",
+                    turns=5,
+                ),
+            ),
         )
-        eval.save_to_file()
+        ei.save_to_file()
 
         loaded_task = Task.load_from_file(str(task_path))
-        loaded = loaded_task.evals(readonly=True)[0]
-        assert loaded.multi_turn_drive_config is not None
-        assert loaded.multi_turn_drive_config.model_name == "claude_4_5_haiku"
-        assert loaded.multi_turn_drive_config.model_provider == "openrouter"
-        assert loaded.multi_turn_drive_config.turns == 5
+        data = loaded_task.eval_inputs(readonly=True)[0].data
+        assert isinstance(data, MultiTurnSyntheticEvalInputData)
+        assert data.drive_config is not None
+        assert data.drive_config.model_name == "claude_4_5_haiku"
+        assert data.drive_config.model_provider == "openrouter"
+        assert data.drive_config.turns == 5
 
-    def test_defaults_to_none_on_eval(self, mock_task):
-        eval = Eval(
-            name="no drive config",
-            eval_set_filter_id="tag::eval_x",
-            eval_configs_filter_id="tag::golden_x",
-            output_scores=[
-                EvalOutputScore(name="Overall", type=TaskOutputRatingType.pass_fail)
-            ],
+    def test_eval_has_no_drive_config_field(self):
+        """The item is the only home for drive settings. An eval-level copy
+        would reintroduce a second read path that can drift from the items."""
+        assert "multi_turn_drive_config" not in Eval.model_fields
+
+    def test_unset_drive_config_is_omitted_from_saved_bytes(self, mock_task, tmp_path):
+        """Items that predate the field must not gain a null key on resave."""
+        task_path = tmp_path / "task.kiln"
+        mock_task.path = task_path
+        mock_task.save_to_file()
+
+        ei = EvalInput(
             parent=mock_task,
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="hi"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
         )
-        assert eval.multi_turn_drive_config is None
+        ei.save_to_file()
+        assert ei.path is not None
+        on_disk = json.loads(ei.path.read_text())
+        assert "drive_config" not in on_disk["data"]
+
+    def test_stamped_drive_config_saved_bytes(self, mock_task, tmp_path):
+        """A stamped config is written as a nested object under data."""
+        task_path = tmp_path / "task.kiln"
+        mock_task.path = task_path
+        mock_task.save_to_file()
+
+        ei = EvalInput(
+            parent=mock_task,
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="hi"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+                drive_config=MultiTurnDriveConfig(
+                    model_name="m", model_provider="openrouter", turns=3
+                ),
+            ),
+        )
+        ei.save_to_file()
+        assert ei.path is not None
+        on_disk = json.loads(ei.path.read_text())
+        assert on_disk["data"]["drive_config"] == {
+            "model_name": "m",
+            "model_provider": "openrouter",
+            "turns": 3,
+        }
+
+    def test_explicit_null_drive_config_loads_as_absent(self):
+        """A hand-written null means the same as no key at all."""
+        data = MultiTurnSyntheticEvalInputData.model_validate(
+            {
+                "type": "multi_turn_synthetic",
+                "first_message": {"text": "hi"},
+                "synthetic_user_info": {"persona": "p", "goal": "g"},
+                "drive_config": None,
+            }
+        )
+        assert data.drive_config is None
+        assert "drive_config" not in data.model_dump()
 
 
 # ── Save-time Jinja validation (validate_v2_templates_and_expressions) ───

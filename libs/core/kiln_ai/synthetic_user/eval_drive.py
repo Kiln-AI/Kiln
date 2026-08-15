@@ -2,7 +2,7 @@
 
 The eval runner calls this to regenerate a conversation per run config: the
 agent under test comes from the run config being evaluated; the synthetic
-user (customer) comes from the eval's drive config, held constant so a
+user (customer) comes from the item's drive config, held constant so a
 comparison varies only the agent.
 
 Nothing is persisted — the drive is transient and the EvalRun record carries

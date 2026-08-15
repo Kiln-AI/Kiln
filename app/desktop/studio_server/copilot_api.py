@@ -213,8 +213,8 @@ class MultiTurnSaveInfo(BaseModel):
     )
     drive_config: MultiTurnDriveConfig = Field(
         description="The alignment-time drive settings (synthetic-user model "
-        "+ turn count), persisted on the Eval so eval-time re-drives match "
-        "the conversations the judge was calibrated on.",
+        "+ turn count), stamped on each minted EvalInput so eval-time "
+        "re-drives match the conversations the judge was calibrated on.",
     )
 
 
@@ -1252,6 +1252,7 @@ def connect_copilot_api(app: FastAPI):
                 request.multi_turn.batch_tag,
                 task,
                 eval_tag,
+                request.multi_turn.drive_config,
             )
         if request.single_turn is not None:
             if task.input_json_schema is not None:
@@ -1267,8 +1268,8 @@ def connect_copilot_api(app: FastAPI):
 
         # 1. Create the Eval. Golden and train are TaskRun slices on both
         # paths; the eval slice is EvalInput-tagged on both, re-run per run
-        # config at eval time (multi-turn re-drives it, using the drive config
-        # persisted on the Eval).
+        # config at eval time (multi-turn re-drives it, using the drive
+        # config stamped on each item).
         eval = Eval(
             parent=task,
             name=request.name,
@@ -1287,9 +1288,6 @@ def connect_copilot_api(app: FastAPI):
             eval_configs_filter_id=eval_configs_filter_id,
             template_properties=None,
             evaluation_data_type=evaluation_data_type,
-            multi_turn_drive_config=request.multi_turn.drive_config
-            if request.multi_turn is not None
-            else None,
         )
         if request.multi_turn is not None:
             # set_split (not dict assignment) so the TaskRun-backed train split

@@ -509,15 +509,11 @@ def test_golden_item_scored_as_test_item_still_calibrates(
 
     mock_eval.eval_set_filter_id = "tag::nonexistent"
     mock_eval.eval_configs_filter_id = "tag::tag1"
-    # A drive config makes missing_drive_config tombstones recoverable, so the
-    # tombstone below would ride a job if the lane filter were missing.
-    mock_eval.multi_turn_drive_config = MultiTurnDriveConfig(
-        model_name="gpt_4o", model_provider="openrouter", turns=2
-    )
     mock_eval.save_to_file()
 
-    # Test-lane records on the same golden item: a real score and a recoverable
-    # tombstone. Neither is a calibration record.
+    # Test-lane records on the same golden item: a real score and a tombstone
+    # (terminal in the calibration runner, which has no split to recover
+    # against). Neither is a calibration record.
     EvalRun(
         parent=mock_eval_config,
         dataset_id=golden_run.id,
@@ -3022,8 +3018,8 @@ class TestV1LegacyRunnerCoexistence:
 
 @pytest.fixture
 def mock_v2_redrive_eval(mock_task):
-    """EvalInput-sourced full_trace eval with a drive config — the shape the
-    builder saves for multi-turn."""
+    """EvalInput-sourced full_trace eval — the shape the builder saves for
+    multi-turn. Drive settings live on the items, not the eval."""
     eval = Eval(
         id="v2_redrive_eval",
         name="v2 redrive eval",
@@ -3031,11 +3027,6 @@ def mock_v2_redrive_eval(mock_task):
         splits={"test": EvalInputSplit(filter_id="all")},
         eval_configs_filter_id="all",
         evaluation_data_type=EvalDataType.full_trace,
-        multi_turn_drive_config=MultiTurnDriveConfig(
-            model_name="claude_4_5_haiku",
-            model_provider="openrouter",
-            turns=3,
-        ),
         output_scores=[
             EvalOutputScore(
                 name="Accuracy",
@@ -3063,6 +3054,8 @@ def mock_v2_redrive_config(mock_v2_redrive_eval):
 
 @pytest.fixture
 def multi_turn_eval_input(mock_task):
+    """A stamped multi-turn item: persona, seed, and drive config together
+    make it the self-contained recipe the runner re-drives from."""
     ei = EvalInput(
         id="ei_redrive",
         data=MultiTurnSyntheticEvalInputData(
@@ -3071,6 +3064,11 @@ def multi_turn_eval_input(mock_task):
                 persona="frustrated customer",
                 goal="get a refund",
                 behavior_guidance="be polite then escalate",
+            ),
+            drive_config=MultiTurnDriveConfig(
+                model_name="claude_4_5_haiku",
+                model_provider="openrouter",
+                turns=3,
             ),
         ),
         parent=mock_task,
@@ -3135,7 +3133,7 @@ class TestRunV2MultiTurnRedrive:
             result = await runner.run_job(job)
 
         assert result is True
-        # The drive got the seed, the typed persona, the eval's drive config
+        # The drive got the seed, the typed persona, the item's drive config
         # as the customer, and the job's run config as the agent.
         drive_kwargs = mock_drive.await_args.kwargs
         assert drive_kwargs["seed_prompt"] == "opening message"
@@ -3169,54 +3167,39 @@ class TestRunV2MultiTurnRedrive:
         assert json.loads(saved.task_run_trace) == MULTI_TURN_TRACE
 
     @pytest.mark.asyncio
-    async def test_missing_drive_config_skips(
+    async def test_unstamped_item_skips(
         self,
         mock_task,
         mock_run_config,
-        multi_turn_eval_input,
+        mock_v2_redrive_config,
     ):
-        """An eval without multi_turn_drive_config has no customer to
-        re-drive with — clean typed skip, no drive attempted."""
-        eval = Eval(
-            id="v2_no_drive_eval",
-            name="no drive config",
-            description="missing drive config",
-            splits={"test": EvalInputSplit(filter_id="all")},
-            eval_configs_filter_id="all",
-            evaluation_data_type=EvalDataType.full_trace,
-            output_scores=[
-                EvalOutputScore(
-                    name="Accuracy",
-                    instruction="Check",
-                    type=TaskOutputRatingType.pass_fail,
-                ),
-            ],
+        """An item without a stamped drive config has no customer to re-drive
+        with — clean typed skip naming the fix, no drive attempted."""
+        ei = EvalInput(
+            id="ei_unstamped",
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="opening message"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
             parent=mock_task,
         )
-        eval.save_to_file()
-        config = EvalConfig(
-            name="no drive cfg",
-            config_type=EvalConfigType.v2,
-            properties=ExactMatchProperties(expected_value="x"),
-            parent=eval,
-        )
-        config.save_to_file()
+        ei.save_to_file()
         runner = EvalRunner(
-            eval_configs=[config],
+            eval_configs=[mock_v2_redrive_config],
             run_configs=[mock_run_config],
             eval_run_type="task_run_eval",
-            split=_test_split([config]),
+            split=_test_split([mock_v2_redrive_config]),
         )
         job = EvalJob(
-            item=multi_turn_eval_input,
-            eval_config=config,
+            item=ei,
+            eval_config=mock_v2_redrive_config,
             type="task_run_eval",
             task_run_config=mock_run_config,
         )
         with (
             patch(
                 "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
-                return_value=StubV2Eval(config),
+                return_value=StubV2Eval(mock_v2_redrive_config),
             ),
             patch(
                 "kiln_ai.adapters.eval.eval_runner.drive_case_for_eval",
@@ -3227,13 +3210,17 @@ class TestRunV2MultiTurnRedrive:
 
         assert result is True
         mock_drive.assert_not_awaited()
-        runs = config.runs(readonly=True)
+        runs = mock_v2_redrive_config.runs(readonly=True)
         assert len(runs) == 1
         saved = runs[0]
         assert saved.skipped_reason == SkippedReason.missing_drive_config.value
-        assert saved.eval_input_id == "ei_redrive"
+        assert saved.eval_input_id == "ei_unstamped"
         assert saved.scores == {}
         assert saved.output is None
+        assert saved.skipped_detail == (
+            "This item has no synthetic user configuration. "
+            "Create a new batch to replace it."
+        )
 
     @pytest.mark.asyncio
     async def test_missing_first_message_skips(
@@ -3247,6 +3234,11 @@ class TestRunV2MultiTurnRedrive:
             id="ei_no_seed",
             data=MultiTurnSyntheticEvalInputData(
                 synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+                drive_config=MultiTurnDriveConfig(
+                    model_name="claude_4_5_haiku",
+                    model_provider="openrouter",
+                    turns=3,
+                ),
             ),
             parent=mock_task,
         )
@@ -3403,16 +3395,20 @@ class TestRecoverableSkipRecollection:
     deduping once their blocking condition is lifted; while still blocked
     they keep deduping so re-triggers never write duplicate tombstones."""
 
-    def test_missing_drive_config_recollected_once_config_set(
-        self, mock_v2_redrive_config, mock_run_config, mock_eval_inputs
+    def test_missing_drive_config_recollected_once_item_stamped(
+        self,
+        mock_v2_redrive_config,
+        mock_run_config,
+        mock_eval_inputs,
+        multi_turn_eval_input,
     ):
-        # Tombstone written before the eval had a drive config; the redrive
-        # eval fixture HAS one now, so the item must be collected again.
+        # Tombstone written while the item carried no drive config; the item
+        # is stamped now, so it must be collected again.
         _skip_run(
             mock_v2_redrive_config,
             mock_run_config.id,
             SkippedReason.missing_drive_config,
-            eval_input_id="ei_1",
+            eval_input_id="ei_redrive",
         )
         runner = EvalRunner(
             eval_configs=[mock_v2_redrive_config],
@@ -3421,18 +3417,26 @@ class TestRecoverableSkipRecollection:
             split=_test_split([mock_v2_redrive_config]),
         )
         collected = {j.item.id for j in runner.collect_tasks()}
-        assert collected == {"ei_1", "ei_2"}
+        assert collected == {"ei_1", "ei_2", "ei_redrive"}
 
-    def test_missing_drive_config_still_deduped_while_condition_holds(
-        self, mock_v2_eval_config, mock_run_config, mock_eval_inputs
+    def test_missing_drive_config_still_deduped_while_item_unstamped(
+        self, mock_task, mock_v2_eval_config, mock_run_config, mock_eval_inputs
     ):
-        # mock_v2_eval has NO drive config: the condition still holds, so the
-        # tombstone keeps deduping (no duplicate skip records per trigger).
+        # The item is still unstamped: the condition holds, so the tombstone
+        # keeps deduping (no duplicate skip records per trigger).
+        EvalInput(
+            id="ei_unstamped_dedupe",
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="hi"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+            parent=mock_task,
+        ).save_to_file()
         _skip_run(
             mock_v2_eval_config,
             mock_run_config.id,
             SkippedReason.missing_drive_config,
-            eval_input_id="ei_1",
+            eval_input_id="ei_unstamped_dedupe",
         )
         runner = EvalRunner(
             eval_configs=[mock_v2_eval_config],
@@ -3441,7 +3445,7 @@ class TestRecoverableSkipRecollection:
             split=_test_split([mock_v2_eval_config]),
         )
         collected = {j.item.id for j in runner.collect_tasks()}
-        assert collected == {"ei_2"}
+        assert collected == {"ei_1", "ei_2"}
 
     @pytest.mark.parametrize("available_now", [True, False])
     def test_type_not_available_follows_adapter_availability(
@@ -3467,15 +3471,19 @@ class TestRecoverableSkipRecollection:
         assert collected == ({"ei_1", "ei_2"} if available_now else {"ei_2"})
 
     def test_terminal_skips_still_dedupe(
-        self, mock_v2_redrive_config, mock_run_config, mock_eval_inputs
+        self,
+        mock_v2_redrive_config,
+        mock_run_config,
+        mock_eval_inputs,
+        multi_turn_eval_input,
     ):
-        # Non-recoverable skips are verdicts about the input itself — a lifted
-        # drive config must not resurrect them.
+        # Non-recoverable skips are verdicts about the input itself — a
+        # stamped drive config on the item must not resurrect them.
         _skip_run(
             mock_v2_redrive_config,
             mock_run_config.id,
             SkippedReason.incompatible_input_shape,
-            eval_input_id="ei_1",
+            eval_input_id="ei_redrive",
         )
         runner = EvalRunner(
             eval_configs=[mock_v2_redrive_config],
@@ -3484,7 +3492,7 @@ class TestRecoverableSkipRecollection:
             split=_test_split([mock_v2_redrive_config]),
         )
         collected = {j.item.id for j in runner.collect_tasks()}
-        assert collected == {"ei_2"}
+        assert collected == {"ei_1", "ei_2"}
 
     def test_task_run_lane_recollects_recoverable_skips(
         self, mock_task, mock_v2_task_run_eval_config, mock_run_config, data_source
@@ -3702,16 +3710,34 @@ class TestDriveUsage:
 
 
 class TestValidateMultiTurnDriveReadiness:
-    def test_no_drive_config_is_noop(self, mock_v2_eval_config, mock_run_config):
+    def test_single_turn_split_is_noop(
+        self, mock_task, mock_v2_eval_config, mock_eval_inputs
+    ):
+        """A split with only single-turn items never re-drives, so it must
+        not acquire agent-run-config checks — an MCP run config that would
+        fail the multi-turn check is fine here."""
+        mcp_rc = TaskRunConfig(
+            name="mcp single turn config",
+            description="not an agent",
+            run_config_properties=McpRunConfigProperties(
+                tool_reference=MCPToolReference(
+                    tool_id="mcp::local::server1::tool1",
+                ),
+            ),
+            parent=mock_task,
+        )
+        mcp_rc.save_to_file()
         runner = EvalRunner(
             eval_configs=[mock_v2_eval_config],
-            run_configs=[mock_run_config],
+            run_configs=[mcp_rc],
             eval_run_type="task_run_eval",
             split=_test_split([mock_v2_eval_config]),
         )
         runner.validate_multi_turn_drive_readiness()
 
-    def test_valid_setup_passes(self, mock_v2_redrive_config, mock_run_config):
+    def test_valid_setup_passes(
+        self, mock_v2_redrive_config, mock_run_config, multi_turn_eval_input
+    ):
         runner = EvalRunner(
             eval_configs=[mock_v2_redrive_config],
             run_configs=[mock_run_config],
@@ -3720,7 +3746,9 @@ class TestValidateMultiTurnDriveReadiness:
         )
         runner.validate_multi_turn_drive_readiness()
 
-    def test_non_agent_run_config_rejected(self, mock_task, mock_v2_redrive_config):
+    def test_non_agent_run_config_rejected(
+        self, mock_task, mock_v2_redrive_config, multi_turn_eval_input
+    ):
         mcp_rc = TaskRunConfig(
             name="mcp config",
             description="not an agent",
@@ -3741,44 +3769,76 @@ class TestValidateMultiTurnDriveReadiness:
         with pytest.raises(ValueError, match="mcp config"):
             runner.validate_multi_turn_drive_readiness()
 
-    def test_bad_su_provider_rejected(self, mock_task, mock_run_config):
-        eval = Eval(
-            id="bad_provider_eval",
-            name="bad provider eval",
-            description="drive config with unknown provider",
-            splits={"test": EvalInputSplit(filter_id="all")},
-            eval_configs_filter_id="all",
-            evaluation_data_type=EvalDataType.full_trace,
-            multi_turn_drive_config=MultiTurnDriveConfig(
-                model_name="claude_4_5_haiku",
-                model_provider="not_a_real_provider",
-                turns=3,
-            ),
-            output_scores=[
-                EvalOutputScore(
-                    name="Accuracy",
-                    instruction="Check",
-                    type=TaskOutputRatingType.pass_fail,
+    def test_bad_su_provider_rejected(
+        self, mock_task, mock_run_config, mock_v2_redrive_config
+    ):
+        """A stamped item whose provider this build doesn't know fails every
+        re-drive of that item — surfaced up front."""
+        EvalInput(
+            id="ei_bad_provider",
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="hi"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+                drive_config=MultiTurnDriveConfig(
+                    model_name="claude_4_5_haiku",
+                    model_provider="not_a_real_provider",
+                    turns=3,
                 ),
-            ],
+            ),
             parent=mock_task,
-        )
-        eval.save_to_file()
-        config = EvalConfig(
-            name="bad provider cfg",
-            config_type=EvalConfigType.v2,
-            properties=ExactMatchProperties(expected_value="x"),
-            parent=eval,
-        )
-        config.save_to_file()
+        ).save_to_file()
         runner = EvalRunner(
-            eval_configs=[config],
+            eval_configs=[mock_v2_redrive_config],
             run_configs=[mock_run_config],
             eval_run_type="task_run_eval",
-            split=_test_split([config]),
+            split=_test_split([mock_v2_redrive_config]),
         )
         with pytest.raises(ValueError, match="not_a_real_provider"):
             runner.validate_multi_turn_drive_readiness()
+
+    def test_all_items_unstamped_fails_up_front(
+        self, mock_task, mock_run_config, mock_v2_redrive_config
+    ):
+        """Nothing could run, so the user gets one clear error instead of a
+        page of identical per-item skips."""
+        for item_id in ("ei_bare_1", "ei_bare_2"):
+            EvalInput(
+                id=item_id,
+                data=MultiTurnSyntheticEvalInputData(
+                    first_message=UserMessage(text="hi"),
+                    synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+                ),
+                parent=mock_task,
+            ).save_to_file()
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+            split=_test_split([mock_v2_redrive_config]),
+        )
+        with pytest.raises(ValueError, match="synthetic user configuration"):
+            runner.validate_multi_turn_drive_readiness()
+
+    def test_partially_stamped_split_passes(
+        self, mock_task, mock_run_config, mock_v2_redrive_config, multi_turn_eval_input
+    ):
+        """One stamped item is enough to run; the unstamped one records its
+        own per-item skip at execution instead of blocking the batch."""
+        EvalInput(
+            id="ei_bare",
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="hi"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+            parent=mock_task,
+        ).save_to_file()
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[mock_run_config],
+            eval_run_type="task_run_eval",
+            split=_test_split([mock_v2_redrive_config]),
+        )
+        runner.validate_multi_turn_drive_readiness()
 
 
 class TestSupersededTombstoneDeletion:
@@ -3830,15 +3890,23 @@ class TestSupersededTombstoneDeletion:
         assert runs[0].eval_input_id == "ei_redrive"
 
     def test_still_blocked_tombstone_not_marked_superseded(
-        self, mock_v2_eval_config, mock_run_config, mock_eval_inputs
+        self, mock_task, mock_v2_eval_config, mock_run_config, mock_eval_inputs
     ):
-        """While the condition holds, the tombstone dedupes and no job
-        carries it for deletion."""
+        """While the item stays unstamped, the tombstone dedupes: the item is
+        not re-collected and no job carries the tombstone for deletion."""
+        EvalInput(
+            id="ei_still_unstamped",
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="hi"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+            parent=mock_task,
+        ).save_to_file()
         _skip_run(
             mock_v2_eval_config,
             mock_run_config.id,
             SkippedReason.missing_drive_config,
-            eval_input_id="ei_1",
+            eval_input_id="ei_still_unstamped",
         )
         runner = EvalRunner(
             eval_configs=[mock_v2_eval_config],
@@ -3847,28 +3915,32 @@ class TestSupersededTombstoneDeletion:
             split=_test_split([mock_v2_eval_config]),
         )
         jobs = runner.collect_tasks()
+        assert not any(j.item.id == "ei_still_unstamped" for j in jobs)
         assert all(j.superseded_tombstones == [] for j in jobs)
 
 
 class TestValidateReadinessSourceGating:
-    def test_task_run_source_with_drive_config_is_noop(
-        self, mock_task, mock_run_config
+    def test_task_run_source_is_noop(
+        self, mock_task, multi_turn_eval_input, data_source
     ):
-        """A drive config on a stored-TaskRun-sourced eval never drives
-        (chain leaves judge their stored trace), so validation must not
-        block the run — even with problems it would otherwise flag."""
+        """A stored-TaskRun-sourced split never re-drives (chain leaves judge
+        their stored trace), so validation must not block the run — even with
+        run-config problems it would otherwise flag, and even while stamped
+        multi-turn items exist elsewhere under the task."""
+        TaskRun(
+            parent=mock_task,
+            input="stored chain",
+            input_source=data_source,
+            output=TaskOutput(output="out"),
+            tags=["stored_tag"],
+        ).save_to_file()
         eval = Eval(
-            id="tr_drive_eval",
-            name="task run eval with drive cfg",
-            description="drive config is vestigial here",
-            eval_set_filter_id="all",
+            id="tr_source_eval",
+            name="task run sourced eval",
+            description="stored-trace eval",
+            eval_set_filter_id="tag::stored_tag",
             eval_configs_filter_id="all",
             evaluation_data_type=EvalDataType.full_trace,
-            multi_turn_drive_config=MultiTurnDriveConfig(
-                model_name="claude_4_5_haiku",
-                model_provider="not_a_real_provider",
-                turns=3,
-            ),
             output_scores=[
                 EvalOutputScore(
                     name="Accuracy",
@@ -3880,22 +3952,33 @@ class TestValidateReadinessSourceGating:
         )
         eval.save_to_file()
         config = EvalConfig(
-            name="tr drive cfg",
+            name="tr source cfg",
             config_type=EvalConfigType.v2,
             properties=ExactMatchProperties(expected_value="x"),
             parent=eval,
         )
         config.save_to_file()
+        mcp_rc = TaskRunConfig(
+            name="mcp stored config",
+            description="not an agent",
+            run_config_properties=McpRunConfigProperties(
+                tool_reference=MCPToolReference(
+                    tool_id="mcp::local::server1::tool1",
+                ),
+            ),
+            parent=mock_task,
+        )
+        mcp_rc.save_to_file()
         runner = EvalRunner(
             eval_configs=[config],
-            run_configs=[mock_run_config],
+            run_configs=[mcp_rc],
             eval_run_type="task_run_eval",
             split=_test_split([config]),
         )
         runner.validate_multi_turn_drive_readiness()
 
     def test_check_run_configs_false_skips_run_config_problems(
-        self, mock_task, mock_v2_redrive_config
+        self, mock_task, mock_v2_redrive_config, multi_turn_eval_input
     ):
         """With an un-hand-picked fleet (all_run_configs), one incompatible
         run config must not block the others — only drive-config problems
@@ -4169,8 +4252,8 @@ class TestCollectTasksOverArbitrarySplits:
         mock_v2_ei_tr_eval_config,
         mock_run_config,
     ):
-        """A recoverable tombstone recorded against a TaskRun must not ride (and
-        later be deleted by) a job for an EvalInput that shares the bare id."""
+        """A tombstone recorded against a TaskRun must not attach to (or
+        dedupe) a job for an EvalInput that shares the bare id."""
         shared_id = "collide_2"
         TaskRun(
             id=shared_id,
@@ -4192,11 +4275,7 @@ class TestCollectTasksOverArbitrarySplits:
             parent=mock_task,
         ).save_to_file()
 
-        # Recoverable tombstone (drive config present) keyed to the TASK RUN store.
-        mock_v2_eval_input_task_run_eval.multi_turn_drive_config = MultiTurnDriveConfig(
-            model_name="gpt_4o", model_provider="openrouter", turns=2
-        )
-        mock_v2_eval_input_task_run_eval.save_to_file()
+        # Tombstone keyed to the TASK RUN store (dataset_id, not eval_input_id).
         tombstone = EvalRun(
             parent=mock_v2_ei_tr_eval_config,
             dataset_id=shared_id,

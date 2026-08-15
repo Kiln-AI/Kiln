@@ -1040,7 +1040,7 @@ class TestCreateSpecWithCopilotMultiTurn:
 
         # Eval: full_trace data type + judge config attached. The eval slice
         # is EvalInput-typed (re-driven per run config at eval time) with the
-        # drive settings persisted on the Eval; golden and train stay TaskRun.
+        # drive settings stamped on each item; golden and train stay TaskRun.
         evals = task.evals()
         assert len(evals) == 1
         eval_obj = evals[0]
@@ -1053,10 +1053,6 @@ class TestCreateSpecWithCopilotMultiTurn:
         )
         assert eval_obj.train_set_filter_id == "tag::train_multi_turn_spec"
         assert eval_obj.current_config_id is not None
-        assert eval_obj.multi_turn_drive_config is not None
-        assert eval_obj.multi_turn_drive_config.model_name == "claude_4_5_haiku"
-        assert eval_obj.multi_turn_drive_config.model_provider == "openrouter"
-        assert eval_obj.multi_turn_drive_config.turns == 5
 
         # The saved judge is a V2 config with a multi-turn (trace) template.
         configs = eval_obj.configs()
@@ -1066,7 +1062,8 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert "{{ trace | format_trace }}" in configs[0].properties.prompt_template
 
         # The eval slice: one EvalInput per driven case, carrying the seed,
-        # the typed persona, and provenance tags (batch + scenario).
+        # the typed persona, the stamped drive config, and provenance tags
+        # (batch + scenario).
         eval_inputs = task.eval_inputs()
         assert len(eval_inputs) == 8
         inputs_by_seed = {ei.data.first_message.text: ei for ei in eval_inputs}
@@ -1079,6 +1076,12 @@ class TestCreateSpecWithCopilotMultiTurn:
             f"synthetic_user_batch:{self.BATCH_TAG}",
             "scenario:0",
         }
+        # Every item in the slice is stamped with the batch's drive settings.
+        for ei in eval_inputs:
+            assert ei.data.drive_config is not None
+            assert ei.data.drive_config.model_name == "claude_4_5_haiku"
+            assert ei.data.drive_config.model_provider == "openrouter"
+            assert ei.data.drive_config.turns == 5
 
         # Chains split into DISJOINT slices: each leaf carries exactly one of
         # golden/train (on top of its synthetic_user_* tags) — the eval slice
@@ -1169,15 +1172,21 @@ class TestCreateSpecWithCopilotMultiTurn:
         # clients and the project zip still read it — NOT in `splits`.
         assert on_disk["train_set_filter_id"] == "tag::train_multi_turn_spec"
         assert on_disk["eval_set_filter_id"] is None
-        # Golden slice and drive config ride along unchanged.
+        # Golden slice rides along unchanged.
         assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_multi_turn_spec"
-        assert on_disk["multi_turn_drive_config"] == {
+        # The retired pre-splits key never reaches disk, and drive settings
+        # live on the eval items, not the eval.
+        assert "eval_input_filter_id" not in first_bytes
+        assert "multi_turn_drive_config" not in first_bytes
+
+        # The stamped drive config is written per item, nested under data.
+        eval_input_path = task.eval_inputs()[0].path
+        on_disk_item = json.loads(eval_input_path.read_text())
+        assert on_disk_item["data"]["drive_config"] == {
             "model_name": "claude_4_5_haiku",
             "model_provider": "openrouter",
             "turns": 5,
         }
-        # The retired pre-splits key never reaches disk.
-        assert "eval_input_filter_id" not in first_bytes
 
         # Reload → save again is byte-stable: the split homing survives a
         # round trip rather than living only in the freshly-built instance.
@@ -1705,7 +1714,7 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
 
         # Eval: final_answer data type (the pipeline judged final answers),
         # EvalInput-backed test split, TaskRun-backed train in the legacy
-        # field, no multi-turn drive config.
+        # field.
         evals = task.evals()
         assert len(evals) == 1
         eval_obj = evals[0]
@@ -1716,7 +1725,6 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         )
         assert eval_obj.train_set_filter_id == "tag::train_single_turn_spec"
         assert eval_obj.current_config_id is not None
-        assert eval_obj.multi_turn_drive_config is None
 
         # The saved judge is a V2 config with the single-turn (I/O) template,
         # never the trace one.
@@ -1807,7 +1815,6 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         assert on_disk["train_set_filter_id"] == "tag::train_single_turn_spec"
         assert on_disk["eval_set_filter_id"] is None
         assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_single_turn_spec"
-        assert on_disk.get("multi_turn_drive_config") is None
         assert "eval_input_filter_id" not in first_bytes
 
     def test_404_when_batch_tag_matches_nothing(

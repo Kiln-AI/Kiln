@@ -905,6 +905,11 @@
   // disk). Save mints one EvalInput per driven case — the eval slice the
   // runner re-drives per run config.
   let driven_cases: SyntheticUserCaseWire[] = []
+  // The synthetic-user model driven_cases actually ran with, captured at
+  // batch commit. Save stamps THIS onto the minted items — the live
+  // su_driver picker can change after the drive (Advanced dialog), and the
+  // stamp must describe the conversations that exist, not a later pick.
+  let driven_su_driver: ModelChoice | null = null
   // batch_tag from each arm's pipeline batch_started event — passed to the
   // save endpoint so the backend can tag the matching runs for the eval
   // dataset.
@@ -1040,35 +1045,23 @@
   // user committed) are never overwritten — only null lanes are filled.
   let lanes_prepopulated = false
 
-  // Lanes from the task's LAST SAVED eval — the replay-what-worked tier of
-  // pre-population. SU rides the eval itself (multi_turn_drive_config);
-  // the judge lives on the eval's current config (v2 configs keep the
-  // model in typed properties, legacy at the root). Best-effort: any miss
-  // returns null lanes and pre-population falls through to suggestions.
-  async function last_saved_eval_lanes(): Promise<{
-    su_driver: ModelChoice | null
-    judge_model: ModelChoice | null
-  }> {
-    const none = { su_driver: null, judge_model: null }
+  // Judge lane from the task's LAST SAVED eval — the replay-what-worked
+  // tier of pre-population. The judge lives on the eval's current config
+  // (v2 configs keep the model in typed properties, legacy at the root).
+  // The synthetic-user lane has no such tier: drive settings live on eval
+  // items, and each wizard run picks its own (registry suggestion by
+  // default). Best-effort: any miss returns null and pre-population falls
+  // through to suggestions.
+  async function last_saved_eval_judge(): Promise<ModelChoice | null> {
     const { data, error } = await client.GET(
       "/api/projects/{project_id}/tasks/{task_id}/evals",
       { params: { path: { project_id, task_id } } },
     )
-    if (error || !data) return none
+    if (error || !data) return null
     const evals = [...data].sort((a, b) =>
       (b.created_at ?? "").localeCompare(a.created_at ?? ""),
     )
-    const drive_eval = evals.find((e) => e.multi_turn_drive_config)
-    const su = drive_eval?.multi_turn_drive_config
-      ? model_choice(
-          drive_eval.multi_turn_drive_config.model_name,
-          drive_eval.multi_turn_drive_config.model_provider,
-        )
-      : null
-    // Judge source: the same eval when one exists, else the newest eval
-    // with a current config (single-turn tasks have no drive config).
-    const judge_eval =
-      drive_eval ?? evals.find((e) => e.id && e.current_config_id) ?? null
+    const judge_eval = evals.find((e) => e.id && e.current_config_id) ?? null
     let judge: ModelChoice | null = null
     if (judge_eval?.id && judge_eval.current_config_id) {
       const configs = await client.GET(
@@ -1097,28 +1090,28 @@
         judge = model_choice(model, provider)
       }
     }
-    return { su_driver: su, judge_model: judge }
+    return judge
   }
 
-  // Fill null lanes: draft (already restored into the lane vars) → last
-  // saved eval on this task → first registry-suggested model among the
-  // connected providers (same flags that power the Recommended badges).
-  // A lane with no usable model anywhere stays null: the dropdown's empty
-  // state names the way out and submit refuses to start.
+  // Fill null lanes: draft (already restored into the lane vars) → the
+  // last saved eval's judge (judge lane only) → first registry-suggested
+  // model among the connected providers (same flags that power the
+  // Recommended badges). A lane with no usable model anywhere stays null:
+  // the dropdown's empty state names the way out and submit refuses to
+  // start.
   async function prepopulate_lanes() {
     if (lanes_prepopulated) return
     lanes_prepopulated = true
     const su_needed = is_multi_turn && su_driver === null
     const input_gen_needed = !is_multi_turn && input_generator === null
     if (!su_needed && !input_gen_needed && judge_model !== null) return
-    try {
-      const saved = await last_saved_eval_lanes()
-      if (su_needed && saved.su_driver) su_driver = saved.su_driver
-      if (judge_model === null && saved.judge_model) {
-        judge_model = saved.judge_model
+    if (judge_model === null) {
+      try {
+        const saved_judge = await last_saved_eval_judge()
+        if (saved_judge) judge_model = saved_judge
+      } catch (e) {
+        console.warn("Could not read the last saved eval's judge model:", e)
       }
-    } catch (e) {
-      console.warn("Could not read the last saved eval's models:", e)
     }
     await load_available_models()
     const models = get(available_models)
@@ -1165,7 +1158,7 @@
   }
 
   // Run-immediately (the plan-approval primary button): resolve the default
-  // model lanes (draft → last saved eval → registry suggestion) and start
+  // model lanes (draft → saved-eval judge → registry suggestion) and start
   // the drive without a settings detour — the common path is "just make my
   // data". If a lane can't be resolved (no usable model anywhere), the
   // drive opens the dialog instead of running — fail-loud recovery, never a
@@ -1686,6 +1679,11 @@
       // once this drive has produced replacements.
       const previous_batch_tag = multi_turn_batch_tag
       const previous_driven_cases = driven_cases
+      // Commit the synthetic-user choice alongside the batch identity: from
+      // here the drive runs with chosen_su, so the stamp source flips with
+      // the cases (and rolls back with them below if nothing is driven).
+      const previous_driven_su_driver = driven_su_driver
+      driven_su_driver = chosen_su
       const tags_to_replace = [...undeleted_batch_tags]
       trace_claims = []
       trace_reviews = []
@@ -1889,10 +1887,11 @@
         }
       } else {
         // Nothing was driven: no replacement chains, no deletions — keep
-        // pointing at the previous batch (and its cases) so save/cleanup
-        // still work.
+        // pointing at the previous batch (its cases and the synthetic user
+        // that drove them) so save/cleanup still work.
         multi_turn_batch_tag = previous_batch_tag
         driven_cases = previous_driven_cases
+        driven_su_driver = previous_driven_su_driver
       }
 
       // Compact survivors BEFORE any error/warning path: completed verdicts
@@ -3135,9 +3134,9 @@
         // The saved batch's own tag: its chains become the eval, so it must
         // be excluded from any future cleanup (below).
         const saved_batch_tag = multi_turn_batch_tag
-        // The SU model the chains were driven with — always committed
-        // before a drive can run; missing means no drive happened.
-        const saved_su_driver = su_driver
+        // The synthetic-user model the chains were actually driven with,
+        // captured at batch commit — missing means no drive happened.
+        const saved_su_driver = driven_su_driver
         if (saved_su_driver === null) {
           save_error =
             "No simulated-user model was recorded. Go back to Step 4."
@@ -3181,9 +3180,9 @@
                 batch_tag: saved_batch_tag,
                 reviewed_chains,
                 cases: driven_cases,
-                // The drive settings this wizard's conversations ran with
-                // ride onto the Eval, so eval-time re-drives replay the same
-                // synthetic user (model + turns).
+                // The drive settings this wizard's conversations ran with —
+                // stamped onto each minted eval item, so eval-time re-drives
+                // replay the same synthetic user (model + turns).
                 drive_config: {
                   model_name: saved_su_driver.model_name,
                   model_provider: saved_su_driver.model_provider,

@@ -5435,8 +5435,9 @@ async def test_run_calibration_empty_golden_set_400(
 async def test_run_comparison_multi_turn_drive_problems_400(
     client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, mock_run_config
 ):
-    """Drive-config/run-config incompatibilities surface as one 400 before
-    the SSE stream opens, not as N anonymous per-job errors."""
+    """Multi-turn readiness problems (unstamped items, unknown synthetic-user
+    providers, non-agent run configs) surface as one 400 before the SSE
+    stream opens, not as N anonymous per-job errors."""
     mock_task_from_id.return_value = mock_task
 
     with (

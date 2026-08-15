@@ -539,9 +539,39 @@ class SingleTurnEvalInputData(BaseModel):
     user_message: UserMessage
 
 
+class MultiTurnDriveConfig(BaseModel):
+    """Settings for re-driving a multi-turn synthetic input at eval time.
+
+    A multi-turn eval run regenerates each conversation: the agent under test
+    comes from the run config being evaluated, while the synthetic user
+    (customer) configured here is held constant across run configs — so a
+    comparison varies only the agent. Stored per item, on
+    MultiTurnSyntheticEvalInputData.drive_config.
+    """
+
+    model_name: str = Field(
+        description="The model that plays the synthetic user during re-drives."
+    )
+    # A plain string rather than the provider enum so persisted items load on
+    # builds that don't know the provider yet (same choice as LlmJudgeProperties).
+    model_provider: str = Field(description="The provider of the synthetic-user model.")
+    turns: int = Field(
+        ge=1,
+        le=20,
+        description="Exact number of assistant turns per re-driven conversation "
+        "(the drive loop has no early termination).",
+    )
+
+
 class MultiTurnSyntheticEvalInputData(BaseModel):
-    """A re-drivable multi-turn case: the opening user message plus the
-    synthetic user who continues the conversation at eval time.
+    """A re-drivable multi-turn case: the opening user message, the synthetic
+    user who continues the conversation at eval time, and the drive settings
+    that synthetic user runs with.
+
+    Together these make the item a self-contained replication recipe: with the
+    persona, first_message, and drive_config it re-drives identically under any
+    eval that references it, which is what makes conversation traces keyed to
+    the item reusable across evals.
 
     first_message may be None; such items carry no seed to open a
     conversation with, so the eval runner skips them instead of re-driving.
@@ -550,6 +580,30 @@ class MultiTurnSyntheticEvalInputData(BaseModel):
     type: Literal["multi_turn_synthetic"] = "multi_turn_synthetic"
     first_message: UserMessage | None = None
     synthetic_user_info: SyntheticUserInfo
+    drive_config: MultiTurnDriveConfig | None = Field(
+        default=None,
+        description="How this item's conversation is re-driven: the "
+        "synthetic-user model and turn count, stamped when the item is minted. "
+        "This is the ONLY home for drive settings — no eval-level copy exists; "
+        "displays and prefills derive from items. Held constant across run "
+        "configs so a comparison varies only the agent under test. Immutable "
+        "once minted: changing the synthetic-user setup means minting new "
+        "items, which keeps traces keyed to this item valid. None only on "
+        "items minted before drive settings were stamped; the eval runner "
+        "skips such items with a clear reason rather than guessing a config.",
+    )
+
+    @model_serializer(mode="wrap")
+    def _omit_unset_drive_config(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> Dict[str, Any]:
+        # Items that predate drive_config carry no key on disk, and absent and
+        # null load identically — omit an unset config instead of churning
+        # every legacy file with a null on resave.
+        data: Dict[str, Any] = handler(self)
+        if data.get("drive_config") is None:
+            data.pop("drive_config", None)
+        return data
 
 
 EvalInputData = Annotated[
@@ -1117,32 +1171,6 @@ it, and a one-sided change fails silently in the UI (a dataset row rendering `un
 a `/dataset` link pointing at the wrong tag)."""
 
 
-class MultiTurnDriveConfig(BaseModel):
-    """Per-eval settings for re-driving multi-turn synthetic inputs at eval time.
-
-    A multi-turn eval run regenerates each conversation: the agent under test
-    comes from the run config being evaluated, while the synthetic user
-    (customer) defined here is held constant across run configs — so a
-    comparison varies only the agent. Stored per-eval so re-drives use the
-    same synthetic-user model and turn count the builder used when driving
-    the conversations the judge was calibrated on, keeping the judge scoring
-    the same conversation distribution.
-    """
-
-    model_name: str = Field(
-        description="The model that plays the synthetic user during re-drives."
-    )
-    # A plain string rather than the provider enum so persisted evals load on
-    # builds that don't know the provider yet (same choice as LlmJudgeProperties).
-    model_provider: str = Field(description="The provider of the synthetic-user model.")
-    turns: int = Field(
-        ge=1,
-        le=20,
-        description="Exact number of assistant turns per re-driven conversation "
-        "(the drive loop has no early termination).",
-    )
-
-
 class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}):
     """An evaluator definition that specifies what to evaluate and how scores should be produced."""
 
@@ -1189,13 +1217,6 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         default=EvalDataType.final_answer,
         description="The output of the task run to evaluate. Can be final answer, full trace, or None for V2 evals.",
     )
-    multi_turn_drive_config: MultiTurnDriveConfig | None = Field(
-        default=None,
-        description="How to re-drive multi-turn synthetic eval inputs at eval "
-        "time (synthetic-user model + turn count). Required to execute "
-        "multi-turn EvalInput items; None for single-turn and stored-trace evals.",
-    )
-
     # Which splits arrived in a legacy field, so serialization can put them back where
     # they came from. None means "provenance unknown" (see serialize_preserving_split_format).
     _legacy_homed_splits: Set[str] | None = PrivateAttr(default=None)
@@ -1297,13 +1318,6 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         compatibility rather than toward a silent format flip.
         """
         data: Dict[str, Any] = handler(self)
-
-        # Additive multi-turn field: files that predate it carry no key, and
-        # writing a null would break the byte-identical round-trip guarantee
-        # for untouched legacy evals. Absent and None mean the same thing on
-        # load, so an unset config is simply omitted.
-        if data.get("multi_turn_drive_config") is None:
-            data.pop("multi_turn_drive_config", None)
 
         homed = self._legacy_homed_splits
         serialized_splits = data.get("splits") or {}

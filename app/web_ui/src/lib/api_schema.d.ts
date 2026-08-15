@@ -6842,8 +6842,6 @@ export interface components {
              * @default final_answer
              */
             evaluation_data_type: components["schemas"]["EvalDataType"] | null;
-            /** @description How to re-drive multi-turn synthetic eval inputs at eval time (synthetic-user model + turn count). Required to execute multi-turn EvalInput items; None for single-turn and stored-trace evals. */
-            multi_turn_drive_config?: components["schemas"]["MultiTurnDriveConfig"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -9483,15 +9481,13 @@ export interface components {
         ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner" | "featherless_ai";
         /**
          * MultiTurnDriveConfig
-         * @description Per-eval settings for re-driving multi-turn synthetic inputs at eval time.
+         * @description Settings for re-driving a multi-turn synthetic input at eval time.
          *
          *     A multi-turn eval run regenerates each conversation: the agent under test
          *     comes from the run config being evaluated, while the synthetic user
-         *     (customer) defined here is held constant across run configs — so a
-         *     comparison varies only the agent. Stored per-eval so re-drives use the
-         *     same synthetic-user model and turn count the builder used when driving
-         *     the conversations the judge was calibrated on, keeping the judge scoring
-         *     the same conversation distribution.
+         *     (customer) configured here is held constant across run configs — so a
+         *     comparison varies only the agent. Stored per item, on
+         *     MultiTurnSyntheticEvalInputData.drive_config.
          */
         MultiTurnDriveConfig: {
             /**
@@ -9582,7 +9578,7 @@ export interface components {
              * @description The driven synthetic-user cases of this batch. Each is minted as an EvalInput — the eval slice the runner re-drives per run config at eval time.
              */
             cases: components["schemas"]["DrivenSyntheticCaseApi"][];
-            /** @description The alignment-time drive settings (synthetic-user model + turn count), persisted on the Eval so eval-time re-drives match the conversations the judge was calibrated on. */
+            /** @description The alignment-time drive settings (synthetic-user model + turn count), stamped on each minted EvalInput so eval-time re-drives match the conversations the judge was calibrated on. */
             drive_config: components["schemas"]["MultiTurnDriveConfig"];
         };
         /**

@@ -34,6 +34,7 @@ from kiln_ai.datamodel import ClaimReview, Feedback, FeedbackSource, Task, TaskR
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
     EvalInput,
+    MultiTurnDriveConfig,
     MultiTurnSyntheticEvalInputData,
     SingleTurnEvalInputData,
     UserMessage,
@@ -706,13 +707,17 @@ def build_multi_turn_eval_inputs(
     batch_tag: str,
     task: Task,
     eval_tag: str,
+    drive_config: MultiTurnDriveConfig,
 ) -> list[EvalInput]:
     """Mint one EvalInput per driven case — the multi-turn eval slice.
 
-    Each carries the case's seed message plus the parsed synthetic-user
-    persona (the structured submodel; the XML blob never persists), tagged
-    with the eval-slice tag and its provenance: the synthetic-user batch the
-    case was driven in and, when known, the batch-plan scenario it came from.
+    Each carries the case's seed message, the parsed synthetic-user persona
+    (the structured submodel; the XML blob never persists), and the drive
+    settings the batch's conversations ran with — stamped per item so every
+    item is a self-contained replication recipe for eval-time re-drives.
+    Tagged with the eval-slice tag and its provenance: the synthetic-user
+    batch the case was driven in and, when known, the batch-plan scenario it
+    came from.
 
     Models are built and validated here, unsaved — persistence happens in
     persist_eval_slice inside the save unit-of-work. Raises
@@ -737,6 +742,7 @@ def build_multi_turn_eval_inputs(
                 data=MultiTurnSyntheticEvalInputData(
                     first_message=UserMessage(text=case.seed_prompt),
                     synthetic_user_info=info,
+                    drive_config=drive_config,
                 ),
                 tags=tags,
             )
