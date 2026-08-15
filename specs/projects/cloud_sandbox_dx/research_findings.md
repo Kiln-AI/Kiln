@@ -222,3 +222,145 @@ The tkinter-stub package they built is unnecessary given §4.
   invocation and ~10 k collected-then-skipped paid tests, not the runner config.
 - **Anything else?** The uv version mismatch (§3) dwarfs everything else, and no
   amount of documentation fixes it — every documented command triggers it.
+
+---
+
+# Round 2 — follow-up measurements
+
+## 8. How to actually upgrade uv in the sandbox
+
+`uv self update` **does not work here** and the failure is structural, not
+transient (retried, same result):
+
+```
+error: GitHub API rate limit exceeded. Please provide a GitHub token via the `--token` option.
+```
+
+It resolves releases through the GitHub API, whose limit is per egress IP, and
+sandboxes share one. `astral.sh` is also unreachable through the proxy.
+
+PyPI works, and is the fix:
+
+```
+pip install --user --upgrade uv     → 2.4 s, installs uv 0.12.5
+```
+
+It writes to `/root/.local/bin/uv` — the same path as the pre-installed binary,
+already first on `PATH` — so it is a clean in-place replacement.
+
+Verified end-to-end afterwards:
+
+| | uv 0.8.17 | after upgrade (0.12.5) |
+|---|---|---|
+| plain `uv run python -c "print(1)"` | 16.4 s | **0.072 s** |
+| `uv.lock` afterwards | +3534 / −2284 lines | **untouched** |
+| TOML parse error on every call | yes | gone |
+
+**A 2.4 s pip install eliminates the entire top-priority problem.**
+
+## 9. MCP: project `.mcp.json` is never auto-trusted
+
+Tested directly in a cloud session with `claude mcp list`:
+
+| Mechanism | Result |
+|---|---|
+| nothing (fresh state) | ⏸ Pending approval |
+| `.claude/settings.local.json` → `enabledMcpjsonServers: ["HooksMCP"]` | ⏸ Pending |
+| `~/.claude.json` → `projects[path].enabledMcpjsonServers` | ⏸ Pending |
+| `~/.claude.json` → `projects[path].hasTrustDialogAccepted: true` | ✓ works |
+| `.claude/settings.local.json` → `enableAllProjectMcpServers: true` | ⏸ Pending |
+| **`~/.claude/settings.json` → `enableAllProjectMcpServers: true`** | **✓ Connected** |
+
+Control: setting trust back to `false` returned it to Pending, confirming the
+mechanism. **Project-scoped settings files do not work for this — only user-level
+settings or the trust flag.** So this belongs in the cloud environment config,
+not the repo.
+
+Separately, `.agents/claude/setup.sh` was verified to work mid-session: after
+running it, `CLAUDE.md` and all five repo skills became available without a
+session restart. Only MCP needs the extra setting.
+
+The server itself fails to start on `hooks-mcp 0.2.4` + `mcp 2.0.0`
+(`'Server' object has no attribute 'list_tools'`). With a working server the full
+chain reports **√ Connected**, so the path is proven; being fixed upstream in
+hooks-mcp 0.2.5.
+
+## 10. Pytest startup cost — the "E4" conftest change
+
+The root `conftest.py` imported `litellm` at module scope. pytest imports the root
+conftest on **every** invocation, so every run paid the litellm import even when no
+test touched it. The change: drop the module-level import, have the autouse
+`_clear_httpx_clients` fixture use `sys.modules.get("litellm")` and return early if
+absent, fold the session-scoped `setup_test_logging` into that guarded path, and
+move `KilnAttachmentModel` under `TYPE_CHECKING`.
+
+Safe because: the cache flush is only skipped when nothing imported litellm (so
+there are no cached clients to flush), and `setup_litellm_logging` is idempotent —
+it early-returns if the callback is already installed (`logging.py:137-140`).
+
+| | collect | full suite `-n auto` |
+|---|---|---|
+| baseline | 22.9 s (16,389 tests) | **63.3 s** — 6369 passed, 10020 skipped |
+| **E4** | 22.4 s (16,389 tests) | **58.9 s** — 6369 passed, 10020 skipped |
+| baseline + paid ignored | 21.2 s (6,203) | 55.7 s — 5952 passed |
+| E4 + paid ignored | 20.5 s (6,203) | 47.6 s — 5952 passed |
+
+Single test file (42 tests, 0.14 s of actual testing):
+
+| baseline | E4 |
+|---|---|
+| 7.40 / 7.73 / 6.86 s | **0.96 / 0.91 / 2.03 s** |
+
+**~7× on the inner loop**, and identical pass/skip counts on the full suite.
+
+**Negative result — ignoring the paid-heavy files is not worth it.** The 8 files
+holding ~9,734 of the ~10,020 paid tests can be `--ignore`d, cutting collection
+from 16,389 to 6,203 tests, but that saves only **~1.7 s**. The cost is module
+*imports*, not parametrize expansion. Not worth the risk of silently skipping
+tests. Rejected.
+
+## 11. Why `import litellm` costs ~4 s
+
+It **does** make a network request at import: it fetches the model cost map from
+`raw.githubusercontent.com`. In this sandbox the fetch succeeds and costs ~0.6 s —
+it is not a hang.
+
+`LITELLM_LOCAL_MODEL_COST_MAP=True` forces the bundled copy. Six alternating reps:
+
+| | median |
+|---|---|
+| baseline | **3.86 s** |
+| local cost map | **3.26 s** |
+
+So the network fetch is only ~0.6 s of ~3.9 s. The remaining ~3.2 s is pure import
+work — **2,148 modules**:
+
+| package | self time | modules |
+|---|---|---|
+| litellm | 1.804 s | 822 |
+| openai | 0.448 s | 609 |
+| fastapi | 0.160 s | 35 |
+| aiohttp | 0.109 s | 40 |
+
+Worst single module: `litellm.proxy._types` at **0.431 s** — 4,834 lines of pydantic
+models for litellm's *proxy server*, pulled in transitively by `secret_managers/*`
+just for a couple of enums, dragging fastapi with it. Then
+`litellm_core_utils/default_encoding` at 0.218 s (`tiktoken.get_encoding`). Not
+eagerly imported: boto3, botocore, google.*, anthropic, transformers.
+
+There is no setting that gets this meaningfully below ~3.2 s.
+
+**Correctness risk if set globally:** the bundled map has **2,733 models vs 3,020
+remote — 290 missing**, including `claude-opus-5` and `claude-sonnet-5`, and 30
+shared models have different `input_cost_per_token`. Kiln reads the derived cost at
+`litellm_adapter.py:787` (`response._hidden_params.get("response_cost")`), so
+forcing the local map in production would silently yield `None` or stale costs for
+the newest models. **Never set it in `pyproject.toml` or the app.**
+
+Test-only is safe, and verified: the repo has **zero** call sites for
+`litellm.model_cost`, `get_model_info`, or `completion_cost`; Kiln's own context
+windows come from its hand-maintained `ml_model_list.py`. The justification for
+setting it in the test environment is **hermeticity, not speed** — a suite that
+makes an HTTP request to GitHub at import time is a latent flake, and with E4
+landed the inner loop does not import litellm at all, so the 0.6 s only applies to
+full-suite runs.
