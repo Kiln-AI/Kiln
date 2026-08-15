@@ -503,6 +503,10 @@ class V2EvalResult(BaseModel):
     skipped_reason: SkippedReason | None = None
     skipped_detail: str | None = None
     intermediate_outputs: Dict[str, str] | None = None
+    usage: Usage | None = Field(
+        default=None,
+        description="What the judgment itself cost, if it called a model. None for the deterministic eval types, which call none. Stored on the resulting EvalRun as eval_usage.",
+    )
 
 
 class UserMessage(BaseModel):
@@ -572,47 +576,58 @@ class EvalTaskInput(BaseModel):
     )
 
     @classmethod
-    def from_task_run(cls, task_run: "TaskRun") -> "EvalTaskInput":
+    def from_trace(
+        cls, trace: "TaskRun", source: "TaskRun | EvalInput"
+    ) -> "EvalTaskInput":
+        """What a judge sees: the trace that was produced, plus the item it came from.
+
+        The two are separate arguments because they are separate records once eval traces
+        live on their own TaskRun — the trace holds what the model said, and the source
+        item holds the ground truth to compare it against. They are the same object only
+        for calibration, where the golden dataset item is itself what gets scored.
+        """
         from kiln_ai.datamodel.task_run import TaskRun as _TaskRun
 
-        if not isinstance(task_run, _TaskRun):
-            raise TypeError("Expected a TaskRun instance")
+        if not isinstance(trace, _TaskRun):
+            raise TypeError("Expected a TaskRun instance for trace")
 
         trace_data: list[dict[str, Any]] | None = None
-        if task_run.trace is not None:
-            trace_data = [dict(msg) for msg in task_run.trace]
+        if trace.trace is not None:
+            trace_data = [dict(msg) for msg in trace.trace]
+
+        if isinstance(source, EvalInput):
+            if not isinstance(source.data, SingleTurnEvalInputData):
+                raise ValueError("EvalTaskInput only supports single-turn EvalInput")
+            reference_data = source.reference
+            # The item's own text, not the trace's: an EvalInput is the canonical
+            # statement of the input, and the adapter may have reserialized it.
+            task_input = source.data.user_message.text
+        elif isinstance(source, _TaskRun):
+            reference_data = None
+            task_input = trace.input
+        else:
+            raise TypeError("Expected a TaskRun or EvalInput instance for source")
 
         return cls(
-            final_message=task_run.output.output,
+            final_message=trace.output.output,
             trace=trace_data,
-            reference_data=None,
-            task_input=task_run.input,
+            reference_data=reference_data,
+            task_input=task_input,
         )
+
+    @classmethod
+    def from_task_run(cls, task_run: "TaskRun") -> "EvalTaskInput":
+        """A TaskRun scored as itself, with no separate source item."""
+        return cls.from_trace(task_run, task_run)
 
     @classmethod
     def from_eval_input(
         cls, eval_input: "EvalInput", run_output: "TaskRun"
     ) -> "EvalTaskInput":
-        from kiln_ai.datamodel.task_run import TaskRun as _TaskRun
-
-        if not isinstance(run_output, _TaskRun):
-            raise TypeError("Expected a TaskRun instance for run_output")
+        """A generated run scored against the EvalInput it was generated from."""
         if not isinstance(eval_input, EvalInput):
             raise TypeError("Expected an EvalInput instance")
-
-        trace_data: list[dict[str, Any]] | None = None
-        if run_output.trace is not None:
-            trace_data = [dict(msg) for msg in run_output.trace]
-
-        if not isinstance(eval_input.data, SingleTurnEvalInputData):
-            raise ValueError("from_eval_input only supports single-turn EvalInput")
-
-        return cls(
-            final_message=run_output.output.output,
-            trace=trace_data,
-            reference_data=eval_input.reference,
-            task_input=eval_input.data.user_message.text,
-        )
+        return cls.from_trace(run_output, eval_input)
 
 
 class EvalOutputScore(BaseModel):

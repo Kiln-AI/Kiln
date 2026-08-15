@@ -41,7 +41,8 @@ from kiln_ai.datamodel.eval import (
     validate_scores_against_output_scores,
 )
 from kiln_ai.datamodel.task import Task
-from kiln_ai.datamodel.task_output import TaskOutputRatingType
+from kiln_ai.datamodel.task_output import TaskOutput, TaskOutputRatingType
+from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.datamodel.usage import Usage
 
 
@@ -2469,6 +2470,80 @@ class TestEvalTaskInput:
         """final_message is required; omitting it raises ValidationError."""
         with pytest.raises(ValidationError, match="final_message"):
             EvalTaskInput()  # type: ignore[call-arg]
+
+
+class TestEvalTaskInputFromTrace:
+    """The trace and the item it was generated from are two records now."""
+
+    @pytest.fixture
+    def trace(self):
+        return TaskRun(
+            input="what the model saw",
+            output=TaskOutput(output="what the model said"),
+            trace=[{"role": "assistant", "content": "what the model said"}],
+        )
+
+    def test_from_an_eval_input_source(self, trace):
+        eval_input = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="2+2?")),
+            reference={"answer": "4"},
+        )
+
+        result = EvalTaskInput.from_trace(trace, eval_input)
+
+        assert result.final_message == "what the model said"
+        assert result.trace == trace.trace
+        assert result.reference_data == {"answer": "4"}
+        # The item's own text, not the trace's: the item is the canonical input.
+        assert result.task_input == "2+2?"
+
+    def test_from_a_task_run_source(self, trace):
+        item = TaskRun(input="the dataset input", output=TaskOutput(output="old"))
+
+        result = EvalTaskInput.from_trace(trace, item)
+
+        assert result.final_message == "what the model said"
+        assert result.reference_data is None
+        # No separate statement of the input exists for a TaskRun-backed item, so the
+        # trace's own input is what was actually scored.
+        assert result.task_input == "what the model saw"
+
+    def test_existing_constructors_are_from_trace(self, trace):
+        """The two named constructors are the two shapes of `from_trace`."""
+        eval_input = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="2+2?")),
+            reference={"answer": "4"},
+        )
+        assert EvalTaskInput.from_eval_input(
+            eval_input, trace
+        ) == EvalTaskInput.from_trace(trace, eval_input)
+        assert EvalTaskInput.from_task_run(trace) == EvalTaskInput.from_trace(
+            trace, trace
+        )
+
+    @pytest.mark.parametrize(
+        "trace_arg, source, error",
+        [
+            ("not a run", TaskRun(input="i", output=TaskOutput(output="o")), TypeError),
+            (
+                TaskRun(input="i", output=TaskOutput(output="o")),
+                "not an item",
+                TypeError,
+            ),
+            (
+                TaskRun(input="i", output=TaskOutput(output="o")),
+                EvalInput(
+                    data=MultiTurnSyntheticEvalInputData(
+                        first_message=UserMessage(text="hi")
+                    )
+                ),
+                ValueError,
+            ),
+        ],
+    )
+    def test_rejects_shapes_it_cannot_describe(self, trace_arg, source, error):
+        with pytest.raises(error):
+            EvalTaskInput.from_trace(trace_arg, source)
 
 
 # ── Save-time Jinja validation (validate_v2_templates_and_expressions) ───
