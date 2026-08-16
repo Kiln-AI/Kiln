@@ -246,9 +246,8 @@ done
 # is left alone; only a missing, malformed, or too-old pin gets rewritten.
 #
 # Compare major and minor only, ignoring any patch component: `3.13.1` is the form
-# pyenv writes, and AGENTS.md tells pyenv users this file is shared with their
-# shims, so clobbering it would be resetting exactly the pin most likely to be
-# deliberate.
+# pyenv writes into this same file, so clobbering it would be resetting exactly
+# the pin most likely to be deliberate.
 pinned="$(cat "$PROJECT_ROOT/.python-version" 2>/dev/null)"
 IFS=. read -r pin_major pin_minor _ <<<"$pinned"
 if ! [[ "${pin_major:-}" =~ ^[0-9]+$ ]] ||

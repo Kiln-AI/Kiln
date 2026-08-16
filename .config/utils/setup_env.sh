@@ -340,10 +340,11 @@ warm_from_throwaway_clone() {
 }
 
 # ── Run setup_startup.sh from a Claude Code SessionStart hook ─────────────────
-# This is what closes the repo's circular bootstrap. The only thing that tells an
-# agent to run setup_startup.sh is AGENTS.md, copied to CLAUDE.md *by that script*,
-# so in a fresh sandbox nothing has told it the script exists. A user-level hook
-# runs before the agent reads anything, so it depends on nothing having been said.
+# This is what closes the repo's circular bootstrap. Documenting the script could
+# not work: the docs an agent reads are CLAUDE.md, which setup_startup.sh itself
+# writes, so in a fresh sandbox nothing has told it the script exists. A user-level
+# hook runs before the agent reads anything, so it depends on nothing being said —
+# which is why the repo no longer documents running it at all.
 #
 # ~/.claude survives into the VM snapshot and Claude Code reads it in cloud
 # sessions, so no repo file and no human instruction are involved.
@@ -585,9 +586,9 @@ write_vm_setup_marker() {
   fi
 
   # Describe the tree that is on disk now, not what this particular run did. The
-  # two come apart on a re-run: `setup_env.sh --upgrade-tools` is what AGENTS.md
-  # tells an agent to run to repair an environment, it carries no --warm-cache, and
-  # the warm tree it does not touch outlives it. A marker rewritten as
+  # two come apart on a re-run: repairing an environment means re-running this
+  # script, which carries no --warm-cache, and the warm tree it does not touch
+  # outlives it. A marker rewritten as
   # "created=false, commit=none" would then be lying about the provenance of the
   # 601 MB every session on this machine inherits — the one fact it exists to
   # record. So carry the previous commit forward whenever the tree survives.
