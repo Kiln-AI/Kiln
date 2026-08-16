@@ -153,10 +153,13 @@ Two things have to be true, and neither is visible from inside a session:
    its allowed domains (`playwright.download.prss.microsoft.com` too, for the
    Firefox and WebKit fallbacks). On the default Trusted policy the downloads get
    a 403 from the proxy.
-2. **The VM setup script must run with `ADD_PLAYWRIGHT=true`.** That script is a
-   pasted copy of `.config/utils/setup_env.sh`, so changing the file in the repo
-   changes nothing by itself — re-paste it into the environment's setup script
-   field and set `ADD_PLAYWRIGHT=true` in the CONFIGURATION block at the top.
+2. **The environment's setup script must install the browsers.**
+   `.config/utils/setup_cloud.sh` is what belongs in that field: it fetches
+   `setup_env.sh` from `main` and runs it with `--add-playwright`, so later
+   changes to `setup_env.sh` take effect without anyone re-pasting anything. An
+   environment still holding a pasted copy of `setup_env.sh` needs that copy
+   replaced with `setup_cloud.sh` once — or, failing that, re-pasted with
+   `ADD_PLAYWRIGHT=true` in its CONFIGURATION block.
 
 Installing during the VM build is what puts the browser in the environment's
 filesystem snapshot, so every later session starts with it already on disk.

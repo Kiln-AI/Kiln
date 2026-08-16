@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Build (or repair) a development environment for Kiln.
 #
-# This file doubles as the setup script for a Claude Code cloud environment:
-# paste its contents into the environment's "Setup script" field and edit only
-# the CONFIGURATION block below. Nothing outside that block needs to change.
+# This also runs as the setup script for a Claude Code cloud environment, where
+# setup_cloud.sh fetches and runs it. Pasting this file's contents into the
+# environment's "Setup script" field works too — edit only the CONFIGURATION
+# block below — but a pasted copy goes stale as soon as this file changes, which
+# is why setup_cloud.sh exists.
 #
 # In that context the script does not live inside a checkout, and there may be no
 # Kiln checkout on disk at all: the setup script runs once per environment, is
