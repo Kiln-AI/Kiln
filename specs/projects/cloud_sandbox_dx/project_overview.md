@@ -119,8 +119,9 @@ Settled during planning:
    conftest module scope — the current session-scoped fixture runs after
    collection, by which time test modules have already imported litellm. That
    needs `# ruff: noqa: E402`, for which `app/desktop/desktop.py:1` is precedent.
-7. **Out of scope:** the `debug_detector` TODO-in-spec-markdown issue and the
-   mutation-sweep scripts leaving mutated source on disk. Unrelated to sandboxes.
+7. **Out of scope:** `debug_detector` flagging task-marker keywords anywhere in the
+   repo, including prose in spec markdown, and the mutation-sweep scripts leaving
+   mutated source on disk. Unrelated to sandboxes.
 8. **Setup runs the two installs in parallel, in the foreground** (~37 s → ~26 s).
    Not backgrounded: `npm ci` deletes `node_modules` before repopulating it, so an
    agent acting during setup would hit intermittent phantom import errors — the

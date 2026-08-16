@@ -556,9 +556,10 @@ exists to guarantee.
 - **`LITELLM_LOCAL_MODEL_COST_MAP` / `.env` changes.** Worth ~0.6 s of a 3.9 s
   import, ~1 % of a suite run, and nothing on the inner loop once F6 lands.
 - **Installing `misspell`.** `checks.sh` warns and skips; accepted.
-- **`debug_detector` firing on `TODO` in spec markdown**, and **mutation-sweep
-  scripts leaving mutated source in the working tree.** Real problems, unrelated
-  to sandboxes.
+- **`debug_detector` flagging task-marker keywords in spec markdown prose**, and
+  **mutation-sweep scripts leaving mutated source in the working tree.** Real
+  problems, unrelated to sandboxes. Note that naming the keyword in a document is
+  itself enough to fail the check, which is why the wording here avoids it.
 - **Adding `--frozen` to every `uv run` call site** in `checks.sh`, the `Makefile`,
   `hooks_mcp.yaml`, the schema scripts, and the skills. Once uv ≥ 0.10 is
   enforced, plain `uv run` is correct and costs 0.07 s. Fixing the root cause
