@@ -119,15 +119,12 @@ Settled during planning:
    conftest module scope — the current session-scoped fixture runs after
    collection, by which time test modules have already imported litellm. That
    needs `# ruff: noqa: E402`, for which `app/desktop/desktop.py:1` is precedent.
-7. **Out of scope:** `debug_detector` flagging task-marker keywords anywhere in the
-   repo, including prose in spec markdown, and the mutation-sweep scripts leaving
-   mutated source on disk. Unrelated to sandboxes.
-8. **Setup runs the two installs in parallel, in the foreground** (~37 s → ~26 s).
+7. **Setup runs the two installs in parallel, in the foreground** (~37 s → ~26 s).
    Not backgrounded: `npm ci` deletes `node_modules` before repopulating it, so an
    agent acting during setup would hit intermittent phantom import errors — the
    exact failure class this project exists to remove.
 
-9. **The cloud setup script is a copy of `setup_env.sh`, not a wrapper around it.**
+8. **The cloud setup script is a copy of `setup_env.sh`, not a wrapper around it.**
    Discovered after the first plan was written (research §12): a cloud setup script
    runs once per environment and is then snapshotted and skipped, and the
    environment is shared across repos — so it cannot depend on a particular
@@ -152,7 +149,7 @@ Settled during planning:
    non-zero stops the session from starting, so a `set -e` script with hard
    `exit 1` paths would turn one flaky `npm` fetch into a sandbox that will not
    boot.
-10. **A new `setup_startup.sh` carries the per-session work.** Because the setup
+9. **A new `setup_startup.sh` carries the per-session work.** Because the setup
     script is snapshotted and skipped, nothing repo-aware runs per session.
     `AGENTS.md` instructs agents to run it before their first build or test. It
     verifies the hard dependencies the VM was supposed to provide — failing fast
@@ -167,7 +164,7 @@ Settled during planning:
     `node_modules`, `.venv`, and a 1.4 GB uv cache), and `npm ci` would empty
     `node_modules` before refilling it, discarding exactly the cached state that
     makes the top-up cheap.
-11. **A `SessionStart` hook runs `setup_startup.sh`, installed by the VM setup
+10. **A `SessionStart` hook runs `setup_startup.sh`, installed by the VM setup
     script itself.** Added late, once a live session showed that user-level hooks in
     `~/.claude/settings.json` fire in cloud sandboxes and that `~/.claude` is on the
     snapshotted filesystem. It closes the project's last circular dependency — the
