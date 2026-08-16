@@ -492,7 +492,35 @@ if [ "$has_tk" != "True" ]; then
     "$REPAIR_SETUP"
 fi
 
-# ── Playwright browsers ───────────────────────────────────────────────────────
+# ── Playwright ────────────────────────────────────────────────────────────────
+# Gitignored per-device state, written for the same reason this script writes the
+# agent config: in a cloud sandbox setup_env.sh ran once with no checkout in
+# reach, and every session starts from a fresh one. Without it playwright-cli
+# tries to launch a branded Google Chrome, which a container does not have.
+#
+# Only when absent, so a contributor's own defaults survive. A failure is a
+# warning: it costs an agent a `--browser=chromium` flag, not a broken checkout.
+write_playwright_cli_config() {
+  local config="$PROJECT_ROOT/.playwright/cli.config.json"
+
+  [ -f "$config" ] && return 0
+
+  if ! mkdir -p "$PROJECT_ROOT/.playwright" || ! cat >"$config" <<'JSON'
+{
+  "browser": {
+    "browserName": "chromium",
+    "launchOptions": {
+      "channel": "chromium"
+    }
+  }
+}
+JSON
+  then
+    echo "warning: could not write $config; playwright-cli will need --browser=chromium." >&2
+  fi
+  return 0
+}
+
 # Only a check, and deliberately a pure-bash one: this runs at the start of every
 # session, and shelling out to `playwright install --dry-run` to ask the same
 # question costs ~1 s — about as much as the whole rest of this script warm.
@@ -535,6 +563,7 @@ check_playwright() {
   echo "" >&2
 }
 
+command -v playwright-cli >/dev/null 2>&1 && write_playwright_cli_config
 check_playwright
 
 echo "Ready. Python $py_major.$py_minor, uv $UV_VERSION, agent config written."

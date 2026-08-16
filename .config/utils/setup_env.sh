@@ -641,6 +641,42 @@ install_playwright_repo_browser() {
     fail "could not install the Chromium build app/web_ui pins"
 }
 
+# playwright-cli launches a branded Google Chrome unless a config in the
+# directory it runs from says otherwise. A Linux container has no such Chrome, and
+# even a machine that does should not be driving the UI in a different browser
+# from the one the e2e suite runs against.
+#
+# Not checked in: what it says is a property of this device — which browser is
+# installed here — not of the repo, and it is written for the same reason
+# .mcp.json and CLAUDE.md are. setup_startup.sh writes it too, because in a cloud
+# sandbox this script runs once with no checkout in reach and every session gets a
+# fresh one.
+#
+# Only when absent, so a contributor who has set their own defaults in it keeps
+# them across setup runs.
+write_playwright_cli_config() {
+  # $1 = project root.
+  local config="$1/.playwright/cli.config.json"
+
+  [ -f "$config" ] && return 0
+
+  if ! mkdir -p "$1/.playwright"; then
+    fail "could not create $1/.playwright for the playwright-cli config"
+    return 1
+  fi
+
+  cat >"$config" <<'JSON' || fail "could not write $config"
+{
+  "browser": {
+    "browserName": "chromium",
+    "launchOptions": {
+      "channel": "chromium"
+    }
+  }
+}
+JSON
+}
+
 install_playwright_cli() {
   if ! command -v npm >/dev/null 2>&1; then
     fail "npm is not installed, so playwright-cli cannot be installed"
@@ -860,8 +896,11 @@ fi
 # After npm ci, which is what puts the pinned playwright in node_modules for the
 # revision to be read from. Skipped when the warm clone above already did it, so
 # a --warm-cache run with a checkout does not download the same browser twice.
-if [ "$ADD_PLAYWRIGHT" = true ] && [ "$PLAYWRIGHT_REPO_BROWSER_ATTEMPTED" = false ]; then
-  install_playwright_repo_browser "$PROJECT_ROOT/app/web_ui"
+if [ "$ADD_PLAYWRIGHT" = true ]; then
+  if [ "$PLAYWRIGHT_REPO_BROWSER_ATTEMPTED" = false ]; then
+    install_playwright_repo_browser "$PROJECT_ROOT/app/web_ui"
+  fi
+  write_playwright_cli_config "$PROJECT_ROOT"
 fi
 
 # ── Agent configuration ───────────────────────────────────────────────────────

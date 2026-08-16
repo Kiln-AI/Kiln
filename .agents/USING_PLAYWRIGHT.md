@@ -97,11 +97,16 @@ playwright-cli requests                     # network activity
 playwright-cli close
 ```
 
-Run it from the repo root. `open` reads `.playwright/cli.config.json` relative to
-the current directory, and that file is what selects the same Chromium the e2e
-suite uses; from `app/web_ui` it is not found, and `open` fails trying to launch
-a branded Google Chrome that is not installed. `open --config=<path>` if you must
-be somewhere else.
+The repo root matters: `open` reads `.playwright/cli.config.json` relative to the
+current directory, and that file is what selects the same Chromium the e2e suite
+uses. From `app/web_ui` it is not found, and `open` fails trying to launch a
+branded Google Chrome that a container does not have. Pass `--config=<path>` if
+you must be somewhere else.
+
+That config is gitignored, not checked in — which browser to launch is a fact
+about your machine, not about Kiln. `setup_env.sh --add-playwright` writes it, and
+`setup_startup.sh` writes it in a container, both only when it is missing, so your
+own edits to it survive.
 
 `snapshot` is the one to reach for by default: it is the page as structure and
 text, which is both cheaper to read than an image and closer to what the e2e

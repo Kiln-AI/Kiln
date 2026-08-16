@@ -24,9 +24,11 @@ test_output/
 .mcp.json
 .python-version
 
-# playwright-cli writes its per-session snapshots and screenshots here, relative
-# to wherever it was run. .playwright/cli.config.json is deliberately not ignored:
-# it is what makes the tool use the same browser as the e2e suite.
+# playwright-cli's per-device state: .playwright/cli.config.json selects the
+# browser it launches (written by setup_env.sh --add-playwright, and by
+# setup_startup.sh in a container), and .playwright-cli/ collects the snapshots
+# and screenshots of whatever directory it was run from.
+.playwright/
 .playwright-cli/
 
 .specs_skill_state/
