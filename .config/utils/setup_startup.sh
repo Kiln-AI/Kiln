@@ -492,4 +492,49 @@ if [ "$has_tk" != "True" ]; then
     "$REPAIR_SETUP"
 fi
 
+# ── Playwright browsers ───────────────────────────────────────────────────────
+# Only a check, and deliberately a pure-bash one: this runs at the start of every
+# session, and shelling out to `playwright install --dry-run` to ask the same
+# question costs ~1 s — about as much as the whole rest of this script warm.
+#
+# What makes the browser worth checking at all is that its absence is reported by
+# Playwright as a browser that was never installed, pointing at `npx playwright
+# install`, when the actual state is a browser of the wrong revision sitting right
+# where it looked. Naming the revision here turns that into one clear line.
+#
+# Not fatal: most sessions never launch a browser, and the rest of the checkout is
+# ready regardless. See .agents/USING_PLAYWRIGHT.md.
+check_playwright() {
+  local browsers_json="$WEB_UI_DIR/node_modules/playwright-core/browsers.json"
+  local browsers_dir revision missing=""
+
+  [ -f "$browsers_json" ] || return 0
+
+  # The first "revision" after the chromium entry. The closing quote in the match
+  # is what keeps this off "chromium-headless-shell", which follows it and
+  # currently shares the revision — but is a separate entry that need not.
+  revision="$(grep -A1 '"name": "chromium"' "$browsers_json" |
+    sed -n 's/.*"revision": *"\([0-9]*\)".*/\1/p' | head -1)"
+  [ -n "$revision" ] || return 0
+
+  # Containers only, so the Linux default is the right fallback. Playwright writes
+  # INSTALLATION_COMPLETE last, so a directory without it is a partial download.
+  browsers_dir="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}"
+  [ -f "$browsers_dir/chromium-$revision/INSTALLATION_COMPLETE" ] ||
+    missing="chromium-$revision"
+
+  command -v playwright-cli >/dev/null 2>&1 || missing="${missing:+$missing, }playwright-cli"
+
+  [ -n "$missing" ] || return 0
+
+  echo "" >&2
+  echo "  ! Playwright is not fully installed here: $missing is missing." >&2
+  echo "    Needed only to run the e2e tests or drive the UI in a browser:" >&2
+  echo "        bash .config/utils/setup_env.sh --add-playwright" >&2
+  echo "    See .agents/USING_PLAYWRIGHT.md." >&2
+  echo "" >&2
+}
+
+check_playwright
+
 echo "Ready. Python $py_major.$py_minor, uv $UV_VERSION, agent config written."
