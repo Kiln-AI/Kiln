@@ -12,6 +12,16 @@ New contributors must agree to the [contributor license agreement](.config/CLA.m
 
 We use [uv](https://github.com/astral-sh/uv) to manage the Python environment and dependencies, and npm to manage the web UI.
 
+The quickest path is the setup script, which also pins the Python version and writes editor/agent config:
+
+```
+bash .config/utils/setup_env.sh --human
+```
+
+Run `bash .config/utils/setup_env.sh --help` for the flags.
+
+Or by hand:
+
 ```
 # First install uv: https://github.com/astral-sh/uv
 uv sync
