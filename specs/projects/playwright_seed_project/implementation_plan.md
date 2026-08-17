@@ -20,7 +20,7 @@ it; it is not recorded in any spec artifact.
 - [x] Phase 2: Runs and ratings — 15–20 runs, spread ratings including unrated, a
   repair, two run configs. Then the saved prompt, dataset split, input transform, and
   feedback.
-- [ ] Phase 3: Evals — one eval, judge config, results across both run configs. Carries
+- [x] Phase 3: Evals — one eval, judge config, results across both run configs. Carries
   specs with it.
 - [ ] Phase 4: Skills and RAG — skills with `SKILL.md` bodies, then documents through
   RAG config. Prove the index rebuilds from a seeded sandbox. Final docs pass on what

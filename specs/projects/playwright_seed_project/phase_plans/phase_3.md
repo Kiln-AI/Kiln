@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Phase 3: The eval, its judge, and its results
@@ -267,7 +267,11 @@ Neither of these is a phase-3 anecdote; both are properties of the create-eval f
   `show_for_tags=[golden_set_tag]`, so tagging must come before rating. Rating a golden run
   that already had a five-star rating leaves the overall value, the rating record's `id` and
   its `created_at` untouched — the named score is another entry in `requirement_ratings`.
-  Confirmed against all five golden runs. Phase 2's toggle warning did not bite here: the
-  Pass/Fail buttons are a separate control from the star widget, and no star was touched.
+  That was checked on the **three** golden runs it could apply to (`122030456526`,
+  `237372582418`, `820034106688`); the other two had `rating: null` and got a fresh record
+  whose `value` is null alongside the named score, so they are evidence that a golden run
+  needs no prior rating, not evidence that an existing one survives. Phase 2's toggle warning
+  did not bite here: the Pass/Fail buttons are a separate control from the star widget, and
+  no star was touched.
 - **The run detail page is `/dataset/<p>/<t>/<run_id>/run`**, not `/dataset/<p>/<t>/<run_id>`,
   which returns 404.
