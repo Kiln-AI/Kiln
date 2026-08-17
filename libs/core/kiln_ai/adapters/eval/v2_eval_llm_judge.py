@@ -174,7 +174,9 @@ class LlmJudgeEval(BaseV2EvalBridge):
             ),
         )
 
-        _, run_output = await adapter.invoke_returning_run_output(rendered_prompt)
+        judge_run, run_output = await adapter.invoke_returning_run_output(
+            rendered_prompt
+        )
 
         if props.g_eval:
             scores = build_g_eval_score(
@@ -192,4 +194,7 @@ class LlmJudgeEval(BaseV2EvalBridge):
         return V2EvalResult(
             scores=scores,
             intermediate_outputs=run_output.intermediate_outputs,
+            # `usage`, not `cumulative_usage`: it already accumulates every call this
+            # judgment made, and it is the one that carries latency.
+            usage=judge_run.usage,
         )

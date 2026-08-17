@@ -27,6 +27,7 @@
     type TableRow,
   } from "./spec_table"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Banner from "$lib/ui/banner.svelte"
   import posthog from "posthog-js"
   import { agentInfo } from "$lib/agent"
@@ -46,6 +47,7 @@
   let evals: Eval[] | null = null
   let evals_error: KilnError | null = null
   let evals_loading = true
+  let eval_load_error_count = 0
 
   $: loading = specs_loading || evals_loading
   $: error = specs_error || evals_error
@@ -206,6 +208,7 @@
     try {
       evals_loading = true
       evals_error = null
+      eval_load_error_count = 0
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/evals",
         {
@@ -218,7 +221,8 @@
       if (error) {
         throw error
       }
-      evals = data
+      evals = data.evals
+      eval_load_error_count = data.load_error_count
     } catch (error) {
       if (req_project_id !== project_id || req_task_id !== task_id) return
       evals_error = createKilnError(error)
@@ -670,6 +674,17 @@
       ]}
 >
   <div class="flex flex-col gap-4">
+    {#if !loading && !error && eval_load_error_count > 0}
+      <div class="text-error text-sm">
+        {eval_load_error_count === 1
+          ? "1 eval failed to load"
+          : `${eval_load_error_count} evals failed to load`}
+        <InfoTooltip
+          tooltip_text="You may need to update Kiln. Some evals could not be opened by this version of Kiln."
+          no_pad={true}
+        />
+      </div>
+    {/if}
     {#if loading}
       <div class="flex justify-center items-center h-full">
         <div class="loading loading-spinner loading-lg"></div>

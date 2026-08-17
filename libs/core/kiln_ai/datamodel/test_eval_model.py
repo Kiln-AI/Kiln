@@ -1,9 +1,16 @@
+import json
+import warnings
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 from pydantic import ValidationError
 
-from kiln_ai.datamodel.basemodel import KilnParentModel
+from kiln_ai.datamodel.basemodel import KilnParentModel, ReadOnlyMutationError
 from kiln_ai.datamodel.datamodel_enums import EvalStatus, Priority
 from kiln_ai.datamodel.eval import (
+    LEGACY_TRACE_FIELDS,
+    SCORER_CODE_FILENAME,
     ArgMatch,
     CodeEvalProperties,
     ContainsProperties,
@@ -12,6 +19,7 @@ from kiln_ai.datamodel.eval import (
     EvalConfigType,
     EvalDataType,
     EvalInput,
+    EvalInputSplit,
     EvalOutputScore,
     EvalRun,
     EvalTaskInput,
@@ -24,17 +32,21 @@ from kiln_ai.datamodel.eval import (
     SingleTurnEvalInputData,
     SkippedReason,
     StepCountCheckProperties,
+    TaskRunSplit,
     ToolCallCheckProperties,
     ToolCallSpec,
     UserMessage,
     V2EvalResult,
+    V2EvalType,
     reference_data_keys,
     validate_scores_against_output_scores,
 )
 from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import Task
-from kiln_ai.datamodel.task_output import TaskOutputRatingType
+from kiln_ai.datamodel.task_output import TaskOutput, TaskOutputRatingType
+from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.usage import Usage
 
 
 @pytest.fixture
@@ -128,7 +140,7 @@ def test_eval_basic_properties():
 
 
 def test_eval_with_train_set_filter_id():
-    """Test that Eval correctly stores train_set_filter_id."""
+    """The deprecated filter fields are accepted as input and land in `splits`."""
     eval = Eval(
         name="Test Eval",
         eval_set_filter_id="tag::eval_test",
@@ -142,13 +154,14 @@ def test_eval_with_train_set_filter_id():
         ],
     )
 
-    assert eval.eval_set_filter_id == "tag::eval_test"
-    assert eval.train_set_filter_id == "tag::eval_train_test"
+    assert eval.splits["test"] == TaskRunSplit(filter_id="tag::eval_test")
+    assert eval.splits["train"] == TaskRunSplit(filter_id="tag::eval_train_test")
+    # The golden set is not a split, and eval_configs_filter_id is not deprecated.
     assert eval.eval_configs_filter_id == "tag::eval_golden_test"
 
 
 def test_eval_train_set_filter_id_defaults_to_none():
-    """Test that train_set_filter_id defaults to None when not provided."""
+    """No train filter in, no train split out."""
     eval = Eval(
         name="Test Eval",
         eval_set_filter_id="tag::tag1",
@@ -161,11 +174,11 @@ def test_eval_train_set_filter_id_defaults_to_none():
         ],
     )
 
-    assert eval.train_set_filter_id is None
+    assert "train" not in eval.splits
 
 
-def test_migrate_train_set_filter_id_on_load(mock_task, tmp_path):
-    """Test that loading an eval from file auto-creates train_set_filter_id when missing."""
+def test_no_train_split_minted_on_load(mock_task, tmp_path):
+    """An eval loaded without a train split has none. Nothing mints one."""
     task_path = tmp_path / "task.kiln"
     mock_task.path = task_path
     mock_task.save_to_file()
@@ -186,11 +199,11 @@ def test_migrate_train_set_filter_id_on_load(mock_task, tmp_path):
     eval.save_to_file()
 
     loaded_eval = Eval.load_from_file(str(eval.path))
-    assert loaded_eval.train_set_filter_id == "tag::train_my_eval_name"
+    assert "train" not in loaded_eval.splits
 
 
-def test_migrate_train_set_filter_id_preserves_existing(mock_task, tmp_path):
-    """Test that migration does not overwrite an existing train_set_filter_id."""
+def test_train_set_filter_id_survives_round_trip(mock_task, tmp_path):
+    """An explicitly set train filter survives the save, as a split."""
     task_path = tmp_path / "task.kiln"
     mock_task.path = task_path
     mock_task.save_to_file()
@@ -211,11 +224,13 @@ def test_migrate_train_set_filter_id_preserves_existing(mock_task, tmp_path):
     eval.save_to_file()
 
     loaded_eval = Eval.load_from_file(str(eval.path))
-    assert loaded_eval.train_set_filter_id == "tag::custom_train_tag"
+    assert loaded_eval.splits["train"] == TaskRunSplit(
+        filter_id="tag::custom_train_tag"
+    )
 
 
-def test_migrate_train_set_filter_id_not_on_new_eval():
-    """Test that migration does not trigger on newly created evals (not loaded from file)."""
+def test_no_train_split_minted_on_new_eval():
+    """A newly constructed eval without a train filter has no train split."""
     eval = Eval(
         name="New Eval",
         eval_set_filter_id="tag::tag1",
@@ -228,43 +243,7 @@ def test_migrate_train_set_filter_id_not_on_new_eval():
             )
         ],
     )
-    assert eval.train_set_filter_id is None
-
-
-@pytest.mark.parametrize(
-    "eval_name,expected_tag",
-    [
-        ("Simple", "tag::train_simple"),
-        ("Two Words", "tag::train_two_words"),
-        ("UPPER CASE", "tag::train_upper_case"),
-        ("mixed Case Name", "tag::train_mixed_case_name"),
-        ("already_underscored", "tag::train_already_underscored"),
-    ],
-)
-def test_migrate_train_set_filter_id_slugification(
-    mock_task, tmp_path, eval_name, expected_tag
-):
-    """Test that various eval names are correctly slugified into train_set_filter_id."""
-    task_path = tmp_path / "task.kiln"
-    mock_task.path = task_path
-    mock_task.save_to_file()
-
-    eval = Eval(
-        name=eval_name,
-        parent=mock_task,
-        eval_set_filter_id="tag::tag1",
-        eval_configs_filter_id="tag::tag2",
-        output_scores=[
-            EvalOutputScore(
-                name="score",
-                type=TaskOutputRatingType.pass_fail,
-            )
-        ],
-    )
-    eval.save_to_file()
-
-    loaded_eval = Eval.load_from_file(str(eval.path))
-    assert loaded_eval.train_set_filter_id == expected_tag
+    assert "train" not in eval.splits
 
 
 def test_eval_default_values():
@@ -2207,7 +2186,7 @@ def test_step_count_check_bounds():
 
 
 def test_eval_v2_with_eval_input_filter():
-    """Eval with eval_input_filter_id (V2 path) validates correctly."""
+    """The eval_input_filter_id shim becomes an EvalInput-backed test split."""
     eval = Eval(
         name="V2 Eval",
         eval_input_filter_id="all",
@@ -2216,28 +2195,14 @@ def test_eval_v2_with_eval_input_filter():
             EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
         ],
     )
-    assert eval.eval_input_filter_id == "all"
-    assert eval.eval_set_filter_id is None
+    assert eval.splits["test"] == EvalInputSplit(filter_id="all")
+    assert eval.model_dump()["eval_set_filter_id"] is None
+    assert not hasattr(eval, "eval_input_filter_id")
 
 
-def test_eval_filter_mutual_exclusivity():
-    """Setting both eval_set_filter_id and eval_input_filter_id raises."""
-    with pytest.raises(
-        ValueError, match="Exactly one of eval_set_filter_id or eval_input_filter_id"
-    ):
-        Eval(
-            name="Both",
-            eval_set_filter_id="tag::tag1",
-            eval_input_filter_id="all",
-            eval_configs_filter_id="tag::cfg",
-            output_scores=[
-                EvalOutputScore(name="s", type=TaskOutputRatingType.pass_fail)
-            ],
-        )
-
-    with pytest.raises(
-        ValueError, match="Exactly one of eval_set_filter_id or eval_input_filter_id"
-    ):
+def test_eval_requires_a_test_split():
+    """An eval with no test split, in either home, raises."""
+    with pytest.raises(ValueError, match="must have a test split"):
         Eval(
             name="Neither",
             eval_configs_filter_id="tag::cfg",
@@ -2245,6 +2210,21 @@ def test_eval_filter_mutual_exclusivity():
                 EvalOutputScore(name="s", type=TaskOutputRatingType.pass_fail)
             ],
         )
+
+
+def test_eval_legacy_only_validates():
+    """An eval carrying only legacy fields validates.
+
+    Guards the declaration order of migrate_legacy_split_fields and validate_splits: if
+    the migration stopped running first, this would raise 'must have a test split'.
+    """
+    eval = Eval(
+        name="Legacy",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::cfg",
+        output_scores=[EvalOutputScore(name="s", type=TaskOutputRatingType.pass_fail)],
+    )
+    assert eval.splits["test"] == TaskRunSplit(filter_id="tag::tag1")
 
 
 def test_eval_optional_evaluation_data_type():
@@ -2344,7 +2324,7 @@ def test_eval_run_v2_bypass_output_fields():
     """V2 config_type bypasses validate_output_fields and validate_reference_answer."""
     eval = Eval(
         name="V2 Parent",
-        eval_input_filter_id="all",
+        splits={"test": EvalInputSplit(filter_id="all")},
         eval_configs_filter_id="tag::cfg",
         evaluation_data_type=EvalDataType.final_answer,
         output_scores=[
@@ -2493,6 +2473,80 @@ class TestEvalTaskInput:
         """final_message is required; omitting it raises ValidationError."""
         with pytest.raises(ValidationError, match="final_message"):
             EvalTaskInput()  # type: ignore[call-arg]
+
+
+class TestEvalTaskInputFromTrace:
+    """The trace and the item it was generated from are two records now."""
+
+    @pytest.fixture
+    def trace(self):
+        return TaskRun(
+            input="what the model saw",
+            output=TaskOutput(output="what the model said"),
+            trace=[{"role": "assistant", "content": "what the model said"}],
+        )
+
+    def test_from_an_eval_input_source(self, trace):
+        eval_input = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="2+2?")),
+            reference={"answer": "4"},
+        )
+
+        result = EvalTaskInput.from_trace(trace, eval_input)
+
+        assert result.final_message == "what the model said"
+        assert result.trace == trace.trace
+        assert result.reference_data == {"answer": "4"}
+        # The item's own text, not the trace's: the item is the canonical input.
+        assert result.task_input == "2+2?"
+
+    def test_from_a_task_run_source(self, trace):
+        item = TaskRun(input="the dataset input", output=TaskOutput(output="old"))
+
+        result = EvalTaskInput.from_trace(trace, item)
+
+        assert result.final_message == "what the model said"
+        assert result.reference_data is None
+        # No separate statement of the input exists for a TaskRun-backed item, so the
+        # trace's own input is what was actually scored.
+        assert result.task_input == "what the model saw"
+
+    def test_existing_constructors_are_from_trace(self, trace):
+        """The two named constructors are the two shapes of `from_trace`."""
+        eval_input = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="2+2?")),
+            reference={"answer": "4"},
+        )
+        assert EvalTaskInput.from_eval_input(
+            eval_input, trace
+        ) == EvalTaskInput.from_trace(trace, eval_input)
+        assert EvalTaskInput.from_task_run(trace) == EvalTaskInput.from_trace(
+            trace, trace
+        )
+
+    @pytest.mark.parametrize(
+        "trace_arg, source, error",
+        [
+            ("not a run", TaskRun(input="i", output=TaskOutput(output="o")), TypeError),
+            (
+                TaskRun(input="i", output=TaskOutput(output="o")),
+                "not an item",
+                TypeError,
+            ),
+            (
+                TaskRun(input="i", output=TaskOutput(output="o")),
+                EvalInput(
+                    data=MultiTurnSyntheticEvalInputData(
+                        first_message=UserMessage(text="hi")
+                    )
+                ),
+                ValueError,
+            ),
+        ],
+    )
+    def test_rejects_shapes_it_cannot_describe(self, trace_arg, source, error):
+        with pytest.raises(error):
+            EvalTaskInput.from_trace(trace_arg, source)
 
 
 # ── Save-time Jinja validation (validate_v2_templates_and_expressions) ───
@@ -2784,6 +2838,67 @@ class TestV1EvalRunCoexistence:
         assert loaded.skipped_detail is None
         assert loaded.scores == {"acc": 0.8}
 
+    def test_pre_split_eval_run_file_loads_unchanged(self, mock_task, tmp_path):
+        """Regression guard for D15: a record written before scored_run_id existed still
+        loads, with every inline field intact and no new field required. Read through
+        config.runs(), the real path, not just load_from_file."""
+        mock_task.path = tmp_path / "task.kiln"
+        mock_task.save_to_file()
+
+        eval_obj = Eval(
+            name="Pre Split Eval",
+            parent=mock_task,
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+            ],
+        )
+        eval_obj.save_to_file()
+        config = EvalConfig(
+            name="Pre Split Config",
+            parent=eval_obj,
+            config_type=EvalConfigType.g_eval,
+            model_name="gpt-4",
+            model_provider="openai",
+            properties={"eval_steps": ["step1"]},
+        )
+        config.save_to_file()
+
+        runs_dir = config.path.parent / "runs" / "legacy_run"
+        runs_dir.mkdir(parents=True)
+        on_disk = {
+            "v": 1,
+            "id": "123456789012",
+            "model_type": "eval_run",
+            "dataset_id": "ds1",
+            "task_run_config_id": "rc1",
+            "eval_config_eval": False,
+            "input": "legacy input",
+            "output": "legacy output",
+            "reference_answer": None,
+            "intermediate_outputs": {"chain_of_thought": "thinking"},
+            "task_run_trace": None,
+            "scores": {"accuracy": 1.0},
+            "task_run_usage": {
+                "input_tokens": 5,
+                "output_tokens": 2,
+                "total_tokens": 7,
+            },
+        }
+        (runs_dir / "eval_run.kiln").write_text(json.dumps(on_disk))
+
+        loaded_runs = config.runs()
+        assert len(loaded_runs) == 1
+        loaded = loaded_runs[0]
+        assert loaded.scored_run_id is None
+        assert loaded.eval_usage is None
+        assert loaded.input == "legacy input"
+        assert loaded.output == "legacy output"
+        assert loaded.task_run_usage is not None
+        assert loaded.task_run_usage.total_tokens == 7
+        assert loaded.scores == {"accuracy": 1.0}
+
 
 class TestV1EvalConfigCoexistence:
     def test_v1_config_with_default_config_type(self):
@@ -2956,7 +3071,7 @@ class TestV1EvalRunOutputNoneGuard:
         eval_obj = Eval(
             name="V2 Guard Test",
             parent=mock_task,
-            eval_input_filter_id="tag::s",
+            splits={"test": EvalInputSplit(filter_id="tag::s")},
             eval_configs_filter_id="tag::g",
             evaluation_data_type=None,
             output_scores=[
@@ -3532,3 +3647,1298 @@ class TestEvalPriorityStatusResolution:
         loaded = Eval.load_from_file(str(eval.path))
         assert loaded.priority == Priority.p2
         assert loaded.status == EvalStatus.future
+
+
+class TestEvalSplits:
+    """The splits dict, and the one-way migration of the deprecated flat filter fields."""
+
+    @pytest.fixture
+    def scores(self):
+        return [EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)]
+
+    @pytest.fixture
+    def saved_task(self, mock_task, tmp_path):
+        mock_task.path = tmp_path / "task.kiln"
+        mock_task.save_to_file()
+        return mock_task
+
+    def build_eval(self, scores, **kwargs) -> Eval:
+        return Eval(name="Split Eval", output_scores=scores, **kwargs)
+
+    def saved_json(self, eval: Eval) -> dict:
+        eval.save_to_file()
+        assert eval.path is not None
+        return json.loads(Path(eval.path).read_text(encoding="utf-8"))
+
+    def test_legacy_fields_migrate_into_splits(self, scores):
+        eval = self.build_eval(
+            scores,
+            eval_set_filter_id="tag::test_x",
+            train_set_filter_id="tag::train_x",
+        )
+        assert eval.splits == {
+            "test": TaskRunSplit(filter_id="tag::test_x"),
+            "train": TaskRunSplit(filter_id="tag::train_x"),
+        }
+        # Read once, then cleared: the fields are an input format, not a second home.
+        data = eval.model_dump()
+        assert data["eval_set_filter_id"] is None
+        assert data["train_set_filter_id"] is None
+
+    def test_fresh_eval_has_populated_splits(self, scores):
+        """The migration is not gated on loading from a file."""
+        eval = self.build_eval(scores, eval_set_filter_id="tag::test_x")
+        assert eval._loaded_from_file is False
+        assert eval.splits["test"] == TaskRunSplit(filter_id="tag::test_x")
+
+    def test_splits_wins_over_a_legacy_field(self, saved_task, scores):
+        """Both homes populated: `splits` is the answer and the legacy value is ignored.
+
+        Once a split is in `splits` it is official, so a legacy field beside it — a
+        hand-edited file, or one an older build wrote after a newer one — cannot
+        overwrite it, and is dropped on the next save.
+        """
+        eval = self.build_eval(
+            scores,
+            parent=saved_task,
+            eval_set_filter_id="tag::from_legacy",
+            splits={"test": TaskRunSplit(filter_id="tag::from_splits")},
+        )
+        assert eval.splits["test"] == TaskRunSplit(filter_id="tag::from_splits")
+
+        data = self.saved_json(eval)
+        assert data["eval_set_filter_id"] is None
+        assert data["splits"] == {
+            "test": {"source": "task_run", "filter_id": "tag::from_splits"}
+        }
+
+    def test_a_legacy_field_does_not_rebuild_an_existing_split(
+        self, saved_task, scores
+    ):
+        """The split object itself survives, not just its filter id.
+
+        Splits are `extra="allow"` so a field a future build adds is not dropped. A
+        migration that overwrote the existing entry would rebuild it from a bare filter-id
+        string and lose everything else on it — and a legacy field is exactly the
+        situation where that overwrite used to happen.
+        """
+        eval = Eval.model_validate(
+            {
+                "name": "Future Split",
+                "parent": saved_task,
+                "output_scores": [{"name": "score", "type": "pass_fail"}],
+                "eval_set_filter_id": "tag::from_legacy",
+                "train_set_filter_id": "tag::train_legacy",
+                "splits": {
+                    "test": {
+                        "source": "task_run",
+                        "filter_id": "tag::from_splits",
+                        "weight": 0.5,
+                    },
+                    "train": {
+                        "source": "eval_input",
+                        "filter_id": "tag::train_inputs",
+                        "weight": 0.25,
+                    },
+                },
+            }
+        )
+        data = self.saved_json(eval)
+        assert data["splits"]["test"] == {
+            "source": "task_run",
+            "filter_id": "tag::from_splits",
+            "weight": 0.5,
+        }
+        assert data["splits"]["train"] == {
+            "source": "eval_input",
+            "filter_id": "tag::train_inputs",
+            "weight": 0.25,
+        }
+
+        assert eval.path is not None
+        reloaded = Eval.load_from_file(eval.path)
+        assert getattr(reloaded.splits["test"], "weight") == 0.5
+        assert getattr(reloaded.splits["train"], "weight") == 0.25
+
+    def test_both_legacy_test_filters_is_rejected(self, scores):
+        """The one conflict `splits` winning can't resolve: two legacy inputs, one split.
+
+        `splits` decides legacy-vs-`splits` disagreements, but both sides here are legacy
+        and name different backings, so nothing picks between them. Accepting one would
+        silently discard the other.
+        """
+        with pytest.raises(
+            ValidationError,
+            match="cannot set both eval_set_filter_id and eval_input_filter_id",
+        ):
+            self.build_eval(
+                scores,
+                eval_set_filter_id="tag::runs",
+                eval_input_filter_id="tag::inputs",
+            )
+
+    def test_excluding_a_legacy_field_cannot_drop_a_split(self, scores):
+        """With one home, no dump option can write a split nowhere at all.
+
+        This was the worst failure the two-home serializer could have, so the property is
+        kept as a test even though a single home makes it structural.
+        """
+        eval = self.build_eval(scores, eval_set_filter_id="tag::test_x")
+
+        excluded = eval.model_dump(exclude={"eval_set_filter_id"})
+        assert excluded["splits"] == {
+            "test": {"source": "task_run", "filter_id": "tag::test_x"}
+        }
+        assert eval.model_dump(exclude_none=True)["splits"] == {
+            "test": {"source": "task_run", "filter_id": "tag::test_x"}
+        }
+
+    def test_serialization_schema_describes_the_fields(self):
+        """Eval has no model serializer, so both schema modes are field-derived.
+
+        FastAPI generates response types from the serialization-mode schema; a model
+        serializer would collapse it to a bare object and erase Eval from the generated
+        web client. Pinned here because that failure would otherwise only show up as a
+        schema diff in CI.
+        """
+        properties = Eval.model_json_schema(mode="serialization")["properties"]
+        assert "splits" in properties
+        assert properties["splits"]["additionalProperties"]["discriminator"]
+        assert properties["name"]["type"] == "string"
+        # The deprecation reaches the OpenAPI schema, and from there the generated
+        # TypeScript, so a web caller reading a legacy field is flagged.
+        assert properties["eval_set_filter_id"]["deprecated"] is True
+        assert properties["train_set_filter_id"]["deprecated"] is True
+
+    def test_legacy_eval_file_is_migrated_on_save(self, saved_task, tmp_path):
+        """The gate: an existing-format eval file is rewritten into the new format.
+
+        The file below is what a build predating `splits` writes. Loading it must produce
+        the splits it describes, and saving it must write them to `splits` and null both
+        legacy fields — a stale legacy value would let an older client evaluate against a
+        dataset this one no longer uses.
+        """
+        eval_path = tmp_path / "existing_eval" / "eval.kiln"
+        eval_path.parent.mkdir(parents=True)
+        original = {
+            "v": 1,
+            "id": "123456789012",
+            "created_at": "2025-01-01T00:00:00Z",
+            "created_by": "someone",
+            "name": "Existing Eval",
+            "description": None,
+            "template": None,
+            "current_config_id": None,
+            "eval_set_filter_id": "tag::eval_set_existing",
+            "eval_configs_filter_id": "tag::golden_existing",
+            "train_set_filter_id": "tag::train_existing",
+            "output_scores": [
+                {"name": "score", "instruction": None, "type": "pass_fail"}
+            ],
+            "favourite": False,
+            "template_properties": None,
+            "evaluation_data_type": "final_answer",
+            "model_type": "eval",
+        }
+        eval_path.write_text(
+            json.dumps(original, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
+        loaded = Eval.load_from_file(eval_path)
+        assert loaded.splits == {
+            "test": TaskRunSplit(filter_id="tag::eval_set_existing"),
+            "train": TaskRunSplit(filter_id="tag::train_existing"),
+        }
+
+        loaded.save_to_file()
+        saved = json.loads(eval_path.read_text(encoding="utf-8"))
+        assert saved["eval_set_filter_id"] is None
+        assert saved["train_set_filter_id"] is None
+        assert saved["splits"] == {
+            "test": {"source": "task_run", "filter_id": "tag::eval_set_existing"},
+            "train": {"source": "task_run", "filter_id": "tag::train_existing"},
+        }
+        # Nothing else about the file changed, and the golden set is not a split.
+        assert saved["eval_configs_filter_id"] == "tag::golden_existing"
+        for key in ("v", "id", "created_at", "created_by", "name", "favourite"):
+            assert saved[key] == original[key]
+
+        # Migrated once: the second save is a no-op, and a reload agrees.
+        Eval.load_from_file(eval_path).save_to_file()
+        assert json.loads(eval_path.read_text(encoding="utf-8")) == saved
+
+    def test_no_deprecation_warning_on_a_load_save_cycle(self, saved_task, tmp_path):
+        """The migration reads the deprecated fields through `__dict__` for this reason.
+
+        `deprecated=True` warns on attribute access. The warning is for callers; the one
+        place that is supposed to touch these fields must not trip it, or every load of
+        every legacy eval emits one.
+        """
+        eval_path = tmp_path / "warn_eval" / "eval.kiln"
+        eval_path.parent.mkdir(parents=True)
+        eval_path.write_text(
+            json.dumps(
+                {
+                    "v": 1,
+                    "id": "223456789012",
+                    "name": "Warning Eval",
+                    "eval_set_filter_id": "tag::test_x",
+                    "train_set_filter_id": "tag::train_x",
+                    "eval_configs_filter_id": "tag::golden_x",
+                    "output_scores": [{"name": "score", "type": "pass_fail"}],
+                    "model_type": "eval",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            loaded = Eval.load_from_file(eval_path)
+            loaded.set_split("val", TaskRunSplit(filter_id="tag::val_x"))
+            loaded.save_to_file()
+            loaded.model_dump()
+            loaded.model_dump_json()
+            Eval.load_from_file(eval_path)
+
+    def test_model_construct_is_not_migrated(self, scores):
+        """model_construct skips validation, so the migration never runs.
+
+        Nothing is lost — the fields keep the values they were given, and the dump is
+        exactly what was constructed — but an unvalidated instance is not a migrated one.
+        """
+        eval = Eval.model_construct(
+            name="Unvalidated",
+            eval_set_filter_id="tag::eval_set_x",
+            train_set_filter_id="tag::train_x",
+            eval_configs_filter_id="tag::golden_x",
+            output_scores=scores,
+            splits={},
+        )
+
+        dumped = eval.model_dump()
+
+        assert dumped["eval_set_filter_id"] == "tag::eval_set_x"
+        assert dumped["train_set_filter_id"] == "tag::train_x"
+        assert dumped["splits"] == {}
+
+    def test_splits_native_eval_does_not_acquire_legacy_fields(
+        self, saved_task, scores
+    ):
+        eval = self.build_eval(
+            scores,
+            parent=saved_task,
+            splits={
+                "test": TaskRunSplit(filter_id="tag::test_x"),
+                "val": EvalInputSplit(filter_id="tag::val_x"),
+            },
+        )
+        data = self.saved_json(eval)
+        assert data["eval_set_filter_id"] is None
+        assert data["train_set_filter_id"] is None
+        assert data["splits"] == {
+            "test": {"source": "task_run", "filter_id": "tag::test_x"},
+            "val": {"source": "eval_input", "filter_id": "tag::val_x"},
+        }
+
+    def test_a_legacy_eval_gaining_a_val_split_saves_every_split_together(
+        self, saved_task, scores
+    ):
+        """The mixed case: an existing eval gains a val split with the new tooling.
+
+        All three end up in `splits`, rather than the migrated two staying behind in
+        fields the val split could never share.
+        """
+        eval = self.build_eval(
+            scores,
+            parent=saved_task,
+            eval_set_filter_id="tag::test_x",
+            train_set_filter_id="tag::train_x",
+        )
+        eval.splits["val"] = EvalInputSplit(filter_id="tag::val_x")
+
+        data = self.saved_json(eval)
+        assert data["eval_set_filter_id"] is None
+        assert data["train_set_filter_id"] is None
+        assert data["splits"] == {
+            "test": {"source": "task_run", "filter_id": "tag::test_x"},
+            "train": {"source": "task_run", "filter_id": "tag::train_x"},
+            "val": {"source": "eval_input", "filter_id": "tag::val_x"},
+        }
+        assert "val_set_filter_id" not in data
+
+    def test_reserialized_eval_reloads_to_the_same_splits(self, saved_task, scores):
+        eval = self.build_eval(
+            scores,
+            parent=saved_task,
+            eval_set_filter_id="tag::test_x",
+        )
+        eval.splits["val"] = EvalInputSplit(filter_id="tag::val_x")
+        eval.save_to_file()
+
+        assert eval.path is not None
+        reloaded = Eval.load_from_file(eval.path)
+        assert reloaded.splits == eval.splits
+
+    @pytest.mark.parametrize(
+        "changed_to",
+        [
+            EvalInputSplit(filter_id="tag::inputs"),
+            TaskRunSplit(filter_id="tag::other_runs"),
+        ],
+    )
+    def test_repointing_a_migrated_test_split_writes_only_splits(
+        self, saved_task, scores, changed_to
+    ):
+        """A migrated split is edited like any other: in `splits`, and only there.
+
+        Saved twice, because saving is itself an assignment (`self.path = path`), which
+        re-runs the validators: a split edit has to survive every later save of the same
+        object, not just the first.
+        """
+        eval = self.build_eval(
+            scores, parent=saved_task, eval_set_filter_id="tag::test_x"
+        )
+        eval.splits["test"] = changed_to
+
+        for _ in range(2):
+            data = self.saved_json(eval)
+            assert data["eval_set_filter_id"] is None
+            assert data["splits"] == {
+                "test": {
+                    "source": changed_to.source,
+                    "filter_id": changed_to.filter_id,
+                }
+            }
+            # The in-memory model still agrees with the file it just wrote.
+            assert eval.splits["test"] == changed_to
+
+    def test_a_split_edit_survives_unrelated_edits_and_saves(self, saved_task, scores):
+        """The legacy fields are an input format, not state: nothing re-derives from them.
+
+        Assignment re-runs the model validators, so the migration must not run a second
+        time — otherwise an unrelated edit (here, a rename) would quietly revert the
+        split. Clearing the fields as they are read is what guarantees that.
+        """
+        eval = self.build_eval(
+            scores,
+            parent=saved_task,
+            eval_set_filter_id="tag::test_x",
+            train_set_filter_id="tag::train_x",
+        )
+        eval.splits["train"] = EvalInputSplit(filter_id="tag::train_inputs")
+        eval.name = "Renamed"
+        eval.description = "unrelated edit"
+
+        assert eval.splits["train"] == EvalInputSplit(filter_id="tag::train_inputs")
+        data = self.saved_json(eval)
+        assert data["train_set_filter_id"] is None
+        assert data["splits"]["train"] == {
+            "source": "eval_input",
+            "filter_id": "tag::train_inputs",
+        }
+
+        assert eval.path is not None
+        assert Eval.load_from_file(eval.path).splits["train"] == EvalInputSplit(
+            filter_id="tag::train_inputs"
+        )
+
+    def test_whole_dict_assignment_replaces_splits(self, saved_task, scores):
+        """`eval.splits = {...}` and `eval.splits[...] = ...` must not disagree."""
+        eval = self.build_eval(
+            scores, parent=saved_task, eval_set_filter_id="tag::legacy_test"
+        )
+        eval.splits = {"test": EvalInputSplit(filter_id="tag::inputs")}
+
+        assert eval.splits == {"test": EvalInputSplit(filter_id="tag::inputs")}
+        data = self.saved_json(eval)
+        assert data["eval_set_filter_id"] is None
+        assert data["splits"] == {
+            "test": {"source": "eval_input", "filter_id": "tag::inputs"}
+        }
+
+    def test_whole_dict_assignment_dropping_a_split_removes_it(
+        self, saved_task, scores
+    ):
+        """A key left out of the new dict is gone, and the migration cannot bring it back.
+
+        Whole-dict assignment re-runs the validators, so a migration that had not already
+        cleared the legacy fields would re-read them here and resurrect the dropped split.
+        """
+        eval = self.build_eval(
+            scores,
+            parent=saved_task,
+            eval_set_filter_id="tag::test_x",
+            train_set_filter_id="tag::train_x",
+        )
+        eval.splits = {"test": TaskRunSplit(filter_id="tag::test_x")}
+
+        data = self.saved_json(eval)
+        assert data["train_set_filter_id"] is None
+        assert data["splits"] == {
+            "test": {"source": "task_run", "filter_id": "tag::test_x"}
+        }
+
+        assert eval.path is not None
+        assert "train" not in Eval.load_from_file(eval.path).splits
+
+    def test_removing_a_split_removes_it_from_the_file(self, saved_task, scores):
+        """Deleting a split deletes it from the file, not just from memory.
+
+        Saving re-runs the validators, so this is the same guarantee as the whole-dict
+        case: the migrated legacy field is already cleared, so nothing re-adds the split
+        and the next load agrees.
+        """
+        eval = self.build_eval(
+            scores,
+            parent=saved_task,
+            eval_set_filter_id="tag::test_x",
+            train_set_filter_id="tag::train_x",
+        )
+        del eval.splits["train"]
+
+        data = self.saved_json(eval)
+        assert data["train_set_filter_id"] is None
+        assert data["splits"] == {
+            "test": {"source": "task_run", "filter_id": "tag::test_x"}
+        }
+
+        assert eval.path is not None
+        reloaded = Eval.load_from_file(eval.path)
+        assert "train" not in reloaded.splits
+        assert reloaded.splits["test"] == TaskRunSplit(filter_id="tag::test_x")
+
+    def test_assigning_a_legacy_field_does_not_edit_an_existing_split(
+        self, saved_task, scores
+    ):
+        """Writing a legacy field is not how you edit a split, and it doesn't half-do it.
+
+        `splits` wins over a legacy value wherever it comes from, including a late
+        assignment, so the split is untouched and the assigned value is dropped rather
+        than left on disk for an older client to read.
+        """
+        eval = self.build_eval(
+            scores,
+            parent=saved_task,
+            eval_set_filter_id="tag::test_x",
+            train_set_filter_id="tag::train_x",
+        )
+        eval.train_set_filter_id = "tag::sneak"
+
+        assert eval.splits["train"] == TaskRunSplit(filter_id="tag::train_x")
+        data = self.saved_json(eval)
+        assert data["train_set_filter_id"] is None
+        assert data["splits"]["train"] == {
+            "source": "task_run",
+            "filter_id": "tag::train_x",
+        }
+
+    def test_assigning_a_legacy_field_for_a_missing_split_is_migrated_once(
+        self, saved_task, scores
+    ):
+        """A legacy value is migrated wherever it arrives from — and then it is gone.
+
+        Assignment re-runs the validators, so a deprecated write behaves exactly like a
+        deprecated constructor argument: it fills a split `splits` doesn't have, and the
+        field is cleared. It never becomes a second home for it.
+        """
+        eval = self.build_eval(
+            scores,
+            parent=saved_task,
+            splits={"test": TaskRunSplit(filter_id="tag::test_x")},
+        )
+        eval.train_set_filter_id = "tag::late"
+
+        assert eval.splits["train"] == TaskRunSplit(filter_id="tag::late")
+        data = self.saved_json(eval)
+        assert data["train_set_filter_id"] is None
+        assert data["splits"]["train"] == {
+            "source": "task_run",
+            "filter_id": "tag::late",
+        }
+
+    def test_clearing_a_legacy_field_does_not_remove_its_split(
+        self, saved_task, scores
+    ):
+        """The mirror of the assignment case: writing None is not a deletion either."""
+        eval = self.build_eval(
+            scores,
+            parent=saved_task,
+            eval_set_filter_id="tag::test_x",
+            train_set_filter_id="tag::train_x",
+        )
+        eval.train_set_filter_id = None
+
+        assert eval.splits["train"] == TaskRunSplit(filter_id="tag::train_x")
+        data = self.saved_json(eval)
+        assert data["train_set_filter_id"] is None
+        assert data["splits"]["train"] == {
+            "source": "task_run",
+            "filter_id": "tag::train_x",
+        }
+
+    def test_eval_input_backed_test_split_from_the_shim(self, saved_task, scores):
+        """The eval_input_filter_id shim: migrated into splits, and never written back."""
+        eval = self.build_eval(
+            scores, parent=saved_task, eval_input_filter_id="tag::inputs"
+        )
+        assert eval.splits["test"] == EvalInputSplit(filter_id="tag::inputs")
+
+        data = self.saved_json(eval)
+        assert "eval_input_filter_id" not in data
+        assert data["splits"] == {
+            "test": {"source": "eval_input", "filter_id": "tag::inputs"}
+        }
+
+    def test_splits_wins_over_the_shim(self, scores):
+        """The shim follows the same precedence as the declared legacy fields.
+
+        It is a third legacy input for the test split, so input carrying both it and a
+        `splits["test"]` keeps the `splits` entry — otherwise the one input that skipped
+        the rule would be the one that could still clobber a split's extra fields.
+        """
+        eval = self.build_eval(
+            scores,
+            eval_input_filter_id="tag::from_shim",
+            splits={"test": EvalInputSplit(filter_id="tag::from_splits")},
+        )
+        assert eval.splits["test"] == EvalInputSplit(filter_id="tag::from_splits")
+
+    @pytest.mark.parametrize("source", ["task_run", "eval_input"])
+    def test_unknown_field_inside_a_split_survives_a_round_trip(
+        self, saved_task, scores, source
+    ):
+        """Forward compatibility one level below the split name.
+
+        Both split types, because both are things a future build writes.
+        """
+        eval = Eval.model_validate(
+            {
+                "name": "Future Split",
+                "parent": saved_task,
+                "output_scores": [{"name": "score", "type": "pass_fail"}],
+                "splits": {
+                    "test": {
+                        "source": source,
+                        "filter_id": "tag::test_x",
+                        "weight": 0.5,
+                    }
+                },
+            }
+        )
+        data = self.saved_json(eval)
+        assert data["splits"]["test"]["weight"] == 0.5
+
+        assert eval.path is not None
+        reloaded = Eval.load_from_file(eval.path)
+        assert getattr(reloaded.splits["test"], "weight") == 0.5
+
+    def test_unknown_split_source_fails_the_load(self, scores):
+        """A deliberate limit: an unrecognized backing is a hard failure, not an opaque split.
+
+        Unlike an unknown split *name*, which this build can ignore safely, an unknown
+        *source* on a split this build addresses can't be resolved to items — accepting it
+        would turn a loud load error into a silent "no items" at every reader, and would
+        let an EvalInput-shaped split escape the filter-type guarantee EvalInputSplit
+        exists to enforce. Recorded as a test so the trade is visible if a third source
+        ever lands.
+        """
+        with pytest.raises(ValidationError):
+            self.build_eval(
+                scores, splits={"test": {"source": "warehouse", "filter_id": "tag::x"}}
+            )
+
+    def test_unknown_split_key_survives_a_round_trip(self, saved_task, scores):
+        """A split name this build doesn't know loads, is ignored, and is not dropped."""
+        eval = Eval.model_validate(
+            {
+                "name": "Future Eval",
+                "parent": saved_task,
+                "output_scores": [{"name": "score", "type": "pass_fail"}],
+                "splits": {
+                    "test": {"source": "task_run", "filter_id": "tag::test_x"},
+                    "holdout": {"source": "eval_input", "filter_id": "tag::holdout_x"},
+                },
+            }
+        )
+        data = self.saved_json(eval)
+        assert data["splits"]["holdout"] == {
+            "source": "eval_input",
+            "filter_id": "tag::holdout_x",
+        }
+
+        assert eval.path is not None
+        assert Eval.load_from_file(eval.path).splits["holdout"] == EvalInputSplit(
+            filter_id="tag::holdout_x"
+        )
+
+    @pytest.mark.parametrize(
+        "filter_id",
+        [
+            "multi_filter::high_rating&all",
+            "high_rating",
+            # All four TaskRun-only forms functional spec 7 names, not just the two that
+            # happen to differ in prefix: each is a rating or trace predicate over a
+            # TaskRun, which an EvalInput has nothing to answer.
+            "thinking_model",
+            "thinking_model_high_rated",
+        ],
+    )
+    def test_eval_input_split_rejects_task_run_only_filters(self, filter_id):
+        """Functional spec 7, made structural: unrepresentable, not validator-enforced."""
+        with pytest.raises(ValidationError):
+            EvalInputSplit(filter_id=filter_id)
+        assert TaskRunSplit(filter_id=filter_id).filter_id == filter_id
+
+    def test_dict_round_trip_keeps_the_migrated_splits(self, scores):
+        """A legacy eval rebuilt from its own dump keeps its splits, in the new format.
+
+        The dump carries the splits and two nulls, so the rebuild has nothing left to
+        migrate — the migration happened once, to the first instance.
+        """
+        eval = self.build_eval(
+            scores,
+            eval_set_filter_id="tag::test_x",
+            train_set_filter_id="tag::train_x",
+        )
+        rebuilt = Eval(**eval.model_dump())
+        rebuilt_data = rebuilt.model_dump()
+        assert rebuilt_data["eval_set_filter_id"] is None
+        assert rebuilt_data["train_set_filter_id"] is None
+        assert rebuilt_data["splits"] == {
+            "test": {"source": "task_run", "filter_id": "tag::test_x"},
+            "train": {"source": "task_run", "filter_id": "tag::train_x"},
+        }
+
+    def test_model_copy_keeps_the_migrated_splits(self, scores):
+        """A copy of a migrated eval is migrated too — there is no format to carry."""
+        eval = self.build_eval(scores, eval_set_filter_id="tag::test_x")
+        copied = eval.model_copy()
+        assert copied.splits["test"] == TaskRunSplit(filter_id="tag::test_x")
+        assert copied.model_dump()["eval_set_filter_id"] is None
+
+    def test_a_migrated_split_survives_exclude_unset(self, scores):
+        """A legacy eval never explicitly set `splits`, so the migration marks it set.
+
+        Without the marking, an exclude_unset dump of a migrated eval carries neither the
+        split nor a legacy field that could stand in for it.
+        """
+        eval = self.build_eval(scores, eval_set_filter_id="tag::test_x")
+
+        # `source` is elided because it is a defaulted field the caller never set — that
+        # is what exclude_unset does to any nested model, here and elsewhere in the repo.
+        # What matters is that the split is present at all.
+        data = eval.model_dump(exclude_unset=True)
+        assert data["splits"]["test"]["filter_id"] == "tag::test_x"
+
+    def test_writing_a_train_split_lands_in_splits(self, saved_task, scores):
+        """What the eval-update endpoint does: same result whatever the eval arrived as."""
+        migrated = self.build_eval(
+            scores,
+            parent=saved_task,
+            eval_set_filter_id="tag::test_x",
+            train_set_filter_id="tag::train_x",
+        )
+        migrated.splits["train"] = TaskRunSplit(filter_id="tag::train_updated")
+        migrated_data = self.saved_json(migrated)
+        assert migrated_data["train_set_filter_id"] is None
+        assert migrated_data["splits"]["train"] == {
+            "source": "task_run",
+            "filter_id": "tag::train_updated",
+        }
+
+        native = self.build_eval(
+            scores,
+            parent=saved_task,
+            splits={"test": TaskRunSplit(filter_id="tag::test_x")},
+        )
+        native.splits["train"] = TaskRunSplit(filter_id="tag::train_new")
+        native_data = self.saved_json(native)
+        assert native_data["train_set_filter_id"] is None
+        assert native_data["splits"]["train"] == {
+            "source": "task_run",
+            "filter_id": "tag::train_new",
+        }
+
+    @pytest.mark.parametrize(
+        "name,split",
+        [
+            ("train", TaskRunSplit(filter_id="tag::train_new")),
+            ("train", EvalInputSplit(filter_id="tag::train_inputs")),
+            ("val", TaskRunSplit(filter_id="tag::val_x")),
+        ],
+    )
+    def test_set_split_stores_the_split_in_splits(
+        self, saved_task, scores, name, split
+    ):
+        """Every split, whatever its name or backing, goes to the one home."""
+        eval = self.build_eval(
+            scores, parent=saved_task, eval_set_filter_id="tag::test_x"
+        )
+        eval.set_split(name, split)
+
+        assert eval.splits[name] == split
+        data = self.saved_json(eval)
+        assert data["train_set_filter_id"] is None
+        assert data["splits"][name] == {
+            "source": split.source,
+            "filter_id": split.filter_id,
+        }
+
+    def test_set_split_survives_exclude_unset(self, scores):
+        """set_split marks `splits` set, which dict item assignment can't do for itself.
+
+        Only reachable via model_construct: every validated eval has `splits` marked
+        already, either because it was passed or because the legacy migration marked it.
+        """
+        eval = Eval.model_construct(name="Constructed", output_scores=scores)
+        assert "splits" not in eval.model_fields_set
+
+        eval.set_split("val", EvalInputSplit(filter_id="tag::val_x"))
+
+        data = eval.model_dump(exclude_unset=True)
+        assert data["splits"]["val"]["filter_id"] == "tag::val_x"
+
+    def test_set_split_refuses_to_mutate_a_readonly_eval(self, saved_task, scores):
+        """Readonly instances are the cached ones, shared with every other holder.
+
+        `eval.splits[...] = ...` and set_split mutate a dict, which never reaches
+        __setattr__ — so the readonly check has to be explicit, or a caller that took a
+        readonly copy silently edits everyone else's.
+        """
+        eval = self.build_eval(
+            scores, parent=saved_task, eval_set_filter_id="tag::test_x"
+        )
+        eval.save_to_file()
+        assert eval.path is not None
+
+        readonly = Eval.load_from_file(eval.path, readonly=True)
+        with pytest.raises(ReadOnlyMutationError):
+            readonly.set_split("train", TaskRunSplit(filter_id="tag::train_x"))
+        assert "train" not in readonly.splits
+
+    def test_set_split_and_direct_assignment_agree(self, saved_task, scores):
+        """The two ways to write a split differ only in bookkeeping, not in outcome."""
+        via_set_split = self.build_eval(
+            scores, parent=saved_task, eval_set_filter_id="tag::test_x"
+        )
+        via_set_split.set_split("train", TaskRunSplit(filter_id="tag::train_x"))
+
+        via_assignment = self.build_eval(
+            scores, parent=saved_task, eval_set_filter_id="tag::test_x"
+        )
+        via_assignment.splits["train"] = TaskRunSplit(filter_id="tag::train_x")
+
+        assert via_set_split.splits == via_assignment.splits
+        assert (
+            self.saved_json(via_set_split)["splits"]
+            == self.saved_json(via_assignment)["splits"]
+        )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Phase 2: Code-as-file storage for code judges
+#
+# CodeEvalProperties.code lives in a sibling scorer.py, not inline in
+# eval_config.kiln. CodeEvalProperties is a nested member of the
+# V2EvalConfigProperties discriminated union in EvalConfig.properties, so the
+# load/save context set on the parent EvalConfig must propagate down to it.
+# ──────────────────────────────────────────────────────────────────────
+
+
+VALID_SCORE = "def score(output, trace, reference_data, task_input):\n    return {'accuracy': 1.0}\n"
+ASYNC_SCORE = "async def score(output, trace, reference_data, task_input):\n    return {'accuracy': 1.0}\n"
+
+
+def _saved_task(tmp_path) -> Task:
+    task = Task(name="Code Judge Task", instruction="Test instruction")
+    task.path = tmp_path / "task" / "task.kiln"
+    task.save_to_file()
+    return task
+
+
+def _saved_eval(task) -> Eval:
+    eval_obj = Eval(
+        name="Code Judge Eval",
+        parent=task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail),
+        ],
+    )
+    eval_obj.save_to_file()
+    return eval_obj
+
+
+def _saved_code_eval_config(tmp_path, code=VALID_SCORE, **prop_overrides) -> EvalConfig:
+    """Build and persist a Task -> Eval -> EvalConfig(v2, CodeEvalProperties)."""
+    eval_obj = _saved_eval(_saved_task(tmp_path))
+    config = EvalConfig(
+        name="Code Judge Config",
+        parent=eval_obj,
+        config_type=EvalConfigType.v2,
+        properties=CodeEvalProperties(code=code, **prop_overrides),
+    )
+    config.save_to_file()
+    return config
+
+
+class TestCodeEvalFileStorage:
+    def test_context_propagates_to_nested_union_member(self, tmp_path):
+        # The Phase-2 hinge: validation + serialization context must reach the
+        # nested CodeEvalProperties inside the discriminated union. A full disk
+        # round-trip through EvalConfig proves both directions at once.
+        config = _saved_code_eval_config(
+            tmp_path, code=VALID_SCORE, reference_keys=["gold"], timeout_seconds=90
+        )
+
+        # Serialization context reached the nested member: code is on disk in
+        # scorer.py and absent from the serialized properties.
+        scorer_py = config.path.parent / SCORER_CODE_FILENAME
+        assert scorer_py.read_text(encoding="utf-8") == VALID_SCORE
+        on_disk = json.loads(config.path.read_text(encoding="utf-8"))
+        assert "code" not in on_disk["properties"]
+
+        # Validation context reached the nested member: code is reconstructed on load.
+        loaded = EvalConfig.load_from_file(config.path)
+        assert isinstance(loaded.properties, CodeEvalProperties)
+        assert loaded.properties.code == VALID_SCORE
+        assert loaded.properties.reference_keys == ["gold"]
+        assert loaded.properties.timeout_seconds == 90
+
+    def test_save_writes_scorer_py_and_omits_code_from_properties(self, tmp_path):
+        config = _saved_code_eval_config(
+            tmp_path, code=VALID_SCORE, reference_keys=["gold"], timeout_seconds=42
+        )
+
+        scorer_py = config.path.parent / SCORER_CODE_FILENAME
+        assert scorer_py.exists()
+        assert scorer_py.read_text(encoding="utf-8") == VALID_SCORE
+
+        on_disk_props = json.loads(config.path.read_text(encoding="utf-8"))[
+            "properties"
+        ]
+        assert "code" not in on_disk_props
+        # Discriminator + other functional fields still live in the .kiln JSON.
+        assert on_disk_props["type"] == "code_eval"
+        assert on_disk_props["reference_keys"] == ["gold"]
+        assert on_disk_props["timeout_seconds"] == 42
+
+    def test_load_reconstructs_code_from_scorer_py(self, tmp_path):
+        config = _saved_code_eval_config(tmp_path, code=ASYNC_SCORE)
+
+        loaded = EvalConfig.load_from_file(config.path)
+        assert isinstance(loaded.properties, CodeEvalProperties)
+        assert loaded.properties.code == ASYNC_SCORE
+
+    def test_missing_scorer_py_fails_load(self, tmp_path):
+        config = _saved_code_eval_config(tmp_path)
+        (config.path.parent / SCORER_CODE_FILENAME).unlink()
+
+        with pytest.raises(ValueError, match=SCORER_CODE_FILENAME):
+            EvalConfig.load_from_file(config.path)
+
+    def test_corrupted_scorer_py_fails_validator_on_load(self, tmp_path):
+        config = _saved_code_eval_config(tmp_path)
+        # Hand-edit scorer.py to source without a module-level `score` function.
+        (config.path.parent / SCORER_CODE_FILENAME).write_text(
+            "def helper():\n    pass\n", encoding="utf-8"
+        )
+
+        with pytest.raises(ValidationError, match="module-level 'score' function"):
+            EvalConfig.load_from_file(config.path)
+
+    def test_save_is_idempotent(self, tmp_path):
+        config = _saved_code_eval_config(tmp_path, code=VALID_SCORE)
+        scorer_py = config.path.parent / SCORER_CODE_FILENAME
+
+        first_kiln = config.path.read_bytes()
+        first_py = scorer_py.read_bytes()
+
+        loaded = EvalConfig.load_from_file(config.path)
+        loaded.save_to_file()
+
+        assert config.path.read_bytes() == first_kiln
+        assert scorer_py.read_bytes() == first_py
+
+    def test_api_dump_keeps_code(self):
+        # Without the save context, code stays in the dump and no file is written.
+        props = CodeEvalProperties(code=VALID_SCORE)
+        config = EvalConfig(
+            name="Code Judge Config",
+            config_type=EvalConfigType.v2,
+            properties=props,
+        )
+
+        with patch.object(Path, "write_text") as mock_write:
+            assert props.model_dump()["code"] == VALID_SCORE
+            assert json.loads(props.model_dump_json())["code"] == VALID_SCORE
+            # Also true when dumped as part of the parent EvalConfig (API shape).
+            assert config.model_dump()["properties"]["code"] == VALID_SCORE
+            assert (
+                json.loads(config.model_dump_json())["properties"]["code"]
+                == VALID_SCORE
+            )
+        mock_write.assert_not_called()
+
+    def test_source_dir_missing_from_load_context_fails(self):
+        # Defensive guard: loading_from_file set but source_dir absent (a future
+        # base-model regression) fails clearly rather than silently skipping.
+        with pytest.raises(
+            ValidationError, match="source_dir missing from load context"
+        ):
+            CodeEvalProperties.model_validate(
+                {"type": "code_eval"}, context={"loading_from_file": True}
+            )
+
+    def test_read_path_type_gate_rejects_mismatched_type(self):
+        # Defense-in-depth: the CodeEvalProperties read path only handles
+        # code_eval properties. A present, mismatched `type` is rejected before
+        # any scorer.py read, rather than silently proceeding.
+        with pytest.raises(ValidationError, match="can only load code_eval properties"):
+            CodeEvalProperties.model_validate(
+                {"type": "llm_judge", "code": VALID_SCORE}
+            )
+
+    def test_read_path_type_gate_allows_absent_and_enum_type(self):
+        # None (type omitted, field defaults) and the enum form both pass the
+        # gate — valid-input behavior is unchanged.
+        assert CodeEvalProperties(code=VALID_SCORE).type == V2EvalType.code_eval
+        assert (
+            CodeEvalProperties.model_validate(
+                {"type": V2EvalType.code_eval, "code": VALID_SCORE}
+            ).code
+            == VALID_SCORE
+        )
+
+    def test_serialize_rejects_non_directory_dest_path(self, tmp_path):
+        props = CodeEvalProperties(code=VALID_SCORE)
+        not_a_dir = tmp_path / "does_not_exist"
+        with pytest.raises(ValueError, match="dest_path must be an existing directory"):
+            props.model_dump(context={"save_attachments": True, "dest_path": not_a_dir})
+
+    def test_other_eval_type_writes_no_sibling_file(self, tmp_path):
+        # A v2 config with a non-code property type writes no scorer.py.
+        eval_obj = _saved_eval(_saved_task(tmp_path))
+        llm_config = EvalConfig(
+            name="LLM Judge Config",
+            parent=eval_obj,
+            config_type=EvalConfigType.v2,
+            properties=LlmJudgeProperties(
+                model_name="gpt-4o",
+                model_provider="openai",
+                prompt_template="Evaluate: {{ final_message }}",
+            ),
+        )
+        llm_config.save_to_file()
+        assert not (llm_config.path.parent / SCORER_CODE_FILENAME).exists()
+
+        # A legacy g_eval config likewise writes no scorer.py.
+        legacy_config = EvalConfig(
+            name="Legacy Config",
+            parent=eval_obj,
+            config_type=EvalConfigType.g_eval,
+            model_name="gpt-4",
+            model_provider="openai",
+            properties={"eval_steps": ["s1"]},
+        )
+        legacy_config.save_to_file()
+        assert not (legacy_config.path.parent / SCORER_CODE_FILENAME).exists()
+
+    def test_inline_code_in_properties_is_lenient(self, tmp_path):
+        # A properties dict that already carries `code` (e.g. an in-memory dict
+        # passed to model_validate with load context) uses it as-is and does not
+        # touch disk — the graceful-construction property (functional spec §7).
+        with patch.object(Path, "read_text") as mock_read:
+            props = CodeEvalProperties.model_validate(
+                {"type": "code_eval", "code": VALID_SCORE},
+                context={"loading_from_file": True, "source_dir": tmp_path},
+            )
+        assert props.code == VALID_SCORE
+        mock_read.assert_not_called()
+
+    def test_serialization_schema_matches_validation_schema(self):
+        # The wrap serializer returns an untyped dict, which would collapse the
+        # serialization-mode JSON schema to {additionalProperties: true, type:
+        # object}. The __get_pydantic_json_schema__ override keeps it identical
+        # to validation mode so EvalConfig's OpenAPI (EvalConfig is a FastAPI
+        # response_model) does not drift the committed api_schema.d.ts.
+        validation_schema = CodeEvalProperties.model_json_schema(mode="validation")
+        serialization_schema = CodeEvalProperties.model_json_schema(
+            mode="serialization"
+        )
+        assert serialization_schema == validation_schema
+        # code stays a typed field (not lost to the collapse) in both modes.
+        assert serialization_schema["properties"]["code"]["type"] == "string"
+
+    def test_openapi_component_is_single_and_typed(self):
+        # Reproduce the reviewer's check: a minimal FastAPI app whose
+        # response_model is the real EvalConfig must emit a single, fully typed
+        # CodeEvalProperties component — no -Input/-Output split, no collapse.
+        fastapi = pytest.importorskip("fastapi")
+
+        app = fastapi.FastAPI()
+
+        @app.get("/config", response_model=EvalConfig)
+        def _get_config():  # pragma: no cover - schema-only endpoint
+            return None
+
+        components = app.openapi()["components"]["schemas"]
+        code_eval_names = [n for n in components if "CodeEvalProperties" in n]
+        assert code_eval_names == ["CodeEvalProperties"]
+
+        component = components["CodeEvalProperties"]
+        assert "code" in component.get("properties", {})
+        assert component["properties"]["code"]["type"] == "string"
+
+
+# ── EvalRun record modes: pointer / skipped / legacy inline ────────────
+
+
+def pointer_run_data(**overrides):
+    data = {
+        "eval_input_id": "ei1",
+        "task_run_config_id": "rc1",
+        "scored_run_id": "tr1",
+        "scores": {"accuracy": 1.0},
+    }
+    data.update(overrides)
+    return data
+
+
+@pytest.fixture
+def v2_eval_config(mock_task, tmp_path):
+    """A saved V2 EvalConfig, for the record-mode tests that go to disk.
+
+    validate_record_mode is parent-independent, so only the round-trip tests need this.
+    """
+    mock_task.path = tmp_path / "task.kiln"
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="Record Mode Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+    )
+    eval.save_to_file()
+
+    config = EvalConfig(
+        name="V2 Judge",
+        parent=eval,
+        config_type=EvalConfigType.v2,
+        properties=LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="Evaluate: {{ final_message }}",
+        ),
+    )
+    config.save_to_file()
+    return config
+
+
+def test_pointer_eval_run_is_valid_and_round_trips(v2_eval_config):
+    run = EvalRun(parent=v2_eval_config, **pointer_run_data())
+    run.save_to_file()
+
+    loaded = EvalRun.load_from_file(str(run.path))
+    assert loaded.scored_run_id == "tr1"
+    assert loaded.input is None
+    assert all(getattr(loaded, f) is None for f in LEGACY_TRACE_FIELDS)
+
+
+INLINE_TRACE_CASES = [
+    ("input", "some input"),
+    ("output", "some output"),
+    ("task_run_trace", '{"messages": []}'),
+    ("task_run_usage", Usage(input_tokens=1)),
+    ("reference_answer", "gold"),
+]
+
+
+def test_inline_trace_cases_cover_every_forbidden_field():
+    """The values below can't be derived, but the field list can: without this, adding
+    a field to LEGACY_TRACE_FIELDS would silently get a deprecation assertion and no
+    rejection assertion."""
+    assert {name for name, _ in INLINE_TRACE_CASES} == {"input", *LEGACY_TRACE_FIELDS}
+
+
+@pytest.mark.parametrize("field,value", INLINE_TRACE_CASES)
+def test_pointer_eval_run_rejects_inline_trace_data(field, value):
+    with pytest.raises(ValidationError, match="must not carry inline trace data"):
+        EvalRun(**pointer_run_data(**{field: value}))
+
+
+def test_pointer_eval_run_error_names_every_field_carried():
+    with pytest.raises(ValidationError) as exc_info:
+        EvalRun(**pointer_run_data(input="in", output="out", reference_answer="gold"))
+    message = str(exc_info.value)
+    assert "input" in message
+    assert "output" in message
+    assert "reference_answer" in message
+
+
+def test_legacy_eval_run_without_input_is_rejected():
+    with pytest.raises(ValidationError, match="requires input"):
+        EvalRun(
+            eval_input_id="ei1",
+            task_run_config_id="rc1",
+            output="some output",
+            scores={"accuracy": 1.0},
+        )
+
+
+def test_legacy_eval_run_with_input_is_valid():
+    run = EvalRun(
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="some input",
+        output="some output",
+        scores={"accuracy": 1.0},
+    )
+    assert run.scored_run_id is None
+    assert run.input == "some input"
+
+
+def test_skipped_eval_run_needs_neither_input_nor_pointer():
+    """A skip before generation has nothing to point at, and nothing to copy."""
+    run = EvalRun(
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        skipped_reason=SkippedReason.incompatible_input_shape.value,
+    )
+    assert run.scored_run_id is None
+    assert run.input is None
+
+
+def test_skipped_at_scoring_time_keeps_its_pointer():
+    """The trace existed; only scoring was skipped. The pointer is still meaningful."""
+    run = EvalRun(
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        scored_run_id="tr1",
+        skipped_reason=SkippedReason.missing_reference_key.value,
+    )
+    assert run.scored_run_id == "tr1"
+
+
+def test_skipped_at_scoring_time_still_rejects_inline_data():
+    """The pointer branch is checked before the skip branch on purpose."""
+    with pytest.raises(ValidationError, match="must not carry inline trace data"):
+        EvalRun(
+            eval_input_id="ei1",
+            task_run_config_id="rc1",
+            scored_run_id="tr1",
+            skipped_reason=SkippedReason.missing_reference_key.value,
+            output="some output",
+        )
+
+
+def test_legacy_skipped_eval_run_with_inline_data_still_loads():
+    """Records written before the split carry input on skips. They stay valid."""
+    run = EvalRun(
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="some input",
+        skipped_reason=SkippedReason.missing_trace.value,
+    )
+    assert run.input == "some input"
+
+
+def test_pointer_eval_run_bypasses_v1_output_requirement(
+    mock_task, valid_eval_config_data, tmp_path
+):
+    """validate_output_fields' 'V1 EvalRun requires output' rule must not fire for a
+    pointer record: its output lives on the referenced TaskRun."""
+    mock_task.path = tmp_path / "task.kiln"
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="V1 Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        evaluation_data_type=EvalDataType.full_trace,
+        output_scores=[
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+    )
+    eval.save_to_file()
+    config = EvalConfig(parent=eval, **valid_eval_config_data)
+    config.save_to_file()
+
+    # Without the pointer, a V1 full_trace run with no output and no trace is rejected
+    # twice over ("requires output", "should include trace").
+    with pytest.raises(ValidationError):
+        EvalRun(
+            parent=config,
+            dataset_id="ds1",
+            task_run_config_id="rc1",
+            input="in",
+            scores={"accuracy": 1.0},
+        )
+
+    run = EvalRun(
+        parent=config,
+        dataset_id="ds1",
+        task_run_config_id="rc1",
+        scored_run_id="tr1",
+        scores={"accuracy": 1.0},
+    )
+    assert run.output is None
+    assert run.task_run_trace is None
+
+
+def test_eval_usage_defaults_to_none_and_round_trips(v2_eval_config):
+    run = EvalRun(parent=v2_eval_config, **pointer_run_data())
+    assert run.eval_usage is None
+
+    run.eval_usage = Usage(input_tokens=10, output_tokens=3, cost=0.002)
+    run.save_to_file()
+
+    loaded = EvalRun.load_from_file(str(run.path))
+    assert loaded.eval_usage is not None
+    assert loaded.eval_usage.input_tokens == 10
+    assert loaded.eval_usage.cost == 0.002
+
+
+@pytest.mark.parametrize("field_name", ["input", *LEGACY_TRACE_FIELDS])
+def test_legacy_trace_fields_are_marked_deprecated(field_name):
+    """Two signals, for two audiences: the description prefix for a human reading the
+    SDK docs, and the schema flag, which openapi-typescript turns into a `@deprecated`
+    JSDoc tag so the TS compiler strikes through every web call site."""
+    field = EvalRun.model_fields[field_name]
+    assert field.description is not None
+    assert field.description.startswith("DEPRECATED:")
+
+    schema_property = EvalRun.model_json_schema()["properties"][field_name]
+    assert schema_property["deprecated"] is True
+
+
+def test_reading_a_deprecated_field_does_not_warn():
+    """Why the flag is json_schema_extra and not Field(deprecated=True): reading these
+    is the correct, permanent way to render a legacy record, and Field(deprecated=True)
+    would warn on every one of those reads. Switching to it fails here."""
+    run = EvalRun(
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="legacy input",
+        output="legacy output",
+        scores={"accuracy": 1.0},
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        for field_name in ("input", *LEGACY_TRACE_FIELDS):
+            getattr(run, field_name)
+
+
+def test_live_eval_run_fields_are_not_marked_deprecated():
+    """The flag has to be per-field, not smeared across the model."""
+    schema_properties = EvalRun.model_json_schema()["properties"]
+    for field_name in ("scored_run_id", "eval_usage", "scores", "intermediate_outputs"):
+        assert "deprecated" not in schema_properties[field_name], field_name

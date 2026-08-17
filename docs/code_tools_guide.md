@@ -221,3 +221,117 @@ def run(query: str, max_results: int = 10) -> str:
 
     return json.dumps(filtered)
 ```
+
+## Testing your tool
+
+Kiln stores your tool's source as a real Python file named `tool.py`, right next to the tool's `code_tool.kiln`:
+
+```
+{project}/code_tools/{id} - {name}/
+  ├── code_tool.kiln   # metadata (no code)
+  └── tool.py          # your source -- byte-for-byte what runs
+```
+
+Because it's a plain, importable file, you can write standard `pytest` tests against it -- no Kiln-specific runner, no sandbox. Kiln does not store, display, or run these tests; testing happens in a normal Python environment with `kiln_ai` installed.
+
+### Setup
+
+Install `kiln_ai` into your environment (`pip install kiln-ai`, or your project's dev dependencies). That's all the setup required: `kiln_ai` ships a `pytest` plugin (the `kiln` test shim) that is auto-discovered, so the `from kiln import tools` at the top of your `tool.py` resolves under `pytest` and a `kiln_tools` fixture becomes available.
+
+### Writing a test
+
+Create `test_tool.py` **in the same folder** as `tool.py`, then `import tool` and drive `run(...)` directly:
+
+```python
+import json
+
+import pytest
+
+import tool  # the artifact's tool.py -- imports cleanly under pytest
+
+
+def test_happy_path(kiln_tools):
+    kiln_tools.set("get_user", '{"id": 1234, "name": "Alice"}')      # static reply
+    kiln_tools.set("list_jobs", lambda **kw: json.dumps(["a", "b"]))  # or a callable
+
+    out = tool.run(job_ids=["a", "b"])
+
+    assert json.loads(out)["name"] == "Alice"
+    assert kiln_tools.calls[0].name == "get_user"                     # call assertions
+
+
+def test_unknown_tool_raises(kiln_tools):
+    from kiln.tools import ToolNotAllowed
+
+    # A name that was never registered behaves like a non-allowlisted tool.
+    with pytest.raises(ToolNotAllowed):
+        tool.run(job_ids=["a"])
+```
+
+Then run `pytest` from that folder.
+
+### The `kiln_tools` fixture
+
+The fixture stubs the tools your code calls and records the calls it makes. It is function-scoped and auto-resets between tests.
+
+| Member | What it does |
+|---|---|
+| `kiln_tools.set(name, reply)` | Register a reply for a tool name. `reply` is a `str` (returned verbatim, matching the string-returns contract) or a callable `(**kwargs) -> str`. |
+| `kiln_tools.set_error(name, exc)` | Make a tool name raise a given `ToolNotAllowed` / `ToolTimeout` / `ToolCallError`. |
+| `kiln_tools.calls` | Ordered record of the calls made, each with `.name` and `.arguments`. |
+| `list_tools()` | `tools.list_tools()` returns the declarations you registered. |
+
+Fidelity notes -- the shim behaves like the real runtime:
+
+- An **unregistered** tool name raises `ToolNotAllowed` (the same as an allowlist miss).
+- Calling a tool with **positional** arguments raises `ToolCallError` (tool calls are keyword-only).
+- The exception classes are the *same* classes the runtime raises, so `except kiln.tools.ToolCallError` catches real runtime behavior.
+- `async_tools` is backed by the same registry, so `await asyncio.gather(async_tools.a(...), async_tools.b(...))` works in tests of async `run`.
+
+### Caveat: one tool folder per `pytest` run
+
+The file is always named `tool.py`, so two different tool folders both expose a top-level module named `tool`. A single `pytest` run that spans multiple tool folders will hit a module-name collision. Test **one tool folder at a time** (run `pytest` from inside that folder), or use `pytest --import-mode=importlib`. This is a `pytest` import-mode detail, not a Kiln limitation.
+
+## Testing your judge
+
+Code judges (code evals) follow the same pattern. Kiln stores the judge's source as `scorer.py` beside its `eval_config.kiln`:
+
+```
+{task}/.../eval_configs/{id} - {name}/
+  ├── eval_config.kiln   # metadata (no code)
+  └── scorer.py          # your score() source
+```
+
+Judges need **no shim**: `score()` receives its inputs as plain keyword arguments and depends only on the standard library plus `kiln_ai`, so you can import and call it directly.
+
+### The `score()` contract
+
+`score()` may declare any of these parameters; at runtime Kiln passes only the ones your function actually declares (it must accept at least `output` or `trace`):
+
+- `output` -- the model's final output string.
+- `trace` -- the conversation as a list of message dicts.
+- `reference_data` -- a dict of reference/expected data (keyed by the judge's `reference_keys`).
+- `task_input` -- the original task input string.
+
+It returns a `dict` keyed by each of your eval's output scores' **JSON key** -- the score's display name normalized to lowercase, snake_case (for example a score named `"Exact Match"` has the key `"exact_match"`, and `"Accuracy"` has the key `"accuracy"`). At runtime the code-eval adapter checks the returned keys against exactly this set and raises a "Score key mismatch" error otherwise, so return the JSON keys, not the raw display names.
+
+### Writing a test
+
+Create `test_scorer.py` beside `scorer.py`. Key your assertions by the JSON key, matching what the real eval expects:
+
+```python
+from scorer import score
+
+
+# For an eval whose output score is named "Exact Match" (JSON key: "exact_match").
+def test_scores_exact_match():
+    result = score(output="42", reference_data={"answer": "42"})
+    assert result["exact_match"] == 1.0  # the JSON key, not "Exact Match"
+
+
+def test_scores_mismatch():
+    result = score(output="41", reference_data={"answer": "42"})
+    assert result["exact_match"] == 0.0
+```
+
+Then run `pytest`. The same one-folder-at-a-time caveat applies -- `scorer.py` is a fixed name, so run `pytest` from inside a single eval-config folder (or use `--import-mode=importlib`) to avoid module-name collisions across folders.
