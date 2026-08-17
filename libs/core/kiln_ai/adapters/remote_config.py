@@ -21,9 +21,10 @@ from kiln_ai.adapters.reranker_list import (
     KilnRerankerModelProvider,
     built_in_rerankers,
 )
-from kiln_ai.datamodel.datamodel_enums import KilnMimeType
+from kiln_ai.datamodel.datamodel_enums import KilnMimeType, ModelProviderName
 
 from .ml_model_list import KilnModel, KilnModelProvider, built_in_models
+from .provider_tools import provider_name_from_id
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,13 @@ def serialize_config(
         "model_list": [m.model_dump(mode="json") for m in models],
         "embedding_model_list": [m.model_dump(mode="json") for m in embedding_models],
         "reranker_model_list": [m.model_dump(mode="json") for m in reranker_models],
+        # Human-readable names for every provider ID. Lets consumers of this config
+        # (including clients older than a newly added provider) show a friendly name
+        # instead of falling back to the raw provider ID.
+        "provider_names": {
+            provider.value: provider_name_from_id(provider.value)
+            for provider in ModelProviderName
+        },
     }
     Path(path).write_text(json.dumps(data, indent=2, sort_keys=True))
 
