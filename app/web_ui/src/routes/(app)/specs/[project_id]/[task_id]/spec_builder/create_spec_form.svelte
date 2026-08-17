@@ -7,6 +7,7 @@
   import type { FieldConfig } from "../select_template/spec_templates"
   import { filename_string_short_validator } from "$lib/utils/input_validators"
   import TaskSampleSelector from "$lib/utils/task_sample_selector.svelte"
+  import Warning from "$lib/ui/warning.svelte"
   import type { TaskSampleExample } from "$lib/utils/task_sample_example"
   import type { Priority } from "$lib/types"
 
@@ -53,6 +54,10 @@
   // copilot_enabled = copilot is available for this task
   // copilot_allowed = copilot is available AND not blocked by current form state
   $: copilot_allowed = copilot_enabled && !evaluate_full_trace
+
+  // Form state silently drops the form from the copilot flow to the manual one,
+  // which is otherwise only visible as a changed submit label. Say so explicitly.
+  $: show_copilot_unsupported_notice = copilot_enabled && !copilot_allowed
 
   $: computed_warn_before_unload =
     warn_before_unload &&
@@ -150,6 +155,18 @@
       />
     {/if}
   </Collapse>
+
+  <!-- Sits outside the collapse and next to the submit button: the mode switch it
+       explains shows up there, and Advanced Options is closed by default. -->
+  {#if show_copilot_unsupported_notice}
+    <div data-testid="copilot-full-trace-notice" role="status">
+      <Warning
+        warning_color="warning"
+        outline={true}
+        warning_message="Kiln Pro does not support evaluating complete agent history yet. This eval will be created manually."
+      />
+    </div>
+  {/if}
 </FormContainer>
 
 {#if copilot_allowed}
