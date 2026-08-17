@@ -20,6 +20,9 @@ bash .config/utils/setup_env.sh --human
 
 Run `bash .config/utils/setup_env.sh --help` for the flags.
 
+To develop in a Claude Code cloud sandbox instead, see
+[Claude Cloud Setup for Kiln](.config/utils/claude_cloud_setup.md).
+
 Or by hand:
 
 ```

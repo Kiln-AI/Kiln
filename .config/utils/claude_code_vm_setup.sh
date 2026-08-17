@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The setup script for a Claude Code cloud environment. Paste the contents of
-# this file into the environment's "Setup script" field.
+# this file into the environment's "Setup script" field. The whole setup, with
+# the environment's other fields and what to expect: claude_cloud_setup.md.
 #
 # It fetches .config/utils/setup_env.sh and runs it, rather than being a copy of
 # it. That is the whole point: setup_env.sh changes, and a pasted copy of it goes
