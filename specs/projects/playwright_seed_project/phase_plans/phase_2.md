@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Phase 2: Runs, ratings, and the small artifacts
@@ -257,7 +257,7 @@ attached, and each mechanism was falsified by a reviewer who ran the experiment:
 |---|---|---|
 | The click did nothing and no dialog opened | The DaisyUI menu closed on blur between processes | Menu still open — `activeElement` on the trigger, `.dropdown-content` visible, `find` returning its ref |
 | The error was invisible | `2>/dev/null` suppressed it | Failures print on stdout; `2>/dev/null` shows them in full |
-| `find` returns three matches and one carries a ref | Only the menu item is rendered, so only it carries a ref | Both elements measured visible with the menu open; it also contradicted this document's own closed-menu paragraph |
+| `find` returns three matches and one carries a ref | Only the menu item is rendered, so only it carries a ref | With the menu open, the menu item and the dialog's disabled submit both measured visible; it also contradicted the closed-menu paragraph in USING_PLAYWRIGHT.md |
 
 None of the three came from bad observation. All three came from writing down the first
 explanation that fit rather than the one experiment that would separate it from the
@@ -265,9 +265,9 @@ alternatives — and in the first case that nearly bought a standing exception t
 rule on the strength of it.
 
 The third is the one worth dwelling on: it shipped **in the commit written to end this
-pattern**, a few lines from the table describing the first two. Recognising a habit is not the
-same as having stopped it, and an explanation is most tempting exactly when it is a throwaway
-half-sentence attached to something already verified.
+pattern**, a few lines from the table describing the first two — as a throwaway half-sentence
+bolted onto an observation that was already verified, which is where all three of these came
+from.
 
 The rule this phase ends on: **state the observation, and state a mechanism only with the
 experiment that distinguishes it.** Where the experiment has not been run, say so — "the click

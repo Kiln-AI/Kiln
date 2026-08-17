@@ -17,7 +17,7 @@ it; it is not recorded in any spec artifact.
   `snapshot`, `ui_state` hint, load check. Capture the foundation fixture (project,
   structured task, plain task) through the UI. Document the commands in
   `USING_PLAYWRIGHT.md`. Run the full verification matrix.
-- [ ] Phase 2: Runs and ratings — 15–20 runs, spread ratings including unrated, a
+- [x] Phase 2: Runs and ratings — 15–20 runs, spread ratings including unrated, a
   repair, two run configs. Then the saved prompt, dataset split, input transform, and
   feedback.
 - [ ] Phase 3: Evals — one eval, judge config, results across both run configs. Carries
