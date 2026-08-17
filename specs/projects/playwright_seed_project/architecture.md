@@ -558,6 +558,26 @@ Neither applies once the fixture exists: a seeded sandbox starts past both gates
 matter when authoring from an empty home, and they are why "everything through the UI"
 has this one standing exception.
 
+**Two things about driving the app that every authoring phase hits**, discovered in phase 2
+and durable, not a phase-2 anecdote:
+
+- **A DaisyUI `dropdown` menu closes before a second `playwright-cli` command lands.** The
+  bulk actions on the Dataset screen — and any other `class="dropdown"` menu — open on focus
+  and close on blur, so `click` the trigger, then `click` the menu item is two processes and
+  the menu is gone by the second. The item has to be clicked in-page instead:
+  `playwright-cli run-code`, or `eval` with a `() => {...click()}` expression that finds the
+  button by its text. That is still the app's own handler on the app's own element, and it is
+  the **only** sanctioned way around "everything through the UI" for this shape of control —
+  it is not licence to call the REST API. Multi-step dialogs opened *from* such a menu are
+  fine once open; it is only the menu item itself that cannot be reached across two commands.
+- **The Repair Output section does not render on a fresh load of an already-rated run.**
+  `should_offer_repair` in `app/web_ui/src/routes/(app)/run/run.svelte` is satisfied by a
+  1-to-4-star run with no repair, but on first paint of a run loaded from disk the section is
+  absent — `document.body.innerText` does not contain "Repair Output" and there is no
+  `#repair_instructions` field. Re-clicking the star the run already has makes it appear
+  immediately. So a phase that repairs a previously-rated run must re-assert the rating first
+  rather than concluding the flow is unavailable.
+
 **Resumability comes from `snapshot` itself**, which needs no new mechanism: author a
 group, `snapshot`, commit. A session that dies loses at most one group, and the
 repetition exercises `snapshot` far harder than a single capture at the end would. The

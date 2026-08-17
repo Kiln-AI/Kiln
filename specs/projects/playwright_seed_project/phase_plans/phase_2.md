@@ -146,6 +146,11 @@ Only the overall five-star rating exists: the task carries no requirements, beca
 is no UI path to a task's first requirement (recorded as a phase 1 deviation), so the
 per-requirement ratings the plan anticipated are not available to author.
 
+The table above is the final state and is the one to trust. `d95458e`'s message says "10
+unrated: 8 structured, 2 plain text", which was true when it was written; the next commit
+added run `141021632869`, which is unrated. Counts read from a single commit in the middle
+of the phase will not match the fixture.
+
 ### Repair
 
 Run `189009782155` (Zero Shot Baseline, rated 1) routed a workspace-ownership transfer to
@@ -166,7 +171,10 @@ is its own child model, at `runs/170843774961/feedback/148834163100/feedback.kil
   routing rules per team plus chain-of-thought instructions, written on the Prompts screen.
 - **Dataset split** `240478987760` "Dapper Moss" — 80/10/10 train/test/val (10/1/1) over
   the filter `tag::fine_tune_triage`. 12 of the 15 structured runs carry that tag, applied
-  from the Dataset screen's bulk selection.
+  from the Dataset screen's bulk selection. It keeps its random auto-generated name, unlike
+  the run configs, for the plain reason that it cannot be renamed: there is no update route
+  for `dataset_splits` in `libs/server/kiln_server/` or `app/desktop/studio_server/`, and
+  hand-editing the file would break the UI-first rule for a cosmetic gain.
 - **Input transform** — a Jinja template on run config `140414461876` that renders the
   ticket as prose. Transforms are a field of `RunConfigProperties`, not a standalone task
   child, so "one input transform" is one run config carrying one. Run `141021632869`
@@ -183,11 +191,19 @@ is its own child model, at `runs/170843774961/feedback/148834163100/feedback.kil
 - **Two clicks went through `page.evaluate` rather than the CLI's `click`.** The bulk-tag
   menu is a DaisyUI `dropdown` that closes on blur before a second CLI command lands, so
   "Add Tags" and the dialog's submit were clicked in-page. Same elements, same handlers —
-  no API call was made by hand.
+  no API call was made by hand. This one is missing from `a6d621d`'s commit message, which
+  says only "tagged from the Dataset screen's bulk selection"; architecture.md asks for a
+  line per deviation there. The commit is pushed, so rather than rewrite history it is
+  promoted to architecture.md and USING_PLAYWRIGHT.md, where it is more use anyway.
 - **The Repair Output section only appears after an interactive rating change.** On a fresh
   load of an already-rated run the section is absent even though the run qualifies, so the
-  repair was reached by re-clicking the star. Worth knowing for phase 3; it is an app quirk,
-  not a fixture property.
+  repair was reached by re-clicking the star. It is an app quirk, not a fixture property.
+
+Neither of those last two is a phase-2 anecdote — both are things any authoring phase that
+drives a bulk menu or repairs an already-rated run will hit. Following phase 1's precedent
+with the onboarding gates, both are now recorded in architecture.md's "Fixture authoring"
+section (the dropdown one in USING_PLAYWRIGHT.md too, under "Driving the UI"), because the
+coding-phase prompt's context loading names architecture.md and never a prior phase plan.
 
 ## Roadblock (resolved): OpenRouter was unreachable from the container
 

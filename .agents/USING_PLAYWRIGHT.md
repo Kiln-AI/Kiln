@@ -147,6 +147,26 @@ Do not guess a role from how something looks. Kiln styles links as buttons, so
 `find "Get Started"` returns `link "Get Started" [ref=e9]` — the ref and the true
 role in one call. Run `find` first, then write the locator from what it reports.
 
+### A dropdown menu will not survive two commands
+
+Kiln's bulk actions — the tag and delete menus on the Dataset screen, and anything
+else with `class="dropdown"` — are DaisyUI dropdowns, which open on focus and close
+on blur. Each `playwright-cli` command is its own process, so `click` the trigger
+and then `click` the item never works: the menu is already gone. Nothing in the
+output says so; you just get no dialog.
+
+Click the item in-page instead, in the same command that has it open:
+
+```bash
+playwright-cli click "div.dropdown [role=button]"
+playwright-cli run-code "async page => await page.evaluate(() => \
+  [...document.querySelectorAll('.dropdown-content button')] \
+    .find(b => b.innerText.trim() === 'Add Tags').click())"
+```
+
+Only the menu item needs this. A dialog the item opens is an ordinary dialog once
+it is up, and `find` plus `click` work on it normally.
+
 ## The seeded project
 
 `start` copies `.agents/playwright_project` into the sandbox, so you get an app
@@ -156,6 +176,15 @@ copy: click around, break things, delete things — the checkout is untouched.
 The fixture is a support-ticket-triage project with two tasks, one with JSON input
 and output schemas and one plain text, because structured and unstructured tasks
 render differently in a lot of places.
+
+It is not only task definitions. Both tasks carry runs — 20 of them, weighted to the
+structured task — so the dataset, prompt and run-configuration screens have something
+in them before you touch anything. On the structured task that means three saved run
+configurations (zero-shot, chain-of-thought, and one pairing a custom saved prompt
+with a Jinja input transform), ratings spread deliberately across high, low and
+unrated, one repaired run, one run carrying human feedback, and a train/test/val
+dataset split over the runs tagged `fine_tune_triage`. If a screen you are working on
+comes up empty, check what the fixture holds before assuming the screen is broken.
 
 ### Landing in the app
 
