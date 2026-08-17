@@ -492,4 +492,103 @@ if [ "$has_tk" != "True" ]; then
     "$REPAIR_SETUP"
 fi
 
+# ── Playwright ────────────────────────────────────────────────────────────────
+# playwright-cli's global config, which selects the browser it launches. Without
+# it the first `playwright-cli open` tries to launch a branded Google Chrome that
+# a container does not have.
+#
+# setup_env.sh writes this at VM-build time, so on a machine it provisioned this
+# is a no-op. It is repeated here as the safety net for the case that is easy to
+# miss: an image built before --add-playwright existed, or one where the home
+# directory is not the one the setup script wrote to.
+#
+# Only when absent, so anyone's own defaults survive. A failure is a warning: it
+# costs an agent a `--browser=chromium` flag, not a broken checkout.
+write_playwright_cli_config() {
+  local config="$HOME/.playwright/cli.config.json"
+
+  [ -f "$config" ] && return 0
+
+  if ! mkdir -p "$HOME/.playwright" || ! cat >"$config" <<'JSON'
+{
+  "browser": {
+    "browserName": "chromium",
+    "launchOptions": {
+      "channel": "chromium"
+    }
+  }
+}
+JSON
+  then
+    echo "warning: could not write $config; playwright-cli will need --browser=chromium." >&2
+  fi
+  return 0
+}
+
+# Only a check, and deliberately a pure-bash one: this runs at the start of every
+# session, and shelling out to `playwright install --dry-run` to ask the same
+# question costs ~1 s — about as much as the whole rest of this script warm.
+#
+# What makes the browser worth checking at all is that its absence is reported by
+# Playwright as a browser that was never installed, pointing at `npx playwright
+# install`, when the actual state is a browser of the wrong revision sitting right
+# where it looked. Naming the revision here turns that into one clear line.
+#
+# Not fatal: most sessions never launch a browser, and the rest of the checkout is
+# ready regardless. See .agents/USING_PLAYWRIGHT.md.
+check_playwright() {
+  local browsers_json="$WEB_UI_DIR/node_modules/playwright-core/browsers.json"
+  local browsers_dir revision missing=""
+
+  # Only assert the browser is missing when its directory is actually visible from
+  # here. PLAYWRIGHT_BROWSERS_PATH comes from the image environment, and a hook
+  # process does not always inherit it: without it this read an empty default cache
+  # path and reported an installed browser as missing, which sent an agent off to
+  # reinstall something already on disk. A false alarm is worse than no check, so
+  # when the root cannot be seen this says nothing and leaves the real complaint to
+  # Playwright at the point of use. The playwright-cli check below still catches
+  # the case where nothing was installed at all, and it depends only on PATH.
+  #
+  # "The directory exists" is not that evidence: playwright-cli creates
+  # ~/.cache/ms-playwright for its own session state, so the default path is
+  # present on a machine whose browsers live in /opt. What counts is the directory
+  # already holding a chromium build — then a missing pinned revision is the real
+  # version mismatch this exists to name, rather than a guess about the wrong root.
+  browsers_dir="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}"
+  local -a installed_chromium=()
+  if [ -d "$browsers_dir" ]; then
+    mapfile -t installed_chromium < <(
+      find "$browsers_dir" -maxdepth 1 -type d -name 'chromium-*' 2>/dev/null
+    )
+  fi
+
+  if [ -f "$browsers_json" ] && [ "${#installed_chromium[@]}" -gt 0 ]; then
+    # The first "revision" after the chromium entry. The closing quote in the match
+    # is what keeps this off "chromium-headless-shell", which follows it and
+    # currently shares the revision — but is a separate entry that need not.
+    revision="$(grep -A1 '"name": "chromium"' "$browsers_json" |
+      sed -n 's/.*"revision": *"\([0-9]*\)".*/\1/p' | head -1)"
+    # Playwright writes INSTALLATION_COMPLETE last, so a directory without it is a
+    # partial download.
+    if [ -n "$revision" ] &&
+      [ ! -f "$browsers_dir/chromium-$revision/INSTALLATION_COMPLETE" ]; then
+      missing="chromium-$revision"
+    fi
+  fi
+
+  command -v playwright-cli >/dev/null 2>&1 || missing="${missing:+$missing, }playwright-cli"
+
+  [ -n "$missing" ] || return 0
+
+  echo "" >&2
+  echo "  ! Playwright is not fully installed here: $missing is missing." >&2
+  echo "    Needed only to run the e2e tests or drive the UI in a browser:" >&2
+  echo "        bash .config/utils/setup_env.sh --add-playwright" >&2
+  echo "    See .agents/USING_PLAYWRIGHT.md." >&2
+  echo "" >&2
+}
+
+command -v playwright-cli >/dev/null 2>&1 && write_playwright_cli_config
+check_playwright
+
 echo "Ready. Python $py_major.$py_minor, uv $UV_VERSION, agent config written."

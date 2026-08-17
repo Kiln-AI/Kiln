@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Build (or repair) a development environment for Kiln.
 #
-# This file doubles as the setup script for a Claude Code cloud environment:
-# paste its contents into the environment's "Setup script" field and edit only
-# the CONFIGURATION block below. Nothing outside that block needs to change.
+# This also runs as the setup script for a Claude Code cloud environment, where
+# claude_code_vm_setup.sh fetches and runs it. Pasting this file's contents into
+# the environment's "Setup script" field works too — edit only the CONFIGURATION
+# block below — but a pasted copy goes stale as soon as this file changes, which
+# is why claude_code_vm_setup.sh exists.
 #
 # In that context the script does not live inside a checkout, and there may be no
 # Kiln checkout on disk at all: the setup script runs once per environment, is
@@ -30,12 +32,14 @@ set -uo pipefail
 # Defaults for a local run. Command line flags override them.
 # For a Claude Code cloud setup script use:
 #   UPGRADE_TOOLS=true BEST_EFFORT=true WARM_CACHE=true CREATE_STARTUP_SCRIPT=true
+#   ADD_PLAYWRIGHT=true
 HUMAN_MODE=false    # true: also offer the worktrunk/Zellij workspace tools
 UPGRADE_TOOLS=false # true: upgrade uv without asking when it is too old
 AGENT=all           # all | claude | cursor | none
 BEST_EFFORT=false   # true: never exit non-zero (required for cloud setup scripts)
 WARM_CACHE=false    # true: warm the machine's caches from a throwaway clone (cloud VMs)
 CREATE_STARTUP_SCRIPT=false # true: run setup_startup.sh from a Claude Code SessionStart hook (cloud VMs)
+ADD_PLAYWRIGHT=false # true: install browsers for the e2e suite, and the playwright-cli agent tool
 # ──────────────────────────────────────────────────────────────────────────────
 
 UV_MIN=0.10.0
@@ -124,6 +128,15 @@ Usage: setup_env.sh [options]
                       setup_startup.sh in every session on this machine. For cloud
                       VMs; off by default so a local run never edits your Claude
                       Code settings. Merges into ~/.claude/settings.json.
+  --add-playwright    Install the Chromium build app/web_ui's @playwright/test
+                      pins, so `npm run tests:e2e` can launch a browser, plus the
+                      playwright-cli agent tool, its own browser and its config.
+                      Off by default: it is ~800 MB and most work needs neither.
+                      The revision is read from the checkout, never hardcoded, so
+                      a @playwright/test bump moves it. Downloads come from
+                      cdn.playwright.dev, which a restrictive egress policy
+                      blocks — for a cloud environment see the allowlist in
+                      claude_code_vm_setup.sh, which passes this flag for you.
   -h, --help          Show this help.
 
 The Python sync uses --frozen, so run `uv lock` first if you changed dependencies.
@@ -137,6 +150,7 @@ while [ $# -gt 0 ]; do
     --best-effort) BEST_EFFORT=true ;;
     --warm-cache) WARM_CACHE=true ;;
     --create-startup-script) CREATE_STARTUP_SCRIPT=true ;;
+    --add-playwright) ADD_PLAYWRIGHT=true ;;
     --agent) AGENT="${2:-}"; shift ;;
     --agent=*) AGENT="${1#*=}" ;;
     -h | --help) usage; exit 0 ;;
@@ -337,6 +351,32 @@ warm_from_throwaway_clone() {
 
   rm -rf "$clone"
   echo "Warm node_modules kept at $WARM_NODE_MODULES."
+
+  # After the move and the clone's deletion, deliberately.
+  #
+  # `playwright install` registers the installation that asked for a browser, in
+  # .links inside the browsers directory, and every later `playwright install`
+  # deletes any browser no surviving registration references. Installing from the
+  # clone therefore worked and then undid itself: the registration named a path
+  # inside the clone, the move and delete above invalidated it, and the very next
+  # install in this same run — playwright-cli's, for its own browser — swept the
+  # revision away again. The VM finished with playwright-cli's browser and not the
+  # one the e2e suite needs, which is exactly the failure this flag exists to fix.
+  #
+  # Running the warm tree's own playwright registers $WARM_NODE_MODULES instead,
+  # which is outside any checkout and survives for the life of the machine.
+  if [ "$ADD_PLAYWRIGHT" = true ]; then
+    # Set whether or not it worked: a failure has already gone through `fail`,
+    # and the message this gates is about never having tried.
+    PLAYWRIGHT_REPO_BROWSER_ATTEMPTED=true
+    install_playwright_repo_browser "$VM_SETUP_DIR"
+  fi
+
+  # The warm tree is on disk by now, so this function succeeded. Without this the
+  # browser install's status would become the function's, and a failed download
+  # would leave the caller recording that no warm tree was created — the one fact
+  # the marker exists to report, and it would be false.
+  return 0
 }
 
 # ── Run setup_startup.sh from a Claude Code SessionStart hook ─────────────────
@@ -569,6 +609,143 @@ print("Registered the SessionStart hook in %s." % settings_path)
 PY
 }
 
+# ── Playwright ────────────────────────────────────────────────────────────────
+# Two separate installs, both off by default because together they are ~800 MB
+# and most work in this repo needs neither:
+#
+#   - The Chromium build app/web_ui's @playwright/test pins, without which
+#     `npm run tests:e2e` cannot launch a browser. The pin is the whole
+#     difficulty: an image that ships "a Chromium" ships some other revision, and
+#     Playwright accepts only its own — reporting it as a browser that was never
+#     installed, rather than as the version mismatch it is. So no revision is
+#     named anywhere below. It is whatever the checkout's own playwright asks
+#     for, and it moves on its own when @playwright/test is bumped.
+#
+#   - playwright-cli, the agent-facing browser tool, and its Claude Code skill.
+#     It bundles its own playwright, so it wants its own browser revision, which
+#     is not the one above and has to be installed separately.
+#
+# Every download here comes from cdn.playwright.dev, which a restrictive egress
+# policy blocks. These route through `fail`, so --best-effort leaves a VM that
+# boots and reports the problem instead of one that never starts.
+PLAYWRIGHT_CLI_MIN=0.1.18
+PLAYWRIGHT_REPO_BROWSER_ATTEMPTED=false
+
+# --with-deps shells out to apt-get, and the apt mirrors are not in every egress
+# allowlist that has the CDN in it. Any image that already ships a Chromium has
+# the system libraries, so losing apt is not a reason to end up with no browser:
+# drop the flag and retry, and only a second failure is a real one.
+run_browser_install() {
+  # "$@" = the command that installs a browser, without --with-deps.
+  "$@" --with-deps && return 0
+  echo "note: '$*' failed with --with-deps (apt is often blocked); retrying without it." >&2
+  "$@"
+}
+
+# $1 = a directory whose node_modules holds the playwright app/web_ui pins —
+# either a checkout's app/web_ui, or the warm tree's parent on a cloud VM. Which
+# one matters beyond convenience: `playwright install` records the caller in the
+# browsers directory's .links registry, and a later install deletes browsers no
+# surviving registration references. Passing a directory that is about to be
+# deleted installs a browser that the next install collects.
+install_playwright_repo_browser() {
+  local playwright_root="$1"
+
+  # The bin, not the package: it is what the line below actually runs, and
+  # `npx --no-install` reports its absence as a bare "could not determine
+  # executable" with nothing about npm ci not having run.
+  if [ ! -x "$playwright_root/node_modules/.bin/playwright" ]; then
+    fail "no playwright in $playwright_root/node_modules, so the e2e browser cannot be installed"
+    return 1
+  fi
+
+  echo "Installing the Chromium build app/web_ui pins..."
+  # --no-install so this can only ever run the checkout's own pinned playwright.
+  # Without it npx silently fetches the latest from the registry on a miss, and
+  # would install a revision the suite then refuses to use.
+  (cd "$playwright_root" && run_browser_install npx --no-install playwright install chromium) ||
+    fail "could not install the Chromium build app/web_ui pins"
+}
+
+# playwright-cli launches a branded Google Chrome unless a config says otherwise.
+# A Linux container has no such Chrome, so the very first `playwright-cli open`
+# fails; and even a machine that has one should not be driving the UI in a
+# different browser from the one the e2e suite runs against.
+#
+# Written to the home directory, which playwright-cli reads as its global config,
+# rather than to .playwright/ in a checkout. Three things follow from that, and
+# each one is a bug we have already hit with the per-checkout form:
+#
+#   - It needs no checkout, so it can be written here, at VM-build time, and land
+#     in the environment's snapshot. The per-checkout file could only be written
+#     by whatever ran inside a session, which meant a session on a branch without
+#     that code got playwright-cli with no config and the Chrome error.
+#   - It applies from any working directory. The per-checkout file is resolved
+#     relative to the process's cwd, so running from app/web_ui missed it.
+#   - It is per-device state, which is what this is: it records which browser is
+#     installed here, not anything about Kiln.
+#
+# Only when absent, so anyone who has set their own defaults in it keeps them.
+write_playwright_cli_config() {
+  local config="$HOME/.playwright/cli.config.json"
+
+  [ -f "$config" ] && return 0
+
+  if ! mkdir -p "$HOME/.playwright"; then
+    fail "could not create $HOME/.playwright for the playwright-cli config"
+    return 1
+  fi
+
+  cat >"$config" <<'JSON' || fail "could not write $config"
+{
+  "browser": {
+    "browserName": "chromium",
+    "launchOptions": {
+      "channel": "chromium"
+    }
+  }
+}
+JSON
+}
+
+install_playwright_cli() {
+  if ! command -v npm >/dev/null 2>&1; then
+    fail "npm is not installed, so playwright-cli cannot be installed"
+    return 1
+  fi
+
+  echo "Installing playwright-cli..."
+  # A floor rather than @latest: hooks-mcp taught us that a bare latest is one
+  # broken publish away from breaking every session, and a floor still picks up
+  # fixes. Bump it when the tool gains something worth requiring.
+  if ! npm install -g "@playwright/cli@>=$PLAYWRIGHT_CLI_MIN" --no-fund --no-audit; then
+    fail "could not install @playwright/cli"
+    return 1
+  fi
+  hash -r
+
+  # A successful `npm install -g` still leaves nothing to run when npm's global
+  # bin directory is not on PATH, which is ordinary on a machine using a Node
+  # installed by Homebrew or a version manager. Saying that here beats three
+  # "command not found" lines that each look like a failed install.
+  if ! command -v playwright-cli >/dev/null 2>&1; then
+    fail "playwright-cli installed but is not on PATH; add '$(npm prefix -g 2>/dev/null)/bin' to it"
+    return 1
+  fi
+
+  # --global puts the skill in ~/.claude/skills, which survives into the VM
+  # snapshot. The workspace form writes .claude/skills/playwright-cli, which
+  # .agents/claude/setup.sh rebuilds from .agents/skills every session — so the
+  # skill would be deleted by the next session to start.
+  playwright-cli install --skills --global ||
+    fail "could not install the playwright-cli agent skill"
+
+  run_browser_install playwright-cli install-browser chromium ||
+    fail "could not install playwright-cli's own Chromium"
+
+  write_playwright_cli_config
+}
+
 # The marker is how setup_startup.sh tells a machine this script provisioned from
 # one that never ran it — and so whether the warm tree beside it has known
 # provenance. Its contents are for a human reading a broken VM, not for parsing.
@@ -592,8 +769,15 @@ write_vm_setup_marker() {
   # "created=false, commit=none" would then be lying about the provenance of the
   # 601 MB every session on this machine inherits — the one fact it exists to
   # record. So carry the previous commit forward whenever the tree survives.
-  local tree_present=false tree_commit=none hook_shim=none
+  local tree_present=false tree_commit=none hook_shim=none playwright_cli=none
   [ -d "$WARM_NODE_MODULES" ] && tree_present=true
+
+  # Probed rather than carried forward like the fields below: what is on PATH now
+  # is the whole truth here, and a re-run without --add-playwright must not report
+  # a tool that has since been uninstalled.
+  command -v playwright-cli >/dev/null 2>&1 &&
+    playwright_cli="$(playwright-cli --version 2>/dev/null | tr -d '\n')"
+  playwright_cli="${playwright_cli:-unknown}"
 
   # The shim file existing proves nothing — it is written before the registration
   # that makes it a hook, and that registration refuses to touch a malformed
@@ -636,6 +820,7 @@ warm_node_modules_present=$tree_present
 warm_node_modules_commit=$tree_commit
 warm_node_modules_created_this_run=$WARM_TREE_CREATED
 session_start_hook=$hook_shim
+playwright_cli=$playwright_cli
 EOF
   then
     rm -f "$staged_marker"
@@ -662,12 +847,25 @@ fi
 # checkout, and is exactly the case this exists for.
 [ "$CREATE_STARTUP_SCRIPT" = true ] && install_session_start_hook
 
+# Same reason: playwright-cli is installed globally and carries its own browser,
+# so unlike the e2e browser above it needs no checkout at all.
+[ "$ADD_PLAYWRIGHT" = true ] && install_playwright_cli
+
 write_vm_setup_marker
 
 # ── Everything below here needs a checkout ────────────────────────────────────
 if [ -z "$PROJECT_ROOT" ]; then
   echo "No Kiln checkout found, so dependency install and agent configuration"
   echo "were skipped."
+  # playwright-cli is installed by now either way; this is only about the browser
+  # the e2e suite pins, whose revision can only be read from a checkout's
+  # node_modules. --warm-cache makes one, so say so only when nothing did.
+  if [ "$ADD_PLAYWRIGHT" = true ] && [ "$PLAYWRIGHT_REPO_BROWSER_ATTEMPTED" = false ]; then
+    echo ""
+    echo "The browser the e2e suite needs was skipped: which revision to install"
+    echo "is a property of a checkout. Add --warm-cache, or from a checkout run:"
+    echo "  .config/utils/setup_env.sh --add-playwright"
+  fi
   # Two readers land here. On a cloud VM this is the setup log, and the next step
   # is setup_startup.sh in the session's checkout. Locally it is someone who ran
   # this from the wrong directory — and setup_startup.sh would tell them only that
@@ -726,6 +924,13 @@ if [ "$py_status" -ne 0 ]; then
 fi
 if [ "$npm_status" -ne 0 ]; then
   fail "npm ci failed (exit $npm_status)"
+fi
+
+# After npm ci, which is what puts the pinned playwright in node_modules for the
+# revision to be read from. Skipped when the warm clone above already did it, so
+# a --warm-cache run with a checkout does not download the same browser twice.
+if [ "$ADD_PLAYWRIGHT" = true ] && [ "$PLAYWRIGHT_REPO_BROWSER_ATTEMPTED" = false ]; then
+  install_playwright_repo_browser "$PROJECT_ROOT/app/web_ui"
 fi
 
 # ── Agent configuration ───────────────────────────────────────────────────────

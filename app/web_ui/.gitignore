@@ -19,3 +19,5 @@ vite.config.ts.timestamp-*
 /playwright/.cache/
 /playwright/.auth/
 /.e2e_home/
+# Isolated HOME for .agents/scripts/dev_server.sh, same idea as .e2e_home.
+/.agent_dev_home/
