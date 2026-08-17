@@ -3176,9 +3176,11 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                     # audio
-                    KilnMimeType.MP3,
+                    # MP3 and OGG excluded: Vertex's content filter stochastically blocks
+                    # this model's transcriptions of compressed audio (finish_reason
+                    # content_filter; mp3 ~90%, ogg ~50% of requests). WAV is unaffected,
+                    # as are all audio types on gemini_api.
                     KilnMimeType.WAV,
-                    KilnMimeType.OGG,
                     # video
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
