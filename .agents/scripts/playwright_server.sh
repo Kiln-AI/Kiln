@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Start a Kiln dev server for an agent to drive with playwright-cli.
 #
-#   .agents/scripts/dev_server.sh start|stop|status
+#   .agents/scripts/playwright_server.sh start|stop|status
 #
 # This is not for running the e2e suite: playwright.config.ts starts its own
 # servers and would refuse to share these. It exists so an agent can look at the
@@ -15,7 +15,7 @@ if [ -z "${BASH_VERSION:-}" ]; then
   if [ -r "$0" ]; then
     exec bash "$0" "$@"
   fi
-  echo "error: dev_server.sh requires bash. Re-run it as: bash dev_server.sh" >&2
+  echo "error: playwright_server.sh requires bash. Re-run it as: bash playwright_server.sh" >&2
   exit 1
 fi
 
@@ -44,7 +44,7 @@ BACKEND_URL="http://localhost:$BACKEND_PORT"
 
 usage() {
   cat <<EOF
-Usage: dev_server.sh [start|stop|status]
+Usage: playwright_server.sh [start|stop|status]
 
   start   Start the backend and frontend, wait until both answer, print the URL.
           Already running is success, not an error.
@@ -198,7 +198,7 @@ do_start() {
       echo "  Kiln dev server ready: $FRONTEND_URL"
       echo ""
       echo "    playwright-cli open $FRONTEND_URL"
-      echo "    .agents/scripts/dev_server.sh stop"
+      echo "    .agents/scripts/playwright_server.sh stop"
       echo ""
       return 0
     fi

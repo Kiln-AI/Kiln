@@ -14,6 +14,16 @@
 #
 # KILN_SETUP_REF overrides the ref, to try a branch's setup_env.sh without
 # editing this file.
+#
+# The environment this runs in needs Custom network access, with these in its
+# allowed domains, or the corresponding step below fails:
+#
+#   raw.githubusercontent.com          this script's own fetch
+#   cdn.playwright.dev                 the browsers --add-playwright installs
+#   playwright.download.prss.microsoft.com   Playwright's download fallback
+#
+# plus "also include default list of common package managers" for npm, PyPI and
+# apt. On the default Trusted policy the browser downloads get a 403.
 set -u
 
 REF="${KILN_SETUP_REF:-main}"

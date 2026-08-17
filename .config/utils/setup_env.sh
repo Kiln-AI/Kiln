@@ -2,10 +2,10 @@
 # Build (or repair) a development environment for Kiln.
 #
 # This also runs as the setup script for a Claude Code cloud environment, where
-# setup_cloud.sh fetches and runs it. Pasting this file's contents into the
-# environment's "Setup script" field works too — edit only the CONFIGURATION
+# claude_code_vm_setup.sh fetches and runs it. Pasting this file's contents into
+# the environment's "Setup script" field works too — edit only the CONFIGURATION
 # block below — but a pasted copy goes stale as soon as this file changes, which
-# is why setup_cloud.sh exists.
+# is why claude_code_vm_setup.sh exists.
 #
 # In that context the script does not live inside a checkout, and there may be no
 # Kiln checkout on disk at all: the setup script runs once per environment, is
@@ -130,9 +130,13 @@ Usage: setup_env.sh [options]
                       Code settings. Merges into ~/.claude/settings.json.
   --add-playwright    Install the Chromium build app/web_ui's @playwright/test
                       pins, so `npm run tests:e2e` can launch a browser, plus the
-                      playwright-cli agent tool and its own browser. Off by
-                      default: it is ~800 MB and most work needs neither.
-                      See .agents/USING_PLAYWRIGHT.md.
+                      playwright-cli agent tool, its own browser and its config.
+                      Off by default: it is ~800 MB and most work needs neither.
+                      The revision is read from the checkout, never hardcoded, so
+                      a @playwright/test bump moves it. Downloads come from
+                      cdn.playwright.dev, which a restrictive egress policy
+                      blocks — for a cloud environment see the allowlist in
+                      claude_code_vm_setup.sh, which passes this flag for you.
   -h, --help          Show this help.
 
 The Python sync uses --frozen, so run `uv lock` first if you changed dependencies.

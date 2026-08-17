@@ -6,8 +6,7 @@ Two separate things share one browser install:
 - **`playwright-cli`** — a browser you drive from the shell, for looking at the UI
   you are changing and taking screenshots of it.
 
-If neither works, the install is probably missing. See
-[Installing](#installing) at the bottom.
+If neither works, the install is probably missing — see the bottom of this file.
 
 ## Running the e2e suite
 
@@ -76,7 +75,7 @@ Claude Code has a `playwright-cli` skill installed with the full command list;
 It needs something to point at, so start a server first:
 
 ```bash
-.agents/scripts/dev_server.sh start     # prints http://localhost:6544
+.agents/scripts/playwright_server.sh start     # prints http://localhost:6544
 ```
 
 That script runs the backend and the web UI on 6544/6545 — deliberately not the
@@ -145,6 +144,8 @@ Do not guess a role from how something looks. Kiln styles links as buttons, so
 `find "Get Started"` returns `link "Get Started" [ref=e9]` — the ref and the true
 role in one call. Run `find` first, then write the locator from what it reports.
 
+### Landing on a task's page directly
+
 Kiln stores the selected project and task in `localStorage`, and redirects to a
 task picker without it. To land directly on a task's page, do what the e2e
 fixtures do:
@@ -155,42 +156,8 @@ playwright-cli localstorage-set ui_state \
 playwright-cli goto http://localhost:6544/generate/<project_id>/<task_id>
 ```
 
-## Installing
+## Nothing is installed
 
-Neither the browser nor `playwright-cli` is installed by default — together they
-are ~800 MB, and most work in this repo needs neither. To add them:
-
-```bash
-bash .config/utils/setup_env.sh --add-playwright
-```
-
-The e2e suite needs the exact Chromium revision `app/web_ui`'s `@playwright/test`
-pins. This is the failure worth recognizing: when some *other* Chromium is
-installed, Playwright reports a browser that was never installed and tells you to
-run `npx playwright install` — the real problem is a version mismatch, not a
-missing install. `setup_startup.sh` checks for the pinned revision at the start of
-every session and names it, so you should see that before you see Playwright's
-version of the story.
-
-Nothing in the repo overrides the browser path. `--add-playwright` installs the
-revision Playwright already looks for, which is what keeps sandbox results the
-same as CI's.
-
-### Cloud sandboxes
-
-Two things have to be true, and neither is visible from inside a session:
-
-1. **The environment needs Custom network access** with `cdn.playwright.dev` in
-   its allowed domains (`playwright.download.prss.microsoft.com` too, for the
-   Firefox and WebKit fallbacks). On the default Trusted policy the downloads get
-   a 403 from the proxy.
-2. **The environment's setup script must install the browsers.**
-   `.config/utils/setup_cloud.sh` is what belongs in that field: it fetches
-   `setup_env.sh` from `main` and runs it with `--add-playwright`, so later
-   changes to `setup_env.sh` take effect without anyone re-pasting anything. An
-   environment still holding a pasted copy of `setup_env.sh` needs that copy
-   replaced with `setup_cloud.sh` once — or, failing that, re-pasted with
-   `ADD_PLAYWRIGHT=true` in its CONFIGURATION block.
-
-Installing during the VM build is what puts the browser in the environment's
-filesystem snapshot, so every later session starts with it already on disk.
+Neither the browser nor `playwright-cli` ships by default — together they are
+~800 MB. `bash .config/utils/setup_env.sh --add-playwright` adds both; see that
+script's `--help` for what it does and what a cloud environment needs.
