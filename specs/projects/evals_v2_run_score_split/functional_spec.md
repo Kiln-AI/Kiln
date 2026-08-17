@@ -147,8 +147,15 @@ Exactly one applies. Enforced by validator (D17).
 | State | Discriminator | `scored_run_id` | `scores` | `input` + trace fields |
 |---|---|---|---|---|
 | **Pointer** (new, scored) | `scored_run_id` set, no skip | required | non-empty | **must be None** |
-| **Skipped** | `skipped_reason` set | optional — set if the trace existed, None if skipped before generation | empty | **must be None** |
+| **Skipped** | `skipped_reason` set | optional — set if the trace existed, None if skipped before generation | empty | **must be None** on new records; see note |
 | **Legacy inline** | `scored_run_id` None, no skip | None | non-empty | `input` **required**, trace fields allowed |
+
+**Note on the Skipped row.** The "must be None" is what new records write, not what the
+validator enforces. Only *pointer* records are forbidden inline data. A skipped record
+with no `scored_run_id` may carry it, because `input` was required on every pre-split
+EvalRun — enforcing the row literally would reject every skipped record already on disk
+and break §7 / D15. So the rule is: inline data is forbidden whenever `scored_run_id` is
+set, and otherwise allowed. `architecture.md` §1.5 has the validator.
 
 The *forbidding* half of the pointer rule is the one that earns its keep: a pointer-mode
 record must never carry a stale second copy of what it scored.

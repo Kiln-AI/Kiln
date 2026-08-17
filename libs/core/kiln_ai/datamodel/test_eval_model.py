@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from kiln_ai.datamodel.basemodel import KilnParentModel, ReadOnlyMutationError
 from kiln_ai.datamodel.eval import (
+    LEGACY_TRACE_FIELDS,
     SCORER_CODE_FILENAME,
     ArgMatch,
     CodeEvalProperties,
@@ -40,7 +41,9 @@ from kiln_ai.datamodel.eval import (
     validate_scores_against_output_scores,
 )
 from kiln_ai.datamodel.task import Task
-from kiln_ai.datamodel.task_output import TaskOutputRatingType
+from kiln_ai.datamodel.task_output import TaskOutput, TaskOutputRatingType
+from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.usage import Usage
 
 
 @pytest.fixture
@@ -2469,6 +2472,80 @@ class TestEvalTaskInput:
             EvalTaskInput()  # type: ignore[call-arg]
 
 
+class TestEvalTaskInputFromTrace:
+    """The trace and the item it was generated from are two records now."""
+
+    @pytest.fixture
+    def trace(self):
+        return TaskRun(
+            input="what the model saw",
+            output=TaskOutput(output="what the model said"),
+            trace=[{"role": "assistant", "content": "what the model said"}],
+        )
+
+    def test_from_an_eval_input_source(self, trace):
+        eval_input = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="2+2?")),
+            reference={"answer": "4"},
+        )
+
+        result = EvalTaskInput.from_trace(trace, eval_input)
+
+        assert result.final_message == "what the model said"
+        assert result.trace == trace.trace
+        assert result.reference_data == {"answer": "4"}
+        # The item's own text, not the trace's: the item is the canonical input.
+        assert result.task_input == "2+2?"
+
+    def test_from_a_task_run_source(self, trace):
+        item = TaskRun(input="the dataset input", output=TaskOutput(output="old"))
+
+        result = EvalTaskInput.from_trace(trace, item)
+
+        assert result.final_message == "what the model said"
+        assert result.reference_data is None
+        # No separate statement of the input exists for a TaskRun-backed item, so the
+        # trace's own input is what was actually scored.
+        assert result.task_input == "what the model saw"
+
+    def test_existing_constructors_are_from_trace(self, trace):
+        """The two named constructors are the two shapes of `from_trace`."""
+        eval_input = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="2+2?")),
+            reference={"answer": "4"},
+        )
+        assert EvalTaskInput.from_eval_input(
+            eval_input, trace
+        ) == EvalTaskInput.from_trace(trace, eval_input)
+        assert EvalTaskInput.from_task_run(trace) == EvalTaskInput.from_trace(
+            trace, trace
+        )
+
+    @pytest.mark.parametrize(
+        "trace_arg, source, error",
+        [
+            ("not a run", TaskRun(input="i", output=TaskOutput(output="o")), TypeError),
+            (
+                TaskRun(input="i", output=TaskOutput(output="o")),
+                "not an item",
+                TypeError,
+            ),
+            (
+                TaskRun(input="i", output=TaskOutput(output="o")),
+                EvalInput(
+                    data=MultiTurnSyntheticEvalInputData(
+                        first_message=UserMessage(text="hi")
+                    )
+                ),
+                ValueError,
+            ),
+        ],
+    )
+    def test_rejects_shapes_it_cannot_describe(self, trace_arg, source, error):
+        with pytest.raises(error):
+            EvalTaskInput.from_trace(trace_arg, source)
+
+
 # ── Save-time Jinja validation (validate_v2_templates_and_expressions) ───
 
 
@@ -2757,6 +2834,67 @@ class TestV1EvalRunCoexistence:
         assert loaded.skipped_reason is None
         assert loaded.skipped_detail is None
         assert loaded.scores == {"acc": 0.8}
+
+    def test_pre_split_eval_run_file_loads_unchanged(self, mock_task, tmp_path):
+        """Regression guard for D15: a record written before scored_run_id existed still
+        loads, with every inline field intact and no new field required. Read through
+        config.runs(), the real path, not just load_from_file."""
+        mock_task.path = tmp_path / "task.kiln"
+        mock_task.save_to_file()
+
+        eval_obj = Eval(
+            name="Pre Split Eval",
+            parent=mock_task,
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+            ],
+        )
+        eval_obj.save_to_file()
+        config = EvalConfig(
+            name="Pre Split Config",
+            parent=eval_obj,
+            config_type=EvalConfigType.g_eval,
+            model_name="gpt-4",
+            model_provider="openai",
+            properties={"eval_steps": ["step1"]},
+        )
+        config.save_to_file()
+
+        runs_dir = config.path.parent / "runs" / "legacy_run"
+        runs_dir.mkdir(parents=True)
+        on_disk = {
+            "v": 1,
+            "id": "123456789012",
+            "model_type": "eval_run",
+            "dataset_id": "ds1",
+            "task_run_config_id": "rc1",
+            "eval_config_eval": False,
+            "input": "legacy input",
+            "output": "legacy output",
+            "reference_answer": None,
+            "intermediate_outputs": {"chain_of_thought": "thinking"},
+            "task_run_trace": None,
+            "scores": {"accuracy": 1.0},
+            "task_run_usage": {
+                "input_tokens": 5,
+                "output_tokens": 2,
+                "total_tokens": 7,
+            },
+        }
+        (runs_dir / "eval_run.kiln").write_text(json.dumps(on_disk))
+
+        loaded_runs = config.runs()
+        assert len(loaded_runs) == 1
+        loaded = loaded_runs[0]
+        assert loaded.scored_run_id is None
+        assert loaded.eval_usage is None
+        assert loaded.input == "legacy input"
+        assert loaded.output == "legacy output"
+        assert loaded.task_run_usage is not None
+        assert loaded.task_run_usage.total_tokens == 7
+        assert loaded.scores == {"accuracy": 1.0}
 
 
 class TestV1EvalConfigCoexistence:
@@ -4463,3 +4601,254 @@ class TestCodeEvalFileStorage:
         component = components["CodeEvalProperties"]
         assert "code" in component.get("properties", {})
         assert component["properties"]["code"]["type"] == "string"
+
+
+# ── EvalRun record modes: pointer / skipped / legacy inline ────────────
+
+
+def pointer_run_data(**overrides):
+    data = {
+        "eval_input_id": "ei1",
+        "task_run_config_id": "rc1",
+        "scored_run_id": "tr1",
+        "scores": {"accuracy": 1.0},
+    }
+    data.update(overrides)
+    return data
+
+
+@pytest.fixture
+def v2_eval_config(mock_task, tmp_path):
+    """A saved V2 EvalConfig, for the record-mode tests that go to disk.
+
+    validate_record_mode is parent-independent, so only the round-trip tests need this.
+    """
+    mock_task.path = tmp_path / "task.kiln"
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="Record Mode Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+    )
+    eval.save_to_file()
+
+    config = EvalConfig(
+        name="V2 Judge",
+        parent=eval,
+        config_type=EvalConfigType.v2,
+        properties=LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="Evaluate: {{ final_message }}",
+        ),
+    )
+    config.save_to_file()
+    return config
+
+
+def test_pointer_eval_run_is_valid_and_round_trips(v2_eval_config):
+    run = EvalRun(parent=v2_eval_config, **pointer_run_data())
+    run.save_to_file()
+
+    loaded = EvalRun.load_from_file(str(run.path))
+    assert loaded.scored_run_id == "tr1"
+    assert loaded.input is None
+    assert all(getattr(loaded, f) is None for f in LEGACY_TRACE_FIELDS)
+
+
+INLINE_TRACE_CASES = [
+    ("input", "some input"),
+    ("output", "some output"),
+    ("task_run_trace", '{"messages": []}'),
+    ("task_run_usage", Usage(input_tokens=1)),
+    ("reference_answer", "gold"),
+]
+
+
+def test_inline_trace_cases_cover_every_forbidden_field():
+    """The values below can't be derived, but the field list can: without this, adding
+    a field to LEGACY_TRACE_FIELDS would silently get a deprecation assertion and no
+    rejection assertion."""
+    assert {name for name, _ in INLINE_TRACE_CASES} == {"input", *LEGACY_TRACE_FIELDS}
+
+
+@pytest.mark.parametrize("field,value", INLINE_TRACE_CASES)
+def test_pointer_eval_run_rejects_inline_trace_data(field, value):
+    with pytest.raises(ValidationError, match="must not carry inline trace data"):
+        EvalRun(**pointer_run_data(**{field: value}))
+
+
+def test_pointer_eval_run_error_names_every_field_carried():
+    with pytest.raises(ValidationError) as exc_info:
+        EvalRun(**pointer_run_data(input="in", output="out", reference_answer="gold"))
+    message = str(exc_info.value)
+    assert "input" in message
+    assert "output" in message
+    assert "reference_answer" in message
+
+
+def test_legacy_eval_run_without_input_is_rejected():
+    with pytest.raises(ValidationError, match="requires input"):
+        EvalRun(
+            eval_input_id="ei1",
+            task_run_config_id="rc1",
+            output="some output",
+            scores={"accuracy": 1.0},
+        )
+
+
+def test_legacy_eval_run_with_input_is_valid():
+    run = EvalRun(
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="some input",
+        output="some output",
+        scores={"accuracy": 1.0},
+    )
+    assert run.scored_run_id is None
+    assert run.input == "some input"
+
+
+def test_skipped_eval_run_needs_neither_input_nor_pointer():
+    """A skip before generation has nothing to point at, and nothing to copy."""
+    run = EvalRun(
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        skipped_reason=SkippedReason.incompatible_input_shape.value,
+    )
+    assert run.scored_run_id is None
+    assert run.input is None
+
+
+def test_skipped_at_scoring_time_keeps_its_pointer():
+    """The trace existed; only scoring was skipped. The pointer is still meaningful."""
+    run = EvalRun(
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        scored_run_id="tr1",
+        skipped_reason=SkippedReason.missing_reference_key.value,
+    )
+    assert run.scored_run_id == "tr1"
+
+
+def test_skipped_at_scoring_time_still_rejects_inline_data():
+    """The pointer branch is checked before the skip branch on purpose."""
+    with pytest.raises(ValidationError, match="must not carry inline trace data"):
+        EvalRun(
+            eval_input_id="ei1",
+            task_run_config_id="rc1",
+            scored_run_id="tr1",
+            skipped_reason=SkippedReason.missing_reference_key.value,
+            output="some output",
+        )
+
+
+def test_legacy_skipped_eval_run_with_inline_data_still_loads():
+    """Records written before the split carry input on skips. They stay valid."""
+    run = EvalRun(
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="some input",
+        skipped_reason=SkippedReason.missing_trace.value,
+    )
+    assert run.input == "some input"
+
+
+def test_pointer_eval_run_bypasses_v1_output_requirement(
+    mock_task, valid_eval_config_data, tmp_path
+):
+    """validate_output_fields' 'V1 EvalRun requires output' rule must not fire for a
+    pointer record: its output lives on the referenced TaskRun."""
+    mock_task.path = tmp_path / "task.kiln"
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="V1 Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        evaluation_data_type=EvalDataType.full_trace,
+        output_scores=[
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+    )
+    eval.save_to_file()
+    config = EvalConfig(parent=eval, **valid_eval_config_data)
+    config.save_to_file()
+
+    # Without the pointer, a V1 full_trace run with no output and no trace is rejected
+    # twice over ("requires output", "should include trace").
+    with pytest.raises(ValidationError):
+        EvalRun(
+            parent=config,
+            dataset_id="ds1",
+            task_run_config_id="rc1",
+            input="in",
+            scores={"accuracy": 1.0},
+        )
+
+    run = EvalRun(
+        parent=config,
+        dataset_id="ds1",
+        task_run_config_id="rc1",
+        scored_run_id="tr1",
+        scores={"accuracy": 1.0},
+    )
+    assert run.output is None
+    assert run.task_run_trace is None
+
+
+def test_eval_usage_defaults_to_none_and_round_trips(v2_eval_config):
+    run = EvalRun(parent=v2_eval_config, **pointer_run_data())
+    assert run.eval_usage is None
+
+    run.eval_usage = Usage(input_tokens=10, output_tokens=3, cost=0.002)
+    run.save_to_file()
+
+    loaded = EvalRun.load_from_file(str(run.path))
+    assert loaded.eval_usage is not None
+    assert loaded.eval_usage.input_tokens == 10
+    assert loaded.eval_usage.cost == 0.002
+
+
+@pytest.mark.parametrize("field_name", ["input", *LEGACY_TRACE_FIELDS])
+def test_legacy_trace_fields_are_marked_deprecated(field_name):
+    """Two signals, for two audiences: the description prefix for a human reading the
+    SDK docs, and the schema flag, which openapi-typescript turns into a `@deprecated`
+    JSDoc tag so the TS compiler strikes through every web call site."""
+    field = EvalRun.model_fields[field_name]
+    assert field.description is not None
+    assert field.description.startswith("DEPRECATED:")
+
+    schema_property = EvalRun.model_json_schema()["properties"][field_name]
+    assert schema_property["deprecated"] is True
+
+
+def test_reading_a_deprecated_field_does_not_warn():
+    """Why the flag is json_schema_extra and not Field(deprecated=True): reading these
+    is the correct, permanent way to render a legacy record, and Field(deprecated=True)
+    would warn on every one of those reads. Switching to it fails here."""
+    run = EvalRun(
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="legacy input",
+        output="legacy output",
+        scores={"accuracy": 1.0},
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        for field_name in ("input", *LEGACY_TRACE_FIELDS):
+            getattr(run, field_name)
+
+
+def test_live_eval_run_fields_are_not_marked_deprecated():
+    """The flag has to be per-field, not smeared across the model."""
+    schema_properties = EvalRun.model_json_schema()["properties"]
+    for field_name in ("scored_run_id", "eval_usage", "scores", "intermediate_outputs"):
+        assert "deprecated" not in schema_properties[field_name], field_name

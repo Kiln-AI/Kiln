@@ -21,6 +21,7 @@ from kiln_ai.datamodel.eval import (
 from kiln_ai.datamodel.eval_splits import (
     ResolvedSplit,
     eval_run_item_key,
+    item_key,
     resolve_split,
 )
 
@@ -176,6 +177,72 @@ def test_eval_run_item_key_for_both_shapes():
 
     assert eval_run_item_key(task_run_scored) == ("task_run", "1234")
     assert eval_run_item_key(eval_input_scored) == ("eval_input", "1234")
+
+
+def test_item_key_matches_the_key_of_the_record_that_scores_it(task, data_source):
+    """A job keys its item by type; the EvalRun it writes keys by field. Both must agree,
+    or a score is written under one identity and looked up under another."""
+    task_run = TaskRun(
+        parent=task,
+        input="in",
+        input_source=data_source,
+        output=TaskOutput(output="out"),
+    )
+    task_run.save_to_file()
+    eval_input = EvalInput(
+        parent=task,
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="in")),
+    )
+    eval_input.save_to_file()
+
+    assert item_key(task_run) == ("task_run", task_run.id)
+    assert item_key(eval_input) == ("eval_input", eval_input.id)
+
+    assert item_key(task_run) == eval_run_item_key(
+        EvalRun(
+            dataset_id=task_run.id,
+            task_run_config_id="rc",
+            input="in",
+            output="out",
+            scores={"score": 1.0},
+        )
+    )
+    assert item_key(eval_input) == eval_run_item_key(
+        EvalRun(
+            eval_input_id=eval_input.id,
+            task_run_config_id="rc",
+            input="in",
+            output="out",
+            scores={"score": 1.0},
+        )
+    )
+
+
+def test_item_key_refuses_an_item_from_neither_store():
+    """A fall-through `else` would file a wrong-typed item under `eval_input` silently,
+    and nothing downstream would ever look it up there."""
+    with pytest.raises(ValueError, match="not a str"):
+        item_key("just an id")  # type: ignore[arg-type]
+
+
+def test_item_key_agrees_with_the_split_its_item_came_from(task, data_source):
+    """`ResolvedSplit` keys by its declared source, the runner keys by item type."""
+    task_run = TaskRun(
+        parent=task,
+        input="in",
+        input_source=data_source,
+        output=TaskOutput(output="out"),
+    )
+    task_run.save_to_file()
+    eval_input = EvalInput(
+        parent=task,
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="in")),
+    )
+    eval_input.save_to_file()
+
+    for source, items in (("task_run", [task_run]), ("eval_input", [eval_input])):
+        split = ResolvedSplit(name="test", source=source, items=items, eval_id="eval_1")
+        assert {item_key(item) for item in split.items} == split.item_keys()
 
 
 def test_eval_run_item_key_requires_an_item():

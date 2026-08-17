@@ -6,7 +6,7 @@
     EvalRunResult,
     Eval,
     EvalConfig,
-    EvalRun,
+    EvalRunWithTrace,
     TaskRunConfig,
   } from "$lib/types"
   import { isKilnAgentRunConfig } from "$lib/types"
@@ -55,7 +55,7 @@
   let results_loading = true
   let peek_dialog: Dialog | null = null
   let thinking_dialog: Dialog | null = null
-  let displayed_result: EvalRun | null = null
+  let displayed_result: EvalRunWithTrace | null = null
 
   onMount(() => {
     peek_dialog?.show()
@@ -310,26 +310,29 @@
               <td>
                 <div class="font-medium">Input:</div>
                 <div>
-                  {result.input}
+                  <!-- Both are nullable: a dangling trace reference, or a skipped run
+                       whose dataset item is gone. Svelte stringifies null to "null". -->
+                  {result.input ?? ""}
                 </div>
-                {#if result.reference_answer}
+                {#if result.eval_run.reference_answer}
                   <div class="font-medium mt-4">Reference Answer:</div>
                   <div>
-                    {result.reference_answer}
+                    {result.eval_run.reference_answer}
                   </div>
                 {/if}
                 <div class="font-medium mt-4">Output:</div>
                 <div>
-                  {result.output}
+                  {result.output ?? ""}
                 </div>
               </td>
               {#if !is_v2_config}
                 <td>
-                  {#if result.intermediate_outputs?.reasoning || result.intermediate_outputs?.chain_of_thought}
+                  {#if result.eval_run.intermediate_outputs?.reasoning || result.eval_run.intermediate_outputs?.chain_of_thought}
                     <div class="max-w-[600px] min-w-[200px]">
                       <div class="max-h-[140px] overflow-y-hidden relative">
-                        {result.intermediate_outputs?.reasoning ||
-                          result.intermediate_outputs?.chain_of_thought ||
+                        {result.eval_run.intermediate_outputs?.reasoning ||
+                          result.eval_run.intermediate_outputs
+                            ?.chain_of_thought ||
                           "N/A"}
                         <div class="absolute bottom-0 left-0 w-full">
                           <div
@@ -360,17 +363,18 @@
                 <td>
                   <svelte:component
                     this={v2_result_component}
-                    scores={result.scores}
-                    skipped_reason={result.skipped_reason ?? null}
-                    skipped_detail={result.skipped_detail ?? null}
+                    scores={result.eval_run.scores}
+                    skipped_reason={result.eval_run.skipped_reason ?? null}
+                    skipped_detail={result.eval_run.skipped_detail ?? null}
                     eval_config={results.eval_config}
-                    intermediate_outputs={result.intermediate_outputs ?? null}
+                    intermediate_outputs={result.eval_run
+                      .intermediate_outputs ?? null}
                   />
                 </td>
               {:else}
                 {#each results.eval.output_scores as score}
                   {@const score_value =
-                    result.scores[string_to_json_key(score.name)]}
+                    result.eval_run.scores[string_to_json_key(score.name)]}
                   <td class="text-center">
                     {score_value != null ? score_value.toFixed(2) : "N/A"}
                   </td>
@@ -423,8 +427,8 @@
 
 <Dialog bind:this={thinking_dialog} title="Thinking Output">
   <div class="font-light text-sm whitespace-pre-wrap">
-    {displayed_result?.intermediate_outputs?.reasoning ||
-      displayed_result?.intermediate_outputs?.chain_of_thought ||
+    {displayed_result?.eval_run.intermediate_outputs?.reasoning ||
+      displayed_result?.eval_run.intermediate_outputs?.chain_of_thought ||
       "N/A"}
   </div>
 </Dialog>

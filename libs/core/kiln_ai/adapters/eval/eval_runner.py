@@ -1,16 +1,17 @@
-import json
 import logging
 from dataclasses import dataclass
 from typing import AsyncGenerator, Dict, List, Literal, Set
 
 import litellm
+from pydantic import JsonValue
 
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
 from kiln_ai.adapters.errors import KilnRunError
-from kiln_ai.adapters.eval.base_eval import BaseEval
+from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 from kiln_ai.adapters.eval.registry import legacy_eval_adapter_from_type
+from kiln_ai.adapters.eval.trace_index import TraceIndex, TraceKey, trace_key
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
-from kiln_ai.datamodel.basemodel import ID_TYPE
+from kiln_ai.datamodel.basemodel import ID_TYPE, generate_model_id
 from kiln_ai.datamodel.dataset_filters import (
     DatasetFilterId,
     dataset_filter_from_id,
@@ -25,14 +26,20 @@ from kiln_ai.datamodel.eval import (
     EvalScores,
     EvalTaskInput,
     MultiTurnSyntheticEvalInputData,
-    SingleTurnEvalInputData,
     SkippedReason,
+    V2EvalResult,
 )
-from kiln_ai.datamodel.eval_splits import ItemKey, ResolvedSplit, eval_run_item_key
+from kiln_ai.datamodel.eval_splits import (
+    ItemKey,
+    ResolvedSplit,
+    eval_run_item_key,
+    item_key,
+)
 from kiln_ai.datamodel.task import TaskRunConfig
-from kiln_ai.datamodel.task_run import TaskRun, Usage
+from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun, Usage
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
+from kiln_ai.utils.open_ai_types import serialize_trace
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +50,32 @@ class EvalJob:
     type: Literal["task_run_eval", "eval_config_eval"]
     eval_config: EvalConfig
     task_run_config: TaskRunConfig | None = None
+
+
+def _calibration_item(job: EvalJob) -> TaskRun | None:
+    """The golden TaskRun a calibration job scores, or None if this isn't calibration.
+
+    Calibration generates nothing: the human-rated dataset item *is* what gets scored
+    (functional spec 4.5). So the trace is known before the job starts, and stays known
+    even for a job that is skipped before it reaches the judge — which is why both the
+    scoring path and the skip path ask here rather than each deciding for themselves.
+    """
+    if job.type != "eval_config_eval":
+        return None
+    if not isinstance(job.item, TaskRun):
+        raise ValueError("Calibration items are always TaskRuns")
+    return job.item
+
+
+def _is_multi_turn(item: TaskRun | EvalInput) -> bool:
+    """Whether this item is a conversation rather than a single exchange.
+
+    Multi-turn items are skipped by V2 evals, which also keeps eval traces childless —
+    a property `TraceIndex._seed` relies on to find them.
+    """
+    if isinstance(item, TaskRun):
+        return item.parent_task_run_id is not None
+    return isinstance(item.data, MultiTurnSyntheticEvalInputData)
 
 
 def no_golden_set_message(eval: Eval) -> str:
@@ -139,6 +172,10 @@ class EvalRunner:
         self.eval = target_eval
         self._skills: SkillsDict = self._preload_skills()
         self._save_context: SaveContext = save_context or default_save_context
+        # Live, not precomputed like `already_run`: a trace persisted by one job has to be
+        # visible to the next, whether that next job is running concurrently under a
+        # different eval config or is this job's own retry (functional spec 4.2, 4.3).
+        self._trace_index = TraceIndex(self.task)
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
@@ -310,7 +347,7 @@ class EvalRunner:
                 and parent_eval.evaluation_data_type == EvalDataType.full_trace
                 and result_task_run.trace
             ):
-                trace = json.dumps(result_task_run.trace, indent=2)
+                trace = serialize_trace(result_task_run.trace)
 
             if (
                 parent_eval
@@ -341,15 +378,6 @@ class EvalRunner:
     async def _run_v2_job(self, job: EvalJob) -> bool:
         from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
 
-        if isinstance(job.item, TaskRun):
-            early_input_str = job.item.input
-        elif isinstance(job.item, EvalInput) and isinstance(
-            job.item.data, SingleTurnEvalInputData
-        ):
-            early_input_str = job.item.data.user_message.text
-        else:
-            early_input_str = ""
-
         try:
             rc_props = (
                 job.task_run_config.run_config_properties
@@ -360,144 +388,159 @@ class EvalRunner:
                 job.eval_config, rc_props, self._skills
             )
         except NotImplementedError:
-            async with self._save_context():
-                eval_run = EvalRun(
-                    parent=job.eval_config,
-                    task_run_config_id=job.task_run_config.id
-                    if job.task_run_config
-                    else None,
-                    dataset_id=job.item.id if isinstance(job.item, TaskRun) else None,
-                    eval_input_id=job.item.id
-                    if isinstance(job.item, EvalInput)
-                    else None,
-                    eval_config_eval=job.type == "eval_config_eval",
-                    scores={},
-                    input=early_input_str,
-                    output=None,
-                    skipped_reason=SkippedReason.type_not_available.value,
-                    skipped_detail="V2 eval type not yet implemented",
-                )
-                eval_run.save_to_file()
-            return True
+            return await self._persist_skip(
+                job,
+                SkippedReason.type_not_available,
+                "V2 eval type not yet implemented",
+            )
 
-        is_multi_turn = (
-            isinstance(job.item, TaskRun) and job.item.parent_task_run_id is not None
-        ) or (
-            isinstance(job.item, EvalInput)
-            and isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
+        # Both skips come before `_resolve_trace`, so a job that can never be scored
+        # never pays for a generation.
+        if _is_multi_turn(job.item):
+            return await self._persist_skip(
+                job,
+                SkippedReason.incompatible_input_shape,
+                "V2 evals do not yet support multi-turn inputs",
+            )
+
+        trace = await self._resolve_trace(job, evaluator)
+        eval_task_input = EvalTaskInput.from_trace(trace, job.item)
+        result = await evaluator.evaluate(eval_task_input)
+        return await self._persist_judgment(job, trace, eval_task_input, result)
+
+    async def _resolve_trace(
+        self, job: EvalJob, evaluator: BaseV2EvalBridge
+    ) -> TaskRun:
+        """The TaskRun this job scores, generating it only if the task has none."""
+        golden = _calibration_item(job)
+        if golden is not None:
+            return golden
+
+        if job.task_run_config is None:
+            raise ValueError("A task_run_eval job requires a run config")
+
+        key = trace_key(item_key(job.item), job.task_run_config.id)
+        # `TraceIndex` logs both outcomes itself — debug on reuse, info on generation
+        # (architecture 8) — so the was_generated bool has no reader here.
+        trace, _ = await self._trace_index.get_or_create(
+            key, lambda: self._generate_and_persist(job, evaluator, key)
         )
-        if is_multi_turn:
-            async with self._save_context():
-                eval_run = EvalRun(
-                    parent=job.eval_config,
-                    task_run_config_id=job.task_run_config.id
-                    if job.task_run_config
-                    else None,
-                    dataset_id=job.item.id if isinstance(job.item, TaskRun) else None,
-                    eval_input_id=job.item.id
-                    if isinstance(job.item, EvalInput)
-                    else None,
-                    eval_config_eval=job.type == "eval_config_eval",
-                    scores={},
-                    input=early_input_str,
-                    output=None,
-                    skipped_reason=SkippedReason.incompatible_input_shape.value,
-                    skipped_detail="V2 evals do not yet support multi-turn inputs",
-                )
-                eval_run.save_to_file()
-            return True
+        return trace
 
-        if isinstance(job.item, EvalInput):
-            # Always task_run_eval: eval_config_eval is scoped by the eval's golden filter,
-            # which is DatasetFilterId-typed, so it can only ever yield TaskRuns.
-            run_output = await evaluator.run_task(job.item)
-            eval_task_input = EvalTaskInput.from_eval_input(job.item, run_output)
-            result = await evaluator.evaluate(eval_task_input)
+    async def _generate_and_persist(
+        self, job: EvalJob, evaluator: BaseV2EvalBridge, key: TraceKey
+    ) -> TaskRun:
+        """Run the task for this job's item, and make the result durable before scoring.
 
-            async with self._save_context():
-                eval_run = EvalRun(
-                    parent=job.eval_config,
-                    task_run_config_id=job.task_run_config.id
-                    if job.task_run_config
-                    else None,
-                    dataset_id=None,
-                    eval_input_id=job.item.id,
-                    eval_config_eval=False,
-                    scores=result.scores,
-                    input=early_input_str,
-                    output=run_output.output.output
-                    if result.skipped_reason is None
-                    else None,
-                    reference_data=job.item.reference,
-                    skipped_reason=result.skipped_reason.value
-                    if result.skipped_reason
-                    else None,
-                    skipped_detail=result.skipped_detail,
-                    intermediate_outputs=result.intermediate_outputs,
-                )
-                eval_run.save_to_file()
-            return True
+        Stamped from `key` rather than re-derived from the job, so the run files itself
+        under exactly the key the index filed it under. A run that disagrees is never
+        found again, and the eval regenerates it on every future run.
+        """
+        source_type, source_id, run_config_id = key
+        trace = await evaluator.run_task(job.item, run_config_id=run_config_id)
+        if trace.id is None:
+            # `run_task` builds its adapter with allow_saving=False, and every adapter
+            # clears the id of a run it did not persist (base_adapter.py:346). The runner
+            # is the one persisting here, so it mints the id — the same thing
+            # data_gen_api.py:474 does with an unsaved adapter run.
+            #
+            # Deliberately not allow_saving=True instead: the adapter would persist the
+            # run before `eval_source` is stamped on it, so a crash in that window would
+            # leave an eval trace permanently indistinguishable from a curated dataset
+            # row — the contamination Task.runs()' default-exclude exists to prevent.
+            trace.id = generate_model_id()
+        trace.eval_source = EvalItemSource(source_type=source_type, source_id=source_id)
+        async with self._save_context():
+            trace.save_to_file()
+        return trace
 
-        if job.type == "task_run_eval":
-            run_output = await evaluator.run_task(job.item)
-            eval_task_input = EvalTaskInput.from_task_run(run_output)
-            result = await evaluator.evaluate(eval_task_input)
-            task_output = run_output.output.output
-            task_input_str = run_output.input
-            # The source dataset item, not the fresh generation: run_task never
-            # persists its run, and dedupe/progress accounting key on the source id.
-            dataset_id = job.item.id
+    async def _persist_score(
+        self,
+        job: EvalJob,
+        *,
+        scored_run_id: ID_TYPE = None,
+        scores: EvalScores | None = None,
+        reference_data: dict[str, JsonValue] | None = None,
+        skipped_reason: str | None = None,
+        skipped_detail: str | None = None,
+        intermediate_outputs: Dict[str, str] | None = None,
+        eval_usage: Usage | None = None,
+    ) -> bool:
+        """Write one V2 score record.
 
-            async with self._save_context():
-                eval_run = EvalRun(
-                    parent=job.eval_config,
-                    task_run_config_id=job.task_run_config.id
-                    if job.task_run_config
-                    else None,
-                    dataset_id=dataset_id,
-                    eval_input_id=None,
-                    eval_config_eval=False,
-                    scores=result.scores,
-                    input=task_input_str,
-                    output=task_output if result.skipped_reason is None else None,
-                    reference_data=eval_task_input.reference_data,
-                    skipped_reason=result.skipped_reason.value
-                    if result.skipped_reason
-                    else None,
-                    skipped_detail=result.skipped_detail,
-                    intermediate_outputs=result.intermediate_outputs,
-                )
-                eval_run.save_to_file()
-            return True
-        else:
-            eval_task_input = EvalTaskInput.from_task_run(job.item)
-            dataset_id = job.item.id
-            task_input_str = job.item.input
-            task_output = job.item.output.output
+        The single place the item-identity fields are filled in, because `collect_tasks`
+        dedupes on exactly those: a skip record and a score record that disagreed would
+        be two identities for one job. No inline trace field is ever set — they are
+        deprecated, and the trace lives on the TaskRun (functional spec 3.2).
+        """
+        async with self._save_context():
+            EvalRun(
+                parent=job.eval_config,
+                task_run_config_id=job.task_run_config.id
+                if job.task_run_config
+                else None,
+                dataset_id=job.item.id if isinstance(job.item, TaskRun) else None,
+                eval_input_id=job.item.id if isinstance(job.item, EvalInput) else None,
+                eval_config_eval=job.type == "eval_config_eval",
+                scored_run_id=scored_run_id,
+                scores=scores or {},
+                reference_data=reference_data,
+                skipped_reason=skipped_reason,
+                skipped_detail=skipped_detail,
+                intermediate_outputs=intermediate_outputs,
+                eval_usage=eval_usage,
+            ).save_to_file()
+        return True
 
-            result = await evaluator.evaluate(eval_task_input)
+    async def _persist_skip(
+        self, job: EvalJob, reason: SkippedReason, detail: str
+    ) -> bool:
+        """A job skipped before it reached the judge.
 
-            async with self._save_context():
-                eval_run = EvalRun(
-                    parent=job.eval_config,
-                    task_run_config_id=job.task_run_config.id
-                    if job.task_run_config
-                    else None,
-                    dataset_id=dataset_id,
-                    eval_input_id=None,
-                    eval_config_eval=True,
-                    scores=result.scores,
-                    input=task_input_str,
-                    output=task_output if result.skipped_reason is None else None,
-                    reference_data=eval_task_input.reference_data,
-                    skipped_reason=result.skipped_reason.value
-                    if result.skipped_reason
-                    else None,
-                    skipped_detail=result.skipped_detail,
-                    intermediate_outputs=result.intermediate_outputs,
-                )
-                eval_run.save_to_file()
-            return True
+        Calibration still names its trace: the golden item *is* what would have been
+        scored, it is already on disk, and a skip that happens one step later — inside
+        `evaluate()` — records it (functional spec 4.6, row 2). Where the failure
+        happened shouldn't change the record's shape, and Phase 5 migrates old
+        calibration skips to exactly this.
+
+        A scoring job genuinely has nothing to point at. Generating a trace for a job
+        that can never be scored is the spend these early skips exist to avoid.
+        """
+        golden = _calibration_item(job)
+        return await self._persist_score(
+            job,
+            scored_run_id=golden.id if golden is not None else None,
+            skipped_reason=reason.value,
+            skipped_detail=detail,
+        )
+
+    async def _persist_judgment(
+        self,
+        job: EvalJob,
+        trace: TaskRun,
+        eval_task_input: EvalTaskInput,
+        result: V2EvalResult,
+    ) -> bool:
+        """The score for one item, pointing at the trace it was computed over.
+
+        Also the home of a scoring-time skip: the trace exists and this judge could not
+        score it, so the record carries both `scored_run_id` and `skipped_reason`
+        (functional spec 4.6, row 2).
+        """
+        return await self._persist_score(
+            job,
+            scored_run_id=trace.id,
+            scores=result.scores,
+            # From what was handed to the judge, not re-derived from the item: the field
+            # records what the scorer actually saw.
+            reference_data=eval_task_input.reference_data,
+            skipped_reason=result.skipped_reason.value
+            if result.skipped_reason
+            else None,
+            skipped_detail=result.skipped_detail,
+            intermediate_outputs=result.intermediate_outputs,
+            eval_usage=result.usage,
+        )
 
 
 def _unwrap_kiln_run_error(e: BaseException) -> BaseException:

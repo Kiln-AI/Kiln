@@ -165,6 +165,25 @@ def resolve_split(task: Task, eval: Eval, split: EvalSplitName) -> ResolvedSplit
             raise_exhaustive_enum_error(split_ref)
 
 
+def item_key(item: TaskRun | EvalInput) -> ItemKey:
+    """The identity of a dataset item, from the item itself.
+
+    Read from the item's type rather than from the `ResolvedSplit.source` it arrived
+    under. The two can't disagree — `ResolvedSplit.__post_init__` refuses a split whose
+    declared source doesn't match its items — and the type is available to callers that
+    hold an item without its split, like the eval runner's per-job trace lookup.
+    """
+    if isinstance(item, TaskRun):
+        return ("task_run", item.id)
+    if isinstance(item, EvalInput):
+        return ("eval_input", item.id)
+    raise ValueError(
+        f"A dataset item is a TaskRun or an EvalInput, not a {type(item).__name__}. "
+        "Defaulting to either store would file the item under an identity nothing else "
+        "computes the same way."
+    )
+
+
 def eval_run_item_key(eval_run: EvalRun) -> ItemKey:
     """The item this run scored.
 
