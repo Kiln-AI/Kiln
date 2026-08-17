@@ -183,4 +183,91 @@ failure mode is a red CI on an unrelated PR. Verification for this phase is:
 
 ## What was authored
 
-_Filled in as the phase runs._
+All ids are the real ones in the committed fixture.
+
+### The spec and the eval
+
+| Model | Id | Notes |
+|---|---|---|
+| `Spec` | `327624899191` | `Escalation Flagging`, template `desired_behaviour`, priority P1, status active, `eval_id` `839615031663` |
+| `Eval` | `839615031663` | one `pass_fail` output score named `Escalation Flagging`, `evaluation_data_type` `final_answer` |
+| `EvalConfig` | `291382769538` | `Chic Ornithopter`, `llm_as_judge`, `deepseek_4_flash` / `openrouter`, the eval's `current_config_id` |
+
+The spec's `definition` is the three form fields rendered into markdown headings, and the
+judge's `eval_steps` are generated from the same three fields — so filling the two optional
+example fields shows up twice, in the spec body and in the judge's prompt.
+
+### The datasets
+
+| Tag | Runs | Which |
+|---|---|---|
+| `eval_escalation_flagging` | 10 | `106695015830`, `141021632869`, `170843774961`, `189009782155`, `219379828532`, `267255821357`, `281115927207`, `282639728982`, `297010025377`, `303024072746` |
+| `eval_golden_escalation_flagging` | 5 | `122030456526`, `237372582418`, `268548667746`, `324168665101`, `820034106688` |
+| `train_escalation_flagging` | 0 | The eval declares the filter; nothing is tagged into it |
+
+Disjoint by construction. The five golden items were chosen as the runs whose outputs make
+an unambiguous call against the spec, in both directions: three pass (a suspicious-login
+ticket and a cross-tenant data exposure both flagged `needs_human_review: true`, and a
+free-tier how-to question flagged false) and two fail (a routine downgrade request and an
+ordinary 429 rate-limit bug, both flagged true where the spec says urgency alone does not
+warrant a human).
+
+### Results
+
+35 `EvalRun` records under the judge:
+
+| What | Count | Mean score |
+|---|---|---|
+| Golden set, judge vs. human (`task_run_config_id` null) | 5 | 0.60 |
+| Run config `140414461876` Playbook with Prose Input | 10 | 0.90 |
+| Run config `293284619675` Chain of Thought | 10 | 0.80 |
+| Run config `177167545173` Zero Shot Baseline | 10 | 0.70 |
+
+The judge's pass/fail call matches the human rating on all five golden items, so Compare
+Judges reads **0.00**. That is not a missing score: for a `pass_fail` eval the page selects
+mean squared error rather than the Kendall's Tau that heads the metric list, and 0.00 MSE
+is perfect agreement. Verified by reading the five `EvalRun` scores off disk against the
+five `named::Escalation Flagging` ratings.
+
+Whole-fixture spend on the authoring key, including everything phase 2 generated, is
+**$0.029**.
+
+### Deviations from the plan
+
+- **10 eval / 5 golden, not the dialog's suggested 80/20.** The Manually Tag Existing Data
+  dialog asks for `eval:0.8, golden:0.2`, which over 15 runs is 12/3. A judge-to-human
+  correlation over three points is not worth putting on a screen, so the golden set took
+  five. The eval page's own banner agrees the golden set is small — it says so at five too.
+- **Three run configs, not two.** functional_spec.md asks for results across two; all three
+  structured run configs were run because `Run All Evals` on the comparison page runs every
+  incomplete row and the marginal cost was fractions of a cent. Playbook with Prose Input is
+  the one carrying the saved prompt and the Jinja input transform, so it is the most
+  interesting of the three to have a score for.
+- **The eval set is 10 items where the app suggests 25.** `MIN_DATASET_SIZE` in
+  `[eval_id]/+page.svelte` is 25 for both sets. Reaching it would mean generating 40+
+  synthetic runs, tripling a fixture functional_spec.md fixes at 15–20 runs to satisfy a
+  hint. Note that the suggestion is only *visible* before a default judge exists: once
+  `current_config_id` is set, `update_eval_progress` jumps straight to the final step, so
+  the seeded fixture never shows the banner.
+- **The judge keeps its generated name.** `Chic Ornithopter` is what the create-judge flow
+  minted, and unlike phase 2's run configs it cannot be renamed: `app/desktop/studio_server/eval_api.py`
+  has PATCH routes for evals and run configs but none for eval configs. Hand-editing the
+  file would break the UI-first rule for a cosmetic gain — the same call phase 2 made for
+  the dataset split.
+
+### Notes for whoever authors the next eval
+
+Neither of these is a phase-3 anecdote; both are properties of the create-eval flow.
+
+- **The eval's name fixes its three dataset tags** — `generate_spec_eval_tags` lowercases it
+  and replaces spaces with underscores — and nothing in the UI shows that before you submit
+  the form. Choose the name knowing it becomes `eval_…`, `train_…` and `eval_golden_…`.
+- **The named pass/fail control only renders on runs already carrying the golden tag.**
+  `get_rating_options` returns each eval's output scores with
+  `show_for_tags=[golden_set_tag]`, so tagging must come before rating. Rating a golden run
+  that already had a five-star rating leaves the overall value, the rating record's `id` and
+  its `created_at` untouched — the named score is another entry in `requirement_ratings`.
+  Confirmed against all five golden runs. Phase 2's toggle warning did not bite here: the
+  Pass/Fail buttons are a separate control from the star widget, and no star was touched.
+- **The run detail page is `/dataset/<p>/<t>/<run_id>/run`**, not `/dataset/<p>/<t>/<run_id>`,
+  which returns 404.
