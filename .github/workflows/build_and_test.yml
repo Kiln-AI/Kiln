@@ -56,6 +56,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # No git operations after checkout; keep the token out of git config.
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
