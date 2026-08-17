@@ -57,7 +57,7 @@ one task to be worth opening.
 
 From the Dataset screen, rate runs by opening each and using the rating control:
 
-- Several **high** (4–5 overall, with the per-requirement ratings the structured task
+- Several **high** (4–5 overall, plus any per-requirement ratings the structured task
   offers).
 - A couple **low** (1–2), on runs whose output really is wrong or thin.
 - **Several left unrated.** This is content, not an omission: the dataset filters and the
@@ -103,12 +103,101 @@ Verification for this phase is:
 
 ## What was authored
 
-Nothing yet. The phase is blocked at step 1 — see below.
+All ids are the real ones in the committed fixture. 20 runs, weighted to the structured
+task, across four run configs.
 
-## Roadblock: OpenRouter is unreachable from this container
+### Run configs
 
-Connecting OpenRouter through the UI (Settings → Providers → OpenRouter → paste key →
-Connect) fails with:
+Saving options from `/run` mints a config with a random name, and there is no name field
+in that flow — but each config's detail page under `/optimize/.../run_config/<id>` has an
+Edit dialog that renames it, so all four carry meaningful names. Their **directory** names
+still hold the original random name, because Kiln fixes the directory at creation and does
+not rename it; that is what a renamed run config looks like on disk.
+
+| Task | Id | Name | Model | Prompt | Runs |
+|---|---|---|---|---|---|
+| Triage Ticket | `177167545173` | Zero Shot Baseline | deepseek-v4-flash | frozen Basic (Zero Shot) | 10 |
+| Triage Ticket | `293284619675` | Chain of Thought | deepseek-v4-flash | frozen Chain of Thought | 4 |
+| Triage Ticket | `140414461876` | Playbook with Prose Input | deepseek-v4-flash | saved prompt `281098421169` | 1 |
+| Draft Ticket Reply | `228934807381` | Zero Shot Baseline | deepseek-v4-flash | frozen Basic (Zero Shot) | 5 |
+
+All four run OpenRouter's `deepseek/deepseek-v4-flash-0731` at thinking level high, so
+every run also carries reasoning content.
+
+### Runs
+
+**Triage Ticket (structured) — 15 runs.** Inputs cover all three `customer_plan` values and
+produce every `team` the enum offers except `account_management`, which appears only in the
+repair below; `needs_human_review` comes out both ways. Two tickets are deliberate
+escalations (a cross-tenant data leak, a suspicious admin login).
+
+**Draft Ticket Reply (plain text) — 5 runs**, five of the same tickets rewritten as prose,
+so the unstructured screens have data too.
+
+### Ratings
+
+| State | Count | Structured | Plain text |
+|---|---|---|---|
+| High (4–5) | 6 | 4 | 2 |
+| Low (1–2) | 3 | 2 | 1 |
+| Unrated | 11 | 9 | 2 |
+
+Only the overall five-star rating exists: the task carries no requirements, because there
+is no UI path to a task's first requirement (recorded as a phase 1 deviation), so the
+per-requirement ratings the plan anticipated are not available to author.
+
+### Repair
+
+Run `189009782155` (Zero Shot Baseline, rated 1) routed a workspace-ownership transfer to
+`technical_support` at low priority. Repaired through Attempt Repair with an instruction
+naming the right team and priority; the accepted repair is `account_management` / `medium`.
+Accepting does not overwrite the original rating, so the run keeps its 1 star alongside
+`repair_instructions` and `repaired_output` — the one run in the fixture whose Repair State
+column reads "Repaired".
+
+### Feedback
+
+Run `170843774961` (Chain of Thought, rated 2) carries one free-text feedback note. Feedback
+is its own child model, at `runs/170843774961/feedback/148834163100/feedback.kiln`.
+
+### Prompt, split, transform
+
+- **Saved prompt** `281098421169` "Triage Playbook" on the structured task — explicit
+  routing rules per team plus chain-of-thought instructions, written on the Prompts screen.
+- **Dataset split** `240478987760` "Dapper Moss" — 80/10/10 train/test/val (10/1/1) over
+  the filter `tag::fine_tune_triage`. 12 of the 15 structured runs carry that tag, applied
+  from the Dataset screen's bulk selection.
+- **Input transform** — a Jinja template on run config `140414461876` that renders the
+  ticket as prose. Transforms are a field of `RunConfigProperties`, not a standalone task
+  child, so "one input transform" is one run config carrying one. Run `141021632869`
+  exercises it: `TaskRun.input` holds the raw structured input while the trace shows the
+  rendered user message, which is the transform contract.
+
+### Deviations from the plan
+
+- **Splits are not creatable from the Dataset screen.** The only UI that creates a
+  `DatasetSplit` is step 3 of the fine-tune flow, reached by picking a JSONL download format
+  in step 1 — no fine-tune provider is connected and no fine-tune job was started. That flow
+  also only offers tags beginning with `fine_tune`, which is why the tag is
+  `fine_tune_triage` rather than something shorter.
+- **Two clicks went through `page.evaluate` rather than the CLI's `click`.** The bulk-tag
+  menu is a DaisyUI `dropdown` that closes on blur before a second CLI command lands, so
+  "Add Tags" and the dialog's submit were clicked in-page. Same elements, same handlers —
+  no API call was made by hand.
+- **The Repair Output section only appears after an interactive rating change.** On a fresh
+  load of an already-rated run the section is absent even though the run qualifies, so the
+  repair was reached by re-clicking the star. Worth knowing for phase 3; it is an app quirk,
+  not a fixture property.
+
+## Roadblock (resolved): OpenRouter was unreachable from the container
+
+Kept as history. The prior attempt at this phase was blocked at step 1 and recorded the
+finding below; the egress denial has since been lifted, `curl https://openrouter.ai/api/v1/models`
+returns 200 from this container, and the plan above ran as written. Nothing about it needs
+to change — it is recorded because the same symptom will look identical if the policy ever
+changes back.
+
+Connecting OpenRouter through the UI failed with:
 
 ```
 Failed to connect to OpenRouter. Error: HTTPSConnectionPool(host='openrouter.ai', port=443):
@@ -116,32 +205,21 @@ Max retries exceeded with url: /api/v1/chat/completions
 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
 ```
 
-This is not the key and not Kiln. All outbound HTTPS from this session goes through the
-agent egress proxy, and `openrouter.ai:443` is denied by policy at the gateway — the
-proxy's own status endpoint records it as `connect_rejected … gateway answered 403 to
-CONNECT`, and a bare `curl https://openrouter.ai/api/v1/models` fails the same way with
+That was not the key and not Kiln. All outbound HTTPS from the session went through the
+agent egress proxy, and `openrouter.ai:443` was denied by policy at the gateway — the
+proxy's own status endpoint recorded it as `connect_rejected … gateway answered 403 to
+CONNECT`, and a bare `curl https://openrouter.ai/api/v1/models` failed the same way with
 no Kiln in the picture. The proxy README is explicit that a 403 is an organization egress
 denial that must be reported rather than retried or routed around.
 
-The denial is not OpenRouter-specific: `api.openai.com`, `api.deepseek.com` and
-`api.fireworks.ai` (the other provider serving `deepseek-v4-flash`) are all denied the
-same way. `generativelanguage.googleapis.com` does answer, and no local model runtime is
-installed (`ollama` is absent).
+The denial was not OpenRouter-specific: `api.openai.com`, `api.deepseek.com` and
+`api.fireworks.ai` (the other provider serving `deepseek-v4-flash`) were all denied the
+same way. `generativelanguage.googleapis.com` did answer, and no local model runtime was
+installed (`ollama` absent).
 
-Every remaining step of this phase depends on real generation, so nothing further can be
-authored: runs, both run configs, ratings, the repair and the dataset split all require
-runs to exist first.
+The key never reached disk in that attempt — Kiln only stores a provider key after the
+validation call succeeds.
 
-The key never reached disk — Kiln only stores a provider key after the validation call
-succeeds, and the sandbox's `settings.yaml` still holds only the three seeded lines. The
-key is absent from the working tree; the only place it appeared locally was a
-`playwright-cli` page snapshot under the gitignored `.playwright-cli/`, which was deleted.
-
-Unblocking needs one of:
-
-1. `openrouter.ai` allowed through this session's egress policy, after which this plan
-   runs as written.
-2. A different provider whose host is already allowed, plus a key for it — which changes
-   the model every run in the fixture is generated with, so it is the user's call, not
-   the implementing agent's.
-3. Authoring this phase somewhere with unrestricted egress.
+The lasting lesson: every step of this phase depends on real generation, so an egress
+denial blocks all of it, and the correct response is to report it rather than substitute a
+provider — the model every run in the fixture is generated with is the user's call.
