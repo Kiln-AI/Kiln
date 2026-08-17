@@ -3,7 +3,7 @@
   "id": "140414461876",
   "created_at": "2026-08-17T19:22:41.712875Z",
   "created_by": "root",
-  "name": "Curious Foxglove",
+  "name": "Playbook with Prose Input",
   "description": null,
   "run_config_properties": {
     "type": "kiln_agent",

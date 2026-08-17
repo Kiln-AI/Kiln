@@ -3,7 +3,7 @@
   "id": "228934807381",
   "created_at": "2026-08-17T19:07:13.680392Z",
   "created_by": "root",
-  "name": "Watertight Crocodile",
+  "name": "Zero Shot Baseline",
   "description": null,
   "run_config_properties": {
     "type": "kiln_agent",

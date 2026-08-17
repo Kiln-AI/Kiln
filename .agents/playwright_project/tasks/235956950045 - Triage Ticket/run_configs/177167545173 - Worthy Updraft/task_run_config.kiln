@@ -3,7 +3,7 @@
   "id": "177167545173",
   "created_at": "2026-08-17T18:56:41.143681Z",
   "created_by": "root",
-  "name": "Worthy Updraft",
+  "name": "Zero Shot Baseline",
   "description": null,
   "run_config_properties": {
     "type": "kiln_agent",

@@ -3,7 +3,7 @@
   "id": "293284619675",
   "created_at": "2026-08-17T19:03:00.357241Z",
   "created_by": "root",
-  "name": "Spiffy Coconut",
+  "name": "Chain of Thought",
   "description": null,
   "run_config_properties": {
     "type": "kiln_agent",
