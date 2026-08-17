@@ -21,8 +21,8 @@ look at already have plausible data in them.
 - Any automated test that loads the committed fixture.
 - Wiring an inference provider into the dev server so new runs can execute. See
   [Providers](#providers) — this turns out to be an authoring-time need only.
-- The docs library / RAG chain, fine-tunes, skills, tool servers, and git sync. See
-  [Deferred content](#deferred-content).
+- Fixture content that depends on an external service: fine-tunes, tool servers,
+  prompt optimization jobs, and git sync. See [Deferred content](#deferred-content).
 
 ## What the app requires before it will show you a screen
 
@@ -201,20 +201,39 @@ A realistic-looking project, so screenshots read like a real user's app:
   be worth looking at.
 - **One custom saved prompt.** The built-in generators need no fixture data.
 - **One dataset split** on the structured task.
-- **One eval** with a judge config and results across both run configs. This is the
-  most expensive item to author and is sequenced last, so it can be dropped without
-  blocking the rest.
+- **One eval** with a judge config and results across both run configs. Evals are not
+  optional here — this is an evals platform, and an agent working on an eval screen is
+  the likeliest reader of this fixture.
+- **One input transform.**
+- **Feedback** on at least one run.
+- **One or two skills**, with `SKILL.md` bodies. Skills are pure project data — a
+  name, a description, and a markdown sidecar — so they cost nothing beyond the
+  clicking.
+- **The docs library / RAG chain**: a couple of small documents, an extractor config, a
+  chunker config, an embedding config, a vector store config, and a RAG config. See
+  [RAG indexes](#rag-indexes) for what does and does not survive a snapshot.
+
+The dividing line is external services. Anything that needs one is out, because a
+fixture referencing a service nobody can reach is worse than no fixture.
 
 ### Deferred content
 
-Fine-tunes, skills, tool servers, input transforms, specs, prompt optimization jobs,
-feedback, git sync, and the whole documents → extractor → chunker → embedding → vector
-store → RAG chain.
+**Fine-tunes** (a training job at Fireworks or OpenAI), **tool servers** (a reachable
+MCP server), **prompt optimization jobs**, and **git sync** (whose `~/.ssh` lookup
+resolves inside the sandbox and so cannot see real keys).
 
-RAG deserves a specific note: its index lives at `.kiln_ai/rag_indexes/lancedb/<id>`,
-**outside** the project directory. A snapshot captures RAG *configs* but never the
-index, so a seeded RAG config would appear configured and be unqueryable. That needs
-an answer before docs-library data is worth shipping.
+### RAG indexes
+
+A RAG index lives at `.kiln_ai/rag_indexes/lancedb/<id>`, **outside** the project
+directory, so `snapshot` captures every RAG *config* and never the index. This is
+intended, not a defect: the project carries the documents and the configs, and the
+index is derived data that gets rebuilt when it is needed.
+
+Two things follow, and both are implementation-phase obligations rather than open
+questions. Rebuilding must be confirmed to actually work from a seeded sandbox — a
+config whose index cannot be rebuilt is a config that only looks configured. And the
+documents themselves are real files committed as attachments inside the fixture, so
+they should be small and textual.
 
 ## Providers
 
@@ -226,6 +245,18 @@ A provider is needed only by whoever is *authoring* the fixture, in that session
 only. For this project that is a one-off OpenRouter key with a few dollars of credit,
 supplied when the authoring phase starts and connected through the UI like any user
 would.
+
+All generation uses **`deepseek/deepseek-v4-flash-0731`** — cheap, capable, and
+already `ModelName.deepseek_4_flash` in the built-in list with
+`structured_output_mode=json_schema`, so the schema'd task needs no special handling.
+
+One key covers the whole fixture, including the parts that are not chat completions:
+extraction routes through OpenRouter, and so do embeddings, by rewriting the model
+slug `openrouter/…` to `openai/…` and calling OpenRouter as an OpenAI-compatible
+endpoint because LiteLLM has no native OpenRouter embedding support. That rewrite is
+the one thing here taken on faith from reading the code rather than from running it;
+whether OpenRouter actually serves an embeddings endpoint is verified in the
+implementation phase, and if it does not, the RAG content needs a second key.
 
 The key never reaches the repo, and this is a property of the design rather than of
 anyone remembering. Connecting a provider through the UI writes it to
