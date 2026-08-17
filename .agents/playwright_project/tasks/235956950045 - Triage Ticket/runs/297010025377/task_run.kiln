@@ -65,7 +65,8 @@
     "reasoning": "We need to triage: team, urgency, and whether human needed. Ticket is billing dispute (charged twice, request refund). This is a billing issue, likely finance/billing team. Urgency: it's about duplicate charge, not data loss or security, but billing disputes should be escalated to human? Instruction says: \"when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\" So yes, human needed. Urgency: likely normal or high? Duplicate charge might be urgent financial impact, but not system down. Could be medium. But since human needed, we'll assign to billing team with urgency. Summary sentence for next agent."
   },
   "tags": [
-    "manual_run"
+    "manual_run",
+    "fine_tune_triage"
   ],
   "usage": {
     "input_tokens": 233,

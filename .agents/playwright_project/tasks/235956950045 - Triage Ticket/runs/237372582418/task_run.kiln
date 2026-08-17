@@ -66,7 +66,8 @@
     "reasoning": "We need to respond with final result based on previous instructions. The user asked \"Considering the above, return a final result.\" So we need to output the final decision, likely in structured format. The previous answer already gave a summary sentence and decision. But they want final result. Probably we should provide the team, priority, whether human needed, and the one-sentence summary. Keep it concise."
   },
   "tags": [
-    "manual_run"
+    "manual_run",
+    "fine_tune_triage"
   ],
   "usage": {
     "input_tokens": 671,

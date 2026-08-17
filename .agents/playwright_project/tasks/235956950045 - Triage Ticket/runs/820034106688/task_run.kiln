@@ -65,7 +65,8 @@
     "reasoning": "We need answer as support triage assistant. Need decide team, urgency, human review. Need summary one sentence. Need be conservative: data loss, billing disputes, security concern escalate human. This is data exposure/security/privacy issue. Enterprise. Urgent. Need human before reply? Likely yes. Need identify team: security/privacy/engineering. Maybe \"Security/Engineering\" or \"Security team\". Need urgency: critical/urgent. Need summary one sentence. Also perhaps mention no auto-reply? Let's craft."
   },
   "tags": [
-    "manual_run"
+    "manual_run",
+    "fine_tune_triage"
   ],
   "usage": {
     "input_tokens": 244,

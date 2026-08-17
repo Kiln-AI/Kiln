@@ -56,7 +56,8 @@
     "reasoning": "We need to answer with the final result considering the previous analysis. The user says \"Considering the above, return a final result.\" So we should produce the final output in the structured format as before, likely with the same decision. We need to keep it concise. Since the ticket is about adding a VAT number, it's billing, not security or data loss. Human review not needed. Priority normal. Summary one sentence for the next agent."
   },
   "tags": [
-    "manual_run"
+    "manual_run",
+    "fine_tune_triage"
   ],
   "usage": {
     "input_tokens": 643,
