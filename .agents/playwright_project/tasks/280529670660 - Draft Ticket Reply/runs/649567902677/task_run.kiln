@@ -46,7 +46,17 @@
         "input_transform": null
       }
     },
-    "rating": null,
+    "rating": {
+      "v": 1,
+      "id": "228723084474",
+      "path": null,
+      "created_at": "2026-08-17T19:11:39.774641Z",
+      "created_by": "root",
+      "type": "five_star",
+      "value": 4.0,
+      "requirement_ratings": {},
+      "model_type": "task_output_rating"
+    },
     "model_type": "task_output"
   },
   "repair_instructions": null,
