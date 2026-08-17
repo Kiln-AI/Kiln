@@ -1,0 +1,100 @@
+{
+  "v": 1,
+  "id": "267255821357",
+  "created_at": "2026-08-17T19:01:31.215630Z",
+  "created_by": "root",
+  "input": "{\"subject\": \"Webhook deliveries silently stopped\", \"body\": \"Our endpoint has not received a webhook since Saturday 02:14 UTC. The delivery log in your dashboard shows no attempts at all — not failures, just nothing. The endpoint is up and responds 200 to a manual POST.\", \"customer_plan\": \"enterprise\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "root"
+    },
+    "run_config_id": null,
+    "run_config": null
+  },
+  "output": {
+    "v": 1,
+    "id": "456870641076",
+    "path": null,
+    "created_at": "2026-08-17T19:01:31.215237Z",
+    "created_by": "root",
+    "output": "{\"team\": \"technical_support\", \"priority\": \"high\", \"needs_human_review\": true, \"summary\": \"Enterprise customer reports webhook deliveries silently stopped since Saturday — no attempts logged in the delivery dashboard, but endpoint is up and returns 200 on manual POST, indicating a potential platform-side delivery or scheduling failure that requires investigation by an engineer.\"}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_openai_compatible_adapter",
+        "model_name": "deepseek_4_flash",
+        "model_provider": "openrouter",
+        "prompt_id": "task_run_config::507368061812::235956950045::177167545173",
+        "structured_output_mode": "json_schema",
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "run_config_id": "177167545173",
+      "run_config": {
+        "type": "kiln_agent",
+        "model_name": "deepseek_4_flash",
+        "model_provider_name": "openrouter",
+        "prompt_id": "task_run_config::507368061812::235956950045::177167545173",
+        "top_p": 1.0,
+        "temperature": 1.0,
+        "structured_output_mode": "json_schema",
+        "thinking_level": "high",
+        "tools_config": {
+          "tools": []
+        },
+        "input_transform": null
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "intermediate_outputs": {
+    "reasoning": "We need to process this ticket. The subject: \"Webhook deliveries silently stopped\". Body: endpoint not receiving webhooks since Saturday, delivery log shows no attempts, endpoint is up and responds 200 to manual POST. Customer plan: enterprise.\n\nWe need to decide team, urgency, and whether human needs to look before reply. Be conservative: data loss, billing disputes, security concerns escalate to human. Here, it's about missing webhook deliveries. This could be a platform issue or configuration issue. No explicit data loss, but missing webhooks could mean missed data/events. However, it's not directly data loss (like deletion). It's a service disruption. Since it's enterprise, high priority. But does a human need to look? The ticket mentions \"silently stopped\" - no attempts, no failures. This could be a bug or a configuration change. It's not a billing or security concern. However, it's an enterprise customer with a potentially critical integration. We should have a human look because it's a significant issue and could be complex. But the instruction says \"be conservative: when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\" This doesn't mention those explicitly. But the ticket is about a service interruption. Usually, tier 1 support can handle initial troubleshooting, but since it's enterprise and webhooks are critical, it's likely urgent. The instruction doesn't say all enterprise tickets go to human, but we need to decide ownership and urgency.\n\nLet's consider the teams: likely Support, Engineering, or Integrations. Given it's about webhooks, it's probably an infrastructure issue, so Engineering. Urgency: high, because a critical integration is broken. Human review: Probably yes, because it's a silent failure that could indicate a systemic issue. Even though not explicitly data loss, missing webhook deliveries can lead to missed events and data inconsistency, which is a form of data loss. So I'd escalate to human.\n\nLet's craft a one-sentence summary for the engineer/agent: \"Enterprise customer's webhook deliveries have silently stopped since Saturday, with no attempts logged and endpoint healthy, requiring investigation into webhook scheduling/delivery pipeline.\"\n\nWe need to output: team, urgency, human review needed (yes/no), and summary. Let's structure.\n\nTeam: Engineering (or Platform/Infrastructure). Urgency: High (P1 or P2). Human: Yes.\n\nI'll write the response."
+  },
+  "tags": [
+    "manual_run"
+  ],
+  "usage": {
+    "input_tokens": 243,
+    "output_tokens": 591,
+    "total_tokens": 834,
+    "cost": 0.0001995,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 8778
+  },
+  "cumulative_usage": {
+    "input_tokens": 243,
+    "output_tokens": 591,
+    "total_tokens": 834,
+    "cost": 0.0001995,
+    "cached_tokens": 0
+  },
+  "trace": [
+    {
+      "content": "You are a support triage assistant for a B2B SaaS product.\n\nRead the inbound ticket and decide which team should own it, how urgent it is, and whether a human needs to look at it before a reply goes out. Be conservative: when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\n\nKeep the summary to one sentence, written for the engineer or agent who picks the ticket up next.",
+      "role": "system"
+    },
+    {
+      "content": "{\"subject\": \"Webhook deliveries silently stopped\", \"body\": \"Our endpoint has not received a webhook since Saturday 02:14 UTC. The delivery log in your dashboard shows no attempts at all — not failures, just nothing. The endpoint is up and responds 200 to a manual POST.\", \"customer_plan\": \"enterprise\"}",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "content": "{\n  \"team\": \"technical_support\",\n  \"priority\": \"high\",\n  \"needs_human_review\": true,\n  \"summary\": \"Enterprise customer reports webhook deliveries silently stopped since Saturday — no attempts logged in the delivery dashboard, but endpoint is up and returns 200 on manual POST, indicating a potential platform-side delivery or scheduling failure that requires investigation by an engineer.\"\n}",
+      "reasoning_content": "We need to process this ticket. The subject: \"Webhook deliveries silently stopped\". Body: endpoint not receiving webhooks since Saturday, delivery log shows no attempts, endpoint is up and responds 200 to manual POST. Customer plan: enterprise.\n\nWe need to decide team, urgency, and whether human needs to look before reply. Be conservative: data loss, billing disputes, security concerns escalate to human. Here, it's about missing webhook deliveries. This could be a platform issue or configuration issue. No explicit data loss, but missing webhooks could mean missed data/events. However, it's not directly data loss (like deletion). It's a service disruption. Since it's enterprise, high priority. But does a human need to look? The ticket mentions \"silently stopped\" - no attempts, no failures. This could be a bug or a configuration change. It's not a billing or security concern. However, it's an enterprise customer with a potentially critical integration. We should have a human look because it's a significant issue and could be complex. But the instruction says \"be conservative: when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\" This doesn't mention those explicitly. But the ticket is about a service interruption. Usually, tier 1 support can handle initial troubleshooting, but since it's enterprise and webhooks are critical, it's likely urgent. The instruction doesn't say all enterprise tickets go to human, but we need to decide ownership and urgency.\n\nLet's consider the teams: likely Support, Engineering, or Integrations. Given it's about webhooks, it's probably an infrastructure issue, so Engineering. Urgency: high, because a critical integration is broken. Human review: Probably yes, because it's a silent failure that could indicate a systemic issue. Even though not explicitly data loss, missing webhook deliveries can lead to missed events and data inconsistency, which is a form of data loss. So I'd escalate to human.\n\nLet's craft a one-sentence summary for the engineer/agent: \"Enterprise customer's webhook deliveries have silently stopped since Saturday, with no attempts logged and endpoint healthy, requiring investigation into webhook scheduling/delivery pipeline.\"\n\nWe need to output: team, urgency, human review needed (yes/no), and summary. Let's structure.\n\nTeam: Engineering (or Platform/Infrastructure). Urgency: High (P1 or P2). Human: Yes.\n\nI'll write the response.",
+      "latency_ms": 8778,
+      "usage": {
+        "input_tokens": 243,
+        "output_tokens": 591,
+        "total_tokens": 834,
+        "cost": 0.0001995,
+        "cached_tokens": 0
+      }
+    }
+  ],
+  "parent_task_run_id": null,
+  "model_type": "task_run"
+}

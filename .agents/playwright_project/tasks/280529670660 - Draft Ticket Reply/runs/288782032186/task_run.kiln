@@ -1,0 +1,100 @@
+{
+  "v": 1,
+  "id": "288782032186",
+  "created_at": "2026-08-17T19:08:25.777080Z",
+  "created_by": "root",
+  "input": "Subject: Deleted a project by mistake — can you restore it? I deleted \"Q3 Pipeline\" instead of \"Q3 Pipeline (old)\". It had eighteen months of records in it. Is there a restore window, or is that data gone? Our board reporting runs off it.",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "root"
+    },
+    "run_config_id": null,
+    "run_config": null
+  },
+  "output": {
+    "v": 1,
+    "id": "177021472688",
+    "path": null,
+    "created_at": "2026-08-17T19:08:25.776680Z",
+    "created_by": "root",
+    "output": "Thanks for reaching out. You accidentally deleted the “Q3 Pipeline” project, which contained eighteen months of records needed for board reporting, instead of the “Q3 Pipeline (old)” project. I understand how concerning that is.\n\nTo check whether we can recover the project, please open a ticket from your admin account and include your workspace name and the exact deletion time if you have it. Our support tooling can then look into whether the project is still within a recoverable state.\n\nWe’ll investigate as soon as we have that information. Please avoid creating a new project with the same name in the meantime, as that can interfere with restoration.\n\nThe Support Team",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_openai_compatible_adapter",
+        "model_name": "deepseek_4_flash",
+        "model_provider": "openrouter",
+        "prompt_id": "task_run_config::507368061812::280529670660::228934807381",
+        "structured_output_mode": "default",
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "run_config_id": "228934807381",
+      "run_config": {
+        "type": "kiln_agent",
+        "model_name": "deepseek_4_flash",
+        "model_provider_name": "openrouter",
+        "prompt_id": "task_run_config::507368061812::280529670660::228934807381",
+        "top_p": 1.0,
+        "temperature": 1.0,
+        "structured_output_mode": "default",
+        "thinking_level": "high",
+        "tools_config": {
+          "tools": []
+        },
+        "input_transform": null
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "intermediate_outputs": {
+    "reasoning": "We need to write the first reply. Restate problem, next step, no promises. Under 150 words, plain prose, no bullets, sign off 'The Support Team'."
+  },
+  "tags": [
+    "manual_run"
+  ],
+  "usage": {
+    "input_tokens": 233,
+    "output_tokens": 171,
+    "total_tokens": 404,
+    "cost": 0.0000805,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 3165
+  },
+  "cumulative_usage": {
+    "input_tokens": 233,
+    "output_tokens": 171,
+    "total_tokens": 404,
+    "cost": 0.0000805,
+    "cached_tokens": 0
+  },
+  "trace": [
+    {
+      "content": "You are a customer support agent for a B2B SaaS product.\n\nGiven the text of an inbound support ticket, write the first reply the customer will receive. Open by restating the problem in your own words so they know they were understood, then give the next concrete step. Never promise a refund, a deadline, or a fix date.\n\nKeep it under 150 words, plain prose, no bullet lists, and sign off as 'The Support Team'.",
+      "role": "system"
+    },
+    {
+      "content": "Subject: Deleted a project by mistake — can you restore it? I deleted \"Q3 Pipeline\" instead of \"Q3 Pipeline (old)\". It had eighteen months of records in it. Is there a restore window, or is that data gone? Our board reporting runs off it.",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "content": "Thanks for reaching out. You accidentally deleted the “Q3 Pipeline” project, which contained eighteen months of records needed for board reporting, instead of the “Q3 Pipeline (old)” project. I understand how concerning that is.\n\nTo check whether we can recover the project, please open a ticket from your admin account and include your workspace name and the exact deletion time if you have it. Our support tooling can then look into whether the project is still within a recoverable state.\n\nWe’ll investigate as soon as we have that information. Please avoid creating a new project with the same name in the meantime, as that can interfere with restoration.\n\nThe Support Team",
+      "reasoning_content": "We need to write the first reply. Restate problem, next step, no promises. Under 150 words, plain prose, no bullets, sign off 'The Support Team'.",
+      "latency_ms": 3165,
+      "usage": {
+        "input_tokens": 233,
+        "output_tokens": 171,
+        "total_tokens": 404,
+        "cost": 0.0000805,
+        "cached_tokens": 0
+      }
+    }
+  ],
+  "parent_task_run_id": null,
+  "model_type": "task_run"
+}

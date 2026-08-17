@@ -1,0 +1,100 @@
+{
+  "v": 1,
+  "id": "302913659007",
+  "created_at": "2026-08-17T19:08:33.693220Z",
+  "created_by": "root",
+  "input": "Subject: Webhook deliveries silently stopped. Our endpoint has not received a webhook since Saturday 02:14 UTC. Your delivery log shows no attempts at all — not failures, nothing. The endpoint is up and returns 200 to a manual POST.",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "root"
+    },
+    "run_config_id": null,
+    "run_config": null
+  },
+  "output": {
+    "v": 1,
+    "id": "100426672028",
+    "path": null,
+    "created_at": "2026-08-17T19:08:33.692899Z",
+    "created_by": "root",
+    "output": "Thanks for flagging this. It sounds like webhook deliveries to your endpoint have been completely silent since Saturday 02:14 UTC, with no attempts recorded in the delivery log, even though the endpoint itself responds correctly to a manual POST. That’s a clear signal something changed at the configuration level rather than a network or endpoint issue.\n\nTo dig in, could you reply with the webhook subscription ID or the exact endpoint URL? I’ll check whether the subscription was paused, disabled, or filtered, and review the event stream around that timestamp. No need to change anything on your side yet — I’ll come back with what I find and the next recommended step.\n\nThe Support Team",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_openai_compatible_adapter",
+        "model_name": "deepseek_4_flash",
+        "model_provider": "openrouter",
+        "prompt_id": "task_run_config::507368061812::280529670660::228934807381",
+        "structured_output_mode": "default",
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "run_config_id": "228934807381",
+      "run_config": {
+        "type": "kiln_agent",
+        "model_name": "deepseek_4_flash",
+        "model_provider_name": "openrouter",
+        "prompt_id": "task_run_config::507368061812::280529670660::228934807381",
+        "top_p": 1.0,
+        "temperature": 1.0,
+        "structured_output_mode": "default",
+        "thinking_level": "high",
+        "tools_config": {
+          "tools": []
+        },
+        "input_transform": null
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "intermediate_outputs": {
+    "reasoning": "We need to write a reply. First restate problem: webhook deliveries stopped, no attempts logged, endpoint works manually. Next step: investigate, ask for webhook ID or endpoint URL, check configuration, maybe check if endpoint was disabled. Don't promise fix date. Sign off. Under 150 words. Plain prose."
+  },
+  "tags": [
+    "manual_run"
+  ],
+  "usage": {
+    "input_tokens": 226,
+    "output_tokens": 207,
+    "total_tokens": 433,
+    "cost": 0.0000896,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 3500
+  },
+  "cumulative_usage": {
+    "input_tokens": 226,
+    "output_tokens": 207,
+    "total_tokens": 433,
+    "cost": 0.0000896,
+    "cached_tokens": 0
+  },
+  "trace": [
+    {
+      "content": "You are a customer support agent for a B2B SaaS product.\n\nGiven the text of an inbound support ticket, write the first reply the customer will receive. Open by restating the problem in your own words so they know they were understood, then give the next concrete step. Never promise a refund, a deadline, or a fix date.\n\nKeep it under 150 words, plain prose, no bullet lists, and sign off as 'The Support Team'.",
+      "role": "system"
+    },
+    {
+      "content": "Subject: Webhook deliveries silently stopped. Our endpoint has not received a webhook since Saturday 02:14 UTC. Your delivery log shows no attempts at all — not failures, nothing. The endpoint is up and returns 200 to a manual POST.",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "content": "Thanks for flagging this. It sounds like webhook deliveries to your endpoint have been completely silent since Saturday 02:14 UTC, with no attempts recorded in the delivery log, even though the endpoint itself responds correctly to a manual POST. That’s a clear signal something changed at the configuration level rather than a network or endpoint issue.\n\nTo dig in, could you reply with the webhook subscription ID or the exact endpoint URL? I’ll check whether the subscription was paused, disabled, or filtered, and review the event stream around that timestamp. No need to change anything on your side yet — I’ll come back with what I find and the next recommended step.\n\nThe Support Team",
+      "reasoning_content": "We need to write a reply. First restate problem: webhook deliveries stopped, no attempts logged, endpoint works manually. Next step: investigate, ask for webhook ID or endpoint URL, check configuration, maybe check if endpoint was disabled. Don't promise fix date. Sign off. Under 150 words. Plain prose.",
+      "latency_ms": 3500,
+      "usage": {
+        "input_tokens": 226,
+        "output_tokens": 207,
+        "total_tokens": 433,
+        "cost": 0.0000896,
+        "cached_tokens": 0
+      }
+    }
+  ],
+  "parent_task_run_id": null,
+  "model_type": "task_run"
+}

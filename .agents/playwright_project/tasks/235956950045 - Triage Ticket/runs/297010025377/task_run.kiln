@@ -1,0 +1,100 @@
+{
+  "v": 1,
+  "id": "297010025377",
+  "created_at": "2026-08-17T19:02:31.081739Z",
+  "created_by": "root",
+  "input": "{\"subject\": \"Invoice charged twice this month\", \"body\": \"We were billed twice for our June subscription — two identical charges of $480 on the same card, three minutes apart. Please refund one of them and confirm which invoice is the duplicate.\", \"customer_plan\": \"enterprise\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "root"
+    },
+    "run_config_id": null,
+    "run_config": null
+  },
+  "output": {
+    "v": 1,
+    "id": "352367752539",
+    "path": null,
+    "created_at": "2026-08-17T19:02:31.081302Z",
+    "created_by": "root",
+    "output": "{\"team\": \"billing\", \"priority\": \"high\", \"needs_human_review\": true, \"summary\": \"Enterprise customer reports a duplicate $480 charge on their June invoice and requests a refund of one charge — verify the transaction IDs, confirm which invoice is duplicate, and process the refund.\"}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_openai_compatible_adapter",
+        "model_name": "deepseek_4_flash",
+        "model_provider": "openrouter",
+        "prompt_id": "task_run_config::507368061812::235956950045::177167545173",
+        "structured_output_mode": "json_schema",
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "run_config_id": "177167545173",
+      "run_config": {
+        "type": "kiln_agent",
+        "model_name": "deepseek_4_flash",
+        "model_provider_name": "openrouter",
+        "prompt_id": "task_run_config::507368061812::235956950045::177167545173",
+        "top_p": 1.0,
+        "temperature": 1.0,
+        "structured_output_mode": "json_schema",
+        "thinking_level": "high",
+        "tools_config": {
+          "tools": []
+        },
+        "input_transform": null
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "intermediate_outputs": {
+    "reasoning": "We need to triage: team, urgency, and whether human needed. Ticket is billing dispute (charged twice, request refund). This is a billing issue, likely finance/billing team. Urgency: it's about duplicate charge, not data loss or security, but billing disputes should be escalated to human? Instruction says: \"when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\" So yes, human needed. Urgency: likely normal or high? Duplicate charge might be urgent financial impact, but not system down. Could be medium. But since human needed, we'll assign to billing team with urgency. Summary sentence for next agent."
+  },
+  "tags": [
+    "manual_run"
+  ],
+  "usage": {
+    "input_tokens": 233,
+    "output_tokens": 209,
+    "total_tokens": 442,
+    "cost": 0.00009114,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 4037
+  },
+  "cumulative_usage": {
+    "input_tokens": 233,
+    "output_tokens": 209,
+    "total_tokens": 442,
+    "cost": 0.00009114,
+    "cached_tokens": 0
+  },
+  "trace": [
+    {
+      "content": "You are a support triage assistant for a B2B SaaS product.\n\nRead the inbound ticket and decide which team should own it, how urgent it is, and whether a human needs to look at it before a reply goes out. Be conservative: when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\n\nKeep the summary to one sentence, written for the engineer or agent who picks the ticket up next.",
+      "role": "system"
+    },
+    {
+      "content": "{\"subject\": \"Invoice charged twice this month\", \"body\": \"We were billed twice for our June subscription — two identical charges of $480 on the same card, three minutes apart. Please refund one of them and confirm which invoice is the duplicate.\", \"customer_plan\": \"enterprise\"}",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "content": "{\n  \"team\": \"billing\",\n  \"priority\": \"high\",\n  \"needs_human_review\": true,\n  \"summary\": \"Enterprise customer reports a duplicate $480 charge on their June invoice and requests a refund of one charge — verify the transaction IDs, confirm which invoice is duplicate, and process the refund.\"\n}",
+      "reasoning_content": "We need to triage: team, urgency, and whether human needed. Ticket is billing dispute (charged twice, request refund). This is a billing issue, likely finance/billing team. Urgency: it's about duplicate charge, not data loss or security, but billing disputes should be escalated to human? Instruction says: \"when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\" So yes, human needed. Urgency: likely normal or high? Duplicate charge might be urgent financial impact, but not system down. Could be medium. But since human needed, we'll assign to billing team with urgency. Summary sentence for next agent.",
+      "latency_ms": 4037,
+      "usage": {
+        "input_tokens": 233,
+        "output_tokens": 209,
+        "total_tokens": 442,
+        "cost": 0.00009114,
+        "cached_tokens": 0
+      }
+    }
+  ],
+  "parent_task_run_id": null,
+  "model_type": "task_run"
+}

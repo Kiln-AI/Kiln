@@ -1,0 +1,118 @@
+{
+  "v": 1,
+  "id": "170843774961",
+  "created_at": "2026-08-17T19:03:44.607810Z",
+  "created_by": "root",
+  "input": "{\"subject\": \"Deleted a project by mistake — can you restore it?\", \"body\": \"I was cleaning up old workspaces and deleted \\\"Q3 Pipeline\\\" instead of \\\"Q3 Pipeline (old)\\\". It had about eighteen months of records in it. Is there a restore window, or is that data gone? This is the one our board reporting runs off.\", \"customer_plan\": \"enterprise\"}",
+  "input_source": {
+    "type": "human",
+    "properties": {
+      "created_by": "root"
+    },
+    "run_config_id": null,
+    "run_config": null
+  },
+  "output": {
+    "v": 1,
+    "id": "288847367482",
+    "path": null,
+    "created_at": "2026-08-17T19:03:44.607504Z",
+    "created_by": "root",
+    "output": "{\"team\": \"security\", \"priority\": \"urgent\", \"needs_human_review\": true, \"summary\": \"Enterprise customer accidentally deleted 'Q3 Pipeline' with 18 months of records and board reporting reliance; confirm restore options urgently and escalate as a data-loss case.\"}",
+    "source": {
+      "type": "synthetic",
+      "properties": {
+        "adapter_name": "kiln_openai_compatible_adapter",
+        "model_name": "deepseek_4_flash",
+        "model_provider": "openrouter",
+        "prompt_id": "task_run_config::507368061812::235956950045::293284619675",
+        "structured_output_mode": "json_schema",
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "run_config_id": "293284619675",
+      "run_config": {
+        "type": "kiln_agent",
+        "model_name": "deepseek_4_flash",
+        "model_provider_name": "openrouter",
+        "prompt_id": "task_run_config::507368061812::235956950045::293284619675",
+        "top_p": 1.0,
+        "temperature": 1.0,
+        "structured_output_mode": "json_schema",
+        "thinking_level": "high",
+        "tools_config": {
+          "tools": []
+        },
+        "input_transform": null
+      }
+    },
+    "rating": null,
+    "model_type": "task_output"
+  },
+  "repair_instructions": null,
+  "repaired_output": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "- **Customer request:** Accidentally deleted the project “Q3 Pipeline,” wants to know if it can be restored and if there is a restore window.\n- **Human review needed:** Yes — potential data loss and enterprise impact.\n- **Team:** Support (with escalation to data/engineering for restore feasibility)\n- **Priority:** High / Urgent\n- **Summary:** Enterprise customer deleted “Q3 Pipeline” (not “Q3 Pipeline (old)”) with ~18 months of records and board reporting depending on it; confirm restore options urgently and treat as a high-priority data loss case.",
+    "reasoning": "We need to produce final result based on previous analysis. The instruction: \"Considering the above, return a final result.\" Means we should output the triage result in a structured way. Likely we need to produce the final answer as a JSON or something? The user originally wanted \"decide which team should own it, how urgent it is, and whether a human needs to look at it before a reply goes out.\" We already reasoned. Now we need final result. We should include the summary sentence and maybe the decisions. The instruction says \"Keep the summary to one sentence, written for the engineer or agent who picks the ticket up next.\" So final should include that summary. Also we should specify team, priority, human review. Let's format clearly.\n\nWe have to be conservative: data loss, billing disputes, security concern -> escalate to human. Here data loss -> yes human needed.\n\nTeam: likely Support (or maybe Data/Restore team?) But they asked \"which team should own it\". Usually for data restore, it may be a specialized \"Data Engineering\" or \"Support\" with escalation. The customer plan is enterprise, so perhaps \"Enterprise Support\" or \"Support\" is fine. We can say \"Support (with Infrastructure/Data Engineering escalation)\".\n\nPriority: Urgent/High.\n\nLet's craft final response."
+  },
+  "tags": [
+    "manual_run"
+  ],
+  "usage": {
+    "input_tokens": 730,
+    "output_tokens": 722,
+    "total_tokens": 1452,
+    "cost": 0.00028644,
+    "cached_tokens": 256,
+    "total_llm_latency_ms": 13978
+  },
+  "cumulative_usage": {
+    "input_tokens": 730,
+    "output_tokens": 722,
+    "total_tokens": 1452,
+    "cost": 0.00028644,
+    "cached_tokens": 256
+  },
+  "trace": [
+    {
+      "content": "You are a support triage assistant for a B2B SaaS product.\n\nRead the inbound ticket and decide which team should own it, how urgent it is, and whether a human needs to look at it before a reply goes out. Be conservative: when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\n\nKeep the summary to one sentence, written for the engineer or agent who picks the ticket up next.",
+      "role": "system"
+    },
+    {
+      "content": "The input is:\n<user_input>\n{\"subject\": \"Deleted a project by mistake — can you restore it?\", \"body\": \"I was cleaning up old workspaces and deleted \\\"Q3 Pipeline\\\" instead of \\\"Q3 Pipeline (old)\\\". It had about eighteen months of records in it. Is there a restore window, or is that data gone? This is the one our board reporting runs off.\", \"customer_plan\": \"enterprise\"}\n</user_input>\n\nFirst decide what the customer is actually asking for, then whether anything in the ticket is irreversible or disputed. Only then pick the team and priority.",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "content": "- **Customer request:** Accidentally deleted the project “Q3 Pipeline,” wants to know if it can be restored and if there is a restore window.\n- **Human review needed:** Yes — potential data loss and enterprise impact.\n- **Team:** Support (with escalation to data/engineering for restore feasibility)\n- **Priority:** High / Urgent\n- **Summary:** Enterprise customer deleted “Q3 Pipeline” (not “Q3 Pipeline (old)”) with ~18 months of records and board reporting depending on it; confirm restore options urgently and treat as a high-priority data loss case.",
+      "reasoning_content": "We need answer. Need follow instructions. Need decide team, urgency, human needed? Let's parse.\n\nTicket: enterprise customer deleted project by mistake, asks restore, data loss, board reporting. Need conservative: data loss -> escalate human. Need summary one sentence for engineer/agent. Need maybe team: Support? Actually need pick team likely \"Support\" or \"Customer Support\" plus \"Data/Restore\" maybe. Need urgent? Data loss, enterprise, board reporting. High priority. Human needed yes.\n\nNeed identify what customer asking: restore accidentally deleted project \"Q3 Pipeline\" with 18 months records. Is there restore window? Data gone? Need check backup/restore. Irreversible/disputed: data loss potential, deletion. Billing? no. Security? no. But data loss mention => human. Team likely \"Support\" with escalation to engineering/data recovery? Need output maybe structured with fields. User didn't specify exact format. Need be concise.\n\nNeed one-sentence summary for next agent. Include context: Enterprise customer accidentally deleted Q3 Pipeline (not old), needs restore, includes 18 months records and board reporting depends on it. Escalate to human support engineer / data recovery. Priority high/urgent.\n\nLet's craft final with decisions.",
+      "latency_ms": 8137,
+      "usage": {
+        "input_tokens": 298,
+        "output_tokens": 381,
+        "total_tokens": 679,
+        "cost": 0.0001484,
+        "cached_tokens": 0
+      }
+    },
+    {
+      "content": "Considering the above, return a final result.",
+      "role": "user"
+    },
+    {
+      "role": "assistant",
+      "content": "{\n  \"team\": \"security\",\n  \"priority\": \"urgent\",\n  \"needs_human_review\": true,\n  \"summary\": \"Enterprise customer accidentally deleted 'Q3 Pipeline' with 18 months of records and board reporting reliance; confirm restore options urgently and escalate as a data-loss case.\"\n}",
+      "reasoning_content": "We need to produce final result based on previous analysis. The instruction: \"Considering the above, return a final result.\" Means we should output the triage result in a structured way. Likely we need to produce the final answer as a JSON or something? The user originally wanted \"decide which team should own it, how urgent it is, and whether a human needs to look at it before a reply goes out.\" We already reasoned. Now we need final result. We should include the summary sentence and maybe the decisions. The instruction says \"Keep the summary to one sentence, written for the engineer or agent who picks the ticket up next.\" So final should include that summary. Also we should specify team, priority, human review. Let's format clearly.\n\nWe have to be conservative: data loss, billing disputes, security concern -> escalate to human. Here data loss -> yes human needed.\n\nTeam: likely Support (or maybe Data/Restore team?) But they asked \"which team should own it\". Usually for data restore, it may be a specialized \"Data Engineering\" or \"Support\" with escalation. The customer plan is enterprise, so perhaps \"Enterprise Support\" or \"Support\" is fine. We can say \"Support (with Infrastructure/Data Engineering escalation)\".\n\nPriority: Urgent/High.\n\nLet's craft final response.",
+      "latency_ms": 5841,
+      "usage": {
+        "input_tokens": 432,
+        "output_tokens": 341,
+        "total_tokens": 773,
+        "cost": 0.00013804,
+        "cached_tokens": 256
+      }
+    }
+  ],
+  "parent_task_run_id": null,
+  "model_type": "task_run"
+}
