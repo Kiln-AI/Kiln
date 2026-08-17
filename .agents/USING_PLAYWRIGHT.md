@@ -204,6 +204,22 @@ enabled`. Same label, same command, unrelated diagnosis.
 Not everything on that toolbar is a menu, either. Only the tag control is a
 `dropdown`; the delete button beside it opens its modal directly, in one click.
 
+### A collapsed "Advanced Options" hides its fields from `find`
+
+Kiln's `Collapse` is a checkbox plus a hidden panel, and the fields inside a closed
+one are in the DOM but `visibility: hidden` — so `snapshot` and `find` do not report
+them at all. `find "Extractor Name"` returning nothing means the section is closed,
+not that the field does not exist. Confirm with the checkbox rather than the label:
+
+```bash
+playwright-cli eval "() => { const d=[...document.querySelectorAll('dialog')].filter(x=>x.open)[0]; return d.querySelector('input[type=checkbox]').checked }"
+```
+
+Every click toggles it, so a click that appears not to work followed by a second
+click leaves you exactly where you started. Clicking the checkbox inside the open
+dialog — `"dialog[open] .collapse input[type=checkbox]"` — is unambiguous where a
+label ref can go stale after the surrounding form re-renders.
+
 ## The seeded project
 
 `start` copies `.agents/playwright_project` into the sandbox, so you get an app
@@ -214,14 +230,51 @@ The fixture is a support-ticket-triage project with two tasks, one with JSON inp
 and output schemas and one plain text, because structured and unstructured tasks
 render differently in a lot of places.
 
-It is not only task definitions. Both tasks carry runs — 20 of them, weighted to the
-structured task — so the dataset, prompt and run-configuration screens have something
-in them before you touch anything. On the structured task that means three saved run
-configurations (zero-shot, chain-of-thought, and one pairing a custom saved prompt
-with a Jinja input transform), ratings spread deliberately across high, low and
-unrated, one repaired run, one run carrying human feedback, and a train/test/val
-dataset split over the runs tagged `fine_tune_triage`. If a screen you are working on
-comes up empty, check what the fixture holds before assuming the screen is broken.
+It is not only task definitions. If a screen you are working on comes up empty, check
+this list before assuming the screen is broken.
+
+| Screen | What the fixture holds |
+|---|---|
+| Dataset, Run | 20 runs, weighted to the structured task. Ratings spread deliberately across high, low and **unrated** — filters need all three. One repaired run, one run carrying human feedback |
+| Run configurations | Four, three of them on the structured task: zero-shot, chain-of-thought, and one pairing a custom saved prompt with a Jinja input transform |
+| Prompts | One saved prompt, "Triage Playbook" |
+| Fine Tune | A train/test/val split over the runs tagged `fine_tune_triage`. No fine-tune job — no provider for one |
+| Evals, Specs | One eval, `Escalation Flagging`, with its spec, a judge, human ratings on a golden set, and eval runs scoring all three structured run configs |
+| Skills | Two, each with a `SKILL.md` body |
+| Docs & Search | Three markdown documents, and a search tool over them with all five configs in its chain |
+
+### The search tool, and what a keyless sandbox can do with it
+
+Worth its own paragraph, because it is the one part of the fixture whose data is
+split between the repo and your machine.
+
+The fixture commits the *outputs* of running the RAG chain, not just its configs:
+each document carries its extraction, its chunks, and its embeddings, all inside the
+project directory and therefore all captured by `snapshot`. What it does not commit
+is the LanceDB index, which lives at `.kiln_ai/rag_indexes/lancedb/<rag_config_id>`
+inside the sandbox home — outside the project, and derived data. Kiln's git sync
+draws the same line.
+
+So a freshly seeded sandbox opens Docs & Search showing extraction, chunking and
+embedding complete and **indexing at zero**. Press Run on the search tool and the
+index builds from the committed embeddings, with no API key and no network. That is
+worth knowing before you conclude a keyless sandbox cannot exercise RAG at all.
+
+Searching is the part that does need a key: the vector store is `lancedb_hybrid`, and
+a hybrid or vector query embeds the query string live. A full-text-only store would
+not. Connect OpenRouter through Settings → Providers and the tool's own Search panel
+returns chunks from the seeded documents.
+
+Two things about the chain that read like bugs and are not:
+
+- **The extractor names a model it never calls.** The create-extractor form hardcodes
+  `passthrough_mimetypes` to `text/plain` and `text/markdown`, and the fixture's
+  documents are markdown, so every extraction is a passthrough copy with
+  `source: passthrough`. The model in the config would only matter for a PDF or an
+  image.
+- **With no provider connected, model names render as raw ids** — "Model ID:
+  `gemini_3_5_flash_lite`" rather than "Gemini 3.5 Flash Lite". Connecting a provider
+  restores the friendly names.
 
 ### Landing in the app
 
@@ -260,6 +313,10 @@ data is just files the screens read, so the pages render it with nothing connect
 — but if the feature you are working on needs a live model call, you have to
 connect a provider by hand through the UI first.
 
+The search tool is the exception in one direction and not the other: its index
+rebuilds with no key, and searching it needs one. See
+[the search tool](#the-search-tool-and-what-a-keyless-sandbox-can-do-with-it) above.
+
 ### `playwright_server.sh reset` — start over
 
 ```bash
@@ -289,7 +346,7 @@ It mirrors the sandbox's project over `.agents/playwright_project` and prints
 whatever was in the sandbox, including files you did not mean to create, and a
 deletion in the sandbox is a deletion in the repo.
 
-Two rules if you are extending the fixture:
+Three rules if you are extending the fixture:
 
 - **Create the data through the UI**, not by hand-editing files under
   `.agents/playwright_project` and not through the REST API. This is the project we
@@ -298,6 +355,12 @@ Two rules if you are extending the fixture:
   commit message.
 - **Create the task you want agents to land on first.** The `ui_state` hint points
   at the earliest-created task in the project.
+- **Run the expensive steps once, here, and commit what they produce.** Anything a
+  future sandbox would otherwise have to regenerate with an API key belongs in the
+  fixture if it lands inside the project directory — which is what makes the RAG
+  chain's extractions and embeddings committed data rather than something each
+  sandbox recreates. Locally derived caches outside the project, like the LanceDB
+  index, stay out and are rebuilt on demand.
 
 `snapshot` never reads or writes `settings.yaml`, which is where connecting a
 provider puts your API key — so a key cannot reach the repo this way. It also

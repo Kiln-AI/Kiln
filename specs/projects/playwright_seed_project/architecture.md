@@ -621,23 +621,65 @@ Content groups, in order — each one ends in `snapshot` and a commit:
    non-legacy one.
 5. **Skills and RAG.** One or two skills with `SKILL.md` bodies. Then the chain:
    documents, extractor config, chunker config, embedding config, vector store config,
-   RAG config.
-
-Group 5 carries the project's two open risks, which is why it is last:
-
-- **OpenRouter embeddings are unproven.** Kiln rewrites the slug `openrouter/…` to
-  `openai/…` and calls OpenRouter as an OpenAI-compatible endpoint, because LiteLLM has
-  no native OpenRouter embedding support. That is read from the code, not run. If
-  OpenRouter does not serve `/embeddings`, this group needs a second key — ask the user
-  rather than substituting a provider.
-- **The RAG index must be shown to rebuild.** It lives at
-  `.kiln_ai/rag_indexes/lancedb/<id>`, outside the project directory, so `snapshot`
-  captures configs and never the index — by design, the index being derived data. The
-  obligation is to prove it: `reset` to a seeded sandbox, rebuild from the seeded
-  config, and confirm it indexes and queries. A config whose index cannot be rebuilt
-  only looks configured, and shipping one would be worse than shipping none.
+   RAG config — **and the outputs of running that chain**, per the section below.
 
 Documents are real files committed as attachments, so they stay small and textual.
+
+### What group 5 commits, and what it deliberately does not
+
+A user directive during phase 3 corrects an understatement in the original text of this
+document, which said only that `snapshot` "captures configs and never the index". That is
+right about the index and wrong about everything else the chain produces. Running a RAG
+config produces four kinds of artifact, and **three of them live inside the project
+directory**:
+
+| Artifact | Where it lands | Captured by `snapshot` |
+|---|---|---|
+| `Extraction` + its output attachment | `documents/<doc>/extractions/<id>/` | yes |
+| `ChunkedDocument` + a content attachment per chunk | `…/extractions/<id>/chunked_documents/<id>/` | yes |
+| `ChunkEmbeddings` — the vectors | `…/chunked_documents/<id>/chunk_embeddings/<id>/` | yes |
+| The LanceDB index | `<home>/.kiln_ai/rag_indexes/lancedb/<rag_config_id>` | no — outside the project |
+
+The nesting is the datamodel's: `Project` is `parent_of` `documents`, `Document` of
+`extractions`, `Extraction` of `chunked_documents`, `ChunkedDocument` of
+`chunk_embeddings`. The index path is `LanceDBAdapter.lancedb_path_for_config`.
+
+So the split is: **extraction and embedding are run in this repo and their outputs are
+committed; the index is not.** In the user's framing, "the same approach is used by sync:
+the embeddings and extracted docs are synced, but index is locally cached artifact."
+
+The obligation on group 5 is therefore not merely "prove the index rebuilds". It is to
+**run extraction and then embedding creation so their outputs land in the fixture**, and
+then prove that a seeded sandbox rebuilds the index from those committed outputs. A
+fixture holding only the five configs would leave the rebuild depending on live extraction
+and embedding calls — which is exactly what a seeded sandbox with no API key cannot make.
+
+`RagIndexingStepRunner.collect_records` is what makes the offline rebuild possible: it
+walks documents → extractions → chunked documents → chunk embeddings on disk and inserts
+what it finds, calling no model. A `lancedb_hybrid` or `lancedb_vector` *search* is a
+different matter — `RagTool.search` embeds the query for those two store types — so a
+keyless sandbox rebuilds the index but cannot query a vector-backed one.
+
+Group 5 also carries the project's two open risks, which is why it is last:
+
+- **OpenRouter embeddings were unproven** at design time. Kiln rewrites the slug
+  `openrouter/…` to `openai/…` and calls OpenRouter as an OpenAI-compatible endpoint,
+  because LiteLLM has no native OpenRouter embedding support, and that was read from the
+  code rather than run. Phase 4 ran it: OpenRouter serves `/embeddings` for
+  `openai/text-embedding-3-small`. Should a future model or provider fail here, ask the
+  user for another key rather than substituting a provider — the models the fixture is
+  built with are the user's call, as phase 2 established for generation.
+- **The RAG index must be shown to rebuild**, from the committed extractions and
+  embeddings above and with no provider connected. `reset` to a seeded sandbox, run the
+  seeded RAG config, and confirm it indexes and then queries. A config whose index cannot
+  be rebuilt only looks configured, and shipping one would be worse than shipping none.
+
+One more fact about extraction that any future authoring phase hits: the create-extractor
+form posts `passthrough_mimetypes: ["text/plain", "text/markdown"]` and offers no control
+over it, so a markdown or plaintext document is copied through by
+`BaseExtractor._should_passthrough` and the extractor's model is never called. Extraction
+still produces a full `Extraction` record and output attachment. A fixture of markdown
+documents therefore names an extraction model it does not exercise.
 
 ## Rejected alternatives
 
