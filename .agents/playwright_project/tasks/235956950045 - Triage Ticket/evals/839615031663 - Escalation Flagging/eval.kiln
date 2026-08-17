@@ -6,7 +6,7 @@
   "name": "Escalation Flagging",
   "description": null,
   "template": "desired_behaviour",
-  "current_config_id": null,
+  "current_config_id": "291382769538",
   "eval_set_filter_id": "tag::eval_escalation_flagging",
   "eval_configs_filter_id": "tag::eval_golden_escalation_flagging",
   "train_set_filter_id": "tag::train_escalation_flagging",
