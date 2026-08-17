@@ -342,17 +342,6 @@ warm_from_throwaway_clone() {
     return 1
   fi
 
-  # Before the move below, because this is the only moment in the no-checkout
-  # case when a real app/web_ui with its node_modules exists to read the pinned
-  # browser revision out of. That is also the whole cloud environment-build case:
-  # the setup script runs with nothing checked out.
-  if [ "$ADD_PLAYWRIGHT" = true ]; then
-    # Set whether or not it worked: a failure has already gone through `fail`,
-    # and the message this gates is about never having tried.
-    PLAYWRIGHT_REPO_BROWSER_ATTEMPTED=true
-    install_playwright_repo_browser "$clone/app/web_ui"
-  fi
-
   rm -rf "$WARM_NODE_MODULES"
   if ! mv "$clone/app/web_ui/node_modules" "$WARM_NODE_MODULES"; then
     echo "warning: warm cache: could not move node_modules to $WARM_NODE_MODULES" >&2
@@ -362,6 +351,32 @@ warm_from_throwaway_clone() {
 
   rm -rf "$clone"
   echo "Warm node_modules kept at $WARM_NODE_MODULES."
+
+  # After the move and the clone's deletion, deliberately.
+  #
+  # `playwright install` registers the installation that asked for a browser, in
+  # .links inside the browsers directory, and every later `playwright install`
+  # deletes any browser no surviving registration references. Installing from the
+  # clone therefore worked and then undid itself: the registration named a path
+  # inside the clone, the move and delete above invalidated it, and the very next
+  # install in this same run — playwright-cli's, for its own browser — swept the
+  # revision away again. The VM finished with playwright-cli's browser and not the
+  # one the e2e suite needs, which is exactly the failure this flag exists to fix.
+  #
+  # Running the warm tree's own playwright registers $WARM_NODE_MODULES instead,
+  # which is outside any checkout and survives for the life of the machine.
+  if [ "$ADD_PLAYWRIGHT" = true ]; then
+    # Set whether or not it worked: a failure has already gone through `fail`,
+    # and the message this gates is about never having tried.
+    PLAYWRIGHT_REPO_BROWSER_ATTEMPTED=true
+    install_playwright_repo_browser "$VM_SETUP_DIR"
+  fi
+
+  # The warm tree is on disk by now, so this function succeeded. Without this the
+  # browser install's status would become the function's, and a failed download
+  # would leave the caller recording that no warm tree was created — the one fact
+  # the marker exists to report, and it would be false.
+  return 0
 }
 
 # ── Run setup_startup.sh from a Claude Code SessionStart hook ─────────────────
@@ -627,15 +642,20 @@ run_browser_install() {
   "$@"
 }
 
-# $1 = an app/web_ui directory whose node_modules is already installed.
+# $1 = a directory whose node_modules holds the playwright app/web_ui pins —
+# either a checkout's app/web_ui, or the warm tree's parent on a cloud VM. Which
+# one matters beyond convenience: `playwright install` records the caller in the
+# browsers directory's .links registry, and a later install deletes browsers no
+# surviving registration references. Passing a directory that is about to be
+# deleted installs a browser that the next install collects.
 install_playwright_repo_browser() {
-  local web_ui="$1"
+  local playwright_root="$1"
 
   # The bin, not the package: it is what the line below actually runs, and
   # `npx --no-install` reports its absence as a bare "could not determine
   # executable" with nothing about npm ci not having run.
-  if [ ! -x "$web_ui/node_modules/.bin/playwright" ]; then
-    fail "no playwright in $web_ui/node_modules, so the e2e browser cannot be installed"
+  if [ ! -x "$playwright_root/node_modules/.bin/playwright" ]; then
+    fail "no playwright in $playwright_root/node_modules, so the e2e browser cannot be installed"
     return 1
   fi
 
@@ -643,7 +663,7 @@ install_playwright_repo_browser() {
   # --no-install so this can only ever run the checkout's own pinned playwright.
   # Without it npx silently fetches the latest from the registry on a miss, and
   # would install a revision the suite then refuses to use.
-  (cd "$web_ui" && run_browser_install npx --no-install playwright install chromium) ||
+  (cd "$playwright_root" && run_browser_install npx --no-install playwright install chromium) ||
     fail "could not install the Chromium build app/web_ui pins"
 }
 
