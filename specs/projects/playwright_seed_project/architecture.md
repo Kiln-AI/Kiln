@@ -565,25 +565,39 @@ and durable, not phase-2 anecdotes:
   Dataset screen's bulk tag menu, `getByRole('button', { name: 'Add Tags' })` resolves to two
   elements and the click fails with a strict-mode violation; the dialog simply never appears.
   `find` first and click the returned ref, which is a single element by construction, or scope
-  the locator (`.dropdown-content button`). **And never suppress `playwright-cli`'s stderr** —
-  the strict-mode error names both matches and the fix, and discarding it is what turned this
-  into a wrong diagnosis the first time. There is no exception to "everything through the UI"
-  here: the ordinary two-command path works, including across a DaisyUI `dropdown`, because
-  `playwright-cli` holds one persistent session and the trigger keeps focus, so an open menu
-  is still open in the next process.
-- **The Repair Output section never renders for an already-rated run until you touch the
-  rating — which looks like a bug in the app, not a fact about authoring.** On a run loaded
+  the locator tightly enough to be unique — `.dropdown-content button >> nth=0`, since plain
+  `.dropdown-content button` matches both menu items and violates strict mode in its own
+  right. **`playwright-cli` prints that failure on stdout and exits 1**, so `>/dev/null` (or
+  `>/dev/null 2>&1`) discards the one message that names both matches and the fix; `2>/dev/null`
+  alone does not. Keep the output, or at least check `$?`. There is no exception to "everything
+  through the UI" here: the ordinary two-command path works, including across a DaisyUI
+  `dropdown`, because `playwright-cli` holds one persistent session and the trigger keeps focus,
+  so an open menu is still open in the next process.
+- **The Repair Output section never renders for an already-rated run until the rating is
+  changed — which looks like a bug in the app, not a fact about authoring.** On a run loaded
   from disk with `output.rating.value` of 1–4, `output.source.type` of `synthetic` and no
   `repaired_output`, every condition `should_offer_repair` and `repair_enabled_for_source`
   test in `app/web_ui/src/routes/(app)/run/run.svelte` is satisfied, and the star widget
   renders the stored rating — yet `document.body.innerText` contains no "Repair Output" and
-  there is no `#repair_instructions` field. Waiting does not help: reproduced after
-  `waitForLoadState('networkidle')`, so it is not a paint race. Re-clicking the star the run
-  already carries makes the section appear at once, which points at reactivity ordering around
-  where `overall_rating` is seeded rather than at the guard conditions themselves. Re-clicking
-  is a real PATCH — it leaves the rating's `id` and `created_at` intact but will change the
-  stored value if you click a different star, so re-assert the *same* one. Treat the workaround
-  as working around a defect worth fixing, not as the way the screen is meant to behave.
+  there is no `#repair_instructions` field. Three things were measured, and they narrow it:
+
+  - Waiting does not help. Reproduced after `waitForLoadState('networkidle')`, so it is not a
+    paint race.
+  - An unrelated interaction does not help either. Toggling "Show Raw Data" schedules an
+    update pass and the section still does not appear — so this is *not* "any later event
+    recomputes it".
+  - Only invalidating the rating helps. That points at `overall_rating` being assigned inside
+    `load_server_ratings()` rather than syntactically within a `$:` block, so the statements
+    derived from it keep a stale value until something dirties `overall_rating` again.
+
+  The workaround therefore costs a rating round trip. The star widget **toggles**: clicking the
+  star a run already carries *clears* the rating (and still shows nothing, since the section
+  also needs a non-null rating); clicking it a second time re-sets the original value and the
+  section appears. The rating record keeps its `id` and `created_at` throughout — verified by
+  round-tripping run `122030456526` from 4 to unrated and back and confirming the fixture was
+  byte-identical afterwards — so this is recoverable, but a phase that does it must put the
+  original value back and re-`snapshot` to prove it did. Treat this as working around a defect
+  worth fixing, not as the way the screen is meant to behave.
 
 **Resumability comes from `snapshot` itself**, which needs no new mechanism: author a
 group, `snapshot`, commit. A session that dies loses at most one group, and the

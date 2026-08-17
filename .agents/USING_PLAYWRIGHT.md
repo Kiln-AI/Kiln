@@ -147,43 +147,59 @@ Do not guess a role from how something looks. Kiln styles links as buttons, so
 `find "Get Started"` returns `link "Get Started" [ref=e9]` — the ref and the true
 role in one call. Run `find` first, then write the locator from what it reports.
 
-### A name that matches twice fails the click, silently if you let it
+### One label, two elements — and `>/dev/null` hides the reason
 
 Kiln reuses one label for a menu item and the button that submits the dialog it
 opens. On the Dataset screen's bulk tag menu, `Add Tags` is both the item in the
-dropdown and the disabled submit inside the resulting dialog, so
+open dropdown and the disabled submit inside the resulting dialog, so
 
 ```bash
 playwright-cli click "getByRole('button', { name: 'Add Tags', exact: true })"
 ```
 
-fails with `strict mode violation: … resolved to 2 elements`. The dialog never
-opens, and if you piped stderr away you have no idea why — it looks exactly like a
-click that landed on nothing.
+fails with `strict mode violation: … resolved to 2 elements`, naming both matches
+and a disambiguating locator for each. The dialog never opens.
 
-Two habits make that a non-event:
+**`playwright-cli` reports that failure on stdout, and exits 1.** So the redirection
+that hides it is `>/dev/null` — including the `>/dev/null 2>&1` that is easy to put
+on every command to keep a transcript readable. Measured against this app:
 
-- **Do not suppress stderr on `playwright-cli`.** The strict-mode error names both
-  matches and the locator that would disambiguate them. Discarding it is how a
-  two-line fix turns into an afternoon of wrong theories.
-- **`find` first, click the ref.** A ref is a single element by construction, so it
-  cannot go strict-mode ambiguous:
+| Redirection | What you see |
+|---|---|
+| none, or `2>/dev/null` | the full strict-mode error |
+| `1>/dev/null`, or `>/dev/null 2>&1` | nothing at all |
 
-  ```bash
-  playwright-cli click "div.dropdown [role=button]"   # opens the menu
-  playwright-cli find "Add Tags"                      # → button "Add Tags" [ref=e366]
-  playwright-cli click e366                           # → the dialog
-  ```
+In every case the exit status is `1`. Discard the output if you must, but then test
+`$?` — a failed click that looks like a click landing on nothing is how a two-line
+locator fix turns into an afternoon of wrong theories.
 
-  Scoping the locator works as well — `click ".dropdown-content button >> nth=0"`.
+The locator fix itself is **`find` first, click the ref**: a ref is a single element
+by construction, so it cannot go strict-mode ambiguous.
 
-Menus survive between commands, so this sequence is three ordinary processes.
+```bash
+playwright-cli click "div.dropdown [role=button]"   # opens the menu
+playwright-cli find "Add Tags"                      # 3 matches; one carries a ref
+playwright-cli click f1e369                         # → the dialog
+```
+
+`find` reports three matches here — the menu item plus the dialog's two copies — but
+only the menu item is rendered, so only it carries a ref. Take the ref-bearing one.
+Scoping works too, as long as the scope is narrow enough to be unique:
+`".dropdown-content button >> nth=0"`. Plain `".dropdown-content button"` is itself a
+strict-mode violation, since the menu holds both `Add Tags` and `Remove Tags`.
+
+Menus survive between commands, so that sequence is three ordinary processes.
 `playwright-cli` keeps one persistent session and the trigger keeps focus, so a
 DaisyUI `dropdown` opened by one command is still open, still visible, and still in
 the accessibility tree for the next one. Reach for `run-code` to click something
 in-page only when a control genuinely cannot be clicked otherwise: it bypasses
 Playwright's actionability checks, which is the opposite of what driving the UI
 like a user is for.
+
+Open the menu **first**, though. With it closed the menu item is `visibility: hidden`,
+so the same locator resolves to exactly one element — the dialog's disabled submit —
+and you get a different failure entirely: a 5 s timeout ending in `element is not
+enabled`. Same label, same command, unrelated diagnosis.
 
 Not everything on that toolbar is a menu, either. Only the tag control is a
 `dropdown`; the delete button beside it opens its modal directly, in one click.

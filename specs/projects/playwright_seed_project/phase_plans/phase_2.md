@@ -224,16 +224,47 @@ the open list. Clicking that ref opens the dialog. So does `click ".dropdown-con
 
 What actually failed was the locator. `getByRole('button', { name: 'Add Tags', exact: true })`
 matches **two** elements — the menu item and the disabled submit inside the Add Tags dialog —
-so Playwright raises a strict-mode violation and clicks nothing. Every `playwright-cli` call in
-that stretch of authoring ran with `2>/dev/null`, so the error naming both matches was thrown
-away, and a click that had loudly explained itself looked like a click that silently did
-nothing. Re-running the identical command with stderr visible prints the violation and both
-candidate elements immediately.
+so Playwright raises a strict-mode violation and clicks nothing.
 
-Two lessons, both now in USING_PLAYWRIGHT.md: do not suppress `playwright-cli`'s stderr, and
-prefer `find` then the ref, which cannot go ambiguous. The `page.evaluate` fallback keeps no
-special blessing — it bypasses Playwright's actionability checks, and the ordinary path works
-here.
+Why the error was invisible took a second correction. The first write-up said the calls ran
+with `2>/dev/null`; they did not, and that would not have hidden anything. Measured against
+this app, `playwright-cli` prints failures on **stdout** and exits 1:
+
+| Redirection | Output |
+|---|---|
+| none, or `2>/dev/null` | full strict-mode violation, both matches named |
+| `1>/dev/null`, or `>/dev/null 2>&1` | nothing at all |
+
+The authoring commands used `>/dev/null 2>&1`, applied to every call to keep the transcript
+readable. That discards stdout, which is where the explanation was. So the mechanism is real
+and recoverable — it is just about stdout, not stderr.
+
+Two lessons, both now in USING_PLAYWRIGHT.md: `>/dev/null` on a `playwright-cli` call throws
+away the failure text, so keep it or check `$?`; and prefer `find` then the ref, which cannot
+go ambiguous. The `page.evaluate` fallback keeps no special blessing — it bypasses Playwright's
+actionability checks, and the ordinary path works here.
+
+### The method lesson, which is the durable one
+
+Twice in review this phase, a real observation was written up with an invented mechanism
+attached, and both mechanisms were falsified by someone who ran the experiment:
+
+| Observation (true both times) | Mechanism asserted | What testing showed |
+|---|---|---|
+| The click did nothing and no dialog opened | The DaisyUI menu closed on blur between processes | Menu still open — `activeElement` on the trigger, `.dropdown-content` visible, `find` returning its ref |
+| The error was invisible | `2>/dev/null` suppressed it | Failures print on stdout; `2>/dev/null` shows them in full |
+
+Neither wrong mechanism came from bad observation. Both came from writing down the first
+explanation that fit rather than the one experiment that would separate it from the
+alternatives — and in the first case that nearly bought a standing exception to the UI-first
+rule on the strength of it.
+
+The rule this phase ends on: **state the observation, and state a mechanism only with the
+experiment that distinguishes it.** Where the experiment has not been run, say so — "the click
+failed and the reason was not visible" is publishable; a confident wrong reason is worse than
+no reason, because it stops the next reader from looking. The repair finding above is written
+to that standard: three measurements, one of which (an unrelated interaction does *not* reveal
+the section) rules out the tidier explanation that was offered for it.
 
 ## Roadblock (resolved): OpenRouter was unreachable from the container
 
