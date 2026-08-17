@@ -84,7 +84,7 @@ suite's ports, so it can stay up while you run e2e tests. It keeps its data in
 `app/web_ui/.agent_dev_home`, so it will not touch real Kiln projects.
 `stop` when you are done; `status` if you are not sure.
 
-Then, **from the repo root**:
+Then:
 
 ```bash
 playwright-cli open http://localhost:6544   # start the browser and navigate
@@ -97,22 +97,53 @@ playwright-cli requests                     # network activity
 playwright-cli close
 ```
 
-The repo root matters: `open` reads `.playwright/cli.config.json` relative to the
-current directory, and that file is what selects the same Chromium the e2e suite
-uses. From `app/web_ui` it is not found, and `open` fails trying to launch a
-branded Google Chrome that a container does not have. Pass `--config=<path>` if
-you must be somewhere else.
+If `open` fails saying Chromium distribution `chrome` was not found, the config
+below is missing. Without it playwright-cli launches a branded Google Chrome,
+which no container has. `--browser=chromium` is the one-off workaround; the fix
+is `setup_env.sh --add-playwright`.
 
-That config is gitignored, not checked in — which browser to launch is a fact
-about your machine, not about Kiln. `setup_env.sh --add-playwright` writes it, and
-`setup_startup.sh` writes it in a container, both only when it is missing, so your
-own edits to it survive.
+That config lives at `~/.playwright/cli.config.json` — playwright-cli's global
+config, not a file in the repo, because which browser is installed is a fact
+about your machine. Both setup scripts write it, and only when it is missing, so
+your own edits survive. Being global is also what makes the commands above work
+from any directory rather than only the repo root.
+
+### Screenshots: never trust the first frame
+
+A screenshot taken immediately after `open` or `goto` is very often **blank
+white**, and nothing in the output says so. The DOM is complete by then —
+`snapshot` returns the full page and `document.readyState` is `"complete"` — but
+Chromium has not painted yet, so `snapshot` is *not* a usable gate for it.
+
+This matters because a blank frame is the normal signal that an app failed to
+start, so a false blank will have you reporting a working app as broken. Settle
+the page first:
+
+```bash
+playwright-cli run-code "async page => await page.waitForLoadState('networkidle')"
+playwright-cli screenshot --filename=/tmp/ui.png
+```
+
+`networkidle` is the right default here: Kiln's pages fetch from the API after
+hydrating, so it waits for the data as well as the paint. If you only need the
+paint and not the data, two animation frames are enough:
+
+```bash
+playwright-cli run-code "async page => await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))"
+```
 
 `snapshot` is the one to reach for by default: it is the page as structure and
 text, which is both cheaper to read than an image and closer to what the e2e
 locators actually match. Take a **screenshot when the question is visual** —
 spacing, alignment, color, whether something overlaps — then read the PNG back
 with the Read tool, which renders it.
+
+### Let `find` tell you the role
+
+Do not guess a role from how something looks. Kiln styles links as buttons, so
+`getByRole("button", { name: "Get Started" })` finds nothing where
+`find "Get Started"` returns `link "Get Started" [ref=e9]` — the ref and the true
+role in one call. Run `find` first, then write the locator from what it reports.
 
 Kiln stores the selected project and task in `localStorage`, and redirects to a
 task picker without it. To land directly on a task's page, do what the e2e

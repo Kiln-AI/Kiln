@@ -493,19 +493,23 @@ if [ "$has_tk" != "True" ]; then
 fi
 
 # ── Playwright ────────────────────────────────────────────────────────────────
-# Gitignored per-device state, written for the same reason this script writes the
-# agent config: in a cloud sandbox setup_env.sh ran once with no checkout in
-# reach, and every session starts from a fresh one. Without it playwright-cli
-# tries to launch a branded Google Chrome, which a container does not have.
+# playwright-cli's global config, which selects the browser it launches. Without
+# it the first `playwright-cli open` tries to launch a branded Google Chrome that
+# a container does not have.
 #
-# Only when absent, so a contributor's own defaults survive. A failure is a
-# warning: it costs an agent a `--browser=chromium` flag, not a broken checkout.
+# setup_env.sh writes this at VM-build time, so on a machine it provisioned this
+# is a no-op. It is repeated here as the safety net for the case that is easy to
+# miss: an image built before --add-playwright existed, or one where the home
+# directory is not the one the setup script wrote to.
+#
+# Only when absent, so anyone's own defaults survive. A failure is a warning: it
+# costs an agent a `--browser=chromium` flag, not a broken checkout.
 write_playwright_cli_config() {
-  local config="$PROJECT_ROOT/.playwright/cli.config.json"
+  local config="$HOME/.playwright/cli.config.json"
 
   [ -f "$config" ] && return 0
 
-  if ! mkdir -p "$PROJECT_ROOT/.playwright" || ! cat >"$config" <<'JSON'
+  if ! mkdir -p "$HOME/.playwright" || ! cat >"$config" <<'JSON'
 {
   "browser": {
     "browserName": "chromium",

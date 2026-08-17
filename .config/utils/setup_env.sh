@@ -643,27 +643,32 @@ install_playwright_repo_browser() {
     fail "could not install the Chromium build app/web_ui pins"
 }
 
-# playwright-cli launches a branded Google Chrome unless a config in the
-# directory it runs from says otherwise. A Linux container has no such Chrome, and
-# even a machine that does should not be driving the UI in a different browser
-# from the one the e2e suite runs against.
+# playwright-cli launches a branded Google Chrome unless a config says otherwise.
+# A Linux container has no such Chrome, so the very first `playwright-cli open`
+# fails; and even a machine that has one should not be driving the UI in a
+# different browser from the one the e2e suite runs against.
 #
-# Not checked in: what it says is a property of this device — which browser is
-# installed here — not of the repo, and it is written for the same reason
-# .mcp.json and CLAUDE.md are. setup_startup.sh writes it too, because in a cloud
-# sandbox this script runs once with no checkout in reach and every session gets a
-# fresh one.
+# Written to the home directory, which playwright-cli reads as its global config,
+# rather than to .playwright/ in a checkout. Three things follow from that, and
+# each one is a bug we have already hit with the per-checkout form:
 #
-# Only when absent, so a contributor who has set their own defaults in it keeps
-# them across setup runs.
+#   - It needs no checkout, so it can be written here, at VM-build time, and land
+#     in the environment's snapshot. The per-checkout file could only be written
+#     by whatever ran inside a session, which meant a session on a branch without
+#     that code got playwright-cli with no config and the Chrome error.
+#   - It applies from any working directory. The per-checkout file is resolved
+#     relative to the process's cwd, so running from app/web_ui missed it.
+#   - It is per-device state, which is what this is: it records which browser is
+#     installed here, not anything about Kiln.
+#
+# Only when absent, so anyone who has set their own defaults in it keeps them.
 write_playwright_cli_config() {
-  # $1 = project root.
-  local config="$1/.playwright/cli.config.json"
+  local config="$HOME/.playwright/cli.config.json"
 
   [ -f "$config" ] && return 0
 
-  if ! mkdir -p "$1/.playwright"; then
-    fail "could not create $1/.playwright for the playwright-cli config"
+  if ! mkdir -p "$HOME/.playwright"; then
+    fail "could not create $HOME/.playwright for the playwright-cli config"
     return 1
   fi
 
@@ -713,6 +718,8 @@ install_playwright_cli() {
 
   run_browser_install playwright-cli install-browser chromium ||
     fail "could not install playwright-cli's own Chromium"
+
+  write_playwright_cli_config
 }
 
 # The marker is how setup_startup.sh tells a machine this script provisioned from
@@ -898,11 +905,8 @@ fi
 # After npm ci, which is what puts the pinned playwright in node_modules for the
 # revision to be read from. Skipped when the warm clone above already did it, so
 # a --warm-cache run with a checkout does not download the same browser twice.
-if [ "$ADD_PLAYWRIGHT" = true ]; then
-  if [ "$PLAYWRIGHT_REPO_BROWSER_ATTEMPTED" = false ]; then
-    install_playwright_repo_browser "$PROJECT_ROOT/app/web_ui"
-  fi
-  write_playwright_cli_config "$PROJECT_ROOT"
+if [ "$ADD_PLAYWRIGHT" = true ] && [ "$PLAYWRIGHT_REPO_BROWSER_ATTEMPTED" = false ]; then
+  install_playwright_repo_browser "$PROJECT_ROOT/app/web_ui"
 fi
 
 # ── Agent configuration ───────────────────────────────────────────────────────

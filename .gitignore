@@ -24,10 +24,11 @@ test_output/
 .mcp.json
 .python-version
 
-# playwright-cli's per-device state: .playwright/cli.config.json selects the
-# browser it launches (written by setup_env.sh --add-playwright, and by
-# setup_startup.sh in a container), and .playwright-cli/ collects the snapshots
-# and screenshots of whatever directory it was run from.
+# playwright-cli scratch. .playwright-cli/ is snapshots and screenshots, written
+# into whatever directory the tool was run from. .playwright/ is a workspace
+# config the tool writes if someone runs `playwright-cli install` here — our setup
+# scripts deliberately write the global ~/.playwright one instead, but a stray
+# local copy should not end up in a commit either.
 .playwright/
 .playwright-cli/
 
