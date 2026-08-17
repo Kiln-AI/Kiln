@@ -69,7 +69,7 @@ Some providers — **Fireworks AI**, **Together AI**, **SiliconFlow** — expose
 
 Run this check on **every invocation** of the skill, regardless of whether you're in discovery mode or adding a specific model.
 
-1. **Pull the 10 most recently added models** from the top of `built_in_models` in `ml_model_list.py` (newest are at the top), or from git:
+1. **Pull the 10 most recently added models from git history.** List position is NOT a recency signal — entries are ordered by family/version/size (see 3c), and net-new families sit at the END of the list, so recent additions can be anywhere:
    ```bash
    git log --follow -p -- libs/core/kiln_ai/adapters/ml_model_list.py | grep -E "^\+\s+name=ModelName\." | head -20
    ```
@@ -502,10 +502,14 @@ entries had to be rolled back.
 
 **Sequence it in two PRs:**
 
-1. **PR 1 — plumbing only.** Everything in the checklist below EXCEPT the
-   `built_in_models` entries. Merge whenever ready.
-2. **PR 2 — model entries.** The `ml_model_list.py` entries for the provider.
-   Open it, but **merge only after a client release containing PR 1 is live.**
+1. **PR 1 — provider plumbing only.** The `ModelProviderName` enum member and
+   everything else in the checklist below EXCEPT the model catalog. Merge
+   whenever ready.
+2. **PR 2 — model catalog.** ALL `ml_model_list.py` changes: `ModelName`
+   members, `ModelFamily` (if the vendor is new), and the `built_in_models`
+   entries. Open it, but **merge only after a client release containing PR 1
+   is live.** (Only `built_in_models` is published via the remote config, but
+   the enums belong in the same PR as the entries they exist for.)
 
 ### Touchpoint checklist (from the Featherless integration, #1618)
 
@@ -529,8 +533,9 @@ model.
   `provider_name_from_id` match (friendly name; pyright flags a missed case),
   `provider_warnings` (missing-credential message, `required_config_keys`),
   and the adapter config (credential / base URL / headers plumbing)
-- Model entries — `libs/core/kiln_ai/adapters/ml_model_list.py` (**PR 2 only**,
-  see gating rule)
+- Model catalog — `libs/core/kiln_ai/adapters/ml_model_list.py`: `ModelName`
+  members, `ModelFamily` if needed, and the `built_in_models` entries
+  (**PR 2 only**, see gating rule)
 
 **Desktop server (`app/desktop/studio_server/provider_api.py`):**
 - `connect_<provider>` credential-validation endpoint (find a cheap
