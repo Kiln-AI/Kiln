@@ -200,14 +200,17 @@ dropdown to every client via the remote config. Rules:
    version's group — NOT at the top of the family and NOT below older
    versions (past bugs: Gemini 3.6/3.7 Flash were inserted mid-3.1; Qwen 3.6/3.7
    landed below Qwen 3.5 entries; Phi 3.5 sat above Phi 4).
-3. **Within a version, follow the family's existing convention:**
-   - Commercial tiers big → small: Max > Plus > Flash; Pro > Flash > Flash Lite.
-   - Open-weight sizes: match whatever direction that family already uses.
-   - The Claude family groups by tier rather than interleaving versions, and
-     the tier blocks follow the same big → small rule: Fable, then Opus >
-     Sonnet > Haiku, with versions descending inside each tier. (It once ran
-     Haiku-first — smallest tier at the top — which was a bug, not a
-     convention. Big → small applies to tier-grouped families too.)
+3. **Within a version, big → small. Always.**
+   - Commercial tiers: Max > Plus > Flash; Pro > Flash > Flash Lite;
+     Large > Medium > Small.
+   - Open-weight sizes descending: 405B > 70B > 8B. Keep base/Non-Thinking
+     variant pairs adjacent; variant sub-groups (e.g. the Qwen VL Instruct and
+     VL Thinking blocks) stay intact, ordered descending internally.
+   - Tier-grouped families follow the same rule for their tier blocks: Claude
+     runs Fable, then Opus > Sonnet > Haiku, versions descending inside each
+     tier. (It once ran Haiku-first, and several families ran sizes
+     ascending — those were bugs, not conventions. Do not preserve an
+     ascending run because it's "what the family already does.")
 4. **A net-new family's block goes at the END of `built_in_models`** (this is
    the existing convention — the newest niche vendors sit at the bottom of the
    list). The "place before predecessor" rule only applies within an existing
