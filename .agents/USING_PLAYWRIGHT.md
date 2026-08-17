@@ -182,9 +182,9 @@ playwright-cli find "Add Tags"                      # 3 matches; one carries a r
 playwright-cli click f1e369                         # → the dialog
 ```
 
-`find` reports three matches here — the menu item plus the dialog's two copies — but
-only the menu item is rendered, so only it carries a ref. Take the ref-bearing one.
-Scoping works too, as long as the scope is narrow enough to be unique:
+`find` reports three matches for that label, and exactly one of them carries a ref:
+the menu item. Take the ref-bearing one. Scoping works too, as long as the scope is
+narrow enough to be unique:
 `".dropdown-content button >> nth=0"`. Plain `".dropdown-content button"` is itself a
 strict-mode violation, since the menu holds both `Add Tags` and `Remove Tags`.
 
