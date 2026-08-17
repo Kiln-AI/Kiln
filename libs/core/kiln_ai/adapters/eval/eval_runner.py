@@ -1,4 +1,3 @@
-import json
 import logging
 from dataclasses import dataclass
 from typing import AsyncGenerator, Dict, List, Literal, Set
@@ -40,6 +39,7 @@ from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun, Usage
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
+from kiln_ai.utils.open_ai_types import serialize_trace
 
 logger = logging.getLogger(__name__)
 
@@ -347,7 +347,7 @@ class EvalRunner:
                 and parent_eval.evaluation_data_type == EvalDataType.full_trace
                 and result_task_run.trace
             ):
-                trace = json.dumps(result_task_run.trace, indent=2, ensure_ascii=False)
+                trace = serialize_trace(result_task_run.trace)
 
             if (
                 parent_eval

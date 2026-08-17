@@ -85,9 +85,17 @@ class EvalRunWithTrace(BaseModel):
 `task_run_trace` stays a JSON string rather than becoming the structured
 `list[dict]` that `TaskRun.trace` is, because that is the shape legacy records have and
 the point of the model is that both modes look alike. Pointer records are serialized with
-`json.dumps(..., indent=2, ensure_ascii=False)` — the repo rule, which the equivalent
-call in the V1 runner (`eval_runner.py:350`) was missing. That one is fixed here too
-rather than copied, since it is the call that writes every legacy trace.
+`serialize_trace` (`utils/open_ai_types.py`), which pretty-prints at indent 2 and leaves
+non-ASCII unescaped — the repo rule, which the equivalent call in the V1 runner
+(`eval_runner.py:350`) was missing. That one goes through the same helper rather than
+being copied, since it is the call that writes every legacy trace.
+
+> **Corrected after the phase shipped.** Both sites originally called `json.dumps`
+> directly, which 500'd the results page on any real trace: pydantic types a message's
+> `usage` key as a `MessageUsage` model — in memory *and* when a TaskRun is loaded back
+> off disk — and the stdlib encoder cannot serialize it. `serialize_trace` dumps through
+> the same TypedDicts pydantic validated against, and is byte-identical to the old call
+> for traces that are plain data.
 
 **Known tradeoff: a legacy record ships its trace twice.** The model embeds the whole
 `EvalRun`, whose deprecated `input` / `output` / `task_run_trace` / `task_run_usage` are
@@ -139,7 +147,7 @@ Per-record resolution:
   `input` / `output` / `task_run_trace` / `task_run_usage`.
 - **`scored_run_id` set, trace found**: `trace.input`, `trace.output.output`
   (**never `repaired_output`** — functional spec §5.2 — repair can happen after
-  scoring), `json.dumps(trace.trace)`, `trace.usage`.
+  scoring), `serialize_trace(trace.trace)`, `trace.usage`.
 - **`scored_run_id` set, trace missing**: all four None. The score still renders and
   still aggregates; only the drill-through is gone (functional spec §5.3). Never raises.
 

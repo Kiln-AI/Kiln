@@ -70,6 +70,7 @@ from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecTy
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.task_run import EvalItemSource, Usage
+from kiln_ai.datamodel.usage import MessageUsage
 
 
 def stub_split(
@@ -1875,13 +1876,13 @@ def _eval_trace(
     **overrides,
 ) -> TaskRun:
     """A TaskRun the eval runner would have generated: flagged, with a trace and usage."""
+    overrides.setdefault("trace", [{"role": "user", "content": "traced input"}])
     run = TaskRun(
         parent=task,
         input="traced input",
         input_source=data_source,
         output=TaskOutput(output=output, source=data_source),
         eval_source=source,
-        trace=[{"role": "user", "content": "traced input"}],
         usage=Usage(input_tokens=11, output_tokens=7, total_tokens=18, cost=0.5),
         **overrides,
     )
@@ -2237,6 +2238,50 @@ class TestEvalRunTraceJoin:
         assert json.loads(by_id[pointer.id]["task_run_trace"]) == json.loads(
             by_id[legacy.id]["task_run_trace"]
         )
+
+    def test_a_trace_carrying_per_message_usage_still_serializes(
+        self,
+        client,
+        mock_task_from_id,
+        mock_task,
+        mock_eval,
+        mock_eval_config,
+        mock_run_config,
+        data_source,
+    ):
+        """Regression: every trace the eval runner writes has per-message `usage`.
+
+        Pydantic types that key as a `MessageUsage` model - on the TaskRun as built and
+        again when it is read back off disk - so serializing the trace with a plain
+        `json.dumps` raised `TypeError` and the endpoint 500'd on any real eval result.
+        """
+        item = _tagged_task_run(mock_task, data_source, "eval_set")
+        trace = _eval_trace(
+            mock_task,
+            data_source,
+            EvalItemSource(source_type="task_run", source_id=item.id),
+            trace=[
+                {"role": "user", "content": "traced input"},
+                {
+                    "role": "assistant",
+                    "content": "traced output",
+                    "usage": MessageUsage(
+                        input_tokens=11, output_tokens=7, total_tokens=18, cost=0.5
+                    ),
+                },
+            ],
+        )
+        _pointer_scored(mock_eval_config, trace.id, dataset_id=item.id)
+
+        result = self._results(client)[0]
+
+        assert json.loads(result["task_run_trace"])[1]["usage"] == {
+            "input_tokens": 11,
+            "output_tokens": 7,
+            "total_tokens": 18,
+            "cost": 0.5,
+            "cached_tokens": None,
+        }
 
     def test_returns_the_output_that_was_scored_not_a_later_repair(
         self,

@@ -1,4 +1,5 @@
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Dict
@@ -47,7 +48,7 @@ from kiln_ai.datamodel.eval import (
 from kiln_ai.datamodel.eval_splits import resolve_split
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
-from kiln_ai.datamodel.usage import Usage
+from kiln_ai.datamodel.usage import MessageUsage, Usage
 from kiln_ai.utils.async_job_runner import RetryableError
 from kiln_ai.utils.git_sync_protocols import default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
@@ -969,10 +970,71 @@ async def test_run_job_with_full_trace_evaluation_data_type(
     assert saved_run.task_run_trace is not None
     assert isinstance(saved_run.task_run_trace, str)
     # Verify the trace was JSON serialized
-    import json
-
     parsed_trace = json.loads(saved_run.task_run_trace)
     assert parsed_trace == mock_trace
+
+
+@pytest.mark.asyncio
+async def test_run_job_full_trace_serializes_per_message_usage(
+    mock_eval_runner, mock_task, data_source, mock_run_config, mock_eval_config
+):
+    """Regression: the V1 runner serialized the trace with a plain `json.dumps`.
+
+    A real trace types its per-message `usage` as a `MessageUsage` model, which that
+    encoder cannot handle - so the job died before it ever saved an EvalRun.
+    """
+    mock_eval_config.parent.evaluation_data_type = EvalDataType.full_trace
+    mock_eval_config.parent.save_to_file()
+
+    task_run = TaskRun(
+        parent=mock_task,
+        input="test input",
+        input_source=data_source,
+        output=TaskOutput(output="test output"),
+    )
+    task_run.save_to_file()
+
+    job = EvalJob(
+        item=task_run,
+        task_run_config=mock_run_config,
+        type="task_run_eval",
+        eval_config=mock_eval_config,
+    )
+
+    class MockEvaluator(BaseEval):
+        async def run_task_and_eval(self, eval_job_item: TaskRun):
+            result_task_run = TaskRun(
+                input=eval_job_item.input,
+                input_source=data_source,
+                output=TaskOutput(output="evaluated output"),
+                trace=[
+                    {"role": "user", "content": "test input"},
+                    {
+                        "role": "assistant",
+                        "content": "test response",
+                        "usage": MessageUsage(
+                            input_tokens=42, output_tokens=7, cost=0.001
+                        ),
+                    },
+                ],
+            )
+            return result_task_run, {"accuracy": 0.95}, {}
+
+    with patch(
+        "kiln_ai.adapters.eval.eval_runner.legacy_eval_adapter_from_type",
+        return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
+    ):
+        assert await mock_eval_runner.run_job(job) is True
+
+    saved_run = mock_eval_config.runs()[0]
+    assert saved_run.task_run_trace is not None
+    assert json.loads(saved_run.task_run_trace)[1]["usage"] == {
+        "input_tokens": 42,
+        "output_tokens": 7,
+        "total_tokens": None,
+        "cost": 0.001,
+        "cached_tokens": None,
+    }
 
 
 @pytest.mark.asyncio

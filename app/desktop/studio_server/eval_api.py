@@ -65,6 +65,7 @@ from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.datamodel.usage import Usage
 from kiln_ai.utils.name_generator import generate_memorable_name
+from kiln_ai.utils.open_ai_types import serialize_trace
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
@@ -446,7 +447,7 @@ class EvalRunWithTrace(BaseModel):
             # Never repaired_output: a repair can happen after scoring, so it is not
             # what the score was computed over (functional spec 5.2).
             output=trace.output.output if trace is not None else None,
-            task_run_trace=json.dumps(trace.trace, indent=2, ensure_ascii=False)
+            task_run_trace=serialize_trace(trace.trace)
             if trace is not None and trace.trace
             else None,
             task_run_usage=trace.usage if trace is not None else None,
