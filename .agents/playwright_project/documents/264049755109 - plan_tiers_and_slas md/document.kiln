@@ -1,0 +1,23 @@
+{
+  "v": 1,
+  "id": "264049755109",
+  "created_at": "2026-08-17T22:00:51.736485Z",
+  "created_by": "root",
+  "name": "plan_tiers_and_slas md",
+  "name_override": "plan_tiers_and_slas.md",
+  "description": "What free, pro and enterprise plans change about first-response targets, and what they deliberately do not change.",
+  "original_file": {
+    "filename": "plan_tiers_and_slas.md",
+    "size": 1468,
+    "mime_type": "text/markdown",
+    "attachment": {
+      "path": "attachment_708668659640.md"
+    }
+  },
+  "kind": "document",
+  "tags": [
+    "support_policy"
+  ],
+  "model_type": "document",
+  "friendly_name": "plan_tiers_and_slas.md"
+}
