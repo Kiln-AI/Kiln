@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Phase 4: Skills, the RAG chain, and the index-rebuild proof
@@ -214,8 +214,10 @@ Custom rather than a built-in template because every template targets `gemini_ap
 Per document: an `extraction.kiln` with a markdown output attachment, a
 `chunked_document.kiln` with a content attachment per chunk, and a
 `chunk_embeddings.kiln` holding two 1536-dimension vectors. All three nest inside the
-project directory and all three are committed — 132 KB of vectors, bringing the whole
-fixture to 1.3 MB.
+project directory and all three are committed — the three `chunk_embeddings.kiln`
+files are 86952 + 86778 + 86700 = 260,430 bytes, so **254 KB of vectors** for six
+chunks, or roughly 42 KB per 1536-dimension vector serialized as JSON floats. That is
+the number to size a larger corpus against; the whole fixture is 1.3 MB.
 
 The LanceDB index landed at
 `app/web_ui/.agent_dev_home/.kiln_ai/rag_indexes/lancedb/184180693413`. Checked with
@@ -279,12 +281,23 @@ the only paid work in the phase was six chunk embeddings plus one query embeddin
 ## Deviations from the plan
 
 - **The documents were written twice.** At ~300 words each they produced exactly one
-  chunk apiece under the 512-word chunker, so nothing about chunking was visible in
-  the fixture: `chunk_idx` was always 0, and a chunk viewer had one row to show. They
-  were deleted through the UI, rewritten at ~550 words, re-uploaded, and the chain
-  re-run. The alternative — shrinking the chunk size — was rejected because 512/64 is
-  what the app's own templates use, and a fixture that departs from the default to
-  make its own data look better is worth less as a reference.
+  chunk apiece, so nothing about chunking was visible in the fixture: `chunk_idx` was
+  always 0, and a chunk viewer had one row to show. They were deleted through the UI,
+  rewritten at ~550 words, re-uploaded, and the chain re-run. The alternative —
+  shrinking the chunk size — was rejected because 512/64 is what the app's own
+  templates use, and a fixture that departs from the default to make its own data look
+  better is worth less as a reference.
+
+  **`chunk_size` is counted in tokens, not words**, which matters for anyone sizing a
+  corpus off these numbers. `FixedWindowChunker` hands it straight to llama_index's
+  `SentenceSplitter`
+  (`libs/core/kiln_ai/adapters/chunkers/fixed_window_chunker.py:19`), which tokenizes;
+  the create-chunker form nonetheless describes it as "the approximate number of words
+  to include in each chunk". Re-running that splitter over the three committed
+  extractions measures 519 words → 658 tokens, 528 → 682, and 650 → 824, i.e. 1.27–1.29
+  tokens per word for this prose, so the 512 setting cuts at roughly 400 words of it.
+  The observed 300-words-to-one-chunk and 550-to-two holds either way, and it was the
+  observation rather than the arithmetic that drove the rewrite.
 - **The extractor names a model the fixture never calls.** `create_extractor_form.svelte`
   posts `passthrough_mimetypes: ["text/plain", "text/markdown"]` with no control over
   it, so markdown documents short-circuit in `BaseExtractor._should_passthrough`. The

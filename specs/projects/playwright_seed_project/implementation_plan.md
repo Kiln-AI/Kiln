@@ -22,6 +22,6 @@ it; it is not recorded in any spec artifact.
   feedback.
 - [x] Phase 3: Evals — one eval, judge config, results across both run configs. Carries
   specs with it.
-- [ ] Phase 4: Skills and RAG — skills with `SKILL.md` bodies, then documents through
+- [x] Phase 4: Skills and RAG — skills with `SKILL.md` bodies, then documents through
   RAG config. Prove the index rebuilds from a seeded sandbox. Final docs pass on what
   the fixture contains, and re-run matrix cases 1–4 against the finished fixture.

@@ -229,9 +229,18 @@ resolves inside the sandbox and so cannot see real keys).
 ### RAG indexes
 
 A RAG index lives at `.kiln_ai/rag_indexes/lancedb/<id>`, **outside** the project
-directory, so `snapshot` captures every RAG *config* and never the index. This is
-intended, not a defect: the project carries the documents and the configs, and the
-index is derived data that gets rebuilt when it is needed.
+directory, so `snapshot` never captures the index. This is intended, not a defect:
+the index is derived data that gets rebuilt when it is needed.
+
+Everything else the chain produces *is* inside the project directory and *is*
+captured — the extraction for each document, its chunks, and its embeddings, which
+nest under `documents/<doc>/extractions/…`. So the fixture carries the documents, the
+five configs, **and the outputs of running the chain**. A correction to an earlier
+draft of this section, which said only "configs and never the index": committing the
+configs alone would leave every rebuild depending on live extraction and embedding
+calls, which is exactly what a keyless seeded sandbox cannot make. The same split
+Kiln's git sync uses — extracted docs and embeddings sync, the index is a local cache.
+See architecture.md's "What group 5 commits, and what it deliberately does not".
 
 Two things follow, and both are implementation-phase obligations rather than open
 questions. Rebuilding must be confirmed to actually work from a seeded sandbox — a
@@ -258,10 +267,11 @@ already `ModelName.deepseek_4_flash` in the built-in list with
 One key covers the whole fixture, including the parts that are not chat completions:
 extraction routes through OpenRouter, and so do embeddings, by rewriting the model
 slug `openrouter/…` to `openai/…` and calling OpenRouter as an OpenAI-compatible
-endpoint because LiteLLM has no native OpenRouter embedding support. That rewrite is
-the one thing here taken on faith from reading the code rather than from running it;
-whether OpenRouter actually serves an embeddings endpoint is verified in the
-implementation phase, and if it does not, the RAG content needs a second key.
+endpoint because LiteLLM has no native OpenRouter embedding support. That rewrite was
+the one thing here taken on faith from reading the code rather than from running it.
+Phase 4 ran it: OpenRouter serves `/embeddings` for `openai/text-embedding-3-small`
+and the app produced real vectors through the rewrite, so no second key was needed.
+The other OpenRouter embedding models in `ml_embedding_model_list.py` remain unrun.
 
 The key never reaches the repo, and this is a property of the design rather than of
 anyone remembering. Connecting a provider through the UI writes it to
