@@ -147,25 +147,46 @@ Do not guess a role from how something looks. Kiln styles links as buttons, so
 `find "Get Started"` returns `link "Get Started" [ref=e9]` — the ref and the true
 role in one call. Run `find` first, then write the locator from what it reports.
 
-### A dropdown menu will not survive two commands
+### A name that matches twice fails the click, silently if you let it
 
-Kiln's bulk actions — the tag and delete menus on the Dataset screen, and anything
-else with `class="dropdown"` — are DaisyUI dropdowns, which open on focus and close
-on blur. Each `playwright-cli` command is its own process, so `click` the trigger
-and then `click` the item never works: the menu is already gone. Nothing in the
-output says so; you just get no dialog.
-
-Click the item in-page instead, in the same command that has it open:
+Kiln reuses one label for a menu item and the button that submits the dialog it
+opens. On the Dataset screen's bulk tag menu, `Add Tags` is both the item in the
+dropdown and the disabled submit inside the resulting dialog, so
 
 ```bash
-playwright-cli click "div.dropdown [role=button]"
-playwright-cli run-code "async page => await page.evaluate(() => \
-  [...document.querySelectorAll('.dropdown-content button')] \
-    .find(b => b.innerText.trim() === 'Add Tags').click())"
+playwright-cli click "getByRole('button', { name: 'Add Tags', exact: true })"
 ```
 
-Only the menu item needs this. A dialog the item opens is an ordinary dialog once
-it is up, and `find` plus `click` work on it normally.
+fails with `strict mode violation: … resolved to 2 elements`. The dialog never
+opens, and if you piped stderr away you have no idea why — it looks exactly like a
+click that landed on nothing.
+
+Two habits make that a non-event:
+
+- **Do not suppress stderr on `playwright-cli`.** The strict-mode error names both
+  matches and the locator that would disambiguate them. Discarding it is how a
+  two-line fix turns into an afternoon of wrong theories.
+- **`find` first, click the ref.** A ref is a single element by construction, so it
+  cannot go strict-mode ambiguous:
+
+  ```bash
+  playwright-cli click "div.dropdown [role=button]"   # opens the menu
+  playwright-cli find "Add Tags"                      # → button "Add Tags" [ref=e366]
+  playwright-cli click e366                           # → the dialog
+  ```
+
+  Scoping the locator works as well — `click ".dropdown-content button >> nth=0"`.
+
+Menus survive between commands, so this sequence is three ordinary processes.
+`playwright-cli` keeps one persistent session and the trigger keeps focus, so a
+DaisyUI `dropdown` opened by one command is still open, still visible, and still in
+the accessibility tree for the next one. Reach for `run-code` to click something
+in-page only when a control genuinely cannot be clicked otherwise: it bypasses
+Playwright's actionability checks, which is the opposite of what driving the UI
+like a user is for.
+
+Not everything on that toolbar is a menu, either. Only the tag control is a
+`dropdown`; the delete button beside it opens its modal directly, in one click.
 
 ## The seeded project
 

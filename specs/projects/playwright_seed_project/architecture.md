@@ -559,24 +559,31 @@ matter when authoring from an empty home, and they are why "everything through t
 has this one standing exception.
 
 **Two things about driving the app that every authoring phase hits**, discovered in phase 2
-and durable, not a phase-2 anecdote:
+and durable, not phase-2 anecdotes:
 
-- **A DaisyUI `dropdown` menu closes before a second `playwright-cli` command lands.** The
-  bulk actions on the Dataset screen — and any other `class="dropdown"` menu — open on focus
-  and close on blur, so `click` the trigger, then `click` the menu item is two processes and
-  the menu is gone by the second. The item has to be clicked in-page instead:
-  `playwright-cli run-code`, or `eval` with a `() => {...click()}` expression that finds the
-  button by its text. That is still the app's own handler on the app's own element, and it is
-  the **only** sanctioned way around "everything through the UI" for this shape of control —
-  it is not licence to call the REST API. Multi-step dialogs opened *from* such a menu are
-  fine once open; it is only the menu item itself that cannot be reached across two commands.
-- **The Repair Output section does not render on a fresh load of an already-rated run.**
-  `should_offer_repair` in `app/web_ui/src/routes/(app)/run/run.svelte` is satisfied by a
-  1-to-4-star run with no repair, but on first paint of a run loaded from disk the section is
-  absent — `document.body.innerText` does not contain "Repair Output" and there is no
-  `#repair_instructions` field. Re-clicking the star the run already has makes it appear
-  immediately. So a phase that repairs a previously-rated run must re-assert the rating first
-  rather than concluding the flow is unavailable.
+- **One label can match a menu item and the submit button of the dialog it opens.** On the
+  Dataset screen's bulk tag menu, `getByRole('button', { name: 'Add Tags' })` resolves to two
+  elements and the click fails with a strict-mode violation; the dialog simply never appears.
+  `find` first and click the returned ref, which is a single element by construction, or scope
+  the locator (`.dropdown-content button`). **And never suppress `playwright-cli`'s stderr** —
+  the strict-mode error names both matches and the fix, and discarding it is what turned this
+  into a wrong diagnosis the first time. There is no exception to "everything through the UI"
+  here: the ordinary two-command path works, including across a DaisyUI `dropdown`, because
+  `playwright-cli` holds one persistent session and the trigger keeps focus, so an open menu
+  is still open in the next process.
+- **The Repair Output section never renders for an already-rated run until you touch the
+  rating — which looks like a bug in the app, not a fact about authoring.** On a run loaded
+  from disk with `output.rating.value` of 1–4, `output.source.type` of `synthetic` and no
+  `repaired_output`, every condition `should_offer_repair` and `repair_enabled_for_source`
+  test in `app/web_ui/src/routes/(app)/run/run.svelte` is satisfied, and the star widget
+  renders the stored rating — yet `document.body.innerText` contains no "Repair Output" and
+  there is no `#repair_instructions` field. Waiting does not help: reproduced after
+  `waitForLoadState('networkidle')`, so it is not a paint race. Re-clicking the star the run
+  already carries makes the section appear at once, which points at reactivity ordering around
+  where `overall_rating` is seeded rather than at the guard conditions themselves. Re-clicking
+  is a real PATCH — it leaves the rating's `id` and `created_at` intact but will change the
+  stored value if you click a different star, so re-assert the *same* one. Treat the workaround
+  as working around a defect worth fixing, not as the way the screen is meant to behave.
 
 **Resumability comes from `snapshot` itself**, which needs no new mechanism: author a
 group, `snapshot`, commit. A session that dies loses at most one group, and the

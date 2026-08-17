@@ -188,22 +188,52 @@ is its own child model, at `runs/170843774961/feedback/148834163100/feedback.kil
   in step 1 — no fine-tune provider is connected and no fine-tune job was started. That flow
   also only offers tags beginning with `fine_tune`, which is why the tag is
   `fine_tune_triage` rather than something shorter.
-- **Two clicks went through `page.evaluate` rather than the CLI's `click`.** The bulk-tag
-  menu is a DaisyUI `dropdown` that closes on blur before a second CLI command lands, so
-  "Add Tags" and the dialog's submit were clicked in-page. Same elements, same handlers —
-  no API call was made by hand. This one is missing from `a6d621d`'s commit message, which
-  says only "tagged from the Dataset screen's bulk selection"; architecture.md asks for a
-  line per deviation there. The commit is pushed, so rather than rewrite history it is
-  promoted to architecture.md and USING_PLAYWRIGHT.md, where it is more use anyway.
+- **Two clicks went through `page.evaluate` rather than the CLI's `click`** — and did not
+  need to. The `fine_tune_triage` tags were applied by clicking "Add Tags" and the dialog's
+  submit in-page. Same elements, same handlers, no API call by hand, so the fixture is what
+  the UI would have produced either way; but the reason recorded at the time was wrong, and
+  the detour was avoidable. See ["What actually went wrong with the tag menu"](#what-actually-went-wrong-with-the-tag-menu)
+  below. This deviation is also missing from `a6d621d`'s commit message, which says only
+  "tagged from the Dataset screen's bulk selection"; architecture.md asks for a line per
+  deviation there. The commit is pushed, so rather than rewrite history the corrected finding
+  is recorded in architecture.md and USING_PLAYWRIGHT.md, where it is more use anyway.
 - **The Repair Output section only appears after an interactive rating change.** On a fresh
-  load of an already-rated run the section is absent even though the run qualifies, so the
-  repair was reached by re-clicking the star. It is an app quirk, not a fixture property.
+  load of an already-rated run the section is absent even though every condition the
+  component tests is satisfied, so the repair was reached by re-clicking the star. On
+  re-examination this looks like a defect in `run.svelte` rather than an authoring quirk —
+  see architecture.md's "Fixture authoring" section for the reproduction and what it costs.
 
-Neither of those last two is a phase-2 anecdote — both are things any authoring phase that
-drives a bulk menu or repairs an already-rated run will hit. Following phase 1's precedent
-with the onboarding gates, both are now recorded in architecture.md's "Fixture authoring"
-section (the dropdown one in USING_PLAYWRIGHT.md too, under "Driving the UI"), because the
+Both of the last two bullets are things any authoring phase that drives a bulk menu or
+repairs an already-rated run will hit, not phase-2 anecdotes. Following phase 1's precedent
+with the onboarding gates, both are recorded in architecture.md's "Fixture authoring" section
+(the locator one in USING_PLAYWRIGHT.md too, under "Driving the UI"), because the
 coding-phase prompt's context loading names architecture.md and never a prior phase plan.
+
+### What actually went wrong with the tag menu
+
+Recorded because the first explanation was confident and false, and it nearly bought a
+standing exception to the UI-first rule on the strength of it.
+
+The claim was that a DaisyUI `dropdown` closes on blur before the next `playwright-cli`
+command lands, so the menu item can only ever be clicked in-page. Re-tested against the live
+sandbox, that is not what happens. After `click "div.dropdown [role=button]"`, a separate
+process reports `document.activeElement` still on the trigger, `.dropdown-content` visible at
+`opacity: 1` and 88px tall, and `find "Add Tags"` returning `button "Add Tags" [ref=…]` inside
+the open list. Clicking that ref opens the dialog. So does `click ".dropdown-content button
+>> nth=0"`. The menu survives; there is no blur problem.
+
+What actually failed was the locator. `getByRole('button', { name: 'Add Tags', exact: true })`
+matches **two** elements — the menu item and the disabled submit inside the Add Tags dialog —
+so Playwright raises a strict-mode violation and clicks nothing. Every `playwright-cli` call in
+that stretch of authoring ran with `2>/dev/null`, so the error naming both matches was thrown
+away, and a click that had loudly explained itself looked like a click that silently did
+nothing. Re-running the identical command with stderr visible prints the violation and both
+candidate elements immediately.
+
+Two lessons, both now in USING_PLAYWRIGHT.md: do not suppress `playwright-cli`'s stderr, and
+prefer `find` then the ref, which cannot go ambiguous. The `page.evaluate` fallback keeps no
+special blessing — it bypasses Playwright's actionability checks, and the ordinary path works
+here.
 
 ## Roadblock (resolved): OpenRouter was unreachable from the container
 
