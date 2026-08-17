@@ -1,17 +1,17 @@
 {
   "v": 1,
-  "id": "322836786880",
-  "created_at": "2026-08-17T22:00:51.734867Z",
+  "id": "149787447013",
+  "created_at": "2026-08-17T22:17:43.508254Z",
   "created_by": "root",
   "name": "escalation_policy md",
   "name_override": "escalation_policy.md",
-  "description": "When a ticket must be held for a human before any reply is sent, and why urgency alone is not a reason to escalate.",
+  "description": "When a ticket must be held for a human before any reply is sent, why urgency alone is not a reason to escalate, and the borderline cases.",
   "original_file": {
     "filename": "escalation_policy.md",
-    "size": 1507,
+    "size": 3201,
     "mime_type": "text/markdown",
     "attachment": {
-      "path": "attachment_236190033475.md"
+      "path": "attachment_206333366860.md"
     }
   },
   "kind": "document",

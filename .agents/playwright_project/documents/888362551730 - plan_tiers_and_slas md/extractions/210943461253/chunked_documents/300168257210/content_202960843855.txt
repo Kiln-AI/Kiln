@@ -32,3 +32,22 @@ happening next, and who is doing it.
 An enterprise ticket that is genuinely low priority stays low priority. The tier
 shortens the clock on the first reply; it does not move the ticket up the queue ahead
 of a higher-priority ticket from a smaller customer.
+
+## Business hours
+
+Response targets are counted in business hours for pro and enterprise, and business
+days for free. Business hours are 09:00 to 18:00 in the customer's registered
+timezone, Monday to Friday, excluding public holidays in that region. A ticket that
+arrives at 17:30 on a Friday with a four-business-hour target is due at 12:30 on the
+following Monday.
+
+Enterprise customers with a signed 24/7 addendum are the one exception, and those
+accounts are flagged in the workspace record. Do not assume an enterprise account has
+one.
+
+## What happens when a target is missed
+
+A missed first-response target is recorded automatically and appears in the weekly
+support review. It is not escalated, and it does not change the ticket's priority.
+The correct response to a missed target is to reply, not to reprioritise the queue
+around the clock.

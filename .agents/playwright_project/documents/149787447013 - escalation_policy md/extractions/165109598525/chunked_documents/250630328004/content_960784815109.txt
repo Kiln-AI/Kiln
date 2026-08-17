@@ -32,3 +32,22 @@ makes both less useful.
 The ticket is held before the first reply, an on-call reviewer reads it within the
 hour, and the reviewer either releases the draft, rewrites it, or takes the ticket
 over entirely. The customer is not told the ticket was escalated.
+
+## Borderline cases
+
+**A customer says their account was accessed from a country they have never visited.**
+Escalate. It is a suspicious login even if the customer adds that they think it was
+their VPN.
+
+**A customer asks for a refund because they forgot to cancel.** Do not escalate. This
+is an ordinary refund request and billing can decide it. It becomes a dispute only
+after billing has refused once and the customer comes back.
+
+**A customer's export contains three rows belonging to another tenant.** Escalate.
+Volume does not matter for data exposure.
+
+**A customer mentions their lawyer in passing while complaining about downtime.**
+Escalate. Threats of legal action are escalated whether or not they are serious,
+because judging seriousness is exactly the thing a human should do.
+
+**A customer asks us to delete all their data.

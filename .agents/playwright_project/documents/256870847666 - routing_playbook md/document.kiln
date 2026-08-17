@@ -1,17 +1,17 @@
 {
   "v": 1,
-  "id": "212611970654",
-  "created_at": "2026-08-17T22:00:51.732601Z",
+  "id": "256870847666",
+  "created_at": "2026-08-17T22:17:43.506658Z",
   "created_by": "root",
   "name": "routing_playbook md",
   "name_override": "routing_playbook.md",
-  "description": "The reference the Triage Ticket task is built against: which team owns which kind of ticket, and how priority is chosen.",
+  "description": "The reference the Triage Ticket task is built against: which team owns which kind of ticket, how priority is chosen, and worked examples.",
   "original_file": {
     "filename": "routing_playbook.md",
-    "size": 1942,
+    "size": 3933,
     "mime_type": "text/markdown",
     "attachment": {
-      "path": "attachment_134046397906.md"
+      "path": "attachment_262203580271.md"
     }
   },
   "kind": "document",

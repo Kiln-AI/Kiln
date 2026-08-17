@@ -38,3 +38,12 @@ covers questions, requests, and anything the customer is not blocked on.
 
 Plan tier does not set priority. An enterprise customer asking a how-to question is
 low priority. A free-tier customer whose data has been exposed is urgent.
+
+## Worked examples
+
+**"My invoice shows two charges for March."** Billing, high. The customer is not
+blocked from using the product, but money has moved incorrectly and the fix is a
+refund only billing can issue. Do not route this to technical support because the
+duplicate came from a retry in the payment pipeline; billing owns the outcome.
+
+**"Imports have been failing since this morning with a 502.
