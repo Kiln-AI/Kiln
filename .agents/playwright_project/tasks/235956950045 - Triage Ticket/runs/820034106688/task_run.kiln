@@ -54,7 +54,12 @@
       "created_by": "root",
       "type": "five_star",
       "value": 5.0,
-      "requirement_ratings": {},
+      "requirement_ratings": {
+        "named::Escalation Flagging": {
+          "value": 1.0,
+          "type": "pass_fail"
+        }
+      },
       "model_type": "task_output_rating"
     },
     "model_type": "task_output"

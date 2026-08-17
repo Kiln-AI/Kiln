@@ -46,7 +46,22 @@
         "input_transform": null
       }
     },
-    "rating": null,
+    "rating": {
+      "v": 1,
+      "id": "204170812336",
+      "path": null,
+      "created_at": "2026-08-17T21:24:51.670987Z",
+      "created_by": "root",
+      "type": "five_star",
+      "value": null,
+      "requirement_ratings": {
+        "named::Escalation Flagging": {
+          "value": 0.0,
+          "type": "pass_fail"
+        }
+      },
+      "model_type": "task_output_rating"
+    },
     "model_type": "task_output"
   },
   "repair_instructions": null,
