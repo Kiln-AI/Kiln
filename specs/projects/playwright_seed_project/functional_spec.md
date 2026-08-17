@@ -203,7 +203,11 @@ A realistic-looking project, so screenshots read like a real user's app:
 - **One dataset split** on the structured task.
 - **One eval** with a judge config and results across both run configs. Evals are not
   optional here — this is an evals platform, and an agent working on an eval screen is
-  the likeliest reader of this fixture.
+  the likeliest reader of this fixture. This covers **specs** as well: a `Spec` is a
+  child of the task that the create-eval flow produces, and `Eval.associated_spec()`
+  matches it back by `eval_id`, returning `None` only for legacy evals predating specs.
+  Authoring the eval through the current UI therefore yields the spec for free, and is
+  the only path that produces a non-legacy one.
 - **One input transform.**
 - **Feedback** on at least one run.
 - **One or two skills**, with `SKILL.md` bodies. Skills are pure project data — a
@@ -242,9 +246,10 @@ once and thereafter are just files the screens read; the dataset, eval, and comp
 pages render seeded runs with nothing connected.
 
 A provider is needed only by whoever is *authoring* the fixture, in that session
-only. For this project that is a one-off OpenRouter key with a few dollars of credit,
-supplied when the authoring phase starts and connected through the UI like any user
-would.
+only. For this project that is a one-off OpenRouter key with a few dollars of credit.
+The agent doing the authoring asks the user for it when that phase starts — it is not
+recorded here, and no planning artifact should carry it — then connects it through the
+UI the way a user would.
 
 All generation uses **`deepseek/deepseek-v4-flash-0731`** — cheap, capable, and
 already `ModelName.deepseek_4_flash` in the built-in list with
