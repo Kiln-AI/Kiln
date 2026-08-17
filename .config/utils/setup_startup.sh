@@ -540,20 +540,41 @@ check_playwright() {
   local browsers_json="$WEB_UI_DIR/node_modules/playwright-core/browsers.json"
   local browsers_dir revision missing=""
 
-  [ -f "$browsers_json" ] || return 0
-
-  # The first "revision" after the chromium entry. The closing quote in the match
-  # is what keeps this off "chromium-headless-shell", which follows it and
-  # currently shares the revision — but is a separate entry that need not.
-  revision="$(grep -A1 '"name": "chromium"' "$browsers_json" |
-    sed -n 's/.*"revision": *"\([0-9]*\)".*/\1/p' | head -1)"
-  [ -n "$revision" ] || return 0
-
-  # Containers only, so the Linux default is the right fallback. Playwright writes
-  # INSTALLATION_COMPLETE last, so a directory without it is a partial download.
+  # Only assert the browser is missing when its directory is actually visible from
+  # here. PLAYWRIGHT_BROWSERS_PATH comes from the image environment, and a hook
+  # process does not always inherit it: without it this read an empty default cache
+  # path and reported an installed browser as missing, which sent an agent off to
+  # reinstall something already on disk. A false alarm is worse than no check, so
+  # when the root cannot be seen this says nothing and leaves the real complaint to
+  # Playwright at the point of use. The playwright-cli check below still catches
+  # the case where nothing was installed at all, and it depends only on PATH.
+  #
+  # "The directory exists" is not that evidence: playwright-cli creates
+  # ~/.cache/ms-playwright for its own session state, so the default path is
+  # present on a machine whose browsers live in /opt. What counts is the directory
+  # already holding a chromium build — then a missing pinned revision is the real
+  # version mismatch this exists to name, rather than a guess about the wrong root.
   browsers_dir="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}"
-  [ -f "$browsers_dir/chromium-$revision/INSTALLATION_COMPLETE" ] ||
-    missing="chromium-$revision"
+  local -a installed_chromium=()
+  if [ -d "$browsers_dir" ]; then
+    mapfile -t installed_chromium < <(
+      find "$browsers_dir" -maxdepth 1 -type d -name 'chromium-*' 2>/dev/null
+    )
+  fi
+
+  if [ -f "$browsers_json" ] && [ "${#installed_chromium[@]}" -gt 0 ]; then
+    # The first "revision" after the chromium entry. The closing quote in the match
+    # is what keeps this off "chromium-headless-shell", which follows it and
+    # currently shares the revision — but is a separate entry that need not.
+    revision="$(grep -A1 '"name": "chromium"' "$browsers_json" |
+      sed -n 's/.*"revision": *"\([0-9]*\)".*/\1/p' | head -1)"
+    # Playwright writes INSTALLATION_COMPLETE last, so a directory without it is a
+    # partial download.
+    if [ -n "$revision" ] &&
+      [ ! -f "$browsers_dir/chromium-$revision/INSTALLATION_COMPLETE" ]; then
+      missing="chromium-$revision"
+    fi
+  fi
 
   command -v playwright-cli >/dev/null 2>&1 || missing="${missing:+$missing, }playwright-cli"
 
