@@ -6,7 +6,13 @@ allowed-tools: Read Edit Write Bash Grep Glob Agent WebSearch WebFetch
 
 # Add a New AI Model to Kiln
 
-Integrating a new model into `libs/core/kiln_ai/adapters/ml_model_list.py` requires:
+**Branch check first:** if the request involves a provider Kiln does not
+support yet, start at [Adding a Net-New Provider](#adding-a-net-new-provider).
+That workflow spans core, server, UI, tests, and tooling, and is gated on a
+client release — the model-entry steps below are only its final, gated piece.
+
+For a new model on an already-supported provider, integrating it into
+`libs/core/kiln_ai/adapters/ml_model_list.py` requires:
 
 1. **`ModelName` enum** – add an enum member
 2. **`built_in_models` list** – add a `KilnModel(...)` entry with providers
@@ -107,7 +113,8 @@ All changes go in `libs/core/kiln_ai/adapters/ml_model_list.py`.
 ### 3a. `ModelName` enum
 
 - snake_case: `claude_opus_4_6 = "claude_opus_4_6"`
-- Place **before** predecessor (newer first within group)
+- Place **before** predecessor (newer first within group). If the vendor is
+  brand-new there is no predecessor — start a new group at the end of the enum
 - Follow existing grouping (all claude together, all gpt together, etc.)
 
 ### 3b. `KilnModel` entry in `built_in_models`
@@ -198,7 +205,11 @@ dropdown to every client via the remote config. Rules:
    - Open-weight sizes: match whatever direction that family already uses.
    - Exception — the Claude family groups by tier (Haiku, Sonnet, Opus blocks),
      with versions descending inside each tier. Keep that structure.
-4. **Verify after editing** — print the order you just shipped and eyeball the
+4. **A net-new family's block goes at the END of `built_in_models`** (this is
+   the existing convention — the newest niche vendors sit at the bottom of the
+   list). The "place before predecessor" rule only applies within an existing
+   family; a new family has no predecessor.
+5. **Verify after editing** — print the order you just shipped and eyeball the
    affected family:
 
    ```bash
@@ -425,8 +436,8 @@ Use `gh pr create` against `main`. The PR body must follow this exact format:
 
 ## Checklist
 
-- [ ] `ModelName` enum entry added (before predecessor)
-- [ ] `KilnModel` entry added to `built_in_models` per the ordering rules in 3c (family contiguous, versions newest-first, correct slot within the version group)
+- [ ] `ModelName` enum entry added (before predecessor for an existing family; new enum group at the end for a brand-new vendor)
+- [ ] `KilnModel` entry added to `built_in_models` per the ordering rules in 3c (family contiguous, versions newest-first, correct slot within the version group; net-new family block at the end of the list)
 - [ ] Printed the resulting list order and eyeballed the affected family (3c verification command)
 - [ ] `friendly_name` matches the naming pattern of sibling models in the same family
 - [ ] If the provider is net-new: followed [Adding a Net-New Provider](#adding-a-net-new-provider), including the release-gating rule (model entries merge only after a client release with the provider plumbing is live)
@@ -492,22 +503,34 @@ entries had to be rolled back.
 
 ### Touchpoint checklist (from the Featherless integration, #1618)
 
+**First, identify the provider's authentication model** — the checklist below
+describes the common single-API-key pattern, but not every provider fits it.
+Existing variants to crib from: Bedrock stores an access key + secret pair,
+Fireworks a key + account ID, Azure OpenAI a key + endpoint, Vertex a project
+ID (auth via gcloud ADC), and Ollama / Docker Model Runner store only a base
+URL with no credentials. Follow the closest existing analog's plumbing through
+`config.py`, `provider_warnings`, `provider_api.py`, and the connect page —
+the credential fields, validation call, and UI steps all change with the auth
+model.
+
 **libs/core:**
 - `ModelProviderName` enum — `libs/core/kiln_ai/datamodel/datamodel_enums.py`
-- API key storage — `libs/core/kiln_ai/utils/config.py` (new key with `env_var`)
+- Credential storage — `libs/core/kiln_ai/utils/config.py` (for API-key
+  providers: a new key with `env_var`; otherwise whatever fields the auth
+  model needs)
 - LiteLLM provider mapping — `libs/core/kiln_ai/utils/litellm.py`
 - `libs/core/kiln_ai/adapters/provider_tools.py` — three spots: the
   `provider_name_from_id` match (friendly name; pyright flags a missed case),
-  `provider_warnings` (missing-key message), and the adapter config
-  (API key / base URL / headers plumbing)
+  `provider_warnings` (missing-credential message, `required_config_keys`),
+  and the adapter config (credential / base URL / headers plumbing)
 - Model entries — `libs/core/kiln_ai/adapters/ml_model_list.py` (**PR 2 only**,
   see gating rule)
 
 **Desktop server (`app/desktop/studio_server/provider_api.py`):**
-- `connect_<provider>` key-validation endpoint (find a cheap authenticated call;
-  see the Featherless connect function for a pattern when the provider has no
-  authenticated GET to ping)
-- Disconnect handling (clear the stored key)
+- `connect_<provider>` credential-validation endpoint (find a cheap
+  authenticated call; see the Featherless connect function for a pattern when
+  the provider has no authenticated GET to ping)
+- Disconnect handling (clear the stored credentials)
 - Tests in `test_provider_api.py`
 
 **Web UI (`app/web_ui`):**
@@ -516,7 +539,9 @@ entries had to be rolled back.
   the monochrome convention: bare glyph, `currentColor`, no background tile,
   viewBox cropped to the artwork
 - Connect page — `src/routes/(fullscreen)/setup/(setup)/connect_providers/connect_providers.svelte`:
-  provider card (name, description, `api_key_steps`) plus connected-status
+  provider card (name, description, and the auth flow — `api_key_steps` /
+  `api_key_fields` for key providers, or the custom flow the auth model
+  needs) plus connected-status
   wiring from `settings` keys
 - `src/lib/api_schema.d.ts` — regenerate with `make schema` (needs the server
   running on :8757)
