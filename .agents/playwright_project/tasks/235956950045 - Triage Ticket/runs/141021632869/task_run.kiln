@@ -59,6 +59,7 @@
     "reasoning": "We need to produce final result. We already have analysis. Need to output team, priority, needs_human_review, summary. Ensure consistency with instructions. The ticket: password reset emails never arrive. This is technical_support. Priority high because paying customers are blocked (can't log in via password reset). Not urgent since product not entirely unusable, but high. No data loss, billing dispute, security concern. So needs_human_review false. Summary one sentence. We'll output."
   },
   "tags": [
+    "eval_escalation_flagging",
     "manual_run",
     "fine_tune_triage"
   ],

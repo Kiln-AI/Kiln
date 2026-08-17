@@ -55,6 +55,7 @@
     "reasoning": "We need to classify ticket: team, urgency, human review needed? Summary one sentence.\n\nTicket: CSV export missing last three days, dashboard shows current data, export from UI and scheduled email both stop at Tuesday. Customer plan: free.\n\nPotential issues: data export bug, maybe sync delay? But dashboard shows data through today, so export pipeline is stale. Could be a bug in exporter. Not data loss, not billing, not security. But data discrepancy. Since free plan, maybe lower priority but still bug.\n\nNeed to decide team: likely Product/Engineering, specifically data/export team. Urgency: normal? It's a bug affecting reporting, but not critical. Could be high if many users affected, but no indication. Free plan. Human review? No explicit need, but data integrity issue? It's not data loss; the data is in dashboard. So could auto-reply? But we are triage assistant; need to specify if human needs to look before reply. Conservative: only escalate for data loss, billing, security. This is not those. So no human required.\n\nSummary one sentence: \"CSV export stops at Tuesday while dashboard shows current data, likely a stale export pipeline bug affecting both UI and scheduled emails.\"\n\nTeam: Engineering (or Data/Reporting). Urgency: Normal (maybe Medium). Let's output."
   },
   "tags": [
+    "eval_escalation_flagging",
     "manual_run"
   ],
   "usage": {

@@ -55,6 +55,7 @@
     "reasoning": "We need to route this ticket. It's a question about rate limits on the free tier. No data loss, billing dispute, or security concern. It's a simple informational request. Likely can be answered by a human or potentially automated, but the policy says be conservative: only escalate for data loss, billing, security. This is none. So likely can be auto-replied or handled by support. Team: probably support or sales? Since it's a free plan user asking about limits, it's a pre-sales or onboarding question. Could be product support. Urgency: low. Human review not needed. So we need to output: team, urgency, human review needed, and one-sentence summary.\n\nWe'll decide: Team = Customer Support (or Support). Urgency = Low. Human review = No. Summary: \"Customer asks about per-minute and per-day rate limits for the free plan and whether they apply per API key or per account.\"\n\nLet's format accordingly."
   },
   "tags": [
+    "eval_golden_escalation_flagging",
     "manual_run",
     "fine_tune_triage"
   ],

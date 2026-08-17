@@ -55,6 +55,7 @@
     "reasoning": "We need answer as triage. Need decide team, urgency, human needed? Ticket: billing/plan seats question, no data loss/security. Need route likely billing or customer success? Product? Need summarize one sentence for next agent. Need be conservative: mentions billing dispute? No, just question. Need no human before reply? Can auto? But we are deciding. Need include team, urgency, human review flag.\n\nLet's craft: Team: Billing/Account Management. Urgency: normal (not urgent). Human needed: No. Summary: Pro customer asks about prorated charges and assigning seats before engineers start."
   },
   "tags": [
+    "eval_escalation_flagging",
     "manual_run"
   ],
   "usage": {

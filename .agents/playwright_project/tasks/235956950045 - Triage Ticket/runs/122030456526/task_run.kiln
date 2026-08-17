@@ -65,6 +65,7 @@
     "reasoning": "We need to classify ticket: team, urgency, human needed. Content: API 429 on every request since 9am, even single requests after no traffic, nightly sync behind. Enterprise plan. Likely rate limiting issue or outage. Need to route to API/platform team. Urgency high because customer's sync is down. Human needed? Possibly not initially, but need to check if this is a known issue. Conservative: data loss? No. Billing? No. Security? No. But \"every request 429\" could be a platform incident. Should escalate to human? The instruction says be conservative when data loss, billing, security concern. Not mentioned. However, a 429 across all requests suggests a systemic issue. Human review probably needed before auto-reply? Typically for enterprise, high priority. But the instruction specifically says \"whether a human needs to look at it before a reply goes out.\" For a potential outage, yes, human should look. Also \"nightly sync four hours behind\" indicates data pipeline stall. I'd escalate to human. Team: API/Platform/Infrastructure. Urgency: High (P1/P2). Summary one sentence.\n\nLet's craft response: Decision: Team - API Infrastructure / Platform. Urgency - High (P1 or P2). Human needed - Yes. Summary: \"Enterprise customer experiencing complete API outage with 429s on all /v2/events requests since 9am, causing sync backlog; investigate rate limiter misconfiguration or incident.\"\n\nWrite in structured format."
   },
   "tags": [
+    "eval_golden_escalation_flagging",
     "manual_run",
     "fine_tune_triage"
   ],
