@@ -13,7 +13,7 @@ it; it is not recorded in any spec artifact.
 
 ## Phases
 
-- [ ] Phase 1: `playwright_server.sh` mechanics — home guard, seed, stamp, `reset`,
+- [x] Phase 1: `playwright_server.sh` mechanics — home guard, seed, stamp, `reset`,
   `snapshot`, `ui_state` hint, load check. Capture the foundation fixture (project,
   structured task, plain task) through the UI. Document the commands in
   `USING_PLAYWRIGHT.md`. Run the full verification matrix.

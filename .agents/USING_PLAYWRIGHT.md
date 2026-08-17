@@ -80,8 +80,11 @@ It needs something to point at, so start a server first:
 
 That script runs the backend and the web UI on 6544/6545 — deliberately not the
 suite's ports, so it can stay up while you run e2e tests. It keeps its data in
-`app/web_ui/.agent_dev_home`, so it will not touch real Kiln projects.
-`stop` when you are done; `status` if you are not sure.
+`app/web_ui/.agent_dev_home`, so it will not touch real Kiln projects. On the
+first `start` it seeds that sandbox with a committed project so the screens have
+data in them — see [The seeded project](#the-seeded-project). `stop` when you are
+done; `status` if you are not sure; `reset` for a clean sandbox and `snapshot` to
+capture one back into the repo.
 
 Then:
 
@@ -144,17 +147,107 @@ Do not guess a role from how something looks. Kiln styles links as buttons, so
 `find "Get Started"` returns `link "Get Started" [ref=e9]` — the ref and the true
 role in one call. Run `find` first, then write the locator from what it reports.
 
-### Landing on a task's page directly
+## The seeded project
 
-Kiln stores the selected project and task in `localStorage`, and redirects to a
-task picker without it. To land directly on a task's page, do what the e2e
-fixtures do:
+`start` copies `.agents/playwright_project` into the sandbox, so you get an app
+with a project and tasks already in it instead of an onboarding wizard. It is a
+copy: click around, break things, delete things — the checkout is untouched.
+
+The fixture is a support-ticket-triage project with two tasks, one with JSON input
+and output schemas and one plain text, because structured and unstructured tasks
+render differently in a lot of places.
+
+### Landing in the app
+
+Getting past the app's setup gate takes browser state as well as disk state: the
+selected project and task live in `localStorage`, and the layout redirects to a
+task picker on mount without them — whatever URL you asked for. `start` prints the
+exact commands, with the seeded ids filled in:
 
 ```bash
+playwright-cli open http://localhost:6544
 playwright-cli localstorage-set ui_state \
   '{"current_project_id":"<id>","current_task_id":"<id>","selected_model":null}'
-playwright-cli goto http://localhost:6544/generate/<project_id>/<task_id>
+playwright-cli goto http://localhost:6544
 ```
+
+All three, in that order. `localstorage-set` fails outright with no browser open,
+and running `open` a second time starts a fresh context that throws away what you
+just wrote — so `open` first, then write, then navigate again. Use `goto` for that
+last step rather than `reload`: by then the page is sitting on the task picker it
+was redirected to, and reloading that just stays there.
+
+Once `ui_state` is set, `goto` any deep link you like — `/dataset/<project_id>/<task_id>`,
+`/generate/<project_id>/<task_id>`, and so on.
+
+If `start` warns that the seeded project is not loaded, it also stops printing the
+hint — a hint for a project the app does not have would just land you on `/setup`.
+The warning names the three causes: you removed the project yourself (nothing to
+fix), the sandbox was seeded from an older fixture (`reset`), or the committed
+fixture has gone stale against this branch's datamodel (re-author through the UI,
+then `snapshot`).
+
+### No provider is connected
+
+A seeded sandbox has no API keys, so you cannot *execute* a new run in it. Seeded
+data is just files the screens read, so the pages render it with nothing connected
+— but if the feature you are working on needs a live model call, you have to
+connect a provider by hand through the UI first.
+
+### `playwright_server.sh reset` — start over
+
+```bash
+.agents/scripts/playwright_server.sh reset
+```
+
+Stops the server, deletes the sandbox, seeds it again, starts. This is the only
+command that re-seeds: an ordinary `start` never reverts changes you made, however
+many times you stop and start. Use `reset` when you want the committed fixture
+back, or after pulling a branch whose fixture differs.
+
+It deletes the whole sandbox home, `settings.yaml` included — so any provider you
+connected by hand goes with it, and you will need to paste the key again.
+
+### `playwright_server.sh snapshot` — improve the fixture
+
+Not to be confused with `playwright-cli snapshot`, which prints the page.
+
+When you have built state through the UI that future sessions should start from:
+
+```bash
+.agents/scripts/playwright_server.sh snapshot
+```
+
+It mirrors the sandbox's project over `.agents/playwright_project` and prints
+`git status` for it. **Read that diff before committing.** A snapshot captures
+whatever was in the sandbox, including files you did not mean to create, and a
+deletion in the sandbox is a deletion in the repo.
+
+Two rules if you are extending the fixture:
+
+- **Create the data through the UI**, not by hand-editing files under
+  `.agents/playwright_project` and not through the REST API. This is the project we
+  look at through a browser, and state created the way a user creates it looks the
+  way a user's looks. A manual edit is fine with a good reason — say so in the
+  commit message.
+- **Create the task you want agents to land on first.** The `ui_state` hint points
+  at the earliest-created task in the project.
+
+`snapshot` never reads or writes `settings.yaml`, which is where connecting a
+provider puts your API key — so a key cannot reach the repo this way. It also
+drops any `.git` it finds inside the project, at any depth and whether it is a
+directory or the plain file a worktree or submodule leaves: if you initialized a
+repo in there while experimenting, committing it would land a gitlink in the
+fixture and break the checkout for everyone. Git-synced projects
+are a different thing and never the source here — their clones live under
+`~/.git-projects`, outside the `Kiln Projects` tree `snapshot` searches, so a
+sandbox whose only project is git-synced reports "no project found".
+
+One thing it does not scrub: Kiln stamps `created_by` with your OS username on
+everything you create, so anything you author shows up in the diff under your
+account name. The committed fixture says `root` because it was authored in a
+container. If that is not what you want in a public repo, edit those fields before
+committing.
 
 ## Nothing is installed
 

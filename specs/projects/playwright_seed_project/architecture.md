@@ -29,11 +29,11 @@ every algorithm below depends on it.
 ```json
 {
   "v": 1,
-  "id": "312236893393",
-  "created_at": "2026-08-17T15:35:08.682167Z",
+  "id": "507368061812",
+  "created_at": "2026-08-17T16:10:56.657538Z",
   "created_by": "root",
   "name": "Support Ticket Triage",
-  "description": "Triage inbound support tickets.",
+  "description": "Route inbound customer support tickets to the right team, and draft first replies.",
   "model_type": "project"
 }
 ```
@@ -43,7 +43,8 @@ the app:
 
 ```
 Kiln Projects/playwright_project/project.kiln
-Kiln Projects/playwright_project/tasks/847089358761 - Triage Ticket/task.kiln
+Kiln Projects/playwright_project/tasks/235956950045 - Triage Ticket/task.kiln
+Kiln Projects/playwright_project/tasks/280529670660 - Draft Ticket Reply/task.kiln
 ```
 
 Three consequences:
@@ -102,9 +103,14 @@ New functions, in dependency order:
 
 ```bash
 guard_not_real_home() {
-  local resolved_run resolved_home
+  local resolved_run resolved_home home="${HOME:-}"
+  if [ -z "$home" ]; then
+    echo "error: HOME is not set, so this script cannot tell whether $RUN_DIR is" >&2
+    echo "       your real home. Export HOME and re-run." >&2
+    return 1
+  fi
   resolved_run="$(cd "$RUN_DIR" 2>/dev/null && pwd -P)" || resolved_run="$RUN_DIR"
-  resolved_home="$(cd "$HOME" 2>/dev/null && pwd -P)" || resolved_home="$HOME"
+  resolved_home="$(cd "$home" 2>/dev/null && pwd -P)" || resolved_home="$home"
   if [ "$resolved_run" = "$resolved_home" ]; then
     echo "error: KILN_DEV_HOME is your real home ($resolved_home)." >&2
     echo "       This sandbox writes settings and a fixture project into the home it" >&2
@@ -118,10 +124,28 @@ guard_not_real_home() {
 it only passes `env HOME="$RUN_DIR"` to the backend child. `cd`+`pwd -P` rather than
 `realpath` because `realpath` is not dependably present across the Linux containers and
 macOS machines this repo is developed on, and the fallback to the literal string keeps
-the comparison meaningful when the directory does not exist yet.
+the comparison meaningful when the directory does not exist yet. `${HOME:-}` because a
+bare `$HOME` under `set -u` aborts with `unbound variable` in the shells that do not set
+it, and this guard is the last thing that should fail open.
 
-Called by `start`, `reset`, and `snapshot`. Not by `stop` or `status`, which write
-nothing.
+**The literal-string fallback is also the guard's one hole, so callers check twice.** `cd`
+fails on a path with a missing component, so `$HOME/sandbox/..` — which resolves to the
+real home the instant `sandbox` exists — compares as its literal self and passes. `start`
+then creates the component and seeds into the real home. Every caller that writes therefore
+re-checks once the directory is known to exist, where `cd` cannot fail:
+
+- `start` calls it again immediately after `mkdir -p "$RUN_DIR"`, before seeding.
+- `reset` deletes only when `[ -d "$RUN_DIR" ]`, and re-checks first. Nothing to delete is
+  not an error — `reset` on a never-started sandbox is just a seeded `start`, which does
+  its own post-`mkdir` check.
+- `snapshot` needs only the one call: it writes nothing into `$RUN_DIR`, and `find` cannot
+  traverse a missing component any more than `cd` can, so a bypass reaches "no project
+  found" and stops.
+
+Called by `start`, `reset`, and `snapshot`. Not by `stop` or `status` — those two are how
+you recover from a misconfigured `KILN_DEV_HOME`, so guarding them would leave a server
+you cannot stop. Between them they write only `rm -f` of the two pid files the script
+created itself.
 
 ### `json_field`
 
@@ -136,16 +160,19 @@ Indentation-tolerant so a change to `json.dumps` formatting cannot break it, and
 same key.
 
 Every caller must treat empty output as failure. The rule for the `ui_state` hint is
-absolute: **when the id cannot be read, print a warning and no hint.** A wrong hint
-sends the agent to the task picker, which is exactly the symptom of an unseeded
-sandbox, so a confident wrong answer costs more than an admitted unknown.
+absolute: **unless the backend confirms the project, print a warning and no hint.** A
+wrong hint sends the agent to the task picker, which is exactly the symptom of an
+unseeded sandbox, so a confident wrong answer costs more than an admitted unknown. An
+unreadable id is only one way to earn that warning — see
+[`verify_seed_loaded`](#verify_seed_loaded), which owns the decision, because a project
+the app does not have is the more common cause and disk cannot see it.
 
 ### `do_seed`
 
 Runs only when `is_seeded` is false, and only from `start` (`reset` wipes the stamp by
 deleting the directory). Order matters:
 
-1. `cp -R "$FIXTURE_DIR" "$SEEDED_PROJECT_DIR"`, after `mkdir -p "$PROJECTS_DIR"`.
+1. `cp -R "$FIXTURE_DIR/." "$SEEDED_PROJECT_DIR/"`, after `mkdir -p "$SEEDED_PROJECT_DIR"`.
 2. `write_seed_settings "$SEEDED_PROJECT_DIR/project.kiln"`.
 3. Write `$SEED_STAMP`, last.
 
@@ -153,6 +180,15 @@ The stamp is written last so that a failure at any earlier step leaves it absent
 the next `start` retries. Its contents are informational only — the date and the repo's
 `git rev-parse --short HEAD` at seed time, so someone can find out how old a sandbox
 is. **Nothing ever reads it back for comparison**; presence is the entire signal.
+
+Step 1 copies `$FIXTURE_DIR/.` into an existing directory rather than `$FIXTURE_DIR`
+into a missing one, which makes it idempotent. This matters precisely because of the
+retry the stamp ordering creates: `cp -R src dst` with `dst` already present copies
+*into* it, so a second attempt after a mid-seed failure would produce
+`playwright_project/playwright_project/…`. The nested copy is invisible in the app — the
+outer `project.kiln` is what settings point at — and `snapshot`'s depth-2 `find` still
+matches exactly one project, so it would be captured and committed. Same form
+`do_snapshot` already uses.
 
 Seeding happens before the backend launches. `Config` is a process-lifetime singleton
 that caches settings on first read, so a backend started against an unseeded home holds
@@ -187,14 +223,16 @@ check; the address is deliberately an `@example.com` placeholder.
 
 ```bash
 seeded_task_lines() {
-  local dir kiln
+  local dir kiln created id name
   for dir in "$SEEDED_PROJECT_DIR"/tasks/*/; do
-    kiln="$dir/task.kiln"
+    kiln="${dir}task.kiln"
     [ -f "$kiln" ] || continue
-    printf '%s\t%s\t%s\n' \
-      "$(json_field "$kiln" created_at)" \
-      "$(json_field "$kiln" id)" \
-      "$(json_field "$kiln" name)"
+    id="$(json_field "$kiln" id)"
+    [ -n "$id" ] || continue
+    created="$(json_field "$kiln" created_at)"
+    name="$(json_field "$kiln" name)"
+    [ -n "$created" ] || created="9999-12-31T23:59:59Z"
+    printf '%s\t%s\t%s\n' "$created" "$id" "$name"
   done | sort
 }
 ```
@@ -206,45 +244,121 @@ paste-ready command uses. That rule is deterministic and, unlike sorting by id, 
 land on first. The rest are listed compactly with their ids so a different one is one
 edit away.
 
-`print_seed_hint` emits, alongside the existing ready message:
+The two malformed shapes are handled differently, because they are not equally bad:
+
+- **No readable `id` — drop the row.** `ID_FIELD` mints a fresh id when the datamodel loads
+  a file without one, so the on-disk value is unknowable and no `ui_state` can name that
+  task. Dropping also lets an unreadable *earliest* task promote the next one rather than
+  suppressing a hint that would have worked.
+- **No readable `created_at` — sort last, keep the row.** That field has a
+  `default_factory`, so the task loads fine and the id above still addresses it. An empty
+  sort key sorts *first*, which would crown a malformed task "primary" — the one remaining
+  shape of confidently wrong task id — so it gets a high sentinel instead. Dropping it
+  would have been the safer-looking choice and the wrong one: the id works, and the row is
+  what puts it in "Other tasks" where someone can use it.
+
+`print_seed_hint` emits, alongside the existing ready message — verbatim from the shipped
+fixture, so the ids below are the real ones:
 
 ```
-  Seeded project: Support Ticket Triage
+  Seeded project: Support Ticket Triage / Triage Ticket
 
   Land in the app (the layout redirects to a task picker without this):
-    playwright-cli localstorage-set ui_state '{"current_project_id":"312236893393","current_task_id":"847089358761","selected_model":null}'
     playwright-cli open http://localhost:6544
+    playwright-cli localstorage-set ui_state '{"current_project_id":"507368061812","current_task_id":"235956950045","selected_model":null}'
+    playwright-cli goto http://localhost:6544
 
-  Other tasks: 193847562011 (Draft Reply)
+  Other tasks: 280529670660 (Draft Ticket Reply)
 ```
 
 This exists because the four-step gate in `routes/+layout.svelte` has two steps that
 disk cannot satisfy. It is printed on every `start`, seeded or not, because the browser
 profile is independent of the sandbox and an agent on a fresh profile needs it whether
-or not this particular `start` did the seeding.
+or not this particular `start` did the seeding — and from the already-running early
+return as well as the readiness loop, since an agent that runs `start` twice must not get
+different instructions the second time.
+
+The already-running return also warns when the running server is **not this sandbox's**,
+which it decides with `pidfile_process_alive "$BACKEND_PID"` — the same live-process and
+command-name filter `stop_from_pidfile` uses before it signals anything, factored out so
+the two cannot drift. Seeding runs only on the path below the early return, so somebody
+else's server on these ports would otherwise report success in silence and leave the agent
+driving a different sandbox's app, with `verify_seed_loaded` quietly querying the wrong
+backend.
+
+Ownership is the question, so it is asked directly rather than inferred from the seed
+stamp. A stamp test gets this wrong in both directions: absent after any `do_seed`
+bail-out — no fixture on this branch, a failed copy — it accuses a sandbox of driving
+someone else's app while the hint below correctly names that sandbox's own project, two
+statements contradicting each other in one block; and present on a seeded sandbox whose
+server is somebody else's, where the warning is wanted and never comes.
+
+**Three commands, in that order**, which is a correction against the two this document
+originally specified. Verified from a cold browser profile: `localstorage-set` fails
+outright when no browser is open, and re-running `open` against an already-open browser
+starts a fresh context that discards what was just written — so neither ordering of that
+pair works. The last step is `goto` and not `reload` because by then the page is sitting
+on the task picker it was redirected to, and reloading that stays there.
+
+The hint is gated on [`verify_seed_loaded`](#verify_seed_loaded) having confirmed the
+project with the backend, not on `project.kiln` being on disk. `delete_project` in
+`app/desktop/git_sync/git_sync_api.py` only deregisters the project — "does not delete the
+files from disk", as its own docstring and the UI's confirm dialog both say — so a
+disk-presence gate prints a hint naming a project the app does not have, and the agent
+lands on `/setup`. That is the exact symptom the no-wrong-hint rule exists to prevent.
 
 ### `verify_seed_loaded`
 
-Runs after both servers answer, and only when `fixture_present && is_seeded`:
+Runs after both servers answer, on both `start` paths, whenever the sandbox has a
+`$SEEDED_PROJECT_DIR/project.kiln` to ask about:
 
 ```bash
+loaded_project_id=""
+
 verify_seed_loaded() {
   local id body
-  id="$(json_field "$FIXTURE_DIR/project.kiln" id)"
-  [ -n "$id" ] || return 0
+  loaded_project_id=""
+  [ -f "$SEEDED_PROJECT_DIR/project.kiln" ] || return 0
+  id="$(json_field "$SEEDED_PROJECT_DIR/project.kiln" id)"
   body="$(curl -fsS --max-time 5 "$BACKEND_URL/api/projects" 2>/dev/null)"
-  case "$body" in
-    *"$id"*) return 0 ;;
-  esac
-  echo "warning: the seeded project did not load." >&2
-  echo "         .agents/playwright_project is probably stale against this branch's" >&2
-  echo "         datamodel. The app will show no projects and send you to /setup." >&2
-  echo "         Re-author it through the UI and run 'playwright_server.sh snapshot'." >&2
+  if [ -n "$id" ]; then
+    case "$body" in
+      *"\"$id\""*)
+        loaded_project_id="$id"
+        return 0
+        ;;
+    esac
+  fi
+  echo "warning: the seeded project is not loaded, so the app will show no projects" >&2
+  echo "         and send you to /setup. Three things cause this:" >&2
+  echo "           - you removed the project through the UI — expected, nothing to fix" >&2
+  echo "           - this sandbox was seeded from an older fixture: run 'reset'" >&2
+  echo "           - .agents/playwright_project is stale against this branch's" >&2
+  echo "             datamodel: re-author it through the UI and run 'snapshot'" >&2
+  echo "         No ui_state hint is printed below, because it would name a project" >&2
+  echo "         the app does not have and land you on /setup anyway." >&2
 }
 ```
 
 Matching the id rather than checking for a non-empty array, so it also catches the case
-where some *other* project loaded. Never fails the server.
+where some *other* project loaded — and quoted, so one id cannot match inside another.
+Never fails the server.
+
+The id comes from the **installed copy**, not the committed fixture, which is a
+correction against this document's original form. The question the check asks is "did the
+thing in this sandbox load", and reading `$FIXTURE_DIR` asks a different one: after a
+branch switch whose fixture has a different project id, the sandbox is perfectly healthy
+and the check would fire and recommend re-authoring, when the answer is `reset`. That
+scenario is not hypothetical — `USING_PLAYWRIGHT.md` tells people to `reset` "after
+pulling a branch whose fixture differs".
+
+The message names three causes rather than one, because two of them are states an agent
+reaches on purpose and only the third is a stale fixture. An unreadable id lands here too:
+it is a project the app cannot have loaded either.
+
+`loaded_project_id` is the single source of truth shared with `print_seed_hint`. Having
+each decide for itself was the original bug: the check warned that nothing had loaded
+while the hint confidently named a project, in the same output.
 
 This check earns its place because `get_projects` in `libs/server/kiln_server/project_api.py`
 catches every per-project load exception and continues. Without it, a stale fixture is
@@ -256,10 +370,12 @@ cause and the fix.
 ### `do_reset`
 
 ```
-guard_not_real_home  → abort on failure
-do_stop              → abort if it reports something still answering
-rm -rf "$RUN_DIR"    → the stamp goes with it
-do_start             → seeds, because the stamp is gone
+guard_not_real_home       → abort on failure
+do_stop                   → abort if it reports something still answering
+if [ -d "$RUN_DIR" ]      → nothing to delete is not an error
+  guard_not_real_home     → again, where cd cannot fail; abort on failure
+  rm -rf "$RUN_DIR"       → the stamp goes with it
+do_start                  → seeds, because the stamp is gone
 ```
 
 Stopping precedes the wipe because the backend holds the directory open, and a failure
@@ -274,15 +390,26 @@ act.
 ### `do_snapshot`
 
 ```bash
-mapfile -d '' -t found < <(
-  find "$PROJECTS_DIR" -mindepth 2 -maxdepth 2 -name project.kiln -print0 2>/dev/null
-)
+while IFS= read -r -d '' kiln; do
+  count=$((count + 1))
+  [ "$count" -eq 1 ] && first="$kiln"
+  listing="$listing         $kiln
+"
+done < <(find "$PROJECTS_DIR" -mindepth 2 -maxdepth 2 -name project.kiln -print0 2>/dev/null)
 ```
 
-`-print0` with `mapfile -d ''` because project directory names contain spaces by
-construction. Exactly one match is required: zero is "nothing to capture", more than one
-lists what it found and stops, since picking one silently would be a coin flip over
-which state gets committed.
+`-print0` with `read -d ''` because project directory names contain spaces by
+construction. A read loop rather than `mapfile -d ''`, which this document originally
+specified: `-d` needs bash 4.4, stock macOS `/bin/bash` is 3.2, and under `set -u` the
+resulting unset array aborts with `unbound variable` rather than printing a message —
+which contradicts the portability argument made for avoiding `realpath` a few sections up.
+Counting instead of building an array also sidesteps bash's pre-4.4 quirk where
+`${#arr[@]}` on an empty array is itself an unbound-variable error.
+
+Exactly one match is required: zero is "nothing to capture", more than one lists what it
+found and stops, since picking one silently would be a coin flip over which state gets
+committed. The listing goes through `sort` so that whoever is deciding which project to
+delete sees a stable order rather than whatever the filesystem handed back.
 
 Then, before deleting anything:
 
@@ -302,7 +429,7 @@ The mirror itself:
 rm -rf "$FIXTURE_DIR"
 mkdir -p "$FIXTURE_DIR"
 cp -R "$src_dir/." "$FIXTURE_DIR/"
-rm -rf "$FIXTURE_DIR/.git"
+find "$FIXTURE_DIR" -name .git -prune -exec rm -rf {} +
 find "$FIXTURE_DIR" -name .DS_Store -delete
 ```
 
@@ -310,9 +437,24 @@ Delete-then-copy rather than a merge: a run deleted through the UI must disappea
 the repo, and a merge would strand it there forever. `cp -R` plus a post-clean rather
 than `tar --exclude` — the exclusion list is two entries and the intent reads plainly.
 
-`.git` matters more than it looks: git-sync can put a repository inside a project
-directory, and a nested `.git` committed here becomes a gitlink that breaks the fixture
-for everyone who checks it out.
+A `.git` committed here becomes a gitlink that breaks the fixture for everyone who checks
+it out, so it is scrubbed at any depth — the same recursive form as the `.DS_Store`
+cleanup, since a top-level-only `rm -rf` would leave one inside a task directory. No
+`-type` filter either: `git worktree add` and submodules make `.git` a regular *file*
+holding `gitdir: …`, and git treats that as a repository boundary exactly as it does a
+directory, so filtering on directories would let the same hazard through in its other
+shape.
+
+The originally documented reason for the scrub, that git-sync can put a repository inside
+a project directory, is **wrong** and is corrected here: git-sync clones live at
+`~/.git-projects/<id> - <name>/`, outside the `Kiln Projects` tree `snapshot` searches, so
+a git-synced project can never be `src_dir`. The scrub stays anyway, because someone
+experimenting by hand inside the sandbox project can create one and it costs a single
+`find`.
+
+The same fact has a consequence worth writing down while git-sync is out of scope:
+`snapshot` against a sandbox whose only project is git-synced reports "no project found
+under …/Kiln Projects".
 
 `settings.yaml` is never read or written by `snapshot`. It lives outside the project
 directory anyway, and this is the property that keeps the authoring provider's API key
@@ -332,13 +474,17 @@ expected. Only the two genuinely destructive preconditions abort.
 | Situation | Behavior | Exit |
 |---|---|---|
 | Run directory is the real home | Refuse before touching anything | non-zero |
+| Run directory resolves to the real home only once created | Refuse at the post-`mkdir` re-check, before any content is written. The `mkdir -p` that makes the path resolvable does leave its empty directories (`$HOME/sandbox`, `$HOME/a/b`) behind — no settings, no project, nothing overwritten | non-zero |
+| `HOME` unset, so the guard cannot compare | Refuse before touching anything | non-zero |
+| Ports already answering, but this sandbox was never seeded | Warn that the app belongs to another sandbox | 0 |
 | `snapshot` finds zero or multiple projects | Error, change nothing | non-zero |
 | `snapshot` destination path fails the shape assertion | Error, change nothing | non-zero |
 | `reset` cannot stop a running server | Abort before the wipe | non-zero |
 | Fixture missing or has no `project.kiln` | Warn, start empty | 0 |
 | Copy or settings write fails mid-seed | Warn, no stamp written, start anyway | 0 |
-| Project id unreadable | Warn, print no `ui_state` hint | 0 |
-| Seeded project does not load | Warn naming stale fixture and `snapshot` | 0 |
+| Seeded project not in `/api/projects` — removed, older fixture, or stale | Warn naming all three causes, print no `ui_state` hint | 0 |
+| Project id unreadable | Same path as above: it cannot have loaded either | 0 |
+| Project loaded but no task id readable | Warn, print no `ui_state` hint | 0 |
 
 ## Testing strategy
 
@@ -350,19 +496,29 @@ verified by running them, against this matrix, in-container:
 
 | # | Setup | Expected |
 |---|---|---|
-| 1 | Fresh home, `start` | Seeds; `ui_state` + `open` lands in the app, not `/setup` |
-| 2 | `start` again | No re-seed; a change made in the UI survives |
-| 3 | Delete the project through the UI, `start` | Not resurrected |
+| 1 | Fresh home, `start` | Seeds; the printed three-command hint lands the browser in the app, not `/setup` |
+| 2 | `start` again, both already-running and after a `stop` | No re-seed; a change made in the UI survives; both paths print the same block |
+| 3 | Remove the project through the UI, `start` | Not resurrected, **and no `ui_state` hint printed** on either path |
 | 4 | `reset` | Fixture back, UI changes gone |
 | 5 | `snapshot` after a UI edit | Fixture mirrors it; `git status` shows only intended files |
-| 6 | `snapshot` with zero, then two projects | Errors both times, fixture untouched |
+| 6 | `snapshot` with zero, then three projects | Errors both times, fixture untouched |
 | 7 | `KILN_DEV_HOME=$HOME start` (and `reset`, `snapshot`) | Refused, nothing written |
+| 7b | `KILN_DEV_HOME=$HOME/sandbox/..` with `sandbox` **not existing** | Refused, nothing written into the home |
 | 8 | Fixture directory moved aside, `start` | Warns, server still comes up |
-| 9 | `project.kiln` corrupted, `start` | Warns with the stale-fixture message, server up |
+| 9 | Seeded copy's `project.kiln` made **valid JSON that fails datamodel validation**, `start` | Warns, no hint, server up |
 | 10 | `stop`, `status` | Unchanged from today |
+| 11 | Mid-seed failure, then `start` again | Re-seeds without nesting a second copy; `snapshot` stays clean |
+| 12 | `start` while **another sandbox's** server holds the ports, seeded or not | Warns that the app belongs to a different sandbox |
+| 13 | `start` while **this sandbox's own** server is up, with and without a seed stamp | No ownership warning either way |
 
-Cases 7 and 9 need care: 7 must be checked with a disposable `HOME`, never the real
-one, and 9 by corrupting the *seeded copy* rather than the committed fixture.
+Cases 7 and 9 need care. 7 and 7b must be checked with a disposable `HOME`, never the real
+one — 7b in particular writes into that home if the guard is wrong, which is the whole
+point of the case.
+9 must corrupt the *seeded copy* rather than the committed fixture, and must do it by
+deleting a required key rather than mangling the syntax: syntax damage only exercises the
+unreadable-id branch, while the real stale fixture is valid JSON whose `id` reads fine and
+whose load fails inside the datamodel. That distinction matters — the weaker version of
+this case is what let a confidently-wrong `ui_state` hint through review.
 
 ## Fixture authoring
 
@@ -380,6 +536,27 @@ All generation uses `deepseek/deepseek-v4-flash-0731`.
 through the REST API, wherever the UI can do it. This is the project we look at through
 a browser, and state created the way a user creates it looks the way a user's looks. A
 deviation is allowed with a good reason and is worth a line in the commit message.
+
+**Two things about onboarding that every authoring phase hits**, discovered in phase 1 and
+durable, not a phase-1 anecdote:
+
+- **Registration cannot be completed in-container.** `/setup/register_personal` posts to
+  `api.kiln.tech`, which the container cannot reach, so the form fails with "Unexpected
+  error: Failed to fetch". The way past it is to write `user_type: personal` and
+  `personal_use_contact` into the *sandbox's* `settings.yaml` — which is exactly what
+  `write_seed_settings` does, so a seeded sandbox is already past this gate and only a
+  from-scratch sandbox needs the manual write. Settings are never captured by `snapshot`,
+  so this cannot reach the repo.
+- **Reaching the create-project screen requires a connected provider.** The Continue
+  button on `/setup/connect_providers` is bound to `has_connected_providers`, and a full
+  page load of any `/setup/*` URL bounces to `/setup` because the root layout's
+  `check_needs_setup` runs on mount — so there is no way to skip the step by navigating.
+  A placeholder **Custom API** (name plus base URL, no key, no validation call on save)
+  satisfies it without an external service. It lives only in the sandbox's settings.
+
+Neither applies once the fixture exists: a seeded sandbox starts past both gates. They
+matter when authoring from an empty home, and they are why "everything through the UI"
+has this one standing exception.
 
 **Resumability comes from `snapshot` itself**, which needs no new mechanism: author a
 group, `snapshot`, commit. A session that dies loses at most one group, and the
