@@ -71,6 +71,8 @@ from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.task_run import EvalItemSource, Usage
 from kiln_ai.datamodel.usage import MessageUsage
+from kiln_ai.tools.base_tool import ToolCallResult
+from kiln_ai.tools.sandbox_bridge import BridgeResult
 
 
 def stub_split(
@@ -125,6 +127,40 @@ def patch_resolve_split_by_ref(items_by_ref: Dict[Tuple[ItemSource, str], set]):
     return patch(
         "app.desktop.studio_server.eval_api.resolve_split", side_effect=resolve
     )
+
+
+class _CollectingResponses:
+    """Stands in for the parent->child responses queue; the payload is not asserted."""
+
+    def __init__(self):
+        self.puts: list[dict] = []
+
+    def put(self, msg: dict) -> None:
+        self.puts.append(msg)
+
+
+class _FakeLlmTool:
+    """Minimal KilnToolInterface stand-in for the `llm` built-in."""
+
+    async def name(self) -> str:
+        return "llm"
+
+    async def toolcall_definition(self):
+        return {
+            "type": "function",
+            "function": {
+                "name": "llm",
+                "description": "Call a model",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"prompt": {"type": "string"}},
+                    "required": ["prompt"],
+                },
+            },
+        }
+
+    async def run(self, context=None, **kwargs):
+        return ToolCallResult(output="a judgement")
 
 
 @pytest.fixture
@@ -5645,8 +5681,12 @@ class TestTestV2Eval:
                 return_value=True,
             ),
             patch(
-                "kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer",
-                return_value={"ok": {"accuracy": 0.75}},
+                "kiln_ai.adapters.eval.v2_eval_code_eval.run_bridged_child",
+                new=AsyncMock(
+                    return_value=BridgeResult(
+                        result_msg={"type": "result", "ok": {"accuracy": 0.75}}
+                    )
+                ),
             ),
         ):
             mock_eid.return_value = mock_v2_eval
@@ -5656,6 +5696,71 @@ class TestTestV2Eval:
         body = response.json()
         assert body["scores"]["accuracy"] == 0.75
         assert body["skipped_reason"] is None
+        assert body["tool_call_log"] == []
+
+    def test_code_eval_reports_nested_tool_calls(self, client, mock_v2_eval):
+        """The test pane records what the scorer called, so nested LLM spend is visible."""
+        payload = {
+            "properties": {
+                "type": "code_eval",
+                "code": "def score(output, **kwargs):\n    return {'accuracy': 1.0}\n",
+                "tool_allowlist": ["kiln_tool::llm"],
+            },
+            "eval_input": {"final_message": "test"},
+        }
+
+        responses = _CollectingResponses()
+
+        async def serve_one_tool_call(**kwargs):
+            """Stand in for the child: hand the server a real tool_call to serve.
+
+            Going through the public ``serve()`` rather than poking the recorder
+            exercises what the endpoint actually depends on -- allowlist resolution,
+            the registry lookup, the tool run, and the recorder the endpoint
+            installed -- end to end.
+            """
+            await kwargs["server"].serve(
+                {
+                    "type": "tool_call",
+                    "call_id": "call-1",
+                    "tool_name": "llm",
+                    "arguments": {"prompt": "hi"},
+                },
+                responses,
+            )
+            return BridgeResult(result_msg={"type": "result", "ok": {"accuracy": 1.0}})
+
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj,
+            patch(
+                "app.desktop.studio_server.eval_api.has_add_code_trust",
+                return_value=True,
+            ),
+            patch(
+                "kiln_ai.tools.tool_registry.tool_from_id_and_project",
+                return_value=_FakeLlmTool(),
+            ),
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_code_eval.run_bridged_child",
+                new=serve_one_tool_call,
+            ),
+        ):
+            mock_eid.return_value = mock_v2_eval
+            mock_proj.return_value = Mock()
+            response = client.post(self._url(), json=payload)
+
+        assert response.status_code == 200
+        log = response.json()["tool_call_log"]
+        assert len(log) == 1
+        assert log[0]["tool_name"] == "llm"
+        assert log[0]["arguments"] == {"prompt": "hi"}
+        assert log[0]["output_preview"] == "a judgement"
+        assert log[0]["is_error"] is False
+        # The parent also answered the child, which is what unblocks the call.
+        assert responses.puts == [
+            {"type": "tool_result", "call_id": "call-1", "ok": "a judgement"}
+        ]
 
     def test_llm_judge_with_mocked_model(self, client, mock_v2_eval):
         payload = {
@@ -5815,8 +5920,12 @@ class TestTestV2Eval:
                 return_value=True,
             ),
             patch(
-                "kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer",
-                return_value={"ok": {"accuracy": 5.0}},
+                "kiln_ai.adapters.eval.v2_eval_code_eval.run_bridged_child",
+                new=AsyncMock(
+                    return_value=BridgeResult(
+                        result_msg={"type": "result", "ok": {"accuracy": 5.0}}
+                    )
+                ),
             ),
         ):
             mock_eid.return_value = mock_v2_eval

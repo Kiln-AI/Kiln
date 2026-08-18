@@ -2,10 +2,26 @@
 import { describe, it, expect, vi, beforeAll } from "vitest"
 import { render, fireEvent } from "@testing-library/svelte"
 import { tick } from "svelte"
+import { available_tools } from "$lib/stores"
+import type { ToolSetApiDescription } from "$lib/types"
 
 vi.mock("$lib/utils/form_element.svelte", async () => {
   const { default: Stub } = await import("./__tests__/form_element_stub.svelte")
   return { default: Stub }
+})
+
+// Keep the real is_tool_selectable_in_context; only stub the async function-name
+// resolver so build_tool_options runs without hitting the API.
+vi.mock("$lib/stores/tools_store", async () => {
+  const actual = await vi.importActual<
+    typeof import("$lib/stores/tools_store")
+  >("$lib/stores/tools_store")
+  return {
+    ...actual,
+    tool_id_to_function_name: vi.fn(
+      async (tool_id: string) => tool_id.split("::").pop() ?? tool_id,
+    ),
+  }
 })
 
 vi.mock("$lib/utils/form_list.svelte", async () => {
@@ -2086,5 +2102,72 @@ describe("StepCountCheckForm UI polish", () => {
         "Count each response the model generated (one per inference call).",
       ).length,
     ).toBeGreaterThan(0)
+  })
+})
+
+describe("ToolCallCheckForm tool option filtering", () => {
+  const mcp_set: ToolSetApiDescription = {
+    type: "mcp",
+    set_name: "MCP Server: demo",
+    tools: [
+      {
+        id: "mcp::remote::demo::search",
+        name: "Search",
+        description: "Search the web",
+        function_name: "search",
+      },
+    ],
+  }
+
+  const ai_models_set: ToolSetApiDescription = {
+    type: "sandbox_code",
+    set_name: "AI Models",
+    tools: [
+      {
+        id: "kiln_tool::llm",
+        name: "LLM",
+        description: "Call a model",
+        function_name: "llm",
+      },
+      {
+        id: "kiln_tool::llm_judge",
+        name: "LLM Judge",
+        description: "Judge with the eval schema",
+        function_name: "llm_judge",
+      },
+    ],
+  }
+
+  it("excludes the sandbox-only built-ins, keeping real agent tools", async () => {
+    available_tools.set({ proj_tcc: [ai_models_set, mcp_set] })
+
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        project_id: "proj_tcc",
+        task_id: "task_tcc",
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "", expected_args: null }],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+
+    // Let the async build_tool_options resolve, then flush reactivity.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await tick()
+
+    // Neither sandbox built-in is an agent tool, so neither can appear in a trace.
+    expect(
+      container.querySelector('[data-testid="fancy-option-llm"]'),
+    ).toBeNull()
+    expect(
+      container.querySelector('[data-testid="fancy-option-llm_judge"]'),
+    ).toBeNull()
+    // A real agent tool is still offered.
+    expect(
+      container.querySelector('[data-testid="fancy-option-search"]'),
+    ).not.toBeNull()
   })
 })

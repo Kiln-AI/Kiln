@@ -1,4 +1,4 @@
-"""Heavy-__main__ benchmark harness for run_scorer.
+"""Heavy-__main__ benchmark harness for the code-eval scorer spawn path.
 
 This script deliberately imports a heavy module at the top level,
 mimicking ``app/desktop/dev_server.py`` which has an unguarded
@@ -9,19 +9,22 @@ When invoked as ``python _heavy_main_bench.py``, *this file* is
 ``__main__``.  Under multiprocessing "spawn", the child process
 re-imports the parent's ``__main__`` module during bootstrap
 (``multiprocessing.spawn.get_preparation_data`` reads
-``sys.modules['__main__'].__file__``).  So if ``run_scorer`` does NOT
+``sys.modules['__main__'].__file__``).  So if the spawn path does NOT
 prevent the re-import, the child re-executes the heavy import chain
-(~1-3 s per call) -- the exact bug this benchmark catches.
+(~1-3 s per call) -- the exact bug this benchmark catches. The scorer now
+spawns through ``run_bridged_child``, which uses
+``start_process_with_light_main`` to keep the fix.
 
 Usage (from repo root):
     uv run python libs/core/kiln_ai/adapters/eval/_heavy_main_bench.py
 
-Prints one JSON line per run_scorer call:
+Prints one JSON line per scorer call:
     {"call": 1, "elapsed": 2.345}
 
 Exit code 0 on success.
 """
 
+import asyncio
 import json
 import multiprocessing
 import sys
@@ -36,7 +39,9 @@ import time
 # that the spawn child would re-execute.
 import litellm  # noqa: F401
 
-from kiln_ai.adapters.eval.sandbox_worker import run_scorer
+from kiln_ai.adapters.eval.sandbox_worker import execute_scorer_bridged
+from kiln_ai.datamodel.project import Project
+from kiln_ai.tools.sandbox_bridge import NestedToolServer, run_bridged_child
 
 _TRIVIAL_CODE = (
     "def score(output, trace, reference_data, task_input):\n    return {'x': 1.0}\n"
@@ -49,12 +54,29 @@ _INPUTS = {
 }
 _N = 2
 
+
+def _run_scorer(code: str, inputs: dict, timeout: float) -> dict:
+    async def _run() -> dict:
+        server = NestedToolServer(
+            allowlist=[], project=Project(name="heavy_bench"), task=None, context=None
+        )
+        res = await run_bridged_child(
+            target=execute_scorer_bridged,
+            args=(code, inputs),
+            timeout_s=float(timeout),
+            server=server,
+        )
+        return res.result_msg or {"error": "no result"}
+
+    return asyncio.run(_run())
+
+
 if __name__ == "__main__":
     multiprocessing.freeze_support()
 
     for i in range(1, _N + 1):
         t0 = time.perf_counter()
-        result = run_scorer(_TRIVIAL_CODE, _INPUTS, timeout=30)
+        result = _run_scorer(_TRIVIAL_CODE, _INPUTS, timeout=30)
         elapsed = time.perf_counter() - t0
 
         if "ok" not in result:

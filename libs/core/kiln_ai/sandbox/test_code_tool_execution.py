@@ -20,10 +20,13 @@ from kiln_ai.tools.base_tool import (
     ToolCallResult,
 )
 from kiln_ai.tools.code_tool import (
-    CODE_TOOL_MAX_CONCURRENCY,
     PythonCodeTool,
     ToolCallLogEntry,
-    _code_tool_depth,
+)
+from kiln_ai.tools.sandbox_bridge import (
+    CODE_SANDBOX_MAX_CONCURRENCY,
+    NestedToolServer,
+    _depth,
 )
 
 # ---------------------------------------------------------------------------
@@ -709,13 +712,13 @@ class TestDepthCap:
     async def test_depth_cap_at_10(self, tmp_path):
         """Depth >= 10 returns an error without spawning."""
         tool = _make_python_code_tool(tmp_path, 'def run(x):\n    return "ok"\n')
-        token = _code_tool_depth.set(10)
+        token = _depth.set(10)
         try:
             result = await tool.run(None, x="test")
         finally:
-            _code_tool_depth.reset(token)
+            _depth.reset(token)
         assert result.is_error
-        assert "max code tool depth exceeded" in result.output
+        assert "maximum nested code execution depth exceeded" in result.output
 
 
 class TestSemaphore:
@@ -736,15 +739,17 @@ class TestSemaphore:
 
         async def run_nested(i: int):
             tool = _make_python_code_tool(tmp_path, code)
-            token = _code_tool_depth.set(1)
+            token = _depth.set(1)
             try:
                 r = await tool.run(None, x=str(i))
                 results.append(r)
             finally:
-                _code_tool_depth.reset(token)
+                _depth.reset(token)
 
-        await asyncio.gather(*(run_nested(i) for i in range(CODE_TOOL_MAX_CONCURRENCY)))
-        assert len(results) == CODE_TOOL_MAX_CONCURRENCY
+        await asyncio.gather(
+            *(run_nested(i) for i in range(CODE_SANDBOX_MAX_CONCURRENCY))
+        )
+        assert len(results) == CODE_SANDBOX_MAX_CONCURRENCY
         assert all(not r.is_error for r in results)
 
 
@@ -929,11 +934,11 @@ class TestUnicodePassthrough:
 
 class TestSpawnLockIdentity:
     def test_spawn_lock_shared(self):
-        """PythonCodeTool and run_scorer share the same _spawn_lock."""
-        from kiln_ai.adapters.eval import sandbox_worker
+        """Code tools and code evals spawn through the same bridge / _spawn_lock."""
+        from kiln_ai.tools import sandbox_bridge
 
         assert (
-            sandbox_worker.start_process_with_light_main.__module__
+            sandbox_bridge.start_process_with_light_main.__module__
             == "kiln_ai.sandbox.spawn"
         )
         from kiln_ai.sandbox.spawn import _spawn_lock as shared_lock
@@ -1109,9 +1114,10 @@ class TestRealBuiltInTools:
                 tool_allowlist=[tool_id],
             )
             ct.parent = project
-            pct = PythonCodeTool(ct, project)
-            name_map = await pct._build_name_map()
-            dispatch_names = list(name_map.keys())
+            server = NestedToolServer(
+                allowlist=ct.tool_allowlist, project=project, task=None, context=None
+            )
+            dispatch_names = list((await server.name_map()).keys())
 
             assert dispatch_names == [real_name], (
                 f"For {builtin_id}: dispatch name {dispatch_names} != "

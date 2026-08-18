@@ -71,6 +71,39 @@ class TestToolRegistry:
         assert await tool.id() == KilnBuiltInToolId.DIVIDE_NUMBERS
         assert await tool.name() == "divide"
 
+    async def test_tool_from_id_llm(self):
+        """LLM tool ID returns an LlmTool instance."""
+        from kiln_ai.tools.built_in_tools.llm_tools import LlmTool
+
+        tool = tool_from_id(KilnBuiltInToolId.LLM)
+
+        assert isinstance(tool, LlmTool)
+        assert await tool.id() == KilnBuiltInToolId.LLM
+        assert await tool.name() == "llm"
+
+    async def test_tool_from_id_llm_judge(self):
+        """LLM_JUDGE tool ID returns an LlmJudgeTool instance."""
+        from kiln_ai.tools.built_in_tools.llm_tools import LlmJudgeTool
+
+        tool = tool_from_id(KilnBuiltInToolId.LLM_JUDGE)
+
+        assert isinstance(tool, LlmJudgeTool)
+        assert await tool.id() == KilnBuiltInToolId.LLM_JUDGE
+        assert await tool.name() == "llm_judge"
+
+    async def test_tool_from_id_and_project_llm_tools_by_string(self):
+        """Both LLM tool IDs resolve via tool_from_id_and_project with no project."""
+        from kiln_ai.tools.built_in_tools.llm_tools import LlmJudgeTool, LlmTool
+
+        assert isinstance(
+            tool_from_id_and_project("kiln_tool::llm"),
+            LlmTool,
+        )
+        assert isinstance(
+            tool_from_id_and_project("kiln_tool::llm_judge"),
+            LlmJudgeTool,
+        )
+
     async def test_tool_from_id_call_kiln_api(self):
         tool = tool_from_id(KilnBuiltInToolId.CALL_KILN_API)
 

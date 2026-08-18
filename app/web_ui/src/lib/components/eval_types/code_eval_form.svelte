@@ -4,11 +4,13 @@
   import type { InlineAction } from "$lib/utils/form_element.svelte"
   import CodeEditor from "$lib/components/code_editor.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import ToolsSelector from "$lib/ui/run_config_component/tools_selector.svelte"
   import type { EvalOutputScore } from "$lib/types"
   import { generate_default_code, generate_examples } from "./code_eval_helpers"
   import { SHOW_REFERENCE_DATA_UI } from "$lib/utils/eval_types/reference_data_ui"
 
   export let output_scores: EvalOutputScore[] | undefined = undefined
+  export let project_id: string = ""
 
   export let properties: components["schemas"]["CodeEvalProperties"] & {
     timeout_seconds?: number
@@ -16,7 +18,8 @@
     type: "code_eval",
     code: generate_default_code(output_scores),
     reference_keys: [],
-    timeout_seconds: 30,
+    timeout_seconds: 180,
+    tool_allowlist: [],
   }
 
   // Bindable code string so the parent can track code edits reactively.
@@ -31,9 +34,13 @@
     code_editor?.setValue(new_code)
   }
 
-  let timeout_seconds: number = properties.timeout_seconds ?? 30
+  let timeout_seconds: number = properties.timeout_seconds ?? 180
 
   $: properties.timeout_seconds = timeout_seconds
+
+  let tool_allowlist: string[] = properties.tool_allowlist ?? []
+
+  $: properties.tool_allowlist = tool_allowlist
 
   export function getProperties(): Omit<
     components["schemas"]["CodeEvalProperties"],
@@ -45,6 +52,7 @@
       type: "code_eval",
       code: properties.code,
       timeout_seconds,
+      tool_allowlist,
     }
   }
 
@@ -59,9 +67,16 @@
   }
 
   function use_example(): boolean {
-    properties.code = examples[active_example_tab].code
-    code_string = examples[active_example_tab].code
-    code_editor?.setValue(examples[active_example_tab].code)
+    const example = examples[active_example_tab]
+    properties.code = example.code
+    code_string = example.code
+    code_editor?.setValue(example.code)
+    // The snippet's tool calls fail against an allowlist that doesn't list them, so
+    // taking an example grants what it needs. Unioned rather than replaced: it must
+    // not drop tools the user already picked, and re-using an example is then a no-op.
+    tool_allowlist = [
+      ...new Set([...tool_allowlist, ...example.required_tool_ids]),
+    ]
     user_has_edited = true
     return true
   }
@@ -105,9 +120,24 @@
     description="Maximum time allowed for the score function to execute. Must be between 1 and 300 seconds."
     inputType="input_number"
     bind:value={timeout_seconds}
-    placeholder="30"
+    placeholder="180"
     min={1}
     max={300}
+  />
+
+  <ToolsSelector
+    {project_id}
+    label="Tools"
+    settings={{
+      description: "The score function can only call tools listed here.",
+      info_description:
+        "Select the tools this score function is allowed to call. Use them from `score()` via the kiln.tools or kiln.async_tools module. LLM Judge runs an LLM-as-judge call using this eval's own score schema.",
+      hide_create_kiln_task_tool_button: true,
+      optional: true,
+      empty_label: "None (no tool access)",
+      sandbox_code_context: "code_eval",
+    }}
+    bind:tools={tool_allowlist}
   />
 </div>
 
@@ -124,11 +154,13 @@
   ]}
 >
   <div class="flex flex-col gap-4">
-    <div class="tabs tabs-bordered">
+    <div class="tabs tabs-bordered flex-nowrap overflow-x-auto">
       {#each examples as example, i}
         <button
           type="button"
-          class="tab {active_example_tab === i ? 'tab-active' : ''}"
+          class="tab shrink-0 whitespace-nowrap {active_example_tab === i
+            ? 'tab-active'
+            : ''}"
           on:click={() => (active_example_tab = i)}
         >
           {example.label}

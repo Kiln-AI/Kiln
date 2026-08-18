@@ -29,6 +29,8 @@ from kiln_ai.adapters.eval.v2_eval_code_eval import (
     add_code_trust,
     has_add_code_trust,
 )
+from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
+from app.desktop.studio_server.code_tool_api import ToolCallLogEntryResponse
 from kiln_ai.datamodel.eval import (
     CodeEvalProperties,
     Eval,
@@ -312,6 +314,10 @@ class TestV2EvalResponse(BaseModel):
     skipped_detail: str | None = None
     score_range_errors: list[str] | None = None
     intermediate_outputs: dict[str, str] | None = None
+    tool_call_log: list[ToolCallLogEntryResponse] = Field(
+        default_factory=list,
+        description="Tools the scorer code called, in call order. Code evals only.",
+    )
 
 
 class CodeTrustResponse(BaseModel):
@@ -1639,6 +1645,8 @@ def connect_evals_api(app: FastAPI):
             )
             adapter = v2_eval_adapter_from_config(transient_config)
 
+            tool_call_log: list[ToolCallLogEntry] = []
+
             # Trust-conferral gate: executing not-yet-saved code in the test pane
             # requires code trust for this session. Saved code needs no gate.
             if isinstance(adapter, CodeEvalAdapter):
@@ -1648,6 +1656,9 @@ def connect_evals_api(app: FastAPI):
                         skipped_reason=SkippedReason.code_eval_not_trusted.value,
                         skipped_detail="Project not trusted for code eval execution.",
                     )
+                # The author is iterating on this code right now, so show them what
+                # it called -- nested LLM calls in particular are real spend.
+                adapter.tool_call_recorder = tool_call_log.append
 
             result = await adapter.evaluate(request.eval_input)
 
@@ -1667,6 +1678,7 @@ def connect_evals_api(app: FastAPI):
                 skipped_detail=result.skipped_detail,
                 score_range_errors=score_range_errors,
                 intermediate_outputs=result.intermediate_outputs,
+                tool_call_log=ToolCallLogEntryResponse.from_log(tool_call_log),
             )
         except (ValueError, NotImplementedError, ValidationError) as e:
             raise HTTPException(status_code=400, detail=str(e))

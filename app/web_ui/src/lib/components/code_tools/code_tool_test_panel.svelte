@@ -13,7 +13,7 @@
   import CodeTrustDialog from "$lib/components/code_tools/code_trust_dialog.svelte"
   import type { TestCodeToolResponse } from "$lib/types"
   import posthog from "posthog-js"
-  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
+  import ToolCallLogTable from "$lib/components/tool_calls/tool_call_log_table.svelte"
 
   export let project_id: string
   export let tool_function_name: string
@@ -249,56 +249,11 @@
       </div>
     {/if}
 
-    {#if test_result.tool_call_log && test_result.tool_call_log.length > 0}
-      <div class="flex flex-col gap-1" data-testid="tool-call-log">
-        <div class="flex items-center justify-between">
-          <span class="text-sm font-medium">Internal Tool Calls</span>
-          <InfoTooltip
-            tooltip_text="Calls made by the code tool to other tools. These are not visible to the agent"
-          />
-        </div>
-        <div class="overflow-x-auto rounded-lg border">
-          <table class="table table-xs">
-            <thead>
-              <tr>
-                <th>Function</th>
-                <th>Arguments</th>
-                <th>Duration</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each test_result.tool_call_log as entry}
-                <tr>
-                  <td class="font-mono text-xs">{entry.tool_name}</td>
-                  <td class="text-xs max-w-[120px]">
-                    <details>
-                      <summary class="cursor-pointer truncate"
-                        >{JSON.stringify(entry.arguments)}</summary
-                      >
-                      <pre
-                        class="whitespace-pre-wrap font-mono mt-1">{JSON.stringify(
-                          entry.arguments,
-                          null,
-                          2,
-                        )}</pre>
-                    </details>
-                  </td>
-                  <td class="text-xs">{entry.duration_ms}ms</td>
-                  <td class="text-xs">
-                    {#if entry.is_error}
-                      <span class="badge badge-error badge-xs">Error</span>
-                    {:else}
-                      <span class="badge badge-success badge-xs">OK</span>
-                    {/if}
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    {/if}
+    <ToolCallLogTable
+      entries={test_result.tool_call_log ?? []}
+      title="Internal Tool Calls"
+      tooltip_text="Calls made by the code tool to other tools. These are not visible to the agent"
+    />
 
     {#if test_result.stdout}
       <details class="text-sm" data-testid="test-stdout">

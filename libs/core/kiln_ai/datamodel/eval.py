@@ -35,6 +35,7 @@ from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, EvalInputFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.task_run import Usage
+from kiln_ai.datamodel.tool_id import ToolId, validate_tool_allowlist
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 if TYPE_CHECKING:
@@ -219,7 +220,17 @@ class CodeEvalProperties(BaseModel):
     type: Literal[V2EvalType.code_eval] = V2EvalType.code_eval
     code: str
     reference_keys: list[str] = []
-    timeout_seconds: int = Field(default=30, ge=1, le=300)
+    timeout_seconds: int = Field(default=180, ge=1, le=300)
+    tool_allowlist: list[ToolId] = Field(
+        default_factory=list,
+        description="Explicit per-tool allowlist of tools the scorer code may call.",
+    )
+
+    @model_validator(mode="after")
+    def validate_allowlist(self) -> Self:
+        # No self-reference check: a code eval is not itself a tool.
+        validate_tool_allowlist(self.tool_allowlist, caller="code evals")
+        return self
 
     @model_validator(mode="before")
     @classmethod
@@ -342,7 +353,7 @@ class CodeEvalProperties(BaseModel):
 
         tree = ast.parse(self.code)
         # Both sync and async score functions are accepted here.
-        # Async coroutines are transparently awaited in sandbox_worker._execute_scorer.
+        # Async coroutines are transparently awaited in sandbox_worker.execute_scorer_bridged.
         has_score_fn = any(
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             and node.name == "score"
