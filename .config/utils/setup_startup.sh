@@ -535,7 +535,7 @@ JSON
 # where it looked. Naming the revision here turns that into one clear line.
 #
 # Not fatal: most sessions never launch a browser, and the rest of the checkout is
-# ready regardless. See .agents/USING_PLAYWRIGHT.md.
+# ready regardless. See the playwright skill: .agents/skills/playwright/.
 check_playwright() {
   local browsers_json="$WEB_UI_DIR/node_modules/playwright-core/browsers.json"
   local browsers_dir revision missing=""
@@ -584,7 +584,7 @@ check_playwright() {
   echo "  ! Playwright is not fully installed here: $missing is missing." >&2
   echo "    Needed only to run the e2e tests or drive the UI in a browser:" >&2
   echo "        bash .config/utils/setup_env.sh --add-playwright" >&2
-  echo "    See .agents/USING_PLAYWRIGHT.md." >&2
+  echo "    See the playwright skill: .agents/skills/playwright/." >&2
   echo "" >&2
 }
 
