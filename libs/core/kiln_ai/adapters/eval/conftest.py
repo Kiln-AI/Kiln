@@ -32,7 +32,8 @@ def run_scorer(code: str, inputs: dict, timeout: float) -> dict:
     the two-queue bridge replaced, so the worker's behavioural suite and its
     benchmarks did not have to be rewritten around an async, server-carrying API.
     Raises ``RuntimeError`` on timeout / crash, mirroring how ``CodeEvalAdapter``
-    maps those outcomes.
+    maps those outcomes -- including its clean-exit wording, which comes from the
+    shared ``BridgeResult.crash_description``.
     """
     return asyncio.run(_run_scorer_async(code, inputs, timeout))
 
@@ -50,7 +51,7 @@ async def _run_scorer_async(code: str, inputs: dict, timeout: float) -> dict:
     if res.timed_out:
         raise RuntimeError(f"Code eval scorer timed out after {timeout}s")
     if res.crashed:
-        raise RuntimeError(f"Scorer crashed (exit code {res.exit_code})")
+        raise RuntimeError(res.crash_description("Scorer"))
     assert res.result_msg is not None
     return res.result_msg
 

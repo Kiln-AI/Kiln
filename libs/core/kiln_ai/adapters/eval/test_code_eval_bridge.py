@@ -297,6 +297,11 @@ class TestParallelism:
         about, so it is asserted directly.
         """
         n = 3
+        # The rendezvous is a shared directory, so this test depends on the sandbox
+        # child being able to create and list files. That is true today (the sandbox
+        # is process isolation, not a filesystem jail -- see functional_spec §9); if
+        # filesystem access is ever restricted, the signal has to move to something
+        # else the children can both reach.
         rendezvous = tmp_path / "rendezvous"
         rendezvous.mkdir()
         code = (

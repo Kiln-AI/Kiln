@@ -7,7 +7,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.project import Project
-from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool, ToolCallLogEntry
+from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool
+from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
 from kiln_server.custom_errors import connect_custom_errors
 
 SIMPLE_CODE = "def run(x: int) -> str:\n    return str(x * 2)\n"
@@ -515,6 +516,54 @@ class TestTestCodeTool:
         assert len(body["tool_call_log"]) == 1
         assert body["tool_call_log"][0]["tool_name"] == "helper_tool"
         assert body["tool_call_log"][0]["is_error"] is False
+        assert body["tool_call_log"][0]["is_overflow_marker"] is False
+
+    def test_overflow_marker_survives_the_wire_mapping(
+        self, client, test_project, mock_project_from_id
+    ):
+        """`is_overflow_marker` must reach the client, per entry.
+
+        It is the only thing separating the trailing "N further calls not shown"
+        note from a real call in the UI. Dropped in the mapping, the pane renders
+        it as a successful zero-millisecond call with a blank function name.
+        """
+        outcome = ChildOutcome(ok="done", duration_ms=50)
+
+        async def mock_invoke(self_ref, context, kwargs):
+            recorder = self_ref._tool_call_recorder
+            recorder(
+                ToolCallLogEntry(
+                    tool_name="helper_tool",
+                    arguments={"q": "test"},
+                    output_preview="result preview",
+                    is_error=False,
+                    duration_ms=20,
+                )
+            )
+            recorder(
+                ToolCallLogEntry(
+                    tool_name="",
+                    arguments={},
+                    output_preview="42 further calls not shown",
+                    is_error=False,
+                    duration_ms=0,
+                    is_overflow_marker=True,
+                )
+            )
+            return outcome
+
+        with (
+            patch.object(PythonCodeTool, "_invoke", mock_invoke),
+            patch(TRUST_PATCH, return_value=True),
+        ):
+            response = client.post(
+                self._test_url(test_project.id), json=self._base_request()
+            )
+
+        assert response.status_code == 200
+        log = response.json()["tool_call_log"]
+        assert [entry["is_overflow_marker"] for entry in log] == [False, True]
+        assert log[1]["output_preview"] == "42 further calls not shown"
 
 
 class TestAvailableToolsCodeGroup:

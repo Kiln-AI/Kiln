@@ -20,6 +20,7 @@ import logging
 import multiprocessing
 import queue
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from time import monotonic
 from typing import Any, Callable
@@ -46,6 +47,48 @@ _depth: contextvars.ContextVar[int] = contextvars.ContextVar(
 _semaphore: asyncio.Semaphore | None = None
 _semaphore_init_lock = threading.Lock()
 
+# Every in-flight bridged run permanently occupies one worker thread: `_pump`
+# re-submits `_poll_get` (a 0.1s blocking Queue.get) the instant the previous one
+# returns, and the spawn and join calls draw from the same pool. asyncio's default
+# executor is sized `min(32, cpu_count + 4)` -- 6 threads on a 2-core CI box -- so
+# running sandboxes on it would starve every unrelated `run_in_executor(None, ...)`
+# in the server behind sandbox polling. The bridge gets its own pool instead.
+#
+# One slot per in-flight run: a run awaits its spawn, then its polls, then its join,
+# never two at once. Nested runs bypass the depth-0 semaphore, so the bound allows
+# for each top-level run carrying a few levels of nesting. Threads are created
+# lazily, so a large bound costs nothing while few sandboxes are running.
+_BRIDGE_EXECUTOR_MAX_WORKERS = CODE_SANDBOX_MAX_CONCURRENCY * 4
+
+_bridge_executor: ThreadPoolExecutor | None = None
+_bridge_executor_init_lock = threading.Lock()
+
+
+def _get_bridge_executor() -> ThreadPoolExecutor:
+    """Return the process-wide bridge executor, creating it on first use.
+
+    A singleton, so threads are bounded by ``_BRIDGE_EXECUTOR_MAX_WORKERS`` across
+    the process rather than accumulating per run; idle workers are reused by the
+    next run.
+
+    Deliberately no shutdown hook. ``concurrent.futures.thread`` registers its
+    ``_python_exit`` through ``threading._register_atexit``, which CPython runs from
+    ``threading._shutdown()`` -- *before* any user ``atexit`` callback -- and it
+    joins every worker. So the pool is already torn down by the time a hook of ours
+    could run: one here would be a no-op that reads like a safety property.
+    """
+    global _bridge_executor
+    if _bridge_executor is None:
+        with _bridge_executor_init_lock:
+            if _bridge_executor is None:
+                _bridge_executor = ThreadPoolExecutor(
+                    max_workers=_BRIDGE_EXECUTOR_MAX_WORKERS,
+                    thread_name_prefix="kiln-sandbox-bridge",
+                )
+    executor = _bridge_executor
+    assert executor is not None
+    return executor
+
 
 async def _get_semaphore() -> asyncio.Semaphore:
     """Lazily create the semaphore inside the running event loop."""
@@ -59,6 +102,15 @@ async def _get_semaphore() -> asyncio.Semaphore:
     return sem
 
 
+MAX_RECORDED_TOOL_CALLS = 200
+"""How many real nested tool calls one bridged run reports.
+
+The log is for a human reading a test pane and its contents are child-controlled, so
+it is bounded. Calls past the cap are counted, not recorded, and the run emits one
+final overflow entry saying how many were dropped -- so the log never exceeds
+``MAX_RECORDED_TOOL_CALLS + 1`` entries no matter what the child does."""
+
+
 @dataclass
 class ToolCallLogEntry:
     tool_name: str
@@ -66,6 +118,23 @@ class ToolCallLogEntry:
     output_preview: str
     is_error: bool
     duration_ms: int
+    # True only for the single trailing entry standing in for dropped calls. An
+    # explicit flag, not a sentinel name, so consumers (including the web UI) can
+    # tell it apart from a real call without matching a magic string.
+    is_overflow_marker: bool = False
+
+
+def describe_crash(subject: str, exit_code: int | None) -> str:
+    """Phrase a child that ended without a result. One wording for every caller.
+
+    A zero (or absent) exit code is not a crash: the child returned cleanly without
+    ever putting a result on the queue, which is what ``os._exit(0)`` or a hard
+    interpreter exit from user code looks like. Reporting that as "crashed (exit
+    code 0)" tells the author nothing.
+    """
+    if exit_code in (0, None):
+        return f"{subject} exited without returning results"
+    return f"{subject} crashed (exit code {exit_code})"
 
 
 @dataclass
@@ -84,6 +153,11 @@ class BridgeResult:
     stdout: str = ""
     stderr: str = ""
     duration_ms: int = 0
+
+    def crash_description(self, subject: str) -> str:
+        """Phrase this run's ``crashed`` outcome for the user."""
+        assert self.crashed, "crash_description() is only meaningful for a crash"
+        return describe_crash(subject, self.exit_code)
 
 
 class NestedToolServer:
@@ -108,6 +182,8 @@ class NestedToolServer:
         self._context = context
         self._recorder = recorder
         self._name_map: dict[str, list[ToolId]] | None = None
+        self._recorded_calls = 0
+        self._dropped_calls = 0
 
     async def serve(
         self,
@@ -322,6 +398,17 @@ class NestedToolServer:
     ) -> None:
         if self._recorder is None:
             return
+
+        if self._recorded_calls >= MAX_RECORDED_TOOL_CALLS:
+            # Past the cap we count and drop. Emitting a marker per dropped call
+            # would leave the log (and the HTTP response) unbounded, which is the
+            # whole thing the cap exists to prevent: the cheap parent-side paths (an
+            # unknown tool name, invalid kwargs) never reach a real tool, so a
+            # scorer can loop on one for the length of its timeout.
+            self._dropped_calls += 1
+            return
+
+        self._recorded_calls += 1
         duration_ms = int((monotonic() - start) * 1000)
         preview = output[:1024] if output else ""
         self._recorder(
@@ -331,6 +418,27 @@ class NestedToolServer:
                 output_preview=preview,
                 is_error=is_error,
                 duration_ms=duration_ms,
+            )
+        )
+
+    def flush_overflow_marker(self) -> None:
+        """Emit the single entry standing in for dropped calls, if there were any.
+
+        Called once when the run ends, which is the first moment the total is known.
+        Idempotent, so a caller that flushes twice does not double-report.
+        """
+        if self._recorder is None or self._dropped_calls == 0:
+            return
+        dropped, self._dropped_calls = self._dropped_calls, 0
+        plural = "" if dropped == 1 else "s"
+        self._recorder(
+            ToolCallLogEntry(
+                tool_name="",
+                arguments={},
+                output_preview=f"{dropped} further call{plural} not shown",
+                is_error=False,
+                duration_ms=0,
+                is_overflow_marker=True,
             )
         )
 
@@ -430,6 +538,13 @@ async def run_bridged_child(
             try:
                 return await _pump(target, args, timeout_s, requests, responses, server)
             finally:
+                # The run is over, so the dropped-call total is final. Flushing here
+                # rather than in each caller means both the code-tool and code-eval
+                # panes report overflow identically on every path that spawned a
+                # child -- result, timeout, crash and cancellation alike. The
+                # depth-cap return above never gets here, and never needs to: it
+                # refuses before spawning, on a server that has recorded nothing.
+                server.flush_overflow_marker()
                 _close_queues(requests, responses)
     finally:
         _depth.reset(token)
@@ -444,6 +559,7 @@ async def _pump(
     server: NestedToolServer,
 ) -> BridgeResult:
     loop = asyncio.get_running_loop()
+    executor = _get_bridge_executor()
     ctx = multiprocessing.get_context("spawn")
 
     p = ctx.Process(
@@ -452,7 +568,7 @@ async def _pump(
         daemon=True,
     )
 
-    await loop.run_in_executor(None, start_process_with_light_main, p)
+    await loop.run_in_executor(executor, start_process_with_light_main, p)
 
     deadline = monotonic() + timeout_s
     pending_tasks: set[asyncio.Task[None]] = set()
@@ -460,12 +576,12 @@ async def _pump(
 
     try:
         while True:
-            msg = await loop.run_in_executor(None, _poll_get, requests)
+            msg = await loop.run_in_executor(executor, _poll_get, requests)
 
             if monotonic() > deadline:
                 elapsed = int((monotonic() - start_time) * 1000)
                 p.kill()
-                await loop.run_in_executor(None, p.join, 5)
+                await loop.run_in_executor(executor, p.join, 5)
                 return BridgeResult(timed_out=True, duration_ms=elapsed)
 
             if msg is None:
@@ -485,7 +601,7 @@ async def _pump(
 
             elif msg["type"] == "result":
                 elapsed = int((monotonic() - start_time) * 1000)
-                await loop.run_in_executor(None, p.join, 5)
+                await loop.run_in_executor(executor, p.join, 5)
                 return BridgeResult(
                     result_msg=msg,
                     stdout=msg.get("stdout", ""),
@@ -497,7 +613,7 @@ async def _pump(
             t.cancel()
         if p.is_alive():
             p.kill()
-            await loop.run_in_executor(None, p.join, 5)
+            await loop.run_in_executor(executor, p.join, 5)
 
 
 def _render_params_schema(schema: dict[str, Any]) -> str:

@@ -71,8 +71,7 @@ from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.task_run import EvalItemSource, Usage
 from kiln_ai.datamodel.usage import MessageUsage
-from time import monotonic
-
+from kiln_ai.tools.base_tool import ToolCallResult
 from kiln_ai.tools.sandbox_bridge import BridgeResult
 
 
@@ -128,6 +127,40 @@ def patch_resolve_split_by_ref(items_by_ref: Dict[Tuple[ItemSource, str], set]):
     return patch(
         "app.desktop.studio_server.eval_api.resolve_split", side_effect=resolve
     )
+
+
+class _CollectingResponses:
+    """Stands in for the parent->child responses queue; the payload is not asserted."""
+
+    def __init__(self):
+        self.puts: list[dict] = []
+
+    def put(self, msg: dict) -> None:
+        self.puts.append(msg)
+
+
+class _FakeLlmTool:
+    """Minimal KilnToolInterface stand-in for the `llm` built-in."""
+
+    async def name(self) -> str:
+        return "llm"
+
+    async def toolcall_definition(self):
+        return {
+            "type": "function",
+            "function": {
+                "name": "llm",
+                "description": "Call a model",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"prompt": {"type": "string"}},
+                    "required": ["prompt"],
+                },
+            },
+        }
+
+    async def run(self, context=None, **kwargs):
+        return ToolCallResult(output="a judgement")
 
 
 @pytest.fixture
@@ -5676,11 +5709,24 @@ class TestTestV2Eval:
             "eval_input": {"final_message": "test"},
         }
 
-        async def record_then_succeed(**kwargs):
-            # Stand in for the child calling a tool: the pump would hand the server
-            # the call, and the server reports it to whatever recorder it was given.
-            kwargs["server"]._record(
-                "llm", {"prompt": "hi"}, "a judgement", False, monotonic()
+        responses = _CollectingResponses()
+
+        async def serve_one_tool_call(**kwargs):
+            """Stand in for the child: hand the server a real tool_call to serve.
+
+            Going through the public ``serve()`` rather than poking the recorder
+            exercises what the endpoint actually depends on -- allowlist resolution,
+            the registry lookup, the tool run, and the recorder the endpoint
+            installed -- end to end.
+            """
+            await kwargs["server"].serve(
+                {
+                    "type": "tool_call",
+                    "call_id": "call-1",
+                    "tool_name": "llm",
+                    "arguments": {"prompt": "hi"},
+                },
+                responses,
             )
             return BridgeResult(result_msg={"type": "result", "ok": {"accuracy": 1.0}})
 
@@ -5692,8 +5738,12 @@ class TestTestV2Eval:
                 return_value=True,
             ),
             patch(
+                "kiln_ai.tools.tool_registry.tool_from_id_and_project",
+                return_value=_FakeLlmTool(),
+            ),
+            patch(
                 "kiln_ai.adapters.eval.v2_eval_code_eval.run_bridged_child",
-                new=record_then_succeed,
+                new=serve_one_tool_call,
             ),
         ):
             mock_eid.return_value = mock_v2_eval
@@ -5707,6 +5757,10 @@ class TestTestV2Eval:
         assert log[0]["arguments"] == {"prompt": "hi"}
         assert log[0]["output_preview"] == "a judgement"
         assert log[0]["is_error"] is False
+        # The parent also answered the child, which is what unblocks the call.
+        assert responses.puts == [
+            {"type": "tool_result", "call_id": "call-1", "ok": "a judgement"}
+        ]
 
     def test_llm_judge_with_mocked_model(self, client, mock_v2_eval):
         payload = {

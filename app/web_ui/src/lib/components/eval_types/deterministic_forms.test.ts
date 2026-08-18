@@ -2120,7 +2120,7 @@ describe("ToolCallCheckForm tool option filtering", () => {
   }
 
   const ai_models_set: ToolSetApiDescription = {
-    type: "builtin",
+    type: "sandbox_code",
     set_name: "AI Models",
     tools: [
       {

@@ -8,6 +8,7 @@
   import ReferenceDataField from "./reference_data_field.svelte"
   import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import ToolCallLogTable from "$lib/components/tool_calls/tool_call_log_table.svelte"
   import {
     referenceDataUsageMode,
     type V2EvalType,
@@ -181,26 +182,11 @@
       </div>
     {/if}
 
-    {#if test_result.tool_call_log && test_result.tool_call_log.length > 0}
-      <div class="flex flex-col gap-2" data-testid="tool-call-log">
-        <span class="text-sm font-medium">Tool Calls</span>
-        <div class="flex flex-col gap-1.5">
-          {#each test_result.tool_call_log as entry}
-            <div
-              class="flex items-center justify-between gap-2 text-sm py-1 px-2 rounded bg-base-200/50"
-              class:text-error={entry.is_error}
-            >
-              <span class="font-mono text-xs font-medium truncate"
-                >{entry.tool_name}</span
-              >
-              <span class="text-xs whitespace-nowrap text-gray-500"
-                >{entry.duration_ms}ms</span
-              >
-            </div>
-          {/each}
-        </div>
-      </div>
-    {/if}
+    <ToolCallLogTable
+      entries={test_result.tool_call_log ?? []}
+      title="Internal Tool Calls"
+      tooltip_text="Calls the scorer code made to other tools. These run in the parent process, not the sandbox, and are billed per eval item."
+    />
 
     {#if test_error}
       <div data-testid="test-error">

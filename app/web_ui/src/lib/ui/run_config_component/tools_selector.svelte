@@ -161,6 +161,7 @@
 
   const tool_set_order: ToolSetType[] = [
     "builtin",
+    "sandbox_code",
     "code",
     "search",
     "kiln_task",
@@ -180,7 +181,11 @@
       .map((tool_set) => ({
         ...tool_set,
         tools: tool_set.tools.filter((tool) =>
-          is_tool_selectable_in_context(tool.id, sandbox_code_context),
+          is_tool_selectable_in_context(
+            tool.id,
+            tool_set.type,
+            sandbox_code_context,
+          ),
         ),
       }))
       .filter((tool_set) => tool_set.tools.length > 0)

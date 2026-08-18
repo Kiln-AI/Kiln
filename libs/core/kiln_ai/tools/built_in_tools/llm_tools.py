@@ -18,7 +18,7 @@ from jinja2 import TemplateSyntaxError, UndefinedError
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.json_schema import validate_schema_dict
 from kiln_ai.datamodel.project import Project
-from kiln_ai.datamodel.task import Task
+from kiln_ai.datamodel.task import StructuredOutputMode, Task
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import KilnTool, ToolCallContext, ToolCallResult
 from kiln_ai.utils.jinja_engine import JinjaExtractionError, _template_env
@@ -74,7 +74,6 @@ async def run_llm_call(
     from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
     from kiln_ai.datamodel.prompt_id import PromptGenerators
     from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-    from kiln_ai.datamodel.task import StructuredOutputMode
 
     if provider not in ModelProviderName.__members__:
         raise ValueError(f"Invalid model provider: {provider}")

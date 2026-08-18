@@ -276,5 +276,7 @@ def validate_tool_allowlist(
             raise ValueError(f"Duplicate tool ID in tool_allowlist: {tool_id}")
         seen.add(tool_id)
 
+    # Only code tools are themselves tools, so only they can self-reference; the
+    # wording stays concrete rather than being generated from `caller`.
     if self_tool_id is not None and self_tool_id in seen:
         raise ValueError("A code tool cannot reference itself in tool_allowlist.")

@@ -172,7 +172,7 @@ All surface through the existing bridge error mapping — the tool call raises a
 
 - **Wall clock.** The code judge's `timeout_seconds` (`CodeEvalProperties`) bounds the whole invocation including all nested LLM calls, exactly as it bounds nested tool calls for code tools. **The default is raised from 30 → 180s** (min 1, max 300) to accommodate LLM latency; authors making several calls can raise it further, up to the max.
 - **Parallelism.** The parent serves nested calls concurrently (existing pump); the async mirror lets a judge fan out calls under `asyncio.gather`.
-- **Process concurrency.** Reuses the existing top-level spawn bound and `_spawn_lock`; no new limits.
+- **Process concurrency.** Reuses the existing top-level spawn bound and `_spawn_lock`; no new limits. The bridge does get its own thread pool: every in-flight run holds a worker for as long as it polls its child, and on asyncio's default executor (as few as 6 threads) 16 concurrent sandboxes would starve every unrelated `run_in_executor(None, …)` in the server (arch §3.4).
 - **Cost/scale.** An eval run executes the code judge once per eval item, so each allowlisted LLM call is billed per item × per call. This is the intended trade (small filtered prompt vs. a full-trace judge), but it is real spend and should be visible (§10).
 
 ## 9. Security model
@@ -183,7 +183,7 @@ All surface through the existing bridge error mapping — the tool call raises a
 
 ## 10. Observability / cost
 
-Nested LLM calls should be attributable. Minimum: they flow through the existing tool-call recorder (name, args preview, duration, error) already wired in the pump. v1 delivers that on the **test-pane** path — `test_v2_eval` returns the log as `TestV2EvalResponse.tool_call_log` and the pane lists each call with its duration — which is where an author is iterating and can act on it. An eval run leaves the recorder unset, because a per-item tool log has nowhere to go in the run UI yet. *(Open: whether to surface token usage / cost and the judge's intermediate output for a code judge's nested calls, and where — §12.)*
+Nested LLM calls should be attributable. Minimum: they flow through the existing tool-call recorder (name, args preview, duration, error) already wired in the pump. v1 delivers that on the **test-pane** path — `test_v2_eval` returns the log as `TestV2EvalResponse.tool_call_log`, rendered by the shared `tool_call_log_table.svelte` that the code-tool test pane also uses (function, arguments, result, duration, status). The result column matters: for a failed call the recorder puts the error message in `output_preview`, so it is the only place an author learns *why* a judge call failed. The log is capped at `MAX_RECORDED_TOOL_CALLS` because its contents are child-controlled: calls past the cap are counted rather than recorded, and the run emits one trailing overflow entry (`is_overflow_marker`) saying how many were dropped — so the log, and the HTTP response carrying it, never exceed `MAX_RECORDED_TOOL_CALLS + 1` entries however long a scorer loops on a cheap parent-side rejection. An eval run leaves the recorder unset, because a per-item tool log has nowhere to go in the run UI yet. *(Open: whether to surface token usage / cost and the judge's intermediate output for a code judge's nested calls, and where — §12.)*
 
 ## 11. Out of scope (v1)
 

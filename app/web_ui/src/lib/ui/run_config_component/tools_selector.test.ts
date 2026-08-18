@@ -32,7 +32,7 @@ beforeAll(() => {
 })
 
 const ai_models_set: ToolSetApiDescription = {
-  type: "builtin",
+  type: "sandbox_code",
   set_name: "AI Models",
   tools: [
     {
@@ -99,6 +99,31 @@ describe("ToolsSelector sandbox-only tool filtering", () => {
     // every project that has configured no tools of its own. FancySelect keys the
     // empty state off options.length === 0, so no groups at all is the assertion.
     const { group_count } = await option_values("none", "proj_ts_empty")
+    expect(group_count).toBe(0)
+  })
+
+  it("hides a sandbox_code set by its type, not by tool id", async () => {
+    // The coarse rule must survive a KilnBuiltInToolId rename: nothing here is
+    // matched by id, so an unrecognised tool in a sandbox_code set is still hidden.
+    const { values, group_count } = await option_values(
+      "none",
+      "proj_ts_renamed",
+      [
+        {
+          type: "sandbox_code",
+          set_name: "AI Models",
+          tools: [
+            {
+              id: "kiln_tool::renamed_after_a_refactor",
+              name: "LLM",
+              description: "Call a model",
+              function_name: "llm",
+            },
+          ],
+        },
+      ],
+    )
+    expect(values).toEqual([])
     expect(group_count).toBe(0)
   })
 

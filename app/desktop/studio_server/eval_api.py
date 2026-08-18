@@ -1678,16 +1678,7 @@ def connect_evals_api(app: FastAPI):
                 skipped_detail=result.skipped_detail,
                 score_range_errors=score_range_errors,
                 intermediate_outputs=result.intermediate_outputs,
-                tool_call_log=[
-                    ToolCallLogEntryResponse(
-                        tool_name=entry.tool_name,
-                        arguments=entry.arguments,
-                        output_preview=entry.output_preview,
-                        is_error=entry.is_error,
-                        duration_ms=entry.duration_ms,
-                    )
-                    for entry in tool_call_log
-                ],
+                tool_call_log=ToolCallLogEntryResponse.from_log(tool_call_log),
             )
         except (ValueError, NotImplementedError, ValidationError) as e:
             raise HTTPException(status_code=400, detail=str(e))

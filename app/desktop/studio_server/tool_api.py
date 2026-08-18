@@ -193,6 +193,13 @@ class ToolSetType(Enum):
     SKILL = "skill"
     BUILTIN = "builtin"
     CODE = "code"
+    # Tools that only user-authored sandboxed code can call, over the sandbox
+    # bridge (`kiln.tools`). They are not agent tools -- an agent cannot select
+    # one and one can never appear in an agent's trace -- so a picker offering
+    # agent tools must exclude this whole set. Carried on the set rather than
+    # inferred from tool ids so API consumers can see it, and so the rule cannot
+    # drift if a KilnBuiltInToolId value is ever renamed.
+    SANDBOX_CODE = "sandbox_code"
 
 
 class ToolSetApiDescription(BaseModel):
@@ -293,16 +300,15 @@ def connect_tool_servers_api(app: FastAPI):
 
         tool_sets = []
 
-        # Built-in AI-model tools, for user-authored sandboxed code to call over the
-        # sandbox bridge: `llm` calls a model from a code tool or code judge, and
-        # `llm_judge` runs an LLM-as-judge call using a code judge's own score schema.
-        # Neither is an agent tool. The catalog is shared by every picker, so the
-        # scoping is applied client-side (`is_tool_selectable_in_context`): `llm` is
-        # offered in the code-tool and code-eval allowlists, `llm_judge` in the
-        # code-eval allowlist only, and neither anywhere else.
+        # AI-model tools, for user-authored sandboxed code to call over the sandbox
+        # bridge: `llm` calls a model from a code tool or code judge, and `llm_judge`
+        # runs an LLM-as-judge call using a code judge's own score schema. The
+        # SANDBOX_CODE set type says neither is an agent tool. `llm_judge` is narrower
+        # still -- it needs a code judge's score schema and errors without one -- so
+        # the code-eval picker is the only one that offers it.
         tool_sets.append(
             ToolSetApiDescription(
-                type=ToolSetType.BUILTIN,
+                type=ToolSetType.SANDBOX_CODE,
                 set_name="AI Models",
                 tools=[
                     ToolApiDescription(

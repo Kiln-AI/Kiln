@@ -1,10 +1,13 @@
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from app.desktop.studio_server.tool_api import (
     ExternalToolApiDescription,
+    ToolSetType,
     available_mcp_tools,
     connect_tool_servers_api,
     tool_server_from_id,
@@ -19,7 +22,10 @@ from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task, TaskRunConfig
-from kiln_ai.datamodel.tool_id import KILN_TASK_TOOL_ID_PREFIX
+from kiln_ai.datamodel.tool_id import (
+    KILN_TASK_TOOL_ID_PREFIX,
+    KilnBuiltInToolId,
+)
 from kiln_ai.tools.mcp_session_manager import KilnMCPError
 from kiln_ai.utils.config import MCP_SECRETS_KEY
 from kiln_server.custom_errors import connect_custom_errors
@@ -525,12 +531,12 @@ def test_get_tool_server_config_not_found(client, test_project):
 
 
 def _builtin_ai_models_set(set_result):
-    """Return the always-present built-in AI Models tool set (or None)."""
+    """Return the always-present AI Models tool set (or None)."""
     return next(
         (
             s
             for s in set_result
-            if s["type"] == "builtin" and s["set_name"] == "AI Models"
+            if s["type"] == "sandbox_code" and s["set_name"] == "AI Models"
         ),
         None,
     )
@@ -951,6 +957,69 @@ def test_get_available_tools_builtin_ai_models_always_present(client, test_proje
         assert by_id["kiln_tool::llm"]["function_name"] == "llm"
         assert by_id["kiln_tool::llm_judge"]["name"] == "LLM Judge"
         assert by_id["kiln_tool::llm_judge"]["function_name"] == "llm_judge"
+
+
+def test_ai_models_set_is_typed_sandbox_code(client, test_project):
+    """The AI Models set must carry SANDBOX_CODE, not a generic type.
+
+    That type is the whole contract: it is what tells every tool picker (and any
+    other API consumer) that these are not agent tools. Typed BUILTIN instead, they
+    would silently become selectable in every agent picker.
+    """
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        response = client.get(f"/api/projects/{test_project.id}/available_tools")
+
+        assert response.status_code == 200
+        sets_by_name = {s["set_name"]: s for s in response.json()}
+        assert sets_by_name["AI Models"]["type"] == ToolSetType.SANDBOX_CODE.value
+        # Every tool the sandbox-only set advertises really is one of the built-in
+        # sandbox tools -- nothing agent-selectable may hide in here.
+        assert {t["id"] for t in sets_by_name["AI Models"]["tools"]} == {
+            KilnBuiltInToolId.LLM.value,
+            KilnBuiltInToolId.LLM_JUDGE.value,
+        }
+
+
+def test_llm_judge_tool_id_matches_the_web_ui_constant():
+    """Guard the one tool id the web UI still has to name literally.
+
+    `llm_judge` needs a code judge's score schema, so the code-eval picker is the
+    only one that offers it -- a narrowing the sandbox_code set type cannot express,
+    which leaves `CODE_EVAL_ONLY_TOOL_IDS` in tools_store.ts holding a hand-copied
+    id. Renaming the enum value without updating that list would put `llm_judge`
+    back in the code-tool picker, so fail here instead.
+    """
+    tools_store = (
+        Path(__file__).resolve().parents[2]
+        / "web_ui"
+        / "src"
+        / "lib"
+        / "stores"
+        / "tools_store.ts"
+    )
+    assert tools_store.is_file(), f"expected the web UI store at {tools_store}"
+
+    declaration = re.search(
+        r"const CODE_EVAL_ONLY_TOOL_IDS = \[(.*?)\]",
+        tools_store.read_text(),
+        re.DOTALL,
+    )
+    assert declaration is not None, (
+        "could not find CODE_EVAL_ONLY_TOOL_IDS in tools_store.ts"
+    )
+    # Exact ids, not a substring search: "kiln_tool::llm_judge" is a prefix of any
+    # renamed-but-not-updated value, so a loose check would pass right through the
+    # drift this test exists to catch.
+    declared_ids = set(re.findall(r'"([^"]+)"', declaration.group(1)))
+    assert declared_ids == {KilnBuiltInToolId.LLM_JUDGE.value}, (
+        f"CODE_EVAL_ONLY_TOOL_IDS is {sorted(declared_ids)}, expected "
+        f"['{KilnBuiltInToolId.LLM_JUDGE.value}'] -- update tools_store.ts to match "
+        "the enum."
+    )
 
 
 async def test_create_tool_server_whitespace_handling(

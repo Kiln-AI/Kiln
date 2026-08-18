@@ -103,12 +103,7 @@ class CodeEvalAdapter(BaseV2EvalBridge):
                 f"Code eval scorer timed out after {props.timeout_seconds}s"
             )
         if res.crashed:
-            # A clean exit with no result is not a crash: the child returned without
-            # putting a result on the queue (e.g. os._exit, or a hard interpreter
-            # exit from user code). Say that, rather than "crashed (exit code 0)".
-            if res.exit_code in (0, None):
-                raise RuntimeError("Scorer process exited without returning results")
-            raise RuntimeError(f"Scorer crashed (exit code {res.exit_code})")
+            raise RuntimeError(res.crash_description("Scorer"))
 
         result_msg = res.result_msg
         assert result_msg is not None

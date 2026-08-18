@@ -1,6 +1,7 @@
 import type {
   ExternalToolApiDescription,
   ToolSetApiDescription,
+  ToolSetType,
 } from "$lib/types"
 import { writable } from "svelte/store"
 import { tool_link } from "$lib/utils/link_builder"
@@ -11,23 +12,29 @@ type ToolsStore = {
   selected_tool_ids_by_task_id: Record<string, string[]>
 }
 
-// Built-in tools that exist only for user-authored sandboxed code (code tools and
-// code judges), which reach them over the sandbox bridge via `kiln.tools`. They are
-// not agent tools: an agent never gets to select them, so they can never appear in a
-// real trace either. `llm_judge` additionally needs a code judge's own score schema
-// and errors without it, so it is narrower still — the code-eval picker only.
-export const SANDBOX_CODE_TOOL_IDS = ["kiln_tool::llm", "kiln_tool::llm_judge"]
-export const CODE_EVAL_ONLY_TOOL_IDS = ["kiln_tool::llm_judge"]
-
-// Which sandboxed-code allowlist a tool picker is editing, if any.
+// Which sandboxed-code allowlist a tool picker is editing, if any. "none" is every
+// picker that selects agent tools.
 export type SandboxCodeContext = "none" | "code_tool" | "code_eval"
 
-// Centralized so every picker applies the same filter.
+// Tools the server marks as needing a code judge's score schema. `llm_judge` errors
+// without one, so it is offered in the code-eval picker alone — a narrowing within
+// the sandbox_code set that the set type cannot express on its own.
+// Module-private on purpose: pickers must go through
+// is_tool_selectable_in_context() rather than matching ids themselves.
+const CODE_EVAL_ONLY_TOOL_IDS = ["kiln_tool::llm_judge"]
+
+// Whether a picker in `context` may offer a tool, given the set that carries it.
+//
+// The coarse rule is the server's: a "sandbox_code" set holds tools that only
+// user-authored sandboxed code can call, so no agent picker may offer them. Keying
+// on the set type rather than on tool ids means renaming a KilnBuiltInToolId cannot
+// silently leak these back into every picker.
 export function is_tool_selectable_in_context(
   tool_id: string,
+  tool_set_type: ToolSetType,
   context: SandboxCodeContext,
 ): boolean {
-  if (!SANDBOX_CODE_TOOL_IDS.includes(tool_id)) {
+  if (tool_set_type !== "sandbox_code") {
     return true
   }
   if (context === "none") {

@@ -6,28 +6,35 @@ via the stdlib child entry point (``sandbox.worker.child_main``), mirroring the
 existing ``test_code_tool_execution.py`` style.
 """
 
+import asyncio
 import multiprocessing
+import threading
 from unittest.mock import patch
 
 import pytest
 
 from kiln_ai.datamodel.project import Project
 from kiln_ai.sandbox.worker import child_main
+from kiln_ai.tools import sandbox_bridge
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallDefinition,
     ToolCallResult,
 )
 from kiln_ai.tools.sandbox_bridge import (
+    _BRIDGE_EXECUTOR_MAX_WORKERS,
     CODE_SANDBOX_MAX_CONCURRENCY,
+    MAX_RECORDED_TOOL_CALLS,
     BridgeResult,
     NestedToolServer,
     ToolCallLogEntry,
     _close_queues,
     _depth,
     _example_kwargs,
+    _get_bridge_executor,
     _poll_get,
     _render_params_schema,
+    describe_crash,
     run_bridged_child,
 )
 
@@ -107,6 +114,33 @@ def _spawn_queues():
 
 def test_shared_concurrency_bound_is_16():
     assert CODE_SANDBOX_MAX_CONCURRENCY == 16
+
+
+@pytest.mark.parametrize(
+    "exit_code, expected",
+    [
+        # A clean or absent exit code is not a crash -- the child simply returned
+        # without ever putting a result on the queue.
+        (0, "Scorer exited without returning results"),
+        (None, "Scorer exited without returning results"),
+        (1, "Scorer crashed (exit code 1)"),
+        (7, "Scorer crashed (exit code 7)"),
+        (-9, "Scorer crashed (exit code -9)"),
+    ],
+)
+def test_describe_crash_wording(exit_code, expected):
+    """One wording for four call sites, so it is pinned in one place."""
+    assert describe_crash("Scorer", exit_code) == expected
+
+
+def test_bridge_result_delegates_its_crash_description():
+    result = BridgeResult(crashed=True, exit_code=0)
+    assert result.crash_description("Code tool 'x'") == (
+        "Code tool 'x' exited without returning results"
+    )
+    assert BridgeResult(crashed=True, exit_code=3).crash_description("Scorer") == (
+        "Scorer crashed (exit code 3)"
+    )
 
 
 def test_bridge_result_defaults():
@@ -286,6 +320,215 @@ class TestNestedToolServer:
 def _empty_server(tmp_path) -> NestedToolServer:
     project = _make_project(tmp_path)
     return NestedToolServer(allowlist=[], project=project, task=None, context=None)
+
+
+class TestRecorderCap:
+    def _server(self, tmp_path, log):
+        return NestedToolServer(
+            allowlist=[],
+            project=Project(name="p", path=tmp_path / "project.kiln"),
+            task=None,
+            context=None,
+            recorder=log.append,
+        )
+
+    # Far past the cap, so a per-dropped-call marker (the bug this replaced) would
+    # blow the bound by orders of magnitude rather than by one.
+    @pytest.mark.parametrize("overflow", [1, 2, 50, 5000])
+    def test_log_never_exceeds_the_cap_plus_one_marker(self, tmp_path, overflow):
+        """The log is bounded no matter how many calls the child makes.
+
+        Production recorders are ``list.append`` and the list is serialized straight
+        into the HTTP response, so "bounded" has to mean the list stops growing --
+        not merely that entries past the cap are cheaper.
+        """
+        log: list[ToolCallLogEntry] = []
+        server = self._server(tmp_path, log)
+
+        for i in range(MAX_RECORDED_TOOL_CALLS + overflow):
+            server._record(
+                "nope", {"payload": "x" * 100, "i": i}, "not allowed", True, 0.0
+            )
+        server.flush_overflow_marker()
+
+        assert len(log) == MAX_RECORDED_TOOL_CALLS + 1
+        assert [e.tool_name for e in log].count("nope") == MAX_RECORDED_TOOL_CALLS
+        marker = log[-1]
+        assert marker.is_overflow_marker is True
+        plural = "" if overflow == 1 else "s"
+        assert marker.output_preview == f"{overflow} further call{plural} not shown"
+        assert marker.arguments == {}
+
+    def test_overflow_marker_says_call_not_calls_for_one(self, tmp_path):
+        log: list[ToolCallLogEntry] = []
+        server = self._server(tmp_path, log)
+        for i in range(MAX_RECORDED_TOOL_CALLS + 1):
+            server._record("nope", {}, "not allowed", True, 0.0)
+        server.flush_overflow_marker()
+        assert log[-1].output_preview == "1 further call not shown"
+
+    def test_no_marker_when_nothing_was_dropped(self, tmp_path):
+        log: list[ToolCallLogEntry] = []
+        server = self._server(tmp_path, log)
+        for _ in range(MAX_RECORDED_TOOL_CALLS):
+            server._record("llm", {}, "ok", False, 0.0)
+        server.flush_overflow_marker()
+        assert len(log) == MAX_RECORDED_TOOL_CALLS
+        assert not any(e.is_overflow_marker for e in log)
+
+    def test_flush_is_idempotent(self, tmp_path):
+        log: list[ToolCallLogEntry] = []
+        server = self._server(tmp_path, log)
+        for _ in range(MAX_RECORDED_TOOL_CALLS + 3):
+            server._record("nope", {}, "not allowed", True, 0.0)
+        server.flush_overflow_marker()
+        server.flush_overflow_marker()
+        assert len(log) == MAX_RECORDED_TOOL_CALLS + 1
+
+    def test_entries_below_the_cap_are_untouched(self, tmp_path):
+        log: list[ToolCallLogEntry] = []
+        server = self._server(tmp_path, log)
+        server._record("llm", {"prompt": "hi"}, "answer", False, 0.0)
+        server.flush_overflow_marker()
+        assert len(log) == 1
+        assert log[0].tool_name == "llm"
+        assert log[0].arguments == {"prompt": "hi"}
+        assert log[0].output_preview == "answer"
+        assert log[0].is_overflow_marker is False
+
+    @pytest.mark.asyncio
+    async def test_run_bridged_child_flushes_the_marker(self, tmp_path):
+        """The flush is the bridge's job, so every caller gets it for free."""
+        log: list[ToolCallLogEntry] = []
+        server = self._server(tmp_path, log)
+        for _ in range(MAX_RECORDED_TOOL_CALLS + 4):
+            server._record("nope", {}, "not allowed", True, 0.0)
+
+        await run_bridged_child(
+            target=child_main,
+            args=('def run(x):\n    return "ok"\n', {"x": "a"}),
+            timeout_s=10,
+            server=server,
+        )
+
+        assert len(log) == MAX_RECORDED_TOOL_CALLS + 1
+        assert log[-1].output_preview == "4 further calls not shown"
+
+
+class _RecordingExecutor:
+    """Wraps the real bridge pool and records what was submitted through it.
+
+    Anything the pump sends to asyncio's default executor instead bypasses this
+    wrapper entirely, so a site that regresses to ``run_in_executor(None, ...)``
+    simply goes missing from ``submitted``.
+    """
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.submitted: list[str] = []
+
+    def submit(self, fn, *args, **kwargs):
+        self.submitted.append(getattr(fn, "__name__", repr(fn)))
+        return self._inner.submit(fn, *args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+class TestBridgeExecutor:
+    def test_bridge_executor_is_a_bounded_singleton(self):
+        """One pool for the whole process, so threads cannot accumulate per run."""
+        first = _get_bridge_executor()
+        second = _get_bridge_executor()
+        assert first is second
+        assert _BRIDGE_EXECUTOR_MAX_WORKERS >= CODE_SANDBOX_MAX_CONCURRENCY
+        assert first._max_workers == _BRIDGE_EXECUTOR_MAX_WORKERS
+
+    async def _run_recording(self, tmp_path, code, timeout_s, cancel=False):
+        """Run one bridged child through its own recorder and return what it used."""
+        recorder = _RecordingExecutor(_get_bridge_executor())
+        with patch.object(
+            sandbox_bridge, "_get_bridge_executor", return_value=recorder
+        ):
+            call = run_bridged_child(
+                target=child_main,
+                args=(code, {"x": "a"}),
+                timeout_s=timeout_s,
+                server=_empty_server(tmp_path),
+            )
+            if not cancel:
+                result = await call
+            else:
+                task = asyncio.ensure_future(call)
+                # Let the child spawn and the pump start polling before pulling out.
+                await asyncio.sleep(0.5)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+                result = None
+        return result, recorder.submitted
+
+    # Each scenario gets its own recorder and its own assertions, because each
+    # reaches exactly one of the three `p.join` sites. A single suite-wide
+    # "join in submitted" is satisfied by any one of them, so two could regress to
+    # the default executor unnoticed.
+    @pytest.mark.asyncio
+    async def test_result_path_uses_the_bridge_pool_for_spawn_poll_and_join(
+        self, tmp_path
+    ):
+        result, submitted = await self._run_recording(
+            tmp_path, 'def run(x):\n    return "ok"\n', 10
+        )
+        assert result is not None and result.result_msg is not None
+        assert "start_process_with_light_main" in submitted, sorted(set(submitted))
+        assert "_poll_get" in submitted, sorted(set(submitted))
+        assert "join" in submitted, sorted(set(submitted))
+
+    @pytest.mark.asyncio
+    async def test_timeout_path_joins_through_the_bridge_pool(self, tmp_path):
+        result, submitted = await self._run_recording(
+            tmp_path, "import time\ndef run(x):\n    time.sleep(30)\n", 0.3
+        )
+        assert result is not None and result.timed_out is True
+        assert "start_process_with_light_main" in submitted, sorted(set(submitted))
+        assert "_poll_get" in submitted, sorted(set(submitted))
+        assert "join" in submitted, sorted(set(submitted))
+
+    @pytest.mark.asyncio
+    async def test_cancellation_joins_through_the_bridge_pool(self, tmp_path):
+        """The `finally` join, reached only when the caller walks away mid-run."""
+        _, submitted = await self._run_recording(
+            tmp_path,
+            "import time\ndef run(x):\n    time.sleep(30)\n",
+            30,
+            cancel=True,
+        )
+        assert "start_process_with_light_main" in submitted, sorted(set(submitted))
+        assert "join" in submitted, sorted(set(submitted))
+
+    @pytest.mark.asyncio
+    async def test_pump_never_polls_on_the_default_executor(self, tmp_path):
+        """Belt and braces on the polling site, asserted by thread name."""
+        polling_threads: list[str] = []
+        real_poll_get = sandbox_bridge._poll_get
+
+        def spy(q):
+            polling_threads.append(threading.current_thread().name)
+            return real_poll_get(q)
+
+        with patch.object(sandbox_bridge, "_poll_get", spy):
+            result = await run_bridged_child(
+                target=child_main,
+                args=('def run(x):\n    return "polled"\n', {"x": "a"}),
+                timeout_s=10,
+                server=_empty_server(tmp_path),
+            )
+
+        assert result.result_msg is not None
+        assert polling_threads, "expected the pump to poll at least once"
+        assert all(
+            name.startswith("kiln-sandbox-bridge") for name in polling_threads
+        ), f"polled on non-bridge threads: {sorted(set(polling_threads))}"
 
 
 class TestRunBridgedChild:

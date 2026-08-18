@@ -54,11 +54,11 @@
     const groups: OptionGroup[] = []
     const fn_names = new Set<string>()
     for (const tool_set of tool_sets) {
-      // This form matches tool calls in an agent's trace. The sandbox-only
-      // built-ins (llm, llm_judge) are never agent tools, so they can never
-      // appear in one — exclude them.
+      // This form matches tool calls in an agent's trace, so it selects agent
+      // tools: context "none". Whole sets the server marks as sandbox-only are
+      // dropped, because nothing in one can appear in an agent's trace.
       const selectable_tools = tool_set.tools.filter((tool) =>
-        is_tool_selectable_in_context(tool.id, "none"),
+        is_tool_selectable_in_context(tool.id, tool_set.type, "none"),
       )
       const resolved = await Promise.all(
         selectable_tools.map(async (tool): Promise<Option | null> => {

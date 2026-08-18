@@ -11902,7 +11902,10 @@ export interface components {
             /** Requiresapproval */
             requiresApproval: boolean;
         };
-        /** ToolCallLogEntryResponse */
+        /**
+         * ToolCallLogEntryResponse
+         * @description One nested tool call a sandboxed run made, as reported to a test pane.
+         */
         ToolCallLogEntryResponse: {
             /** Tool Name */
             tool_name: string;
@@ -11916,6 +11919,12 @@ export interface components {
             is_error: boolean;
             /** Duration Ms */
             duration_ms: number;
+            /**
+             * Is Overflow Marker
+             * @description True for the single trailing entry standing in for calls dropped once the per-run log cap was reached. Not a real tool call.
+             * @default false
+             */
+            is_overflow_marker: boolean;
         };
         /** ToolCallSpec */
         ToolCallSpec: {
@@ -11966,7 +11975,7 @@ export interface components {
          * ToolSetType
          * @enum {string}
          */
-        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin" | "code";
+        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin" | "code" | "sandbox_code";
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.
