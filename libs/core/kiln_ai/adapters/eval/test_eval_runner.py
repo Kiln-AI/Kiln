@@ -3518,12 +3518,16 @@ def multi_turn_eval_input(mock_task):
 def _fresh_leaf(
     task: Task,
     data_source: DataSource,
-    su_total_cost: float = 0.0,
+    su_usage: Usage | None = None,
     cumulative_usage: MessageUsage | None = None,
     trace: list[ChatCompletionMessageParam] | None = MULTI_TURN_TRACE,
 ) -> DriveCaseResult:
     """The in-memory DriveCaseResult drive_case_for_eval would return:
-    an id-less, trace-carrying, never-saved leaf plus the SU-side spend."""
+    an id-less, trace-carrying, never-saved leaf plus the SU-side spend.
+
+    `su_usage` defaults to None — the shape a drive whose provider reported
+    nothing produces, which is what the tests that don't care about SU spend
+    want."""
     leaf = TaskRun(
         input="opening message",
         input_source=data_source,
@@ -3533,7 +3537,7 @@ def _fresh_leaf(
         parent=task,
     )
     leaf.id = None
-    return DriveCaseResult(chain=[leaf], su_total_cost=su_total_cost)
+    return DriveCaseResult(chain=[leaf], su_usage=su_usage)
 
 
 class TestRunV2MultiTurnRedrive:
@@ -4274,7 +4278,7 @@ class TestFreshGenerationDatasetId:
 
 class TestEvalRunUsageRecording:
     @pytest.mark.asyncio
-    async def test_drive_records_agent_usage_plus_su_cost(
+    async def test_drive_records_agent_usage_and_full_su_usage(
         self,
         mock_task,
         mock_run_config,
@@ -4285,7 +4289,9 @@ class TestEvalRunUsageRecording:
         drive_result = _fresh_leaf(
             mock_task,
             data_source,
-            su_total_cost=0.25,
+            su_usage=Usage(
+                input_tokens=3548, output_tokens=61, total_tokens=3609, cost=0.25
+            ),
             cumulative_usage=MessageUsage(
                 input_tokens=100, output_tokens=50, total_tokens=150, cost=1.0
             ),
@@ -4327,9 +4333,15 @@ class TestEvalRunUsageRecording:
         assert trace.usage.cost == pytest.approx(1.0)
         assert trace.usage.input_tokens == 100
         assert trace.usage.total_tokens == 150
-        # The synthetic-user driver's spend rides its own field.
+        # The synthetic-user driver's spend rides its own field, with its own
+        # tokens — the agent's counts above are a different model on a different
+        # provider, so a cost-only SU record could be reconciled against neither
+        # invoice and split per model not at all.
         assert trace.synthetic_user_usage is not None
         assert trace.synthetic_user_usage.cost == pytest.approx(0.25)
+        assert trace.synthetic_user_usage.input_tokens == 3548
+        assert trace.synthetic_user_usage.output_tokens == 61
+        assert trace.synthetic_user_usage.total_tokens == 3609
         assert trace.cumulative_usage == MessageUsage(
             input_tokens=100, output_tokens=50, total_tokens=150, cost=1.0
         )
@@ -4345,7 +4357,7 @@ class TestEvalRunUsageRecording:
     ):
         """None, not a zero-cost Usage: the rollup's null-tolerant blend would
         read a zero object as a real 0.0 cost and count it in averages."""
-        drive_result = _fresh_leaf(mock_task, data_source, su_total_cost=0.0)
+        drive_result = _fresh_leaf(mock_task, data_source, su_usage=None)
         runner = EvalRunner(
             eval_configs=[mock_v2_redrive_config],
             run_configs=[mock_run_config],

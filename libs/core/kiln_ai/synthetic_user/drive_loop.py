@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.usage import Usage
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
@@ -63,14 +64,32 @@ class DriveCaseResult:
     no stop_reason field — every case ends after exactly `turns`
     iterations by design.
 
-    `su_total_cost` sums the SU driver's per-turn LLM cost across the
-    case. SU turns aren't persisted as TaskRuns, so this is the only
-    place that spend surfaces — the runner adds it to the target's
-    `cumulative_usage.cost` to produce an honest total.
+    `su_usage` sums the SU driver model's usage across the case's turns.
+    SU turns aren't persisted as TaskRuns, so this is the only place that
+    spend surfaces at all — and it carries the driver's tokens, not just
+    its cost, because the SU is usually a different model on a different
+    provider from the agent under test. A cost alone can be reconciled
+    against no invoice and split per model not at all.
+
+    None when no turn reported usage, rather than a zeroed Usage: an
+    unmeasured drive must not read as a genuinely free one.
     """
 
     chain: list[TaskRun]
-    su_total_cost: float
+    su_usage: Usage | None
+
+    @property
+    def su_total_cost(self) -> float:
+        """The case's SU cost, or 0.0 when nothing was reported.
+
+        Kept as a derived property so the interactive runner's
+        `CaseCompletedEvent.total_cost` is unchanged in behaviour — it wants a
+        float it can add, and "no usage reported" has always summed as zero
+        there.
+        """
+        if self.su_usage is None or self.su_usage.cost is None:
+            return 0.0
+        return float(self.su_usage.cost)
 
 
 async def drive_case(
@@ -111,7 +130,9 @@ async def drive_case(
     prev_run: TaskRun | None = None
     prev_trace: list[ChatCompletionMessageParam] | None = None
     chain: list[TaskRun] = []
-    su_total_cost: float = 0.0
+    # Stays None until some turn actually reports usage, so a drive whose
+    # provider reported nothing is distinguishable from a free one.
+    su_usage: Usage | None = None
 
     for turn in range(1, turns + 1):
         new_run = await target_invoker(
@@ -128,8 +149,13 @@ async def drive_case(
         su_message: str | None = None
         su_cost = 0.0
         if turn < turns:
-            su_message, su_cost = await su_driver.respond(new_run.trace or [])
-            su_total_cost += su_cost
+            su_message, turn_usage = await su_driver.respond(new_run.trace or [])
+            if turn_usage is not None:
+                # Usage.__add__ is None-graceful per field, so a turn that
+                # reports only cost doesn't erase another turn's token counts.
+                su_usage = turn_usage if su_usage is None else su_usage + turn_usage
+                if turn_usage.cost is not None:
+                    su_cost = float(turn_usage.cost)
 
         if on_turn is not None:
             await on_turn(run=new_run, su_message=su_message, su_cost=su_cost)
@@ -139,4 +165,4 @@ async def drive_case(
         prev_run = new_run
         prev_trace = new_run.trace
 
-    return DriveCaseResult(chain=chain, su_total_cost=su_total_cost)
+    return DriveCaseResult(chain=chain, su_usage=su_usage)

@@ -1048,10 +1048,12 @@ class EvalRunner:
             trace=leaf.trace,
             usage=_conversation_usage(drive_result.chain),
             # The synthetic-user driver's spend rides its own field so `usage`
-            # stays honestly assistant-only; a zero-cost drive records None.
-            synthetic_user_usage=Usage(cost=drive_result.su_total_cost)
-            if drive_result.su_total_cost > 0
-            else None,
+            # stays honestly assistant-only. The whole Usage, not a cost-only
+            # stub: the SU is usually a different model on a different provider
+            # from the agent, so its tokens are the half that makes the figure
+            # reconcilable. `drive_case` already returns None for a drive whose
+            # provider reported nothing.
+            synthetic_user_usage=drive_result.su_usage,
             cumulative_usage=leaf.cumulative_usage
             or MessageUsage.from_trace(leaf.trace),
             eval_source=EvalItemSource(source_type=source_type, source_id=source_id),
