@@ -6316,11 +6316,11 @@ def test_list_eval_inputs_empty(client, mock_task, mock_task_from_id):
 
 def test_list_eval_inputs_all_and_filtered(client, mock_task, mock_task_from_id):
     tagged = make_multi_turn_eval_input(mock_task, tags=["corpus", "nm_app_crit"])
-    untagged = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+    corpus_only = make_multi_turn_eval_input(mock_task, tags=["corpus"])
 
     response = client.get("/api/projects/project1/tasks/task1/eval_inputs")
     assert response.status_code == 200
-    assert {item["id"] for item in response.json()} == {tagged.id, untagged.id}
+    assert {item["id"] for item in response.json()} == {tagged.id, corpus_only.id}
 
     response = client.get(
         "/api/projects/project1/tasks/task1/eval_inputs",
