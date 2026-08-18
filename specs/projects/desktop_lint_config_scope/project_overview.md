@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Desktop Lint Config Scope — Project Overview
@@ -53,22 +53,21 @@ Python directory inherits the root config correctly.
 
 ## Scale of the backlog
 
-Running the root ruleset over `app/desktop` today:
+Running the root ruleset over `app/desktop` today (generated client still excluded):
 
 ```
  74  RUF059   unused-unpacked-variable
- 43  I001     unsorted-imports                    [auto-fixable]
+ 51  I001     unsorted-imports                    [auto-fixable]
   9  FAST002  fast-api-non-annotated-dependency
   5  RUF010   explicit-f-string-type-conversion   [auto-fixable]
-  4  RUF012   mutable-class-default
   3  TID252   relative-imports
-  2  RUF100   unused-noqa                         [auto-fixable]
+  2  RUF012   mutable-class-default
   1  RUF005   collection-literal-concatenation
   1  RUF015   unnecessary-iterable-allocation-for-first-element
   1  RUF022   unsorted-dunder-all                 [auto-fixable]
 ```
 
-**143 findings across 69 files.** 51 are auto-fixable; a further 88 have fixes available only
+**~147 findings across ~64 files** (counts drift with ordinary development). 57 are auto-fixable; a further 88 have fixes available only
 under `--unsafe-fixes`.
 
 The config change itself is three lines. The backlog is the actual project.
@@ -81,14 +80,14 @@ no rules suppressed to get there.
 ## Decisions to make
 
 1. **How to land the backlog.** One large mechanical PR, or the config change plus a phased
-   cleanup? 74 of the 143 are `RUF059` (unused unpacked variables), which is a single
+   cleanup? 74 of the 147 are `RUF059` (unused unpacked variables), which is a single
    repetitive shape and may be worth its own pass.
-2. **Auto-fix policy.** `--fix` covers 51. The other 88 need `--unsafe-fixes`, which by
+2. **Auto-fix policy.** `--fix` covers 57. The other 88 need `--unsafe-fixes`, which by
    definition can change behavior — these likely want to be done by hand or reviewed
    individually rather than applied in bulk.
 3. **`RUF012` deserves real attention, not a mechanical fix.** Mutable class defaults are a
-   genuine bug class, and the root config's own comment calls them out as important. Each of
-   the 4 should be read for whether it is an actual latent bug rather than annotated with
+   genuine bug class, and the root config's own comment calls them out as important. Each
+   should be read for whether it is an actual latent bug rather than annotated with
    `ClassVar` to silence it.
 4. **Whether any rule genuinely should be off for this tree.** If so, disable it explicitly
    and deliberately in the root config with a comment — the current state is an accident, and
