@@ -2922,18 +2922,40 @@ class TestEvalTaskInputFromTrace:
         # trace's own input is what was actually scored.
         assert result.task_input == "what the model saw"
 
-    def test_existing_constructors_are_from_trace(self, trace):
-        """The two named constructors are the two shapes of `from_trace`."""
+    def test_from_a_multi_turn_eval_input_source(self, trace):
+        """The item's first message is the canonical input; the conversation
+        itself (and its final answer) comes from the trace TaskRun."""
         eval_input = EvalInput(
-            data=SingleTurnEvalInputData(user_message=UserMessage(text="2+2?")),
-            reference={"answer": "4"},
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="opening message"),
+                synthetic_user_info=SyntheticUserInfo(
+                    persona="p", goal="g", behavior_guidance="b"
+                ),
+            ),
+            reference={"expected": "resolution"},
         )
-        assert EvalTaskInput.from_eval_input(
-            eval_input, trace
-        ) == EvalTaskInput.from_trace(trace, eval_input)
-        assert EvalTaskInput.from_task_run(trace) == EvalTaskInput.from_trace(
-            trace, trace
+
+        result = EvalTaskInput.from_trace(trace, eval_input)
+
+        assert result.final_message == "what the model said"
+        assert result.trace == trace.trace
+        assert result.reference_data == {"expected": "resolution"}
+        assert result.task_input == "opening message"
+
+    def test_from_a_multi_turn_eval_input_without_a_first_message(self, trace):
+        """Items minted without a seed have no canonical input text; the judge
+        still gets the trace and final answer."""
+        eval_input = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
         )
+
+        result = EvalTaskInput.from_trace(trace, eval_input)
+
+        assert result.task_input is None
+        assert result.final_message == "what the model said"
+        assert result.trace == trace.trace
 
     @pytest.mark.parametrize(
         "trace_arg, source, error",
@@ -2943,18 +2965,6 @@ class TestEvalTaskInputFromTrace:
                 TaskRun(input="i", output=TaskOutput(output="o")),
                 "not an item",
                 TypeError,
-            ),
-            (
-                TaskRun(input="i", output=TaskOutput(output="o")),
-                EvalInput(
-                    data=MultiTurnSyntheticEvalInputData(
-                        first_message=UserMessage(text="hi"),
-                        synthetic_user_info=SyntheticUserInfo(
-                            persona="p", goal="g", behavior_guidance="b"
-                        ),
-                    )
-                ),
-                ValueError,
             ),
         ],
     )

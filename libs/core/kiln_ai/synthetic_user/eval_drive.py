@@ -5,10 +5,11 @@ agent under test comes from the run config being evaluated; the synthetic
 user (customer) comes from the item's drive config, held constant so a
 comparison varies only the agent.
 
-Nothing is persisted — the drive is transient and the EvalRun record carries
-the scored trace, mirroring how single-turn fresh generation runs with
-allow_saving=False. Conversation continuity rides `prior_trace`, so no
-parent_task_run chaining (which requires persisted parents) is involved.
+Nothing here touches disk — the drive runs with allow_saving=False, and the
+eval runner persists the finished conversation itself as one standalone
+TaskRun, after stamping it as an eval trace. Conversation continuity rides
+`prior_trace`, so no parent_task_run chaining (which requires persisted
+parents) is involved.
 """
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task

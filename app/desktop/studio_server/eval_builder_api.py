@@ -1118,7 +1118,7 @@ class SingleTurnPipelineRun(JudgeStreamBase):
             # The judge scores the REQUEST's input string, verbatim: the
             # saved eval stores this same string on its inputs-only item and
             # the eval-time judge reads it from there (EvalTaskInput.
-            # from_eval_input → user_message.text), so this is the byte-
+            # from_trace → user_message.text), so this is the byte-
             # identical pairing. The persisted run's own `input` can differ
             # in whitespace for structured tasks (the adapter re-serializes
             # the parsed dict) — that variant is never what a judge reads.

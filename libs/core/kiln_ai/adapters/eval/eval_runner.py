@@ -1,4 +1,3 @@
-import json
 import logging
 from dataclasses import dataclass, field
 from typing import AsyncGenerator, Dict, List, Literal, Set, Tuple
@@ -47,6 +46,7 @@ from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun, Usage
 from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.synthetic_user import drive_case_for_eval
+from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
 from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
@@ -306,7 +306,7 @@ class EvalRunner:
         """Whether a persisted record makes its item "done" for dedup.
 
         Most records do — including skips, which are terminal verdicts about
-        the input itself (missing_trace, incompatible_input_shape, ...). The
+        the input itself (missing_trace, extraction_failed, ...). The
         recoverable skips mark a blocked PRECONDITION instead: once the
         condition is lifted, treating the tombstone as done would freeze the
         item out forever, so it stops counting and the item is collected
@@ -327,6 +327,22 @@ class EvalRunner:
                     and isinstance(item.data, MultiTurnSyntheticEvalInputData)
                 ):
                     return item.data.drive_config is None
+            return True
+        if run.skipped_reason == SkippedReason.incompatible_input_shape.value:
+            # Two writers share this reason. The empty-seed guard's records are
+            # terminal (items are immutable, a seedless item never gains one).
+            # Earlier Kiln versions also skipped EVERY multi-turn synthetic item
+            # with it before re-driving existed; a multi-turn item that carries
+            # a seed can run now, so its tombstone must not freeze it out.
+            if self.split is None:
+                return True
+            for item in self.split.items:
+                if (
+                    isinstance(item, EvalInput)
+                    and item.id == run.eval_input_id
+                    and isinstance(item.data, MultiTurnSyntheticEvalInputData)
+                ):
+                    return item.data.first_message is None
             return True
         if run.skipped_reason == SkippedReason.type_not_available.value:
             return not v2_eval_type_available(eval_config)
@@ -582,68 +598,25 @@ class EvalRunner:
             # re-driving per run config needs a synthetic-user seed + persona,
             # which EvalInput-sourced cases carry (branch above) but stored
             # TaskRun chains do not.
+            #
+            # The leaf is a curated dataset item that already holds its whole
+            # conversation, so there is nothing to generate and nothing to
+            # index — and no eval_source stamp, which would pull the item off
+            # dataset surfaces. The score is a pointer record at the leaf.
             leaf = job.item
             if not leaf.trace:
-                async with self._save_context():
-                    eval_run = EvalRun(
-                        parent=job.eval_config,
-                        task_run_config_id=job.task_run_config.id
-                        if job.task_run_config
-                        else None,
-                        dataset_id=leaf.id,
-                        eval_input_id=None,
-                        eval_config_eval=job.type == "eval_config_eval",
-                        scores={},
-                        input=leaf.input,
-                        output=None,
-                        skipped_reason=SkippedReason.missing_trace.value,
-                        skipped_detail="Multi-turn task run has no stored trace to evaluate",
-                    )
-                    eval_run.save_to_file()
-                return True
+                # The run exists but recorded no conversation, so the skip
+                # still names what it could not score.
+                return await self._persist_score(
+                    job,
+                    scored_run_id=leaf.id,
+                    skipped_reason=SkippedReason.missing_trace.value,
+                    skipped_detail="Multi-turn task run has no stored trace to evaluate",
+                )
 
             eval_task_input = EvalTaskInput.from_task_run(leaf)
             result = await evaluator.evaluate(eval_task_input)
-
-            # Like the legacy runner, only successful task-run-eval records of
-            # a full_trace eval carry the serialized trace.
-            trace_json: str | None = None
-            if (
-                job.type == "task_run_eval"
-                and result.skipped_reason is None
-                and self.eval.evaluation_data_type == EvalDataType.full_trace
-            ):
-                trace_json = json.dumps(
-                    eval_task_input.trace,
-                    indent=2,
-                    ensure_ascii=False,
-                    default=_trace_json_default,
-                )
-
-            async with self._save_context():
-                eval_run = EvalRun(
-                    parent=job.eval_config,
-                    task_run_config_id=job.task_run_config.id
-                    if job.task_run_config
-                    else None,
-                    dataset_id=leaf.id,
-                    eval_input_id=None,
-                    eval_config_eval=job.type == "eval_config_eval",
-                    scores=result.scores,
-                    input=leaf.input,
-                    output=leaf.output.output
-                    if result.skipped_reason is None
-                    else None,
-                    reference_data=eval_task_input.reference_data,
-                    skipped_reason=result.skipped_reason.value
-                    if result.skipped_reason
-                    else None,
-                    skipped_detail=result.skipped_detail,
-                    intermediate_outputs=result.intermediate_outputs,
-                    task_run_trace=trace_json,
-                )
-                eval_run.save_to_file()
-            return True
+            return await self._persist_judgment(job, leaf, eval_task_input, result)
 
         trace = await self._resolve_trace(job, evaluator)
         eval_task_input = EvalTaskInput.from_trace(trace, job.item)
@@ -797,51 +770,26 @@ class EvalRunner:
         The run config under evaluation drives the agent while the drive
         config stamped on the item plays the synthetic user, so each run
         config gets its own fresh conversation — the property that makes
-        run-config comparison meaningful for multi-turn. The drive is
-        transient (nothing persisted); for full_trace evals the EvalRun
-        record carries the serialized conversation when scoring succeeds,
-        otherwise the driven conversation is not retained.
+        run-config comparison meaningful for multi-turn. The conversation
+        persists as one standalone TaskRun through the trace index, exactly
+        like single-turn generations: durable before scoring, and reusable
+        by every other judge over the same item and run config.
         """
         drive_config = data.drive_config
         if drive_config is None:
-            async with self._save_context():
-                eval_run = EvalRun(
-                    parent=job.eval_config,
-                    task_run_config_id=job.task_run_config.id
-                    if job.task_run_config
-                    else None,
-                    dataset_id=None,
-                    eval_input_id=eval_input.id,
-                    eval_config_eval=False,
-                    scores={},
-                    input=seed,
-                    output=None,
-                    skipped_reason=SkippedReason.missing_drive_config.value,
-                    skipped_detail="This item has no synthetic user "
-                    "configuration. Create a new batch to replace it.",
-                )
-                eval_run.save_to_file()
-            return True
+            return await self._persist_skip(
+                job,
+                SkippedReason.missing_drive_config,
+                "This item has no synthetic user configuration. "
+                "Create a new batch to replace it.",
+            )
 
         if not seed:
-            async with self._save_context():
-                eval_run = EvalRun(
-                    parent=job.eval_config,
-                    task_run_config_id=job.task_run_config.id
-                    if job.task_run_config
-                    else None,
-                    dataset_id=None,
-                    eval_input_id=eval_input.id,
-                    eval_config_eval=False,
-                    scores={},
-                    input=seed,
-                    output=None,
-                    skipped_reason=SkippedReason.incompatible_input_shape.value,
-                    skipped_detail="Multi-turn synthetic input has no "
-                    "first_message to open the conversation",
-                )
-                eval_run.save_to_file()
-            return True
+            return await self._persist_skip(
+                job,
+                SkippedReason.incompatible_input_shape,
+                "Multi-turn synthetic input has no first_message to open the conversation",
+            )
 
         if job.task_run_config is None:
             raise ValueError("Task run eval requires a run config")
@@ -862,81 +810,110 @@ class EvalRunner:
                 f"drive config: {drive_config.model_provider}"
             ) from e
 
-        drive_result = await drive_case_for_eval(
-            seed_prompt=seed,
-            synthetic_user_info=data.synthetic_user_info,
-            target_task=self.task,
-            target_run_config=agent_run_config,
-            su_driver_config=SyntheticUserDriverConfig(
-                model_name=drive_config.model_name,
-                model_provider_name=su_provider,
-            ),
-            turns=drive_config.turns,
-            skills=self._skills,
-        )
-        leaf = drive_result.chain[-1]
-        drive_usage = _drive_usage(leaf, drive_result.su_total_cost)
+        key = trace_key(item_key(eval_input), job.task_run_config.id)
 
-        eval_task_input = EvalTaskInput.from_eval_input(eval_input, leaf)
+        async def drive_and_persist() -> TaskRun:
+            drive_result = await drive_case_for_eval(
+                seed_prompt=seed,
+                synthetic_user_info=data.synthetic_user_info,
+                target_task=self.task,
+                target_run_config=agent_run_config,
+                su_driver_config=SyntheticUserDriverConfig(
+                    model_name=drive_config.model_name,
+                    model_provider_name=su_provider,
+                ),
+                turns=drive_config.turns,
+                skills=self._skills,
+            )
+            return await self._persist_driven_conversation(key, drive_result, seed=seed)
+
+        # A raising drive persists nothing, so the job's retry re-drives; a
+        # successful one is on disk before the judge sees it, so a scoring
+        # failure re-scores without paying for the conversation again.
+        trace, _ = await self._trace_index.get_or_create(key, drive_and_persist)
+
+        eval_task_input = EvalTaskInput.from_trace(trace, eval_input)
         result = await evaluator.evaluate(eval_task_input)
+        return await self._persist_judgment(job, trace, eval_task_input, result)
 
-        # Like the stored-trace path, only successful records of a full_trace
-        # eval carry the serialized conversation.
-        trace_json: str | None = None
-        if (
-            result.skipped_reason is None
-            and self.eval.evaluation_data_type == EvalDataType.full_trace
-        ):
-            trace_json = json.dumps(
-                eval_task_input.trace,
-                indent=2,
-                ensure_ascii=False,
-                default=_trace_json_default,
+    async def _persist_driven_conversation(
+        self, key: TraceKey, drive_result: DriveCaseResult, *, seed: str
+    ) -> TaskRun:
+        """One standalone TaskRun holding a freshly driven multi-turn conversation.
+
+        The drive itself touches no disk, and its leaf's trace already holds the
+        whole conversation — so a single childless run is the entire durable
+        record. Persisting the chain's ancestors would store partial copies of
+        the same conversation, and a child run would be invisible to the trace
+        index's childless-only seed.
+
+        Stamped from `key` rather than re-derived, for the same reason as
+        `_generate_and_persist`: the run must file itself under exactly the key
+        the index filed it under, or it is never found again.
+        """
+        source_type, source_id, run_config_id = key
+        leaf = drive_result.chain[-1]
+        if leaf.output.source is None:
+            # Fail before anything is saved: a run without an output source can't
+            # carry the run_config_id half of its reuse key, so persisting it would
+            # strand a paid conversation on disk that the index can never serve.
+            raise ValueError(
+                "Driven conversation has no output source; cannot stamp its reuse key"
             )
-
+        # The drive's adapter runs detached from any TaskRunConfig, so the leaf's
+        # output source has no run_config_id; the index requires it as half the key.
+        output_source = leaf.output.source.model_copy(
+            update={"run_config_id": run_config_id}
+        )
+        run = TaskRun(
+            parent=self.task,
+            # The seed, not the leaf's own input (the synthetic user's LAST message):
+            # this run stands alone, so its input is what opened the conversation.
+            input=seed,
+            input_source=leaf.input_source,
+            output=leaf.output.model_copy(update={"source": output_source}),
+            trace=leaf.trace,
+            usage=_conversation_usage(drive_result.chain),
+            # The synthetic-user driver's spend rides its own field so `usage`
+            # stays honestly assistant-only; a zero-cost drive records None.
+            synthetic_user_usage=Usage(cost=drive_result.su_total_cost)
+            if drive_result.su_total_cost > 0
+            else None,
+            cumulative_usage=leaf.cumulative_usage
+            or MessageUsage.from_trace(leaf.trace),
+            eval_source=EvalItemSource(source_type=source_type, source_id=source_id),
+        )
+        # The drive runs with allow_saving=False, so nothing touched disk before
+        # this fully-stamped run — no crash window in which a driven conversation
+        # could persist without eval_source and pass for a curated dataset row.
         async with self._save_context():
-            eval_run = EvalRun(
-                parent=job.eval_config,
-                task_run_config_id=job.task_run_config.id,
-                dataset_id=None,
-                eval_input_id=eval_input.id,
-                eval_config_eval=False,
-                scores=result.scores,
-                input=seed,
-                output=leaf.output.output if result.skipped_reason is None else None,
-                reference_data=eval_input.reference,
-                skipped_reason=result.skipped_reason.value
-                if result.skipped_reason
-                else None,
-                skipped_detail=result.skipped_detail,
-                intermediate_outputs=result.intermediate_outputs,
-                task_run_trace=trace_json,
-                task_run_usage=drive_usage,
-            )
-            eval_run.save_to_file()
-        return True
+            run.save_to_file()
+        return run
 
 
-def _drive_usage(leaf: TaskRun, su_total_cost: float) -> Usage | None:
-    """Total generation spend of one eval-time drive: the agent side's
-    cumulative usage plus the synthetic user's LLM cost (which surfaces
-    nowhere else — SU turns aren't persisted). Token counts are agent-side
-    only; cost covers both sides. None when neither side reported anything.
+def _conversation_usage(chain: list[TaskRun]) -> Usage | None:
+    """Conversation-total assistant spend for one driven multi-turn conversation.
+
+    The leaf's own `usage` covers only its final turn, so tokens and cost come
+    from the cumulative recompute over the full trace, and latency sums each
+    turn's in-flight accumulator. None when no turn reported anything — an
+    all-None Usage would read as a report where there was none.
     """
-    total = (leaf.cumulative_usage or MessageUsage()) + MessageUsage(
-        cost=su_total_cost if su_total_cost > 0 else None
+    leaf = chain[-1]
+    totals = leaf.cumulative_usage or MessageUsage.from_trace(leaf.trace)
+    latencies = [
+        run.usage.total_llm_latency_ms
+        for run in chain
+        if run.usage is not None and run.usage.total_llm_latency_ms is not None
+    ]
+    usage = Usage(
+        input_tokens=totals.input_tokens,
+        output_tokens=totals.output_tokens,
+        total_tokens=totals.total_tokens,
+        cost=totals.cost,
+        cached_tokens=totals.cached_tokens,
+        total_llm_latency_ms=sum(latencies) if latencies else None,
     )
-    # Field-level check (not ==) so a Usage subclass instance in
-    # cumulative_usage can't defeat pydantic's class-sensitive equality.
-    if all(v is None for v in total.model_dump().values()):
+    if all(v is None for v in usage.model_dump().values()):
         return None
-    return Usage(**total.model_dump())
-
-
-def _trace_json_default(obj: object) -> object:
-    """json.dumps `default` for stored traces: in-memory assistant turns carry
-    MessageUsage (Pydantic). The whitelist stays narrow so any new non-JSON
-    type fails loudly instead of leaking through a blanket str() fallback."""
-    if isinstance(obj, MessageUsage):
-        return obj.model_dump(mode="json")
-    raise TypeError(f"{type(obj).__name__} is not JSON serializable")
+    return usage

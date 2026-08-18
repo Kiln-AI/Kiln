@@ -12482,6 +12482,8 @@ export interface components {
             usage?: components["schemas"]["Usage"] | null;
             /** @description Sum of per-message token usage and cost across the entire trace, including any seeded prior trace. None on records created before this field existed. For a fresh (non-seeded) run, the token / cost fields equal those of `usage`. */
             cumulative_usage?: components["schemas"]["MessageUsage"] | null;
+            /** @description The synthetic-user driver model's spend for an eval-driven conversation, recorded beside the assistant's own usage so `usage` stays assistant-only. None for ordinary runs, and for migrated legacy traces whose driver cost is fused into `usage`. */
+            synthetic_user_usage?: components["schemas"]["Usage"] | null;
             /**
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
@@ -12563,6 +12565,8 @@ export interface components {
             usage?: components["schemas"]["Usage"] | null;
             /** @description Sum of per-message token usage and cost across the entire trace, including any seeded prior trace. None on records created before this field existed. For a fresh (non-seeded) run, the token / cost fields equal those of `usage`. */
             cumulative_usage?: components["schemas"]["MessageUsage"] | null;
+            /** @description The synthetic-user driver model's spend for an eval-driven conversation, recorded beside the assistant's own usage so `usage` stays assistant-only. None for ordinary runs, and for migrated legacy traces whose driver cost is fused into `usage`. */
+            synthetic_user_usage?: components["schemas"]["Usage"] | null;
             /**
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.

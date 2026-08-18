@@ -92,13 +92,13 @@ class TraceIndex:
 
     def _seed(self) -> None:
         # include_intermediate_runs stays False, so a trace that is the *parent* of
-        # another run is invisible here. Safe only because no eval trace has children
-        # today: single-turn generations are single runs, multi-turn synthetic drives
-        # are transient (nothing persisted), and chain-leaf scoring reads stored runs
-        # without generating. When multi-turn drives start persisting traces, this
-        # seed must be revisited with them: only a childless (leaf) run per
-        # conversation may carry the trace key, or those traces are never found and
-        # the eval regenerates them on every run, silently.
+        # another run is invisible here. Safe because eval traces are always
+        # childless: single-turn generations are single runs, and a driven
+        # multi-turn conversation persists as one standalone run whose trace holds
+        # the whole exchange (chain-leaf scoring reads stored dataset runs without
+        # generating at all). Nothing may ever chain a child onto an eval trace
+        # without revisiting this seed — the parent would turn invisible here, and
+        # the eval would silently regenerate its trace on every run.
         for run in self._task.runs(readonly=True, include_eval_generated=True):
             if run.path is None:
                 continue

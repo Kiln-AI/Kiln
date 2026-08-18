@@ -18,6 +18,7 @@ from app.desktop.studio_server.eval_api import (
     resolve_eval_run_traces,
     resolved_split_or_422,
     reusable_frozen_prompt_id,
+    scored_trace_usage,
     scored_trace_usage_for_run_config,
     split_size,
     summary_eval_config,
@@ -1958,13 +1959,15 @@ def _eval_trace(
 ) -> TaskRun:
     """A TaskRun the eval runner would have generated: flagged, with a trace and usage."""
     overrides.setdefault("trace", [{"role": "user", "content": "traced input"}])
+    overrides.setdefault(
+        "usage", Usage(input_tokens=11, output_tokens=7, total_tokens=18, cost=0.5)
+    )
     run = TaskRun(
         parent=task,
         input="traced input",
         input_source=data_source,
         output=TaskOutput(output=output, source=data_source),
         eval_source=source,
-        usage=Usage(input_tokens=11, output_tokens=7, total_tokens=18, cost=0.5),
         **overrides,
     )
     run.save_to_file()
@@ -2260,6 +2263,125 @@ class TestResolveEvalRunTraces:
         )
 
         assert set(usage_by_id) == {scored_trace.id}
+
+
+class TestScoredTraceUsage:
+    """What one scored TaskRun's spend reads as in a summary.
+
+    Three record generations share the read path: standalone driven traces
+    (assistant usage + separate synthetic-user spend), dataset multi-turn chain
+    leaves (last-turn usage, conversation totals in cumulative_usage), and
+    migrated legacy traces (the blend fused into usage). One function must read
+    all three correctly or a summary quietly misprices whole eval runs.
+    """
+
+    def test_driven_trace_blends_assistant_and_synthetic_user_spend(
+        self, mock_task, mock_eval, mock_eval_config, data_source
+    ):
+        """End to end through the pre-pass: the reported cost is the assistant's
+        plus the synthetic-user driver's, with tokens and latency untouched
+        (the driver's record carries cost only)."""
+        item = _tagged_task_run(mock_task, data_source, "eval_set")
+        trace = _eval_trace(
+            mock_task,
+            data_source,
+            EvalItemSource(source_type="task_run", source_id=item.id),
+            usage=Usage(
+                input_tokens=100,
+                output_tokens=40,
+                total_tokens=140,
+                cost=0.5,
+                total_llm_latency_ms=800,
+            ),
+            synthetic_user_usage=Usage(cost=0.25),
+        )
+        _pointer_scored(mock_eval_config, trace.id, dataset_id=item.id)
+
+        usage_by_id = scored_trace_usage_for_run_config(
+            mock_task, [mock_eval], "run_config1"
+        )
+
+        usage = usage_by_id[trace.id]
+        assert usage is not None
+        assert usage.cost == pytest.approx(0.75)
+        assert usage.input_tokens == 100
+        assert usage.output_tokens == 40
+        assert usage.total_tokens == 140
+        assert usage.total_llm_latency_ms == 800
+
+    def test_chain_leaf_reports_conversation_totals_not_its_last_turn(
+        self, mock_task, data_source
+    ):
+        """A dataset chain leaf's `usage` covers only its final turn; the
+        summary must report the conversation totals from `cumulative_usage`,
+        keeping latency from `usage` (cumulative carries none)."""
+        multiturn_task = mock_task.model_copy(update={"turn_mode": TurnMode.multiturn})
+        leaf = TaskRun(
+            parent=multiturn_task,
+            parent_task_run_id="parent_run_id",
+            input="turn 3",
+            input_source=data_source,
+            output=TaskOutput(output="reply", source=data_source),
+            usage=Usage(
+                input_tokens=10, total_tokens=12, cost=0.1, total_llm_latency_ms=250
+            ),
+            cumulative_usage=MessageUsage(
+                input_tokens=300, output_tokens=90, total_tokens=390, cost=1.5
+            ),
+        )
+
+        usage = scored_trace_usage(leaf)
+        assert usage is not None
+        assert usage.input_tokens == 300
+        assert usage.output_tokens == 90
+        assert usage.total_tokens == 390
+        assert usage.cost == pytest.approx(1.5)
+        assert usage.total_llm_latency_ms == 250
+
+    def test_chain_leaf_without_cumulative_does_not_report_last_turn_as_totals(
+        self, mock_task, data_source
+    ):
+        """A leaf that predates cumulative_usage has unknown conversation
+        totals; reporting its last turn's tokens as the whole conversation
+        would understate silently, so only the latency survives."""
+        multiturn_task = mock_task.model_copy(update={"turn_mode": TurnMode.multiturn})
+        leaf = TaskRun(
+            parent=multiturn_task,
+            parent_task_run_id="parent_run_id",
+            input="turn 3",
+            input_source=data_source,
+            output=TaskOutput(output="reply", source=data_source),
+            usage=Usage(input_tokens=10, cost=0.1, total_llm_latency_ms=250),
+        )
+
+        usage = scored_trace_usage(leaf)
+        assert usage is not None
+        assert usage.input_tokens is None
+        assert usage.cost is None
+        assert usage.total_llm_latency_ms == 250
+
+    def test_migrated_legacy_trace_reads_unchanged(self, mock_task, data_source):
+        """Migrated traces carry the blend fused inside `usage` with the
+        synthetic-user field null, so the sum must be a no-op for them."""
+        blended = Usage(input_tokens=100, total_tokens=140, cost=1.25)
+        trace = TaskRun(
+            parent=mock_task,
+            input="in",
+            input_source=data_source,
+            output=TaskOutput(output="out", source=data_source),
+            usage=blended,
+        )
+        assert trace.synthetic_user_usage is None
+        assert scored_trace_usage(trace) == blended
+
+    def test_nothing_to_report_reads_as_none(self, mock_task, data_source):
+        trace = TaskRun(
+            parent=mock_task,
+            input="in",
+            input_source=data_source,
+            output=TaskOutput(output="out", source=data_source),
+        )
+        assert scored_trace_usage(trace) is None
 
 
 class TestEvalRunTraceJoin:

@@ -109,6 +109,15 @@ class TaskRun(
             "cost fields equal those of `usage`."
         ),
     )
+    synthetic_user_usage: Usage | None = Field(
+        default=None,
+        description=(
+            "The synthetic-user driver model's spend for an eval-driven "
+            "conversation, recorded beside the assistant's own usage so `usage` "
+            "stays assistant-only. None for ordinary runs, and for migrated "
+            "legacy traces whose driver cost is fused into `usage`."
+        ),
+    )
     trace: list[ChatCompletionMessageParam] | None = Field(
         default=None,
         description="The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.",

@@ -451,6 +451,10 @@ class EvalRunWithTrace(BaseModel):
             task_run_trace=serialize_trace(trace.trace)
             if trace is not None and trace.trace
             else None,
+            # Raw per-record usage, not the summary's blended figure: it omits
+            # synthetic_user_usage and is last-turn-only for chain leaves. No UI
+            # renders it today; a surface that reports cost should use the
+            # summary's blend, not this field.
             task_run_usage=trace.usage if trace is not None else None,
         )
 
@@ -718,7 +722,48 @@ def scored_trace_usage_for_run_config(
             ):
                 scored_run_ids.add(eval_run.scored_run_id)
     traces = load_task_children_by_id(TaskRun, task, scored_run_ids)
-    return {run_id: trace.usage for run_id, trace in traces.items()}
+    return {run_id: scored_trace_usage(trace) for run_id, trace in traces.items()}
+
+
+def scored_trace_usage(trace: TaskRun) -> Usage | None:
+    """The full generation spend of one scored TaskRun, as a summary reports it.
+
+    Two record shapes need more than `trace.usage`:
+
+    - A multi-turn chain leaf from the dataset (`parent_task_run_id` set) stores
+      last-turn-only usage; its conversation totals live in `cumulative_usage`.
+      Latency still reads from `usage` — `cumulative_usage` deliberately carries
+      none, since per-message latencies don't aggregate meaningfully.
+    - An eval-driven conversation stores the synthetic-user driver model's spend
+      in `synthetic_user_usage`, beside the assistant-only `usage`; the honest
+      total sums the two null-tolerantly. Today that field carries cost only, so
+      token counts pass through from the assistant side. Migrated legacy traces
+      have the blend fused inside `usage` with `synthetic_user_usage` None, so
+      the same sum reads both record generations correctly.
+
+    None when the record has nothing to report, so it contributes nothing to an
+    average instead of counting as a zero.
+    """
+    if trace.parent_task_run_id is not None:
+        cumulative = trace.cumulative_usage
+        base: Usage | None = Usage(
+            input_tokens=cumulative.input_tokens if cumulative else None,
+            output_tokens=cumulative.output_tokens if cumulative else None,
+            total_tokens=cumulative.total_tokens if cumulative else None,
+            cost=cumulative.cost if cumulative else None,
+            cached_tokens=cumulative.cached_tokens if cumulative else None,
+            total_llm_latency_ms=trace.usage.total_llm_latency_ms
+            if trace.usage
+            else None,
+        )
+    else:
+        base = trace.usage
+
+    if trace.synthetic_user_usage is not None:
+        base = (base or Usage()) + trace.synthetic_user_usage
+    if base is None or all(v is None for v in base.model_dump().values()):
+        return None
+    return base
 
 
 def eval_run_task_usage(
@@ -2397,10 +2442,10 @@ def connect_evals_api(app: FastAPI):
 
                 total_eval_runs += 1
 
-                # The evaluated task's usage: on the scored TaskRun for pointer records,
-                # inline on legacy ones. TaskRun.usage rather than cumulative_usage - it
-                # already accumulates across every call the run made, and it is the one
-                # that carries the latency this summary reports (functional spec 5.1).
+                # The evaluated task's usage: on the scored TaskRun for pointer records
+                # (as scored_trace_usage reports it - conversation totals for multi-turn
+                # chain leaves, synthetic-user spend blended in for driven traces),
+                # inline on legacy ones.
                 usage = eval_run_task_usage(eval_run, usage_by_scored_run_id)
                 if usage:
                     if usage.input_tokens is not None:

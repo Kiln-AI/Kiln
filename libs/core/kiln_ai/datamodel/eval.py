@@ -692,12 +692,24 @@ class EvalTaskInput(BaseModel):
             trace_data = [dict(msg) for msg in trace.trace]
 
         if isinstance(source, EvalInput):
-            if not isinstance(source.data, SingleTurnEvalInputData):
-                raise ValueError("EvalTaskInput only supports single-turn EvalInput")
             reference_data = source.reference
             # The item's own text, not the trace's: an EvalInput is the canonical
             # statement of the input, and the adapter may have reserialized it.
-            task_input = source.data.user_message.text
+            if isinstance(source.data, SingleTurnEvalInputData):
+                task_input = source.data.user_message.text
+            elif isinstance(source.data, MultiTurnSyntheticEvalInputData):
+                # Multi-turn: the first message opened the conversation, and the
+                # rest of the exchange lives in the trace. Items minted without a
+                # first message have no canonical input text to offer.
+                task_input = (
+                    source.data.first_message.text
+                    if source.data.first_message
+                    else None
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported EvalInput data type: {type(source.data).__name__}"
+                )
         elif isinstance(source, _TaskRun):
             reference_data = None
             task_input = trace.input
@@ -720,36 +732,15 @@ class EvalTaskInput(BaseModel):
     def from_eval_input(
         cls, eval_input: "EvalInput", run_output: "TaskRun"
     ) -> "EvalTaskInput":
-        """A generated run scored against the EvalInput it was generated from."""
+        """A generated run scored against the EvalInput it was generated from.
+
+        The argument-order counterpart of `from_trace` for callers holding the item
+        first. The explicit type check stays: passed a TaskRun by mistake,
+        `from_trace` would silently take its TaskRun branch instead of failing.
+        """
         if not isinstance(eval_input, EvalInput):
             raise TypeError("Expected an EvalInput instance")
-
-        trace_data: list[dict[str, Any]] | None = None
-        if run_output.trace is not None:
-            trace_data = [dict(msg) for msg in run_output.trace]
-
-        task_input: str | None
-        if isinstance(eval_input.data, SingleTurnEvalInputData):
-            task_input = eval_input.data.user_message.text
-        elif isinstance(eval_input.data, MultiTurnSyntheticEvalInputData):
-            # Multi-turn: the seed message opened the conversation; the rest
-            # of the exchange is in the trace.
-            task_input = (
-                eval_input.data.first_message.text
-                if eval_input.data.first_message
-                else None
-            )
-        else:
-            raise ValueError(
-                f"Unsupported EvalInput data type: {type(eval_input.data).__name__}"
-            )
-
-        return cls(
-            final_message=run_output.output.output,
-            trace=trace_data,
-            reference_data=eval_input.reference,
-            task_input=task_input,
-        )
+        return cls.from_trace(run_output, eval_input)
 
 
 class EvalOutputScore(BaseModel):

@@ -833,10 +833,13 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     # config — agent = the run config under test, customer = the eval's
     # drive config — then judges the fresh trace. Two different run configs
     # must therefore produce two different conversations per scenario, with
-    # scores attributed per config. run_calibration (eval_config_eval) then
-    # validates the judge against the golden slice over the STORED rated
-    # traces, where judge-vs-human agreement is the number the judge screen
-    # reports.
+    # scores attributed per config. Each driven conversation persists as one
+    # standalone TaskRun (hidden from dataset surfaces), with the score a
+    # pointer record at it — which is what lets a re-run reuse the paid
+    # conversations instead of driving again. run_calibration
+    # (eval_config_eval) then validates the judge against the golden slice
+    # over the STORED rated traces, where judge-vs-human agreement is the
+    # number the judge screen reports.
     from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
     from kiln_ai.datamodel.task import TaskRunConfig
 
@@ -844,7 +847,10 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     judge_config = configs[0]
     score_key = saved_eval.output_scores[0].json_key()
     eval_input_ids = {ei.id for ei in eval_inputs}
-    runs_on_disk_before = len(temp_task.runs(include_intermediate_runs=True))
+    dataset_runs_before = len(temp_task.runs(include_intermediate_runs=True))
+    all_runs_before = len(
+        temp_task.runs(include_intermediate_runs=True, include_eval_generated=True)
+    )
 
     def _run_sse_complete(url: str, params: dict | None = None) -> None:
         """Drive one eval-runner SSE endpoint to completion, zero errors."""
@@ -895,6 +901,15 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         "task_run_eval did not cover EvalInput x run-config exactly: "
         f"{sorted((str(r.eval_input_id), str(r.task_run_config_id)) for r in eval_set_runs)}",
     )
+    # Each driven conversation persisted as one standalone eval trace, and the
+    # score record points at it instead of carrying an inline copy.
+    eval_trace_by_id = {
+        r.id: r
+        for r in temp_task.runs(
+            readonly=True, include_intermediate_runs=True, include_eval_generated=True
+        )
+        if r.eval_source is not None
+    }
     for run in eval_set_runs:
         _require(
             run.skipped_reason is None,
@@ -910,17 +925,42 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             f"eval run for input {run.eval_input_id} has no {score_key} "
             f"verdict: {run.scores}",
         )
-        # full_trace evals record the re-driven conversation on the eval run,
-        # driven for exactly the drive config's turn count.
         _require(
-            bool(run.task_run_trace),
-            f"eval run for input {run.eval_input_id} did not record its trace",
+            run.task_run_trace is None and run.output is None,
+            f"eval run for input {run.eval_input_id} carries inline trace data "
+            "— new records must be pointers",
         )
-        trace = json.loads(run.task_run_trace)
-        assistant_turns = [m for m in trace if m.get("role") == "assistant"]
+        trace_run = eval_trace_by_id.get(run.scored_run_id)
+        _require(
+            trace_run is not None,
+            f"eval run for input {run.eval_input_id} does not point at a "
+            f"persisted eval trace (scored_run_id={run.scored_run_id})",
+        )
+        # Standalone and correctly stamped: childless, named for its item, and
+        # filed under the run config that drove it (the reuse key).
+        _require(
+            trace_run.parent_task_run_id is None,
+            f"eval trace {trace_run.id} chained a parent — driven "
+            "conversations must persist as one standalone run",
+        )
+        _require(
+            trace_run.eval_source.source_type == "eval_input"
+            and trace_run.eval_source.source_id == run.eval_input_id,
+            f"eval trace {trace_run.id} names {trace_run.eval_source}, not its "
+            f"item {run.eval_input_id}",
+        )
+        _require(
+            trace_run.output.source is not None
+            and trace_run.output.source.run_config_id == run.task_run_config_id,
+            f"eval trace {trace_run.id} does not file under run config "
+            f"{run.task_run_config_id}",
+        )
+        assistant_turns = [
+            m for m in (trace_run.trace or []) if m.get("role") == "assistant"
+        ]
         _require(
             len(assistant_turns) == TURNS_PER_CASE,
-            f"eval run for input {run.eval_input_id} drove "
+            f"eval trace for input {run.eval_input_id} drove "
             f"{len(assistant_turns)} assistant turns, expected {TURNS_PER_CASE}",
         )
 
@@ -929,7 +969,10 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     # one stored conversation for both configs — which cannot differentiate
     # run configs, the whole point of a comparison.
     trace_by_pair = {
-        (r.eval_input_id, r.task_run_config_id): r.task_run_trace for r in eval_set_runs
+        (r.eval_input_id, r.task_run_config_id): json.dumps(
+            eval_trace_by_id[r.scored_run_id].trace, default=str
+        )
+        for r in eval_set_runs
     }
     for ei_id in eval_input_ids:
         trace_a = trace_by_pair[(ei_id, run_config_a.id)]
@@ -940,10 +983,37 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             f"EvalInput {ei_id} — the eval did not re-drive per config",
         )
 
-    # Re-drives are transient: no new TaskRuns leaked into the dataset.
+    # Persistence is bounded and contained: exactly one trace per
+    # (EvalInput, run config) pair, and none of them leaked into the dataset
+    # view the user curates.
     _require(
-        len(temp_task.runs(include_intermediate_runs=True)) == runs_on_disk_before,
-        "run_comparison persisted TaskRuns — eval-time re-drives must be transient",
+        len(temp_task.runs(include_intermediate_runs=True, include_eval_generated=True))
+        == all_runs_before + len(eval_input_ids) * 2,
+        "run_comparison persisted a different number of eval traces than one "
+        "per (EvalInput, run config) pair",
+    )
+    _require(
+        len(temp_task.runs(include_intermediate_runs=True)) == dataset_runs_before,
+        "eval traces leaked into the default dataset view",
+    )
+
+    # THE REUSE PROOF: a second comparison run finds every pair already scored
+    # and every conversation already persisted — no new drives, no new records.
+    _run_sse_complete(
+        f"/api/projects/p/tasks/t/evals/{saved_eval.id}"
+        f"/eval_config/{judge_config.id}/run_comparison",
+        params={"run_config_ids": [run_config_a.id, run_config_b.id]},
+    )
+    _require(
+        len(temp_task.runs(include_intermediate_runs=True, include_eval_generated=True))
+        == all_runs_before + len(eval_input_ids) * 2,
+        "re-running the comparison drove new conversations instead of reusing "
+        "the persisted ones",
+    )
+    _require(
+        len([r for r in judge_config.runs(readonly=True) if not r.eval_config_eval])
+        == len(eval_set_runs),
+        "re-running the comparison wrote duplicate score records",
     )
 
     # eval_config_eval: validate the judge against the golden answer key.
