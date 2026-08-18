@@ -44,7 +44,11 @@ kiln-studio-desktop = { workspace = true }
 kiln-ai = { workspace = true }
 
 [tool.ruff]
-exclude = [".worktrees"]
+exclude = [
+    ".worktrees",
+    # Automatically generated code, so we don't lint it
+    "app/desktop/studio_server/api_client/kiln_ai_server_client",
+]
 
 [tool.ty.src]
 exclude = [".worktrees", "**/test_*.py", "app/desktop/build/**", "app/web_ui/**", "**/.venv", "**/kiln_ai_server_client/**"]

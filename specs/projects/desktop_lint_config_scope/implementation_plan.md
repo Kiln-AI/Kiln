@@ -25,7 +25,7 @@ Phases 1–3 are verified with the audit command from the functional spec, since
       `registry.py` singleton, the `noop.py` relative import, and the `RUF010`/`RUF022`/`RUF005`/
       `RUF015` one-offs.
 
-- [ ] **Phase 4: Flip the config** — move the generated-client exclude to root `pyproject.toml`,
+- [x] **Phase 4: Flip the config** — move the generated-client exclude to root `pyproject.toml`,
       delete `[tool.ruff]` from `app/desktop/pyproject.toml`. Re-run the full check to catch
       anything that landed mid-project, confirm the generated client is still excluded and
       unmodified, then `uv run ./checks.sh --agent-mode`.
