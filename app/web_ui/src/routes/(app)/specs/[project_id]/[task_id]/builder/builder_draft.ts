@@ -86,7 +86,6 @@ export type BuilderDraft = {
   property_values: Record<string, string | null>
   refined_property_values: Record<string, string | null>
   suggested_edits: Record<string, SuggestedEdit>
-  not_incorporated_feedback: string
   // Step 4 — the approved plan (minutes of copilot work to recreate).
   batch_plan: { prompts: string[]; summary: string } | null
   batch_plan_edited: boolean
@@ -122,7 +121,6 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   property_values: {},
   refined_property_values: {},
   suggested_edits: {},
-  not_incorporated_feedback: "",
   batch_plan: null,
   batch_plan_edited: false,
   cached_su_cases: null,

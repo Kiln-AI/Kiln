@@ -34,7 +34,6 @@ const full_draft: BuilderDraft = {
       reason_for_edit: "Broadened to cover guessing.",
     },
   },
-  not_incorporated_feedback: "Tone feedback was out of scope.",
   batch_plan: {
     prompts: ["Customer asks about a return window.", "Warranty question."],
     summary: "Two fabrication-bait scenarios.",

@@ -47,10 +47,9 @@
     type SyntheticUserCaseWire,
   } from "./builder_draft"
   import { isKilnAgentRunConfig } from "$lib/types"
-  // Reuse v1 spec_builder components so v2 looks identical on the shared
-  // screens (clarify Q&A, refine). When v1 evolves, v2 follows for free.
+  // Reuse v1 spec_builder's Questions component so the clarify screen looks
+  // identical across builders. When v1 evolves, v2 follows for free.
   import Questions from "../spec_builder/questions.svelte"
-  import RefineSpec from "../spec_builder/refine_spec.svelte"
   // Claim/Evidence replaces the read-the-trace pass/fail review: the reviewer
   // agrees/disagrees with distilled claims; the trace stays hidden in a modal.
   import ClaimEvidenceReview from "./claim_evidence_review.svelte"
@@ -127,6 +126,14 @@
   import ConversationAnimation from "$lib/ui/animations/conversation_animation.svelte"
   import { spec_field_configs } from "../select_template/spec_templates"
   import type { SuggestedEdit } from "../spec_utils"
+  // Splits the refine response into edits the form can show and edits it
+  // cannot; the latter are discarded (the request does not declare those
+  // fields) and reported for telemetry.
+  import {
+    keep_rendered_fields,
+    split_refine_edits,
+    type ProposedSpecEdit,
+  } from "./refine_fields"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { filename_string_short_validator } from "$lib/utils/input_validators"
   import { sse_data_payloads } from "$lib/utils/sse"
@@ -161,7 +168,7 @@
   // ── State machine for the v2 builder.
   //   describe  — Step 1: free-text "what to evaluate"
   //   clarify   — Step 2: Q&A (no live preview — fast collection)
-  //   refine    — Step 3: editable proposed spec edits (mirrors v1's refine screen)
+  //   refine    — Step 3: eval name + description with proposed refinements
   //   generate  — Step 4: single-turn examples or multi-turn chains
   //   review    — Step 5: pass/fail review + suggested spec refinements
   //   save      — Step 6: persist Spec + Eval + EvalConfig + dataset
@@ -343,7 +350,6 @@
         property_values,
         refined_property_values,
         suggested_edits,
-        not_incorporated_feedback,
         batch_plan,
         batch_plan_edited,
         cached_su_cases,
@@ -415,9 +421,17 @@
       if (Object.keys(saved.property_values).length > 0) {
         property_values = saved.property_values
       }
-      refined_property_values = saved.refined_property_values
-      suggested_edits = saved.suggested_edits
-      not_incorporated_feedback = saved.not_incorporated_feedback
+      // Filter to the rendered fields: a draft written when the refine form
+      // still had example fields can carry values with no surface today, and
+      // restoring them would silently reach the saved spec.
+      refined_property_values = keep_rendered_fields(
+        saved.refined_property_values,
+        RENDERED_REFINE_FIELDS,
+      )
+      suggested_edits = keep_rendered_fields(
+        saved.suggested_edits,
+        RENDERED_REFINE_FIELDS,
+      )
       batch_plan = saved.batch_plan
       batch_plan_edited = saved.batch_plan_edited
       cached_su_cases = saved.cached_su_cases ?? null
@@ -434,7 +448,14 @@
       // mount already seeded "describe") so the browser's Back walks the
       // wizard steps exactly as in the original session instead of
       // immediately leaving the builder.
-      const step = restore_step(saved)
+      // Computed from the FILTERED refine records: a legacy draft whose
+      // refine content was example fields only must not restore into an
+      // empty refine form.
+      const step = restore_step({
+        ...saved,
+        refined_property_values,
+        suggested_edits,
+      })
       if (step === "refine" || step === "generate") {
         goto_step("refine")
       }
@@ -595,7 +616,7 @@
         data.suggested_name
       // The classifier returns the property_values dict already keyed for
       // this spec_type. Cast to the looser Record shape consumed by
-      // Questions / RefineSpec.
+      // Questions and the refine form.
       property_values = data.property_values as Record<string, string | null>
       goto_step("clarify")
     } catch (e) {
@@ -649,19 +670,39 @@
     }
   }
 
-  // ── Step 3 state — refine (shape required by v1's RefineSpec component)
+  // ── Step 3 state — refine
+  // The fields the refine form renders, and therefore the only writable
+  // surface declared to the refine call. Edits for any other field are
+  // discarded before they can reach the saved spec (the user never saw
+  // them) and reported for telemetry.
+  // The builder is issue-type-only end to end (save also hardcodes the
+  // issue spec_type); this list must move with spec_type if that changes.
+  const RENDERED_REFINE_FIELDS: readonly string[] = ["issue_description"]
   let refined_property_values: Record<string, string | null> = {}
   let suggested_edits: Record<string, SuggestedEdit> = {}
-  let not_incorporated_feedback: string = ""
   let refine_form_error: KilnError | null = null
-  let refine_submitting = false
   let refined_preview_loading = false
   // Non-blocking: refinement failing still lands the user on an editable
   // refine step, but they should know their answers weren't incorporated.
   let refine_warning: string | null = null
 
+  // A failed refine still lands on an editable form: seed it from the
+  // current values, unless a prior visit already populated it (a re-entered
+  // clarify pass must not wipe the user's Step 3 edits). Called only from
+  // the failure paths; success overwrites the form from the response.
+  function seed_refine_form_if_empty() {
+    if (Object.keys(refined_property_values).length === 0) {
+      // Rendered fields only, so a live session and a restored draft save
+      // the same Spec (the restore path filters the same way).
+      refined_property_values = keep_rendered_fields(
+        property_values,
+        RENDERED_REFINE_FIELDS,
+      )
+    }
+  }
+
   // Called by Questions component on Next. Fires the refinement call and
-  // populates the state shape consumed by RefineSpec. Matches v1's flow:
+  // populates the refine form's state. Matches v1's flow:
   //   answer Qs → refining spinner → refine screen with editable suggestions.
   async function on_continue_from_clarify(
     questions_and_answers: QuestionWithAnswer[],
@@ -674,9 +715,12 @@
     refined_preview_loading = true
     refine_warning = null
     try {
+      // Declare only the rendered fields as the refinable surface, so the
+      // copilot is not invited to draft content the form cannot show.
       const spec_fields: Record<string, string> = {}
       const spec_field_current_values: Record<string, string> = {}
       for (const field of field_configs) {
+        if (!RENDERED_REFINE_FIELDS.includes(field.key)) continue
         spec_fields[field.key] = field.description
         spec_field_current_values[field.key] = property_values[field.key] ?? ""
       }
@@ -696,16 +740,12 @@
         refine_warning = `Couldn't refine the spec from your answers (${createKilnError(
           error,
         ).getMessage()}). Edit it directly below.`
+        seed_refine_form_if_empty()
         return
       }
 
       const refine_response = data as {
-        new_proposed_spec_edits?: {
-          spec_field_name: string
-          proposed_edit: string
-          reason_for_edit?: string
-        }[]
-        not_incorporated_feedback?: string
+        new_proposed_spec_edits?: ProposedSpecEdit[]
         suggested_name?: string
       }
 
@@ -725,36 +765,43 @@
             ?.name ?? refine_response.suggested_name
       }
 
-      // Start from current values, then apply each proposed edit. Mirrors v1's
-      // processProposedSpecEdits helper in spec_builder/+page.svelte.
-      const refined = { ...property_values }
-      const edits: Record<string, SuggestedEdit> = {}
-      for (const edit of refine_response.new_proposed_spec_edits ?? []) {
-        refined[edit.spec_field_name] = edit.proposed_edit
-        edits[edit.spec_field_name] = {
-          proposed_value: edit.proposed_edit,
-          reason_for_edit: edit.reason_for_edit ?? "",
-        }
+      // Start from current values, then apply the edits the form can show.
+      // An edit for a field the form does not render is discarded, so
+      // nothing is saved without being seen. The user gets no notice (there
+      // is nothing they could do with one); telemetry carries the signal,
+      // because a stray edit means the refine contract drifted.
+      const split = split_refine_edits(
+        refine_response.new_proposed_spec_edits ?? [],
+        RENDERED_REFINE_FIELDS,
+      )
+      if (split.dropped_fields.length > 0) {
+        // Field names are model-authored: dedupe and bound them before they
+        // ride to telemetry.
+        posthog.capture("eval_v2_refine_stray_edits_dropped", {
+          fields: [...new Set(split.dropped_fields)]
+            .slice(0, 10)
+            .map((f) => f.slice(0, 64)),
+        })
       }
-      refined_property_values = refined
-      suggested_edits = edits
-      not_incorporated_feedback =
-        refine_response.not_incorporated_feedback ?? ""
+      refined_property_values = {
+        ...keep_rendered_fields(property_values, RENDERED_REFINE_FIELDS),
+        ...split.refined_edits,
+      }
+      suggested_edits = split.suggested_edits
     } catch (e) {
       if (is_abort_error(e)) return
       // Refinement is optional — the user lands on an editable refine step
       // either way — but the failure must not be silent.
       refine_warning =
         "Couldn't refine your eval from your answers. Edit it directly below."
+      seed_refine_form_if_empty()
     } finally {
       refined_preview_loading = false
     }
   }
 
-  // Both events from RefineSpec — analyze_refined (user edited something)
-  // and create_spec (no edits) — advance to Step 4 generation. v2 doesn't
-  // re-analyze, it just uses whatever refined_property_values the user
-  // finalized.
+  // The refine form's Next action: advance to Step 4 generation with
+  // whatever refined_property_values the user finalized.
   // Reentry guard for the async submit below: a second activation during
   // the availability round trip (double-click, Cmd-Enter key-repeat) must
   // not advance twice — that would double-push history and start two
@@ -782,10 +829,6 @@
       }
       on_advance_to_generate()
     } finally {
-      // FormContainer flips submitting=true on every submit and leaves the
-      // reset to the caller — cleared here (after the gate) so RefineSpec's
-      // button isn't disabled if the user navigates back.
-      refine_submitting = false
       refine_submit_in_flight = false
     }
   }
@@ -3092,14 +3135,16 @@
       }
       // Source of truth for the saved spec is refined_property_values —
       // populated from Step 1 description initially, then updated in Step 3
-      // via v1's RefineSpec component when the user accepts/edits the LLM's
-      // proposed refinements. Fall back to property_values if Step 3 was
-      // skipped (no refinements were proposed). spec_text() applies the same
-      // precedence, so the saved definition equals what generation/review saw.
+      // when the user accepts or edits the proposed refinements. Fall back
+      // to property_values if Step 3 was skipped (no refinements were
+      // proposed). spec_text() applies the same precedence, so the saved
+      // definition equals what generation/review saw.
+      // The fallback filters to rendered fields like every other path, so
+      // classifier-authored example values can never reach the saved spec.
       const final_values =
         Object.keys(refined_property_values).length > 0
           ? refined_property_values
-          : property_values
+          : keep_rendered_fields(property_values, RENDERED_REFINE_FIELDS)
       const issue_description = spec_text()
       const filtered = Object.fromEntries(
         Object.entries(final_values).filter(
@@ -3342,8 +3387,8 @@
   }
 
   // Cmd/Ctrl-Enter fires the current step's primary action — but only the
-  // steps with bespoke buttons. FormContainer-backed steps (clarify, single-
-  // turn refine/review) already handle it; skipping them avoids double-firing.
+  // steps with bespoke buttons. FormContainer-backed steps (clarify) already
+  // handle it; skipping them avoids double-firing.
   function handle_global_keydown(event: KeyboardEvent) {
     if (!((event.metaKey || event.ctrlKey) && event.key === "Enter")) return
     if (current_step === "describe") {
@@ -3351,13 +3396,11 @@
         event.preventDefault()
         classify_then_continue()
       }
-    } else if (
-      current_step === "refine" &&
-      is_multi_turn &&
-      !refined_preview_loading
-    ) {
+    } else if (current_step === "refine" && !refined_preview_loading) {
+      // Same validator gate as the Next button; the in-flight guard lives
+      // in on_refine_submit itself.
       if (
-        name.trim() &&
+        filename_string_short_validator(name) === null &&
         (refined_property_values.issue_description ?? "").trim()
       ) {
         event.preventDefault()
@@ -3435,11 +3478,10 @@
   }
 
   // v1 widens the layout when there's a side-by-side comparison or table
-  // (review, refine-with-suggestions). Mirror that here so the typography
-  // and form fields aren't crammed into a 3xl box on those steps.
+  // (review). Mirror that here so those tables aren't crammed into a 3xl
+  // box.
   function page_max_w_for(step: BuilderStep): string {
     if (step === "review") return "max-w-[1400px]"
-    if (step === "refine" && !is_multi_turn) return "max-w-[1400px]"
     // Generate hosts the plan-approval table (long prompts, both arms) —
     // give it the same wide layout as review.
     if (step === "generate") return "max-w-[1400px]"
@@ -3626,85 +3668,61 @@
                 />
               </div>
             {/if}
-            {#if is_multi_turn}
-              <!-- Multi-turn variant: examples fields don't apply (real examples
-             come from Step 4 synthetic chains). Just name + description. -->
-              <div class="mb-6">
-                <FormElement
-                  label="Eval Name"
-                  description="A short name for your own reference (max 32 characters)."
-                  id="multi_turn_name"
-                  inputType="input"
-                  bind:value={name}
-                  validator={filename_string_short_validator}
-                />
-              </div>
+            <!-- Both arms share the lean form: name + issue description.
+                 Example fields are not part of the builder; real examples
+                 come from the Step 4 generated data. -->
+            <div class="mb-6">
+              <FormElement
+                label="Eval Name"
+                description="A short name for your own reference (max 32 characters)."
+                id="builder_eval_name"
+                inputType="input"
+                bind:value={name}
+                validator={filename_string_short_validator}
+              />
+            </div>
 
-              <div class="mb-4">
-                <FormElement
-                  label="Issue Description"
-                  description="What the agent must avoid doing."
-                  id="multi_turn_issue_description"
-                  inputType="textarea"
-                  height="large"
-                  bind:value={refined_property_values.issue_description}
-                />
-                {#if suggested_edits.issue_description?.reason_for_edit}
-                  <div class="text-xs text-gray-500 italic mt-2">
-                    Refinement: {suggested_edits.issue_description
-                      .reason_for_edit}
-                  </div>
-                {/if}
-              </div>
-
-              {#if not_incorporated_feedback}
-                <Warning
-                  warning_color="primary"
-                  warning_icon="info"
-                  warning_message={`Unincorporated feedback: ${not_incorporated_feedback}`}
-                />
-              {/if}
-
-              {#if refine_form_error}
-                <!-- The Step 3 gate errors (e.g. a taken eval name). The
-                     single-turn arm surfaces these through RefineSpec's
-                     bound error; this bespoke branch needs its own region
-                     or the Next button silently does nothing. -->
-                <div class="mt-4">
-                  <Warning
-                    warning_color="error"
-                    warning_message={refine_form_error.getMessage()}
-                  />
+            <div class="mb-4">
+              <FormElement
+                label="Issue Description"
+                description="What the agent must avoid doing."
+                id="builder_issue_description"
+                inputType="textarea"
+                height="large"
+                bind:value={refined_property_values.issue_description}
+              />
+              {#if suggested_edits.issue_description?.reason_for_edit}
+                <div class="text-xs text-gray-500 italic mt-2">
+                  Refinement: {suggested_edits.issue_description
+                    .reason_for_edit}
                 </div>
               {/if}
-              <div class="flex justify-end mt-8">
-                <button
-                  class="btn btn-primary"
-                  on:click={on_refine_submit}
-                  disabled={!name.trim() ||
-                    !(refined_property_values.issue_description ?? "").trim()}
-                >
-                  Next →
-                </button>
+            </div>
+
+            {#if refine_form_error}
+              <!-- The Step 3 gate errors (e.g. a taken eval name). Without
+                   this region the Next button silently does nothing. -->
+              <div class="mt-4">
+                <Warning
+                  warning_color="error"
+                  warning_message={refine_form_error.getMessage()}
+                />
               </div>
-            {:else}
-              <!-- Single-turn variant: keep v1's RefineSpec component (handles
-             examples, two-column diff, restore-suggestion buttons). -->
-              <RefineSpec
-                bind:name
-                original_property_values={property_values}
-                bind:refined_property_values
-                {suggested_edits}
-                {not_incorporated_feedback}
-                {field_configs}
-                bind:error={refine_form_error}
-                bind:submitting={refine_submitting}
-                warn_before_unload={false}
-                hide_secondary_button={true}
-                on:analyze_refined={on_refine_submit}
-                on:create_spec={on_refine_submit}
-              />
             {/if}
+            <div class="flex justify-end mt-8">
+              <!-- The name gate runs the same validator the field shows, so
+                   an invalid name cannot ride through generation and review
+                   only to fail at save. -->
+              <button
+                class="btn btn-primary"
+                on:click={on_refine_submit}
+                disabled={refine_submit_in_flight ||
+                  filename_string_short_validator(name) !== null ||
+                  !(refined_property_values.issue_description ?? "").trim()}
+              >
+                Next →
+              </button>
+            </div>
           {/if}
         {:else if current_step === "generate"}
           <!-- ── Step 4 — Generate ── -->
