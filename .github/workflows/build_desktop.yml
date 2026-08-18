@@ -7,6 +7,15 @@ on:
   push:
     branches:
       - main
+  # Also run on PRs that change dependencies, so a packaging break (e.g. a lockfile
+  # bump that drops a module the desktop bundle needs) is caught pre-merge rather than
+  # only on the post-merge push-to-main run. Path-filtered to keep it off unrelated PRs.
+  pull_request:
+    paths:
+      - 'uv.lock'
+      - 'pyproject.toml'
+      - 'app/web_ui/package-lock.json'
+      - 'app/web_ui/package.json'
 
 jobs:
   build:

@@ -1,3 +1,4 @@
+import json
 import logging
 from unittest.mock import patch
 
@@ -6,7 +7,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import Priority
-from kiln_ai.datamodel.eval import Eval, EvalOutputScore, TaskOutputRatingType
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalOutputScore,
+    TaskOutputRatingType,
+    TaskRunSplit,
+)
 from kiln_ai.datamodel.spec import Spec, SpecStatus, TaskSample
 from kiln_ai.datamodel.spec_properties import (
     DesiredBehaviourProperties,
@@ -175,9 +181,24 @@ def test_create_spec_success(client, project_and_task):
     assert len(evals) == 1
     assert evals[0].name == "Test Spec"
     assert evals[0].id == res["eval_id"]
-    assert evals[0].eval_set_filter_id == "tag::eval_test_spec"
-    assert evals[0].train_set_filter_id == "tag::train_test_spec"
     assert evals[0].eval_configs_filter_id == "tag::eval_golden_test_spec"
+    assert evals[0].splits == {
+        "test": TaskRunSplit(filter_id="tag::eval_test_spec"),
+        "train": TaskRunSplit(filter_id="tag::train_test_spec"),
+        "val": TaskRunSplit(filter_id="tag::val_test_spec"),
+    }
+
+    # Check the raw saved file, not the loaded model: what reaches the bytes is
+    # invisible in eval.splits. All three splits go to `splits`, and the deprecated flat
+    # filter fields are written null rather than left for an older build to read.
+    saved_eval = json.loads(evals[0].path.read_text())
+    assert saved_eval["eval_set_filter_id"] is None
+    assert saved_eval["train_set_filter_id"] is None
+    assert saved_eval["splits"] == {
+        "test": {"source": "task_run", "filter_id": "tag::eval_test_spec"},
+        "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
+        "val": {"source": "task_run", "filter_id": "tag::val_test_spec"},
+    }
 
 
 def test_create_spec_minimal(client, project_and_task):

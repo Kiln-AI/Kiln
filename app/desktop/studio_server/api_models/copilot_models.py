@@ -1,7 +1,9 @@
 """Shared Pydantic models for the Copilot API."""
 
+from typing import Annotated
+
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 
 # Base models
@@ -146,4 +148,91 @@ class SpecQuestionerApiInput(BaseModel):
         ...,
         description="The specification to analyze",
         title="target_specification",
+    )
+
+
+# Input Data Guide draft job
+#
+# The draft runs as a kiln_server background job so the heavy
+# summarize+aggregate work survives a flaky connection and the user can leave
+# the page and come back. The studio server exposes the job's start / status /
+# result lifecycle so the web UI owns polling. Preview inputs are no longer
+# bundled here — once the draft is ready the UI generates them via the existing
+# `/data_gen_guide_preview` endpoint.
+
+DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLES = 200
+# Per-example character ceiling. Each example becomes one summarize LLM call;
+# 200k chars stays well under the model's context window even for prose. The
+# client mirrors this and blocks before sending, so hitting it here is a guard.
+DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH = 200_000
+
+
+class StartDataGuideJobApiInput(BaseModel):
+    """Input to kick off the input data guide draft job.
+
+    Carries only the input examples. All task info the job needs — the runtime
+    prompt and the input JSON schema — is derived server-side from the task
+    identified by the route, so the client can't supply a manipulated prompt or
+    schema, and the output schema / description never reach the guide LLM.
+    """
+
+    input_examples: list[
+        Annotated[
+            str,
+            StringConstraints(max_length=DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH),
+        ]
+    ] = Field(
+        ...,
+        description=(
+            "Heterogeneous list of input examples — short manual entries, the "
+            "input portion of selected task runs, or full text of uploaded "
+            "text documents (txt, md, csv). Every entry is a string and is "
+            "treated as a candidate reference input regardless of source."
+        ),
+        min_length=1,
+        max_length=DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLES,
+    )
+
+
+class StartDataGuideJobApiOutput(BaseModel):
+    """Identifier for the started data guide draft job."""
+
+    job_id: str = Field(description="Identifier for the started data guide draft job.")
+
+
+class DataGuideJobStatusApiOutput(BaseModel):
+    """Current status of a data guide draft job."""
+
+    status: str = Field(
+        description=(
+            "Current job status (e.g. running, succeeded, failed, cancelled)."
+        ),
+    )
+
+
+class DataGuideJobResultApiOutput(BaseModel):
+    """Result of a completed data guide draft job."""
+
+    draft_guide: str = Field(description="Full draft input data guide markdown.")
+
+
+class ParseImportFileApiOutput(BaseModel):
+    """Result of parsing an uploaded bulk-import file of input examples.
+
+    Plaintext tasks parse a single-column CSV; structured-input tasks parse one
+    JSON object per line, validated against the task's input schema. A non-null
+    `error` means the whole file was rejected; `warning` means it was accepted
+    but some examples were skipped (e.g. over the length limit).
+    """
+
+    rows: list[str] = Field(
+        description="Parsed example input strings, ready to add. Empty when error is set.",
+    )
+    error: str | None = Field(
+        default=None,
+        description="Set when the whole file was rejected (invalid format/encoding).",
+    )
+    warning: str | None = Field(
+        default=None,
+        description="Set when the file was accepted but some examples were skipped.",
     )

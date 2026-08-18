@@ -248,15 +248,17 @@ def create_dataset_task_runs(
     reviewed_examples: list[ReviewedExample],
     eval_tag: str,
     train_tag: str,
+    val_tag: str,
     golden_tag: str,
     spec_name: str,
 ) -> DatasetTaskRuns:
-    """Create TaskRuns for eval, train, and golden datasets.
+    """Create TaskRuns for eval, train, val, and golden datasets.
 
     Samples from all_examples (mutating it) and creates TaskRuns for:
-    - Eval dataset
-    - Train dataset
     - Golden dataset (reviewed examples + unrated examples to reach MIN_GOLDEN_EXAMPLES)
+    - Eval dataset (half of the remaining examples)
+    - Val dataset (one third of the other half)
+    - Train dataset (the rest)
 
     Returns DatasetTaskRuns without parent set - caller must set parent and call
     save_pending_feedback after saving each run.
@@ -282,16 +284,24 @@ def create_dataset_task_runs(
         for example in unrated_golden_examples:
             result.add_run(create_task_run_from_sample(example, golden_tag, extra_tags))
 
-    # Sample half the remaining examples for eval vs train datasets
+    # Sample half the remaining examples for the eval dataset, then split the
+    # other half between val (one third) and train (two thirds)
     example_count = len(all_examples)
     eval_count = example_count // 2
-    train_count = example_count - eval_count
+    remaining_count = example_count - eval_count
+    val_count = remaining_count // 3
+    train_count = remaining_count - val_count
     eval_examples = sample_and_remove(all_examples, eval_count)
+    val_examples = sample_and_remove(all_examples, val_count)
     train_examples = sample_and_remove(all_examples, train_count)
 
     # Create TaskRuns for eval examples
     for example in eval_examples:
         result.add_run(create_task_run_from_sample(example, eval_tag, extra_tags))
+
+    # Create TaskRuns for val examples
+    for example in val_examples:
+        result.add_run(create_task_run_from_sample(example, val_tag, extra_tags))
 
     # Create TaskRuns for train examples
     for example in train_examples:

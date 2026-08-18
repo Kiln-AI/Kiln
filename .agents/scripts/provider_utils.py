@@ -70,6 +70,12 @@ PROVIDER_CONFIG = {
         "url": "https://api.cerebras.ai/v1/models",
         "env": "CEREBRAS_API_KEY",
     },
+    "featherless_ai": {
+        # Featherless's model list is public — no key needed to enumerate models.
+        "type": "openai_compat",
+        "url": "https://api.featherless.ai/v1/models",
+        "env": "FEATHERLESS_AI_API_KEY",
+    },
     "groq": {
         "type": "openai_compat",
         "url": "https://api.groq.com/openai/v1/models",

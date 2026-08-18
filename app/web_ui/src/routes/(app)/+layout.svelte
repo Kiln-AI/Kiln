@@ -7,6 +7,7 @@
   import { update_update_store, update_info } from "$lib/utils/update"
   import { onMount, onDestroy } from "svelte"
   import ProgressWidget from "$lib/ui/progress_widget.svelte"
+  import DataGuideProgressWidget from "$lib/ui/data_guide_progress_widget.svelte"
   import { beforeNavigate } from "$app/navigation"
   import { setContext } from "svelte"
   import { writable } from "svelte/store"
@@ -435,6 +436,7 @@
         </li>
 
         <li class="mt-auto pt-2 bg-transparent">
+          <DataGuideProgressWidget />
           <ProgressWidget />
         </li>
         {#if $update_info.update_result && $update_info.update_result.has_update}
