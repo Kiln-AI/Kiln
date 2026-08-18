@@ -2,7 +2,9 @@
 import { describe, it, expect, vi, beforeAll } from "vitest"
 import { render } from "@testing-library/svelte"
 import { tick } from "svelte"
+import { get } from "svelte/store"
 import { available_tools } from "$lib/stores"
+import { tools_store } from "$lib/stores/tools_store"
 import type { ToolSetApiDescription } from "$lib/types"
 import type { SandboxCodeContext } from "$lib/stores/tools_store"
 
@@ -74,6 +76,159 @@ async function option_values(
   }
 }
 
+const mcp_set: ToolSetApiDescription = {
+  type: "mcp",
+  set_name: "MCP Server: demo",
+  tools: [
+    {
+      id: "mcp::remote::demo::search",
+      name: "Search",
+      description: "Search the web",
+      function_name: "search",
+    },
+  ],
+}
+
+// The value actually bound out of the picker (and written to tools_store), as
+// opposed to the options it displays.
+async function bound_tools(props: {
+  project_id: string
+  sandbox_code_context: SandboxCodeContext
+  task_id?: string | null
+  pending_tool_id?: string | null
+  tool_sets?: ToolSetApiDescription[]
+}): Promise<string[]> {
+  available_tools.set({
+    [props.project_id]: props.tool_sets ?? [ai_models_set, mcp_set],
+  })
+  const { container } = render(ToolsSelector, {
+    props: {
+      project_id: props.project_id,
+      task_id: props.task_id ?? null,
+      pending_tool_id: props.pending_tool_id ?? null,
+      settings: { sandbox_code_context: props.sandbox_code_context },
+    },
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await tick()
+  const el = container.querySelector('[data-testid="form-element-options"]')
+  return JSON.parse(el?.getAttribute("data-value") ?? "null")
+}
+
+function seed_persisted_tools(task_id: string, tool_ids: string[]) {
+  tools_store.set({ selected_tool_ids_by_task_id: { [task_id]: tool_ids } })
+}
+
+function persisted_tools(task_id: string): string[] | undefined {
+  return get(tools_store).selected_tool_ids_by_task_id[task_id]
+}
+
+describe("ToolsSelector context scoping on the write path", () => {
+  it("drops a persisted llm_judge outside a code-eval context", async () => {
+    const task_id = "task_persisted_none"
+    seed_persisted_tools(task_id, [
+      "kiln_tool::llm_judge",
+      "mcp::remote::demo::search",
+    ])
+
+    const tools = await bound_tools({
+      project_id: "proj_write_none",
+      sandbox_code_context: "none",
+      task_id,
+    })
+
+    expect(tools).toEqual(["mcp::remote::demo::search"])
+    // The store is the thing that outlives the page, so assert it directly.
+    expect(persisted_tools(task_id)).toEqual(["mcp::remote::demo::search"])
+  })
+
+  it("keeps a persisted llm_judge in a code-eval context", async () => {
+    // Positive control: the previous test must fail because of the context, not
+    // because persisted tools never survive at all.
+    const task_id = "task_persisted_eval"
+    seed_persisted_tools(task_id, [
+      "kiln_tool::llm_judge",
+      "mcp::remote::demo::search",
+    ])
+
+    const tools = await bound_tools({
+      project_id: "proj_write_eval",
+      sandbox_code_context: "code_eval",
+      task_id,
+    })
+
+    expect(tools).toEqual(["kiln_tool::llm_judge", "mcp::remote::demo::search"])
+    expect(persisted_tools(task_id)).toEqual([
+      "kiln_tool::llm_judge",
+      "mcp::remote::demo::search",
+    ])
+  })
+
+  it("drops a persisted llm_judge in a code-tool context", async () => {
+    // llm_judge needs a code judge's score schema, so a code tool may never hold it
+    // even though the rest of the sandbox_code set is fair game there.
+    const task_id = "task_persisted_tool"
+    seed_persisted_tools(task_id, ["kiln_tool::llm", "kiln_tool::llm_judge"])
+
+    const tools = await bound_tools({
+      project_id: "proj_write_tool",
+      sandbox_code_context: "code_tool",
+      task_id,
+    })
+
+    expect(tools).toEqual(["kiln_tool::llm"])
+    expect(persisted_tools(task_id)).toEqual(["kiln_tool::llm"])
+  })
+
+  it("refuses a pending llm_judge outside a code-eval context", async () => {
+    const task_id = "task_pending_none"
+    seed_persisted_tools(task_id, [])
+
+    const tools = await bound_tools({
+      project_id: "proj_pending_none",
+      sandbox_code_context: "none",
+      task_id,
+      pending_tool_id: "kiln_tool::llm_judge",
+    })
+
+    expect(tools).toEqual([])
+    expect(persisted_tools(task_id)).toEqual([])
+  })
+
+  it("applies a pending llm_judge in a code-eval context", async () => {
+    // Positive control for the pending path: ?tool_id= still works where allowed.
+    const task_id = "task_pending_eval"
+    seed_persisted_tools(task_id, [])
+
+    const tools = await bound_tools({
+      project_id: "proj_pending_eval",
+      sandbox_code_context: "code_eval",
+      task_id,
+      pending_tool_id: "kiln_tool::llm_judge",
+    })
+
+    expect(tools).toEqual(["kiln_tool::llm_judge"])
+    expect(persisted_tools(task_id)).toEqual(["kiln_tool::llm_judge"])
+  })
+
+  it("still drops tools the server no longer offers", async () => {
+    // The context rule is layered on top of the availability rule, not in place of it.
+    const task_id = "task_removed_tool"
+    seed_persisted_tools(task_id, [
+      "mcp::remote::demo::search",
+      "mcp::remote::demo::deleted",
+    ])
+
+    const tools = await bound_tools({
+      project_id: "proj_removed",
+      sandbox_code_context: "none",
+      task_id,
+    })
+
+    expect(tools).toEqual(["mcp::remote::demo::search"])
+  })
+})
+
 describe("ToolsSelector sandbox-only tool filtering", () => {
   it("hides both sandbox built-ins outside any sandboxed-code context", async () => {
     const { values } = await option_values("none", "proj_ts_off")
@@ -130,18 +285,7 @@ describe("ToolsSelector sandbox-only tool filtering", () => {
   it("keeps ordinary tool sets visible outside a sandboxed-code context", async () => {
     const { values } = await option_values("none", "proj_ts_mixed", [
       ai_models_set,
-      {
-        type: "mcp",
-        set_name: "MCP Server: demo",
-        tools: [
-          {
-            id: "mcp::remote::demo::search",
-            name: "Search",
-            description: "Search the web",
-            function_name: "search",
-          },
-        ],
-      },
+      mcp_set,
     ])
     expect(values).toEqual(["mcp::remote::demo::search"])
   })

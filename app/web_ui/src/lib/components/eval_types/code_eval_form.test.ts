@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll } from "vitest"
 import { render, fireEvent } from "@testing-library/svelte"
+import { tick } from "svelte"
 import type { EvalOutputScore } from "$lib/types"
+import { LLM_JUDGE_TOOL_ID, LLM_TOOL_ID } from "$lib/utils/built_in_tool_ids"
 
 vi.mock("$lib/components/code_editor.svelte", async () => {
   const StubModule = await import("./__tests__/code_editor_stub.svelte")
@@ -24,6 +26,7 @@ vi.mock("$lib/ui/run_config_component/tools_selector.svelte", async () => {
 })
 
 const CodeEvalForm = (await import("./code_eval_form.svelte")).default
+const { actionButtonsByTitle } = await import("./__tests__/dialog_stub.svelte")
 
 beforeAll(() => {
   if (typeof globalThis.ResizeObserver === "undefined") {
@@ -264,6 +267,87 @@ describe("tool allowlist picker", () => {
     await fireEvent.click(add_button)
     const props = component.getProperties()
     expect(props.tool_allowlist).toEqual(["kiln_tool::llm_judge"])
+  })
+})
+
+describe("examples grant the tools they call", () => {
+  // Drives the real dialog action the "Use This Example" button is wired to.
+  async function use_example(container: HTMLElement, tab_index: number) {
+    const tabs = container.querySelectorAll(".tab")
+    await fireEvent.click(tabs[tab_index])
+    const buttons = actionButtonsByTitle["Code Judge Examples"]
+    const use_button = buttons.find((b) => b.label === "Use This Example")
+    expect(use_button).toBeTruthy()
+    ;(use_button?.action as () => boolean)()
+    await tick()
+  }
+
+  const LLM_JUDGE_TAB = 3
+  const TRIAGE_TAB = 4
+  const PARSE_JSON_TAB = 0
+
+  it("grants llm_judge for the LLM judge example", async () => {
+    const { component, container } = render(CodeEvalForm)
+    await use_example(container, LLM_JUDGE_TAB)
+    const props = component.getProperties()
+    expect(props.code).toContain("tools.llm_judge(")
+    expect(props.tool_allowlist).toEqual([LLM_JUDGE_TOOL_ID])
+  })
+
+  it("grants both llm and llm_judge for the triage example", async () => {
+    const { component, container } = render(CodeEvalForm)
+    await use_example(container, TRIAGE_TAB)
+    const props = component.getProperties()
+    expect(props.code).toContain("tools.llm(")
+    expect(props.code).toContain("tools.llm_judge(")
+    expect(props.tool_allowlist).toEqual([LLM_TOOL_ID, LLM_JUDGE_TOOL_ID])
+  })
+
+  it("grants nothing extra for an example that calls no tools", async () => {
+    const { component, container } = render(CodeEvalForm, {
+      props: {
+        properties: {
+          type: "code_eval" as const,
+          code: "def score(output):\n    return {}\n",
+          reference_keys: [] as string[],
+          timeout_seconds: 180,
+          tool_allowlist: ["mcp::remote::demo::search"],
+        },
+      },
+    })
+    await use_example(container, PARSE_JSON_TAB)
+    const props = component.getProperties()
+    expect(props.code).toContain("json.loads(output)")
+    // Unchanged: no spurious grant, and the user's own pick is left alone.
+    expect(props.tool_allowlist).toEqual(["mcp::remote::demo::search"])
+  })
+
+  it("adds to, rather than replaces, tools the user already selected", async () => {
+    const { component, container } = render(CodeEvalForm, {
+      props: {
+        properties: {
+          type: "code_eval" as const,
+          code: "def score(output):\n    return {}\n",
+          reference_keys: [] as string[],
+          timeout_seconds: 180,
+          tool_allowlist: ["mcp::remote::demo::search"],
+        },
+      },
+    })
+    await use_example(container, LLM_JUDGE_TAB)
+    const props = component.getProperties()
+    expect(props.tool_allowlist).toEqual([
+      "mcp::remote::demo::search",
+      LLM_JUDGE_TOOL_ID,
+    ])
+  })
+
+  it("is idempotent when the same example is used twice", async () => {
+    const { component, container } = render(CodeEvalForm)
+    await use_example(container, TRIAGE_TAB)
+    await use_example(container, TRIAGE_TAB)
+    const props = component.getProperties()
+    expect(props.tool_allowlist).toEqual([LLM_TOOL_ID, LLM_JUDGE_TOOL_ID])
   })
 })
 

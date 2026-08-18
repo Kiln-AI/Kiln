@@ -7,6 +7,7 @@ import { writable } from "svelte/store"
 import { tool_link } from "$lib/utils/link_builder"
 import { indexedDBStore } from "./index_db_store"
 import { client } from "$lib/api_client"
+import { LLM_JUDGE_TOOL_ID } from "$lib/utils/built_in_tool_ids"
 
 type ToolsStore = {
   selected_tool_ids_by_task_id: Record<string, string[]>
@@ -21,7 +22,7 @@ export type SandboxCodeContext = "none" | "code_tool" | "code_eval"
 // the sandbox_code set that the set type cannot express on its own.
 // Module-private on purpose: pickers must go through
 // is_tool_selectable_in_context() rather than matching ids themselves.
-const CODE_EVAL_ONLY_TOOL_IDS = ["kiln_tool::llm_judge"]
+const CODE_EVAL_ONLY_TOOL_IDS = [LLM_JUDGE_TOOL_ID]
 
 // Whether a picker in `context` may offer a tool, given the set that carries it.
 //

@@ -984,14 +984,50 @@ def test_ai_models_set_is_typed_sandbox_code(client, test_project):
         }
 
 
-def test_llm_judge_tool_id_matches_the_web_ui_constant():
-    """Guard the one tool id the web UI still has to name literally.
+def test_web_ui_built_in_tool_ids_match_the_enum():
+    """Guard the built-in tool ids the web UI has to name literally.
 
-    `llm_judge` needs a code judge's score schema, so the code-eval picker is the
-    only one that offers it -- a narrowing the sandbox_code set type cannot express,
-    which leaves `CODE_EVAL_ONLY_TOOL_IDS` in tools_store.ts holding a hand-copied
-    id. Renaming the enum value without updating that list would put `llm_judge`
-    back in the code-tool picker, so fail here instead.
+    They are not in the generated OpenAPI client (the API types them as plain tool
+    id strings), so built_in_tool_ids.ts hand-copies them. Two rules downstream key
+    off those literals: `CODE_EVAL_ONLY_TOOL_IDS` keeps `llm_judge` out of the
+    code-tool picker, and the code-judge examples grant themselves the tools their
+    snippets call. Renaming an enum value without updating the .ts would silently
+    break both, so fail here instead.
+    """
+    tool_ids_module = (
+        Path(__file__).resolve().parents[2]
+        / "web_ui"
+        / "src"
+        / "lib"
+        / "utils"
+        / "built_in_tool_ids.ts"
+    )
+    assert tool_ids_module.is_file(), f"expected the web UI module at {tool_ids_module}"
+
+    # Exact ids, not a substring search: "kiln_tool::llm" is a prefix of
+    # "kiln_tool::llm_judge" and of any renamed-but-not-updated value, so a loose
+    # check would pass right through the drift this test exists to catch.
+    declared = dict(
+        re.findall(
+            r'export const (\w+) = "([^"]+)"',
+            tool_ids_module.read_text(),
+        )
+    )
+    assert declared == {
+        "LLM_TOOL_ID": KilnBuiltInToolId.LLM.value,
+        "LLM_JUDGE_TOOL_ID": KilnBuiltInToolId.LLM_JUDGE.value,
+    }, (
+        f"built_in_tool_ids.ts declares {declared} -- update it to match "
+        "KilnBuiltInToolId."
+    )
+
+
+def test_code_eval_only_tool_ids_uses_the_shared_constant():
+    """`CODE_EVAL_ONLY_TOOL_IDS` must reference the guarded constant.
+
+    test_web_ui_built_in_tool_ids_match_the_enum only guards built_in_tool_ids.ts.
+    Re-typing the literal here instead of importing it would put the narrowing rule
+    back outside that guard's reach.
     """
     tools_store = (
         Path(__file__).resolve().parents[2]
@@ -1011,14 +1047,9 @@ def test_llm_judge_tool_id_matches_the_web_ui_constant():
     assert declaration is not None, (
         "could not find CODE_EVAL_ONLY_TOOL_IDS in tools_store.ts"
     )
-    # Exact ids, not a substring search: "kiln_tool::llm_judge" is a prefix of any
-    # renamed-but-not-updated value, so a loose check would pass right through the
-    # drift this test exists to catch.
-    declared_ids = set(re.findall(r'"([^"]+)"', declaration.group(1)))
-    assert declared_ids == {KilnBuiltInToolId.LLM_JUDGE.value}, (
-        f"CODE_EVAL_ONLY_TOOL_IDS is {sorted(declared_ids)}, expected "
-        f"['{KilnBuiltInToolId.LLM_JUDGE.value}'] -- update tools_store.ts to match "
-        "the enum."
+    assert declaration.group(1).strip() == "LLM_JUDGE_TOOL_ID", (
+        f"CODE_EVAL_ONLY_TOOL_IDS is [{declaration.group(1).strip()}], expected "
+        "[LLM_JUDGE_TOOL_ID] imported from built_in_tool_ids.ts."
     )
 
 

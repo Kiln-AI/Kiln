@@ -2,8 +2,18 @@ import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_te
 import type { EvalOutputScore } from "$lib/types"
 import { assertNever } from "$lib/utils/exhaustive"
 import { SHOW_REFERENCE_DATA_UI } from "$lib/utils/eval_types/reference_data_ui"
+import { LLM_JUDGE_TOOL_ID, LLM_TOOL_ID } from "$lib/utils/built_in_tool_ids"
 
 type ScoreType = EvalOutputScore["type"]
+
+export type CodeEvalExample = {
+  label: string
+  code: string
+  // Tool IDs the snippet calls. A code judge may only call tools in its allowlist,
+  // so using an example grants these. Required rather than optional so a new example
+  // cannot ship code that is rejected the moment the user runs it.
+  required_tool_ids: string[]
+}
 
 function score_description(type: ScoreType, key: string): string {
   switch (type) {
@@ -182,11 +192,12 @@ export function generate_default_code(
 }
 
 // IMPORTANT: See the note on generate_default_code above. These example snippets are
-// mirrored byte-for-byte and executed in test_code_eval_samples.py. Do NOT change them
+// mirrored byte-for-byte and executed in test_code_eval_samples.py, which runs each
+// one under the allowlist declared in required_tool_ids here. Do NOT change either
 // without updating those mirrored fixtures.
 export function generate_examples(
   output_scores?: EvalOutputScore[],
-): { label: string; code: string }[] {
+): CodeEvalExample[] {
   const scores = normalize_scores(output_scores)
   const parse_json_return = build_example_return(
     scores,
@@ -209,6 +220,7 @@ export function generate_examples(
   return [
     {
       label: "Parse JSON",
+      required_tool_ids: [],
       code: `import json
 from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
@@ -227,6 +239,7 @@ def score(output):
     },
     {
       label: "Check tool usage",
+      required_tool_ids: [],
       code: `from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
 def score(trace):
@@ -240,6 +253,7 @@ def score(trace):
     },
     {
       label: "Domain-specific grading",
+      required_tool_ids: [],
       code: SHOW_REFERENCE_DATA_UI
         ? `from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
 
@@ -266,6 +280,7 @@ def score(output):
     },
     {
       label: "LLM judge",
+      required_tool_ids: [LLM_JUDGE_TOOL_ID],
       code: `import json
 from kiln import tools
 
@@ -293,6 +308,7 @@ def score(output):
     },
     {
       label: "Triage then LLM judge",
+      required_tool_ids: [LLM_TOOL_ID, LLM_JUDGE_TOOL_ID],
       code: `import json
 from kiln import tools
 

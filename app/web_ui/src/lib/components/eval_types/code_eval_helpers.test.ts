@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import type { EvalOutputScore } from "$lib/types"
 import { generate_default_code, generate_examples } from "./code_eval_helpers"
+import { LLM_JUDGE_TOOL_ID, LLM_TOOL_ID } from "$lib/utils/built_in_tool_ids"
 
 function make_score(
   name: string,
@@ -358,5 +359,65 @@ describe("generate_examples", () => {
         expect(ex.code).toContain("# Adjust each score's logic for your eval")
       }
     })
+  })
+})
+
+describe("example tool requirements", () => {
+  // `from kiln import tools` then `tools.<name>(...)`. Anchored on the `tools.`
+  // receiver so KilnEvalHelpers.* calls are not mistaken for tool calls, and
+  // requiring the open paren so the bare import line does not match.
+  const TOOL_CALL_RE = /\btools\.([A-Za-z_][A-Za-z0-9_]*)\s*\(/g
+
+  const TOOL_ID_BY_FUNCTION_NAME: Record<string, string> = {
+    llm: LLM_TOOL_ID,
+    llm_judge: LLM_JUDGE_TOOL_ID,
+  }
+
+  function tool_ids_called_by(code: string): string[] {
+    const ids = new Set<string>()
+    for (const match of code.matchAll(TOOL_CALL_RE)) {
+      const tool_id = TOOL_ID_BY_FUNCTION_NAME[match[1]]
+      expect(
+        tool_id,
+        `example calls tools.${match[1]}, which this test cannot map to a tool ID`,
+      ).toBeTruthy()
+      ids.add(tool_id)
+    }
+    return [...ids]
+  }
+
+  it("declares every tool its code calls", () => {
+    // A code judge may only call tools in its allowlist, and use_example() grants
+    // exactly required_tool_ids — so an under-declared example ships code that is
+    // rejected the moment the user runs it.
+    for (const example of generate_examples()) {
+      for (const tool_id of tool_ids_called_by(example.code)) {
+        expect(
+          example.required_tool_ids,
+          `example "${example.label}" calls ${tool_id} without declaring it`,
+        ).toContain(tool_id)
+      }
+    }
+  })
+
+  it("finds the LLM examples' calls, so the scan above is not vacuous", () => {
+    const called_by_label = Object.fromEntries(
+      generate_examples().map((e) => [e.label, tool_ids_called_by(e.code)]),
+    )
+    expect(called_by_label["LLM judge"]).toEqual([LLM_JUDGE_TOOL_ID])
+    expect(called_by_label["Triage then LLM judge"].sort()).toEqual(
+      [LLM_TOOL_ID, LLM_JUDGE_TOOL_ID].sort(),
+    )
+  })
+
+  it("declares nothing for examples that call no tools", () => {
+    for (const example of generate_examples()) {
+      if (tool_ids_called_by(example.code).length === 0) {
+        expect(
+          example.required_tool_ids,
+          `example "${example.label}" declares tools its code never calls`,
+        ).toEqual([])
+      }
+    }
   })
 })

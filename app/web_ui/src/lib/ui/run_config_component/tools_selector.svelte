@@ -61,13 +61,29 @@
     tools = []
   }
 
-  function is_tool_available(tool_id: string, project_id: string): boolean {
-    const available = $available_tools[project_id]
-    if (!available) return false
-
-    return available.some((tool_set) =>
-      tool_set.tools.some((tool) => tool.id === tool_id),
-    )
+  // Every tool id this picker may hold in `tools`, given its context. The dropdown,
+  // a pending ?tool_id= injection and anything already persisted all resolve through
+  // this, so filtering the displayed options alone can never leave a context-forbidden
+  // tool sitting in the bound value.
+  function selectable_tool_ids(
+    available_tool_sets: ToolSetApiDescription[] | undefined,
+    sandbox_code_context: SandboxCodeContext,
+  ): Set<string> {
+    const ids = new Set<string>()
+    for (const tool_set of available_tool_sets ?? []) {
+      for (const tool of tool_set.tools) {
+        if (
+          is_tool_selectable_in_context(
+            tool.id,
+            tool_set.type,
+            sandbox_code_context,
+          )
+        ) {
+          ids.add(tool.id)
+        }
+      }
+    }
+    return ids
   }
 
   async function load_tools(project_id: string, task_id: string | null) {
@@ -101,14 +117,19 @@
   }
 
   function apply_pending_tool() {
-    if (
-      pending_tool_id &&
-      !tools.includes(pending_tool_id) &&
-      is_tool_available(pending_tool_id, project_id)
-    ) {
-      const next_tools = [...new Set([...tools, pending_tool_id])]
-      tools = next_tools
+    if (!pending_tool_id || tools.includes(pending_tool_id)) {
+      return
     }
+    // A ?tool_id= in the URL is untrusted input, so it earns a selection only if
+    // this picker could have offered the tool itself.
+    const selectable = selectable_tool_ids(
+      $available_tools[project_id],
+      tools_selector_settings.sandbox_code_context,
+    )
+    if (!selectable.has(pending_tool_id)) {
+      return
+    }
+    tools = [...new Set([...tools, pending_tool_id])]
   }
 
   // If tools load after initial render, re-apply pending tool
@@ -116,7 +137,15 @@
     apply_pending_tool()
   }
 
-  // Update tools_store when tools changes, only after initial load so we don't update it with the empty initial value
+  $: drop_unselectable_tools(
+    $available_tools[project_id],
+    tools,
+    tools_selector_settings.sandbox_code_context,
+  )
+
+  // Update tools_store when tools changes, only after initial load so we don't
+  // update it with the empty initial value. Ordered after drop_unselectable_tools
+  // so a forbidden selection is never persisted, not even transiently.
   $: if (task_id && tools && tools_store_loaded_task_id === task_id) {
     tools_store.update((state) => ({
       ...state,
@@ -127,15 +156,18 @@
     }))
   }
 
-  $: filter_unavailable_tools($available_tools[project_id], tools)
-
-  // Filter out tools that are not in the available tools (server offline, tool removed, etc)
-  function filter_unavailable_tools(
-    available_tools: ToolSetApiDescription[] | undefined,
+  // Drop anything this picker may not hold: tools the server no longer offers
+  // (server offline, tool removed) and tools its sandboxed-code context forbids.
+  // This is the write-path counterpart to the dropdown's filtering — without it a
+  // selection that was persisted earlier, or injected via ?tool_id=, would survive
+  // in `tools` and be saved back out.
+  function drop_unselectable_tools(
+    available_tool_sets: ToolSetApiDescription[] | undefined,
     current_tools: string[],
+    sandbox_code_context: SandboxCodeContext,
   ) {
     if (
-      !available_tools ||
+      !available_tool_sets ||
       !project_id ||
       !current_tools ||
       current_tools.length === 0
@@ -143,19 +175,16 @@
       return
     }
 
-    const available_tool_ids = new Set(
-      available_tools.flatMap((tool_set) =>
-        tool_set.tools.map((tool) => tool.id),
-      ),
+    const selectable = selectable_tool_ids(
+      available_tool_sets,
+      sandbox_code_context,
     )
 
-    const unavailable_tools = tools.filter(
-      (tool_id) => !available_tool_ids.has(tool_id),
-    )
+    const dropped = current_tools.filter((tool_id) => !selectable.has(tool_id))
 
-    if (unavailable_tools.length > 0) {
-      console.warn("Removing unavailable tools:", unavailable_tools)
-      tools = tools.filter((tool_id) => available_tool_ids.has(tool_id))
+    if (dropped.length > 0) {
+      console.warn("Removing tools not selectable in this picker:", dropped)
+      tools = current_tools.filter((tool_id) => selectable.has(tool_id))
     }
   }
 

@@ -23,10 +23,19 @@ from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import KilnTool, ToolCallContext, ToolCallResult
 from kiln_ai.utils.jinja_engine import JinjaExtractionError, _template_env
 
-_DEFAULT_SYSTEM_PROMPT = (
+# Each tool owns its own default. ``run_llm_call`` deliberately has none: it is
+# shared by a scorer and a general-purpose model call, and a default living in the
+# shared helper is how the judge's instruction reached ``llm`` in the first place.
+_DEFAULT_JUDGE_SYSTEM_PROMPT = (
     "Your job is to evaluate a model's performance on a task. "
     "Score the output according to the criteria provided."
 )
+
+# ``llm`` makes arbitrary model calls (summarize, extract, triage), so telling it to
+# score an output would misdirect every caller that omits a system prompt. There is
+# no "send no system prompt" option here: ``Task.instruction`` is ``min_length=1``,
+# so the ephemeral task needs some instruction, and a neutral one steers least.
+_DEFAULT_LLM_SYSTEM_PROMPT = "You are a helpful assistant."
 
 
 class _LlmToolTask(Task, parent_of={}):
@@ -52,7 +61,7 @@ async def run_llm_call(
     *,
     model: str,
     provider: str,
-    system_prompt: str | None,
+    system_prompt: str,
     rendered_prompt: str,
     output_json_schema: str | None,
 ) -> RunOutput:
@@ -60,6 +69,9 @@ async def run_llm_call(
 
     Mirrors the machinery ``LlmJudgeEval`` uses for its non-g-eval path: an
     ephemeral judge Task invoked through ``adapter_for_task``.
+
+    ``system_prompt`` is required and applied verbatim. Callers pick their own
+    default, so a scoring instruction cannot leak into a general model call.
 
     When ``output_json_schema`` is None the call is free-text and
     ``run_output.output`` is a ``str``; when set it is structured and
@@ -79,8 +91,8 @@ async def run_llm_call(
         raise ValueError(f"Invalid model provider: {provider}")
     provider_enum = ModelProviderName(provider)
 
-    judge_task = _LlmToolTask(
-        system_prompt=system_prompt or _DEFAULT_SYSTEM_PROMPT,
+    llm_task = _LlmToolTask(
+        system_prompt=system_prompt,
         output_json_schema=output_json_schema,
     )
 
@@ -95,7 +107,7 @@ async def run_llm_call(
     )
 
     adapter = adapter_for_task(
-        judge_task,
+        llm_task,
         run_config_properties=KilnAgentRunConfigProperties(
             model_name=model,
             model_provider_name=provider_enum,
@@ -197,7 +209,7 @@ class LlmTool(KilnTool):
         run_output = await run_llm_call(
             model=kwargs["model"],
             provider=kwargs["provider"],
-            system_prompt=kwargs.get("system_prompt"),
+            system_prompt=kwargs.get("system_prompt") or _DEFAULT_LLM_SYSTEM_PROMPT,
             rendered_prompt=rendered_prompt,
             output_json_schema=output_json_schema,
         )
@@ -278,7 +290,7 @@ class LlmJudgeTool(KilnTool):
         run_output = await run_llm_call(
             model=kwargs["model"],
             provider=kwargs["provider"],
-            system_prompt=kwargs.get("system_prompt"),
+            system_prompt=kwargs.get("system_prompt") or _DEFAULT_JUDGE_SYSTEM_PROMPT,
             rendered_prompt=rendered_prompt,
             output_json_schema=context.eval_output_schema,
         )

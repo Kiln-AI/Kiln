@@ -67,9 +67,16 @@
   }
 
   function use_example(): boolean {
-    properties.code = examples[active_example_tab].code
-    code_string = examples[active_example_tab].code
-    code_editor?.setValue(examples[active_example_tab].code)
+    const example = examples[active_example_tab]
+    properties.code = example.code
+    code_string = example.code
+    code_editor?.setValue(example.code)
+    // The snippet's tool calls fail against an allowlist that doesn't list them, so
+    // taking an example grants what it needs. Unioned rather than replaced: it must
+    // not drop tools the user already picked, and re-using an example is then a no-op.
+    tool_allowlist = [
+      ...new Set([...tool_allowlist, ...example.required_tool_ids]),
+    ]
     user_has_edited = true
     return true
   }
