@@ -1825,13 +1825,17 @@ class TestRunV2Job:
         tmp_path,
     ):
         # A TaskRun with a parent_task_run_id is only valid on a multi-turn task,
-        # so build the run on a multi-turn task to satisfy that invariant.
+        # so build the run on a multi-turn task to satisfy that invariant. Own
+        # directory: a sibling task file would share this task's runs/ folder,
+        # leaking the chained run into the runner task's scans.
+        multiturn_dir = tmp_path / "multiturn"
+        multiturn_dir.mkdir()
         multiturn_task = Task(
             name="multiturn",
             description="test",
             instruction="do the thing",
             turn_mode=TurnMode.multiturn,
-            path=tmp_path / "multiturn_task.kiln",
+            path=multiturn_dir / "multiturn_task.kiln",
         )
         multiturn_task.save_to_file()
         task_run = TaskRun(
