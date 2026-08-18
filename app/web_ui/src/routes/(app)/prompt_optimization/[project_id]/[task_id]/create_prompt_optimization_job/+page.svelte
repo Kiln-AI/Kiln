@@ -326,26 +326,25 @@
       evals_loading = true
       evals_error = null
 
-      const { data: evals_data, error: evals_fetch_error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/evals",
-        {
+      const { data: evals_response, error: evals_fetch_error } =
+        await client.GET("/api/projects/{project_id}/tasks/{task_id}/evals", {
           params: {
             path: {
               project_id,
               task_id,
             },
           },
-        },
-      )
+        })
 
       if (evals_fetch_error) {
         throw evals_fetch_error
       }
 
-      if (!evals_data) {
+      if (!evals_response) {
         evals_with_configs = []
         return
       }
+      const evals_data = evals_response.evals
 
       const evals_with_configs_promises = evals_data.map(async (evalItem) => {
         if (!evalItem.id) {
@@ -626,7 +625,7 @@
     )
 
     if (evals_data) {
-      const evals_by_id = new Map(evals_data.map((e) => [e.id, e]))
+      const evals_by_id = new Map(evals_data.evals.map((e) => [e.id, e]))
       const configs_by_eval_id = await Promise.all(
         evals_with_configs.map(async (item) => {
           const eval_id = item.eval.id

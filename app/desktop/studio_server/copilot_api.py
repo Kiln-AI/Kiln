@@ -1276,24 +1276,17 @@ def connect_copilot_api(app: FastAPI):
             description=None,
             template=template,
             output_scores=output_scores,
-            # The EvalInput-backed test split is expressible only in `splits`,
-            # so the legacy flat field stays empty. Single-turn's train split
-            # is TaskRun-backed and homed in its legacy field by the
-            # constructor; multi-turn's is homed via set_split below.
-            eval_set_filter_id=None,
-            splits={"test": EvalInputSplit(filter_id=f"tag::{eval_tag}")},
-            train_set_filter_id=None
-            if request.multi_turn is not None
-            else train_set_filter_id,
+            # `splits` is the single home for both splits: the EvalInput-backed
+            # test split and the TaskRun-backed train split. The deprecated flat
+            # filter fields are never written.
+            splits={
+                "test": EvalInputSplit(filter_id=f"tag::{eval_tag}"),
+                "train": TaskRunSplit(filter_id=train_set_filter_id),
+            },
             eval_configs_filter_id=eval_configs_filter_id,
             template_properties=None,
             evaluation_data_type=evaluation_data_type,
         )
-        if request.multi_turn is not None:
-            # set_split (not dict assignment) so the TaskRun-backed train split
-            # is written to its legacy flat field, where older Kiln clients and
-            # the project zip still read it.
-            eval.set_split("train", TaskRunSplit(filter_id=train_set_filter_id))
 
         # 2. Create the judge eval config — V2 shape, the same judge the review
         # step ran transiently (one judge, persisted vs transient). V2 rails

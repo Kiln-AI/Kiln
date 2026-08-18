@@ -1,7 +1,7 @@
 import json
 from enum import Enum
 from threading import Lock
-from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Set, Union
+from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Union
 
 from pydantic import (
     BaseModel,
@@ -10,7 +10,6 @@ from pydantic import (
     Field,
     GetJsonSchemaHandler,
     JsonValue,
-    PrivateAttr,
     SerializationInfo,
     SerializerFunctionWrapHandler,
     TypeAdapter,
@@ -509,6 +508,10 @@ class V2EvalResult(BaseModel):
     skipped_reason: SkippedReason | None = None
     skipped_detail: str | None = None
     intermediate_outputs: Dict[str, str] | None = None
+    usage: Usage | None = Field(
+        default=None,
+        description="What the judgment itself cost, if it called a model. None for the deterministic eval types, which call none. Stored on the resulting EvalRun as eval_usage.",
+    )
 
 
 class UserMessage(BaseModel):
@@ -669,31 +672,55 @@ class EvalTaskInput(BaseModel):
     )
 
     @classmethod
-    def from_task_run(cls, task_run: "TaskRun") -> "EvalTaskInput":
+    def from_trace(
+        cls, trace: "TaskRun", source: "TaskRun | EvalInput"
+    ) -> "EvalTaskInput":
+        """What a judge sees: the trace that was produced, plus the item it came from.
+
+        The two are separate arguments because they are separate records once eval traces
+        live on their own TaskRun — the trace holds what the model said, and the source
+        item holds the ground truth to compare it against. They are the same object only
+        for calibration, where the golden dataset item is itself what gets scored.
+        """
         from kiln_ai.datamodel.task_run import TaskRun as _TaskRun
 
-        if not isinstance(task_run, _TaskRun):
-            raise TypeError("Expected a TaskRun instance")
+        if not isinstance(trace, _TaskRun):
+            raise TypeError("Expected a TaskRun instance for trace")
 
         trace_data: list[dict[str, Any]] | None = None
-        if task_run.trace is not None:
-            trace_data = [dict(msg) for msg in task_run.trace]
+        if trace.trace is not None:
+            trace_data = [dict(msg) for msg in trace.trace]
+
+        if isinstance(source, EvalInput):
+            if not isinstance(source.data, SingleTurnEvalInputData):
+                raise ValueError("EvalTaskInput only supports single-turn EvalInput")
+            reference_data = source.reference
+            # The item's own text, not the trace's: an EvalInput is the canonical
+            # statement of the input, and the adapter may have reserialized it.
+            task_input = source.data.user_message.text
+        elif isinstance(source, _TaskRun):
+            reference_data = None
+            task_input = trace.input
+        else:
+            raise TypeError("Expected a TaskRun or EvalInput instance for source")
 
         return cls(
-            final_message=task_run.output.output,
+            final_message=trace.output.output,
             trace=trace_data,
-            reference_data=None,
-            task_input=task_run.input,
+            reference_data=reference_data,
+            task_input=task_input,
         )
+
+    @classmethod
+    def from_task_run(cls, task_run: "TaskRun") -> "EvalTaskInput":
+        """A TaskRun scored as itself, with no separate source item."""
+        return cls.from_trace(task_run, task_run)
 
     @classmethod
     def from_eval_input(
         cls, eval_input: "EvalInput", run_output: "TaskRun"
     ) -> "EvalTaskInput":
-        from kiln_ai.datamodel.task_run import TaskRun as _TaskRun
-
-        if not isinstance(run_output, _TaskRun):
-            raise TypeError("Expected a TaskRun instance for run_output")
+        """A generated run scored against the EvalInput it was generated from."""
         if not isinstance(eval_input, EvalInput):
             raise TypeError("Expected an EvalInput instance")
 
@@ -760,10 +787,33 @@ class EvalOutputScore(BaseModel):
         return self
 
 
+LEGACY_TRACE_FIELDS = ("output", "task_run_trace", "task_run_usage", "reference_answer")
+"""The EvalRun fields that hold a copy of the trace a score was computed over.
+
+Deprecated: new records point at a TaskRun with `scored_run_id` instead. Kept declared
+and loadable forever - every record written before the split still carries them. A
+pointer-mode record must leave all of them None, which `validate_record_mode` enforces.
+`input` is deprecated alongside these but is not in this tuple: it is the one a legacy
+record is *required* to have, so it is checked separately.
+
+Three ways to mark a pydantic field deprecated; these fields use two of them:
+
+1. A `DEPRECATED:` prefix in the `description`. Reaches a human reading the SDK docs or
+   the OpenAPI schema, and nothing else. Used.
+2. `json_schema_extra={"deprecated": True}`. Puts `"deprecated": true` in the JSON
+   schema, which `openapi-typescript` turns into a `/** @deprecated */` JSDoc tag, so
+   the TS compiler and editors strike through every web call site. No runtime effect.
+   Used.
+3. `Field(deprecated=True)`. Same schema output as (2), but pydantic also raises a
+   DeprecationWarning on every attribute *read* — and reading these is the correct,
+   permanent way to render a legacy record, so it would be a warning storm. Not used.
+   Do not "fix" this to (3) without silencing that first; (2) already provides the
+   tooling signal (3) would be reached for."""
+
+
 class EvalRun(KilnParentedModel):
     """
-    The result of running an eval on a single item, stored as a child of the
-    EvalConfig that produced it.
+    The scores an eval produced for a single dataset item.
 
     A run serves one of two purposes:
     - eval_config_eval=False: evaluating a task run — the task was run with
@@ -772,16 +822,32 @@ class EvalRun(KilnParentedModel):
       item's output was scored so the evaluator can be compared against human
       ratings. task_run_config_id must be None.
 
-    The evaluated item comes from exactly one of two mutually-exclusive sources:
-    dataset_id (a TaskRun) or eval_input_id (a V2 EvalInput).
+    Eval runs can be one of 2 types:
+    1) eval_config_eval=False (scoring): we were evaluating a task run config (a method of running the task). We take the item's input, run the task with the task_run_config, then run the evaluator on that output. task_run_config_id must be set.
+    2) eval_config_eval=True (calibration): we were evaluating an eval config (a method of evaluating the task). We used an existing human-rated dataset item's input/output, and ran the evaluator on it. task_run_config_id must be None.
 
-    output and scores may be missing only when skipped_reason is set, marking an
-    item that was skipped rather than scored.
+    A record is described by two independent facts — whether it points at a TaskRun, and
+    whether it was skipped — which `validate_record_mode` constrains to three legal
+    shapes. What is exclusive is where the trace lives: on the record, or on the TaskRun,
+    never both.
+
+    - **Pointer** (new): `scored_run_id` names the TaskRun that holds the trace. All
+      inline trace fields must be None.
+    - **Skipped**: `skipped_reason` set, so scores are not required. It also carries a
+      `scored_run_id` if the trace existed and only scoring was skipped — so a skip can
+      be a pointer record too — and none if the skip happened before generation.
+    - **Legacy inline**: no `scored_run_id`; the trace lives on this record, and `input`
+      is required unless the record was skipped. Every record written before the
+      trace/score split is in this state, and it stays valid forever.
     """
 
     dataset_id: ID_TYPE | None = Field(
         default=None,
         description="The ID of the dataset item (TaskRun) that was used for this run. Mutually exclusive with eval_input_id.",
+    )
+    scored_run_id: ID_TYPE | None = Field(
+        default=None,
+        description="The ID of the TaskRun this score was computed over. None for legacy records that carry their trace inline. A dangling reference is tolerated: the score still renders and still aggregates, only the trace drill-through is unavailable.",
     )
     task_run_config_id: ID_TYPE | None = Field(
         description="The ID of the TaskRunConfig that was run, if this eval run was based on a task run. Must belong to the same Task as this eval. Can be None if this eval run is based on an eval config."
@@ -790,16 +856,20 @@ class EvalRun(KilnParentedModel):
         description="Whether this eval run to evaluate the parent eval config (evaluating the config using an existing dataset item). If true, task_run_config_id must be None, as we're not running the task.",
         default=False,
     )
-    input: str = Field(
-        description="The input to the task. JSON formatted for structured input, plaintext for unstructured input."
+    input: str | None = Field(
+        default=None,
+        json_schema_extra={"deprecated": True},
+        description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.input instead. The input to the task. JSON formatted for structured input, plaintext for unstructured input. Required on legacy records (those with neither a scored_run_id nor a skipped_reason), never set on new ones.",
     )
     output: str | None = Field(
         default=None,
-        description="The output of the task. None for skipped-before-execution runs.",
+        json_schema_extra={"deprecated": True},
+        description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.output.output instead. The output of the task. None for skipped-before-execution runs.",
     )
     reference_answer: str | None = Field(
         default=None,
-        description="The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.",
+        json_schema_extra={"deprecated": True},
+        description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id. The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.",
     )
     intermediate_outputs: Dict[str, str] | None = Field(
         default=None,
@@ -807,7 +877,8 @@ class EvalRun(KilnParentedModel):
     )
     task_run_trace: str | None = Field(
         default=None,
-        description="The JSON formatted trace of the task run that produced the output.",
+        json_schema_extra={"deprecated": True},
+        description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.trace instead. The JSON formatted trace of the task run that produced the output.",
     )
     scores: EvalScores = Field(
         default={},
@@ -815,7 +886,12 @@ class EvalRun(KilnParentedModel):
     )
     task_run_usage: Usage | None = Field(
         default=None,
-        description="The usage of the task run that produced this eval run output (not the usage by the evaluation model).",
+        json_schema_extra={"deprecated": True},
+        description="DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.usage instead. The usage of the task run that produced this eval run output (not the usage by the evaluation model).",
+    )
+    eval_usage: Usage | None = Field(
+        default=None,
+        description="The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field.",
     )
 
     eval_input_id: ID_TYPE | None = Field(
@@ -850,8 +926,44 @@ class EvalRun(KilnParentedModel):
         return self
 
     @model_validator(mode="after")
+    def validate_record_mode(self) -> Self:
+        """Keep the three record states (pointer / skipped / legacy inline) exclusive.
+
+        The forbidding half of the pointer rule is the one that earns its keep: a record
+        that points at a TaskRun must never also carry a second copy of what it scored,
+        which nothing would keep in sync.
+        """
+        inline_set = [f for f in LEGACY_TRACE_FIELDS if getattr(self, f) is not None]
+
+        if self.scored_run_id is not None:
+            # Checked before the skip branch on purpose: a record skipped at *scoring*
+            # time still has a scored_run_id, and still must not carry inline data.
+            if self.input is not None or inline_set:
+                carried = (["input"] if self.input is not None else []) + inline_set
+                raise ValueError(
+                    "An EvalRun with scored_run_id must not carry inline trace data "
+                    f"(set: {', '.join(carried)}). "
+                    "The trace lives on the referenced TaskRun."
+                )
+            return self
+
+        if self.skipped_reason is not None:
+            # Skipped before generation: there is nothing to point at, and nothing to
+            # require. Legacy skipped records that do carry inline data stay valid.
+            return self
+
+        if self.input is None:
+            raise ValueError("A legacy EvalRun (no scored_run_id) requires input.")
+        return self
+
+    @model_validator(mode="after")
     def validate_output_fields(self, info: ValidationInfo) -> Self:
         parent_eval_config = self.parent_eval_config()
+        if self.scored_run_id is not None:
+            # Pointer mode: the trace lives on the referenced TaskRun, and
+            # validate_record_mode already forbids inline copies here. The checks
+            # below are about data carried on this record, so none of them apply.
+            return self
         parent_eval = parent_eval_config.parent_eval() if parent_eval_config else None
         if not parent_eval:
             return self
@@ -1108,27 +1220,14 @@ class EvalDataType(str, Enum):
     reference_answer = "reference_answer"
 
 
-def _without_model_serializer(schema: CoreSchema) -> CoreSchema:
-    """A copy of a model's core schema with its own model serializer removed.
-
-    The serializer sits on the innermost 'model' schema, under one wrapper per
-    model validator. Only that one is dropped: serializers on fields and on nested
-    models are left alone.
-    """
-    if schema.get("type") == "model":
-        return {key: value for key, value in schema.items() if key != "serialization"}  # type: ignore[return-value]
-    stripped = dict(schema)
-    stripped["schema"] = _without_model_serializer(schema["schema"])  # type: ignore[typeddict-item]
-    return stripped  # type: ignore[return-value]
-
-
 class TaskRunSplit(BaseModel):
     """A split whose items are TaskRuns, selected by a dataset filter."""
 
     # Fields a future build adds are preserved rather than dropped, for the same reason
-    # Eval.splits keeps unknown split names: these files sync between app versions. This
-    # only holds for splits stored in `splits` — a split projected into a legacy flat
-    # field becomes a bare filter-id string, which has no room for anything else.
+    # Eval.splits keeps unknown split names: these files sync between app versions. It is
+    # also why the legacy-field migration never overwrites a split that `splits` already
+    # describes — rebuilding one from a bare filter-id string would drop everything else
+    # on it.
     model_config = ConfigDict(extra="allow")
 
     source: Literal["task_run"] = "task_run"
@@ -1160,15 +1259,10 @@ LEGACY_SPLIT_FIELDS: Dict[str, str] = {
     "test": "eval_set_filter_id",
     "train": "train_set_filter_id",
 }
-"""Split name -> the flat `Eval` field that is its on-disk home for older Kiln builds.
-Only TaskRun-backed splits can live in these fields; every other split is stored in
-`Eval.splits`.
-
-MIRRORED IN TYPESCRIPT: `app/web_ui/src/lib/utils/eval_splits.ts` has its own copy of this
-map and of the fold below, because the serializer hands the web client the same two-homed
-format it writes to disk. Change one and the other must change with it — nothing enforces
-it, and a one-sided change fails silently in the UI (a dataset row rendering `undefined`,
-a `/dataset` link pointing at the wrong tag)."""
+"""Split name -> the deprecated flat `Eval` field a Kiln build predating `splits` stored it
+in. These fields are an input format and nothing else: `Eval.migrate_legacy_split_fields`
+reads each one once, on the way in, and clears it. Nothing else in the codebase reads or
+writes them, and they are never written to disk again — see `Eval.splits`."""
 
 
 class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}):
@@ -1188,7 +1282,8 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     )
     eval_set_filter_id: DatasetFilterId | None = Field(
         default=None,
-        description="Legacy storage for a TaskRun-backed test split, kept so older Kiln builds can still read this eval. It is written from the eval's splits, and is null when the test split has no legacy representation. The eval's splits are the authoritative source: see `splits`.",
+        deprecated=True,
+        description="Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['test'] once, and the field is then cleared. It is always saved as null. Read splits['test'] instead.",
     )
     eval_configs_filter_id: DatasetFilterId | None = Field(
         default=None,
@@ -1196,11 +1291,12 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     )
     train_set_filter_id: DatasetFilterId | None = Field(
         default=None,
-        description="Legacy storage for a TaskRun-backed train split, kept so older Kiln builds can still read this eval. It is written from the eval's splits, and is null when the train split has no legacy representation. The eval's splits are the authoritative source: see `splits`.",
+        deprecated=True,
+        description="Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['train'] once, and the field is then cleared. It is always saved as null. Read splits['train'] instead.",
     )
     splits: Dict[str, SplitRef] = Field(
         default_factory=dict,
-        description="The eval's dataset splits, keyed by split name ('test', 'train', 'val'). Each split names the store its items come from and the filter that selects them. Keys this build doesn't know are preserved but not exposed. In Python, prefer Eval.set_split() to assigning into this dict: it stores a split where older Kiln builds can still read it, and marks the field as set so exclude_unset dumps keep it.",
+        description="The eval's dataset splits, keyed by split name ('test', 'train', 'val'), and the only place they are stored. Each split names the store its items come from and the filter that selects them. Keys this build doesn't know are preserved but not exposed. 'golden' is not a split and does not belong here: the golden set must be dataset (TaskRun) based, because human ratings only exist on dataset items, so it is stored in eval_configs_filter_id instead. Nothing reads splits['golden'] — writing it is accepted and silently ignored. In Python, prefer Eval.set_split() to assigning into this dict: it refuses to mutate a readonly (cached) eval, and marks the field as set so exclude_unset dumps keep it.",
     )
     output_scores: List[EvalOutputScore] = Field(
         description="The scores this evaluator should produce."
@@ -1217,153 +1313,102 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         default=EvalDataType.final_answer,
         description="The output of the task run to evaluate. Can be final answer, full trace, or None for V2 evals.",
     )
-    # Which splits arrived in a legacy field, so serialization can put them back where
-    # they came from. None means "provenance unknown" (see serialize_preserving_split_format).
-    _legacy_homed_splits: Set[str] | None = PrivateAttr(default=None)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_eval_input_filter_id(cls, data: Any) -> Any:
+        """Migrate the pre-`splits` `eval_input_filter_id` key into an EvalInput-backed test split.
+
+        A third legacy input for the test split, so it follows the same rule as the two
+        declared legacy fields: it fills the test split only when `splits` does not
+        already describe one, and is dropped either way (it is not a declared field, so
+        it is never written back).
+
+        FUTURE: Safe to delete whenever someone wants to. Only internal projects contained
+        this key and none of them still exist; no public project file has ever had it, so
+        this never becomes a compatibility commitment.
+        """
+        if not isinstance(data, dict):
+            return data
+        filter_id = data.get("eval_input_filter_id")
+        if filter_id is None:
+            return data
+        if data.get("eval_set_filter_id") is not None:
+            # Two legacy inputs naming one split with two different backings. `splits`
+            # winning resolves legacy-vs-`splits` disagreements, but not this one: both
+            # sides here are legacy, so there is no rule that picks between them, and
+            # silently dropping either is worse than refusing the file.
+            raise ValueError(
+                "An eval cannot set both eval_set_filter_id and eval_input_filter_id: they are two backings for the same test split."
+            )
+        data = dict(data)
+        data.pop("eval_input_filter_id")
+        splits = dict(data.get("splits") or {})
+        if "test" not in splits:
+            splits["test"] = {"source": "eval_input", "filter_id": filter_id}
+        data["splits"] = splits
+        return data
 
     @model_validator(mode="after")
-    def fold_legacy_filter_fields(self) -> Self:
-        """Copy the legacy flat fields into `splits`, recording that they came from there.
+    def migrate_legacy_split_fields(self) -> Self:
+        """Migrate the deprecated flat filter fields into `splits`, once, and clear them.
 
-        Runs once, when the eval is first validated — loaded, or constructed. It must not
-        run again: `validate_assignment` re-runs after-validators on every attribute set
-        (including `self.path = path` at the end of save_to_file), and a second pass would
-        re-derive `splits` from the legacy fields, reverting any split the caller had
-        written and undoing it on disk at the next save. Legacy fields are a storage
-        format, not state, so they get read exactly once.
+        `splits` is the only home a split has. These fields are an input format for evals
+        written before it existed, so each one is read exactly once — here — and only for
+        a split `splits` doesn't already describe. `splits` winning is what makes the
+        migration one-way: once a value is in `splits` it is the eval's answer, and a
+        legacy field left over beside it (a hand-edited file, or one an older build wrote
+        after a newer one) is ignored rather than allowed to overwrite it. Overwriting
+        would also drop any extra fields on the existing split object, which
+        `TaskRunSplit`/`EvalInputSplit` keep on purpose (`extra="allow"`).
+
+        Both fields are then cleared, unconditionally. That is what makes this a
+        migration rather than a second home: nothing downstream can read a stale value,
+        the eval saves with both fields null, and re-running the validator — which
+        `validate_assignment` does on every attribute set, including `self.path = path`
+        at the end of save_to_file — has nothing left to do. An older Kiln build reading
+        the saved file sees no test set rather than the wrong one; that is the accepted
+        cost of a single home, and the eval list surfaces the evals it can't read.
+
+        Reads and writes go through `__dict__` because the fields are
+        `deprecated=True`: attribute access on them emits a DeprecationWarning, which is
+        meant for callers, not for the one place that is supposed to touch them.
 
         Must stay declared before validate_splits, which requires a test split: an eval
         that carries only legacy fields gets its test split from here.
-
-        A populated legacy field wins over a `splits` entry for the same split. At most
-        one of the two is ever written for a given split, so a conflict means a
-        hand-edited file, and preferring the legacy field keeps old and new Kiln builds
-        agreeing on what the eval's test and train splits are.
-
-        MIRRORED IN TYPESCRIPT: `app/web_ui/src/lib/utils/eval_splits.ts`'s `eval_split`
-        is this fold, precedence included. The web client needs it because
-        serialize_preserving_split_format sends the same two-homed format over the API
-        that it writes to disk. Changes here have to be made there too — see
-        LEGACY_SPLIT_FIELDS.
         """
-        if self._legacy_homed_splits is not None:
-            return self
-
-        homed: Set[str] = set()
-        if self.eval_set_filter_id is not None:
-            self.splits["test"] = TaskRunSplit(filter_id=self.eval_set_filter_id)
-            homed.add("test")
-        if self.train_set_filter_id is not None:
-            self.splits["train"] = TaskRunSplit(filter_id=self.train_set_filter_id)
-            homed.add("train")
-        self._legacy_homed_splits = homed
+        for name, field_name in LEGACY_SPLIT_FIELDS.items():
+            filter_id = self.__dict__.get(field_name)
+            if filter_id is not None and name not in self.splits:
+                self.splits[name] = TaskRunSplit(filter_id=filter_id)
+                # The split now lives only in `splits`, so an exclude_unset dump has to
+                # carry it: on a legacy eval `splits` was never explicitly set.
+                self.__pydantic_fields_set__.add("splits")
+            self.__dict__[field_name] = None
         return self
 
     @model_validator(mode="after")
     def validate_splits(self) -> Self:
         if "test" not in self.splits:
-            raise ValueError(
-                "An eval must have a test split. Set splits['test'] (or the legacy eval_set_filter_id field)."
-            )
+            raise ValueError("An eval must have a test split. Set splits['test'].")
         return self
 
     def set_split(self, name: str, split: SplitRef) -> None:
-        """Set one of the eval's splits, storing it where the most Kiln builds can read it.
+        """Set one of the eval's splits.
 
-        Use this rather than `eval.splits[name] = ...` when adding a split to an eval that
-        a user already has, and the split is one older builds understand: a TaskRun-backed
-        test or train split is written to its legacy flat field, so an older Kiln client —
-        and anything else reading the file directly, like the project zip handed to the
-        remote prompt-optimization service — still sees it.
-
-        Assigning `eval.splits[name]` directly is the way to author a split in the new
-        format only. Both are legitimate; this one is the compatible default for splits
-        created on behalf of a user.
+        Equivalent to `eval.splits[name] = split` plus the two things item assignment on
+        a dict can't do for itself, because it never reaches `__setattr__`: refusing to
+        mutate a readonly (cached) eval, and marking `splits` as set so an
+        exclude_unset dump still carries it.
         """
-        # Dict and set mutation don't go through __setattr__, so the readonly check has to
-        # be explicit here: readonly instances are the cached ones, shared with every other
-        # holder of the same file.
+        # Readonly instances are the cached ones, shared with every other holder of the
+        # same file, so this check has to be explicit here.
         self._ensure_not_readonly("splits")
         self.splits[name] = split
-        # Item assignment leaves `splits` looking unset, which would hide the split from a
-        # model_dump(exclude_unset=True) that has no legacy field to fall back on.
+        # Validated evals always have `splits` marked already (their test split came from
+        # `splits` or from the legacy migration, which marks it), so this is for instances
+        # built by model_construct, where nothing did.
         self.__pydantic_fields_set__.add("splits")
-
-        homed = self._legacy_homed_splits
-        if homed is None:
-            # Provenance unknown (model_construct): serialization is content-determined
-            # and already writes TaskRun-backed test/train splits to their legacy fields.
-            return
-        if name in LEGACY_SPLIT_FIELDS and isinstance(split, TaskRunSplit):
-            homed.add(name)
-        else:
-            # No legacy field can hold this split; §2.6's "backing changes force a format
-            # change" case if it previously had one.
-            homed.discard(name)
-
-    @model_serializer(mode="wrap")
-    def serialize_preserving_split_format(
-        self, handler: SerializerFunctionWrapHandler
-    ) -> Dict[str, Any]:
-        """Write each split back to the format it arrived in.
-
-        A split that arrived in a legacy field is written to that field and omitted from
-        the serialized `splits`, so an untouched legacy eval round-trips byte-identically
-        and older Kiln builds keep reading it. A split that arrived in (or was created
-        in) `splits` is written there, with its legacy field null.
-
-        When provenance is unknown — an instance built by `model_construct`, which skips
-        validation and so never records it — this falls back to content: any TaskRun-backed
-        test or train split is written to its legacy field. That degrades toward old-client
-        compatibility rather than toward a silent format flip.
-        """
-        data: Dict[str, Any] = handler(self)
-
-        homed = self._legacy_homed_splits
-        serialized_splits = data.get("splits") or {}
-        legacy_values: Dict[str, str | None] = {
-            name: None for name in LEGACY_SPLIT_FIELDS
-        }
-        splits_remainder: Dict[str, Any] = {}
-
-        for name, split in self.splits.items():
-            legacy_field = LEGACY_SPLIT_FIELDS.get(name)
-            # A field the caller excluded from this dump can't be the split's home, so
-            # the split stays in `splits` rather than being written nowhere at all.
-            legacy_homed = (
-                legacy_field is not None
-                and legacy_field in data
-                and isinstance(split, TaskRunSplit)
-                and (homed is None or name in homed)
-            )
-            if legacy_homed:
-                legacy_values[name] = split.filter_id
-            elif name in serialized_splits:
-                splits_remainder[name] = serialized_splits[name]
-
-        for name, field_name in LEGACY_SPLIT_FIELDS.items():
-            if field_name in data:
-                data[field_name] = legacy_values[name]
-        if "splits" in data:
-            if splits_remainder:
-                data["splits"] = splits_remainder
-            else:
-                del data["splits"]
-
-        return data
-
-    @classmethod
-    def __get_pydantic_json_schema__(
-        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
-    ) -> JsonSchemaValue:
-        """Describe Eval by its fields, even in serialization mode.
-
-        A model serializer makes pydantic describe the serialized form as a bare object,
-        which would erase Eval from the generated OpenAPI client. The serializer only
-        chooses which of two homes each split is written to — every key it can emit is a
-        declared field — so the field-derived schema is the accurate one.
-        """
-        return handler(_without_model_serializer(core_schema))
 
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:

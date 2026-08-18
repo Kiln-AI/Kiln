@@ -51,6 +51,7 @@ from kiln_ai.datamodel.eval import (
     EvalDataType,
     EvalInputSplit,
     LlmJudgeProperties,
+    TaskRunSplit,
 )
 from kiln_ai.datamodel.spec_properties import SpecType
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
@@ -661,19 +662,25 @@ class TestCreateSpecWithCopilot:
         assert "{{ task_input }}" in config.properties.prompt_template
         assert config.model_name is None and config.model_provider is None
 
+        # Golden is not a split, so splits below doesn't cover it: if it pointed at
+        # the test tag, eval-config comparison would score against test items
+        # instead of golden.
+        assert evals[0].eval_configs_filter_id == "tag::eval_golden_test_spec"
+
         specs = task.specs()
         assert len(specs) == 1
         assert specs[0].eval_id == evals[0].id
 
         # Single-turn on disk: the test split is EvalInput-backed (expressible
-        # only in `splits`); train is TaskRun-backed and stays in its legacy
-        # flat field, where old clients still read it.
+        # only in `splits`); train rides beside it. `splits` is the single home:
+        # the deprecated flat fields are written null.
         on_disk = json.loads(evals[0].path.read_text())
         assert on_disk["splits"] == {
-            "test": {"source": "eval_input", "filter_id": "tag::eval_test_spec"}
+            "test": {"source": "eval_input", "filter_id": "tag::eval_test_spec"},
+            "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
         }
         assert on_disk["eval_set_filter_id"] is None
-        assert on_disk["train_set_filter_id"] == "tag::train_test_spec"
+        assert on_disk["train_set_filter_id"] is None
 
     def test_single_turn_save_writes_eval_inputs_and_splits_to_disk(
         self, client, project_and_task, copilot_request_data
@@ -754,19 +761,19 @@ class TestCreateSpecWithCopilot:
         first_bytes = eval_path.read_text()
         on_disk = json.loads(first_bytes)
 
-        # Test split: EvalInput-backed, expressible only in `splits`.
+        # Test split EvalInput-backed, train TaskRun-backed, both in `splits` —
+        # the single home. The deprecated flat fields are written null.
         assert on_disk["splits"] == {
-            "test": {"source": "eval_input", "filter_id": "tag::eval_test_spec"}
+            "test": {"source": "eval_input", "filter_id": "tag::eval_test_spec"},
+            "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
         }
-        # Train and golden stay TaskRun-backed: train in its legacy flat field
-        # (still read by old clients and the project zip), golden in the
-        # eval-configs filter the judge is calibrated against.
+        # Golden stays in the eval-configs filter the judge is calibrated against.
         assert on_disk["eval_set_filter_id"] is None
-        assert on_disk["train_set_filter_id"] == "tag::train_test_spec"
+        assert on_disk["train_set_filter_id"] is None
         assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_test_spec"
 
-        # Reload → save again is byte-stable: the split homing survives a
-        # round trip rather than living only in the freshly-built instance.
+        # Reload → save again is byte-stable: the splits survive a round trip
+        # rather than living only in the freshly-built instance.
         reloaded = Eval.load_from_file(eval_path)
         reloaded.save_to_file()
         assert eval_path.read_text() == first_bytes
@@ -1045,13 +1052,16 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert len(evals) == 1
         eval_obj = evals[0]
         assert eval_obj.evaluation_data_type == EvalDataType.full_trace
-        assert eval_obj.eval_set_filter_id is None
+        assert eval_obj.model_dump()["eval_set_filter_id"] is None
         # The save path writes the EvalInput-backed test split natively; the
         # on-disk shape is covered by the saved-bytes test below.
         assert eval_obj.splits["test"] == EvalInputSplit(
             filter_id="tag::eval_multi_turn_spec"
         )
-        assert eval_obj.train_set_filter_id == "tag::train_multi_turn_spec"
+        assert eval_obj.splits["train"] == TaskRunSplit(
+            filter_id="tag::train_multi_turn_spec"
+        )
+        assert eval_obj.model_dump()["train_set_filter_id"] is None
         assert eval_obj.current_config_id is not None
 
         # The saved judge is a V2 config with a multi-turn (trace) template.
@@ -1161,16 +1171,19 @@ class TestCreateSpecWithCopilotMultiTurn:
         first_bytes = eval_path.read_text()
         on_disk = json.loads(first_bytes)
 
-        # Test split: EvalInput-backed, expressible only in `splits`.
+        # Test split EvalInput-backed, train TaskRun-backed, both in `splits` —
+        # the single home. The deprecated flat fields are written null.
         assert on_disk["splits"] == {
             "test": {
                 "source": "eval_input",
                 "filter_id": "tag::eval_multi_turn_spec",
-            }
+            },
+            "train": {
+                "source": "task_run",
+                "filter_id": "tag::train_multi_turn_spec",
+            },
         }
-        # Train split: TaskRun-backed, homed in the legacy flat field so old
-        # clients and the project zip still read it — NOT in `splits`.
-        assert on_disk["train_set_filter_id"] == "tag::train_multi_turn_spec"
+        assert on_disk["train_set_filter_id"] is None
         assert on_disk["eval_set_filter_id"] is None
         # Golden slice rides along unchanged.
         assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_multi_turn_spec"
@@ -1719,11 +1732,14 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         assert len(evals) == 1
         eval_obj = evals[0]
         assert eval_obj.evaluation_data_type == EvalDataType.final_answer
-        assert eval_obj.eval_set_filter_id is None
+        assert eval_obj.model_dump()["eval_set_filter_id"] is None
         assert eval_obj.splits["test"] == EvalInputSplit(
             filter_id="tag::eval_single_turn_spec"
         )
-        assert eval_obj.train_set_filter_id == "tag::train_single_turn_spec"
+        assert eval_obj.splits["train"] == TaskRunSplit(
+            filter_id="tag::train_single_turn_spec"
+        )
+        assert eval_obj.model_dump()["train_set_filter_id"] is None
         assert eval_obj.current_config_id is not None
 
         # The saved judge is a V2 config with the single-turn (I/O) template,
@@ -1810,9 +1826,13 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
             "test": {
                 "source": "eval_input",
                 "filter_id": "tag::eval_single_turn_spec",
-            }
+            },
+            "train": {
+                "source": "task_run",
+                "filter_id": "tag::train_single_turn_spec",
+            },
         }
-        assert on_disk["train_set_filter_id"] == "tag::train_single_turn_spec"
+        assert on_disk["train_set_filter_id"] is None
         assert on_disk["eval_set_filter_id"] is None
         assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_single_turn_spec"
         assert "eval_input_filter_id" not in first_bytes

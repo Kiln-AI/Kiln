@@ -4,7 +4,7 @@ Apply a mutation to the source, run the tests named for it, restore the source. 
 that SURVIVES means no test discriminates that line, which is the failure this phase kept
 producing (see phase_plans/phase_2.md). Run from anywhere:
 
-    uv run python specs/projects/eval_splits_v1_v2/phase2_mutation_sweep.py
+    uv run --frozen python specs/projects/eval_splits_v1_v2/phase2_mutation_sweep.py
 
 Pass substrings to run a subset. Expected result: every mutation killed.
 """
@@ -25,31 +25,39 @@ TAPI = "app/desktop/studio_server/test_eval_api.py"
 
 MUTATIONS = [
     (
-        "fold: run-once guard removed",
+        "migration: splits not populated",
         EVAL,
-        "        if self._legacy_homed_splits is not None:\n            return self\n\n        homed: Set[str] = set()",
-        "        homed: Set[str] = set()",
+        "                self.splits[name] = TaskRunSplit(filter_id=filter_id)",
+        "                pass",
         DM,
     ),
     (
-        "fold: test branch does not populate splits",
+        "migration: splits precedence dropped (legacy overwrites)",
         EVAL,
-        '            self.splits["test"] = TaskRunSplit(filter_id=self.eval_set_filter_id)\n            homed.add("test")',
-        '            homed.add("test")',
+        "            if filter_id is not None and name not in self.splits:",
+        "            if filter_id is not None:",
         DM,
     ),
     (
-        "fold: train branch removed",
+        "migration: legacy fields not cleared",
         EVAL,
-        '        if self.train_set_filter_id is not None:\n            self.splits["train"] = TaskRunSplit(filter_id=self.train_set_filter_id)\n            homed.add("train")',
-        "        pass",
+        "            self.__dict__[field_name] = None\n        return self",
+        "        return self",
         DM,
     ),
     (
-        "fold: test provenance not recorded",
+        "migration: fields-set marking removed",
         EVAL,
-        '            self.splits["test"] = TaskRunSplit(filter_id=self.eval_set_filter_id)\n            homed.add("test")',
-        '            self.splits["test"] = TaskRunSplit(filter_id=self.eval_set_filter_id)',
+        "                # carry it: on a legacy eval `splits` was never explicitly set.\n"
+        '                self.__pydantic_fields_set__.add("splits")',
+        "                pass",
+        DM,
+    ),
+    (
+        "migration: train has no legacy field",
+        EVAL,
+        '    "train": "train_set_filter_id",\n',
+        "",
         DM,
     ),
     (
@@ -67,47 +75,29 @@ MUTATIONS = [
         DM,
     ),
     (
-        "shim: does not fold into splits",
+        "shim: does not populate splits",
         EVAL,
-        '        splits["test"] = {"source": "eval_input", "filter_id": filter_id}',
-        "        pass",
-        DM,
-    ),
-    (
-        "serializer: legacy-field-present check removed",
-        EVAL,
-        "                legacy_field is not None\n                and legacy_field in data",
-        "                legacy_field is not None",
-        DM,
-    ),
-    (
-        "serializer: provenance ignored",
-        EVAL,
-        "                and (homed is None or name in homed)",
-        "",
-        DM,
-    ),
-    (
-        "serializer: empty splits key retained",
-        EVAL,
-        '            if splits_remainder:\n                data["splits"] = splits_remainder\n            else:\n                del data["splits"]',
-        '            data["splits"] = splits_remainder',
-        DM,
-    ),
-    (
-        "serializer: legacy fields never written",
-        EVAL,
-        "            if field_name in data:\n                data[field_name] = legacy_values[name]",
+        '            splits["test"] = {"source": "eval_input", "filter_id": filter_id}',
         "            pass",
         DM,
     ),
     (
-        "json schema override removed",
+        "shim: splits precedence dropped",
         EVAL,
-        "        return handler(_without_model_serializer(core_schema))",
-        "        return handler(core_schema)",
+        '        if "test" not in splits:',
+        "        if True:",
         DM,
     ),
+    # Eight entries lived here, all mutating Eval's wrap serializer
+    # (serialize_preserving_split_format) and the __get_pydantic_json_schema__ override
+    # that existed to undo its effect on the OpenAPI schema: the legacy-field-present
+    # check, the provenance test, the empty-splits-key deletion, the legacy-field write,
+    # the schema override, the two set_split homing branches, and the run-once guard on
+    # the fold. All of that machinery is deleted — splits have one home, the legacy
+    # fields are cleared as they are migrated, and Eval has no model serializer at all —
+    # so there are no lines left to mutate. The behaviors that replaced them are the
+    # "migration:" entries above. Left as a note rather than deleted silently, because a
+    # PATTERN-MISS on a re-run would otherwise read as a regression.
     (
         "set_split: readonly guard removed",
         EVAL,
@@ -118,23 +108,10 @@ MUTATIONS = [
     (
         "set_split: fields-set marking removed",
         EVAL,
+        "        # built by model_construct, where nothing did.\n"
         '        self.__pydantic_fields_set__.add("splits")',
         "        pass",
         DM,
-    ),
-    (
-        "set_split: homing unconditional",
-        EVAL,
-        "        if name in LEGACY_SPLIT_FIELDS and isinstance(split, TaskRunSplit):",
-        "        if True:",
-        DM + " " + TAPI,
-    ),
-    (
-        "set_split: homing never applied",
-        EVAL,
-        "        if name in LEGACY_SPLIT_FIELDS and isinstance(split, TaskRunSplit):",
-        "        if False:",
-        DM + " " + TAPI,
     ),
     (
         "TaskRunSplit: extra=allow removed",
@@ -199,13 +176,13 @@ MUTATIONS = [
     # PATTERN-MISS on a re-run would otherwise read as a regression. The equivalent
     # behaviors are covered by phase4_mutation_sweep.py's "collect_tasks_for_task_run_eval:
     # iterates the task's runs, not the split" and its dedupe-source entries.
-    (
-        "update endpoint: direct splits write instead of set_split",
-        API,
-        '            eval.set_split("train", TaskRunSplit(filter_id=request.train_set_filter_id))',
-        '            eval.splits["train"] = TaskRunSplit(filter_id=request.train_set_filter_id)',
-        TAPI,
-    ),
+    #
+    # A third entry lived here — "update endpoint: direct splits write instead of
+    # set_split". Its pattern still matches, but with one home set_split and
+    # `eval.splits[...] = ...` differ only in the readonly guard and the exclude_unset
+    # marking, neither of which this endpoint's tests can observe (it never holds a
+    # readonly eval, and never dumps with exclude_unset). Both are mutated directly on
+    # set_split above. Kept as a note so its absence doesn't read as a gap.
     (
         "update endpoint: already-set check reads legacy field",
         API,
@@ -223,17 +200,25 @@ MUTATIONS = [
     # because a PATTERN-MISS on a re-run would otherwise read as a regression. They belong
     # with the judge-feedback-batch work wherever it lands.
     (
-        "fold: golden folded in as a split",
+        "migration: golden migrated in as a split",
         EVAL,
-        "        self._legacy_homed_splits = homed\n        return self",
-        '        if self.eval_configs_filter_id is not None:\n            self.splits["golden"] = TaskRunSplit(filter_id=self.eval_configs_filter_id)\n        self._legacy_homed_splits = homed\n        return self',
+        "            self.__dict__[field_name] = None\n        return self",
+        "            self.__dict__[field_name] = None\n"
+        "        if self.eval_configs_filter_id is not None:\n"
+        '            self.splits["golden"] = TaskRunSplit(filter_id=self.eval_configs_filter_id)\n'
+        "        return self",
         DM + " " + DS,
     ),
     (
-        "fold: train-split minting re-introduced",
+        "migration: train-split minting re-introduced",
         EVAL,
-        "        self._legacy_homed_splits = homed\n        return self",
-        '        if "train" not in self.splits:\n            self.splits["train"] = TaskRunSplit(\n                filter_id="tag::train_" + self.name.lower().replace(" ", "_")\n            )\n        self._legacy_homed_splits = homed\n        return self',
+        "            self.__dict__[field_name] = None\n        return self",
+        "            self.__dict__[field_name] = None\n"
+        '        if "train" not in self.splits:\n'
+        '            self.splits["train"] = TaskRunSplit(\n'
+        '                filter_id="tag::train_" + self.name.lower().replace(" ", "_")\n'
+        "            )\n"
+        "        return self",
         DM,
     ),
 ]
@@ -250,6 +235,9 @@ def run(label, path, old, new, tests):
             [
                 "uv",
                 "run",
+                # --frozen: a bare `uv run` re-resolves and can rewrite the lockfile
+                # mid-sweep, which has corrupted the venv in a sandboxed run before.
+                "--frozen",
                 "python",
                 "-m",
                 "pytest",
@@ -282,3 +270,7 @@ if __name__ == "__main__":
     print(f"\n{len(results) - len(bad)}/{len(results)} killed")
     for r in bad:
         print("  NOT KILLED:", r[0], r[2])
+    # Exit nonzero when anything survived. Without this the sweep reports SURVIVED
+    # and PATTERN-MISS and still exits 0, so a caller reading only the status sees a
+    # clean sweep and a hollowed-out one as identical.
+    raise SystemExit(1 if bad else 0)

@@ -4,7 +4,7 @@ This module contains helper functions for creating specs and their associated ev
 These functions are used by both the core spec API and the desktop copilot API.
 """
 
-from typing import Mapping, NamedTuple
+from typing import NamedTuple
 
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId
@@ -133,25 +133,6 @@ def spec_eval_splits(
     }
 
 
-def set_spec_eval_splits(eval: Eval, splits: Mapping[EvalSplitName, SplitRef]) -> None:
-    """Store each of a new spec eval's splits where the most readers can find it.
-
-    Not a no-op on splits the eval was constructed with: Eval.set_split moves a split that
-    has a legacy on-disk home into it, so a new spec eval's test and train splits stay
-    readable by older Kiln builds and by the project zip handed to the remote
-    prompt-optimization service. Val has no legacy home and stays in `splits`.
-
-    The eval has to be constructed with its splits first — an eval without a test split
-    fails validation — so this sets values that are already set, and changes only where
-    they are written.
-
-    Takes a Mapping rather than a dict because dict key types are invariant, and callers
-    hold the narrower dict[EvalSplitName, SplitRef] that spec_eval_splits returns.
-    """
-    for name, split in splits.items():
-        eval.set_split(name, split)
-
-
 def build_spec_eval(
     *,
     task: Task,
@@ -159,17 +140,14 @@ def build_spec_eval(
     spec_type: SpecType,
     evaluate_full_trace: bool,
 ) -> tuple[Eval, SpecEvalTags]:
-    """A new spec eval, with its splits already stored where readers look for them.
+    """A new spec eval, with its test, train and val splits already set.
 
     Returns the eval alongside the dataset tags its items must carry, so a caller that
     generates those items can tag them. The eval is not saved.
 
-    Constructing the eval and homing its splits is one operation rather than two steps a
-    caller has to remember: an eval built without the second step keeps its test and train
-    splits only in `splits`, where neither older Kiln builds nor the project zip handed to
-    the remote prompt-optimization service can see them — and nothing about the resulting
-    eval looks wrong in memory. Every spec-eval creation path goes through here so that
-    cannot be forgotten.
+    Every spec-eval creation path goes through here, so the three splits and the tags
+    naming their items are derived from the eval's name in one place rather than being
+    reassembled per caller.
     """
     tags = generate_spec_eval_tags(name)
     splits = spec_eval_splits(
@@ -192,6 +170,5 @@ def build_spec_eval(
         template_properties=None,
         evaluation_data_type=spec_eval_data_type(spec_type, evaluate_full_trace),
     )
-    set_spec_eval_splits(eval, splits)
 
     return eval, tags

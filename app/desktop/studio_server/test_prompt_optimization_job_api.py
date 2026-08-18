@@ -55,10 +55,16 @@ from kiln_ai.datamodel.task import TaskRunConfig
 # same cases: absent, usable, and present-but-unusable. A site left reading the legacy
 # train_set_filter_id reports False for all three (these evals carry their splits in
 # `splits`, so the legacy field is None in memory), which the True case catches.
+#
+# Factories rather than constructed instances: pydantic's default
+# revalidate_instances='never' means `Eval(splits={"train": s})` stores `s` by reference,
+# so a constructed param would be one object shared by every eval built in this file.
+# Nothing mutates one today — this keeps it that way by construction rather than by
+# convention.
 TRAIN_SPLIT_CASES = [
-    (None, False),
-    (TaskRunSplit(filter_id="tag::train"), True),
-    (EvalInputSplit(filter_id="tag::train"), False),
+    (lambda: None, False),
+    (lambda: TaskRunSplit(filter_id="tag::train"), True),
+    (lambda: EvalInputSplit(filter_id="tag::train"), False),
 ]
 
 
@@ -1522,9 +1528,11 @@ def test_check_run_config_exception(client, mock_api_key, tmp_path):
         assert "Failed to check run config" in response.json()["message"]
 
 
-@pytest.mark.parametrize("train_split,expected_has_train_set", TRAIN_SPLIT_CASES)
+@pytest.mark.parametrize(
+    "train_split_factory,expected_has_train_set", TRAIN_SPLIT_CASES
+)
 def test_check_eval_no_current_config(
-    client, mock_api_key, tmp_path, train_split, expected_has_train_set
+    client, mock_api_key, tmp_path, train_split_factory, expected_has_train_set
 ):
     """check_eval reports the eval's real train state even when it has no default config."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
@@ -1537,7 +1545,7 @@ def test_check_eval_no_current_config(
     )
     task.save_to_file()
 
-    mock_eval = _eval_with_train_split(train_split, current_config_id=None)
+    mock_eval = _eval_with_train_split(train_split_factory(), current_config_id=None)
 
     project_id = project.id
     task_id = task.id
@@ -1559,9 +1567,11 @@ def test_check_eval_no_current_config(
         assert result["model_is_supported"] is False
 
 
-@pytest.mark.parametrize("train_split,expected_has_train_set", TRAIN_SPLIT_CASES)
+@pytest.mark.parametrize(
+    "train_split_factory,expected_has_train_set", TRAIN_SPLIT_CASES
+)
 def test_check_eval_config_not_found(
-    client, mock_api_key, tmp_path, train_split, expected_has_train_set
+    client, mock_api_key, tmp_path, train_split_factory, expected_has_train_set
 ):
     """check_eval reports the eval's real train state when the config fails to load."""
 
@@ -1575,7 +1585,7 @@ def test_check_eval_config_not_found(
     )
     task.save_to_file()
 
-    mock_eval = _eval_with_train_split(train_split)
+    mock_eval = _eval_with_train_split(train_split_factory())
 
     project_id = project.id
     task_id = task.id
@@ -1821,9 +1831,11 @@ def test_check_eval_exception(client, mock_api_key, tmp_path):
 
 # Prompt optimization resolves the train filter against the project zip's runs directory,
 # which has no eval inputs in it, so an EvalInput-backed train split is not a train set.
-@pytest.mark.parametrize("train_split,expected_has_train_set", TRAIN_SPLIT_CASES)
+@pytest.mark.parametrize(
+    "train_split_factory,expected_has_train_set", TRAIN_SPLIT_CASES
+)
 def test_check_eval_has_train_set_by_split_backing(
-    client, mock_api_key, tmp_path, train_split, expected_has_train_set
+    client, mock_api_key, tmp_path, train_split_factory, expected_has_train_set
 ):
     """check_eval reports a train set only when one exists and is TaskRun-backed."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
@@ -1836,7 +1848,7 @@ def test_check_eval_has_train_set_by_split_backing(
     )
     task.save_to_file()
 
-    mock_eval = _eval_with_train_split(train_split)
+    mock_eval = _eval_with_train_split(train_split_factory())
 
     mock_config = MagicMock()
     mock_config.model_name = "gpt-4"
@@ -1877,16 +1889,16 @@ def test_check_eval_has_train_set_by_split_backing(
 
 
 @pytest.mark.parametrize(
-    "train_split,expected_status",
+    "train_split_factory,expected_status",
     [
-        (EvalInputSplit(filter_id="tag::train"), 400),
-        (TaskRunSplit(filter_id="tag::train"), 200),
+        (lambda: EvalInputSplit(filter_id="tag::train"), 400),
+        (lambda: TaskRunSplit(filter_id="tag::train"), 200),
         # Unchanged behavior: an eval with no train split is not this guard's business.
-        (None, 200),
+        (lambda: None, 200),
     ],
 )
 def test_start_prompt_optimization_job_refuses_unusable_train_splits(
-    client, mock_api_key, tmp_path, train_split, expected_status
+    client, mock_api_key, tmp_path, train_split_factory, expected_status
 ):
     """Only a present, non-TaskRun train split is refused, and before any work happens."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
@@ -1898,7 +1910,7 @@ def test_start_prompt_optimization_job_refuses_unusable_train_splits(
     )
     task.save_to_file()
 
-    eval = _eval_with_train_split(train_split, parent=task)
+    eval = _eval_with_train_split(train_split_factory(), parent=task)
     eval.save_to_file()
 
     mock_run_config = MagicMock()

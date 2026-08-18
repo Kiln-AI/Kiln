@@ -1058,7 +1058,9 @@
       { params: { path: { project_id, task_id } } },
     )
     if (error || !data) return null
-    const evals = [...data].sort((a, b) =>
+    // The evals list rides in an envelope alongside a count of evals that
+    // failed to load; only the readable ones matter for judge pre-population.
+    const evals = [...data.evals].sort((a, b) =>
       (b.created_at ?? "").localeCompare(a.created_at ?? ""),
     )
     const judge_eval = evals.find((e) => e.id && e.current_config_id) ?? null
