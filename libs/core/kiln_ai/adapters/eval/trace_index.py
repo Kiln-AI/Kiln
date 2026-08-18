@@ -13,9 +13,12 @@ what makes a retry after a scoring failure re-score rather than regenerate
 (functional spec §4.2, §4.3).
 """
 
+import json
 import logging
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, Tuple
+
+from pydantic import ValidationError
 
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.eval_splits import ItemKey, ItemSource
@@ -146,6 +149,18 @@ class TraceIndex:
             # rather than failing every job that wanted it.
             logger.warning(
                 "Indexed eval trace for %s is gone from %s; regenerating", key, path
+            )
+            del self._paths[key]
+            return None
+        except (json.JSONDecodeError, ValidationError, ValueError) as error:
+            # The file exists but no longer parses as a TaskRun — truncated by a crash
+            # mid-write, or rewritten by a newer schema. Same posture as a missing file:
+            # drop the entry and regenerate, rather than failing every job on this key.
+            logger.warning(
+                "Indexed eval trace for %s at %s failed to load (%s); regenerating",
+                key,
+                path,
+                error,
             )
             del self._paths[key]
             return None

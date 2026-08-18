@@ -310,8 +310,8 @@
               <td>
                 <div class="font-medium">Input:</div>
                 <div>
-                  <!-- Both are nullable: a dangling trace reference, or a skipped run
-                       whose dataset item is gone. Svelte stringifies null to "null". -->
+                  <!-- Nullable: a skipped run whose dataset item is gone.
+                       Svelte stringifies null to "null". -->
                   {result.input ?? ""}
                 </div>
                 {#if result.eval_run.reference_answer}
@@ -322,7 +322,19 @@
                 {/if}
                 <div class="font-medium mt-4">Output:</div>
                 <div>
-                  {result.output ?? ""}
+                  {#if result.eval_run.scored_run_id && result.output == null}
+                    <!-- A resolved trace always has a string output, so null here
+                         means the referenced trace could not be loaded. Say so
+                         rather than rendering a blank that looks like an empty
+                         output. The input above may still resolve from the
+                         dataset item. -->
+                    <div class="text-sm text-gray-500">
+                      Trace unavailable. It may have been deleted or not
+                      included in an import.
+                    </div>
+                  {:else}
+                    {result.output ?? ""}
+                  {/if}
                 </div>
               </td>
               {#if !is_v2_config}

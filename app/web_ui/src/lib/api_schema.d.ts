@@ -7381,15 +7381,15 @@ export interface components {
          *     Where the trace lives depends on the record: on a TaskRun named by `scored_run_id`,
          *     inline on the EvalRun for records written before the trace/score split, or nowhere at
          *     all for a run that was skipped before anything was generated. This resolves whichever
-         *     applies - falling back to the dataset item for the input of that last kind - so
-         *     callers see one shape regardless of which it is.
+         *     applies - falling back to the dataset item for the input whenever the record
+         *     itself has none - so callers see one shape regardless of which it is.
          */
         EvalRunWithTrace: {
             /** @description The score record itself. */
             eval_run: components["schemas"]["EvalRun"];
             /**
              * Input
-             * @description The input the task was run on. From the scored TaskRun, from the EvalRun itself for legacy records, or from the dataset item for records that were skipped before anything was generated.
+             * @description The input the task was run on. From the scored TaskRun, from the EvalRun itself for legacy records, or from the dataset item whenever neither of those has it (pre-generation skips, and pointer records whose trace is missing).
              */
             input: string | null;
             /**

@@ -170,7 +170,7 @@ _trace_adapter: TypeAdapter[list[ChatCompletionMessageParam]] = TypeAdapter(
 )
 
 
-def _materialize_lazy_content(trace: Iterable[Any]) -> None:
+def materialize_lazy_content(trace: Iterable[Any]) -> None:
     """Replace each message's lazily-validated `content` with the list it yields.
 
     Pydantic validates the wrappers' ``Iterable[...]``-typed fields into a lazy,
@@ -189,17 +189,20 @@ def _materialize_lazy_content(trace: Iterable[Any]) -> None:
     Takes ``Iterable[Any]``, the same structural shape
     :func:`sanitize_messages_for_provider` uses - though for a different reason: that
     one is loose because its callers really do pass heterogeneous values, while here
-    the sole caller passes a precise ``list[ChatCompletionMessageParam]`` and the
+    the callers pass a precise ``list[ChatCompletionMessageParam]`` and the
     ``Any`` exists only to make the write expressible. One union member declares
     ``content`` as ``str | None`` (the function role), so no tighter signature type
     checks, and ``typing.cast`` is banned repo-wide. The guard below still means only
     a message actually holding a lazy iterator is ever written to.
 
-    One side effect, not a defect: a lazy ``content`` matched the union's ``generator``
-    branch, so ``TaskRun.model_dump_json`` emitted no warning for it. A materialized
-    ``list`` matches neither ``str`` nor ``generator``, so each later dump of the same
-    object emits one ``PydanticSerializationUnexpectedValue`` warning. The bytes
-    written are unchanged - this is stderr noise only.
+    Now that TaskRun runs this at validation, it also changes what ``save_to_file``
+    persists for content-part traces - for the better. A lazy ``content`` on a user
+    or tool message serialized as ``content: []`` (only the assistant branch read the
+    iterator), silently dropping the parts; a materialized list persists them. The
+    cost is cosmetic: a materialized ``list`` matches neither ``str`` nor
+    ``generator`` in the union, so each dump of such a message emits one
+    ``PydanticSerializationUnexpectedValue`` warning on stderr. Load-then-resave of a
+    materialized trace is byte-identical.
     """
     for message in trace:
         if not isinstance(message, dict):
@@ -221,9 +224,9 @@ def serialize_trace(trace: list[ChatCompletionMessageParam]) -> str:
 
     Normalizes a lazily-validated `content` to a plain list in place first, so that
     serializing is repeatable and leaves the trace intact for whoever holds it - see
-    :func:`_materialize_lazy_content`.
+    :func:`materialize_lazy_content`.
     """
-    _materialize_lazy_content(trace)
+    materialize_lazy_content(trace)
     # warnings=False: every message with a key the wrappers don't declare, a
     # list-valued `content`, or a `Usage` in the `usage` slot fails to match a
     # union member and emits a six-line serializer warning - on every message, on

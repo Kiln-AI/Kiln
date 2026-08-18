@@ -263,6 +263,32 @@ def test_get_evals_success(client, mock_task, mock_task_from_id, mock_eval):
     mock_task_from_id.assert_called_once_with("project1", "task1")
 
 
+def test_get_evals_logs_each_load_error(
+    client, mock_task, mock_task_from_id, mock_eval, caplog
+):
+    """The response only counts unreadable eval files; the log must name each one, or a
+    permanently corrupt file is indistinguishable from a version mismatch."""
+    mock_task_from_id.return_value = mock_task
+    assert mock_eval.path is not None
+    corrupt_dir = mock_eval.path.parent.parent / "corrupt_eval"
+    corrupt_dir.mkdir()
+    corrupt_file = corrupt_dir / "eval.kiln"
+    corrupt_file.write_text('{"v": 1, ', encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger="app.desktop.studio_server.eval_api"):
+        response = client.get("/api/projects/project1/tasks/task1/evals")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["load_error_count"] == 1
+    assert [e["id"] for e in result["evals"]] == [mock_eval.id]
+    warning = next(
+        r for r in caplog.records if "Failed to load eval file" in r.getMessage()
+    )
+    assert warning.levelno == logging.WARNING
+    assert str(corrupt_file) in warning.getMessage()
+
+
 def test_get_evals_partial_load(client, mock_task, mock_task_from_id, mock_eval):
     """Evals this build can't parse are counted, and the readable ones still load."""
     mock_task_from_id.return_value = mock_task
@@ -1756,6 +1782,55 @@ async def test_get_eval_run_results(
         params={"split": "test"},
     )
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_eval_run_results_content_part_trace_after_readonly_scan(
+    client,
+    mock_task_from_id,
+    mock_task,
+    mock_eval,
+    mock_eval_config,
+    mock_run_config,
+    data_source,
+):
+    """List-valued message content is validated into a lazy iterator by pydantic. A
+    readonly runs scan caches that instance, and the results endpoint's bulk trace load
+    then hits the cache - which must not fail on copying the lazy content."""
+    item = _tagged_task_run(mock_task, data_source, "eval_set")
+    trace_run = TaskRun(
+        parent=mock_task,
+        input="trace input",
+        input_source=data_source,
+        output=TaskOutput(output="trace output"),
+        trace=[
+            {"role": "user", "content": [{"type": "text", "text": "content part"}]},
+            {"role": "assistant", "content": "answer"},
+        ],
+    )
+    trace_run.save_to_file()
+    eval_run = EvalRun(
+        task_run_config_id="run_config1",
+        scores={"score1": 3.0, "overall_rating": 1.0},
+        dataset_id=item.id,
+        scored_run_id=trace_run.id,
+        parent=mock_eval_config,
+    )
+    eval_run.save_to_file()
+
+    # Populate the model cache with readonly instances, as any runs scan does.
+    for _ in mock_task.runs(readonly=True):
+        pass
+
+    response = client.get(RUN_RESULTS_PATH, params={"split": "test"})
+
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert len(results) == 1
+    assert results[0]["eval_run"]["id"] == eval_run.id
+    assert results[0]["input"] == "trace input"
+    assert results[0]["output"] == "trace output"
+    assert "content part" in results[0]["task_run_trace"]
 
 
 class TestGetEvalRunResultsSplits:

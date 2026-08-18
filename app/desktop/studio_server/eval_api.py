@@ -391,15 +391,16 @@ class EvalRunWithTrace(BaseModel):
     Where the trace lives depends on the record: on a TaskRun named by `scored_run_id`,
     inline on the EvalRun for records written before the trace/score split, or nowhere at
     all for a run that was skipped before anything was generated. This resolves whichever
-    applies - falling back to the dataset item for the input of that last kind - so
-    callers see one shape regardless of which it is.
+    applies - falling back to the dataset item for the input whenever the record
+    itself has none - so callers see one shape regardless of which it is.
     """
 
     eval_run: EvalRun = Field(description="The score record itself.")
     input: str | None = Field(
         description="The input the task was run on. From the scored TaskRun, from the "
-        "EvalRun itself for legacy records, or from the dataset item for records that "
-        "were skipped before anything was generated."
+        "EvalRun itself for legacy records, or from the dataset item whenever neither "
+        "of those has it (pre-generation skips, and pointer records whose trace is "
+        "missing)."
     )
     output: str | None = Field(
         description="What the task produced. Always the original output, never a "
@@ -663,10 +664,13 @@ def load_task_children_by_id(
     every child whose id isn't already cached in order to check it, so calling it with no
     ids to find would read the whole directory off disk. Every bulk load in this module
     goes through here so that guard can't be forgotten at one of them.
+
+    Always readonly: every caller in this module only reads the loaded children, and
+    readonly cache hits skip a deep copy per model - traces make those copies large.
     """
     if not ids:
         return {}
-    return model_type.from_ids_and_parent_path(ids, task.path)
+    return model_type.from_ids_and_parent_path(ids, task.path, readonly=True)
 
 
 def summary_eval_config(eval: Eval) -> EvalConfig | None:
@@ -1331,6 +1335,12 @@ def connect_evals_api(app: FastAPI):
         # Partial load: a project folder synced from a newer Kiln can contain an eval this
         # build can't parse. Return the readable evals rather than failing the whole list.
         evals, load_errors = Eval.all_children_of_parent_path_with_errors(task.path)
+        for load_error in load_errors:
+            # The response only carries a count, so log each failure with its path and
+            # reason - it is the only way to tell a corrupt file from a version mismatch.
+            logger.warning(
+                f"Failed to load eval file {load_error.path}: {load_error.message}"
+            )
         return EvalsResponse(evals=evals, load_error_count=len(load_errors))
 
     @app.get(
