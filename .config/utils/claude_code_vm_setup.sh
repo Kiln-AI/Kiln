@@ -61,7 +61,7 @@ fi
 
 # --best-effort is what keeps setup_env.sh's own failures from stopping the
 # session; the rest is the cloud VM profile setup_env.sh documents, plus the
-# Playwright browsers and playwright-cli (see .agents/USING_PLAYWRIGHT.md).
+# Playwright browsers and playwright-cli (see .agents/skills/playwright/).
 bash "$script" \
   --upgrade-tools \
   --best-effort \

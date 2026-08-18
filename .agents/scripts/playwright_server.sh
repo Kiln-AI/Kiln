@@ -9,7 +9,7 @@
 # needs a server that outlives a single command, where the suite's servers live
 # and die inside one `playwright test` run.
 #
-# See .agents/USING_PLAYWRIGHT.md.
+# See the playwright skill: .agents/skills/playwright/.
 
 if [ -z "${BASH_VERSION:-}" ]; then
   if [ -r "$0" ]; then

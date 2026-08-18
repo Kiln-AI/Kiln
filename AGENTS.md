@@ -23,8 +23,6 @@ This repo is a monorepo containing all of the source code, in the following stru
 - Backend: python (3.10+ for library, 3.13 for desktop), pytest, FastAPI, asyncio, pydantic (v2 not v1),
 - Frontend web: typescript, svelte (v4 not v5), tailwind, DaisyUI
 
-When building UI, look at it in a real browser as you go — read [.agents/USING_PLAYWRIGHT.md](.agents/USING_PLAYWRIGHT.md) to drive the app and take screenshots.
-
 ### Agent Tools
 
 Agents have access to a range of tools for running tests, linting, formatting and typechecking. Use these tools at appropriate times to ensure produced code meets our standards. All checks must pass before merging. When iterating on a specific failure, use the targeted command before re-running the full suite.
@@ -45,7 +43,7 @@ Agents have access to a range of tools for running tests, linting, formatting an
 | `app/web_ui/src/lib/check_schema.sh` | `app/web_ui/src/lib/generate_schema.sh` | OpenAPI client up to date |
 | `misspell` | — | Spelling check (optional if not installed) |
 
-Our end-to-end UI tests are separate and not part of `checks.sh`: read [.agents/USING_PLAYWRIGHT.md](.agents/USING_PLAYWRIGHT.md) to run them.
+Our end-to-end UI tests are separate and not part of `checks.sh`.
 
 ### Agent Prompts
 
