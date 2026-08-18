@@ -1286,8 +1286,12 @@ def connect_evals_api(app: FastAPI):
         eval_configs_filter_id = request.eval_configs_filter_id
         splits: dict[str, SplitRef]
         if request.eval_set_filter_id is not None:
-            # A caller-supplied filter names the test split only; train and val are
-            # left unset rather than invented from a name the caller didn't pick.
+            # Naming a filter is the caller opting out of generation: they get the test
+            # split they asked for and nothing else. Train and val stay absent rather
+            # than being minted from a name the caller never chose -- an unconfigured
+            # split has no backing store to pick, and materializing an empty one turns
+            # "this eval has no train set" into "this eval has an empty train set",
+            # which reads as configured and isn't. See eval_splits_v1_v2 spec 3.2.
             splits = {"test": TaskRunSplit(filter_id=request.eval_set_filter_id)}
         else:
             tags = generate_spec_eval_tags(request.name)
