@@ -23,7 +23,9 @@
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
   import { encode_splits_for_url } from "$lib/utils/splits_util"
+  import { eval_split } from "$lib/utils/eval_splits"
   import { build_eval_options } from "./eval_options"
+  import { build_eval_generation_splits_param } from "$lib/utils/eval_generation_splits"
 
   export let generate_subtopics: () => void
   export let generate_samples: () => void
@@ -91,7 +93,7 @@
         throw error
       }
       evals_by_id = {}
-      for (const eval_item of data) {
+      for (const eval_item of data.evals) {
         if (eval_item.id) {
           evals_by_id[eval_item.id] = eval_item
         }
@@ -114,31 +116,26 @@
       alert("This eval is not ready yet. Please configure its judge first.")
       return
     }
-    const eval_set_filter_id = evaluator.eval_set_filter_id
-    if (!eval_set_filter_id) {
+    // Synthetic data generation writes TaskRuns into the dataset, so an
+    // EvalInput-backed test split has no tag for it to target. That is a different
+    // refusal from "the filter isn't tag-shaped", and gets its own message: telling
+    // someone to switch to tag filters would be useless advice here, since the store
+    // is the problem, not the filter's form. The message diagnoses and stops there —
+    // nothing in this app creates eval inputs, so there is no action to point at.
+    const test_split = eval_split(evaluator, "test")
+    if (test_split?.source === "eval_input") {
       alert(
-        "We can't generate synthetic data for this eval as its eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
+        "This eval uses our new eval dataset format, which can't be generated from this UI.",
       )
       return
     }
-    const eval_configs_filter_id = evaluator.eval_configs_filter_id ?? null
-    const splits: Record<string, number> = {}
-    if (
-      eval_set_filter_id.startsWith("tag::") &&
-      (eval_configs_filter_id === null ||
-        eval_configs_filter_id.startsWith("tag::"))
-    ) {
-      const eval_set_tag = eval_set_filter_id.split("::")[1]
-      if (eval_configs_filter_id) {
-        const eval_configs_tag = eval_configs_filter_id.split("::")[1]
-        splits[eval_set_tag] = 0.8
-        splits[eval_configs_tag] = 0.2
-      } else {
-        splits[eval_set_tag] = 1.0
-      }
-    } else {
+    // Generated data is spread over whichever of the eval's splits can receive it. The test
+    // split is the one we can't do without: no tag to write the runs into means there is
+    // nothing to generate for.
+    const splits_param = build_eval_generation_splits_param(evaluator)
+    if (!splits_param) {
       alert(
-        "We can't generate synthetic data for this eval as its eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
+        "We can't generate synthetic data for this eval because its test set isn't defined by a tag filter. Select an eval which uses tags to define its datasets.",
       )
       return
     }
@@ -158,7 +155,7 @@
     }
 
     // .set will automatically URL encode
-    params.set("splits", encode_splits_for_url(splits))
+    params.set("splits", splits_param)
 
     // For reference answer evals, redirect to QnA page instead of synth page
     if (template_id === "rag") {
