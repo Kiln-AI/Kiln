@@ -23,7 +23,7 @@ from kiln_ai.datamodel.basemodel import (
     KilnParentModel,
 )
 from kiln_ai.datamodel.chunk import ChunkedDocument
-from kiln_ai.utils.validation import NonEmptyString
+from kiln_ai.utils.validation import NonEmptyString, validate_tags
 
 logger = logging.getLogger(__name__)
 
@@ -283,13 +283,8 @@ class Document(
     )
 
     @model_validator(mode="after")
-    def validate_tags(self) -> Self:
-        for tag in self.tags:
-            if not tag:
-                raise ValueError("Tags cannot be empty strings")
-            if " " in tag:
-                raise ValueError("Tags cannot contain spaces. Try underscores.")
-
+    def _validate_tags(self) -> Self:
+        validate_tags(self.tags)
         return self
 
     # Workaround to return typed parent without importing Project

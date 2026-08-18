@@ -4,6 +4,7 @@ from kiln_ai.datamodel.tool_id import (
     KILN_TASK_TOOL_ID_PREFIX,
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
+    MEMORY_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
     SKILL_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
@@ -121,6 +122,18 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
         from kiln_ai.tools.rag_tools import RagTool
 
         return RagTool(tool_id, rag_config)
+
+    elif tool_id.startswith(MEMORY_TOOL_ID_PREFIX):
+        project = task.parent_project() if task is not None else None
+        if project is None:
+            raise ValueError(
+                f"Unable to resolve tool from id: {tool_id}. Requires a parent project/task."
+            )
+
+        # Lazy import to avoid circular dependency
+        from kiln_ai.tools.memory_tools import memory_tool_from_id
+
+        return memory_tool_from_id(tool_id, project)
 
     elif tool_id.startswith(SKILL_TOOL_ID_PREFIX):
         raise ValueError(

@@ -7,6 +7,7 @@ from typing_extensions import Self
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
 from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.spec_properties import SpecProperties
+from kiln_ai.utils.validation import validate_tags
 
 
 class TaskSample(BaseModel):
@@ -87,11 +88,6 @@ class Spec(KilnParentedModel):
     )
 
     @model_validator(mode="after")
-    def validate_tags(self) -> Self:
-        for tag in self.tags:
-            if not tag:
-                raise ValueError("tags cannot be empty strings")
-            if " " in tag:
-                raise ValueError("tags cannot contain spaces. Try underscores.")
-
+    def _validate_tags(self) -> Self:
+        validate_tags(self.tags)
         return self
