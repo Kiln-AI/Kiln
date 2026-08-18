@@ -102,15 +102,6 @@ async def _get_semaphore() -> asyncio.Semaphore:
     return sem
 
 
-MAX_RECORDED_TOOL_CALLS = 200
-"""How many real nested tool calls one bridged run reports.
-
-The log is for a human reading a test pane and its contents are child-controlled, so
-it is bounded. Calls past the cap are counted, not recorded, and the run emits one
-final overflow entry saying how many were dropped -- so the log never exceeds
-``MAX_RECORDED_TOOL_CALLS + 1`` entries no matter what the child does."""
-
-
 @dataclass
 class ToolCallLogEntry:
     tool_name: str
@@ -118,10 +109,6 @@ class ToolCallLogEntry:
     output_preview: str
     is_error: bool
     duration_ms: int
-    # True only for the single trailing entry standing in for dropped calls. An
-    # explicit flag, not a sentinel name, so consumers (including the web UI) can
-    # tell it apart from a real call without matching a magic string.
-    is_overflow_marker: bool = False
 
 
 def describe_crash(subject: str, exit_code: int | None) -> str:
@@ -182,8 +169,6 @@ class NestedToolServer:
         self._context = context
         self._recorder = recorder
         self._name_map: dict[str, list[ToolId]] | None = None
-        self._recorded_calls = 0
-        self._dropped_calls = 0
 
     async def serve(
         self,
@@ -398,17 +383,6 @@ class NestedToolServer:
     ) -> None:
         if self._recorder is None:
             return
-
-        if self._recorded_calls >= MAX_RECORDED_TOOL_CALLS:
-            # Past the cap we count and drop. Emitting a marker per dropped call
-            # would leave the log (and the HTTP response) unbounded, which is the
-            # whole thing the cap exists to prevent: the cheap parent-side paths (an
-            # unknown tool name, invalid kwargs) never reach a real tool, so a
-            # scorer can loop on one for the length of its timeout.
-            self._dropped_calls += 1
-            return
-
-        self._recorded_calls += 1
         duration_ms = int((monotonic() - start) * 1000)
         preview = output[:1024] if output else ""
         self._recorder(
@@ -418,27 +392,6 @@ class NestedToolServer:
                 output_preview=preview,
                 is_error=is_error,
                 duration_ms=duration_ms,
-            )
-        )
-
-    def flush_overflow_marker(self) -> None:
-        """Emit the single entry standing in for dropped calls, if there were any.
-
-        Called once when the run ends, which is the first moment the total is known.
-        Idempotent, so a caller that flushes twice does not double-report.
-        """
-        if self._recorder is None or self._dropped_calls == 0:
-            return
-        dropped, self._dropped_calls = self._dropped_calls, 0
-        plural = "" if dropped == 1 else "s"
-        self._recorder(
-            ToolCallLogEntry(
-                tool_name="",
-                arguments={},
-                output_preview=f"{dropped} further call{plural} not shown",
-                is_error=False,
-                duration_ms=0,
-                is_overflow_marker=True,
             )
         )
 
@@ -538,13 +491,6 @@ async def run_bridged_child(
             try:
                 return await _pump(target, args, timeout_s, requests, responses, server)
             finally:
-                # The run is over, so the dropped-call total is final. Flushing here
-                # rather than in each caller means both the code-tool and code-eval
-                # panes report overflow identically on every path that spawned a
-                # child -- result, timeout, crash and cancellation alike. The
-                # depth-cap return above never gets here, and never needs to: it
-                # refuses before spawning, on a server that has recorded nothing.
-                server.flush_overflow_marker()
                 _close_queues(requests, responses)
     finally:
         _depth.reset(token)

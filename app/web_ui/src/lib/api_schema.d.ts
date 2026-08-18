@@ -11919,12 +11919,6 @@ export interface components {
             is_error: boolean;
             /** Duration Ms */
             duration_ms: number;
-            /**
-             * Is Overflow Marker
-             * @description True for the single trailing entry standing in for calls dropped once the per-run log cap was reached. Not a real tool call.
-             * @default false
-             */
-            is_overflow_marker: boolean;
         };
         /** ToolCallSpec */
         ToolCallSpec: {

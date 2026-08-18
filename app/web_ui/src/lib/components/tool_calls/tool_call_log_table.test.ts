@@ -9,7 +9,6 @@ const ok_entry = {
   output_preview: '{"verdict": "safe"}',
   is_error: false,
   duration_ms: 128,
-  is_overflow_marker: false,
 }
 
 const error_entry = {
@@ -18,16 +17,6 @@ const error_entry = {
   output_preview: "Invalid model provider: bogus",
   is_error: true,
   duration_ms: 412,
-  is_overflow_marker: false,
-}
-
-const overflow_entry = {
-  tool_name: "",
-  arguments: {},
-  output_preview: "37 further calls not shown",
-  is_error: false,
-  duration_ms: 0,
-  is_overflow_marker: true,
 }
 
 describe("ToolCallLogTable", () => {
@@ -92,22 +81,6 @@ describe("ToolCallLogTable", () => {
     const tooltip = withTooltip.container.querySelector('[role="tooltip"]')
     expect(tooltip).not.toBeNull()
     expect(tooltip?.textContent).toContain("why these calls happened")
-  })
-
-  it("renders the overflow marker as a muted note, not a successful call", () => {
-    const { container } = render(ToolCallLogTable, {
-      props: { entries: [ok_entry, overflow_entry] },
-    })
-    const overflow = container.querySelector(
-      '[data-testid="tool-call-log-overflow"]',
-    )
-    expect(overflow).not.toBeNull()
-    expect(overflow?.textContent).toContain("37 further calls not shown")
-    // A green OK badge and "0ms" would read as a real, instantaneous call.
-    expect(overflow?.querySelector(".badge-success")).toBeNull()
-    expect(overflow?.textContent).not.toContain("0ms")
-    // Exactly one status badge in the whole table: the real call's.
-    expect(container.querySelectorAll(".badge").length).toBe(1)
   })
 
   it("renders a row per call", () => {

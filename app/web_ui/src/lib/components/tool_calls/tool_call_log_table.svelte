@@ -41,59 +41,49 @@
         </thead>
         <tbody>
           {#each entries as entry}
-            {#if entry.is_overflow_marker}
-              <!-- Not a call: the run hit its log cap. Spanned and muted so it
-                   cannot read as a zero-millisecond success. -->
-              <tr data-testid="tool-call-log-overflow">
-                <td colspan="5" class="text-xs text-gray-500 italic"
-                  >{entry.output_preview}</td
-                >
-              </tr>
-            {:else}
-              <tr>
-                <td class="font-mono text-xs">{entry.tool_name}</td>
-                <td class="text-xs max-w-[120px]">
+            <tr>
+              <td class="font-mono text-xs">{entry.tool_name}</td>
+              <td class="text-xs max-w-[120px]">
+                <details>
+                  <summary class="cursor-pointer truncate"
+                    >{JSON.stringify(entry.arguments)}</summary
+                  >
+                  <pre
+                    class="whitespace-pre-wrap font-mono mt-1">{JSON.stringify(
+                      entry.arguments,
+                      null,
+                      2,
+                    )}</pre>
+                </details>
+              </td>
+              <!-- For a failed call the recorder puts the error message in
+                   output_preview, so this column is the only place an author can
+                   see why a call failed. -->
+              <td class="text-xs max-w-[120px]">
+                {#if entry.output_preview}
                   <details>
-                    <summary class="cursor-pointer truncate"
-                      >{JSON.stringify(entry.arguments)}</summary
+                    <summary
+                      class="cursor-pointer truncate"
+                      class:text-error={entry.is_error}
+                      >{entry.output_preview}</summary
                     >
-                    <pre
-                      class="whitespace-pre-wrap font-mono mt-1">{JSON.stringify(
-                        entry.arguments,
-                        null,
-                        2,
+                    <pre class="whitespace-pre-wrap font-mono mt-1">{pretty(
+                        entry.output_preview,
                       )}</pre>
                   </details>
-                </td>
-                <!-- For a failed call the recorder puts the error message in
-                     output_preview, so this column is the only place an author can
-                     see why a call failed. -->
-                <td class="text-xs max-w-[120px]">
-                  {#if entry.output_preview}
-                    <details>
-                      <summary
-                        class="cursor-pointer truncate"
-                        class:text-error={entry.is_error}
-                        >{entry.output_preview}</summary
-                      >
-                      <pre class="whitespace-pre-wrap font-mono mt-1">{pretty(
-                          entry.output_preview,
-                        )}</pre>
-                    </details>
-                  {:else}
-                    <span class="text-gray-500">—</span>
-                  {/if}
-                </td>
-                <td class="text-xs">{entry.duration_ms}ms</td>
-                <td class="text-xs">
-                  {#if entry.is_error}
-                    <span class="badge badge-error badge-xs">Error</span>
-                  {:else}
-                    <span class="badge badge-success badge-xs">OK</span>
-                  {/if}
-                </td>
-              </tr>
-            {/if}
+                {:else}
+                  <span class="text-gray-500">—</span>
+                {/if}
+              </td>
+              <td class="text-xs">{entry.duration_ms}ms</td>
+              <td class="text-xs">
+                {#if entry.is_error}
+                  <span class="badge badge-error badge-xs">Error</span>
+                {:else}
+                  <span class="badge badge-success badge-xs">OK</span>
+                {/if}
+              </td>
+            </tr>
           {/each}
         </tbody>
       </table>

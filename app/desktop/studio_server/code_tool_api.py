@@ -118,13 +118,6 @@ class ToolCallLogEntryResponse(BaseModel):
     output_preview: str
     is_error: bool
     duration_ms: int
-    is_overflow_marker: bool = Field(
-        default=False,
-        description=(
-            "True for the single trailing entry standing in for calls dropped once "
-            "the per-run log cap was reached. Not a real tool call."
-        ),
-    )
 
     @classmethod
     def from_log(
@@ -138,7 +131,6 @@ class ToolCallLogEntryResponse(BaseModel):
                 output_preview=entry.output_preview,
                 is_error=entry.is_error,
                 duration_ms=entry.duration_ms,
-                is_overflow_marker=entry.is_overflow_marker,
             )
             for entry in entries
         ]
