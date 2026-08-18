@@ -1,7 +1,7 @@
 """V2 adapter for code_eval: runs user-authored Python scorer in a sandboxed subprocess."""
 
 from threading import Lock
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 
@@ -17,7 +17,11 @@ from kiln_ai.datamodel.eval import (
     V2EvalResult,
 )
 from kiln_ai.tools.base_tool import ToolCallContext
-from kiln_ai.tools.sandbox_bridge import NestedToolServer, run_bridged_child
+from kiln_ai.tools.sandbox_bridge import (
+    NestedToolServer,
+    ToolCallLogEntry,
+    run_bridged_child,
+)
 
 _trust_lock = Lock()
 _trusted_projects: set[str] = set()
@@ -57,6 +61,12 @@ class CodeEvalAdapter(BaseV2EvalBridge):
         super().__init__(eval_config, run_config, skills)
         assert isinstance(self.properties, CodeEvalProperties)
 
+        # Set by the test-pane endpoint, which is the one place a code judge's
+        # nested tool calls (including LLM calls, which cost money) have somewhere
+        # to be shown: the author is iterating on the code right there. An eval run
+        # leaves it None -- per-item logs have no home in the run UI yet.
+        self.tool_call_recorder: Callable[[ToolCallLogEntry], None] | None = None
+
     async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
         props = self.properties
         assert isinstance(props, CodeEvalProperties)
@@ -78,7 +88,7 @@ class CodeEvalAdapter(BaseV2EvalBridge):
                     self.eval, allow_float_scores=False
                 ),
             ),
-            recorder=None,
+            recorder=self.tool_call_recorder,
         )
 
         res = await run_bridged_child(
@@ -93,6 +103,11 @@ class CodeEvalAdapter(BaseV2EvalBridge):
                 f"Code eval scorer timed out after {props.timeout_seconds}s"
             )
         if res.crashed:
+            # A clean exit with no result is not a crash: the child returned without
+            # putting a result on the queue (e.g. os._exit, or a hard interpreter
+            # exit from user code). Say that, rather than "crashed (exit code 0)".
+            if res.exit_code in (0, None):
+                raise RuntimeError("Scorer process exited without returning results")
             raise RuntimeError(f"Scorer crashed (exit code {res.exit_code})")
 
         result_msg = res.result_msg

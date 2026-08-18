@@ -2731,10 +2731,7 @@ class TestCodeEvalPropertiesValidation:
     def test_valid_code(self):
         props = CodeEvalProperties(code=self.VALID_CODE)
         assert props.code == self.VALID_CODE
-        assert props.timeout_seconds == 180
-
-    def test_default_timeout_is_180(self):
-        props = CodeEvalProperties(code=self.VALID_CODE)
+        # 180, not 30: the default has to cover nested LLM calls from score().
         assert props.timeout_seconds == 180
 
     def test_custom_timeout(self):

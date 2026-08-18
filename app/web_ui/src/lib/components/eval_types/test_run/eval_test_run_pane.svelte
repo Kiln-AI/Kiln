@@ -181,6 +181,27 @@
       </div>
     {/if}
 
+    {#if test_result.tool_call_log && test_result.tool_call_log.length > 0}
+      <div class="flex flex-col gap-2" data-testid="tool-call-log">
+        <span class="text-sm font-medium">Tool Calls</span>
+        <div class="flex flex-col gap-1.5">
+          {#each test_result.tool_call_log as entry}
+            <div
+              class="flex items-center justify-between gap-2 text-sm py-1 px-2 rounded bg-base-200/50"
+              class:text-error={entry.is_error}
+            >
+              <span class="font-mono text-xs font-medium truncate"
+                >{entry.tool_name}</span
+              >
+              <span class="text-xs whitespace-nowrap text-gray-500"
+                >{entry.duration_ms}ms</span
+              >
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
+
     {#if test_error}
       <div data-testid="test-error">
         <Warning

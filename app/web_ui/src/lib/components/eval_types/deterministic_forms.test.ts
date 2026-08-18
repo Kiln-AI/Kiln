@@ -10,7 +10,7 @@ vi.mock("$lib/utils/form_element.svelte", async () => {
   return { default: Stub }
 })
 
-// Keep the real CODE_EVAL_ONLY_TOOL_IDS; only stub the async function-name
+// Keep the real is_tool_selectable_in_context; only stub the async function-name
 // resolver so build_tool_options runs without hitting the API.
 vi.mock("$lib/stores/tools_store", async () => {
   const actual = await vi.importActual<
@@ -2106,6 +2106,19 @@ describe("StepCountCheckForm UI polish", () => {
 })
 
 describe("ToolCallCheckForm tool option filtering", () => {
+  const mcp_set: ToolSetApiDescription = {
+    type: "mcp",
+    set_name: "MCP Server: demo",
+    tools: [
+      {
+        id: "mcp::remote::demo::search",
+        name: "Search",
+        description: "Search the web",
+        function_name: "search",
+      },
+    ],
+  }
+
   const ai_models_set: ToolSetApiDescription = {
     type: "builtin",
     set_name: "AI Models",
@@ -2125,8 +2138,8 @@ describe("ToolCallCheckForm tool option filtering", () => {
     ],
   }
 
-  it("excludes code-eval-only tools (llm_judge) but keeps llm", async () => {
-    available_tools.set({ proj_tcc: [ai_models_set] })
+  it("excludes the sandbox-only built-ins, keeping real agent tools", async () => {
+    available_tools.set({ proj_tcc: [ai_models_set, mcp_set] })
 
     const { container } = render(ToolCallCheckForm, {
       props: {
@@ -2145,13 +2158,16 @@ describe("ToolCallCheckForm tool option filtering", () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     await tick()
 
-    // llm is general-purpose and stays selectable.
+    // Neither sandbox built-in is an agent tool, so neither can appear in a trace.
     expect(
       container.querySelector('[data-testid="fancy-option-llm"]'),
-    ).not.toBeNull()
-    // llm_judge is code-eval-only and can never appear in a real trace.
+    ).toBeNull()
     expect(
       container.querySelector('[data-testid="fancy-option-llm_judge"]'),
     ).toBeNull()
+    // A real agent tool is still offered.
+    expect(
+      container.querySelector('[data-testid="fancy-option-search"]'),
+    ).not.toBeNull()
   })
 })

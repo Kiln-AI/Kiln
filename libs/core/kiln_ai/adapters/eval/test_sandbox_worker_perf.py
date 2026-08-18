@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from kiln_ai.adapters.eval.test_sandbox_worker import run_scorer
+from kiln_ai.adapters.eval.conftest import run_scorer
 
 _EVAL_HELPERS_PATH = Path(__file__).resolve().parent / "eval_helpers.py"
 

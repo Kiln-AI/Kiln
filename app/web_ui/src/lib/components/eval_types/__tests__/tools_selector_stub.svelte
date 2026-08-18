@@ -11,7 +11,7 @@
   data-testid="tools-selector-stub"
   data-project-id={project_id}
   data-label={label}
-  data-code-eval-context={settings.code_eval_context ? "true" : "false"}
+  data-sandbox-code-context={settings.sandbox_code_context ?? "none"}
   data-tools={JSON.stringify(tools)}
 >
   <button

@@ -7,8 +7,9 @@
   import {
     tools_store,
     tools_store_initialized,
-    CODE_EVAL_ONLY_TOOL_IDS,
+    is_tool_selectable_in_context,
   } from "$lib/stores/tools_store"
+  import type { SandboxCodeContext } from "$lib/stores/tools_store"
   import { goto } from "$app/navigation"
   import type { ToolsSelectorSettings } from "./tools_selector_settings"
 
@@ -33,7 +34,7 @@
     empty_label: "None",
     single_select: false,
     optional: true,
-    code_eval_context: false,
+    sandbox_code_context: "none",
   }
   $: tools_selector_settings = {
     ...default_tools_selector_settings,
@@ -169,9 +170,22 @@
 
   function get_tool_options(
     available_tool_sets: ToolSetApiDescription[] | undefined,
-    code_eval_context: boolean,
+    sandbox_code_context: SandboxCodeContext,
   ): OptionGroup[] {
-    if (!available_tool_sets || available_tool_sets.length === 0) {
+    // Emptiness is judged on what this picker can actually offer, not on what the
+    // server returned: the sandbox-only built-ins ship in every project, so a raw
+    // length check would never see "no tools" again and the "Add tools" empty state
+    // would be lost for projects that have configured none.
+    const selectable_tool_sets = (available_tool_sets ?? [])
+      .map((tool_set) => ({
+        ...tool_set,
+        tools: tool_set.tools.filter((tool) =>
+          is_tool_selectable_in_context(tool.id, sandbox_code_context),
+        ),
+      }))
+      .filter((tool_set) => tool_set.tools.length > 0)
+
+    if (selectable_tool_sets.length === 0) {
       // When there are no available tools, we'll show the empty state "Add tools" button
       return []
     }
@@ -192,23 +206,13 @@
         }
       }
 
-      const tool_sets = available_tool_sets.filter(
-        (tool_set) =>
-          tool_set.type === tool_set_type && tool_set.tools.length > 0,
+      const tool_sets = selectable_tool_sets.filter(
+        (tool_set) => tool_set.type === tool_set_type,
       )
 
       if (tool_sets.length > 0) {
         for (const tool_set of tool_sets) {
-          let tools = tool_set.tools.filter(
-            (tool) =>
-              code_eval_context || !CODE_EVAL_ONLY_TOOL_IDS.includes(tool.id),
-          )
-
-          if (tools.length === 0) {
-            continue
-          }
-
-          let options = tools.map((tool) => ({
+          let options = tool_set.tools.map((tool) => ({
             value: tool.id,
             label: tool.name,
             description: tool.description ? tool.description.trim() : undefined,
@@ -247,7 +251,7 @@
       : tools_selector_settings.info_description,
     fancy_select_options: get_tool_options(
       $available_tools[project_id],
-      tools_selector_settings.code_eval_context,
+      tools_selector_settings.sandbox_code_context,
     ),
     empty_label:
       tools_selector_settings.empty_label ??

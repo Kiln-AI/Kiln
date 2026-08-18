@@ -11,11 +11,33 @@ type ToolsStore = {
   selected_tool_ids_by_task_id: Record<string, string[]>
 }
 
-// Built-in tools that are only meaningful inside a code judge. They resolve
-// through the normal tool path but error off-context (and can never appear in a
-// real agent trace), so tool pickers hide them everywhere except the code-eval
-// allowlist. Centralized here so every picker applies the same filter.
+// Built-in tools that exist only for user-authored sandboxed code (code tools and
+// code judges), which reach them over the sandbox bridge via `kiln.tools`. They are
+// not agent tools: an agent never gets to select them, so they can never appear in a
+// real trace either. `llm_judge` additionally needs a code judge's own score schema
+// and errors without it, so it is narrower still — the code-eval picker only.
+export const SANDBOX_CODE_TOOL_IDS = ["kiln_tool::llm", "kiln_tool::llm_judge"]
 export const CODE_EVAL_ONLY_TOOL_IDS = ["kiln_tool::llm_judge"]
+
+// Which sandboxed-code allowlist a tool picker is editing, if any.
+export type SandboxCodeContext = "none" | "code_tool" | "code_eval"
+
+// Centralized so every picker applies the same filter.
+export function is_tool_selectable_in_context(
+  tool_id: string,
+  context: SandboxCodeContext,
+): boolean {
+  if (!SANDBOX_CODE_TOOL_IDS.includes(tool_id)) {
+    return true
+  }
+  if (context === "none") {
+    return false
+  }
+  if (CODE_EVAL_ONLY_TOOL_IDS.includes(tool_id)) {
+    return context === "code_eval"
+  }
+  return true
+}
 
 const tools_store_key = "tools_store"
 export const { store: tools_store, initialized: tools_store_initialized } =

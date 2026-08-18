@@ -339,3 +339,27 @@ class TestRunLlmCall:
                 rendered_prompt="hi",
                 output_json_schema=None,
             )
+
+    async def test_task_is_ephemeral_with_no_children(self):
+        """The throwaway task must declare no child relationships.
+
+        Same guarantee LlmJudgeEval gets from ``_LlmJudgeTask(Task, parent_of={})``:
+        the task is never saved, so leaving child accessors live would let anything
+        that walks children reach for a project directory that does not exist.
+        """
+        run_output = RunOutput(output="free text", intermediate_outputs=None)
+        factory, _ = _mock_adapter_for(run_output)
+
+        with patch(ADAPTER_PATH, factory):
+            await run_llm_call(
+                model="gpt_4o",
+                provider="openai",
+                system_prompt=None,
+                rendered_prompt="hi",
+                output_json_schema=None,
+            )
+
+        task_arg = factory.call_args[0][0]
+        assert type(task_arg)._parent_of == {}
+        assert task_arg.parent is not None
+        assert task_arg.path is None

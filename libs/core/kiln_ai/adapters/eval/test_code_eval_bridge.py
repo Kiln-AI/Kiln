@@ -8,7 +8,6 @@ global execution lock).
 """
 
 import asyncio
-import time
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -284,33 +283,49 @@ class TestTimeoutMidCall:
 
 class TestParallelism:
     @pytest.mark.asyncio
-    async def test_parallel_code_evals_run_concurrently(self):
-        """N code evals run concurrently — wall-clock << sum of per-item sleeps.
+    async def test_parallel_code_evals_run_concurrently(self, tmp_path):
+        """N code evals must all be inside score() at the same instant.
 
-        With the old global asyncio.Lock these would serialize; the shared depth-0
-        semaphore (16 slots) lets them overlap.
+        Each child drops a marker file, then waits until it can see every sibling's
+        marker before returning a passing score. Under the deleted global execution
+        lock the first child would hold it while the others waited to spawn, so no
+        child could ever see a sibling and every one would time out at 0.0.
+
+        The rendezvous is deliberately not a wall-clock budget: an elapsed-time
+        assertion has to leave a margin for spawn overhead, and any fixed margin
+        eventually loses to a loaded CI machine. Simultaneity is what this test is
+        about, so it is asserted directly.
         """
-        per_sleep = 0.6
         n = 3
+        rendezvous = tmp_path / "rendezvous"
+        rendezvous.mkdir()
         code = (
-            "import time\n"
+            "import os, time\n"
+            f"RENDEZVOUS = {str(rendezvous)!r}\n"
+            f"N = {n}\n"
             "def score(output):\n"
-            f"    time.sleep({per_sleep})\n"
-            "    return {'accuracy': 1.0}\n"
+            "    open(os.path.join(RENDEZVOUS, output), 'w').close()\n"
+            # Generous: only a serialized run can exhaust it, and when it does the
+            # deadline is the failure, not a slow machine.
+            "    deadline = time.monotonic() + 20\n"
+            "    while time.monotonic() < deadline:\n"
+            "        if len(os.listdir(RENDEZVOUS)) >= N:\n"
+            "            return {'accuracy': 1.0}\n"
+            "        time.sleep(0.01)\n"
+            "    return {'accuracy': 0.0}\n"
         )
-        adapters = [CodeEvalAdapter(_make_config(code)) for _ in range(n)]
+        adapters = [CodeEvalAdapter(_make_config(code, timeout=60)) for _ in range(n)]
 
-        start = time.perf_counter()
-        results = await asyncio.gather(*(a.evaluate(_inp()) for a in adapters))
-        elapsed = time.perf_counter() - start
-
-        assert all(r.scores == {"accuracy": 1.0} for r in results)
-        serial_lower_bound = n * per_sleep  # 1.8s
-        assert elapsed < serial_lower_bound, (
-            f"Expected concurrent execution (< {serial_lower_bound}s), got {elapsed:.2f}s"
+        results = await asyncio.gather(
+            *(
+                adapter.evaluate(_inp(final_message=f"child_{i}"))
+                for i, adapter in enumerate(adapters)
+            )
         )
-        # Even with spawn overhead, real parallelism saves well over one full sleep.
-        assert elapsed < serial_lower_bound - per_sleep
+
+        assert [r.scores for r in results] == [{"accuracy": 1.0}] * n, (
+            "a code eval never saw its siblings running — execution was serialized"
+        )
 
 
 # ---------------------------------------------------------------------------

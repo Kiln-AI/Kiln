@@ -128,7 +128,7 @@
       hide_create_kiln_task_tool_button: true,
       optional: true,
       empty_label: "None (no tool access)",
-      code_eval_context: true,
+      sandbox_code_context: "code_eval",
     }}
     bind:tools={tool_allowlist}
   />

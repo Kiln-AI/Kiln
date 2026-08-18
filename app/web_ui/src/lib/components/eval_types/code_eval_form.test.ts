@@ -231,8 +231,10 @@ describe("tool allowlist picker", () => {
     )
     expect(selector).not.toBeNull()
     expect(selector?.getAttribute("data-project-id")).toBe("proj_123")
-    // code_eval_context must be true so llm_judge is offered here.
-    expect(selector?.getAttribute("data-code-eval-context")).toBe("true")
+    // The code-eval context is what makes llm_judge offerable here.
+    expect(selector?.getAttribute("data-sandbox-code-context")).toBe(
+      "code_eval",
+    )
   })
 
   it("binds the picker to properties.tool_allowlist", () => {

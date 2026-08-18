@@ -382,6 +382,59 @@ describe("EvalTestRunPane", () => {
       expect(container.textContent).toContain("not saved")
     })
 
+    it("lists the tool calls a code judge made", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          runs_loading: false,
+          test_result: {
+            scores: { accuracy: 1.0 },
+            skipped_reason: null,
+            skipped_detail: null,
+            tool_call_log: [
+              {
+                tool_name: "llm_judge",
+                arguments: { prompt: "hi" },
+                output_preview: '{"accuracy": 1.0}',
+                is_error: false,
+                duration_ms: 412,
+              },
+            ],
+          },
+          test_has_valid_run: true,
+        },
+      })
+
+      const log = container.querySelector('[data-testid="tool-call-log"]')
+      expect(log).not.toBeNull()
+      expect(log?.textContent).toContain("llm_judge")
+      expect(log?.textContent).toContain("412ms")
+    })
+
+    it("hides the tool call section when the scorer called nothing", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          runs_loading: false,
+          test_result: {
+            scores: { accuracy: 1.0 },
+            skipped_reason: null,
+            skipped_detail: null,
+            tool_call_log: [],
+          },
+          test_has_valid_run: true,
+        },
+      })
+
+      expect(
+        container.querySelector('[data-testid="tool-call-log"]'),
+      ).toBeNull()
+    })
+
     it("shows skipped result with reason", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(EvalTestRunPane as any, {

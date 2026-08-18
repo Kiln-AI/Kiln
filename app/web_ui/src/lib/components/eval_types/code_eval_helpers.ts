@@ -285,7 +285,7 @@ def score(output):
         tools.llm_judge(
             prompt=JUDGE_PROMPT,
             input={"response": output},
-            model="gpt-4.1",
+            model="gpt_4_1",
             provider="openai",
         )
     )
@@ -323,7 +323,7 @@ def score(output):
         tools.llm(
             prompt=TRIAGE_PROMPT,
             input={"response": output},
-            model="gpt-4.1-mini",
+            model="gpt_4_1_mini",
             provider="openai",
             schema=TRIAGE_SCHEMA,
         )
@@ -334,7 +334,7 @@ def score(output):
         tools.llm_judge(
             prompt=JUDGE_PROMPT,
             input={"response": output},
-            model="gpt-4.1",
+            model="gpt_4_1",
             provider="openai",
         )
     )

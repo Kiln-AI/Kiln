@@ -135,9 +135,6 @@ class PythonCodeTool(KilnToolInterface):
         )
         return _bridge_result_to_outcome(result)
 
-    async def _build_name_map(self) -> dict[str, list[ToolId]]:
-        return await self._build_server(None).name_map()
-
 
 def _bridge_result_to_outcome(result: BridgeResult) -> ChildOutcome:
     if result.timed_out:

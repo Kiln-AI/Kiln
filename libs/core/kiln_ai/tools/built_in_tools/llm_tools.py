@@ -17,6 +17,8 @@ from jinja2 import TemplateSyntaxError, UndefinedError
 
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.json_schema import validate_schema_dict
+from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import KilnTool, ToolCallContext, ToolCallResult
 from kiln_ai.utils.jinja_engine import JinjaExtractionError, _template_env
@@ -25,6 +27,25 @@ _DEFAULT_SYSTEM_PROMPT = (
     "Your job is to evaluate a model's performance on a task. "
     "Score the output according to the criteria provided."
 )
+
+
+class _LlmToolTask(Task, parent_of={}):
+    """Ephemeral Task used to invoke a model through ``adapter_for_task()``.
+
+    ``parent_of={}`` is load-bearing, and mirrors ``LlmJudgeEval``'s
+    ``_LlmJudgeTask``: this task is never saved, but a plain ``Task`` keeps every
+    child accessor live, so anything that walked its children would try to read the
+    throwaway project's directory off disk. Declaring no child relationships makes
+    that impossible.
+    """
+
+    def __init__(self, system_prompt: str, output_json_schema: str | None):
+        super().__init__(
+            name="LlmTool Task",
+            parent=Project(name="LlmTool"),
+            instruction=system_prompt,
+            output_json_schema=output_json_schema,
+        )
 
 
 async def run_llm_call(
@@ -51,20 +72,16 @@ async def run_llm_call(
         default_structured_output_mode_for_model_provider,
     )
     from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
-    from kiln_ai.datamodel.project import Project
     from kiln_ai.datamodel.prompt_id import PromptGenerators
     from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-    from kiln_ai.datamodel.task import StructuredOutputMode, Task
+    from kiln_ai.datamodel.task import StructuredOutputMode
 
     if provider not in ModelProviderName.__members__:
         raise ValueError(f"Invalid model provider: {provider}")
     provider_enum = ModelProviderName(provider)
 
-    tmp_project = Project(name="LlmTool")
-    judge_task = Task(
-        name="LlmTool Task",
-        parent=tmp_project,
-        instruction=system_prompt or _DEFAULT_SYSTEM_PROMPT,
+    judge_task = _LlmToolTask(
+        system_prompt=system_prompt or _DEFAULT_SYSTEM_PROMPT,
         output_json_schema=output_json_schema,
     )
 
@@ -123,11 +140,11 @@ _LLM_TOOL_PARAMETERS_SCHEMA = {
         },
         "model": {
             "type": "string",
-            "description": "The model name to call.",
+            "description": "The Kiln model name to call, e.g. `gpt_4_1`.",
         },
         "provider": {
             "type": "string",
-            "description": "The model provider name to call.",
+            "description": "The Kiln model provider name to call, e.g. `openai`.",
         },
         "input": {
             "type": "object",
@@ -203,11 +220,11 @@ _LLM_JUDGE_TOOL_PARAMETERS_SCHEMA = {
         },
         "model": {
             "type": "string",
-            "description": "The model name to call.",
+            "description": "The Kiln model name to call, e.g. `gpt_4_1`.",
         },
         "provider": {
             "type": "string",
-            "description": "The model provider name to call.",
+            "description": "The Kiln model provider name to call, e.g. `openai`.",
         },
         "input": {
             "type": "object",

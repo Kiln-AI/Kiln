@@ -25,6 +25,7 @@ from kiln_ai.tools.code_tool import (
 )
 from kiln_ai.tools.sandbox_bridge import (
     CODE_SANDBOX_MAX_CONCURRENCY,
+    NestedToolServer,
     _depth,
 )
 
@@ -1113,9 +1114,10 @@ class TestRealBuiltInTools:
                 tool_allowlist=[tool_id],
             )
             ct.parent = project
-            pct = PythonCodeTool(ct, project)
-            name_map = await pct._build_name_map()
-            dispatch_names = list(name_map.keys())
+            server = NestedToolServer(
+                allowlist=ct.tool_allowlist, project=project, task=None, context=None
+            )
+            dispatch_names = list((await server.name_map()).keys())
 
             assert dispatch_names == [real_name], (
                 f"For {builtin_id}: dispatch name {dispatch_names} != "

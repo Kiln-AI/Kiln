@@ -35,11 +35,7 @@ from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, EvalInputFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.task_run import Usage
-from kiln_ai.datamodel.tool_id import (
-    KILN_UNMANAGED_TOOL_ID_PREFIX,
-    SKILL_TOOL_ID_PREFIX,
-    ToolId,
-)
+from kiln_ai.datamodel.tool_id import ToolId, validate_tool_allowlist
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 if TYPE_CHECKING:
@@ -232,22 +228,8 @@ class CodeEvalProperties(BaseModel):
 
     @model_validator(mode="after")
     def validate_allowlist(self) -> Self:
-        seen: set[str] = set()
-        for tool_id in self.tool_allowlist:
-            if tool_id.startswith(SKILL_TOOL_ID_PREFIX):
-                raise ValueError(
-                    f"Skill tool IDs cannot be used in tool_allowlist: {tool_id}. "
-                    "Skills are adapter-resolved and not callable from code evals."
-                )
-            if tool_id.startswith(KILN_UNMANAGED_TOOL_ID_PREFIX):
-                raise ValueError(
-                    f"Unmanaged tool IDs cannot be used in tool_allowlist: {tool_id}. "
-                    "Unmanaged tools are SDK-injected and not resolvable by the registry."
-                )
-            if tool_id in seen:
-                raise ValueError(f"Duplicate tool ID in tool_allowlist: {tool_id}")
-            seen.add(tool_id)
-
+        # No self-reference check: a code eval is not itself a tool.
+        validate_tool_allowlist(self.tool_allowlist, caller="code evals")
         return self
 
     @model_validator(mode="before")

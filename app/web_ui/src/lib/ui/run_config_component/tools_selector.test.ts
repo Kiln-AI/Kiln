@@ -4,6 +4,7 @@ import { render } from "@testing-library/svelte"
 import { tick } from "svelte"
 import { available_tools } from "$lib/stores"
 import type { ToolSetApiDescription } from "$lib/types"
+import type { SandboxCodeContext } from "$lib/stores/tools_store"
 
 vi.mock("$app/navigation", () => ({ goto: vi.fn() }))
 
@@ -50,32 +51,73 @@ const ai_models_set: ToolSetApiDescription = {
 }
 
 async function option_values(
-  code_eval_context: boolean,
+  sandbox_code_context: SandboxCodeContext,
   project_id: string,
-): Promise<string[]> {
-  available_tools.set({ [project_id]: [ai_models_set] })
+  tool_sets: ToolSetApiDescription[] = [ai_models_set],
+): Promise<{ values: string[]; group_count: number }> {
+  available_tools.set({ [project_id]: tool_sets })
   const { container } = render(ToolsSelector, {
     props: {
       project_id,
-      settings: { code_eval_context },
+      // hide_create_kiln_task_tool_button is left at its default (false), so this
+      // matches the general agent picker — the configuration the empty state
+      // regressed in.
+      settings: { sandbox_code_context },
     },
   })
   await new Promise((resolve) => setTimeout(resolve, 0))
   await tick()
   const el = container.querySelector('[data-testid="form-element-options"]')
-  return JSON.parse(el?.getAttribute("data-option-values") ?? "[]")
+  return {
+    values: JSON.parse(el?.getAttribute("data-option-values") ?? "[]"),
+    group_count: Number(el?.getAttribute("data-option-group-count") ?? -1),
+  }
 }
 
-describe("ToolsSelector code-eval-only tool filtering", () => {
-  it("hides llm_judge outside a code-eval context (keeps llm)", async () => {
-    const values = await option_values(false, "proj_ts_off")
+describe("ToolsSelector sandbox-only tool filtering", () => {
+  it("hides both sandbox built-ins outside any sandboxed-code context", async () => {
+    const { values } = await option_values("none", "proj_ts_off")
+    expect(values).not.toContain("kiln_tool::llm")
+    expect(values).not.toContain("kiln_tool::llm_judge")
+  })
+
+  it("offers llm but not llm_judge in a code-tool context", async () => {
+    const { values } = await option_values("code_tool", "proj_ts_tool")
     expect(values).toContain("kiln_tool::llm")
     expect(values).not.toContain("kiln_tool::llm_judge")
   })
 
-  it("shows llm_judge inside a code-eval context", async () => {
-    const values = await option_values(true, "proj_ts_on")
+  it("offers both in a code-eval context", async () => {
+    const { values } = await option_values("code_eval", "proj_ts_eval")
     expect(values).toContain("kiln_tool::llm")
     expect(values).toContain("kiln_tool::llm_judge")
+  })
+
+  it("still shows the empty state when only unselectable tools exist", async () => {
+    // Regression: the AI Models set ships in every project, so a raw
+    // available_tools length check would hide the "Add tools" onboarding from
+    // every project that has configured no tools of its own. FancySelect keys the
+    // empty state off options.length === 0, so no groups at all is the assertion.
+    const { group_count } = await option_values("none", "proj_ts_empty")
+    expect(group_count).toBe(0)
+  })
+
+  it("keeps ordinary tool sets visible outside a sandboxed-code context", async () => {
+    const { values } = await option_values("none", "proj_ts_mixed", [
+      ai_models_set,
+      {
+        type: "mcp",
+        set_name: "MCP Server: demo",
+        tools: [
+          {
+            id: "mcp::remote::demo::search",
+            name: "Search",
+            description: "Search the web",
+            function_name: "search",
+          },
+        ],
+      },
+    ])
+    expect(values).toEqual(["mcp::remote::demo::search"])
   })
 })

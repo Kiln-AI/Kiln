@@ -71,6 +71,8 @@ from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.task_run import EvalItemSource, Usage
 from kiln_ai.datamodel.usage import MessageUsage
+from time import monotonic
+
 from kiln_ai.tools.sandbox_bridge import BridgeResult
 
 
@@ -5661,6 +5663,50 @@ class TestTestV2Eval:
         body = response.json()
         assert body["scores"]["accuracy"] == 0.75
         assert body["skipped_reason"] is None
+        assert body["tool_call_log"] == []
+
+    def test_code_eval_reports_nested_tool_calls(self, client, mock_v2_eval):
+        """The test pane records what the scorer called, so nested LLM spend is visible."""
+        payload = {
+            "properties": {
+                "type": "code_eval",
+                "code": "def score(output, **kwargs):\n    return {'accuracy': 1.0}\n",
+                "tool_allowlist": ["kiln_tool::llm"],
+            },
+            "eval_input": {"final_message": "test"},
+        }
+
+        async def record_then_succeed(**kwargs):
+            # Stand in for the child calling a tool: the pump would hand the server
+            # the call, and the server reports it to whatever recorder it was given.
+            kwargs["server"]._record(
+                "llm", {"prompt": "hi"}, "a judgement", False, monotonic()
+            )
+            return BridgeResult(result_msg={"type": "result", "ok": {"accuracy": 1.0}})
+
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj,
+            patch(
+                "app.desktop.studio_server.eval_api.has_add_code_trust",
+                return_value=True,
+            ),
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_code_eval.run_bridged_child",
+                new=record_then_succeed,
+            ),
+        ):
+            mock_eid.return_value = mock_v2_eval
+            mock_proj.return_value = Mock()
+            response = client.post(self._url(), json=payload)
+
+        assert response.status_code == 200
+        log = response.json()["tool_call_log"]
+        assert len(log) == 1
+        assert log[0]["tool_name"] == "llm"
+        assert log[0]["arguments"] == {"prompt": "hi"}
+        assert log[0]["output_preview"] == "a judgement"
+        assert log[0]["is_error"] is False
 
     def test_llm_judge_with_mocked_model(self, client, mock_v2_eval):
         payload = {

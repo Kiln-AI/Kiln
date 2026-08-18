@@ -143,6 +143,18 @@ class TestCodeEvalAdapterEvaluate:
                 await adapter.evaluate(_inp())
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("exit_code", [0, None])
+    async def test_clean_exit_without_result_is_not_reported_as_a_crash(
+        self, exit_code
+    ):
+        cfg = _make_config()
+        adapter = CodeEvalAdapter(cfg)
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(crashed=True, exit_code=exit_code)
+            with pytest.raises(RuntimeError, match="exited without returning results"):
+                await adapter.evaluate(_inp())
+
+    @pytest.mark.asyncio
     async def test_scorer_error_raises_runtime_error(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)

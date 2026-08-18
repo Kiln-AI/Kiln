@@ -242,3 +242,39 @@ def kiln_task_server_id_from_tool_id(tool_id: str) -> str:
         )
 
     return parts[0]  # server_id
+
+
+def validate_tool_allowlist(
+    tool_allowlist: list[ToolId],
+    *,
+    caller: str,
+    self_tool_id: ToolId | None = None,
+) -> None:
+    """Validate a sandboxed-code tool allowlist, raising ValueError on the first problem.
+
+    Shared by every model that carries one (code tools, code evals) so the rules
+    cannot drift apart: the sandbox bridge resolves them all through the same path,
+    so what one accepts the other must too.
+
+    ``caller`` names the owner in error messages ("code tools", "code evals").
+    ``self_tool_id`` is the owner's own tool id, when it has one, to reject
+    self-reference.
+    """
+    seen: set[str] = set()
+    for tool_id in tool_allowlist:
+        if tool_id.startswith(SKILL_TOOL_ID_PREFIX):
+            raise ValueError(
+                f"Skill tool IDs cannot be used in tool_allowlist: {tool_id}. "
+                f"Skills are adapter-resolved and not callable from {caller}."
+            )
+        if tool_id.startswith(KILN_UNMANAGED_TOOL_ID_PREFIX):
+            raise ValueError(
+                f"Unmanaged tool IDs cannot be used in tool_allowlist: {tool_id}. "
+                "Unmanaged tools are SDK-injected and not resolvable by the registry."
+            )
+        if tool_id in seen:
+            raise ValueError(f"Duplicate tool ID in tool_allowlist: {tool_id}")
+        seen.add(tool_id)
+
+    if self_tool_id is not None and self_tool_id in seen:
+        raise ValueError("A code tool cannot reference itself in tool_allowlist.")

@@ -169,13 +169,14 @@ Key differences from the code-tool child (`sandbox/worker.py`): entry point `sco
 
 ```python
 async def evaluate(self, eval_input):
-    # trust gate unchanged (skip if project untrusted)
+    # No trust check here: trust is conferred when code is saved / test-run, not on
+    # execution (see functional_spec.md §6). Saved code runs unprompted.
     inputs = {output, trace, reference_data, task_input}   # existing
     server = NestedToolServer(
         allowlist=props.tool_allowlist, project=project, task=self.target_task,
         context=ToolCallContext(allow_saving=False,
                                 eval_output_schema=BaseEval.build_score_schema(self.eval, allow_float_scores=False)),
-        recorder=None,
+        recorder=self.tool_call_recorder,   # test pane sets it; an eval run leaves it None
     )
     ctx = multiprocessing.get_context("spawn"); requests, responses = ctx.Queue(), ctx.Queue()
     res = await run_bridged_child(target=execute_scorer_bridged, args=(props.code, inputs),
@@ -199,7 +200,7 @@ Today `v2_eval_code_eval.py` serializes **all** code evals through a single `asy
 ## 4. UI changes (`app/web_ui`)
 
 - **Allowlist picker** in `components/eval_types/code_eval_form.svelte`: add the same tool-picker used by the code-tool create/edit page, bound to `properties.tool_allowlist`. Reuse the component wholesale.
-- **Inject the two built-ins into the picker catalog** so `llm` and `llm_judge` are selectable. `llm_judge` is offered only in the code-eval picker context (it errors off-context); `llm` may appear generally.
+- **Inject the two built-ins into the picker catalog** so `llm` and `llm_judge` are selectable. The catalog (`/available_tools`) is shared by every picker, so the scoping is applied client-side in `is_tool_selectable_in_context`: `llm` is offered in the code-tool and code-eval allowlists, `llm_judge` in the code-eval allowlist only, and neither in the general agent picker (functional_spec §11 defers that to a follow-up). Note the picker treats "no tools" as "no *selectable* tools" — these built-ins ship in every project, so a raw catalog-length check would hide the "Add tools" empty state from projects that have configured none.
 - **Editor examples** in `components/eval_types/code_eval_helpers.ts`: add one or two `generate_examples` entries showing `tools.llm_judge(...)` and the cheap-triage pattern. These strings are mirrored byte-for-byte and executed by `test_code_eval_samples.py` — update that fixture in lockstep (see §6).
 - Regenerate the OpenAPI client (`generate_schema.sh`) for the new `tool_allowlist` field.
 
@@ -224,14 +225,14 @@ All nested-call errors already funnel through the bridge's typed mapping (`ToolN
 - **Datamodel** (`test_phase4_data_model.py` peers): `tool_allowlist` validation (skill/unmanaged/dupe rejection), new timeout default, `KilnBuiltInToolId` round-trips, `ToolCallContext` default.
 - **Built-in tools** (new `test_llm_tools.py`, fake adapter double): `llm` text vs schema→JSON-string; `llm_judge` maps pass/fail/critical/1-5 → float and returns JSON scores; off-context error; provider/model/schema/render errors; parity — `llm_judge` output equals a stock `LlmJudgeEval` run for the same schema+prompt.
 - **Bridge refactor** (existing `sandbox/test_code_tool_execution.py`): must stay green unchanged — proves the extraction is behavior-preserving for code tools. Add an identity assertion that code tools and code evals share one `_spawn_lock` and one semaphore.
-- **Code-eval bridge** (real spawns, `test_v2_eval_code_eval.py` / `test_sandbox_worker.py` style): `score()` calls `tools.llm_judge` / `tools.llm` (fake tool double routed through `_serve`), sync and `async def score` with `asyncio.gather`; allowlist enforcement (`ToolNotAllowed`); timeout kills a child mid-LLM-call; concurrency — N code evals run in parallel (regression against the deleted global lock); trust-refusal short-circuits before spawn.
+- **Code-eval bridge** (real spawns, `test_v2_eval_code_eval.py` / `test_sandbox_worker.py` style): `score()` calls `tools.llm_judge` / `tools.llm` (fake tool double routed through `_serve`), sync and `async def score` with `asyncio.gather`; allowlist enforcement (`ToolNotAllowed`); timeout kills a child mid-LLM-call; concurrency — N code evals run in parallel (regression against the deleted global lock; asserted by a rendezvous between the children, not a wall-clock budget). No trust-refusal test at this layer — the gate lives in the API, not the adapter (functional_spec.md §6).
 - **Samples** (`test_code_eval_samples.py`): mirror the new `code_eval_helpers.ts` example strings and execute them through the real sandbox with a stubbed judge tool.
 - **UI** (`code_eval_form.test.ts`): allowlist picker binds; `llm`/`llm_judge` selectable; example snippets present.
 
 ## 7. Open decisions (small)
 
 1. **Home of `run_llm_call`.** Either `tools/built_in_tools/llm_tools.py` or a shared `adapters/eval/eval_utils/` module so `LlmJudgeEval` can also adopt it. Leaning: put it beside the tools, and optionally refactor `LlmJudgeEval`'s non-g-eval path onto it in a later cleanup (not required for v1).
-2. **Cost/usage surfacing.** v1: nested calls flow through the existing recorder (name/args/duration/error). Surfacing token cost + the judge's intermediate output per code-eval item is deferred; `run_output.intermediate_outputs` is available if we later want it.
+2. **Cost/usage surfacing.** v1: nested calls flow through the existing recorder (name/args/duration/error), which the **test pane** wires up and returns as `TestV2EvalResponse.tool_call_log` — that is where an author is iterating and can act on what they see. An eval run leaves the recorder unset: a per-item tool log has no home in the run UI yet. Surfacing token cost + the judge's intermediate output per code-eval item is still deferred; `run_output.intermediate_outputs` is available if we later want it.
 3. **`llm` general availability.** v1 exposes both tools in the code-eval picker; whether `llm` also lands in the general agent add-tools UI is a one-line catalog change deferred to a follow-up.
 
 ## 8. Component-design decision
