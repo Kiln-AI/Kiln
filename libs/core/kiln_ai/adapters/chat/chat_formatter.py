@@ -378,6 +378,52 @@ def get_chat_formatter(
             raise_exhaustive_enum_error(strategy)
 
 
+def chat_strategy_for_run(
+    cot_prompt: str | None,
+    tuned_chat_strategy: ChatStrategy | None,
+    reasoning_capable: bool,
+) -> ChatStrategy:
+    """The chat strategy a run resolves to, from the prompt it uses and the model it
+    runs on.
+
+    Separate from formatter construction so callers that only need the *shape* of the
+    conversation (how many messages a turn costs, whether thinking is its own call) can
+    ask without building a formatter — and so there is only one copy of the branching to
+    keep correct.
+    """
+    # Nothing to separate without thinking instructions, so one message per turn. True
+    # even when a tuned strategy is set: those are either single turn already, or need
+    # the thinking instructions this run doesn't have.
+    if not cot_prompt:
+        return ChatStrategy.single_turn
+
+    # Some models (finetunes) are trained against a specific strategy, so honour it.
+    # Except single turn: the user picked a prompt with thinking instructions, and
+    # explicit prompt selection wins over the tuned default.
+    if tuned_chat_strategy and tuned_chat_strategy != ChatStrategy.single_turn:
+        return tuned_chat_strategy
+
+    # A reasoning model emits its thinking in a structured format of its own, so one
+    # call carries both the thinking and the answer. Any other model needs a second
+    # call to separate them.
+    if reasoning_capable:
+        return ChatStrategy.single_turn_r1_thinking
+    return ChatStrategy.two_message_cot
+
+
+def is_two_message_cot_strategy(strategy: ChatStrategy) -> bool:
+    """Whether one turn of this strategy costs two user-role messages.
+
+    These strategies ask the model to think, then inject a second user message asking
+    for the final answer. A turn is therefore not "one user message, one assistant
+    reply", which anything counting turns in a trace has to know.
+    """
+    return strategy in (
+        ChatStrategy.two_message_cot,
+        ChatStrategy.two_message_cot_legacy,
+    )
+
+
 def format_user_message(input: InputType) -> str:
     """Build a user message from the input.
 

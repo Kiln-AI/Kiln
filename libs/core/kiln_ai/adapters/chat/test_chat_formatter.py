@@ -1,9 +1,12 @@
+import pytest
+
 from kiln_ai.adapters.chat import ChatStrategy, get_chat_formatter
 from kiln_ai.adapters.chat.chat_formatter import (
     COT_FINAL_ANSWER_PROMPT,
     MultiturnFormatter,
     SingleTurnR1ThinkingFormatter,
     format_user_message,
+    is_two_message_cot_strategy,
 )
 
 
@@ -276,3 +279,18 @@ def test_get_chat_formatter_r1_drops_thinking_instructions():
     turn = formatter.next_turn()
     assert turn is not None
     assert turn.messages[1].content == "test"
+
+
+@pytest.mark.parametrize(
+    "strategy, expected",
+    [
+        # Both chain of thought strategies inject a second user-role message asking for
+        # the final answer, so a turn is not one user message and one assistant reply.
+        (ChatStrategy.two_message_cot, True),
+        (ChatStrategy.two_message_cot_legacy, True),
+        (ChatStrategy.single_turn, False),
+        (ChatStrategy.single_turn_r1_thinking, False),
+    ],
+)
+def test_is_two_message_cot_strategy(strategy: ChatStrategy, expected: bool):
+    assert is_two_message_cot_strategy(strategy) is expected

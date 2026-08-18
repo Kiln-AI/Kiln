@@ -1,10 +1,14 @@
 import logging
 from dataclasses import dataclass, field
-from typing import AsyncGenerator, Dict, List, Literal, Set, Tuple
+from typing import Any, AsyncGenerator, Callable, Dict, List, Literal, Set, Tuple
 
 from pydantic import JsonValue
 
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
+from kiln_ai.adapters.chat.chat_formatter import (
+    chat_strategy_for_run,
+    is_two_message_cot_strategy,
+)
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 from kiln_ai.adapters.eval.registry import (
     legacy_eval_adapter_from_type,
@@ -12,6 +16,8 @@ from kiln_ai.adapters.eval.registry import (
 )
 from kiln_ai.adapters.eval.trace_index import TraceIndex, TraceKey, trace_key
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
+from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
+from kiln_ai.adapters.provider_tools import kiln_model_provider_from
 from kiln_ai.adapters.retry_classification import (
     is_retryable_error,
     unwrap_kiln_run_error,
@@ -41,8 +47,11 @@ from kiln_ai.datamodel.eval_splits import (
     eval_run_item_key,
     item_key,
 )
-from kiln_ai.datamodel.run_config import as_kiln_agent_run_config
-from kiln_ai.datamodel.task import TaskRunConfig
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    as_kiln_agent_run_config,
+)
+from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun, Usage
 from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.synthetic_user import drive_case_for_eval
@@ -50,7 +59,7 @@ from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
 from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
-from kiln_ai.utils.open_ai_types import serialize_trace
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam, serialize_trace
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +89,109 @@ def _calibration_item(job: EvalJob) -> TaskRun | None:
     if not isinstance(job.item, TaskRun):
         raise ValueError("Calibration items are always TaskRuns")
     return job.item
+
+
+def _message_field(message: Any, key: str) -> Any:
+    """One field of a trace message, or None for anything that isn't a message dict.
+
+    A stored trace is a list of message dicts, but an in-memory one can hold provider
+    objects too; reading through this keeps the health check from raising on them.
+    """
+    return message.get(key) if isinstance(message, dict) else None
+
+
+def _has_text_content(content: Any) -> bool:
+    """Whether a message's content carries any text.
+
+    Content is either a plain string or a list of content parts, and both shapes reach
+    here — traces are written by adapters and read back through pydantic.
+    """
+    if isinstance(content, str):
+        return bool(content.strip())
+    if isinstance(content, list):
+        return any(
+            isinstance(part, dict) and bool(str(part.get("text") or "").strip())
+            for part in content
+        )
+    return False
+
+
+def conversation_health_problem(
+    trace: list[ChatCompletionMessageParam] | None, required_turns: int
+) -> str | None:
+    """Why `trace` is not a complete conversation for an item wanting `required_turns`
+    turns, or None when it is complete.
+
+    Structural completeness only, never error-freeness: a conversation whose tool calls
+    failed is a legitimate thing to evaluate (judging how an agent handles errors is a
+    first-class eval), so error-bearing tool messages say nothing about health here. What
+    it does catch is a conversation that stopped short — a drive that ended early, or a
+    partial record from an older writer — which would otherwise be judged as if the agent
+    had simply finished.
+
+    Health is a relationship between a trace and the item asking for it, not a property of
+    the trace: the same conversation is complete for a two-turn item and short for a
+    three-turn one, so the required count is always passed in by the caller.
+    """
+    messages = trace or []
+    user_turns = sum(
+        1 for message in messages if _message_field(message, "role") == "user"
+    )
+    if user_turns != required_turns:
+        return f"expected {required_turns} user turns, found {user_turns}"
+    if not messages:
+        return "the conversation is empty"
+    last_role = _message_field(messages[-1], "role")
+    if last_role != "assistant":
+        return f"the conversation ends with a '{last_role}' message, not an assistant reply"
+    if not _has_text_content(_message_field(messages[-1], "content")):
+        return "the final assistant message has no text content"
+    return None
+
+
+def _splits_a_turn_into_two_messages(
+    properties: KilnAgentRunConfigProperties, task: Task
+) -> bool:
+    """Whether this run config answers one turn with two user-role messages.
+
+    A chain of thought prompt on a model with no reasoning step of its own is served by
+    asking the model to think, then sending a second user message asking for the final
+    answer. That extra message is indistinguishable from a real user turn, so a driven
+    conversation both miscounts its turns and feeds the injected message back to the
+    synthetic user as if the user had written it.
+
+    The strategy is resolved from the same prompt builder and model provider the adapter
+    reads, so the answer here is the one the drive would get. A config that cannot be
+    resolved answers False: the drive fails on the identical lookup before it spends
+    anything, and one unresolvable config must not block the run configs beside it.
+    """
+    try:
+        cot_prompt = prompt_builder_from_id(
+            properties.prompt_id, task
+        ).chain_of_thought_prompt()
+        provider = (
+            kiln_model_provider_from(
+                properties.model_name, properties.model_provider_name
+            )
+            if cot_prompt
+            else None
+        )
+    except Exception as error:
+        logger.warning(
+            "Could not resolve the chat strategy for model '%s' with prompt '%s' (%s); "
+            "leaving its multi-turn compatibility to the per-job checks",
+            properties.model_name,
+            properties.prompt_id,
+            error,
+        )
+        return False
+    return is_two_message_cot_strategy(
+        chat_strategy_for_run(
+            cot_prompt=cot_prompt,
+            tuned_chat_strategy=provider.tuned_chat_strategy if provider else None,
+            reasoning_capable=provider.reasoning_capable if provider else False,
+        )
+    )
 
 
 def no_golden_set_message(eval: Eval) -> str:
@@ -181,7 +293,39 @@ class EvalRunner:
         # Live, not precomputed like `already_run`: a trace persisted by one job has to be
         # visible to the next, whether that next job is running concurrently under a
         # different eval config or is this job's own retry (functional spec 4.2, 4.3).
-        self._trace_index = TraceIndex(self.task)
+        self._trace_index = TraceIndex(self.task, vet=self._build_trace_vet())
+
+    def _build_trace_vet(self) -> Callable[[TraceKey, TaskRun], str | None] | None:
+        """The completeness check the trace index applies to reuse candidates, or None
+        when this run has no multi-turn conversations for it to check. Answers None for a
+        usable candidate, or why it is unusable — the index logs the reason alongside the
+        file it rejected.
+
+        Required turn counts come from the split's own items, so every candidate is judged
+        against the item asking for it. Anything the map doesn't name — single-turn
+        generations, and items outside this run's split — is accepted: neither has a turn
+        contract to fall short of.
+        """
+        if self.split is None:
+            return None
+        required_turns: Dict[ItemKey, int] = {
+            item_key(item): item.data.drive_config.turns
+            for item in self.split.items
+            if isinstance(item, EvalInput)
+            and isinstance(item.data, MultiTurnSyntheticEvalInputData)
+            and item.data.drive_config is not None
+        }
+        if not required_turns:
+            return None
+
+        def vet_conversation(key: TraceKey, trace: TaskRun) -> str | None:
+            source_type, source_id, _ = key
+            turns = required_turns.get((source_type, source_id))
+            if turns is None:
+                return None
+            return conversation_health_problem(trace.trace, turns)
+
+        return vet_conversation
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
@@ -353,8 +497,9 @@ class EvalRunner:
     ) -> None:
         """Fail fast on config problems every multi-turn re-drive job would
         hit: no item carrying a synthetic-user drive config, a stamped
-        config with an unknown model provider, or run configs that aren't
-        Kiln agent configs. Callers can invoke this before starting a batch
+        config with an unknown model provider, run configs that aren't
+        Kiln agent configs, or run configs that answer in two messages per
+        turn. Callers can invoke this before starting a batch
         so the user gets one clear error up front instead of one opaque
         error per job. The per-job checks stay as the backstop for
         standalone runner use.
@@ -406,11 +551,22 @@ class EvalRunner:
         if check_run_configs:
             for run_config in self.run_configs or []:
                 try:
-                    as_kiln_agent_run_config(run_config.run_config_properties)
+                    agent_properties = as_kiln_agent_run_config(
+                        run_config.run_config_properties
+                    )
                 except ValueError:
                     problems.append(
                         f"run config '{run_config.name}' is not a Kiln agent "
                         "config, so it can't hold a multi-turn conversation"
+                    )
+                    continue
+                if _splits_a_turn_into_two_messages(agent_properties, self.task):
+                    problems.append(
+                        f"run config '{run_config.name}' uses a chain of thought "
+                        "prompt with a model that has no reasoning step of its own, "
+                        "so it answers in two messages per turn and can't hold a "
+                        "multi-turn conversation (pick a reasoning-capable model, or "
+                        "a prompt without thinking instructions)"
                     )
         if problems:
             raise ValueError(
@@ -453,6 +609,13 @@ class EvalRunner:
             if done:
                 await self._delete_superseded_tombstones(job)
             return done
+        except RetryableError as e:
+            # Already classified by whoever raised it: this is a deliberate, expected
+            # ask for another attempt (an unusable generation the retry replaces), not a
+            # failure. Re-raised untouched, and logged without a stacktrace so a
+            # self-healing event doesn't read as a crash in the logs.
+            logger.warning(f"Retrying eval job for dataset item {job.item.id}: {e}")
+            raise
         except Exception as e:
             if is_retryable_error(e):
                 logger.error(
@@ -825,6 +988,16 @@ class EvalRunner:
                 turns=drive_config.turns,
                 skills=self._skills,
             )
+            leaf_trace = drive_result.chain[-1].trace if drive_result.chain else None
+            problem = conversation_health_problem(leaf_trace, drive_config.turns)
+            if problem is not None:
+                # A drive that stopped short is a failed generation, not a cheap result:
+                # persisting it would index an incomplete conversation that every judge of
+                # this item reuses from then on. Retryable, so the job re-drives.
+                raise RetryableError(
+                    f"The driven conversation for eval item {eval_input.id} is "
+                    f"incomplete ({problem}), so it was not saved."
+                )
             return await self._persist_driven_conversation(key, drive_result, seed=seed)
 
         # A raising drive persists nothing, so the job's retry re-drives; a
