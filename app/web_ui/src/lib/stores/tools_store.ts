@@ -1,13 +1,49 @@
 import type {
   ExternalToolApiDescription,
   ToolSetApiDescription,
+  ToolSetType,
 } from "$lib/types"
 import { writable } from "svelte/store"
 import { tool_link } from "$lib/utils/link_builder"
 import { indexedDBStore } from "./index_db_store"
+import { LLM_JUDGE_TOOL_ID } from "$lib/utils/built_in_tool_ids"
 
 type ToolsStore = {
   selected_tool_ids_by_task_id: Record<string, string[]>
+}
+
+// Which sandboxed-code allowlist a tool picker is editing, if any. "none" is every
+// picker that selects agent tools.
+export type SandboxCodeContext = "none" | "code_tool" | "code_eval"
+
+// Tools the server marks as needing a code judge's score schema. `llm_judge` errors
+// without one, so it is offered in the code-eval picker alone — a narrowing within
+// the sandbox_code set that the set type cannot express on its own.
+// Module-private on purpose: pickers must go through
+// is_tool_selectable_in_context() rather than matching ids themselves.
+const CODE_EVAL_ONLY_TOOL_IDS = [LLM_JUDGE_TOOL_ID]
+
+// Whether a picker in `context` may offer a tool, given the set that carries it.
+//
+// The coarse rule is the server's: a "sandbox_code" set holds tools that only
+// user-authored sandboxed code can call, so no agent picker may offer them. Keying
+// on the set type rather than on tool ids means renaming a KilnBuiltInToolId cannot
+// silently leak these back into every picker.
+export function is_tool_selectable_in_context(
+  tool_id: string,
+  tool_set_type: ToolSetType,
+  context: SandboxCodeContext,
+): boolean {
+  if (tool_set_type !== "sandbox_code") {
+    return true
+  }
+  if (context === "none") {
+    return false
+  }
+  if (CODE_EVAL_ONLY_TOOL_IDS.includes(tool_id)) {
+    return context === "code_eval"
+  }
+  return true
 }
 
 const tools_store_key = "tools_store"

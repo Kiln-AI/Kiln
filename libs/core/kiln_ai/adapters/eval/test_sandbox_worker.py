@@ -1,12 +1,12 @@
-"""Tests for sandbox_worker -- multiprocessing scorer execution.
+"""Tests for the code-eval scorer worker -- multiprocessing scorer execution.
 
-These tests SPAWN child processes. Keep them fast. Scorer code is passed
-as a string so nothing local needs pickling.
+These tests SPAWN child processes via the shared bridge. Keep them fast. Scorer
+code is passed as a string so nothing local needs pickling.
 """
 
 import pytest
 
-from kiln_ai.adapters.eval.sandbox_worker import run_scorer
+from kiln_ai.adapters.eval.conftest import run_scorer
 
 
 def _inputs(output: str = "hello", **overrides: object) -> dict:
