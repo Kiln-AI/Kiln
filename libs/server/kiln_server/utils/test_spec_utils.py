@@ -4,9 +4,7 @@ import pytest
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
-    Eval,
     EvalDataType,
-    EvalOutputScore,
     EvalTemplateId,
     TaskRunSplit,
 )
@@ -15,7 +13,6 @@ from kiln_server.utils.spec_utils import (
     SpecEvalTags,
     build_spec_eval,
     generate_spec_eval_tags,
-    set_spec_eval_splits,
     spec_eval_data_type,
     spec_eval_output_score,
     spec_eval_splits,
@@ -175,33 +172,6 @@ class TestSpecEvalSplits:
         assert splits["train"].filter_id == "tag::train_test"
         assert splits["val"].filter_id == "tag::val_test"
 
-    def test_set_splits_stores_test_and_train_in_their_legacy_homes(self):
-        """Asserted on the dump, because that is the only place the choice is visible.
-
-        set_split and `eval.splits[name] = ...` produce identical in-memory models, so an
-        assertion on eval.splits passes whichever one the code picked and can never fail
-        for this code. Any test of split-writing code has to reach the serialized bytes
-        (architecture 2.6). The legacy fields are what older Kiln builds and the
-        prompt-optimization zip reader look at.
-        """
-        splits = spec_eval_splits(
-            eval_tag="eval_test", train_tag="train_test", val_tag="val_test"
-        )
-        eval = Eval(
-            name="Test Spec",
-            splits=splits,
-            output_scores=[EvalOutputScore(name="score", type="pass_fail")],
-        )
-
-        set_spec_eval_splits(eval, splits)
-
-        dumped = eval.model_dump()
-        assert dumped["eval_set_filter_id"] == "tag::eval_test"
-        assert dumped["train_set_filter_id"] == "tag::train_test"
-        assert dumped["splits"] == {
-            "val": {"source": "task_run", "filter_id": "tag::val_test"}
-        }
-
 
 class TestBuildSpecEval:
     def test_returns_the_tags_the_evals_items_must_carry(self, tmp_path):
@@ -222,12 +192,13 @@ class TestBuildSpecEval:
         # Golden is not a split, so the split assertions below never cover it.
         assert eval.eval_configs_filter_id == "tag::eval_golden_test_spec"
 
-    def test_splits_are_built_and_homed_in_one_step(self, tmp_path):
-        """The factory exists so a caller cannot construct the eval and forget to home it.
+    def test_splits_are_built_in_one_step(self, tmp_path):
+        """All three splits are set, and stored in the one place splits live.
 
-        Asserted on the dump for the reason given in
-        test_set_splits_stores_test_and_train_in_their_legacy_homes: dropping the homing
-        step leaves an eval that looks correct in memory.
+        Asserted on the dump as well as on the model: the deprecated flat filter fields
+        are never written, so an eval built here is unreadable to a Kiln build that
+        predates `splits` — which is the accepted cost of a single home, and worth
+        pinning where it is created.
         """
         eval, _tags = build_spec_eval(
             task=_task(tmp_path),
@@ -242,8 +213,10 @@ class TestBuildSpecEval:
             "val": TaskRunSplit(filter_id="tag::val_test_spec"),
         }
         dumped = eval.model_dump()
-        assert dumped["eval_set_filter_id"] == "tag::eval_test_spec"
-        assert dumped["train_set_filter_id"] == "tag::train_test_spec"
+        assert dumped["eval_set_filter_id"] is None
+        assert dumped["train_set_filter_id"] is None
         assert dumped["splits"] == {
-            "val": {"source": "task_run", "filter_id": "tag::val_test_spec"}
+            "test": {"source": "task_run", "filter_id": "tag::eval_test_spec"},
+            "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
+            "val": {"source": "task_run", "filter_id": "tag::val_test_spec"},
         }

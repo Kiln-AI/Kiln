@@ -38,6 +38,8 @@ logger = logging.getLogger(__name__)
 # Lock to prevent overwriting via concurrent updates. We use a load/update/write pattern that is not atomic.
 update_run_lock = Lock()
 
+EVAL_TRACE_DELETE_MESSAGE = "This run can't be deleted because it's needed for an eval."
+
 # Defensive cap on parent-chain depth. Real multiturn conversations are tiny
 # compared to this; the guard exists to terminate on disk corruption or cycles.
 _MAX_ANCESTOR_DEPTH = 1000
@@ -109,8 +111,12 @@ def _collect_cascade_delete_runs(
         return to_delete
 
     # Pull every run on disk once so we can do child counts without re-hitting
-    # the loader for each ancestor. We need the full chain view here.
-    all_runs = task.runs(include_intermediate_runs=True, readonly=True)
+    # the loader for each ancestor. We need the full chain view here, including
+    # eval-generated runs: an eval trace hanging off an ancestor must count as a
+    # live child, or the cascade deletes the ancestor out from under the eval.
+    all_runs = task.runs(
+        include_intermediate_runs=True, include_eval_generated=True, readonly=True
+    )
     children_by_parent: Dict[str, list[str]] = {}
     runs_by_id: Dict[str, TaskRun] = {}
     for r in all_runs:
@@ -137,6 +143,9 @@ def _collect_cascade_delete_runs(
         ]
         if live_children:
             # A sibling branch survives — keep this parent.
+            break
+        if parent.eval_source is not None:
+            # An eval still needs this ancestor: keep it, like a live sibling.
             break
         if parent.id is not None and str(parent.id) not in queued:
             to_delete.append(parent)
@@ -443,7 +452,11 @@ def connect_run_api(app: FastAPI):
             )
         has_children = any(
             r.parent_task_run_id == run_id
-            for r in task.runs(include_intermediate_runs=True, readonly=True)
+            for r in task.runs(
+                include_intermediate_runs=True,
+                include_eval_generated=True,
+                readonly=True,
+            )
         )
         chain_runs, chain_broken = _walk_run_chain(leaf, task.path)
         turn_count = _count_user_messages(leaf.trace)
@@ -490,9 +503,12 @@ def connect_run_api(app: FastAPI):
         ],
     ):
         task, run = task_and_run_from_id(project_id, task_id, run_id)
+        # 409 not 400: the request is well formed, the resource state forbids it.
+        if run.eval_source is not None:
+            raise HTTPException(status_code=409, detail=EVAL_TRACE_DELETE_MESSAGE)
         # For multiturn chains, also delete ancestors whose only remaining child
         # is in our delete-set. Stop at the first ancestor that still has another
-        # live child (a sibling branch).
+        # live child (a sibling branch) — or one an eval still needs.
         runs_to_delete = _collect_cascade_delete_runs(task, run)
         for r in runs_to_delete:
             r.delete()
@@ -620,19 +636,34 @@ def connect_run_api(app: FastAPI):
     ):
         task = task_from_id(project_id, task_id)
         failed_runs: list[str] = []
-        last_error: Exception | None = None
+        failure_reasons: list[str] = []
+
+        def record_failure(run_id: str, reason: str) -> None:
+            # Every distinct reason is kept, in first-seen order. A single "last error"
+            # would report only whichever failure came last, which since eval traces
+            # became undeletable can mean a mixed selection says "Run not found" about
+            # runs that are on disk and merely protected.
+            failed_runs.append(run_id)
+            if reason and reason not in failure_reasons:
+                failure_reasons.append(reason)
 
         # Cascade behavior matches single DELETE: sweep orphan ancestors. The
         # cumulative queued_ids set means an ancestor whose remaining children
         # are all in this batch also gets cascaded.
         queued_ids: set[str] = set()
         runs_to_delete: list[TaskRun] = []
+
         for run_id in run_ids:
             try:
                 run = TaskRun.from_id_and_parent_path(run_id, task.path)
                 if run is None:
-                    failed_runs.append(run_id)
-                    last_error = Exception("Run not found")
+                    record_failure(run_id, "Run not found")
+                    continue
+                if run.eval_source is not None:
+                    # Reported rather than silently skipped, so a partially deleted
+                    # selection says why. Collected like any other per-run failure
+                    # instead of raising: the rest of the batch is still deletable.
+                    record_failure(run_id, EVAL_TRACE_DELETE_MESSAGE)
                     continue
                 cascade = _collect_cascade_delete_runs(task, run, queued_ids)
                 for r in cascade:
@@ -640,23 +671,21 @@ def connect_run_api(app: FastAPI):
                         queued_ids.add(str(r.id))
                     runs_to_delete.append(r)
             except Exception as e:
-                last_error = e
-                failed_runs.append(run_id)
+                record_failure(run_id, str(e))
 
         for r in runs_to_delete:
             try:
                 r.delete()
             except Exception as e:
-                last_error = e
                 if r.id is not None:
-                    failed_runs.append(str(r.id))
+                    record_failure(str(r.id), str(e))
 
         if failed_runs:
             raise HTTPException(
                 status_code=500,
                 detail={
                     "failed_runs": failed_runs,
-                    "error": str(last_error) if last_error else "Unknown error",
+                    "error": "; ".join(failure_reasons) or "Unknown error",
                 },
             )
         return {"success": True}
@@ -927,6 +956,24 @@ def connect_run_api(app: FastAPI):
 async def update_run_util(
     project_id: str, task_id: str, run_id: str, run_data: Dict[str, Any]
 ) -> TaskRun:
+    # eval_source marks a run as a trace the eval runner generated. It hides the run from
+    # the dataset and blocks deletion, so setting it here would let a client make an
+    # ordinary run both invisible and permanently undeletable - the delete guard reads
+    # the same field, so there'd be no way back through the API. It is written by the
+    # eval runner in-process and by nothing else.
+    #
+    # Testing for the key rather than a set value also refuses `{"eval_source": null}`,
+    # which deep_update treats as a clear. That is deliberate: an escape hatch out of the
+    # delete guard would be the guard's own bypass. The accepted cost (D16) is that a
+    # trace orphaned by deleting its eval - `delete_eval` removes the EvalRuns but not
+    # the TaskRuns they scored - stays on disk, invisible to the dataset and removable
+    # only from the filesystem.
+    if "eval_source" in run_data:
+        raise HTTPException(
+            status_code=400,
+            detail="eval_source cannot be set by client. It marks a run as generated by an eval.",
+        )
+
     # Lock to prevent overwriting concurrent updates
     async with update_run_lock:
         task = task_from_id(project_id, task_id)

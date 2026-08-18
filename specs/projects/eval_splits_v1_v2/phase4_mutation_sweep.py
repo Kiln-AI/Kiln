@@ -5,7 +5,7 @@ several edits at once. Phase 4's headline change is a *deletion* whose effect is
 observable together with the routing that used to reach it, so re-inserting the deleted
 branch alone mutates unreachable code and could never be killed. Run from anywhere:
 
-    uv run python specs/projects/eval_splits_v1_v2/phase4_mutation_sweep.py
+    uv run --frozen python specs/projects/eval_splits_v1_v2/phase4_mutation_sweep.py
 
 Pass substrings to run a subset. Expected result: every mutation killed.
 
@@ -263,8 +263,8 @@ MUTATIONS = [
         [
             (
                 EVAL_API,
-                '            split=resolved_split_or_422(task, eval, "test"),',
-                '            split=resolved_split_or_422(task, eval, "train"),',
+                '        split = resolved_split_or_422(task, eval, "test")',
+                '        split = resolved_split_or_422(task, eval, "train")',
             )
         ],
         TEVAL_API,
@@ -298,6 +298,9 @@ def run(label, edits, tests):
             [
                 "uv",
                 "run",
+                # --frozen: a bare `uv run` re-resolves and can rewrite the lockfile
+                # mid-sweep, which has corrupted the venv in a sandboxed run before.
+                "--frozen",
                 "python",
                 "-m",
                 "pytest",
@@ -331,3 +334,7 @@ if __name__ == "__main__":
     print(f"\n{len(results) - len(bad)}/{len(results)} killed")
     for r in bad:
         print("  NOT KILLED:", r[0], r[2])
+    # Exit nonzero when anything survived. Without this the sweep reports SURVIVED
+    # and PATTERN-MISS and still exits 0, so a caller reading only the status sees a
+    # clean sweep and a hollowed-out one as identical.
+    raise SystemExit(1 if bad else 0)

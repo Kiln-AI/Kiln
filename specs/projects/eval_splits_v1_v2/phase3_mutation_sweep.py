@@ -4,7 +4,7 @@ Same harness as phase2_mutation_sweep.py: apply a mutation to the source, run th
 named for it, restore the source. A mutation that SURVIVES means no test discriminates
 that line. Run from anywhere:
 
-    uv run python specs/projects/eval_splits_v1_v2/phase3_mutation_sweep.py
+    uv run --frozen python specs/projects/eval_splits_v1_v2/phase3_mutation_sweep.py
 
 Pass substrings to run a subset. Expected result: every mutation killed.
 """
@@ -57,40 +57,21 @@ MUTATIONS = [
         "    return tag",
         TSU + " " + TSA,
     ),
-    (
-        "set_spec_eval_splits: direct dict assignment instead of set_split",
-        SPEC_UTILS,
-        "        eval.set_split(name, split)",
-        "        eval.splits[name] = split",
-        TSU + " " + TSA + " " + TCA,
-    ),
-    (
-        # Homing some splits but not others: the plausible shape of a partial migration,
-        # and distinct from "authors all of them in the new format" above.
-        "set_spec_eval_splits: homes the test split only",
-        SPEC_UTILS,
-        "    for name, split in splits.items():\n        eval.set_split(name, split)",
-        '    eval.set_split("test", splits["test"])',
-        TSU + " " + TSA + " " + TCA,
-    ),
-    (
-        "set_spec_eval_splits: does nothing",
-        SPEC_UTILS,
-        "    for name, split in splits.items():\n        eval.set_split(name, split)",
-        "    pass",
-        TSU + " " + TSA + " " + TCA,
-    ),
+    # Three entries lived here, all mutating `set_spec_eval_splits` in spec_utils.py: the
+    # direct-dict-assignment, homes-test-only, and does-nothing shapes. That function
+    # existed to move a new spec eval's test and train splits into their legacy flat
+    # fields; splits now have exactly one home (`Eval.splits`), the legacy fields are
+    # cleared as they are migrated in and never written back, so re-setting the splits the
+    # eval was constructed with was a no-op and the function is deleted. A fourth entry,
+    # "build_spec_eval: splits never homed", mutated its call site and is gone with it.
+    # What remains load-bearing — that build_spec_eval constructs the eval *with* its
+    # splits — is covered by "build_spec_eval: eval built with no splits at all" below.
+    # Left as a note rather than deleted silently, because a PATTERN-MISS on a re-run
+    # would otherwise read as a regression.
     # The construction sequence lives in build_spec_eval rather than being duplicated in
     # the two creation paths, so these three are mutated once each. They are run against
     # both API test files as well as the factory's own, which is what shows both paths
     # still go through it — a path that inlined its own construction would survive.
-    (
-        "build_spec_eval: splits never homed",
-        SPEC_UTILS,
-        "    set_spec_eval_splits(eval, splits)",
-        "    pass",
-        TSU + " " + TSA + " " + TCA,
-    ),
     (
         # Golden is not a split, so nothing in the splits assertions covers it. Pointing
         # it at the test tag would score eval-config comparison against test items
@@ -102,10 +83,9 @@ MUTATIONS = [
         TSU + " " + TSA + " " + TCA,
     ),
     (
-        # Mutating the *values* passed here would be an equivalent mutant:
-        # set_spec_eval_splits re-sets all three. What is load-bearing is that the eval
-        # carries a test split at construction at all, since validate_splits runs before
-        # set_split can be called.
+        # What is load-bearing is that the eval carries its splits at construction:
+        # validate_splits requires a test split, and `splits` is the only place any of
+        # them is stored.
         "build_spec_eval: eval built with no splits at all",
         SPEC_UTILS,
         "        splits=widened_splits,",
@@ -237,6 +217,9 @@ def run(label, path, old, new, tests):
             [
                 "uv",
                 "run",
+                # --frozen: a bare `uv run` re-resolves and can rewrite the lockfile
+                # mid-sweep, which has corrupted the venv in a sandboxed run before.
+                "--frozen",
                 "python",
                 "-m",
                 "pytest",
@@ -269,3 +252,7 @@ if __name__ == "__main__":
     print(f"\n{len(results) - len(bad)}/{len(results)} killed")
     for r in bad:
         print("  NOT KILLED:", r[0], r[2])
+    # Exit nonzero when anything survived. Without this the sweep reports SURVIVED
+    # and PATTERN-MISS and still exits 0, so a caller reading only the status sees a
+    # clean sweep and a hollowed-out one as identical.
+    raise SystemExit(1 if bad else 0)

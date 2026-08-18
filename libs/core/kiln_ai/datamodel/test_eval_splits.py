@@ -21,6 +21,7 @@ from kiln_ai.datamodel.eval import (
 from kiln_ai.datamodel.eval_splits import (
     ResolvedSplit,
     eval_run_item_key,
+    item_key,
     resolve_split,
 )
 
@@ -178,6 +179,72 @@ def test_eval_run_item_key_for_both_shapes():
     assert eval_run_item_key(eval_input_scored) == ("eval_input", "1234")
 
 
+def test_item_key_matches_the_key_of_the_record_that_scores_it(task, data_source):
+    """A job keys its item by type; the EvalRun it writes keys by field. Both must agree,
+    or a score is written under one identity and looked up under another."""
+    task_run = TaskRun(
+        parent=task,
+        input="in",
+        input_source=data_source,
+        output=TaskOutput(output="out"),
+    )
+    task_run.save_to_file()
+    eval_input = EvalInput(
+        parent=task,
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="in")),
+    )
+    eval_input.save_to_file()
+
+    assert item_key(task_run) == ("task_run", task_run.id)
+    assert item_key(eval_input) == ("eval_input", eval_input.id)
+
+    assert item_key(task_run) == eval_run_item_key(
+        EvalRun(
+            dataset_id=task_run.id,
+            task_run_config_id="rc",
+            input="in",
+            output="out",
+            scores={"score": 1.0},
+        )
+    )
+    assert item_key(eval_input) == eval_run_item_key(
+        EvalRun(
+            eval_input_id=eval_input.id,
+            task_run_config_id="rc",
+            input="in",
+            output="out",
+            scores={"score": 1.0},
+        )
+    )
+
+
+def test_item_key_refuses_an_item_from_neither_store():
+    """A fall-through `else` would file a wrong-typed item under `eval_input` silently,
+    and nothing downstream would ever look it up there."""
+    with pytest.raises(ValueError, match="not a str"):
+        item_key("just an id")  # type: ignore[arg-type]
+
+
+def test_item_key_agrees_with_the_split_its_item_came_from(task, data_source):
+    """`ResolvedSplit` keys by its declared source, the runner keys by item type."""
+    task_run = TaskRun(
+        parent=task,
+        input="in",
+        input_source=data_source,
+        output=TaskOutput(output="out"),
+    )
+    task_run.save_to_file()
+    eval_input = EvalInput(
+        parent=task,
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="in")),
+    )
+    eval_input.save_to_file()
+
+    for source, items in (("task_run", [task_run]), ("eval_input", [eval_input])):
+        split = ResolvedSplit(name="test", source=source, items=items, eval_id="eval_1")
+        assert {item_key(item) for item in split.items} == split.item_keys()
+
+
 def test_eval_run_item_key_requires_an_item():
     unvalidated = EvalRun.model_construct(dataset_id=None, eval_input_id=None)
     with pytest.raises(ValueError, match="neither a dataset_id nor an eval_input_id"):
@@ -261,6 +328,71 @@ def test_resolved_split_len_counts_distinct_items(task, data_source):
 
     assert len(split) == 1
     assert len(split.item_keys()) == 1
+
+
+@pytest.mark.parametrize("source", ["task_run", "eval_input"])
+def test_empty_resolved_split_is_truthy(task, source):
+    """Empty is not absent. `__len__` would otherwise make `if split:` read an eval that
+    has the split but no items yet as one that has no such split at all — which is what
+    resolve_split returning None means, and the only thing that should be falsy here."""
+    configured_but_empty = ResolvedSplit(
+        name="test", source=source, items=[], eval_id="e1"
+    )
+    absent = resolve_split(
+        task, make_eval(task, splits={"test": TaskRunSplit(filter_id="tag::x")}), "val"
+    )
+
+    assert bool(configured_but_empty) is True
+    assert len(configured_but_empty) == 0
+    assert absent is None
+
+
+def test_populated_resolved_split_is_truthy(task, data_source):
+    split = ResolvedSplit(
+        name="test",
+        source="task_run",
+        items=[make_task_run(task, data_source, ["test_x"])],
+        eval_id="e1",
+    )
+
+    assert bool(split) is True
+    assert len(split) == 1
+
+
+@pytest.mark.parametrize(
+    "source, wrong_type_name",
+    [("task_run", "EvalInput"), ("eval_input", "TaskRun")],
+)
+def test_source_must_match_the_items_it_stamps(
+    task, data_source, source, wrong_type_name
+):
+    """A split whose declared source disagrees with its items writes results under one
+    identity and looks them up under another, so it never converges."""
+    items = [
+        make_eval_input(task, ["x"])
+        if source == "task_run"
+        else make_task_run(task, data_source, ["x"])
+    ]
+
+    with pytest.raises(ValueError) as exc_info:
+        ResolvedSplit(name="test", source=source, items=items, eval_id="e1")
+
+    message = str(exc_info.value)
+    assert f"declares source '{source}'" in message
+    assert wrong_type_name in message
+
+
+@pytest.mark.parametrize("source", ["task_run", "eval_input"])
+def test_well_formed_split_is_accepted(task, data_source, source):
+    items = [
+        make_task_run(task, data_source, ["x"])
+        if source == "task_run"
+        else make_eval_input(task, ["x"])
+    ]
+
+    split = ResolvedSplit(name="test", source=source, items=items, eval_id="e1")
+
+    assert split.item_keys() == {(source, items[0].id)}
 
 
 def test_item_keys_returns_a_copy(task, data_source):

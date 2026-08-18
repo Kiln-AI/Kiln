@@ -172,6 +172,17 @@ gains a `val_tag` (it came from #1621 on the old base, and without it the copilo
 no run carries), and `phase2_mutation_sweep.py` loses two mutations over the judge-feedback-batch
 surface, which is #1517's.
 
+**The mutation sweeps are a point-in-time claim, not a standing guarantee.** `phase2/3/4/6_mutation_sweep.py`
+are what justifies "these assertions bite", but nothing re-runs them: they are not wired into CI,
+and each rewrites tracked source files in place with only a `finally` to restore them, so a run that
+is interrupted leaves the tree mutated. Treat a sweep result as dated by the commit it was run on
+and re-run the relevant one by hand after touching the code it mutates:
+
+    uv run --frozen python specs/projects/eval_splits_v1_v2/phase2_mutation_sweep.py
+
+(`--frozen` matters — a bare `uv run` re-resolves and can rewrite the lockfile.) Last re-run
+against the tree at `19029efae`: phases 2, 3, 4 and 6, all mutations killed.
+
 **Two `eval_runner.py` fixes are homeless, and need an owner outside phases 5 and 6.** Phase 4
 raised both and deferred them to "whichever of phases 5 and 6 next edits `run_job` /
 `collect_tasks_for_eval_config_eval`". Neither does: phase 5 is `jobs/`, and architecture §6 scopes

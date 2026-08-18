@@ -624,7 +624,7 @@
                   : undefined,
               },
               {
-                name: "Eval Dataset",
+                name: "Test Dataset",
                 value: eval_progress
                   ? eval_progress.dataset_size + " items"
                   : "Loading...",
@@ -758,7 +758,7 @@
 
 <CreateNewRunConfigDialog
   bind:this={create_new_run_config_dialog}
-  subtitle="Compare multiple run configurations to find which one produces the highest scores on your eval dataset."
+  subtitle="Compare multiple run configurations to find which one produces the highest scores on your eval's test dataset."
   {project_id}
   {task}
   new_run_config_created={async () => {
