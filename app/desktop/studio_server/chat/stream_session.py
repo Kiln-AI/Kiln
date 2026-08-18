@@ -5,6 +5,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
+from kiln_ai.tools.tool_registry import tool_from_id
+from pydantic import BaseModel, ConfigDict, Field
+
 from app.desktop.studio_server.chat.constants import (
     CHAT_TIMEOUT,
     DENIED_TOOL_OUTPUT,
@@ -20,9 +24,6 @@ from app.desktop.studio_server.chat.tool_metadata import (
     tool_input_executor_is_server,
     tool_requires_user_approval,
 )
-from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
-from kiln_ai.tools.tool_registry import tool_from_id
-from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 

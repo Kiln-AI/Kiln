@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+
 from app.desktop.studio_server.jobs.events import JobEvent, JobEventBus
 from app.desktop.studio_server.jobs.models import BackgroundJobStatus, JobRecord
 

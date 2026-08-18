@@ -7,6 +7,18 @@ spec creation workflow.
 
 import random
 
+from fastapi import HTTPException
+from kiln_ai.datamodel import Feedback, FeedbackSource, TaskRun
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.task_output import (
+    DataSource,
+    DataSourceType,
+    RequirementRating,
+    TaskOutput,
+    TaskOutputRating,
+)
+from kiln_ai.utils.config import Config
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     generate_batch_v1_copilot_generate_batch_post,
 )
@@ -24,17 +36,6 @@ from app.desktop.studio_server.api_models.copilot_models import (
     TaskInfoApi,
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
-from fastapi import HTTPException
-from kiln_ai.datamodel import Feedback, FeedbackSource, TaskRun
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
-from kiln_ai.datamodel.task_output import (
-    DataSource,
-    DataSourceType,
-    RequirementRating,
-    TaskOutput,
-    TaskOutputRating,
-)
-from kiln_ai.utils.config import Config
 
 # Constants for copilot spec creation
 KILN_COPILOT_MODEL_NAME = "kiln-copilot"

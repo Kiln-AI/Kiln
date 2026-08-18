@@ -2,8 +2,13 @@ from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.spec_properties import SpecType
+from kiln_server.custom_errors import connect_custom_errors
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.clarify_spec_output import (
     ClarifySpecOutput,
 )
@@ -36,11 +41,6 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
 )
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.utils.copilot_utils import DatasetTaskRuns
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from kiln_ai.datamodel import Project, Task
-from kiln_ai.datamodel.spec_properties import SpecType
-from kiln_server.custom_errors import connect_custom_errors
 
 
 @pytest.fixture

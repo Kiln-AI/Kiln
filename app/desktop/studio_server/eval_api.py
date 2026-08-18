@@ -5,7 +5,6 @@ from typing import Annotated, Any, Dict, List, Set, Tuple
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_ai.adapters.fine_tune.finetune_run_config_id import (
     finetune_from_finetune_run_config_id,
     finetune_run_config_id,
@@ -32,6 +31,7 @@ from kiln_ai.datamodel.spec import SpecStatus
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (

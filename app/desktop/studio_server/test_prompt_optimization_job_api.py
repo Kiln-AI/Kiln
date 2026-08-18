@@ -5,6 +5,15 @@ from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
+from kiln_ai.cli.commands.package_project import PackageForTrainingConfig
+from kiln_ai.datamodel import Project, PromptOptimizationJob, Task
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.task import TaskRunConfig
+from kiln_server.custom_errors import connect_custom_errors
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
     AuthenticatedClient,
 )
@@ -34,14 +43,6 @@ from app.desktop.studio_server.prompt_optimization_job_api import (
     prompt_optimization_job_from_id,
     update_prompt_optimization_job_and_create_artifacts,
 )
-from fastapi import FastAPI, HTTPException
-from fastapi.testclient import TestClient
-from kiln_server.custom_errors import connect_custom_errors
-from kiln_ai.cli.commands.package_project import PackageForTrainingConfig
-from kiln_ai.datamodel import Project, PromptOptimizationJob, Task
-from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.task import TaskRunConfig
 
 
 def _mock_package_project_for_training(**kwargs):

@@ -16,7 +16,7 @@ Phases 1–3 are verified with the audit command from the functional spec, since
       under `git_sync/`. One repetitive shape. Underscore-prefix each, but read every site for a
       missing assertion first. No bulk auto-fix.
 
-- [ ] **Phase 2: `I001` import sorting** — ~51 findings across 50 files, produced entirely by
+- [x] **Phase 2: `I001` import sorting** — ~51 findings across 50 files, produced entirely by
       `--select I --fix` plus `ruff format`. Isolated so a wide, purely mechanical diff does not
       hide anything in review.
 

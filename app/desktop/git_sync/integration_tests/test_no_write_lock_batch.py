@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from kiln_server.git_sync_decorators import no_write_lock
 
 from app.desktop.git_sync.integration_tests.conftest import (
     PROJECT_ID,
@@ -20,7 +21,6 @@ from app.desktop.git_sync.integration_tests.conftest import (
 )
 from app.desktop.git_sync.middleware import GitSyncMiddleware
 from app.desktop.git_sync.registry import GitSyncRegistry
-from kiln_server.git_sync_decorators import no_write_lock
 
 
 def _build_batch_app(

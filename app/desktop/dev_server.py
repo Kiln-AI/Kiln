@@ -4,10 +4,10 @@
 import os
 
 import uvicorn
+from kiln_ai.utils.config import Config
 
 from app.desktop.desktop_server import make_app
 from app.desktop.util.resource_limits import setup_resource_limits
-from kiln_ai.utils.config import Config
 
 # Skip remote model loading when running the dev server (unless explicitly set)
 os.environ.setdefault("KILN_SKIP_REMOTE_MODEL_LIST", "true")

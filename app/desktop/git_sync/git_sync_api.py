@@ -12,8 +12,10 @@ from fastapi.responses import HTMLResponse
 from kiln_ai.utils.project_utils import (
     DuplicateProjectError,
     check_duplicate_project_id,
-    project_from_id as project_from_id_core,
     remove_project_from_config,
+)
+from kiln_ai.utils.project_utils import (
+    project_from_id as project_from_id_core,
 )
 from kiln_server.project_api import (
     add_project_to_config,
@@ -40,7 +42,6 @@ from app.desktop.git_sync.config import (
     project_path_from_id,
     save_git_sync_config,
 )
-from app.desktop.git_sync.registry import GitSyncRegistry
 from app.desktop.git_sync.oauth import (
     OAuthError,
     OAuthFlowManager,
@@ -51,6 +52,7 @@ from app.desktop.git_sync.oauth import (
     resolve_github_owner_id,
     resolve_github_repo_id,
 )
+from app.desktop.git_sync.registry import GitSyncRegistry
 
 logger = logging.getLogger(__name__)
 

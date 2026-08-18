@@ -4,19 +4,9 @@ from typing import Dict, List, Tuple
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
-from app.desktop.studio_server.eval_api import (
-    CreateEvalConfigRequest,
-    CreateEvaluatorRequest,
-    connect_evals_api,
-    eval_config_from_id,
-    get_all_run_configs,
-    reusable_frozen_prompt_id,
-    task_run_config_from_id,
-)
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
-from kiln_server.custom_errors import connect_custom_errors
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
     DataSource,
@@ -52,6 +42,17 @@ from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import Usage
+from kiln_server.custom_errors import connect_custom_errors
+
+from app.desktop.studio_server.eval_api import (
+    CreateEvalConfigRequest,
+    CreateEvaluatorRequest,
+    connect_evals_api,
+    eval_config_from_id,
+    get_all_run_configs,
+    reusable_frozen_prompt_id,
+    task_run_config_from_id,
+)
 
 
 @pytest.fixture
