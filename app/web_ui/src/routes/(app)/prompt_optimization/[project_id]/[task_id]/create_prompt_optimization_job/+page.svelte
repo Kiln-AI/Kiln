@@ -45,6 +45,7 @@
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import posthog from "posthog-js"
   import { agentInfo } from "$lib/agent"
+  import { task_run_split_filter_id } from "$lib/utils/eval_splits"
 
   function tagFromFilterId(filter_id: string): string | undefined {
     if (filter_id.startsWith("tag::")) {
@@ -324,26 +325,25 @@
       evals_loading = true
       evals_error = null
 
-      const { data: evals_data, error: evals_fetch_error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/evals",
-        {
+      const { data: evals_response, error: evals_fetch_error } =
+        await client.GET("/api/projects/{project_id}/tasks/{task_id}/evals", {
           params: {
             path: {
               project_id,
               task_id,
             },
           },
-        },
-      )
+        })
 
       if (evals_fetch_error) {
         throw evals_fetch_error
       }
 
-      if (!evals_data) {
+      if (!evals_response) {
         evals_with_configs = []
         return
       }
+      const evals_data = evals_response.evals
 
       const evals_with_configs_promises = evals_data.map(async (evalItem) => {
         if (!evalItem.id) {
@@ -517,9 +517,13 @@
         evals_with_configs[index].has_train_set = data.has_train_set
         evals_with_configs[index].model_is_supported = data.model_is_supported
 
-        // If has train set, fetch the size
-        if (data.has_train_set && item.eval.train_set_filter_id) {
-          const train_tag = tagFromFilterId(item.eval.train_set_filter_id)
+        // If has train set, fetch the size. has_train_set is already
+        // TaskRun-backed-only (the remote optimizer resolves the train filter over the
+        // project zip's runs/), so the filter id read here has to be too, or the two
+        // disagree and the size fetch is silently skipped.
+        const train_filter_id = task_run_split_filter_id(item.eval, "train")
+        if (data.has_train_set && train_filter_id) {
+          const train_tag = tagFromFilterId(train_filter_id)
           if (train_tag) {
             try {
               const { data: tag_counts, error: tag_error } = await client.GET(
@@ -620,7 +624,7 @@
     )
 
     if (evals_data) {
-      const evals_by_id = new Map(evals_data.map((e) => [e.id, e]))
+      const evals_by_id = new Map(evals_data.evals.map((e) => [e.id, e]))
       const configs_by_eval_id = await Promise.all(
         evals_with_configs.map(async (item) => {
           const eval_id = item.eval.id
@@ -1071,7 +1075,8 @@
                             <td class="text-sm whitespace-nowrap">
                               {#if train_set_size !== null}
                                 {@const train_tag = tagFromFilterId(
-                                  evalItem.train_set_filter_id || "",
+                                  task_run_split_filter_id(evalItem, "train") ||
+                                    "",
                                 )}
                                 {@const dataset_link = train_tag
                                   ? `/dataset/${project_id}/${task_id}?tags=${train_tag}`
@@ -1108,7 +1113,8 @@
                               {:else if validation_status === "invalid"}
                                 {@const eval_configs_link = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}/eval_configs`}
                                 {@const train_tag = tagFromFilterId(
-                                  evalItem.train_set_filter_id || "",
+                                  task_run_split_filter_id(evalItem, "train") ||
+                                    "",
                                 )}
                                 {@const dataset_add_link =
                                   train_tag &&

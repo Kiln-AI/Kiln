@@ -1363,6 +1363,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/provider/verify_kiln_copilot_api_key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Verify Kiln Copilot API Key
+         * @description Verify the stored Kiln Copilot API key against the Kiln server.
+         *
+         *     Returns `{is_valid: bool}`. A stale key the server rejects with
+         *     401/403 is cleared from local config so subsequent flows fall back to
+         *     the connect screen instead of silently using a dead key. Network
+         *     failures leave the key in place and report `false` for this check
+         *     only — they shouldn't punish the user for a transient blip.
+         */
+        get: operations["verify_kiln_copilot_api_key_api_provider_verify_kiln_copilot_api_key_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/gen_prompt/{prompt_id}": {
         parameters: {
             query?: never;
@@ -1583,6 +1609,82 @@ export interface paths {
         put?: never;
         /** Generate Sample */
         post: operations["generate_sample_api_projects__project_id__tasks__task_id__generate_sample_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/generate_inputs_batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Inputs Batch
+         * @description Start an in-process job that generates one input per prompt in
+         *     parallel. Poll the status endpoint for progress and results.
+         */
+        post: operations["start_generate_inputs_batch_api_projects__project_id__tasks__task_id__generate_inputs_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/generate_inputs_batch/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Generate Inputs Batch Status */
+        get: operations["generate_inputs_batch_status_api_projects__project_id__tasks__task_id__generate_inputs_batch__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/generate_outputs_batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Outputs Batch
+         * @description Start an in-process job that runs the task on each input in parallel.
+         *     Poll the status endpoint for progress and the resulting (unsaved) runs.
+         */
+        post: operations["start_generate_outputs_batch_api_projects__project_id__tasks__task_id__generate_outputs_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/generate_outputs_batch/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Generate Outputs Batch Status */
+        get: operations["generate_outputs_batch_status_api_projects__project_id__tasks__task_id__generate_outputs_batch__job_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2060,7 +2162,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Eval Run Results */
+        /**
+         * Get Eval Run Results
+         * @description Results for one run config, scoped to one of the eval's splits.
+         */
         get: operations["get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get"];
         put?: never;
         post?: never;
@@ -2898,6 +3003,105 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Data Guide Job
+         * @description Kick off the input data guide draft job on kiln_server and return its
+         *     job id. The job summarizes and aggregates the heterogeneous list of
+         *     input examples (manual entries, existing task runs, uploaded text
+         *     documents) into a draft guide.
+         *
+         *     The job runs in the background so the user can leave the page and come
+         *     back. The web UI polls `.../data_guide_job/{job_id}/status` and, once
+         *     the job succeeds, fetches `.../data_guide_job/{job_id}/result` and
+         *     generates preview inputs locally via the existing
+         *     `/data_gen_guide_preview` flow.
+         */
+        post: operations["start_data_guide_job_api_projects__project_id__tasks__task_id__copilot_data_guide_job_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/copilot/parse_import_file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Parse Import File
+         * @description Parse an uploaded bulk-import file of input examples for the data
+         *     guide, server-side.
+         *
+         *     Both task types use a single-column CSV (parsed with the stdlib csv
+         *     reader). Plaintext tasks take each cell as the raw input; structured
+         *     tasks take each cell as a JSON object, validated against the task's input
+         *     schema. Returns the parsed example strings plus any whole-file `error` or
+         *     partial-skip `warning` so the web UI just renders the result.
+         */
+        post: operations["parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/{job_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Data Guide Job Status
+         * @description Return the current status of a data guide draft job (e.g. running,
+         *     succeeded, failed, cancelled). The web UI polls this while showing the
+         *     analyzing animation and the task-wide progress widget.
+         */
+        get: operations["data_guide_job_status_api_projects__project_id__tasks__task_id__copilot_data_guide_job__job_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/{job_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Data Guide Job Result
+         * @description Return the draft guide markdown produced by a completed data guide
+         *     draft job. The web UI calls this once the job status is `succeeded`.
+         */
+        get: operations["data_guide_job_result_api_projects__project_id__tasks__task_id__copilot_data_guide_job__job_id__result_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot": {
         parameters: {
             query?: never;
@@ -2923,6 +3127,28 @@ export interface paths {
          *     no data is persisted.
          */
         post: operations["create_spec_with_copilot_api_projects__project_id__tasks__task_id__spec_with_copilot_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/copilot/batch_plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch Plan
+         * @description Plan a synthetic batch: turn the user's guidance + count into one
+         *     tailored prompt per input (plus a user-facing summary). Requires a
+         *     connected Kiln Pro / Copilot key (connection only, no paid tier).
+         */
+        post: operations["batch_plan_api_projects__project_id__tasks__task_id__copilot_batch_plan_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3983,6 +4209,38 @@ export interface components {
              */
             chain_of_thought_instructions?: string | null;
         };
+        /** BatchPlanApiInput */
+        BatchPlanApiInput: {
+            /**
+             * Guidance
+             * @description User guidance describing this batch (distribution, focus, edge cases).
+             * @default
+             */
+            guidance: string;
+            /**
+             * Count
+             * @description Number of inputs to plan — the planner returns one prompt per input.
+             */
+            count: number;
+            /**
+             * Data Guide
+             * @description The task's input data guide (input profile) to include, or null to omit.
+             */
+            data_guide?: string | null;
+        };
+        /** BatchPlanApiOutput */
+        BatchPlanApiOutput: {
+            /**
+             * Prompts
+             * @description One tailored prompt per input; length equals the requested count.
+             */
+            prompts: string[];
+            /**
+             * Summary
+             * @description A short, user-facing overview of the planned batch.
+             */
+            summary: string;
+        };
         /** BiasProperties */
         BiasProperties: {
             /**
@@ -4062,6 +4320,15 @@ export interface components {
              * @description Tags to remove from the task runs.
              */
             remove_tags?: string[] | null;
+        };
+        /** Body_parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post */
+        Body_parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post: {
+            /**
+             * File
+             * Format: binary
+             * @description The file of input examples to parse and validate.
+             */
+            file: string;
         };
         /**
          * BuildPromptRequest
@@ -5379,7 +5646,7 @@ export interface components {
             guidance?: string | null;
             /**
              * Data Guide
-             * @description Optional per-run data guide override. Replaces the task's persisted data guide for this run.
+             * @description Optional per-run input data guide override. Replaces the task's persisted input data guide for this run.
              */
             data_guide?: string | null;
             /** @description The run config properties to use for input generation */
@@ -5420,11 +5687,6 @@ export interface components {
              */
             guidance?: string | null;
             /**
-             * Data Guide
-             * @description Optional per-run data guide override. Replaces the task's persisted data guide for this run.
-             */
-            data_guide?: string | null;
-            /**
              * Tags
              * @description Tags to add to the sample
              */
@@ -5432,15 +5694,29 @@ export interface components {
         };
         /**
          * DataGuide
-         * @description Persistent data guide for synthetic data generation, stored as a child
-         *     of a Task.
+         * @description Persistent input data guide for synthetic data generation, stored as a
+         *     child of a Task.
          *
-         *     The guide is a single markdown body — typically two top-level sections:
-         *     `# Reference Examples` (user-authored input/output pairs) and
-         *     `# Guidelines & Rules` (structural and semantic constraints, often
-         *     LLM-authored via refine). Either or both may be present; the metaprompter
-         *     treats the whole body as one editable artifact and returns a refined
-         *     version on each refine pass.
+         *     The guide describes what realistic *inputs* to this task look like — input
+         *     shape, format, distribution, and the kinds of values inputs contain. It is
+         *     consumed at the topic and input generation stages of synthetic data
+         *     generation, never at the output stage. Output behavior is the job of the
+         *     task's system prompt, not this guide.
+         *
+         *     The guide is a single markdown body. Two canonical shapes are supported
+         *     depending on origin:
+         *
+         *     - **Manual flow** (user-authored examples): leads with `# Reference Inputs`
+         *       (user-owned `## Example N` blocks), followed by `# Semantics`, `# Style`,
+         *       `# Presentation Defaults`.
+         *     - **Kiln Pro / Copilot flow** (analyze pipeline): only `# Semantics`,
+         *       `# Style`, `# Presentation Defaults` — the analyze prompt derives rules
+         *       from input documents rather than quoting them, matching Mike's
+         *       GENERATE_CORPUS_GUIDELINES vocabulary.
+         *
+         *     The metaprompter treats the whole body as one editable artifact and returns
+         *     a refined version on each refine pass; refine auto-detects which shape it
+         *     is working on by checking for a `# Reference Inputs` heading.
          */
         DataGuide: {
             /**
@@ -5472,12 +5748,41 @@ export interface components {
             created_by?: string;
             /**
              * Guide
-             * @description Markdown body of the data guide. Typically contains a `# Reference Examples` section and a `# Guidelines & Rules` section.
+             * @description Markdown body of the input data guide. Manual-flow guides start with `# Reference Inputs`; Kiln Pro / Copilot-flow guides have only `# Semantics`, `# Style`, `# Presentation Defaults`.
              * @default
              */
             guide: string;
+            /**
+             * Source
+             * @description Which flow created this guide. Refine + verify pipelines branch on this to choose the right metaprompter (manual = user-curated examples + edits all sections; kiln_pro = LLM-derived, refine is feedback-only surgical edits).
+             * @default manual
+             * @enum {string}
+             */
+            source: "manual" | "kiln_pro";
             /** Model Type */
             readonly model_type: string;
+        };
+        /**
+         * DataGuideJobResultApiOutput
+         * @description Result of a completed data guide draft job.
+         */
+        DataGuideJobResultApiOutput: {
+            /**
+             * Draft Guide
+             * @description Full draft input data guide markdown.
+             */
+            draft_guide: string;
+        };
+        /**
+         * DataGuideJobStatusApiOutput
+         * @description Current status of a data guide draft job.
+         */
+        DataGuideJobStatusApiOutput: {
+            /**
+             * Status
+             * @description Current job status (e.g. running, succeeded, failed, cancelled).
+             */
+            status: string;
         };
         /**
          * DataSource
@@ -5929,7 +6234,8 @@ export interface components {
             current_config_id?: string | null;
             /**
              * Eval Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included when running this eval (V1 TaskRun-typed).
+             * @deprecated
+             * @description Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['test'] once, and the field is then cleared. It is always saved as null. Read splits['test'] instead.
              */
             eval_set_filter_id?: string | null;
             /**
@@ -5939,14 +6245,17 @@ export interface components {
             eval_configs_filter_id?: string | null;
             /**
              * Train Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning.
+             * @deprecated
+             * @description Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['train'] once, and the field is then cleared. It is always saved as null. Read splits['train'] instead.
              */
             train_set_filter_id?: string | null;
             /**
-             * Eval Input Filter Id
-             * @description Filter ID for EvalInput-backed datasets (V2). Mutually exclusive with eval_set_filter_id.
+             * Splits
+             * @description The eval's dataset splits, keyed by split name ('test', 'train', 'val'), and the only place they are stored. Each split names the store its items come from and the filter that selects them. Keys this build doesn't know are preserved but not exposed. 'golden' is not a split and does not belong here: the golden set must be dataset (TaskRun) based, because human ratings only exist on dataset items, so it is stored in eval_configs_filter_id instead. Nothing reads splits['golden'] — writing it is accepted and silently ignored. In Python, prefer Eval.set_split() to assigning into this dict: it refuses to mutate a readonly (cached) eval, and marks the field as set so exclude_unset dumps keep it.
              */
-            eval_input_filter_id?: string | null;
+            splits?: {
+                [key: string]: components["schemas"]["TaskRunSplit"] | components["schemas"]["EvalInputSplit"];
+            };
             /**
              * Output Scores
              * @description The scores this evaluator should produce.
@@ -6121,6 +6430,41 @@ export interface components {
          */
         EvalDataType: "final_answer" | "full_trace" | "reference_answer";
         /**
+         * EvalInputSplit
+         * @description A split whose items are EvalInputs, selected by an eval-input filter.
+         */
+        EvalInputSplit: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            source: "eval_input";
+            /** Filter Id */
+            filter_id: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * EvalItemSource
+         * @description The eval dataset item a TaskRun was generated for.
+         *
+         *     Not the run config — that lives on the same TaskRun at
+         *     `output.source.run_config_id`.
+         */
+        EvalItemSource: {
+            /**
+             * Source Type
+             * @description Which store the dataset item came from: an EvalInput (V2) or a TaskRun (V1-backed split).
+             * @enum {string}
+             */
+            source_type: "eval_input" | "task_run";
+            /**
+             * Source Id
+             * @description The id of the dataset item this run was generated for. Interpreted within the store named by source_type — ids are only unique within a store.
+             */
+            source_id: string;
+        };
+        /**
          * EvalOutputScore
          * @description A definition of a score that an evaluator will produce.
          *
@@ -6172,9 +6516,14 @@ export interface components {
             golden_dataset_fully_rated_count: number;
             /**
              * Train Dataset Size
-             * @description The total size of the train dataset.
+             * @description The total size of the train split. 0 when the eval has no train split.
              */
             train_dataset_size: number;
+            /**
+             * Val Dataset Size
+             * @description The total size of the val split. 0 when the eval has no val split.
+             */
+            val_dataset_size: number;
             /** @description The currently selected eval config. */
             current_eval_method?: components["schemas"]["EvalConfig"] | null;
         };
@@ -6291,13 +6640,27 @@ export interface components {
         };
         /**
          * EvalRun
-         * @description The results of running an eval on a single dataset item.
+         * @description The scores an eval produced for a single dataset item.
          *
          *     This is a child of an EvalConfig, which specifies how the scores were generated.
          *
          *     Eval runs can be one of 2 types:
-         *     1) eval_config_eval=False: we were evaluating a task run (a method of running the task). We get the task input from the dataset_id.input, run the task with the task_run_config, then ran the evaluator on that output. task_run_config_id must be set. The output saved in this model is the output of the task run.
-         *     2) eval_config_eval=True: we were evaluating an eval config (a method of evaluating the task). We used the existing dataset item input/output, and ran the evaluator on it. task_run_config_id must be None. The input/output saved in this model is the input/output of the dataset item.
+         *     1) eval_config_eval=False (scoring): we were evaluating a task run config (a method of running the task). We take the item's input, run the task with the task_run_config, then run the evaluator on that output. task_run_config_id must be set.
+         *     2) eval_config_eval=True (calibration): we were evaluating an eval config (a method of evaluating the task). We used an existing human-rated dataset item's input/output, and ran the evaluator on it. task_run_config_id must be None.
+         *
+         *     A record is described by two independent facts — whether it points at a TaskRun, and
+         *     whether it was skipped — which `validate_record_mode` constrains to three legal
+         *     shapes. What is exclusive is where the trace lives: on the record, or on the TaskRun,
+         *     never both.
+         *
+         *     - **Pointer** (new): `scored_run_id` names the TaskRun that holds the trace. All
+         *       inline trace fields must be None.
+         *     - **Skipped**: `skipped_reason` set, so scores are not required. It also carries a
+         *       `scored_run_id` if the trace existed and only scoring was skipped — so a skip can
+         *       be a pointer record too — and none if the skip happened before generation.
+         *     - **Legacy inline**: no `scored_run_id`; the trace lives on this record, and `input`
+         *       is required unless the record was skipped. Every record written before the
+         *       trace/score split is in this state, and it stays valid forever.
          */
         EvalRun: {
             /**
@@ -6333,6 +6696,11 @@ export interface components {
              */
             dataset_id?: string | null;
             /**
+             * Scored Run Id
+             * @description The ID of the TaskRun this score was computed over. None for legacy records that carry their trace inline. A dangling reference is tolerated: the score still renders and still aggregates, only the trace drill-through is unavailable.
+             */
+            scored_run_id?: string | null;
+            /**
              * Task Run Config Id
              * @description The ID of the TaskRunConfig that was run, if this eval run was based on a task run. Must belong to the same Task as this eval. Can be None if this eval run is based on an eval config.
              */
@@ -6345,17 +6713,20 @@ export interface components {
             eval_config_eval: boolean;
             /**
              * Input
-             * @description The input to the task. JSON formatted for structured input, plaintext for unstructured input.
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.input instead. The input to the task. JSON formatted for structured input, plaintext for unstructured input. Required on legacy records (those with neither a scored_run_id nor a skipped_reason), never set on new ones.
              */
-            input: string;
+            input?: string | null;
             /**
              * Output
-             * @description The output of the task. None for skipped-before-execution runs.
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.output.output instead. The output of the task. None for skipped-before-execution runs.
              */
             output?: string | null;
             /**
              * Reference Answer
-             * @description The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id. The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.
              */
             reference_answer?: string | null;
             /**
@@ -6367,7 +6738,8 @@ export interface components {
             } | null;
             /**
              * Task Run Trace
-             * @description The JSON formatted trace of the task run that produced the output.
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.trace instead. The JSON formatted trace of the task run that produced the output.
              */
             task_run_trace?: string | null;
             /**
@@ -6378,7 +6750,10 @@ export interface components {
             scores: {
                 [key: string]: number;
             };
-            /** @description The usage of the task run that produced this eval run output (not the usage by the evaluation model). */
+            /**
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.usage instead. The usage of the task run that produced this eval run output (not the usage by the evaluation model).
+             */
             task_run_usage?: components["schemas"]["Usage"] | null;
             /** @description The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field. */
             eval_usage?: components["schemas"]["Usage"] | null;
@@ -6416,13 +6791,44 @@ export interface components {
              * Results
              * @description The individual eval run results.
              */
-            results: components["schemas"]["EvalRun"][];
+            results: components["schemas"]["EvalRunWithTrace"][];
             /** @description The parent eval. */
             eval: components["schemas"]["Eval"];
             /** @description The eval config used. */
             eval_config: components["schemas"]["EvalConfig"];
             /** @description The run config used. */
             run_config: components["schemas"]["TaskRunConfig"];
+        };
+        /**
+         * EvalRunWithTrace
+         * @description An eval's scores for one item, plus the trace those scores were computed over.
+         *
+         *     Where the trace lives depends on the record: on a TaskRun named by `scored_run_id`,
+         *     inline on the EvalRun for records written before the trace/score split, or nowhere at
+         *     all for a run that was skipped before anything was generated. This resolves whichever
+         *     applies - falling back to the dataset item for the input of that last kind - so
+         *     callers see one shape regardless of which it is.
+         */
+        EvalRunWithTrace: {
+            /** @description The score record itself. */
+            eval_run: components["schemas"]["EvalRun"];
+            /**
+             * Input
+             * @description The input the task was run on. From the scored TaskRun, from the EvalRun itself for legacy records, or from the dataset item for records that were skipped before anything was generated.
+             */
+            input: string | null;
+            /**
+             * Output
+             * @description What the task produced. Always the original output, never a repaired one: a repair can happen after scoring, so it is not what was scored. None when nothing was generated, or when the scored TaskRun is missing.
+             */
+            output: string | null;
+            /**
+             * Task Run Trace
+             * @description The JSON formatted trace of the task run that produced the output, if it recorded one.
+             */
+            task_run_trace: string | null;
+            /** @description The usage of the task run that produced the output. Not the judge's own usage, which is on the EvalRun as eval_usage. */
+            task_run_usage: components["schemas"]["Usage"] | null;
         };
         /**
          * EvalTaskInput
@@ -6462,6 +6868,22 @@ export interface components {
          * @enum {string}
          */
         EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
+        /**
+         * EvalsResponse
+         * @description The evals of a task, plus how many eval files this version of Kiln couldn't read.
+         */
+        EvalsResponse: {
+            /**
+             * Evals
+             * @description The evals which loaded successfully.
+             */
+            evals: components["schemas"]["Eval"][];
+            /**
+             * Load Error Count
+             * @description How many eval files failed to load. Usually because they were written by a newer version of Kiln.
+             */
+            load_error_count: number;
+        };
         /** ExactMatchProperties */
         ExactMatchProperties: {
             /**
@@ -7320,6 +7742,74 @@ export interface components {
                 [key: string]: components["schemas"]["SampleApi"][];
             };
         };
+        /** GenerateInputsBatchInput */
+        GenerateInputsBatchInput: {
+            /**
+             * Prompts
+             * @description One tailored prompt per input. Each is used as the guidance for a single input-generation call.
+             */
+            prompts: string[];
+            /**
+             * Data Guide
+             * @description The input data guide to include in every input-generation call. Send it when the user has 'Use Data Guide' on, and null when off — null means 'do not use a guide', not 'fall back to the task's saved guide'.
+             */
+            data_guide?: string | null;
+            /** @description The run config properties (model, provider, tools, skills) to use for input generation. */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
+        };
+        /** GenerateOutputsBatchInput */
+        GenerateOutputsBatchInput: {
+            /**
+             * Items
+             * @description The inputs to generate outputs for.
+             */
+            items: components["schemas"]["GenerateOutputsBatchItem"][];
+            /**
+             * Input Model Name
+             * @description The model used to generate the inputs (recorded on each run).
+             */
+            input_model_name: string;
+            /**
+             * Input Provider
+             * @description The provider used to generate the inputs (recorded on each run).
+             */
+            input_provider: string;
+            /**
+             * Run Config Properties
+             * @description The run config properties to use for output generation.
+             */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
+            /**
+             * Guidance
+             * @description Optional custom guidance for output generation.
+             */
+            guidance?: string | null;
+            /**
+             * Session Id
+             * @description Optional session ID to group generated samples.
+             */
+            session_id?: string | null;
+            /**
+             * Tags
+             * @description Tags to add to each generated sample.
+             */
+            tags?: string[] | null;
+        };
+        /** GenerateOutputsBatchItem */
+        GenerateOutputsBatchItem: {
+            /**
+             * Index
+             * @description Stable index of this item within the batch.
+             */
+            index: number;
+            /**
+             * Input
+             * @description The generated input to run the task on.
+             */
+            input: string | {
+                [key: string]: unknown;
+            };
+        };
         /** GetRagConfigProgressRequest */
         GetRagConfigProgressRequest: {
             /**
@@ -7383,14 +7873,12 @@ export interface components {
         GuidePreviewInput: {
             /**
              * Guide
-             * @description Markdown body of the data guide being previewed.
+             * @description Markdown body of the input data guide being previewed.
              * @default
              */
             guide: string;
             /** @description The model config to use for preview input generation */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
-            /** @description Optional model config to use for preview output generation. Defaults to the input run config when not provided. */
-            output_run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
             /**
              * Num Samples
              * @description Number of preview samples to generate
@@ -7405,40 +7893,38 @@ export interface components {
              * @description Generated sample input
              */
             input: string;
-            /**
-             * Output
-             * @description Generated sample output
-             */
-            output: string;
         };
         /** GuideRefineInput */
         GuideRefineInput: {
             /**
              * Current Guide
-             * @description Markdown body of the current data guide — the metaprompter rewrites it wholesale.
+             * @description Markdown body of the current input data guide — the metaprompter rewrites it wholesale.
              * @default
              */
             current_guide: string;
             /**
+             * Source
+             * @description Which flow owns the in-memory guide, so the metaprompter branches correctly during the pre-save refine loop. When omitted, falls back to the persisted guide's source (correct only once the guide is saved).
+             */
+            source?: ("manual" | "kiln_pro") | null;
+            /**
              * Feedback
-             * @description User feedback on what's wrong with preview samples
+             * @description User feedback on what's wrong with the previewed inputs
              */
             feedback: string;
             /**
              * Preview Samples
-             * @description The previewed samples the user is giving feedback on, each rated by the user as realistic (true) or needs work (false)
+             * @description The previewed inputs the user is giving feedback on, each rated by the user as realistic (true) or needs work (false)
              */
             preview_samples: components["schemas"]["RatedSample"][];
             /** @description The model config to use for the metaprompter call itself. */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
-            /** @description The user's chosen output-generation run config. Its prompt template is rendered server-side and used as runtime context for the metaprompter, so the rules it produces match what the model actually sees at synthesis time. Falls back to `task.instruction` when not provided — accurate for users on the default simple prompt template, stale for users on prompt-optimization or saved-prompt run configs. */
-            output_run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
         };
         /** GuideRefineResponse */
         GuideRefineResponse: {
             /**
              * Refined Guide
-             * @description The refined data guide markdown returned by the metaprompter.
+             * @description The refined input data guide markdown returned by the metaprompter.
              */
             refined_guide: string;
         };
@@ -7478,6 +7964,39 @@ export interface components {
              * @enum {string}
              */
             format: "wav" | "mp3";
+        };
+        /** InputsBatchResultItem */
+        InputsBatchResultItem: {
+            /** Index */
+            index: number;
+            /** Input */
+            input?: string | {
+                [key: string]: unknown;
+            } | null;
+            /** Error */
+            error?: string | null;
+        };
+        /** InputsBatchStatusOutput */
+        InputsBatchStatusOutput: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "complete" | "error";
+            /** Total */
+            total: number;
+            /** Completed */
+            completed: number;
+            /** Errors */
+            errors: number;
+            /** Model Name */
+            model_name: string;
+            /** Model Provider */
+            model_provider: string;
+            /** Results */
+            results: components["schemas"]["InputsBatchResultItem"][];
+            /** Error Message */
+            error_message?: string | null;
         };
         /** IssueProperties */
         IssueProperties: {
@@ -8341,7 +8860,7 @@ export interface components {
          * @description Enumeration of supported AI model providers.
          * @enum {string}
          */
-        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
+        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner" | "featherless_ai";
         /**
          * NewProposedSpecEditApi
          * @description A proposed edit to a spec field.
@@ -8490,6 +9009,58 @@ export interface components {
          * @enum {string}
          */
         OutputFormat: "text/plain" | "text/markdown";
+        /** OutputsBatchResultItem */
+        OutputsBatchResultItem: {
+            /** Index */
+            index: number;
+            task_run?: components["schemas"]["TaskRun-Output"] | null;
+            /** Error */
+            error?: string | null;
+        };
+        /** OutputsBatchStatusOutput */
+        OutputsBatchStatusOutput: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "complete" | "error";
+            /** Total */
+            total: number;
+            /** Completed */
+            completed: number;
+            /** Errors */
+            errors: number;
+            /** Results */
+            results: components["schemas"]["OutputsBatchResultItem"][];
+            /** Error Message */
+            error_message?: string | null;
+        };
+        /**
+         * ParseImportFileApiOutput
+         * @description Result of parsing an uploaded bulk-import file of input examples.
+         *
+         *     Plaintext tasks parse a single-column CSV; structured-input tasks parse one
+         *     JSON object per line, validated against the task's input schema. A non-null
+         *     `error` means the whole file was rejected; `warning` means it was accepted
+         *     but some examples were skipped (e.g. over the length limit).
+         */
+        ParseImportFileApiOutput: {
+            /**
+             * Rows
+             * @description Parsed example input strings, ready to add. Empty when error is set.
+             */
+            rows: string[];
+            /**
+             * Error
+             * @description Set when the whole file was rejected (invalid format/encoding).
+             */
+            error?: string | null;
+            /**
+             * Warning
+             * @description Set when the file was accepted but some examples were skipped.
+             */
+            warning?: string | null;
+        };
         /** PatchDocumentRequest */
         PatchDocumentRequest: {
             /**
@@ -9215,10 +9786,10 @@ export interface components {
         };
         /**
          * RatedSample
-         * @description A preview sample (input/output pair) plus the user's rating, used as
-         *     feedback input to the data-guide refinement metaprompter. Shared between
-         *     the API surface and the prompt builder so callers don't have to flatten
-         *     into positional tuples.
+         * @description A previewed input sample plus the user's rating, used as feedback input
+         *     to the input-data-guide refinement metaprompter. Shared between the API
+         *     surface and the prompt builder so callers don't have to flatten into
+         *     positional tuples.
          */
         RatedSample: {
             /**
@@ -9227,13 +9798,8 @@ export interface components {
              */
             input: string;
             /**
-             * Output
-             * @description Generated sample output
-             */
-            output: string;
-            /**
              * Looks Good
-             * @description User rating: true if the sample looks realistic, false if it needs work
+             * @description User rating: true if the input looks realistic, false if it needs work
              */
             looks_good: boolean;
         };
@@ -9749,10 +10315,15 @@ export interface components {
         SaveTaskDataGuideInput: {
             /**
              * Guide
-             * @description Markdown body of the data guide.
+             * @description Markdown body of the input data guide.
              * @default
              */
             guide: string;
+            /**
+             * Source
+             * @description Which flow created this guide. Determines which refine metaprompter branch runs on subsequent edits. On edit, omit to preserve the existing source; on first save, send the originating flow.
+             */
+            source?: ("manual" | "kiln_pro") | null;
         };
         /**
          * ScanProjectsRequest
@@ -10147,6 +10718,41 @@ export interface components {
             spec_field_current_values: {
                 [key: string]: string;
             };
+        };
+        /** StartBatchJobOutput */
+        StartBatchJobOutput: {
+            /**
+             * Job Id
+             * @description Identifier for the started batch job.
+             */
+            job_id: string;
+        };
+        /**
+         * StartDataGuideJobApiInput
+         * @description Input to kick off the input data guide draft job.
+         *
+         *     Carries only the input examples. All task info the job needs — the runtime
+         *     prompt and the input JSON schema — is derived server-side from the task
+         *     identified by the route, so the client can't supply a manipulated prompt or
+         *     schema, and the output schema / description never reach the guide LLM.
+         */
+        StartDataGuideJobApiInput: {
+            /**
+             * Input Examples
+             * @description Heterogeneous list of input examples — short manual entries, the input portion of selected task runs, or full text of uploaded text documents (txt, md, csv). Every entry is a string and is treated as a candidate reference input regardless of source.
+             */
+            input_examples: string[];
+        };
+        /**
+         * StartDataGuideJobApiOutput
+         * @description Identifier for the started data guide draft job.
+         */
+        StartDataGuideJobApiOutput: {
+            /**
+             * Job Id
+             * @description Identifier for the started data guide draft job.
+             */
+            job_id: string;
         };
         /** StartPromptOptimizationJobRequest */
         StartPromptOptimizationJobRequest: {
@@ -10800,6 +11406,8 @@ export interface components {
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
              */
             parent_task_run_id?: string | null;
+            /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
+            eval_source?: components["schemas"]["EvalItemSource"] | null;
         };
         /**
          * TaskRun
@@ -10879,6 +11487,8 @@ export interface components {
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
              */
             parent_task_run_id?: string | null;
+            /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
+            eval_source?: components["schemas"]["EvalItemSource"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -10948,6 +11558,21 @@ export interface components {
         TaskRunSnapshot: {
             /** Trace */
             trace?: components["schemas"]["TraceMessage"][] | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * TaskRunSplit
+         * @description A split whose items are TaskRuns, selected by a dataset filter.
+         */
+        TaskRunSplit: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            source: "task_run";
+            /** Filter Id */
+            filter_id: string;
         } & {
             [key: string]: unknown;
         };
@@ -13483,6 +14108,8 @@ export interface operations {
             query?: {
                 /** @description Comma-separated list of tags to filter documents by. */
                 tags?: string | null;
+                /** @description Comma-separated list of document ids to filter by. Combined (AND) with tags when both are set. */
+                document_ids?: string | null;
             };
             header?: never;
             path: {
@@ -14960,6 +15587,26 @@ export interface operations {
             };
         };
     };
+    verify_kiln_copilot_api_key_api_provider_verify_kiln_copilot_api_key_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     generate_prompt_api_projects__project_id__tasks__task_id__gen_prompt__prompt_id__get: {
         parameters: {
             query?: never;
@@ -15393,6 +16040,154 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_generate_inputs_batch_api_projects__project_id__tasks__task_id__generate_inputs_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateInputsBatchInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartBatchJobOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_inputs_batch_status_api_projects__project_id__tasks__task_id__generate_inputs_batch__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The batch job identifier. */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InputsBatchStatusOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_generate_outputs_batch_api_projects__project_id__tasks__task_id__generate_outputs_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateOutputsBatchInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartBatchJobOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_outputs_batch_status_api_projects__project_id__tasks__task_id__generate_outputs_batch__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The batch job identifier. */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutputsBatchStatusOutput"];
                 };
             };
             /** @description Validation Error */
@@ -16274,7 +17069,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Eval"][];
+                    "application/json": components["schemas"]["EvalsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -16677,7 +17472,10 @@ export interface operations {
     };
     get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get: {
         parameters: {
-            query?: never;
+            query: {
+                /** @description Which of the eval's dataset splits to return results for. Required: every response about eval results is scoped to exactly one split, and reading has no obvious default the way running does. */
+                split: "train" | "val" | "test";
+            };
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */
@@ -18583,6 +19381,154 @@ export interface operations {
             };
         };
     };
+    start_data_guide_job_api_projects__project_id__tasks__task_id__copilot_data_guide_job_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartDataGuideJobApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartDataGuideJobApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParseImportFileApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    data_guide_job_status_api_projects__project_id__tasks__task_id__copilot_data_guide_job__job_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The data guide draft job identifier. */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataGuideJobStatusApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    data_guide_job_result_api_projects__project_id__tasks__task_id__copilot_data_guide_job__job_id__result_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The data guide draft job identifier. */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataGuideJobResultApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_spec_with_copilot_api_projects__project_id__tasks__task_id__spec_with_copilot_post: {
         parameters: {
             query?: never;
@@ -18608,6 +19554,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    batch_plan_api_projects__project_id__tasks__task_id__copilot_batch_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchPlanApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchPlanApiOutput"];
                 };
             };
             /** @description Validation Error */

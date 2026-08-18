@@ -165,8 +165,6 @@ class LlmJudgeEval(BaseV2EvalBridge):
             ),
         )
 
-        # The judge TaskRun is never persisted (allow_saving=False), but its usage covers
-        # every LLM call the judgment made, so we keep it for the EvalRun record.
         judge_run, run_output = await adapter.invoke_returning_run_output(
             rendered_prompt
         )
@@ -187,5 +185,7 @@ class LlmJudgeEval(BaseV2EvalBridge):
         return V2EvalResult(
             scores=scores,
             intermediate_outputs=run_output.intermediate_outputs,
-            eval_usage=judge_run.usage,
+            # `usage`, not `cumulative_usage`: it already accumulates every call this
+            # judgment made, and it is the one that carries latency.
+            usage=judge_run.usage,
         )

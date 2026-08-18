@@ -292,9 +292,17 @@ class BaseEval:
     def model_and_provider(self) -> tuple[str, ModelProviderName]:
         return model_and_provider_from_config(self.eval_config)
 
-    async def run_task(self, eval_job_item: TaskRun | EvalInput) -> TaskRun:
+    async def run_task(
+        self, eval_job_item: TaskRun | EvalInput, run_config_id: str | None = None
+    ) -> TaskRun:
         """
         Runs the task on the provided run_config to generate fresh output.
+
+        `run_config_id` is the id of the saved TaskRunConfig this generation belongs to.
+        It is what puts `run_config_id` on the resulting run's output source, which is
+        half of the key an eval trace is reused by — a run persisted without it can never
+        be matched to a later job, so the eval regenerates it forever. Optional because
+        the V1 path (`run_task_and_eval`) never persists what it generates.
         """
         if self.run_config is None:
             raise ValueError("Run config is required for run_task_and_eval")
@@ -305,6 +313,7 @@ class BaseEval:
             base_adapter_config=AdapterConfig(
                 allow_saving=False,
                 skills=self.skills,
+                task_run_config_id=run_config_id,
             ),
         )
 
@@ -473,4 +482,4 @@ class BaseV2EvalBridge(BaseEval):
             raise ValueError(
                 f"V2 eval was skipped ({result.skipped_reason}): {result.skipped_detail}"
             )
-        return result.scores, result.intermediate_outputs, result.eval_usage
+        return result.scores, result.intermediate_outputs, result.usage

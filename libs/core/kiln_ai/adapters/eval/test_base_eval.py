@@ -525,6 +525,66 @@ async def test_run_task_and_eval_no_run_config():
         await evaluator.run_task_and_eval(eval_job_item)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("run_config_id", ["rc_123", None])
+async def test_run_task_stamps_the_run_config_on_the_generated_run(run_config_id):
+    """The id reaches `AdapterConfig`, which is what puts it on `output.source`.
+
+    Half the key an eval trace is found by. Without it the trace index rejects the
+    generation, because a run that files itself under nothing is regenerated forever.
+    """
+    task = Task(name="Test Task", instruction="Test instruction")
+    eval_config = EvalConfig(
+        name="Test Eval Config",
+        model_name="gpt-4o",
+        model_provider="openai",
+        parent=Eval(
+            name="Test Eval",
+            parent=task,
+            eval_set_filter_id="all",
+            eval_configs_filter_id="all",
+            output_scores=[
+                EvalOutputScore(
+                    name="Quality",
+                    instruction="Rate quality",
+                    type=TaskOutputRatingType.five_star,
+                ),
+            ],
+        ),
+        properties={"eval_steps": ["test_step"]},
+    )
+
+    class MockEval(BaseEval):
+        async def run_eval(
+            self, task_run: TaskRun, eval_job_item: TaskRun | None = None
+        ) -> tuple[EvalScores, Dict[str, str] | None]:
+            return {"quality": 4.0}, None
+
+    evaluator = MockEval(
+        eval_config,
+        KilnAgentRunConfigProperties(
+            model_name="llama_3_1_8b",
+            model_provider_name=ModelProviderName.groq,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+
+    with patch(
+        "kiln_ai.adapters.eval.base_eval.adapter_for_task"
+    ) as mock_adapter_for_task:
+        mock_adapter_for_task.return_value = AsyncMock()
+        await evaluator.run_task(
+            TaskRun(parent=task, input="test input", output=TaskOutput(output="")),
+            run_config_id=run_config_id,
+        )
+
+    adapter_config = mock_adapter_for_task.call_args[1]["base_adapter_config"]
+    assert adapter_config.task_run_config_id == run_config_id
+    # The runner persists eval traces itself, after stamping eval_source on them.
+    assert adapter_config.allow_saving is False
+
+
 # ---------------------------------------------------------------------------
 # score_scale_instruction tests
 # ---------------------------------------------------------------------------

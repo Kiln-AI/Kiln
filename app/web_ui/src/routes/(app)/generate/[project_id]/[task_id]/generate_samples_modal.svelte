@@ -304,9 +304,10 @@
         <div>
           <SynthDataGuidance guidance_type="inputs" {guidance_data} />
         </div>
-        <div>
-          <SynthDataGuide {guidance_data} />
-        </div>
+        <!-- No wrapper div: SynthDataGuide renders nothing when there's no
+             data guide yet, so an empty wrapper would otherwise leave a stray
+             gap-6 gap in this column. -->
+        <SynthDataGuide {guidance_data} />
         <RunConfigComponent
           bind:this={run_config_component}
           {project_id}

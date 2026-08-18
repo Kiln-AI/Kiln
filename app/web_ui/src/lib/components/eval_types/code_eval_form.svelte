@@ -6,6 +6,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import type { EvalOutputScore } from "$lib/types"
   import { generate_default_code, generate_examples } from "./code_eval_helpers"
+  import { SHOW_REFERENCE_DATA_UI } from "$lib/utils/eval_types/reference_data_ui"
 
   export let output_scores: EvalOutputScore[] | undefined = undefined
 
@@ -84,7 +85,9 @@
     id="code_eval_score_function"
     label="Score Function"
     description="Define a Python score function to evaluate the model's work."
-    info_description="The Python function can use the model's output, trace, and eval's reference data to drive pragmatic scoring. Faster and cheaper than LLM as a judge."
+    info_description={SHOW_REFERENCE_DATA_UI
+      ? "The Python function can use the model's output, trace, and eval's reference data to drive pragmatic scoring. Faster and cheaper than LLM as a judge."
+      : "The Python function can use the model's output and trace to drive pragmatic scoring. Faster and cheaper than LLM as a judge."}
     inputType="header_only"
     inline_action={examples_inline_action}
     value=""
