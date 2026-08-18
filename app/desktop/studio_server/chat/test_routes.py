@@ -812,7 +812,7 @@ class TestMockedFlows:
             sse_text_delta("Tool was denied."),
             _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
         ]
-        mock_client, get_call_count = make_n_round_mock_client(continuation_chunks)
+        mock_client, _get_call_count = make_n_round_mock_client(continuation_chunks)
         mock_class = MagicMock(return_value=mock_client)
 
         body = {

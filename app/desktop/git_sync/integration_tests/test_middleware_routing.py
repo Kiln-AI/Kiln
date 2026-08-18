@@ -62,7 +62,7 @@ class TestManualModeUnaffected:
     """Scenario 31: Manual-mode projects are not wrapped by middleware."""
 
     def test_manual_mode_no_commit(self, git_repos):
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
 
         manual_config = GitSyncProjectConfig(
             sync_mode="manual",

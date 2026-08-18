@@ -226,7 +226,7 @@ def test_mutating_request_commits_and_pushes(git_repos):
 
 
 def test_mutating_request_error_rolls_back(git_repos):
-    local_path, remote_path = git_repos
+    local_path, _remote_path = git_repos
     config = _auto_config(str(local_path))
 
     def post_endpoint_that_errors():

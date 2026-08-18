@@ -136,7 +136,7 @@ class TestDirtyStateRecovery:
 
     @pytest.mark.asyncio
     async def test_dirty_state_stashed_on_write(self, write_ctx, git_repos):
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         leave_dirty_files(local_path)
         pre_stash_count = len(get_stash_list(local_path))
 
@@ -207,7 +207,7 @@ class TestInProgressRebaseRecovery:
     @pytest.mark.asyncio
     async def test_in_progress_rebase_aborted(self, write_ctx, git_repos):
         """Clean cherry-pick state (no conflicts) is recovered successfully."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         leave_rebase_state_clean(local_path)
 
         repo = pygit2.Repository(str(local_path))
@@ -232,7 +232,7 @@ class TestInProgressRebaseRecovery:
         state marker and any index entries (including conflicts), so the
         cherry-picked changes are discarded rather than stashed.
         """
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         leave_rebase_state_clean(local_path)
 
         result = await write_ctx.do_write(
@@ -334,8 +334,6 @@ class TestUnrecoverableState:
 
     @pytest.mark.asyncio
     async def test_unrecoverable_state_returns_error(self, write_ctx, git_repos):
-        local_path, _ = git_repos
-
         original_is_clean = GitSyncManager._is_clean
 
         call_count = 0
@@ -401,7 +399,7 @@ class TestAllThreeSimultaneous:
 
     @pytest.mark.asyncio
     async def test_all_three_simultaneous_recovery(self, write_ctx, git_repos):
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
 
         create_unpushed_commit(local_path, "unpushed_extra.kiln", "unpushed data")
         leave_rebase_state_clean(local_path)
@@ -443,7 +441,7 @@ class TestAllThreeSimultaneous:
 
     @pytest.mark.asyncio
     async def test_all_three_new_write_succeeds(self, write_ctx, git_repos):
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
 
         create_unpushed_commit(local_path, "unpushed_extra2.kiln", "unpushed")
         leave_rebase_state_clean(local_path)
@@ -520,7 +518,7 @@ class TestPartialRecoveryFailure:
         self, write_ctx, git_repos
     ):
         """First recovery attempt fails, second attempt succeeds normally."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         leave_dirty_files(local_path)
 
         original_stash_all = GitSyncManager._stash_all

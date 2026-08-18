@@ -12,7 +12,7 @@ Phases 1–3 are verified with the audit command from the functional spec, since
 
 ## Phases
 
-- [ ] **Phase 1: `RUF059` sweep** — ~74 unused unpacked variables across 17 test files, nearly all
+- [x] **Phase 1: `RUF059` sweep** — ~74 unused unpacked variables across 17 test files, nearly all
       under `git_sync/`. One repetitive shape. Underscore-prefix each, but read every site for a
       missing assertion first. No bulk auto-fix.
 

@@ -107,7 +107,7 @@ class TestNoWriteLockPartialFailure:
     @pytest.mark.asyncio
     async def test_partial_failure_iteration3_rolled_back(self, git_repos):
         """Iteration 3's changes are rolled back after failure."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         config = auto_config(str(local_path))
 
         app, endpoint_url = _build_batch_app(local_path, "batch2", "batch_op2")
