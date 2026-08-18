@@ -316,10 +316,15 @@ It then does seven things, in this order:
    **9.4 s**. Every failure — no warm tree, a tree on another
    filesystem, a filesystem without hardlinks — falls through to step 5 populating
    `node_modules` from scratch, which is what happened before this existed.
-5. **Sync dependencies for the current branch**, `uv sync --frozen --all-packages`
-   and `npm install` in parallel, so a branch that changed a lockfile is not run
-   against stale packages. This is also what reconciles a seeded tree with the
-   branch's `package.json`.
+5. **Sync dependencies for the current branch**, `uv sync --frozen --all-packages
+   --compile-bytecode` and `npm install` in parallel, so a branch that changed a
+   lockfile is not run against stale packages. This is also what reconciles a
+   seeded tree with the branch's `package.json`. `--compile-bytecode` writes the
+   venv's `.pyc` files here rather than leaving them to the session's first import
+   of the app, which compiles thousands of files and pays for it again in the dev
+   server's reload worker. It walks the whole venv on every run, but with
+   everything already up to date that is well under a second, so re-running the
+   script stays cheap.
 6. **Verify the virtualenv** — Python 3.13 or newer and `tkinter` importable. These
    are properties of `.venv`, so they can only be checked once step 5 has built it.
 

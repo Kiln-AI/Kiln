@@ -582,8 +582,11 @@ Order is load-bearing:
    break silence.
 
 4. **Sync**, both in parallel, same `wait`-both pattern as §1.4:
-   `uv sync --frozen --all-packages` and `npm install --no-fund --no-audit`.
-   `npm install`, not `npm ci` — see F4.
+   `uv sync --frozen --all-packages --compile-bytecode` and
+   `npm install --no-fund --no-audit`. `npm install`, not `npm ci` — see F4.
+   `--compile-bytecode` here rather than in `setup_env.sh`: this is the sync that
+   builds the session's `.venv`, and compiling under it costs a session nothing,
+   where the first import of the app would otherwise compile the whole tree.
 
    `npm install` can rewrite the tracked `package-lock.json`, which nothing else in
    either script does. Hash the file with `cksum` before and after and warn, naming
