@@ -20,7 +20,7 @@ Phases 1–3 are verified with the audit command from the functional spec, since
       `--select I --fix` plus `ruff format`. Isolated so a wide, purely mechanical diff does not
       hide anything in review.
 
-- [ ] **Phase 3: The judgment tail** — the remaining ~22 findings, ~9 files. `FAST002` `Annotated`
+- [x] **Phase 3: The judgment tail** — the remaining ~22 findings, ~9 files. `FAST002` `Annotated`
       conversions in `git_sync_api.py` (run `check_schema.sh` here), `ClassVar` on the
       `registry.py` singleton, the `noop.py` relative import, and the `RUF010`/`RUF022`/`RUF005`/
       `RUF015` one-offs.

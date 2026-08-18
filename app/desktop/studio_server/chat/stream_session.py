@@ -346,6 +346,6 @@ def _build_openai_tool_continuation(
         }
         if tool_calls:
             assistant_msg["tool_calls"] = tool_calls
-        new_messages = prior_messages + [assistant_msg] + tool_messages
+        new_messages = [*prior_messages, assistant_msg, *tool_messages]
 
     return {**original_body, "messages": new_messages}

@@ -4,7 +4,7 @@ import logging
 import os
 import shutil
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi import Path as FastAPIPath
@@ -661,9 +661,9 @@ def connect_git_sync_api(app: FastAPI):
         openapi_extra=DENY_AGENT,
     )
     async def api_get_config(
-        project_id: str = FastAPIPath(
-            description="The unique identifier of the project."
-        ),
+        project_id: Annotated[
+            str, FastAPIPath(description="The unique identifier of the project.")
+        ],
     ) -> GitSyncConfigResponse:
         project_path = project_path_from_id(project_id)
         if project_path is None:
@@ -693,9 +693,9 @@ def connect_git_sync_api(app: FastAPI):
     )
     async def api_update_config(
         request: UpdateConfigRequest,
-        project_id: str = FastAPIPath(
-            description="The unique identifier of the project."
-        ),
+        project_id: Annotated[
+            str, FastAPIPath(description="The unique identifier of the project.")
+        ],
     ) -> GitSyncConfigResponse:
         project_path = project_path_from_id(project_id)
         if project_path is None:
@@ -784,22 +784,28 @@ def connect_git_sync_api(app: FastAPI):
         openapi_extra=DENY_AGENT,
     )
     async def api_oauth_callback(
-        state: str = Query(
-            default="",
-            description="OAuth state parameter linking the callback to a pending flow.",
-        ),
-        code: str = Query(
-            default="",
-            description="Authorization code from GitHub to exchange for an access token.",
-        ),
-        error: str = Query(
-            default="",
-            description="Error code returned by GitHub if authorization was denied.",
-        ),
-        error_description: str = Query(
-            default="",
-            description="Human-readable description of the error from GitHub.",
-        ),
+        state: Annotated[
+            str,
+            Query(
+                description="OAuth state parameter linking the callback to a pending flow."
+            ),
+        ] = "",
+        code: Annotated[
+            str,
+            Query(
+                description="Authorization code from GitHub to exchange for an access token."
+            ),
+        ] = "",
+        error: Annotated[
+            str,
+            Query(
+                description="Error code returned by GitHub if authorization was denied."
+            ),
+        ] = "",
+        error_description: Annotated[
+            str,
+            Query(description="Human-readable description of the error from GitHub."),
+        ] = "",
     ) -> HTMLResponse:
         def error_page(msg: str) -> HTMLResponse:
             return HTMLResponse(render_oauth_error_page(msg), status_code=400)
@@ -850,7 +856,9 @@ def connect_git_sync_api(app: FastAPI):
         openapi_extra=DENY_AGENT,
     )
     async def api_oauth_status(
-        state: str = FastAPIPath(description="The OAuth state parameter to check."),
+        state: Annotated[
+            str, FastAPIPath(description="The OAuth state parameter to check.")
+        ],
     ) -> OAuthStatusResponse:
         flow = oauth_manager.get_flow(state)
         if flow is None:
@@ -883,9 +891,9 @@ def connect_git_sync_api(app: FastAPI):
         openapi_extra=DENY_AGENT,
     )
     async def delete_project(
-        project_id: str = FastAPIPath(
-            description="The unique identifier of the project."
-        ),
+        project_id: Annotated[
+            str, FastAPIPath(description="The unique identifier of the project.")
+        ],
     ) -> dict:
         """Removes the project from Kiln but does not delete the files from disk."""
         project = project_from_id(project_id)
@@ -899,9 +907,9 @@ def connect_git_sync_api(app: FastAPI):
         openapi_extra=DENY_AGENT,
     )
     async def api_delete_config(
-        project_id: str = FastAPIPath(
-            description="The unique identifier of the project."
-        ),
+        project_id: Annotated[
+            str, FastAPIPath(description="The unique identifier of the project.")
+        ],
     ) -> DeleteConfigResponse:
         project_path = project_path_from_id(project_id)
         if project_path is None:

@@ -403,7 +403,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
         except Exception as e:
             logger.error(f"Error checking run config: {e}", exc_info=True)
             raise HTTPException(
-                status_code=500, detail=f"Failed to check run config: {str(e)}"
+                status_code=500, detail=f"Failed to check run config: {e!s}"
             )
 
     @app.get(
@@ -485,9 +485,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             raise
         except Exception as e:
             logger.error(f"Error checking eval: {e}", exc_info=True)
-            raise HTTPException(
-                status_code=500, detail=f"Failed to check eval: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to check eval: {e!s}")
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
@@ -607,7 +605,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
 
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to start Prompt Optimization job: {str(e)}",
+                detail=f"Failed to start Prompt Optimization job: {e!s}",
             )
 
     @app.get(
@@ -758,7 +756,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             )
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to get Prompt Optimization job status: {str(e)}",
+                detail=f"Failed to get Prompt Optimization job status: {e!s}",
             )
 
     @app.get(
@@ -806,5 +804,5 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             )
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to get Prompt Optimization job result: {str(e)}",
+                detail=f"Failed to get Prompt Optimization job result: {e!s}",
             )

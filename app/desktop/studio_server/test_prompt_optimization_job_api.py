@@ -2311,7 +2311,7 @@ def test_prompt_optimization_job_creates_run_config_on_success(
         # Check that exactly 1 new run config was created (2 total including target)
         run_configs = task.run_configs()
         assert len(run_configs) == 2
-        new_run_config = [rc for rc in run_configs if rc.id != target_run_config.id][0]
+        new_run_config = next(rc for rc in run_configs if rc.id != target_run_config.id)
 
         assert new_run_config.name
         assert new_run_config.name != target_run_config.name
