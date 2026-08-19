@@ -1580,10 +1580,16 @@ def test_validate_output_fields_final_answer_valid_cases(
     assert run.task_run_trace is None
 
 
-def test_validate_output_fields_final_answer_invalid_cases(
+def test_validate_output_fields_final_answer_allows_trace(
     mock_task, valid_eval_config_data
 ):
-    """Test validate_output_fields with final_answer evaluation data type - invalid cases"""
+    """final_answer evals are now allowed to persist task_run_trace.
+
+    The trace is the only record of what the model actually saw — needed to
+    verify input_transform rendering and debug failures after the fact.
+    evaluation_data_type still gates judging behavior; it no longer constrains
+    whether the trace is set.
+    """
     eval = Eval(
         name="Test Eval",
         parent=mock_task,
@@ -1599,20 +1605,16 @@ def test_validate_output_fields_final_answer_invalid_cases(
     )
     config = EvalConfig(parent=eval, **valid_eval_config_data)
 
-    # Invalid case: full_trace is set
-    with pytest.raises(
-        ValueError,
-        match="final_answer runs should not set trace",
-    ):
-        EvalRun(
-            parent=config,
-            dataset_id="dataset123",
-            task_run_config_id="config456",
-            input="test input",
-            output="test output",
-            scores={"accuracy": 0.95},
-            task_run_trace='{"messages": []}',
-        )
+    run = EvalRun(
+        parent=config,
+        dataset_id="dataset123",
+        task_run_config_id="config456",
+        input="test input",
+        output="test output",
+        scores={"accuracy": 0.95},
+        task_run_trace='{"messages": []}',
+    )
+    assert run.task_run_trace == '{"messages": []}'
 
 
 def test_validate_output_fields_full_trace_valid_cases(
@@ -1729,15 +1731,10 @@ def test_validate_output_fields_no_parent_eval_config():
 @pytest.mark.parametrize(
     "evaluation_data_type,trace,should_raise,expected_error",
     [
-        # final_answer cases
+        # final_answer cases — trace is now optional, never forbidden
         (EvalDataType.final_answer, None, False, None),
-        (
-            EvalDataType.final_answer,
-            '{"messages": []}',
-            True,
-            "final_answer runs should not set trace",
-        ),
-        # full_trace cases
+        (EvalDataType.final_answer, '{"messages": []}', False, None),
+        # full_trace cases — trace is still required
         (EvalDataType.full_trace, '{"messages": []}', False, None),
         (
             EvalDataType.full_trace,
