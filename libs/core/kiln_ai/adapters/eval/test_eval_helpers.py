@@ -137,14 +137,16 @@ class TestTraceNavigation:
         assert results[1]["tool_call_id"] == "call_def456"
 
     def test_get_tool_results_legacy_shapes(self, helpers: KilnEvalHelpers):
+        # type "tool_result" is matched defensively; "tool_result" is not a
+        # role Kiln ever writes, so a role-shaped entry must NOT match.
         trace = [
-            {"role": "tool_result", "content": "result1"},
+            {"role": "tool_result", "content": "not a real shape"},
             {"type": "tool_result", "content": "result2"},
             {"role": "assistant", "content": "not a result"},
         ]
         results = helpers.get_tool_results(trace)
-        assert len(results) == 2
-        assert results[0]["content"] == "result1"
+        assert len(results) == 1
+        assert results[0]["content"] == "result2"
 
     def test_get_tool_results_round_trip_from_task_run(self, helpers: KilnEvalHelpers):
         """End-to-end over the real data path: a TaskRun trace converted via

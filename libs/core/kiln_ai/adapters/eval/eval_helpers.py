@@ -94,16 +94,16 @@ class KilnEvalHelpers:
 
         Kiln stores traces in OpenAI format, where tool results are
         ``role: "tool"`` messages carrying ``tool_call_id`` and ``content``.
-        Entries marked ``role``/``type`` == "tool_result" are also matched,
-        defensively, for non-OpenAI-shaped traces.
+        Entries marked ``type`` == "tool_result" are also matched,
+        defensively, for non-OpenAI-shaped traces; "tool_result" is not a
+        role, so it is not matched there.
         """
         if not trace:
             return []
         return [
             entry
             for entry in trace
-            if entry.get("role") in ("tool", "tool_result")
-            or entry.get("type") == "tool_result"
+            if entry.get("role") == "tool" or entry.get("type") == "tool_result"
         ]
 
     @staticmethod
