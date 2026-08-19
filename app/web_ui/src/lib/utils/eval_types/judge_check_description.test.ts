@@ -56,10 +56,10 @@ describe("judge_check_description", () => {
     expect(
       judge_check_description({
         type: "pattern_match",
-        pattern: "TODO",
+        pattern: "DRAFT",
         mode: "must_not_match",
       }),
-    ).toContain("does not match the regular expression /TODO/")
+    ).toContain("does not match the regular expression /DRAFT/")
   })
 
   it("describes contains in both modes", () => {

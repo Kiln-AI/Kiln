@@ -80,10 +80,11 @@ if __name__ == "__main__":
         elapsed = time.perf_counter() - t0
 
         if "ok" not in result:
-            print(
-                json.dumps({"call": i, "error": result.get("error", "unknown")}),
-                flush=True,
+            sys.stdout.write(
+                json.dumps({"call": i, "error": result.get("error", "unknown")}) + "\n"
             )
+            sys.stdout.flush()
             sys.exit(1)
 
-        print(json.dumps({"call": i, "elapsed": elapsed}), flush=True)
+        sys.stdout.write(json.dumps({"call": i, "elapsed": elapsed}) + "\n")
+        sys.stdout.flush()

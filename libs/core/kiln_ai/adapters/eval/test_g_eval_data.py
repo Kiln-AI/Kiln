@@ -17,7 +17,7 @@ which is required for weighted G-Eval scoring.
 **How to regenerate (if the RunOutput schema changes):**
 1. Write a short script or test that calls a real model to produce a RunOutput
    with logprobs enabled (``logprobs=True, top_logprobs=10``).
-2. ``import pickle; print(repr(pickle.dumps(run_output)))``
+2. Take ``repr(pickle.dumps(run_output))`` (``import pickle`` first).
 3. Replace the ``serialized_run_output`` bytes below.
 4. Re-run ``test_g_eval.py`` and ``test_g_eval_characterization.py`` to lock
    new expected values (the exact weighted scores will change).
