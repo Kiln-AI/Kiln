@@ -154,3 +154,25 @@ describe("ClaimCard — final judgement evidence", () => {
     expect(queryByText("View Full Trace")).toBeNull()
   })
 })
+
+describe("ClaimCard — display only", () => {
+  it("renders the claim as reading material, with no way to grade it", () => {
+    // A disagreeing verdict is the state that renders both controls, so it is
+    // the one that proves display_only drops them. The claim and its evidence
+    // still render: this is the card as reading material for a surface that
+    // takes the grade somewhere else.
+    const verdict: ClaimVerdict = { agrees: false, why: "The window is real." }
+    const { container, getByText, queryByText, queryByTitle } = render(
+      ClaimCard,
+      {
+        props: { claim: claim(), verdict, display_only: true },
+      },
+    )
+
+    expect(getByText("The agent stated a return window as fact.")).toBeTruthy()
+    expect(queryByTitle("View in trace")).toBeTruthy()
+    expect(queryByText("Correct")).toBeNull()
+    expect(queryByText("Incorrect")).toBeNull()
+    expect(container.querySelector("textarea")).toBeNull()
+  })
+})

@@ -421,6 +421,67 @@ export function reviewed_trace_count(
   return traces.filter((t, i) => is_trace_reviewed(t, reviews[i])).length
 }
 
+// ── Trace-first review (gate + blind label) ──────────────────────────────
+
+// Output length at or above which a review keeps the claim stack: past this
+// the trace costs more to read than the claims that distill it.
+// PLACEHOLDER pending calibration — every captured single-turn output sits
+// far below it, so there is no measured boundary to fit yet.
+export const CHAR_CUTOFF = 600
+
+// Which review shape a trace gets. Trace-first (read the trace, label the
+// output) only where the raw trace is the cheaper read: one exchange, short,
+// and plain text. Multi-turn transcripts, long outputs and schema'd outputs
+// keep the claim stack — a structured output collapses into prose in the chat
+// bubble, so its claims are the only readable form of it today.
+export function is_trace_first_review(args: {
+  is_multi_turn: boolean
+  has_output_schema: boolean
+  raw_output: string
+}): boolean {
+  if (args.is_multi_turn || args.has_output_schema) return false
+  return args.raw_output.length < CHAR_CUTOFF
+}
+
+// What the inline trace renderer is fed: the run's own structured trace, or a
+// two-message echo of the input/output pair when the run recorded none (the
+// judge scored exactly that pair, so the echo is lossless). Throws when there
+// is nothing to render rather than presenting an empty surface for a reviewer
+// to label.
+export function review_trace_messages(trace: TraceClaims): TraceMessage[] {
+  if (trace.trace && trace.trace.length > 0) return trace.trace
+  if (trace.raw_input || trace.raw_output) {
+    return [
+      { role: "user", content: trace.raw_input },
+      { role: "assistant", content: trace.raw_output },
+    ]
+  }
+  throw new Error("This trace has no transcript and no raw input or output.")
+}
+
+// The blind label written as the verdict BOTH arms store: the reviewer says
+// the output was right or wrong and agreement with the judge is computed from
+// it (the user_says_meets_spec direction), so trace-first fills the same
+// final_judgement_verdict slot the claim cards fill and the save, gate and
+// refine paths need no arm of their own.
+export function blind_label_agrees(
+  judge_score: ExpectedResult,
+  user_says_pass: boolean,
+): boolean {
+  return user_says_pass === (judge_score === "pass")
+}
+
+// That verdict read back as the reviewer's label. The verdict is what the
+// review state keeps, so a revisited trace can show the label its reviewer
+// already gave rather than a blank row. Null while the trace is ungraded.
+export function blind_label_from_verdict(
+  judge_score: ExpectedResult,
+  agrees: boolean | null,
+): boolean | null {
+  if (agrees === null) return null
+  return agrees === (judge_score === "pass")
+}
+
 // ── Subset review (both arms) ────────────────────────────────────────────
 
 // How many traces the reviewer must rate: the human-rated golden answer key

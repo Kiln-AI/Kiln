@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest"
+import type { TraceMessage } from "$lib/types"
 import {
   apply_rejudge_results,
   blind_final_judgement,
+  blind_label_agrees,
+  blind_label_from_verdict,
   build_claim_review_payload,
   build_graded_traces,
   build_trace_reviews,
   calibration_gate_target,
+  CHAR_CUTOFF,
   disagreed_trace_indices,
   disagreement_feedback,
   final_judgement_reason,
   flipped_indices,
   grade_disagreement_count,
   has_grade_disagreement,
+  is_trace_first_review,
   is_trace_reviewed,
   map_output_span_to_trace,
   MAX_JUDGE_PROMPT_CHARS,
@@ -21,6 +26,7 @@ import {
   review_cta,
   resolve_citation_span,
   review_target,
+  review_trace_messages,
   reviewed_trace_count,
   select_calibration_subset,
   select_review_subset,
@@ -1045,6 +1051,150 @@ describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () =>
     )
     expect(refine_judge_tooltip(2, "example")).toContain(
       "disagreed with the judge on 2 examples.",
+    )
+  })
+})
+
+describe("is_trace_first_review — which review shape a trace gets", () => {
+  const short = "x".repeat(CHAR_CUTOFF - 1)
+
+  it("a short plain-text single-turn output reviews trace-first", () => {
+    expect(
+      is_trace_first_review({
+        is_multi_turn: false,
+        has_output_schema: false,
+        raw_output: short,
+      }),
+    ).toBe(true)
+  })
+
+  it("multi-turn keeps the claim stack however short the transcript", () => {
+    expect(
+      is_trace_first_review({
+        is_multi_turn: true,
+        has_output_schema: false,
+        raw_output: "Sure, I can help.",
+      }),
+    ).toBe(false)
+  })
+
+  it("an output schema keeps the claim stack even under the cutoff", () => {
+    expect(
+      is_trace_first_review({
+        is_multi_turn: false,
+        has_output_schema: true,
+        raw_output: short,
+      }),
+    ).toBe(false)
+  })
+
+  it("cuts over at CHAR_CUTOFF: below is trace-first, at it is claims", () => {
+    const at_cutoff = "x".repeat(CHAR_CUTOFF)
+    const args = { is_multi_turn: false, has_output_schema: false }
+    expect(is_trace_first_review({ ...args, raw_output: at_cutoff })).toBe(
+      false,
+    )
+    expect(
+      is_trace_first_review({ ...args, raw_output: at_cutoff.slice(1) }),
+    ).toBe(true)
+  })
+})
+
+describe("review_trace_messages — what the inline trace renders", () => {
+  it("uses the run's own trace when it recorded one", () => {
+    const messages: TraceMessage[] = [
+      { role: "user", content: "What's the return window?" },
+      { role: "assistant", content: "Our return window is 30 days." },
+    ]
+    expect(review_trace_messages(trace({ trace: messages }))).toBe(messages)
+  })
+
+  it("synthesizes the two-message echo when the run recorded no trace", () => {
+    const t = trace({ trace: null })
+    expect(review_trace_messages(t)).toEqual([
+      { role: "user", content: t.raw_input },
+      { role: "assistant", content: t.raw_output },
+    ])
+    // An empty array is no transcript either.
+    expect(review_trace_messages(trace({ trace: [] }))).toHaveLength(2)
+  })
+
+  it("throws when there is neither a transcript nor raws to show", () => {
+    expect(() =>
+      review_trace_messages(
+        trace({ trace: null, raw_input: "", raw_output: "" }),
+      ),
+    ).toThrow()
+  })
+})
+
+describe("blind label — computed agreement with the judge", () => {
+  it("on a judge-fail trace, Correct contradicts the judge and Incorrect agrees", () => {
+    expect(blind_label_agrees("fail", true)).toBe(false)
+    expect(blind_label_agrees("fail", false)).toBe(true)
+  })
+
+  it("on a judge-pass trace the polarity inverts", () => {
+    expect(blind_label_agrees("pass", true)).toBe(true)
+    expect(blind_label_agrees("pass", false)).toBe(false)
+  })
+
+  it("reads a stored verdict back as the label that produced it", () => {
+    for (const judge_score of ["pass", "fail"] as const) {
+      for (const label of [true, false]) {
+        expect(
+          blind_label_from_verdict(
+            judge_score,
+            blind_label_agrees(judge_score, label),
+          ),
+        ).toBe(label)
+      }
+    }
+    // Ungraded stays unlabelled — nothing to show as chosen.
+    expect(blind_label_from_verdict("fail", null)).toBeNull()
+  })
+
+  it("the label survives as the saved verdict's meaning", () => {
+    // Correct means the reviewer says this output meets the spec, whichever
+    // way the judge went — that equivalence is what makes the blind label
+    // storable as an agree/disagree.
+    for (const judge_score of ["pass", "fail"] as const) {
+      for (const label of [true, false]) {
+        const t = trace({ judge_score })
+        const review = build_trace_reviews([t])[0]
+        review.final_judgement_verdict = {
+          agrees: blind_label_agrees(judge_score, label),
+          why: "Reason enough.",
+        }
+        expect(user_says_meets_spec(t, review)).toBe(label)
+      }
+    }
+  })
+})
+
+describe("a trace-first review's saved shape", () => {
+  it("grades the final judgement alone, with the built claims left ungraded", () => {
+    // The reviewer answered one question about the trace, so the claims the
+    // builder produced ride along unanswered and the graded-only filter drops
+    // them — the judgement itself is still the SERVER's, citation and all.
+    const t = trace({ leaf_run_id: "leaf-tf" })
+    const review = build_trace_reviews([t])[0]
+    review.final_judgement_verdict.agrees = blind_label_agrees(
+      t.judge_score,
+      true,
+    )
+    review.final_judgement_verdict.why = "The 30-day window is documented."
+    expect(is_trace_reviewed(t, review)).toBe(true)
+
+    const graded = build_graded_traces([t], [review])
+    expect(graded).toHaveLength(1)
+    expect(graded[0].claims).toEqual([])
+    expect(graded[0].final_judgement.claim).toBe(
+      "Fails Eval: fabricated policy.",
+    )
+    expect(graded[0].final_judgement.human_grade).toBe("disagree")
+    expect(graded[0].final_judgement.human_feedback).toBe(
+      "The 30-day window is documented.",
     )
   })
 })

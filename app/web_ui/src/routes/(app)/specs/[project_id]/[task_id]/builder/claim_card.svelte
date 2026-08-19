@@ -34,6 +34,12 @@
   // What the judge judged, in the caller's vocabulary: "conversation" for
   // multi-turn, "example" for single-turn.
   export let judged_noun = "example"
+  // Display-only: the claim, its evidence and its citations render as usual,
+  // but the card carries no verdict controls. For surfaces that show claims as
+  // reading material while the grade is taken somewhere else — a second
+  // writable control for the same verdict lets one grade silently overwrite
+  // the other. Defaults to the interactive card.
+  export let display_only = false
 
   // The reason under the headline: the claim builder's contract makes this
   // the substantive reason-only line, "" when there is nothing beyond the
@@ -175,24 +181,26 @@
     <!-- Correct/Incorrect (not Agree/Disagree): the reviewer grades each
          statement as right or wrong — lower cognitive load, and it reads
          the same whichever direction the claim points. -->
-    <div class="flex gap-2 flex-none">
-      <button
-        class="btn btn-sm {verdict.agrees === true
-          ? 'btn-success'
-          : 'btn-outline'}"
-        on:click={() => set_agrees(true)}
-      >
-        Correct
-      </button>
-      <button
-        class="btn btn-sm {verdict.agrees === false
-          ? 'btn-error'
-          : 'btn-outline'}"
-        on:click={() => set_agrees(false)}
-      >
-        Incorrect
-      </button>
-    </div>
+    {#if !display_only}
+      <div class="flex gap-2 flex-none">
+        <button
+          class="btn btn-sm {verdict.agrees === true
+            ? 'btn-success'
+            : 'btn-outline'}"
+          on:click={() => set_agrees(true)}
+        >
+          Correct
+        </button>
+        <button
+          class="btn btn-sm {verdict.agrees === false
+            ? 'btn-error'
+            : 'btn-outline'}"
+          on:click={() => set_agrees(false)}
+        >
+          Incorrect
+        </button>
+      </div>
+    {/if}
   </div>
 
   {#if is_final_judgement && final_reason && !final_evidence_is_reason}
@@ -225,7 +233,7 @@
     >
   {/if}
 
-  {#if verdict.agrees === false}
+  {#if !display_only && verdict.agrees === false}
     <textarea
       class="textarea textarea-bordered textarea-sm w-full mt-3 {needs_reason
         ? 'textarea-error'

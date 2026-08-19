@@ -4270,11 +4270,17 @@
                  every grade, so the review component restarts on the new
                  selection instead of pointing at a stale index. -->
             {#key calibration_rounds_completed}
+              <!-- is_multi_turn / has_output_schema are the task-level half of
+                   the review-shape gate: a single-turn task with plain-text
+                   output reviews its short traces on the trace itself rather
+                   than on the claims distilled from it. -->
               <ClaimEvidenceReview
                 traces={trace_claims}
                 bind:verdicts={trace_reviews}
                 selected_indices={selected_trace_indices}
                 {judged_noun}
+                {is_multi_turn}
+                has_output_schema={!!task?.output_json_schema}
                 {on_open_trace}
                 on_save={on_advance_to_save}
                 save_disabled={!save_gate_met}
