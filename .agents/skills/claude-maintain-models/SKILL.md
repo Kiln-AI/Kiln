@@ -1,12 +1,18 @@
 ---
 name: claude-maintain-models
-description: Add new AI models to Kiln's ml_model_list.py and produce a Discord announcement. Use when the user wants to add, integrate, or register a new LLM model (e.g. Claude, GPT, DeepSeek, Gemini, Kimi, Qwen, Grok) into the Kiln model list, mentions adding a model to ml_model_list.py, or asks to discover/find new models that are available but not yet in Kiln.
+description: Add new AI models to Kiln's ml_model_list.py and produce a Discord announcement. Use when the user wants to add, integrate, or register a new LLM model (e.g. Claude, GPT, DeepSeek, Gemini, Kimi, Qwen, Grok) into the Kiln model list, mentions adding a model to ml_model_list.py, asks to discover/find new models that are available but not yet in Kiln, or wants to add a net-new AI provider to Kiln.
 allowed-tools: Read Edit Write Bash Grep Glob Agent WebSearch WebFetch
 ---
 
 # Add a New AI Model to Kiln
 
-Integrating a new model into `libs/core/kiln_ai/adapters/ml_model_list.py` requires:
+**Branch check first:** if the request involves a provider Kiln does not
+support yet, start at [Adding a Net-New Provider](#adding-a-net-new-provider).
+That workflow spans core, server, UI, tests, and tooling, and is gated on a
+client release — the model-entry steps below are only its final, gated piece.
+
+For a new model on an already-supported provider, integrating it into
+`libs/core/kiln_ai/adapters/ml_model_list.py` requires:
 
 1. **`ModelName` enum** – add an enum member
 2. **`built_in_models` list** – add a `KilnModel(...)` entry with providers
@@ -63,7 +69,7 @@ Some providers — **Fireworks AI**, **Together AI**, **SiliconFlow** — expose
 
 Run this check on **every invocation** of the skill, regardless of whether you're in discovery mode or adding a specific model.
 
-1. **Pull the 10 most recently added models** from the top of `built_in_models` in `ml_model_list.py` (newest are at the top), or from git:
+1. **Pull the 10 most recently added models from git history.** List position is NOT a recency signal — entries are ordered by family/version/size (see 3c), and net-new families sit at the END of the list, so recent additions can be anywhere:
    ```bash
    git log --follow -p -- libs/core/kiln_ai/adapters/ml_model_list.py | grep -E "^\+\s+name=ModelName\." | head -20
    ```
@@ -107,12 +113,13 @@ All changes go in `libs/core/kiln_ai/adapters/ml_model_list.py`.
 ### 3a. `ModelName` enum
 
 - snake_case: `claude_opus_4_6 = "claude_opus_4_6"`
-- Place **before** predecessor (newer first within group)
+- Place **before** predecessor (newer first within group). If the vendor is
+  brand-new there is no predecessor — start a new group at the end of the enum
 - Follow existing grouping (all claude together, all gpt together, etc.)
 
 ### 3b. `KilnModel` entry in `built_in_models`
 
-- Place **before** predecessor entry (newer = higher in list)
+- Place per the **ordering rules in 3c** — this placement is user-visible, get it right
 - Copy predecessor's structure and modify: `name`, `friendly_name`, `model_id` per provider, flags
 - **`friendly_name` must follow the existing naming pattern** of sibling models in the same family. Check the predecessor. For example, Claude Sonnets use `"Claude {version} Sonnet"` (e.g. "Claude 4.5 Sonnet"), not `"Claude Sonnet {version}"`. Do NOT use the vendor's marketing name if it differs from Kiln's established convention.
 
@@ -175,6 +182,47 @@ KilnMimeType.MP3, KilnMimeType.WAV, KilnMimeType.OGG
 # video
 KilnMimeType.MP4, KilnMimeType.MOV
 ```
+
+### 3c. Ordering — the list IS the UI
+
+The order of `built_in_models` is exactly the order users see: model dropdowns
+group by provider and list each provider's models in list order, and the model
+library page lists models in list order. A misplaced entry ships a scrambled
+dropdown to every client via the remote config. Rules:
+
+1. **Families are contiguous.** Every model of a family sits in one block.
+   Never append a new family member at the bottom of the file or after another
+   family — that strands it (past bugs: Mistral Small 4/3 ended up inside the
+   Qwen 2.5 region; GLM-Z1 models ended up after the Kimi family).
+2. **Within a family, versions run newest → oldest, top to bottom.**
+   4 > 3.8 > 3.7 > 3.6 > 3.5 > 3 > 2.5. A new version goes at the TOP of the
+   family block. A new model of an *existing* version goes inside that
+   version's group — NOT at the top of the family and NOT below older
+   versions (past bugs: Gemini 3.6/3.7 Flash were inserted mid-3.1; Qwen 3.6/3.7
+   landed below Qwen 3.5 entries; Phi 3.5 sat above Phi 4).
+3. **Within a version, big → small. Always.**
+   - Commercial tiers: Max > Plus > Flash; Pro > Flash > Flash Lite;
+     Large > Medium > Small.
+   - Open-weight sizes descending: 405B > 70B > 8B. Keep base/Non-Thinking
+     variant pairs adjacent; variant sub-groups (e.g. the Qwen VL Instruct and
+     VL Thinking blocks) stay intact, ordered descending internally.
+   - Tier-grouped families follow the same rule for their tier blocks: Claude
+     runs Fable, then Opus > Sonnet > Haiku, versions descending inside each
+     tier. (It once ran Haiku-first, and several families ran sizes
+     ascending — those were bugs, not conventions. Do not preserve an
+     ascending run because it's "what the family already does.")
+4. **A net-new family's block goes at the END of `built_in_models`** (this is
+   the existing convention — the newest niche vendors sit at the bottom of the
+   list). The "place before predecessor" rule only applies within an existing
+   family; a new family has no predecessor.
+5. **Verify after editing** — print the order you just shipped and eyeball the
+   affected family:
+
+   ```bash
+   uv run python -c "
+   from kiln_ai.adapters.ml_model_list import built_in_models
+   for m in built_in_models: print(m.family, '|', m.friendly_name)"
+   ```
 
 ### 3d. `suggested_for_evals` / `suggested_for_data_gen`
 
@@ -394,9 +442,11 @@ Use `gh pr create` against `main`. The PR body must follow this exact format:
 
 ## Checklist
 
-- [ ] `ModelName` enum entry added (before predecessor)
-- [ ] `KilnModel` entry added to `built_in_models` (before predecessor)
+- [ ] `ModelName` enum entry added (before predecessor for an existing family; new enum group at the end for a brand-new vendor)
+- [ ] `KilnModel` entry added to `built_in_models` per the ordering rules in 3c (family contiguous, versions newest-first, correct slot within the version group; net-new family block at the end of the list)
+- [ ] Printed the resulting list order and eyeballed the affected family (3c verification command)
 - [ ] `friendly_name` matches the naming pattern of sibling models in the same family
+- [ ] If the provider is net-new: followed [Adding a Net-New Provider](#adding-a-net-new-provider), including the release-gating rule (model entries merge only after a client release with the provider plumbing is live)
 - [ ] `ModelFamily` enum updated (only if new family)
 - [ ] All provider slugs verified from authoritative sources
 - [ ] Flags inherited from predecessor and adjusted for quirks
@@ -431,6 +481,101 @@ What you give up with `reasoning_capable=False`:
 **Keep `reasoning_capable=True` only for models that *always* emit reasoning** in a native `<think>` format — DeepSeek R1, QwQ, Qwen thinking variants, gpt-oss — where reasoning is guaranteed and you want the single-call COT strategy.
 
 **Narrower alternative:** if a model reliably reasons but you only hit the error on structured output, set `reasoning_optional_for_structured_output=True` (requires `reasoning_capable=True`) instead of disabling reasoning entirely.
+
+---
+
+## Adding a Net-New Provider
+
+Adding a provider Kiln has never supported is a bigger job than adding a model,
+and it has a hard sequencing constraint. Follow this section end to end.
+
+### The release-gating rule (do NOT skip)
+
+The remote config is generated from main's `built_in_models` and reaches **all
+existing clients immediately** — but provider *support* (name map, connect
+flow, API key handling) only reaches users through a client app release. If
+model entries for a brand-new provider land on main before a client release
+with the provider plumbing is live, every deployed client shows the raw
+provider ID (e.g. `featherless_ai`) in the model library and offers models
+nobody can connect to. This happened with Featherless in Aug 2026 and the
+entries had to be rolled back.
+
+**Sequence it in two PRs:**
+
+1. **PR 1 — provider plumbing only.** The `ModelProviderName` enum member and
+   everything else in the checklist below EXCEPT the model catalog. Merge
+   whenever ready.
+2. **PR 2 — model catalog.** ALL `ml_model_list.py` changes: `ModelName`
+   members, `ModelFamily` (if the vendor is new), and the `built_in_models`
+   entries. Open it, but **merge only after a client release containing PR 1
+   is live.** (Only `built_in_models` is published via the remote config, but
+   the enums belong in the same PR as the entries they exist for.)
+
+### Touchpoint checklist (from the Featherless integration, #1618)
+
+**First, identify the provider's authentication model** — the checklist below
+describes the common single-API-key pattern, but not every provider fits it.
+Existing variants to crib from: Bedrock stores an access key + secret pair,
+Fireworks a key + account ID, Azure OpenAI a key + endpoint, Vertex a project
+ID (auth via gcloud ADC), and Ollama / Docker Model Runner store only a base
+URL with no credentials. Follow the closest existing analog's plumbing through
+`config.py`, `provider_warnings`, `provider_api.py`, and the connect page —
+the credential fields, validation call, and UI steps all change with the auth
+model.
+
+**libs/core:**
+- `ModelProviderName` enum — `libs/core/kiln_ai/datamodel/datamodel_enums.py`
+- Credential storage — `libs/core/kiln_ai/utils/config.py` (for API-key
+  providers: a new key with `env_var`; otherwise whatever fields the auth
+  model needs)
+- LiteLLM provider mapping — `libs/core/kiln_ai/utils/litellm.py`
+- `libs/core/kiln_ai/adapters/provider_tools.py` — three spots: the
+  `provider_name_from_id` match (friendly name; pyright flags a missed case),
+  `provider_warnings` (missing-credential message, `required_config_keys`),
+  and the adapter config (credential / base URL / headers plumbing)
+- Model catalog — `libs/core/kiln_ai/adapters/ml_model_list.py`: `ModelName`
+  members, `ModelFamily` if needed, and the `built_in_models` entries
+  (**PR 2 only**, see gating rule)
+
+**Desktop server (`app/desktop/studio_server/provider_api.py`):**
+- `connect_<provider>` credential-validation endpoint (find a cheap
+  authenticated call; see the Featherless connect function for a pattern when
+  the provider has no authenticated GET to ping)
+- Disconnect handling (clear the stored credentials)
+- Tests in `test_provider_api.py`
+
+**Web UI (`app/web_ui`):**
+- `src/lib/stores.ts` — `provider_name_map` entry (friendly name)
+- `src/lib/ui/provider_image.ts` + SVG in `static/images/` — icon must match
+  the monochrome convention: bare glyph, `currentColor`, no background tile,
+  viewBox cropped to the artwork
+- Connect page — `src/routes/(fullscreen)/setup/(setup)/connect_providers/connect_providers.svelte`:
+  provider card (name, description, and the auth flow — `api_key_steps` /
+  `api_key_fields` for key providers, or the custom flow the auth model
+  needs) plus connected-status
+  wiring from `settings` keys
+- `src/lib/api_schema.d.ts` — regenerate with `make schema` (needs the server
+  running on :8757)
+
+**Tests & tooling:**
+- `libs/core/kiln_ai/adapters/test_provider_tools.py`, `test_adapter_registry.py`,
+  `model_adapters/test_litellm_adapter.py` — extend the per-provider
+  parametrized cases
+- `.agents/scripts/provider_utils.py` — add the provider's model-catalog
+  endpoint so agent tooling can enumerate its models
+
+**Known gap:** the generated Copilot API client
+(`app/desktop/studio_server/api_client/`) mirrors the remote Copilot service's
+schema — it can't learn the new provider until that service updates. Note it in
+the PR rather than hand-editing generated code.
+
+### Friendly names everywhere
+
+The raw enum value must never be user-visible. When you add the provider,
+verify a friendly name exists in **both** name maps (python
+`provider_name_from_id` and web `provider_name_map`) — pyright and typescript
+respectively force these when the enum gains a member, which is why the
+plumbing PR must not skip them.
 
 ---
 
