@@ -7,7 +7,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.project import Project
-from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool, ToolCallLogEntry
+from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool
+from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
 from kiln_server.custom_errors import connect_custom_errors
 
 SIMPLE_CODE = "def run(x: int) -> str:\n    return str(x * 2)\n"

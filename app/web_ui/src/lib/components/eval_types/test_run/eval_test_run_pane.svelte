@@ -8,6 +8,7 @@
   import ReferenceDataField from "./reference_data_field.svelte"
   import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import ToolCallLogTable from "$lib/components/tool_calls/tool_call_log_table.svelte"
   import {
     referenceDataUsageMode,
     type V2EvalType,
@@ -180,6 +181,12 @@
         </div>
       </div>
     {/if}
+
+    <ToolCallLogTable
+      entries={test_result.tool_call_log ?? []}
+      title="Internal Tool Calls"
+      tooltip_text="Calls the scorer code made to other tools. These run in the parent process, not the sandbox, and are billed per eval item."
+    />
 
     {#if test_error}
       <div data-testid="test-error">

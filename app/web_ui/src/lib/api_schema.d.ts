@@ -4839,9 +4839,14 @@ export interface components {
             reference_keys: string[];
             /**
              * Timeout Seconds
-             * @default 30
+             * @default 180
              */
             timeout_seconds: number;
+            /**
+             * Tool Allowlist
+             * @description Explicit per-tool allowlist of tools the scorer code may call.
+             */
+            tool_allowlist?: string[];
         };
         /** CodeToolArchiveRequest */
         CodeToolArchiveRequest: {
@@ -11896,6 +11901,11 @@ export interface components {
             intermediate_outputs?: {
                 [key: string]: string;
             } | null;
+            /**
+             * Tool Call Log
+             * @description Tools the scorer code called, in call order. Code evals only.
+             */
+            tool_call_log?: components["schemas"]["ToolCallLogEntryResponse"][];
         };
         /**
          * TestWriteAccessRequest
@@ -11987,7 +11997,10 @@ export interface components {
             /** Requiresapproval */
             requiresApproval: boolean;
         };
-        /** ToolCallLogEntryResponse */
+        /**
+         * ToolCallLogEntryResponse
+         * @description One nested tool call a sandboxed run made, as reported to a test pane.
+         */
         ToolCallLogEntryResponse: {
             /** Tool Name */
             tool_name: string;
@@ -12051,7 +12064,7 @@ export interface components {
          * ToolSetType
          * @enum {string}
          */
-        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin" | "code";
+        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin" | "code" | "sandbox_code";
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.

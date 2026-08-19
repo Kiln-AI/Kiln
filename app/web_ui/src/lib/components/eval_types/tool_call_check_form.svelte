@@ -6,6 +6,7 @@
   import CloseIcon from "$lib/ui/icons/close_icon.svelte"
   import { onMount } from "svelte"
   import { available_tools, load_available_tools } from "$lib/stores"
+  import { is_tool_selectable_in_context } from "$lib/stores/tools_store"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
   import type { ToolSetApiDescription } from "$lib/types"
 
@@ -63,7 +64,13 @@
         continue
       }
       const options: Option[] = []
-      for (const tool of tool_set.tools) {
+      // This form matches tool calls in an agent's trace, so it selects agent
+      // tools: context "none". Whole sets the server marks as sandbox-only are
+      // dropped, because nothing in one can appear in an agent's trace.
+      const selectable_tools = tool_set.tools.filter((tool) =>
+        is_tool_selectable_in_context(tool.id, tool_set.type, "none"),
+      )
+      for (const tool of selectable_tools) {
         const function_name = tool.function_name ?? tool.name
         options.push({
           value: function_name,
