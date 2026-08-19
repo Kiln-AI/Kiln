@@ -301,7 +301,7 @@
             <div class="sidebar-icon">
               <ForkIcon />
             </div>
-            Compare V2</a
+            Compare</a
           >
         </li>
 

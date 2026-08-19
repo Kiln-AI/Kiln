@@ -87,8 +87,8 @@
   // index, which is what this chart did before.
   export let seriesColors: Record<string, string> = {}
   // What to CALL each run config, by id, decided once by the page for the
-  // whole comparison - see series_display_map, which leads with the model and
-  // appends the config's name only where a model is shared. It is what the
+  // whole comparison - see series_display_map, which leads with the config's
+  // own name and appends the model only where a name is shared. It is what the
   // axis tooltip prints beside each point. Empty falls back to series_label.
   export let seriesLabels: Record<string, string> = {}
 

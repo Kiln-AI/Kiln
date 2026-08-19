@@ -102,14 +102,14 @@
   // palette by series index, which is what this chart always did.
   export let seriesColors: Record<string, string> = {}
   // What to CALL each run config, by id, when the page has decided that for
-  // the whole comparison - see series_display_map, which leads with the model
-  // and only falls back to the config's name where a model is shared. This
+  // the whole comparison - see series_display_map, which leads with the
+  // config's own name and appends the model only where a name is shared. This
   // chart's series names, its legend keys and every tooltip that prints a
   // config go through it.
   //
   // Empty - the default, and what the older compare page passes - falls back
-  // to series_label, the config-name-first naming this chart has always used.
-  // That page has no unified legend to lead with a model, so it is unchanged.
+  // to series_label, the same config-name-first naming without the
+  // cross-config dedup, which is what this chart has always used.
   export let seriesLabels: Record<string, string> = {}
   // Family per data key, for grouping the ring. The page resolves these from
   // the task's own metadata (see $lib/utils/evolution/score_families) rather

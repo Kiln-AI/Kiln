@@ -160,7 +160,7 @@
   $: task_id = $page.params.task_id!
 
   agentInfo.set({
-    name: "Compare V2",
+    name: "Compare",
     description: "Run config lineage, scores, and drill-downs",
   })
 
@@ -272,11 +272,11 @@
   // this page used to do and what makes two configs on one axis not necessarily
   // a comparison at all.
   //
-  // The default is `shared` (DEFAULT_MATCH_PREDICATE), so the page opens on the
-  // basis where a difference between two means is a difference between the
-  // CONFIGS. On a single pinned config every predicate is the identity and the
-  // banner reports "All runs", so nothing about a one-config view changes.
-  // "all" is the explicit opt-out and is what serializes into the URL now.
+  // The default is `all` (DEFAULT_MATCH_PREDICATE): the page opens unfiltered,
+  // and a matched basis is an explicit choice that serializes into the URL —
+  // so a shared link always states the basis it was read under. On a single
+  // pinned config every predicate is the identity and the banner reports
+  // "All runs", so nothing about a one-config view changes either way.
   //
   // It is in the URL for the same reason quality_floor is: a Compare V2 link is
   // an argument someone sends, and the basis it was argued under has to travel
@@ -1105,8 +1105,9 @@
   // run config came out one colour on the radar and another on the bars.
   $: series_colors = series_color_map(pinned_ids)
   // ...and what each one is CALLED, decided here for the same reason: the
-  // model leads every label on this page, and whether a config's own name has
-  // to follow it depends on the whole pinned set, which only the page knows.
+  // config's own name leads every label on this page, and whether the model
+  // has to follow it depends on the whole pinned set, which only the page
+  // knows.
   // Built over every pinned config rather than the visible ones, so hiding a
   // chip in the legend cannot rename the configs still drawn beside it.
   $: pinned_configs = pinned_ids
@@ -2256,10 +2257,7 @@
   }
 </script>
 
-<AppPage
-  title="Compare V2"
-  subtitle="Run config lineage, scores, and drill-downs"
->
+<AppPage title="Compare" subtitle="Run config lineage, scores, and drill-downs">
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
       <div class="loading loading-spinner loading-lg"></div>
@@ -2453,12 +2451,7 @@
          inside any of them: it governs all three, and a control that belongs
          to three things cannot live in one of them. See evolution_legend.
 
-         Mounted bare, with no wrapper: it is sticky, and a sticky box travels
-         inside its containing block, so a div wrapped tight around it would pin
-         it to a 100px-tall box and it would never move. Its containing block is
-         this page body instead, which is why it stays on screen for the whole
-         comparison. It carries its own top margin as padding for the same
-         reason - see the component. -->
+         Mounted bare, with no wrapper: it carries its own top margin. -->
     <EvolutionLegend
       run_configs={run_configs ?? []}
       {pinned_ids}

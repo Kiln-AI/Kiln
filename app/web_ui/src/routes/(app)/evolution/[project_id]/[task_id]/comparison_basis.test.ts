@@ -56,10 +56,10 @@ describe("basis_line", () => {
     )
   })
 
-  it("does not nag about the default predicate on a single config", () => {
-    // `shared` arriving here is not a choice anybody made - it is the default,
-    // and matching is the identity on one config. Saying it "needs 2 configs"
-    // would report a failure the reader never asked for.
+  it("does not nag about shared on a single config", () => {
+    // Matching is the identity on one config, and `shared` costs nothing
+    // there. Saying it "needs 2 configs" would report a failure with no
+    // consequence for what the reader sees.
     expect(basis_line("all", "shared", 1, [], { min: 5, max: 5 })).toBe(
       "All runs · n=5 by eval and config",
     )

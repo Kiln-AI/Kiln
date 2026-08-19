@@ -94,31 +94,30 @@ function summary_of(matched: ReturnType<typeof matched_items_by_eval>) {
 
 describe("parse_match_param / match_param", () => {
   it("round-trips every predicate that is not the default", () => {
-    for (const value of ["all", "length", "tools"] as const) {
+    for (const value of ["shared", "length", "tools"] as const) {
       expect(parse_match_param(value)).toBe(value)
       expect(match_param(value)).toBe(value)
     }
   })
 
   it("keeps the default out of the URL and treats anything unknown as it", () => {
-    // `shared` is the default now, so it is the one that stays absent - and an
-    // absent parameter, including on every link written before this existed,
-    // opens on it.
-    expect(match_param("shared")).toBeNull()
-    expect(parse_match_param(null)).toBe("shared")
-    expect(parse_match_param("")).toBe("shared")
-    expect(parse_match_param("shared")).toBe("shared")
-    expect(parse_match_param("SHARED")).toBe("shared")
-    expect(parse_match_param("similar_vibes")).toBe("shared")
+    // `all` is the default: a link that never touched the control opens on
+    // the full basis, and every matched predicate is an explicit URL value.
+    expect(match_param("all")).toBeNull()
+    expect(parse_match_param(null)).toBe("all")
+    expect(parse_match_param("")).toBe("all")
+    expect(parse_match_param("all")).toBe("all")
+    expect(parse_match_param("ALL")).toBe("all")
+    expect(parse_match_param("similar_vibes")).toBe("all")
   })
 
-  it("serializes the opt-out, so pooling every run is something a link says", () => {
-    expect(parse_match_param("all")).toBe("all")
-    expect(match_param("all")).toBe("all")
+  it("serializes the matched predicates, so a shared basis is something a link says", () => {
+    expect(parse_match_param("shared")).toBe("shared")
+    expect(match_param("shared")).toBe("shared")
   })
 
   it("takes the default from the one constant that decides it", () => {
-    expect(DEFAULT_MATCH_PREDICATE).toBe("shared")
+    expect(DEFAULT_MATCH_PREDICATE).toBe("all")
     expect(parse_match_param(null)).toBe(DEFAULT_MATCH_PREDICATE)
     expect(match_param(DEFAULT_MATCH_PREDICATE)).toBeNull()
   })

@@ -74,12 +74,11 @@
   // plots. Empty falls back to the theme palette by index.
   export let seriesColors: Record<string, string> = {}
   // What to CALL each run config, by id, decided once by the page for the
-  // whole comparison - see series_display_map, which leads with the model and
-  // appends the config's name only where a model is shared. These names are
-  // drawn ON the chart beside each dot, which is exactly the single-line
-  // context that dedup rule exists for: two dots called "GPT-5.4-mini" would
-  // be two configs the reader cannot tell apart. Empty falls back to
-  // series_label.
+  // whole comparison - see series_display_map, which leads with the config's
+  // own name and appends the model only where a name is shared. These names
+  // are drawn ON the chart beside each dot, which is exactly the single-line
+  // context that dedup rule exists for: two dots with one label would be two
+  // configs the reader cannot tell apart. Empty falls back to series_label.
   export let seriesLabels: Record<string, string> = {}
   // Both axes come from the usage rollup, under the same keys the metrics chart
   // uses. Passed in rather than read here so this chart is scoped by whatever
