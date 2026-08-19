@@ -22,7 +22,6 @@
   // leaves them loading forever. Keeping this required makes svelte-check catch
   // a caller that forgets it -- the one relay a test can't guard.
   export let project_id: string
-  export let task_id: string = ""
   export let output_scores: EvalOutputScore[] | undefined = undefined
   export let reference_candidate_keys: string[] = []
   // Creation flow only: the code judge seeds its starter code with a static
@@ -86,7 +85,6 @@
     this={metadata.createFormComponent}
     bind:this={form_ref}
     {project_id}
-    {task_id}
   />
 {:else}
   <svelte:component this={metadata.createFormComponent} bind:this={form_ref} />

@@ -2132,7 +2132,6 @@ describe("ToolCallCheckForm tool option filtering", () => {
     const { container } = render(ToolCallCheckForm, {
       props: {
         project_id: "proj_tcc",
-        task_id: "task_tcc",
         properties: {
           type: "tool_call_check" as const,
           expected_tools: [{ tool_name: "", expected_args: null }],

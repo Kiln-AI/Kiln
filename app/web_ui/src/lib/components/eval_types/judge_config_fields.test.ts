@@ -45,7 +45,6 @@ vi.mock("$lib/ui/run_config_component/tools_selector.svelte", async () => {
 const JudgeConfigFields = (await import("./judge_config_fields.svelte")).default
 
 const PROJECT_ID = "proj_judge_fields"
-const TASK_ID = "task_judge_fields"
 
 const mcp_tool_set: ToolSetApiDescription = {
   type: "mcp",
@@ -85,7 +84,6 @@ describe("JudgeConfigFields project context relay", () => {
       props: {
         eval_config_type: "code_eval",
         project_id: PROJECT_ID,
-        task_id: TASK_ID,
       },
     })
 
@@ -94,16 +92,18 @@ describe("JudgeConfigFields project context relay", () => {
     )
     expect(tools_selector).not.toBeNull()
     expect(tools_selector?.getAttribute("data-project-id")).toBe(PROJECT_ID)
+    // And no task: ToolsSelector given a task_id loads that task's saved tools
+    // over the bound value, clobbering the judge's allowlist.
+    expect(tools_selector?.getAttribute("data-task-id")).toBe("")
   })
 
-  it("gives the tool call check judge both a project_id and a task_id", async () => {
+  it("gives the tool call check judge a project_id, so its tool list loads", async () => {
     available_tools.set({ [PROJECT_ID]: [mcp_tool_set] })
 
     const { container } = render(JudgeConfigFields, {
       props: {
         eval_config_type: "tool_call_check",
         project_id: PROJECT_ID,
-        task_id: TASK_ID,
       },
     })
 
@@ -111,9 +111,8 @@ describe("JudgeConfigFields project context relay", () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     await tick()
 
-    // The form builds its dropdown options only once it has a non-empty
-    // project_id (to key into the loaded tools) AND task_id, so one option
-    // proves both props arrived.
+    // The form keys into the loaded tools by project_id and needs nothing else,
+    // so one rendered option proves the prop arrived.
     expect(
       container.querySelector('[data-testid="fancy-option-search"]'),
     ).not.toBeNull()

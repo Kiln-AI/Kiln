@@ -328,7 +328,6 @@
           {reference_candidate_keys}
           code_placeholder_score_key={true}
           {project_id}
-          {task_id}
         />
       </div>
     </FormContainer>
