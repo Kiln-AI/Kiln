@@ -589,7 +589,7 @@ describe("eval detail page — add eval data", () => {
     })
 
     expect(await alert_from_add_eval_data()).toEqual([
-      "No eval or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
+      "No test or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
     ])
     expect(mockGoto).not.toHaveBeenCalled()
   })

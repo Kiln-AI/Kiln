@@ -6560,10 +6560,10 @@ async def test_create_evaluator_generates_filters_scores_priority_status(
 
     assert response.status_code == 200
     result = response.json()
-    assert result["splits"]["test"]["filter_id"] == "tag::eval_my_issue_eval"
+    assert result["splits"]["test"]["filter_id"] == "tag::test_my_issue_eval"
     assert result["splits"]["train"]["filter_id"] == "tag::train_my_issue_eval"
     assert result["splits"]["val"]["filter_id"] == "tag::val_my_issue_eval"
-    assert result["eval_configs_filter_id"] == "tag::eval_golden_my_issue_eval"
+    assert result["eval_configs_filter_id"] == "tag::golden_my_issue_eval"
     assert result["priority"] == 2
     assert result["status"] == "future"
     assert len(result["output_scores"]) == 1
@@ -6573,7 +6573,7 @@ async def test_create_evaluator_generates_filters_scores_priority_status(
     saved_eval = mock_task.evals()[0]
     assert saved_eval.priority == Priority.p2
     assert saved_eval.status == SpecStatus.future
-    assert saved_eval.splits["test"].filter_id == "tag::eval_my_issue_eval"
+    assert saved_eval.splits["test"].filter_id == "tag::test_my_issue_eval"
 
 
 @pytest.mark.asyncio

@@ -1312,7 +1312,7 @@ def connect_evals_api(app: FastAPI):
             splits = {
                 split_name: split
                 for split_name, split in spec_eval_splits(
-                    eval_tag=tags.eval_tag,
+                    test_tag=tags.test_tag,
                     train_tag=tags.train_tag,
                     val_tag=tags.val_tag,
                 ).items()

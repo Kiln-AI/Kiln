@@ -108,23 +108,25 @@ class SpecEvalTags(NamedTuple):
     want one of four same-typed strings can name it instead of counting positions.
     """
 
-    eval_tag: str
+    test_tag: str
     train_tag: str
     val_tag: str
     golden_tag: str
 
 
 def generate_spec_eval_tags(spec_name: str) -> SpecEvalTags:
-    """Generate eval, train, val, and golden tags for a spec.
+    """Generate test, train, val, and golden tags for a spec.
 
-    `eval_tag` names the TEST set; see spec_eval_splits for why that name persists.
+    Only newly created evals are affected by the names chosen here: an eval stores the
+    concrete tag strings in its saved filters, so evals created by earlier builds keep
+    the tags they were created with.
     """
     tag_suffix = spec_name.lower().replace(" ", "_")
     return SpecEvalTags(
-        eval_tag=f"eval_{tag_suffix}",
+        test_tag=f"test_{tag_suffix}",
         train_tag=f"train_{tag_suffix}",
         val_tag=f"val_{tag_suffix}",
-        golden_tag=f"eval_golden_{tag_suffix}",
+        golden_tag=f"golden_{tag_suffix}",
     )
 
 
@@ -134,7 +136,7 @@ def tag_filter_id(tag: str) -> DatasetFilterId:
 
 
 def spec_eval_splits(
-    *, eval_tag: str, train_tag: str, val_tag: str
+    *, test_tag: str, train_tag: str, val_tag: str
 ) -> dict[EvalSplitName, SplitRef]:
     """The splits a new spec eval is created with, all backed by tagged TaskRuns.
 
@@ -142,16 +144,12 @@ def spec_eval_splits(
     hazard this function exists to remove, so swapping two of them is made unrepresentable
     rather than left to a reader.
 
-    `eval_tag` names the TEST split. "eval_" is the historical prefix for the test set's
-    tag, kept because it is on dataset items in shipped projects; nothing else in this
-    signature carries the legacy vocabulary.
-
     The golden set is not a split and is not returned here: it is TaskRun-only by
     definition, and keeping it out of the splits dict is what keeps that true at the type
     level.
     """
     return {
-        "test": TaskRunSplit(filter_id=tag_filter_id(eval_tag)),
+        "test": TaskRunSplit(filter_id=tag_filter_id(test_tag)),
         "train": TaskRunSplit(filter_id=tag_filter_id(train_tag)),
         "val": TaskRunSplit(filter_id=tag_filter_id(val_tag)),
     }
@@ -181,7 +179,7 @@ def build_spec_eval(
     """
     tags = generate_spec_eval_tags(name)
     splits = spec_eval_splits(
-        eval_tag=tags.eval_tag, train_tag=tags.train_tag, val_tag=tags.val_tag
+        test_tag=tags.test_tag, train_tag=tags.train_tag, val_tag=tags.val_tag
     )
     # Eval.splits is keyed by str, and dict key types are invariant, so the narrower
     # mapping has to be widened rather than passed through.

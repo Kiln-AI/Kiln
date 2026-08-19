@@ -246,17 +246,17 @@ class DatasetTaskRuns:
 def create_dataset_task_runs(
     all_examples: list[SampleApi],
     reviewed_examples: list[ReviewedExample],
-    eval_tag: str,
+    test_tag: str,
     train_tag: str,
     val_tag: str,
     golden_tag: str,
     spec_name: str,
 ) -> DatasetTaskRuns:
-    """Create TaskRuns for eval, train, val, and golden datasets.
+    """Create TaskRuns for test, train, val, and golden datasets.
 
     Samples from all_examples (mutating it) and creates TaskRuns for:
     - Golden dataset (reviewed examples + unrated examples to reach MIN_GOLDEN_EXAMPLES)
-    - Eval dataset (half of the remaining examples)
+    - Test dataset (half of the remaining examples)
     - Val dataset (one third of the other half)
     - Train dataset (the rest)
 
@@ -284,20 +284,20 @@ def create_dataset_task_runs(
         for example in unrated_golden_examples:
             result.add_run(create_task_run_from_sample(example, golden_tag, extra_tags))
 
-    # Sample half the remaining examples for the eval dataset, then split the
+    # Sample half the remaining examples for the test dataset, then split the
     # other half between val (one third) and train (two thirds)
     example_count = len(all_examples)
-    eval_count = example_count // 2
-    remaining_count = example_count - eval_count
+    test_count = example_count // 2
+    remaining_count = example_count - test_count
     val_count = remaining_count // 3
     train_count = remaining_count - val_count
-    eval_examples = sample_and_remove(all_examples, eval_count)
+    test_examples = sample_and_remove(all_examples, test_count)
     val_examples = sample_and_remove(all_examples, val_count)
     train_examples = sample_and_remove(all_examples, train_count)
 
-    # Create TaskRuns for eval examples
-    for example in eval_examples:
-        result.add_run(create_task_run_from_sample(example, eval_tag, extra_tags))
+    # Create TaskRuns for test examples
+    for example in test_examples:
+        result.add_run(create_task_run_from_sample(example, test_tag, extra_tags))
 
     # Create TaskRuns for val examples
     for example in val_examples:

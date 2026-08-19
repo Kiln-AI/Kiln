@@ -686,7 +686,7 @@
     // Adding data means adding TaskRuns, so only a TaskRun-backed test split has a
     // tag to add them under.
     const test_filter_id = task_run_split_filter_id(evalData, "test")
-    const eval_tag = test_filter_id
+    const test_tag = test_filter_id
       ? tagFromFilterId(test_filter_id)
       : undefined
     const golden_tag = evalData.eval_configs_filter_id
@@ -699,9 +699,9 @@
     // reachable in ordinary use: a non-rag eval with no golden set is the expected V2
     // state (functional spec 6.1), and this button appears precisely when the eval's
     // test split is empty.
-    if (!eval_tag || (evalData.template !== "rag" && !golden_tag)) {
+    if (!test_tag || (evalData.template !== "rag" && !golden_tag)) {
       alert(
-        "No eval or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
+        "No test or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
       )
       return
     }
