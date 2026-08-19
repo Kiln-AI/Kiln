@@ -785,9 +785,14 @@ async def test_create_eval_config_custom_scores_reject_non_code_eval(
         )
 
     assert response.status_code == 400
-    # The rule fails as a pydantic ValidationError, which this handler reports
-    # with its generic properties message rather than the rule's own text.
-    assert "Invalid properties for eval config type" in response.json()["message"]
+    # The rule fails as a pydantic ValidationError, and the handler must carry
+    # its text through so the caller learns why, not just that it failed.
+    message = response.json()["message"]
+    assert "Invalid properties for eval config type" in message
+    assert (
+        "Evals with custom-typed output scores can only use code-eval configs"
+        in message
+    )
     # Nothing should have been persisted.
     assert len(mock_custom_score_eval.configs()) == 0
 
@@ -6564,19 +6569,20 @@ class TestTestV2EvalDraft:
         # The transient eval must never be saved to the task.
         assert mock_task.evals() == []
 
-    def test_custom_scores_reject_non_code_eval(
-        self, client, mock_task, mock_task_from_id
-    ):
-        """A drafted custom score paired with a non-code judge must surface as
-        a 400 (a client error), not an unhandled 500."""
+    def test_custom_scores_rejected(self, client, mock_task, mock_task_from_id):
+        """create_evaluator refuses custom-typed scores, so drafting a judge
+        for them is refused here too rather than passing a test the caller
+        could never turn into an eval."""
         mock_task_from_id.return_value = mock_task
         payload = self._payload()
         payload["output_scores"].append(
             {"name": "cost", "instruction": "Total cost", "type": "custom"}
         )
         response = client.post(self._url(), json=payload)
-        assert response.status_code == 400
-        assert "code-eval" in response.json()["message"]
+        assert response.status_code == 422
+        message = response.json()["message"]
+        assert "Score 'cost'" in message
+        assert "not yet supported by this endpoint" in message
 
     def test_code_eval_untrusted_skip(self, client, mock_task, mock_task_from_id):
         payload = self._payload()
@@ -6914,4 +6920,6 @@ async def test_create_evaluator_rejects_custom_output_scores(
         },
     )
     assert response.status_code == 422
-    assert "Kiln library" in response.json()["message"]
+    message = response.json()["message"]
+    assert "Score 'Cost'" in message
+    assert "not yet supported by this endpoint" in message

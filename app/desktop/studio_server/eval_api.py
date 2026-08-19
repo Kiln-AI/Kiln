@@ -243,6 +243,23 @@ async def run_eval_runner_with_status(eval_runner: EvalRunner) -> StreamingRespo
     )
 
 
+def reject_custom_output_scores(
+    output_scores: list[EvalOutputScore] | None,
+) -> list[EvalOutputScore] | None:
+    """Reject custom-typed scores, which only code-eval judges can produce.
+
+    No UI offers a custom score type, so an eval created through the API with
+    one could only ever be finished by hand-building its code-eval config.
+    """
+    for score in output_scores or []:
+        if score.type == TaskOutputRatingType.custom:
+            raise ValueError(
+                f"Score '{score.name}' has type 'custom'. Custom-typed output scores "
+                "are not yet supported by this endpoint; they require a code-eval judge."
+            )
+    return output_scores
+
+
 class CreateEvaluatorRequest(BaseModel):
     """Request to create a new evaluator."""
 
@@ -286,19 +303,7 @@ class CreateEvaluatorRequest(BaseModel):
     def reject_custom_scores(
         cls, output_scores: list[EvalOutputScore] | None
     ) -> list[EvalOutputScore] | None:
-        """Reject custom-typed scores, which only code-eval judges can produce.
-
-        No UI offers a custom score type, so an eval created here with one
-        could only ever be finished by hand-building its code-eval config.
-        Callers who want that combination build the eval with the library.
-        """
-        for score in output_scores or []:
-            if score.type == TaskOutputRatingType.custom:
-                raise ValueError(
-                    f"Score '{score.name}' has type 'custom', which is not supported by this endpoint. "
-                    "Custom-typed scores require a code-eval judge and are created with the Kiln library."
-                )
-        return output_scores
+        return reject_custom_output_scores(output_scores)
 
 
 class CreateEvalConfigRequest(BaseModel):
@@ -398,6 +403,16 @@ class TestV2EvalDraftRequest(BaseModel):
         description="The scores the drafted eval will declare; returned scores are validated against them."
     )
     eval_input: EvalTaskInput = Field(description="The input to evaluate.")
+
+    # Mirror create_evaluator's rule so a draft test can't succeed for a score
+    # combination the creation step would then refuse.
+    @field_validator("output_scores")
+    @classmethod
+    def reject_custom_scores(
+        cls, output_scores: list[EvalOutputScore]
+    ) -> list[EvalOutputScore]:
+        reject_custom_output_scores(output_scores)
+        return output_scores
 
 
 async def run_v2_eval_test(
@@ -1732,10 +1747,19 @@ def connect_evals_api(app: FastAPI):
                 model_provider=request.provider,
                 parent=eval,
             )
-        except ValidationError:
+        except ValidationError as e:
+            # Append the underlying validator messages: rules like
+            # "custom scores need a code-eval config" arrive here as a
+            # ValidationError, and the generic text alone hides why it failed.
+            reasons = "; ".join(
+                str(err["msg"]) for err in e.errors(include_url=False) if err.get("msg")
+            )
+            detail = f"Invalid properties for eval config type '{request.type.value}'."
+            if reasons:
+                detail = f"{detail} {reasons}"
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid properties for eval config type '{request.type.value}'.",
+                detail=detail,
             )
         except ValueError as e:
             raise HTTPException(
