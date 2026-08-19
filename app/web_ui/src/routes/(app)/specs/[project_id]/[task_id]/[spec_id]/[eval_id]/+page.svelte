@@ -530,7 +530,7 @@
       required_more_eval_data = progress.dataset_size < MIN_DATASET_SIZE
       required_more_golden_data =
         evaluator?.template !== "rag" &&
-        progress.golden_dataset_size < MIN_DATASET_SIZE
+        progress.golden_dataset_size < MIN_GOLDEN_DATASET_SIZE
       if (required_more_eval_data || required_more_golden_data) {
         partial.add(2)
       }

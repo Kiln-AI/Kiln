@@ -307,6 +307,65 @@ class TestCreateDatasetTaskRuns:
         assert reviewed_run is not None
         assert "golden_tag" in reviewed_run.tags
 
+    def test_golden_set_is_topped_up_to_the_minimum_when_nothing_was_reviewed(self):
+        # The golden floor is the hand-rating backlog a new spec starts with: every
+        # topped-up example is minted unrated, and the eval detail page holds the golden
+        # set to the same number before its human-ratings step can complete.
+        all_examples = [
+            SampleApi(input=f"input_{i}", output=f"output_{i}")
+            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
+        ]
+
+        task_runs = create_dataset_task_runs(
+            all_examples,
+            [],
+            "test_tag",
+            "train_tag",
+            "val_tag",
+            "golden_tag",
+            "Test Spec",
+        ).task_runs
+
+        golden_runs = [tr for tr in task_runs if "golden_tag" in tr.tags]
+        assert len(golden_runs) == MIN_GOLDEN_EXAMPLES
+        # Topped-up examples carry no human rating — they are the work the user is being
+        # asked to do, which is why the floor tracks the page's goal rather than exceeding
+        # it.
+        assert all(tr.output.rating is None for tr in golden_runs)
+
+    def test_golden_set_keeps_every_reviewed_example_past_the_minimum(self):
+        # The floor tops up, it does not cap: a user who reviewed more than the minimum
+        # keeps all of their rated examples, and gets no unrated ones on top.
+        reviewed_count = MIN_GOLDEN_EXAMPLES + 5
+        all_examples = [
+            SampleApi(input=f"input_{i}", output=f"output_{i}")
+            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
+        ]
+        reviewed_examples = [
+            ReviewedExample(
+                input=f"reviewed_input_{i}",
+                output=f"reviewed_output_{i}",
+                model_says_meets_spec=True,
+                user_says_meets_spec=True,
+                feedback="",
+            )
+            for i in range(reviewed_count)
+        ]
+
+        task_runs = create_dataset_task_runs(
+            all_examples,
+            reviewed_examples,
+            "test_tag",
+            "train_tag",
+            "val_tag",
+            "golden_tag",
+            "Test Spec",
+        ).task_runs
+
+        golden_runs = [tr for tr in task_runs if "golden_tag" in tr.tags]
+        assert len(golden_runs) == reviewed_count
+        assert all(tr.output.rating is not None for tr in golden_runs)
+
     def test_all_task_runs_have_session_tag(self):
         all_examples = [
             SampleApi(input=f"input_{i}", output=f"output_{i}")
