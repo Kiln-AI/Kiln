@@ -86,8 +86,8 @@ model.
 - Severity-tag every finding (blocker / major / minor / cosmetic) and tag whether it's
   actually inside the stated focus window — something can be real and broken while predating
   the window you were asked to focus on; say which.
-- Clean up every sandbox you spun up (see below) before declaring done — leftover
-  `.agent_dev_home_*` directories are untracked scratch state that will trip a repo's
+- Clean up every sandbox you spun up (see below) before declaring done — leftover directories
+  under `.agent_qa_sandboxes/` are untracked scratch state that will trip a repo's
   untracked-files hook.
 - Write the report as **markdown**, not an HTML artifact — this is an internal engineering
   report, not a designed deliverable. Group by severity, not by lane, since a reader triaging
@@ -103,14 +103,26 @@ Two independent axes of isolation, and both matter for every lane:
 ```bash
 export KILN_DEV_FRONTEND_PORT=<unique port>
 export KILN_DEV_BACKEND_PORT=<unique port>
-export KILN_DEV_HOME=/home/user/Kiln/app/web_ui/.agent_dev_home_<lane>
+export KILN_DEV_HOME="$(git rev-parse --show-toplevel)/app/web_ui/.agent_qa_sandboxes/<lane>"
 bash .agents/scripts/playwright_server.sh start
 ```
+
+Repo-root-relative, not a hardcoded absolute path — a path like `/home/user/Kiln/...` copied
+verbatim breaks on any checkout that isn't at that exact location. And every lane's directory
+lives under one parent (`.agent_qa_sandboxes/`), not scattered as loose
+`.agent_dev_home_<lane>` siblings of the real dev sandbox — keeps a multi-lane run from
+littering `app/web_ui/` with a pile of unrelated hidden folders.
 
 Each lane gets its own backend + frontend pair, freshly seeded from the same committed
 fixture, writing into its own file-backed project directory. Without this, concurrent lanes
 share one on-disk Kiln project: two agents creating specs/evals at once can race, and one
 lane's test data pollutes another lane's counts and filters.
+
+`start` only seeds a project into `KILN_DEV_HOME` the *first* time it sees that directory (it
+checks for a `.playwright_seed` stamp file and skips seeding if one's already there) — it does
+not refresh an existing one. If a lane's directory could already exist from an earlier run
+(resuming a QA pass, reusing a lane name), use `reset` instead of `start` to guarantee a clean
+fixture rather than whatever that directory happened to have in it.
 
 For a lane that must intentionally corrupt a file on disk (testing error handling / partial
 load), it must use its own **fresh scratch project**, not the seeded fixture — tell the
@@ -138,7 +150,7 @@ Cleanup per lane, once its findings are captured:
 ```bash
 playwright-cli -s=<lane> close
 bash .agents/scripts/playwright_server.sh stop   # (with that lane's KILN_DEV_* env still set)
-rm -rf app/web_ui/.agent_dev_home_<lane>
+rm -rf app/web_ui/.agent_qa_sandboxes/<lane>
 ```
 
 ## Briefing each lane's subagent
@@ -169,10 +181,13 @@ A lane subagent starts with none of your context — brief it like a self-contai
 
 The seeded dev sandbox has no API key, so anything needing a live model call — LLM-judge
 scoring, synthetic data generation, Copilot-backed flows, provider-gated features — will fail
-or gate off cleanly. Tell every lane this up front so those paths get reported as
-expected/partial rather than bugs, while the lane still verifies everything reachable around
-the gate: form validation, error messages, degrade-gracefully behavior, whatever UI exists
-before the live call would happen.
+or gate off. Tell every lane this up front, but keep the exemption narrow: only the failure
+that's *directly caused by the missing provider itself* (the call can't be made, so that
+specific path stops) is expected/partial, not a bug. Everything else at that same gate is
+still in scope and still gets reported as a real finding — a crash instead of a clean error, a
+gate that fires at the wrong time or not at all, a missing/garbled error message, a "degrade
+gracefully" path that doesn't. The lane should verify all of that reachable-before-the-call
+behavior, not wave the whole area through because a key was missing somewhere downstream of it.
 
 If a live model call is actually essential to a lane's coverage — the feature can't be
 meaningfully verified any other way — don't just skip it. Ask the user for an OpenRouter API
