@@ -25,10 +25,19 @@ CORE_ROOT = Path(__file__).parent.parent.parent
 DATAMODEL_DIR = CORE_ROOT / "kiln_ai" / "datamodel"
 UTILS_PACKAGE = "kiln_ai.utils"
 
+# Source appended to the child's `-c`, run after the module under test is
+# imported. stdout is this probe's return channel back to the parent, so it
+# writes the verdict there directly rather than routing IPC through the print
+# builtin, which the repo's debug-statement screen matches.
+#
+# The leading newline keeps the verdict on a line of its own even when
+# something else left stdout mid-line, which is what lets _verdict_from
+# tolerate noise ahead of it.
 _REPORT_DATAMODEL_LOADED = (
     "import sys;"
-    " print(any(name == 'kiln_ai.datamodel'"
-    " or name.startswith('kiln_ai.datamodel.') for name in sys.modules))"
+    " loaded = any(name == 'kiln_ai.datamodel'"
+    " or name.startswith('kiln_ai.datamodel.') for name in sys.modules);"
+    " sys.stdout.write('\\n' + str(loaded))"
 )
 
 
@@ -295,6 +304,31 @@ def test_verdict_refuses_to_guess_at_unrecognised_output(stdout: str):
     violation slip through unnoticed."""
     with pytest.raises(AssertionError, match="unexpected probe output"):
         _verdict_from(stdout)
+
+
+def test_probe_reports_the_verdict_even_from_a_child_that_left_stdout_mid_line():
+    """The probe prefixes its verdict with a newline so the parent can read it
+    off the last stdout line whatever the child wrote first.
+
+    That prefix is the contract `_verdict_from` relies on, and exercising it
+    end to end also pins the choice of sys.stdout.write: the print builtin
+    emits no such prefix, so a simplification back to it fails here rather
+    than only in CI.
+    """
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            f"import sys; sys.stdout.write('noise'); {_REPORT_DATAMODEL_LOADED}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=_IMPORT_TIMEOUT_SECONDS,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "noise\nFalse"
+    assert _verdict_from(result.stdout) is False
 
 
 def test_assert_imports_cleanly_fails_when_the_import_raises():
