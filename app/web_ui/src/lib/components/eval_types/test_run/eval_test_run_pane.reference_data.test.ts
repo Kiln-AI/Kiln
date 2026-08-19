@@ -87,7 +87,7 @@ describe("EvalTestRunPane reference data visibility by eval type", () => {
     cleanup()
   })
 
-  it("hides reference data field for pattern_match (none mode) in ready state", () => {
+  it("shows reference data field for pattern_match (optional mode) in ready state", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { container } = render(EvalTestRunPane as any, {
       props: {
@@ -100,7 +100,7 @@ describe("EvalTestRunPane reference data visibility by eval type", () => {
     const refField = container.querySelector(
       '[data-testid="reference-data-field"]',
     )
-    expect(refField).toBeNull()
+    expect(refField).not.toBeNull()
   })
 
   it("hides reference data field for tool_call_check (none mode) in ready state", () => {
@@ -183,7 +183,7 @@ describe("EvalTestRunPane reference data visibility by eval type", () => {
     expect(refField).not.toBeNull()
   })
 
-  it("hides reference data field for pattern_match in results state", () => {
+  it("shows reference data field for pattern_match in results state", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { container } = render(EvalTestRunPane as any, {
       props: {
@@ -201,7 +201,7 @@ describe("EvalTestRunPane reference data visibility by eval type", () => {
     const refField = container.querySelector(
       '[data-testid="reference-data-field"]',
     )
-    expect(refField).toBeNull()
+    expect(refField).not.toBeNull()
   })
 
   it("shows reference data field for llm_judge in results state", () => {

@@ -25,12 +25,14 @@ from kiln_ai.datamodel.eval import (
     EvalTemplateId,
     ExactMatchProperties,
     LlmJudgeProperties,
+    MultiTurnDriveConfig,
     MultiTurnSyntheticEvalInputData,
     PatternMatchProperties,
     SetCheckProperties,
     SingleTurnEvalInputData,
     SkippedReason,
     StepCountCheckProperties,
+    SyntheticUserInfo,
     TaskRunSplit,
     ToolCallCheckProperties,
     ToolCallSpec,
@@ -1784,6 +1786,142 @@ def test_validate_output_fields_parametrized(
         assert run.task_run_trace == trace
 
 
+# ── V2 validate_output_fields: writer-shape matrix ─────────────────────────
+#
+# The V2 eval writers attach task_run_trace for exactly one shape: a scored
+# (non-skipped), non-eval-config task run of a full_trace eval. These pin the
+# datamodel gate to that shape so a writer dropping the trace is rejected, while
+# every shape the writer legitimately leaves trace-less continues to pass.
+
+V2_TRACE = '{"messages": [{"role": "user", "content": "test"}]}'
+
+
+def _v2_eval_and_config(mock_task, data_type=EvalDataType.full_trace):
+    """A V2 (typed-properties) config parented to an eval of the given type."""
+    eval = Eval(
+        name="V2 Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.pass_fail)
+        ],
+        evaluation_data_type=data_type,
+    )
+    config = EvalConfig(
+        parent=eval,
+        name="V2 Config",
+        config_type=EvalConfigType.v2,
+        properties=LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="Evaluate: {{ final_message }}",
+        ),
+    )
+    return eval, config
+
+
+def test_v2_full_trace_task_run_eval_with_trace_passes(mock_task):
+    _, config = _v2_eval_and_config(mock_task)
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+        task_run_trace=V2_TRACE,
+    )
+    assert run.task_run_trace == V2_TRACE
+
+
+def test_v2_full_trace_task_run_eval_without_trace_rejected(mock_task):
+    _, config = _v2_eval_and_config(mock_task)
+    with pytest.raises(
+        ValueError, match="full_trace task run eval runs should include trace"
+    ):
+        EvalRun(
+            parent=config,
+            eval_input_id="ei1",
+            task_run_config_id="rc1",
+            input="in",
+            output="out",
+            scores={"accuracy": 1.0},
+        )
+
+
+def test_v2_full_trace_skipped_record_without_trace_passes(mock_task):
+    _, config = _v2_eval_and_config(mock_task)
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="in",
+        output=None,
+        scores={},
+        skipped_reason=SkippedReason.missing_trace.value,
+    )
+    assert run.task_run_trace is None
+
+
+def test_v2_full_trace_eval_config_eval_without_trace_passes(mock_task):
+    _, config = _v2_eval_and_config(mock_task)
+    run = EvalRun(
+        parent=config,
+        dataset_id="ds1",
+        eval_config_eval=True,
+        task_run_config_id=None,
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+    )
+    assert run.task_run_trace is None
+
+
+def test_v2_final_answer_record_without_trace_passes(mock_task):
+    _, config = _v2_eval_and_config(mock_task, data_type=EvalDataType.final_answer)
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+    )
+    assert run.task_run_trace is None
+
+
+def test_v2_full_trace_trace_less_record_loads_from_file(mock_task, tmp_path):
+    """Historical trace-less full_trace records must still load; the gate holds
+    only new writes and rebuilds, not files already on disk."""
+    mock_task.path = tmp_path / "task.kiln"
+    mock_task.save_to_file()
+    eval, config = _v2_eval_and_config(mock_task)
+    eval.save_to_file()
+    config.save_to_file()
+
+    run = EvalRun(
+        parent=config,
+        eval_input_id="ei1",
+        task_run_config_id="rc1",
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+        task_run_trace=V2_TRACE,
+    )
+    run.save_to_file()
+
+    # Rewrite the persisted record to the trace-less shape a pre-gate writer
+    # could have produced, then confirm it still loads rather than erroring.
+    assert run.path is not None
+    data = json.loads(run.path.read_text())
+    data["task_run_trace"] = None
+    run.path.write_text(json.dumps(data))
+
+    loaded = EvalRun.load_from_file(str(run.path))
+    assert loaded.task_run_trace is None
+
+
 @pytest.mark.parametrize(
     "evaluation_data_type,reference_answer,should_raise,expected_error",
     [
@@ -2055,13 +2193,23 @@ def test_v2_eval_config_rejects_root_model_fields():
         )
 
 
-def test_v2_eval_config_requires_typed_properties():
-    """V2 config rejects a raw dict for properties."""
-    with pytest.raises(ValueError, match="V2 config requires typed properties"):
+def test_v2_eval_config_rejects_undiscriminated_dict():
+    """A V2 properties dict without a valid "type" discriminator is rejected."""
+    with pytest.raises(ValidationError, match="type"):
         EvalConfig(
             name="Bad V2",
             config_type=EvalConfigType.v2,
             properties={"eval_steps": ["step"]},
+        )
+
+
+def test_v2_eval_config_requires_typed_properties():
+    """V2 config rejects missing properties."""
+    with pytest.raises(ValueError, match="V2 config requires typed properties"):
+        EvalConfig(
+            name="Bad V2",
+            config_type=EvalConfigType.v2,
+            properties=None,
         )
 
 
@@ -2182,11 +2330,11 @@ def test_step_count_check_bounds():
 # ── V2 Eval Tests ──────────────────────────────────────────────────────
 
 
-def test_eval_v2_with_eval_input_filter():
-    """The eval_input_filter_id shim becomes an EvalInput-backed test split."""
+def test_eval_v2_with_eval_input_split():
+    """An EvalInput-backed test split is authored directly in `splits`."""
     eval = Eval(
         name="V2 Eval",
-        eval_input_filter_id="all",
+        splits={"test": EvalInputSplit(filter_id="all")},
         eval_configs_filter_id="tag::cfg",
         output_scores=[
             EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
@@ -2371,16 +2519,97 @@ def test_eval_input_single_turn():
 
 
 def test_eval_input_multi_turn():
-    """EvalInput with multi_turn_synthetic data."""
+    """EvalInput with multi_turn_synthetic data carries the typed persona."""
     ei = EvalInput(
         data=MultiTurnSyntheticEvalInputData(
             first_message=UserMessage(text="Hello"),
-            synthetic_user_info={"persona": "student"},
+            synthetic_user_info=SyntheticUserInfo(
+                persona="student", goal="pass the exam"
+            ),
         ),
     )
     assert ei.data.type == "multi_turn_synthetic"
     assert ei.data.first_message.text == "Hello"
-    assert ei.data.synthetic_user_info == {"persona": "student"}
+    assert ei.data.synthetic_user_info.persona == "student"
+    assert ei.data.synthetic_user_info.goal == "pass the exam"
+    assert ei.data.synthetic_user_info.behavior_guidance is None
+
+
+def test_eval_input_rejects_empty_tag():
+    """An empty tag is rejected: tag filters can never select it."""
+    with pytest.raises(ValidationError, match="Tags cannot be empty strings"):
+        EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+            tags=[""],
+        )
+
+
+def test_eval_input_rejects_tag_with_spaces():
+    """A tag containing spaces is rejected, matching TaskRun tag rules."""
+    with pytest.raises(ValidationError, match="Tags cannot contain spaces"):
+        EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+            tags=["bad tag"],
+        )
+
+
+def test_eval_input_valid_tags_round_trip():
+    """Valid tags are accepted and survive a dump/validate cycle."""
+    tags = ["eval_slice", "scenario:1", "synthetic_user_batch:b1"]
+    ei = EvalInput(
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
+        tags=tags,
+    )
+    assert ei.tags == tags
+    rebuilt = EvalInput.model_validate(ei.model_dump())
+    assert rebuilt.tags == tags
+
+
+def test_multi_turn_synthetic_requires_synthetic_user_info():
+    """The persona is required — a case without one can't be re-driven."""
+    with pytest.raises(ValidationError, match="synthetic_user_info"):
+        MultiTurnSyntheticEvalInputData(first_message=UserMessage(text="Hello"))
+
+
+def test_synthetic_user_info_preserves_unknown_fields():
+    """extra="allow": fields from newer generators survive a load/dump cycle."""
+    info = SyntheticUserInfo.model_validate(
+        {"persona": "p", "goal": "g", "speaking_style": "terse"}
+    )
+    assert info.model_dump()["speaking_style"] == "terse"
+
+
+def test_eval_input_multi_turn_persists_under_task(mock_task, tmp_path):
+    """Multi-turn EvalInput round-trips through disk with the typed persona."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    ei = EvalInput(
+        parent=mock_task,
+        data=MultiTurnSyntheticEvalInputData(
+            first_message=UserMessage(text="opening message"),
+            synthetic_user_info=SyntheticUserInfo(
+                persona="frustrated customer",
+                goal="get a refund",
+                behavior_guidance="be polite then escalate",
+            ),
+        ),
+        tags=["eval_slice", "scenario:2"],
+    )
+    ei.save_to_file()
+
+    loaded_task = Task.load_from_file(str(task_path))
+    inputs = loaded_task.eval_inputs(readonly=True)
+    assert len(inputs) == 1
+    data = inputs[0].data
+    assert isinstance(data, MultiTurnSyntheticEvalInputData)
+    assert data.first_message is not None
+    assert data.first_message.text == "opening message"
+    assert data.synthetic_user_info.persona == "frustrated customer"
+    assert data.synthetic_user_info.goal == "get a refund"
+    assert data.synthetic_user_info.behavior_guidance == "be polite then escalate"
+    assert inputs[0].tags == ["eval_slice", "scenario:2"]
 
 
 def test_eval_input_with_reference():
@@ -2472,6 +2701,191 @@ class TestEvalTaskInput:
             EvalTaskInput()  # type: ignore[call-arg]
 
 
+class TestEvalTaskInputFromEvalInput:
+    def _run_output(self, mock_task):
+        from kiln_ai.datamodel.task_output import (
+            DataSource,
+            DataSourceType,
+            TaskOutput,
+        )
+        from kiln_ai.datamodel.task_run import TaskRun
+
+        source = DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "m",
+                "model_provider": "p",
+                "adapter_name": "a",
+            },
+        )
+        return TaskRun(
+            input="ignored",
+            input_source=source,
+            output=TaskOutput(output="final reply", source=source),
+            trace=[
+                {"role": "user", "content": "opening message"},
+                {"role": "assistant", "content": "final reply"},
+            ],
+            parent=mock_task,
+        )
+
+    def test_single_turn(self, mock_task):
+        ei = EvalInput(
+            data=SingleTurnEvalInputData(user_message=UserMessage(text="Q")),
+            reference={"expected": "A"},
+        )
+        eti = EvalTaskInput.from_eval_input(ei, self._run_output(mock_task))
+        assert eti.task_input == "Q"
+        assert eti.final_message == "final reply"
+        assert eti.reference_data == {"expected": "A"}
+
+    def test_multi_turn(self, mock_task):
+        """Multi-turn: the seed message is the task_input; the conversation
+        rides the trace."""
+        ei = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="opening message"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+        )
+        eti = EvalTaskInput.from_eval_input(ei, self._run_output(mock_task))
+        assert eti.task_input == "opening message"
+        assert eti.final_message == "final reply"
+        assert eti.trace is not None
+        assert len(eti.trace) == 2
+
+    def test_multi_turn_without_first_message(self, mock_task):
+        ei = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+        )
+        eti = EvalTaskInput.from_eval_input(ei, self._run_output(mock_task))
+        assert eti.task_input is None
+
+
+# ── MultiTurnDriveConfig Tests ───────────────────────────────────────────
+
+
+class TestMultiTurnDriveConfig:
+    def test_valid(self):
+        cfg = MultiTurnDriveConfig(
+            model_name="claude_4_5_haiku", model_provider="openrouter", turns=5
+        )
+        assert cfg.turns == 5
+
+    @pytest.mark.parametrize("turns", [0, -1, 21])
+    def test_turns_bounds(self, turns):
+        with pytest.raises(ValidationError, match="turns"):
+            MultiTurnDriveConfig(
+                model_name="m", model_provider="openrouter", turns=turns
+            )
+
+    def test_unknown_provider_string_accepted(self):
+        """model_provider is a plain string, not the enum — persisted items
+        must load on builds that don't know the provider yet."""
+        cfg = MultiTurnDriveConfig(
+            model_name="m", model_provider="a_future_provider", turns=1
+        )
+        assert cfg.model_provider == "a_future_provider"
+
+    def test_defaults_to_none_on_item(self):
+        """Items minted before drive settings were stamped load with None."""
+        data = MultiTurnSyntheticEvalInputData(
+            synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+        )
+        assert data.drive_config is None
+
+    def test_persists_on_eval_input(self, mock_task, tmp_path):
+        """The stamped drive config round-trips through disk on the item."""
+        task_path = tmp_path / "task.kiln"
+        mock_task.path = task_path
+        mock_task.save_to_file()
+
+        ei = EvalInput(
+            parent=mock_task,
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="opening message"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+                drive_config=MultiTurnDriveConfig(
+                    model_name="claude_4_5_haiku",
+                    model_provider="openrouter",
+                    turns=5,
+                ),
+            ),
+        )
+        ei.save_to_file()
+
+        loaded_task = Task.load_from_file(str(task_path))
+        data = loaded_task.eval_inputs(readonly=True)[0].data
+        assert isinstance(data, MultiTurnSyntheticEvalInputData)
+        assert data.drive_config is not None
+        assert data.drive_config.model_name == "claude_4_5_haiku"
+        assert data.drive_config.model_provider == "openrouter"
+        assert data.drive_config.turns == 5
+
+    def test_eval_has_no_drive_config_field(self):
+        """The item is the only home for drive settings. An eval-level copy
+        would reintroduce a second read path that can drift from the items."""
+        assert "multi_turn_drive_config" not in Eval.model_fields
+
+    def test_unset_drive_config_is_omitted_from_saved_bytes(self, mock_task, tmp_path):
+        """Items that predate the field must not gain a null key on resave."""
+        task_path = tmp_path / "task.kiln"
+        mock_task.path = task_path
+        mock_task.save_to_file()
+
+        ei = EvalInput(
+            parent=mock_task,
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="hi"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+        )
+        ei.save_to_file()
+        assert ei.path is not None
+        on_disk = json.loads(ei.path.read_text())
+        assert "drive_config" not in on_disk["data"]
+
+    def test_stamped_drive_config_saved_bytes(self, mock_task, tmp_path):
+        """A stamped config is written as a nested object under data."""
+        task_path = tmp_path / "task.kiln"
+        mock_task.path = task_path
+        mock_task.save_to_file()
+
+        ei = EvalInput(
+            parent=mock_task,
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="hi"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+                drive_config=MultiTurnDriveConfig(
+                    model_name="m", model_provider="openrouter", turns=3
+                ),
+            ),
+        )
+        ei.save_to_file()
+        assert ei.path is not None
+        on_disk = json.loads(ei.path.read_text())
+        assert on_disk["data"]["drive_config"] == {
+            "model_name": "m",
+            "model_provider": "openrouter",
+            "turns": 3,
+        }
+
+    def test_explicit_null_drive_config_loads_as_absent(self):
+        """A hand-written null means the same as no key at all."""
+        data = MultiTurnSyntheticEvalInputData.model_validate(
+            {
+                "type": "multi_turn_synthetic",
+                "first_message": {"text": "hi"},
+                "synthetic_user_info": {"persona": "p", "goal": "g"},
+                "drive_config": None,
+            }
+        )
+        assert data.drive_config is None
+        assert "drive_config" not in data.model_dump()
+
+
 class TestEvalTaskInputFromTrace:
     """The trace and the item it was generated from are two records now."""
 
@@ -2508,18 +2922,40 @@ class TestEvalTaskInputFromTrace:
         # trace's own input is what was actually scored.
         assert result.task_input == "what the model saw"
 
-    def test_existing_constructors_are_from_trace(self, trace):
-        """The two named constructors are the two shapes of `from_trace`."""
+    def test_from_a_multi_turn_eval_input_source(self, trace):
+        """The item's first message is the canonical input; the conversation
+        itself (and its final answer) comes from the trace TaskRun."""
         eval_input = EvalInput(
-            data=SingleTurnEvalInputData(user_message=UserMessage(text="2+2?")),
-            reference={"answer": "4"},
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text="opening message"),
+                synthetic_user_info=SyntheticUserInfo(
+                    persona="p", goal="g", behavior_guidance="b"
+                ),
+            ),
+            reference={"expected": "resolution"},
         )
-        assert EvalTaskInput.from_eval_input(
-            eval_input, trace
-        ) == EvalTaskInput.from_trace(trace, eval_input)
-        assert EvalTaskInput.from_task_run(trace) == EvalTaskInput.from_trace(
-            trace, trace
+
+        result = EvalTaskInput.from_trace(trace, eval_input)
+
+        assert result.final_message == "what the model said"
+        assert result.trace == trace.trace
+        assert result.reference_data == {"expected": "resolution"}
+        assert result.task_input == "opening message"
+
+    def test_from_a_multi_turn_eval_input_without_a_first_message(self, trace):
+        """Items minted without a seed have no canonical input text; the judge
+        still gets the trace and final answer."""
+        eval_input = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
         )
+
+        result = EvalTaskInput.from_trace(trace, eval_input)
+
+        assert result.task_input is None
+        assert result.final_message == "what the model said"
+        assert result.trace == trace.trace
 
     @pytest.mark.parametrize(
         "trace_arg, source, error",
@@ -2529,15 +2965,6 @@ class TestEvalTaskInputFromTrace:
                 TaskRun(input="i", output=TaskOutput(output="o")),
                 "not an item",
                 TypeError,
-            ),
-            (
-                TaskRun(input="i", output=TaskOutput(output="o")),
-                EvalInput(
-                    data=MultiTurnSyntheticEvalInputData(
-                        first_message=UserMessage(text="hi")
-                    )
-                ),
-                ValueError,
             ),
         ],
     )
@@ -2600,7 +3027,7 @@ class TestV2TemplateValidation:
             )
 
     def test_reference_data_only_prompt_template_rejected(self):
-        """A prompt_template referencing only reference_data is rejected (D30)."""
+        """A prompt_template referencing only reference_data is rejected: it never varies with the model output."""
         with pytest.raises(ValidationError, match="never references the model output"):
             _make_v2_eval_config(
                 properties=LlmJudgeProperties(
@@ -2622,7 +3049,7 @@ class TestV2TemplateValidation:
         assert cfg is not None
 
     def test_prompt_template_with_trace_passes(self):
-        """A prompt_template referencing trace passes (D30)."""
+        """A prompt_template referencing trace passes: trace counts as model output."""
         cfg = _make_v2_eval_config(
             properties=LlmJudgeProperties(
                 model_name="m",
@@ -2633,7 +3060,7 @@ class TestV2TemplateValidation:
         assert cfg is not None
 
     def test_prompt_template_with_task_input_passes(self):
-        """A prompt_template referencing task_input passes (D30)."""
+        """A prompt_template referencing task_input passes: it varies per run."""
         cfg = _make_v2_eval_config(
             properties=LlmJudgeProperties(
                 model_name="m",
@@ -2937,6 +3364,52 @@ class TestV1EvalConfigCoexistence:
         assert config.properties["type"] == "exact_match"
         assert config.properties["eval_steps"] == ["step1"]
 
+    def test_v1_properties_fully_colliding_with_v2_shape_stay_dict(self):
+        """A legacy properties dict that would parse cleanly as a typed V2 class must still load as a plain dict."""
+        props = {
+            "eval_steps": ["step1"],
+            "type": "llm_judge",
+            "model_name": "m",
+            "model_provider": "p",
+            "prompt_template": "{{ final_message }}",
+        }
+        # Premise: this dict is a valid LlmJudgeProperties payload, so only
+        # explicit dispatch (not union fallback) keeps it untyped below.
+        assert isinstance(LlmJudgeProperties.model_validate(props), LlmJudgeProperties)
+
+        config = EvalConfig.model_validate(
+            {
+                "name": "Full Collision",
+                "config_type": "g_eval",
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "properties": props,
+            }
+        )
+        assert config.config_type == EvalConfigType.g_eval
+        assert type(config.properties) is dict
+        assert config.properties["type"] == "llm_judge"
+        assert config.properties["eval_steps"] == ["step1"]
+
+    def test_v2_config_from_dict_round_trips_typed(self):
+        """V2 properties load from a raw dict into the typed class and survive dump/validate."""
+        raw = {
+            "name": "From Disk V2",
+            "config_type": "v2",
+            "properties": {
+                "type": "llm_judge",
+                "model_name": "m",
+                "model_provider": "p",
+                "prompt_template": "{{ final_message }}",
+            },
+        }
+        config = EvalConfig.model_validate(raw)
+        assert isinstance(config.properties, LlmJudgeProperties)
+
+        reloaded = EvalConfig.model_validate(config.model_dump())
+        assert isinstance(reloaded.properties, LlmJudgeProperties)
+        assert reloaded.properties == config.properties
+
     def test_v1_llm_as_judge_config_type_preserved(self):
         config = EvalConfig(
             name="LLM Judge V1",
@@ -2987,7 +3460,7 @@ class TestV1EvalConfigCoexistence:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: V1 EvalRun output=None guard (Item 1c)
+# Legacy EvalRun output: may be None only when skipped_reason is set
 # ---------------------------------------------------------------------------
 
 
@@ -3097,12 +3570,12 @@ class TestV1EvalRunOutputNoneGuard:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: CodeEvalProperties dead SyntaxError catch removed (Item 5.4)
+# CodeEvalProperties code validation: must parse and define a score function
 # ---------------------------------------------------------------------------
 
 
-class TestCodeEvalNoDeadSyntaxErrorCatch:
-    """After removing the dead except SyntaxError, ast.parse + score fn check still works."""
+class TestCodeEvalCodeValidation:
+    """CodeEvalProperties.code must be parseable Python defining a module-level score function."""
 
     def test_valid_code_with_score_fn(self):
         props = CodeEvalProperties(
@@ -3339,7 +3812,7 @@ class TestV2EvalResult:
 
 
 # ---------------------------------------------------------------------------
-# D27: expected_tools non-empty (ToolCallCheckProperties)
+# ToolCallCheckProperties.expected_tools must contain at least one tool
 # ---------------------------------------------------------------------------
 class TestToolCallCheckExpectedToolsValidator:
     def test_empty_expected_tools_rejected(self):
@@ -3354,7 +3827,7 @@ class TestToolCallCheckExpectedToolsValidator:
 
 
 # ---------------------------------------------------------------------------
-# D28: ArgMatch regex validation
+# ArgMatch.value must compile as a regex when match_mode is "regex"
 # ---------------------------------------------------------------------------
 class TestArgMatchRegexValidator:
     def test_bad_regex_rejected(self):
@@ -3375,7 +3848,7 @@ class TestArgMatchRegexValidator:
 
 
 # ---------------------------------------------------------------------------
-# D29: reference_key min_length=1
+# reference_key must be a non-empty string when provided
 # ---------------------------------------------------------------------------
 class TestReferenceKeyMinLength:
     def test_exact_match_empty_reference_key_rejected(self):

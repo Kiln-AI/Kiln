@@ -18,6 +18,7 @@ from app.desktop.studio_server.eval_api import (
     resolve_eval_run_traces,
     resolved_split_or_422,
     reusable_frozen_prompt_id,
+    scored_trace_usage,
     scored_trace_usage_for_run_config,
     split_size,
     summary_eval_config,
@@ -27,6 +28,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 from kiln_server.custom_errors import connect_custom_errors
+from kiln_ai.adapters.eval.eval_runner import EvalRunner
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
     DataSource,
@@ -46,6 +48,7 @@ from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import (
     FineTuneStatusType,
     StructuredOutputMode,
+    TurnMode,
 )
 from kiln_ai.datamodel.eval import (
     Eval,
@@ -59,6 +62,7 @@ from kiln_ai.datamodel.eval import (
     EvalTemplateId,
     MultiTurnSyntheticEvalInputData,
     SingleTurnEvalInputData,
+    SyntheticUserInfo,
     TaskRunSplit,
     UserMessage,
 )
@@ -258,6 +262,32 @@ def test_get_evals_success(client, mock_task, mock_task_from_id, mock_eval):
     assert result["evals"][0]["id"] == "eval1"
     assert result["evals"][0]["name"] == "Test Eval"
     mock_task_from_id.assert_called_once_with("project1", "task1")
+
+
+def test_get_evals_logs_each_load_error(
+    client, mock_task, mock_task_from_id, mock_eval, caplog
+):
+    """The response only counts unreadable eval files; the log must name each one, or a
+    permanently corrupt file is indistinguishable from a version mismatch."""
+    mock_task_from_id.return_value = mock_task
+    assert mock_eval.path is not None
+    corrupt_dir = mock_eval.path.parent.parent / "corrupt_eval"
+    corrupt_dir.mkdir()
+    corrupt_file = corrupt_dir / "eval.kiln"
+    corrupt_file.write_text('{"v": 1, ', encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger="app.desktop.studio_server.eval_api"):
+        response = client.get("/api/projects/project1/tasks/task1/evals")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["load_error_count"] == 1
+    assert [e["id"] for e in result["evals"]] == [mock_eval.id]
+    warning = next(
+        r for r in caplog.records if "Failed to load eval file" in r.getMessage()
+    )
+    assert warning.levelno == logging.WARNING
+    assert str(corrupt_file) in warning.getMessage()
 
 
 def test_get_evals_partial_load(client, mock_task, mock_task_from_id, mock_eval):
@@ -1501,6 +1531,7 @@ async def test_get_eval_config_score_summary(
             Mock(spec=TaskRunConfig, id="run5"),
         ]
         mock_task.finetunes.return_value = []
+        mock_task.runs.return_value = []
         mock_task_from_id.return_value = mock_task
 
         response = client.get(
@@ -1517,6 +1548,8 @@ async def test_get_eval_config_score_summary(
         run_config_percent_complete = top_level_result["run_config_percent_complete"]
         assert "dataset_size" in top_level_result
         assert top_level_result["dataset_size"] == 2
+        # No runs in the task store, so no stored multi-turn conversations
+        assert top_level_result["multi_turn_item_count"] == 0
 
         # Check average scores for run1
         assert results["run1"]["accuracy"]["mean_score"] == 0.7  # (0.8 + 0.6) / 2
@@ -1752,6 +1785,55 @@ async def test_get_eval_run_results(
     assert response.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_get_eval_run_results_content_part_trace_after_readonly_scan(
+    client,
+    mock_task_from_id,
+    mock_task,
+    mock_eval,
+    mock_eval_config,
+    mock_run_config,
+    data_source,
+):
+    """List-valued message content is validated into a lazy iterator by pydantic. A
+    readonly runs scan caches that instance, and the results endpoint's bulk trace load
+    then hits the cache - which must not fail on copying the lazy content."""
+    item = _tagged_task_run(mock_task, data_source, "eval_set")
+    trace_run = TaskRun(
+        parent=mock_task,
+        input="trace input",
+        input_source=data_source,
+        output=TaskOutput(output="trace output"),
+        trace=[
+            {"role": "user", "content": [{"type": "text", "text": "content part"}]},
+            {"role": "assistant", "content": "answer"},
+        ],
+    )
+    trace_run.save_to_file()
+    eval_run = EvalRun(
+        task_run_config_id="run_config1",
+        scores={"score1": 3.0, "overall_rating": 1.0},
+        dataset_id=item.id,
+        scored_run_id=trace_run.id,
+        parent=mock_eval_config,
+    )
+    eval_run.save_to_file()
+
+    # Populate the model cache with readonly instances, as any runs scan does.
+    for _ in mock_task.runs(readonly=True):
+        pass
+
+    response = client.get(RUN_RESULTS_PATH, params={"split": "test"})
+
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert len(results) == 1
+    assert results[0]["eval_run"]["id"] == eval_run.id
+    assert results[0]["input"] == "trace input"
+    assert results[0]["output"] == "trace output"
+    assert "content part" in results[0]["task_run_trace"]
+
+
 class TestGetEvalRunResultsSplits:
     """Every response about eval results is scoped to exactly one split (spec 5)."""
 
@@ -1877,13 +1959,15 @@ def _eval_trace(
 ) -> TaskRun:
     """A TaskRun the eval runner would have generated: flagged, with a trace and usage."""
     overrides.setdefault("trace", [{"role": "user", "content": "traced input"}])
+    overrides.setdefault(
+        "usage", Usage(input_tokens=11, output_tokens=7, total_tokens=18, cost=0.5)
+    )
     run = TaskRun(
         parent=task,
         input="traced input",
         input_source=data_source,
         output=TaskOutput(output=output, source=data_source),
         eval_source=source,
-        usage=Usage(input_tokens=11, output_tokens=7, total_tokens=18, cost=0.5),
         **overrides,
     )
     run.save_to_file()
@@ -2000,13 +2084,18 @@ class TestResolveEvalRunTraces:
             (
                 lambda: EvalInput(
                     data=MultiTurnSyntheticEvalInputData(
-                        first_message=UserMessage(text="first turn")
+                        first_message=UserMessage(text="first turn"),
+                        synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
                     )
                 ),
                 "first turn",
             ),
             (
-                lambda: EvalInput(data=MultiTurnSyntheticEvalInputData()),
+                lambda: EvalInput(
+                    data=MultiTurnSyntheticEvalInputData(
+                        synthetic_user_info=SyntheticUserInfo(persona="p", goal="g")
+                    )
+                ),
                 None,
             ),
         ],
@@ -2174,6 +2263,125 @@ class TestResolveEvalRunTraces:
         )
 
         assert set(usage_by_id) == {scored_trace.id}
+
+
+class TestScoredTraceUsage:
+    """What one scored TaskRun's spend reads as in a summary.
+
+    Three record generations share the read path: standalone driven traces
+    (assistant usage + separate synthetic-user spend), dataset multi-turn chain
+    leaves (last-turn usage, conversation totals in cumulative_usage), and
+    migrated legacy traces (the blend fused into usage). One function must read
+    all three correctly or a summary quietly misprices whole eval runs.
+    """
+
+    def test_driven_trace_blends_assistant_and_synthetic_user_spend(
+        self, mock_task, mock_eval, mock_eval_config, data_source
+    ):
+        """End to end through the pre-pass: the reported cost is the assistant's
+        plus the synthetic-user driver's, with tokens and latency untouched
+        (the driver's record carries cost only)."""
+        item = _tagged_task_run(mock_task, data_source, "eval_set")
+        trace = _eval_trace(
+            mock_task,
+            data_source,
+            EvalItemSource(source_type="task_run", source_id=item.id),
+            usage=Usage(
+                input_tokens=100,
+                output_tokens=40,
+                total_tokens=140,
+                cost=0.5,
+                total_llm_latency_ms=800,
+            ),
+            synthetic_user_usage=Usage(cost=0.25),
+        )
+        _pointer_scored(mock_eval_config, trace.id, dataset_id=item.id)
+
+        usage_by_id = scored_trace_usage_for_run_config(
+            mock_task, [mock_eval], "run_config1"
+        )
+
+        usage = usage_by_id[trace.id]
+        assert usage is not None
+        assert usage.cost == pytest.approx(0.75)
+        assert usage.input_tokens == 100
+        assert usage.output_tokens == 40
+        assert usage.total_tokens == 140
+        assert usage.total_llm_latency_ms == 800
+
+    def test_chain_leaf_reports_conversation_totals_not_its_last_turn(
+        self, mock_task, data_source
+    ):
+        """A dataset chain leaf's `usage` covers only its final turn; the
+        summary must report the conversation totals from `cumulative_usage`,
+        keeping latency from `usage` (cumulative carries none)."""
+        multiturn_task = mock_task.model_copy(update={"turn_mode": TurnMode.multiturn})
+        leaf = TaskRun(
+            parent=multiturn_task,
+            parent_task_run_id="parent_run_id",
+            input="turn 3",
+            input_source=data_source,
+            output=TaskOutput(output="reply", source=data_source),
+            usage=Usage(
+                input_tokens=10, total_tokens=12, cost=0.1, total_llm_latency_ms=250
+            ),
+            cumulative_usage=MessageUsage(
+                input_tokens=300, output_tokens=90, total_tokens=390, cost=1.5
+            ),
+        )
+
+        usage = scored_trace_usage(leaf)
+        assert usage is not None
+        assert usage.input_tokens == 300
+        assert usage.output_tokens == 90
+        assert usage.total_tokens == 390
+        assert usage.cost == pytest.approx(1.5)
+        assert usage.total_llm_latency_ms == 250
+
+    def test_chain_leaf_without_cumulative_does_not_report_last_turn_as_totals(
+        self, mock_task, data_source
+    ):
+        """A leaf that predates cumulative_usage has unknown conversation
+        totals; reporting its last turn's tokens as the whole conversation
+        would understate silently, so only the latency survives."""
+        multiturn_task = mock_task.model_copy(update={"turn_mode": TurnMode.multiturn})
+        leaf = TaskRun(
+            parent=multiturn_task,
+            parent_task_run_id="parent_run_id",
+            input="turn 3",
+            input_source=data_source,
+            output=TaskOutput(output="reply", source=data_source),
+            usage=Usage(input_tokens=10, cost=0.1, total_llm_latency_ms=250),
+        )
+
+        usage = scored_trace_usage(leaf)
+        assert usage is not None
+        assert usage.input_tokens is None
+        assert usage.cost is None
+        assert usage.total_llm_latency_ms == 250
+
+    def test_migrated_legacy_trace_reads_unchanged(self, mock_task, data_source):
+        """Migrated traces carry the blend fused inside `usage` with the
+        synthetic-user field null, so the sum must be a no-op for them."""
+        blended = Usage(input_tokens=100, total_tokens=140, cost=1.25)
+        trace = TaskRun(
+            parent=mock_task,
+            input="in",
+            input_source=data_source,
+            output=TaskOutput(output="out", source=data_source),
+            usage=blended,
+        )
+        assert trace.synthetic_user_usage is None
+        assert scored_trace_usage(trace) == blended
+
+    def test_nothing_to_report_reads_as_none(self, mock_task, data_source):
+        trace = TaskRun(
+            parent=mock_task,
+            input="in",
+            input_source=data_source,
+            output=TaskOutput(output="out", source=data_source),
+        )
+        assert scored_trace_usage(trace) is None
 
 
 class TestEvalRunTraceJoin:
@@ -2435,7 +2643,8 @@ class TestPreGenerationSkipInput:
         eval_input = EvalInput(
             parent=mock_task,
             data=MultiTurnSyntheticEvalInputData(
-                first_message=UserMessage(text="first turn")
+                first_message=UserMessage(text="first turn"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
             ),
             tags=["inputs"],
         )
@@ -2614,7 +2823,11 @@ async def test_get_eval_config_compare_summary(
             continue
 
         eval_run = EvalRun(
-            task_run_config_id="run_config1",
+            # Calibration records: the judge scored the stored golden output,
+            # to be compared against the item's human rating. task_run_eval
+            # records (fresh generations) are excluded from these stats.
+            eval_config_eval=True,
+            task_run_config_id=None,
             scores={
                 "score1": test_case.eval__score1_rating,
                 "overall_rating": test_case.eval_overall_rating,
@@ -2625,6 +2838,20 @@ async def test_get_eval_config_compare_summary(
             parent=eval_config,
         )
         eval_run.save_to_file()
+
+    # A task_run_eval record on a golden item (test/golden overlap is normal)
+    # must NOT enter the calibration stats: its score is about a fresh
+    # generation, not the stored output the human rated. Attached to test
+    # case 5's item — the golden item with no calibration record — so if it
+    # wrongly counted, ec5's percent-complete assertion below would fail.
+    EvalRun(
+        task_run_config_id="run_config1",
+        scores={"score1": 1.0, "overall_rating": 1.0},
+        input="stray input",
+        output="fresh generation output",
+        dataset_id=task_run.id,
+        parent=eval_config,
+    ).save_to_file()
 
     # Test successful retrieval
     response = client.get(
@@ -2719,11 +2946,43 @@ async def test_get_eval_config_compare_summary(
     assert eval_config_percent_complete["ec5"] == pytest.approx(0 / total_in_dataset)
 
 
+def _seed_golden_run(mock_task) -> TaskRun:
+    """One human-rated TaskRun in the golden set (tag::golden), so
+    calibration has something to run against."""
+    task_run = TaskRun(
+        input="golden input",
+        input_source=DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "adapter_name": "langchain_adapter",
+            },
+        ),
+        output=TaskOutput(
+            output="golden output",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt-4",
+                    "model_provider": "openai",
+                    "adapter_name": "langchain_adapter",
+                },
+            ),
+        ),
+        tags=["golden"],
+        parent=mock_task,
+    )
+    task_run.save_to_file()
+    return task_run
+
+
 @pytest.mark.asyncio
 async def test_run_eval_config_eval(
     client, mock_task_from_id, mock_task, mock_eval, mock_eval_config
 ):
     mock_task_from_id.return_value = mock_task
+    _seed_golden_run(mock_task)
 
     # Create a mock response for run_eval_runner_with_status
     mock_response = StreamingResponse(
@@ -3517,6 +3776,53 @@ class TestRunConfigEvalScoresSplits:
 
 
 @pytest.mark.asyncio
+async def test_get_eval_progress_eval_input_slice(client, mock_task_from_id, mock_task):
+    """An EvalInput-typed eval reports its slice size from the matching
+    EvalInput items — the spec page relies on this instead of a 400."""
+    mock_task_from_id.return_value = mock_task
+
+    eval = Eval(
+        id="eval_input_eval",
+        name="EvalInput Eval",
+        output_scores=[
+            EvalOutputScore(
+                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
+            ),
+        ],
+        splits={"test": EvalInputSplit(filter_id="tag::eval_slice")},
+        eval_configs_filter_id="tag::golden",
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    for i in range(3):
+        EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text=f"seed {i}"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+            tags=["eval_slice"],
+            parent=mock_task,
+        ).save_to_file()
+    # An input outside the slice tag is not counted.
+    EvalInput(
+        data=SingleTurnEvalInputData(user_message=UserMessage(text="other")),
+        tags=["other"],
+        parent=mock_task,
+    ).save_to_file()
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = eval
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval_input_eval/progress"
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["dataset_size"] == 3
+    assert result["golden_dataset_size"] == 0
+
+
+@pytest.mark.asyncio
 async def test_get_eval_progress_not_found(client, mock_task_from_id, mock_task):
     mock_task_from_id.return_value = mock_task
 
@@ -3652,6 +3958,47 @@ def test_human_score_from_task_run(
 
     # Verify the result
     assert result == expected_score
+
+
+def test_human_score_named_rating_survives_requirement_name_collision():
+    """A task requirement whose name maps to the same json_key as the score
+    must not hide a named rating: spec-created evals store the human verdict
+    under named::{score.name}, and the like-named requirement may be unrated."""
+    task_run = Mock(spec=TaskRun)
+    task_run.output = Mock(spec=TaskOutput)
+    rating = Mock(spec=TaskOutputRating)
+    rating.value = None
+    rating.requirement_ratings = {
+        # No rating under the colliding requirement's id ("req_id"); the
+        # human verdict lives under the named key.
+        "named::My Spec": RequirementRating(
+            value=1.0, type=TaskOutputRatingType.pass_fail
+        ),
+    }
+    task_run.output.rating = rating
+
+    score = EvalOutputScore(
+        name="My Spec", instruction="Test score", type=TaskOutputRatingType.pass_fail
+    )
+    # A requirement named like the score maps to the same json_key.
+    score_key_to_task_requirement_id: Dict[str, ID_TYPE] = {"my_spec": "req_id"}
+
+    from app.desktop.studio_server.eval_api import human_score_from_task_run
+
+    result = human_score_from_task_run(
+        task_run, score, score_key_to_task_requirement_id
+    )
+
+    assert result == 1.0
+
+    # When the colliding requirement IS rated, its rating still wins.
+    rating.requirement_ratings["req_id"] = RequirementRating(
+        value=0.0, type=TaskOutputRatingType.pass_fail
+    )
+    assert (
+        human_score_from_task_run(task_run, score, score_key_to_task_requirement_id)
+        == 0.0
+    )
 
 
 @pytest.mark.asyncio
@@ -4414,6 +4761,95 @@ async def test_get_run_config_eval_scores_all_skipped(
     assert ecr["percent_complete"] == 1.0
 
 
+@pytest.mark.asyncio
+async def test_get_run_config_eval_scores_includes_eval_input_evals(
+    client, mock_task_from_id, mock_task
+):
+    """EvalInput-typed evals appear in a run config's eval scores with real
+    sizing and completion instead of being silently omitted."""
+    mock_task_from_id.return_value = mock_task
+
+    eval = Eval(
+        id="eval_input_eval",
+        name="EvalInput Eval",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                instruction="Test accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        splits={"test": EvalInputSplit(filter_id="tag::eval_slice")},
+        eval_configs_filter_id="tag::golden",
+        current_config_id="ec1",
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    eval_config = EvalConfig(
+        id="ec1",
+        name="Judge",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+        model_name="gpt-4",
+        model_provider="openai",
+        parent=eval,
+    )
+    eval_config.save_to_file()
+
+    eval_input_ids = []
+    for i in range(2):
+        eval_input = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text=f"seed {i}"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+            tags=["eval_slice"],
+            parent=mock_task,
+        )
+        eval_input.save_to_file()
+        eval_input_ids.append(eval_input.id)
+
+    run_config = TaskRunConfig(
+        parent=mock_task,
+        id="rc1",
+        name="Run Config 1",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_chain_of_thought_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    run_config.save_to_file()
+
+    for eval_input_id, score in zip(eval_input_ids, [1.0, 0.0]):
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": score},
+            input="input",
+            output="output",
+            eval_input_id=eval_input_id,
+            parent=eval_config,
+        ).save_to_file()
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/run_configs/rc1/eval_scores"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    eval_result = next(
+        (er for er in data["eval_results"] if er["eval_id"] == "eval_input_eval"),
+        None,
+    )
+    assert eval_result is not None, "EvalInput eval missing from eval_scores"
+    assert eval_result["dataset_size"] == 2
+    ecr = eval_result["eval_config_result"]
+    assert ecr["results"]["accuracy"]["mean_score"] == pytest.approx(0.5)
+    assert ecr["results"]["accuracy"]["n_used"] == 2
+    assert ecr["percent_complete"] == 1.0
+
+
 def test_get_eval_configs_score_summary_no_filter_id(
     client, mock_task, mock_task_from_id
 ):
@@ -4936,6 +5372,7 @@ async def test_eval_results_summary_happy_path(client):
     mock_task = Mock(spec=Task)
     mock_task.run_configs.return_value = [rc1_mock, rc2_mock, rc3_mock]
     mock_task.finetunes.return_value = []
+    mock_task.runs.return_value = []
     mock_task.evals.return_value = [eval1, eval2]
 
     with (
@@ -5045,6 +5482,7 @@ async def test_eval_results_summary_behavioral_equivalence(client):
     mock_task = Mock(spec=Task)
     mock_task.run_configs.return_value = [rc1_mock]
     mock_task.finetunes.return_value = []
+    mock_task.runs.return_value = []
     mock_task.evals.return_value = [eval1]
 
     with (
@@ -5105,6 +5543,7 @@ async def test_eval_results_summary_empty_filter(client):
     mock_task = Mock(spec=Task)
     mock_task.run_configs.return_value = []
     mock_task.finetunes.return_value = []
+    mock_task.runs.return_value = []
     mock_task.evals.return_value = [eval1]
 
     with (
@@ -5147,6 +5586,7 @@ async def test_eval_results_summary_no_default_judge(client):
     mock_task = Mock(spec=Task)
     mock_task.run_configs.return_value = []
     mock_task.finetunes.return_value = []
+    mock_task.runs.return_value = []
     mock_task.evals.return_value = [eval1]
 
     with (
@@ -5172,6 +5612,7 @@ async def test_eval_results_summary_no_evals(client):
     mock_task = Mock(spec=Task)
     mock_task.run_configs.return_value = []
     mock_task.finetunes.return_value = []
+    mock_task.runs.return_value = []
     mock_task.evals.return_value = []
 
     with patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id:
@@ -6392,7 +6833,11 @@ def test_create_eval_input_multi_turn(client, mock_task, mock_task_from_id):
     on_disk = mock_task.eval_inputs(readonly=True)
     assert len(on_disk) == 1
     assert on_disk[0].id == result["id"]
-    assert on_disk[0].data.synthetic_user_info["persona"] == "maintenance manager"
+    # synthetic_user_info is a typed SyntheticUserInfo on this base, not a bare dict,
+    # so the posted JSON has to have been coerced into the model on the way in.
+    assert on_disk[0].data.synthetic_user_info.persona == "maintenance manager"
+    assert on_disk[0].data.synthetic_user_info.goal == "get an overdue-WO count"
+    assert on_disk[0].data.synthetic_user_info.behavior_guidance == "terse"
 
 
 def test_create_eval_input_single_turn_defaults(client, mock_task, mock_task_from_id):
@@ -6744,3 +7189,221 @@ def test_delete_eval_input_ignores_references_to_other_items(
 
     assert response.status_code == 200
     assert [item.id for item in mock_task.eval_inputs(readonly=True)] == [other.id]
+
+
+@pytest.mark.asyncio
+async def test_run_calibration_empty_golden_set_400(
+    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config
+):
+    """No runs match the golden filter: calibration would complete vacuously
+    (zero jobs, zero scores) and read as success — refuse it up front."""
+    mock_task_from_id.return_value = mock_task
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/evals/eval1/run_calibration"
+    )
+
+    assert response.status_code == 400
+    assert "golden dataset is empty" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_comparison_multi_turn_drive_problems_400(
+    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, mock_run_config
+):
+    """Multi-turn readiness problems (unstamped items, unknown synthetic-user
+    providers, non-agent run configs) surface as one 400 before the SSE
+    stream opens, not as N anonymous per-job errors."""
+    mock_task_from_id.return_value = mock_task
+
+    with (
+        patch(
+            "app.desktop.studio_server.eval_api.task_run_config_from_id"
+        ) as mock_run_config_from_id,
+        patch.object(
+            EvalRunner,
+            "validate_multi_turn_drive_readiness",
+            side_effect=ValueError("run config 'MCP one' is not a Kiln agent config"),
+        ),
+    ):
+        mock_run_config_from_id.return_value = mock_run_config
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/run_comparison",
+            params={"run_config_ids": ["run_config1"]},
+        )
+
+    assert response.status_code == 400
+    assert "MCP one" in response.json()["message"]
+
+
+# ── Multi-turn item count: restored positive-case coverage for the count
+# re-expressed from the resolved split (stored conversations = chain leaves). ──
+
+
+def _multiturn_task_with_eval(tmp_path, evaluation_data_type: EvalDataType) -> Task:
+    """A real on-disk multiturn task with an eval (id eval1) filtering on
+    tag::eval_set and a judge config (id eval_config1)."""
+    project = Project(
+        id="project1", name="Test Project", path=tmp_path / "project.kiln"
+    )
+    project.save_to_file()
+    task = Task(
+        id="task1",
+        name="Test Task",
+        instruction="Test Instructions",
+        path=tmp_path / "task.kiln",
+        turn_mode=TurnMode.multiturn,
+        parent=project,
+    )
+    task.save_to_file()
+
+    eval = Eval(
+        id="eval1",
+        name="Eval",
+        output_scores=[
+            EvalOutputScore(
+                name="score1", instruction="desc1", type=TaskOutputRatingType.pass_fail
+            ),
+        ],
+        eval_set_filter_id="tag::eval_set",
+        eval_configs_filter_id="tag::golden",
+        evaluation_data_type=evaluation_data_type,
+        parent=task,
+    )
+    eval.save_to_file()
+    EvalConfig(
+        id="eval_config1",
+        name="Judge",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+        model_name="gpt-4",
+        model_provider="openai",
+        parent=eval,
+    ).save_to_file()
+    return task
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "evaluation_data_type",
+    [EvalDataType.final_answer, EvalDataType.full_trace],
+)
+async def test_get_eval_config_score_summary_multi_turn_item_count(
+    client, mock_task_from_id, tmp_path, evaluation_data_type
+):
+    """multi_turn_item_count counts the stored conversations (chain leaves) in
+    the eval set. It's a property of the item set alone, so it must be the same
+    for final_answer and full_trace evals."""
+    task = _multiturn_task_with_eval(tmp_path, evaluation_data_type)
+    mock_task_from_id.return_value = task
+
+    output = TaskOutput(output="test output")
+    # Single-turn item in the eval set: regenerated per run config.
+    TaskRun(input="i1", output=output, tags=["eval_set"], parent=task).save_to_file()
+    # Stored conversation in the eval set: only its leaf is an eval item.
+    root = TaskRun(input="i2", output=output, parent=task)
+    root.save_to_file()
+    TaskRun(
+        input="i3",
+        output=output,
+        tags=["eval_set"],
+        parent=task,
+        parent_task_run_id=root.id,
+    ).save_to_file()
+    # Stored conversation outside the eval set: must not count.
+    other_root = TaskRun(input="i4", output=output, parent=task)
+    other_root.save_to_file()
+    TaskRun(
+        input="i5",
+        output=output,
+        tags=["other"],
+        parent=task,
+        parent_task_run_id=other_root.id,
+    ).save_to_file()
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/score_summary"
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["dataset_size"] == 2
+    assert result["multi_turn_item_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_eval_config_score_summary_single_turn_only_set(
+    client, mock_task_from_id, tmp_path
+):
+    """A full_trace eval whose set has no stored conversations reports zero
+    multi-turn items — every item regenerates per run config."""
+    task = _multiturn_task_with_eval(tmp_path, EvalDataType.full_trace)
+    mock_task_from_id.return_value = task
+
+    output = TaskOutput(output="test output")
+    TaskRun(input="i1", output=output, tags=["eval_set"], parent=task).save_to_file()
+    TaskRun(input="i2", output=output, tags=["eval_set"], parent=task).save_to_file()
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/score_summary"
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["dataset_size"] == 2
+    assert result["multi_turn_item_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_emits_eval_input_backed_eval(client):
+    """End-to-end wiring for an EvalInput-backed eval in the task-wide summary:
+    its dataset size and scores must be emitted, not skipped."""
+    output_scores = [
+        EvalOutputScore(
+            name="accuracy",
+            instruction="Test accuracy",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+    eval_runs = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 1.0},
+            input="i",
+            output="o",
+            eval_input_id="ei1",
+        ),
+    ]
+    ec = _build_mock_eval_config("ec1", "Judge", eval_runs)
+    eval1 = _build_mock_eval(
+        eval_id="eval1",
+        name="Eval One",
+        current_config_id="ec1",
+        output_scores=output_scores,
+        configs=[ec],
+        test_split=EvalInputSplit(filter_id="tag::cases"),
+    )
+
+    rc1_mock = Mock(spec=TaskRunConfig, id="rc1")
+    rc1_mock.name = "RC1"
+
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = [rc1_mock]
+    mock_task.finetunes.return_value = []
+    mock_task.runs.return_value = []
+    mock_task.evals.return_value = [eval1]
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        patch_resolve_split_by_ref({("eval_input", "tag::cases"): {"ei1", "ei2"}}),
+    ):
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["evals_by_id"]["eval1"]["dataset_size"] == 2
+    rc_scores = data["scores_by_run_config_by_eval"]["rc1"]["eval1"]
+    assert rc_scores["mean_scores"]["accuracy"] == 1.0
+    assert rc_scores["percent_complete"] == 0.5

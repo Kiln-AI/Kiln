@@ -182,4 +182,11 @@ describe("tool_set_type_label", () => {
     expect(tool_set_type_label("skill")).toBe("Skill")
     expect(tool_set_type_label("builtin")).toBe("Built-in")
   })
+
+  it("throws for an invalid type via assertNever", () => {
+    expect(() =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tool_set_type_label("invalid_type" as any),
+    ).toThrow("Unexpected value")
+  })
 })

@@ -1,4 +1,5 @@
 import type { ToolSetType } from "$lib/types"
+import { assertNever } from "$lib/utils/exhaustive"
 
 const FINE_TUNE_PROMPT_PREFIX = "fine_tune_prompt::"
 
@@ -74,6 +75,7 @@ export function tool_set_type_label(type: ToolSetType): string {
     case "builtin":
       return "Built-in"
     default:
-      return type
+      // Compile error here means a new ToolSetType needs a label above.
+      return assertNever(type)
   }
 }

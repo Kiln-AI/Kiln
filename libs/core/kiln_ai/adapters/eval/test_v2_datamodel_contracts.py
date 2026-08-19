@@ -1,9 +1,10 @@
-"""Tests for Phase 4 data-model robustness improvements.
+"""Contract tests for the V2 eval datamodel and its scoring helpers.
 
 Covers:
-- 5.8: V2_PROPERTY_TYPES explicit tuple matches the V2EvalConfigProperties union
-- 5.9: build_binary_scores accepts output_scores directly (no EvalConfig needed)
-- 5.6: EvalRun validate_input_source error message clarifies V1 vs V2
+- V2_PROPERTY_TYPES explicit tuple stays in sync with the V2EvalConfigProperties union
+- build_binary_scores accepts output_scores directly (no EvalConfig needed)
+- V2 adapters cache output scores at init instead of calling parent_eval() per item
+- EvalRun validate_input_source error message clarifies V1 vs V2 sources
 """
 
 from typing import get_args
@@ -26,7 +27,7 @@ from kiln_ai.datamodel.eval import (
 )
 
 # ---------------------------------------------------------------------------
-# 5.8: V2_PROPERTY_TYPES matches V2EvalConfigProperties union
+# V2_PROPERTY_TYPES matches V2EvalConfigProperties union
 # ---------------------------------------------------------------------------
 
 
@@ -52,7 +53,7 @@ class TestV2PropertyTypes:
 
 
 # ---------------------------------------------------------------------------
-# 5.9: build_binary_scores takes output_scores directly
+# build_binary_scores takes output_scores directly
 # ---------------------------------------------------------------------------
 
 
@@ -83,7 +84,7 @@ class TestBuildBinaryScores:
         assert result == {}
 
     def test_no_eval_config_needed(self):
-        """build_binary_scores no longer requires an EvalConfig or parent_eval() call."""
+        """build_binary_scores works from output_scores alone -- no EvalConfig or parent_eval() call."""
         scores_def = [
             EvalOutputScore(
                 name="check", instruction="test", type=TaskOutputRatingType.pass_fail
@@ -124,7 +125,7 @@ class TestCachedOutputScores:
 
 
 # ---------------------------------------------------------------------------
-# 5.6: validate_input_source error message
+# validate_input_source error message
 # ---------------------------------------------------------------------------
 
 

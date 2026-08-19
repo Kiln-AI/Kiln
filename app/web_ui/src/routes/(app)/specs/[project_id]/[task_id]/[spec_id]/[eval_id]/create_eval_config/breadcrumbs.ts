@@ -18,15 +18,21 @@ export function buildCreateEvalBreadcrumbs(
       label: "Evals",
       href: `/specs/${project_id}/${task_id}`,
     },
-    {
+  ]
+
+  // Legacy evals have no backing spec, so there is no spec detail page to
+  // link to — drop that crumb, matching the sibling eval pages.
+  if (spec_id !== "legacy") {
+    crumbs.push({
       label: spec?.name || "Eval",
       href: `/specs/${project_id}/${task_id}/${spec_id}`,
-    },
-    {
-      label: "Eval",
-      href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}`,
-    },
-  ]
+    })
+  }
+
+  crumbs.push({
+    label: "Eval",
+    href: `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}`,
+  })
 
   if (next_page === "eval_configs") {
     crumbs.push({
