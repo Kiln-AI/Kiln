@@ -9,12 +9,12 @@ from kiln_ai.datamodel.feedback import Feedback
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_ai.datamodel.task_output import DataSource, TaskOutput
-from kiln_ai.datamodel.usage import MessageUsage as MessageUsage
-from kiln_ai.datamodel.usage import Usage as Usage
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionMessageParam,
     trace_has_pending_client_tool_calls,
 )
+from kiln_ai.utils.usage import MessageUsage as MessageUsage
+from kiln_ai.utils.usage import Usage as Usage
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
