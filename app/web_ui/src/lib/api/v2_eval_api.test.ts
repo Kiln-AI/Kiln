@@ -4,8 +4,8 @@ import {
   testV2EvalLlmJudge,
   fetchTaskRuns,
   createEvalConfig,
-  checkCodeEvalTrust,
-  grantCodeEvalTrust,
+  checkAddCodeTrust,
+  addCodeTrust,
   type TestV2EvalRequest,
   type CreateEvalConfigRequest,
 } from "./v2_eval_api"
@@ -133,18 +133,18 @@ describe("createEvalConfig", () => {
   })
 })
 
-describe("checkCodeEvalTrust", () => {
+describe("checkAddCodeTrust", () => {
   it("calls client.GET with correct path and params", async () => {
     mockGet.mockResolvedValue({
       data: { trusted: false },
       error: undefined,
     })
 
-    await checkCodeEvalTrust("proj-1")
+    await checkAddCodeTrust("proj-1")
 
     expect(mockGet).toHaveBeenCalledTimes(1)
     const [path, options] = mockGet.mock.calls[0]
-    expect(path).toBe("/api/projects/{project_id}/code_eval_trust")
+    expect(path).toBe("/api/projects/{project_id}/add_code_trust")
     expect(options.params.path).toEqual({ project_id: "proj-1" })
   })
 
@@ -154,23 +154,23 @@ describe("checkCodeEvalTrust", () => {
       error: undefined,
     })
 
-    const result = await checkCodeEvalTrust("proj-1")
+    const result = await checkAddCodeTrust("proj-1")
     expect(result.trusted).toBe(true)
   })
 })
 
-describe("grantCodeEvalTrust", () => {
+describe("addCodeTrust", () => {
   it("calls client.POST with correct path and params", async () => {
     mockPost.mockResolvedValue({
       data: { trusted: true },
       error: undefined,
     })
 
-    await grantCodeEvalTrust("proj-1")
+    await addCodeTrust("proj-1")
 
     expect(mockPost).toHaveBeenCalledTimes(1)
     const [path, options] = mockPost.mock.calls[0]
-    expect(path).toBe("/api/projects/{project_id}/grant_code_eval_trust")
+    expect(path).toBe("/api/projects/{project_id}/add_code_trust")
     expect(options.params.path).toEqual({ project_id: "proj-1" })
   })
 
@@ -180,7 +180,7 @@ describe("grantCodeEvalTrust", () => {
       error: undefined,
     })
 
-    const result = await grantCodeEvalTrust("proj-1")
+    const result = await addCodeTrust("proj-1")
     expect(result.trusted).toBe(true)
   })
 })
@@ -315,18 +315,18 @@ describe.each([
     expectedPrefix: "create_eval_config failed",
   },
   {
-    fnName: "checkCodeEvalTrust",
-    callFn: () => checkCodeEvalTrust("proj-1"),
+    fnName: "checkAddCodeTrust",
+    callFn: () => checkAddCodeTrust("proj-1"),
     setupMock: (error: Record<string, unknown>) =>
       mockGet.mockResolvedValue({ data: undefined, error }),
-    expectedPrefix: "code_eval_trust check failed",
+    expectedPrefix: "add_code_trust check failed",
   },
   {
-    fnName: "grantCodeEvalTrust",
-    callFn: () => grantCodeEvalTrust("proj-1"),
+    fnName: "addCodeTrust",
+    callFn: () => addCodeTrust("proj-1"),
     setupMock: (error: Record<string, unknown>) =>
       mockPost.mockResolvedValue({ data: undefined, error }),
-    expectedPrefix: "grant_code_eval_trust failed",
+    expectedPrefix: "add_code_trust failed",
   },
 ])("$fnName error handling", ({ callFn, setupMock, expectedPrefix }) => {
   it("throws on error response with message field", async () => {

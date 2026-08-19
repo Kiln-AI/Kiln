@@ -41,6 +41,7 @@ const ReferenceDataField = (await import("./reference_data_field.svelte"))
 const { actionButtonsByTitle, resetActionButtons } = await import(
   "../__tests__/dialog_stub.svelte"
 )
+const { ALL_V2_EVAL_TYPES } = await import("$lib/utils/eval_types/registry")
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -237,7 +238,7 @@ describe("EvalTestRunPane", () => {
       expect(handler).toHaveBeenCalled()
     })
 
-    it("shows reference data field", () => {
+    it("does not show reference data field (reference data UI hidden)", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(EvalTestRunPane as any, {
         props: {
@@ -250,7 +251,7 @@ describe("EvalTestRunPane", () => {
       const refField = container.querySelector(
         '[data-testid="reference-data-field"]',
       )
-      expect(refField).not.toBeNull()
+      expect(refField).toBeNull()
     })
 
     it("selected card shows Change button that opens browse dialog (D15)", () => {
@@ -379,6 +380,92 @@ describe("EvalTestRunPane", () => {
       expect(container.textContent).toContain("Scores")
       expect(container.textContent).toContain("Preview only")
       expect(container.textContent).toContain("not saved")
+    })
+
+    it("lists the tool calls a code judge made", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          runs_loading: false,
+          test_result: {
+            scores: { accuracy: 1.0 },
+            skipped_reason: null,
+            skipped_detail: null,
+            tool_call_log: [
+              {
+                tool_name: "llm_judge",
+                arguments: { prompt: "hi" },
+                output_preview: '{"accuracy": 1.0}',
+                is_error: false,
+                duration_ms: 412,
+              },
+            ],
+          },
+          test_has_valid_run: true,
+        },
+      })
+
+      const log = container.querySelector('[data-testid="tool-call-log"]')
+      expect(log).not.toBeNull()
+      expect(log?.textContent).toContain("llm_judge")
+      expect(log?.textContent).toContain("412ms")
+      expect(log?.textContent).toContain("OK")
+    })
+
+    it("surfaces why a tool call failed, not just that it did", () => {
+      // output_preview carries the error message; dropping it leaves an author
+      // staring at a red row with no reason.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          runs_loading: false,
+          test_result: {
+            scores: { accuracy: 0.0 },
+            skipped_reason: null,
+            skipped_detail: null,
+            tool_call_log: [
+              {
+                tool_name: "llm_judge",
+                arguments: { prompt: "hi" },
+                output_preview: "Invalid model provider: bogus",
+                is_error: true,
+                duration_ms: 412,
+              },
+            ],
+          },
+          test_has_valid_run: true,
+        },
+      })
+
+      const log = container.querySelector('[data-testid="tool-call-log"]')
+      expect(log?.textContent).toContain("Invalid model provider: bogus")
+      expect(log?.textContent).toContain("Error")
+    })
+
+    it("hides the tool call section when the scorer called nothing", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          runs_loading: false,
+          test_result: {
+            scores: { accuracy: 1.0 },
+            skipped_reason: null,
+            skipped_detail: null,
+            tool_call_log: [],
+          },
+          test_has_valid_run: true,
+        },
+      })
+
+      expect(
+        container.querySelector('[data-testid="tool-call-log"]'),
+      ).toBeNull()
     })
 
     it("shows skipped result with reason", () => {
@@ -1962,7 +2049,9 @@ describe("ReferenceDataField callout per usage mode", () => {
 })
 
 // ---------------------------------------------------------------------------
-// Tests: EvalTestRunPane hides reference data for "none" mode types
+// Tests: EvalTestRunPane hides reference data for every eval type while
+// SHOW_REFERENCE_DATA_UI is off (the shipped default). The flag-on behavior is
+// covered in eval_test_run_pane.reference_data.test.ts.
 // ---------------------------------------------------------------------------
 
 describe("EvalTestRunPane reference data visibility by eval type", () => {
@@ -1970,141 +2059,46 @@ describe("EvalTestRunPane reference data visibility by eval type", () => {
     cleanup()
   })
 
-  it("hides reference data field for pattern_match (none mode) in ready state", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(EvalTestRunPane as any, {
-      props: {
-        available_runs: [run1],
-        selected_run: run1,
-        runs_loading: false,
-        eval_config_type: "pattern_match",
-      },
-    })
-    const refField = container.querySelector(
-      '[data-testid="reference-data-field"]',
-    )
-    expect(refField).toBeNull()
-  })
-
-  it("hides reference data field for tool_call_check (none mode) in ready state", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(EvalTestRunPane as any, {
-      props: {
-        available_runs: [run1],
-        selected_run: run1,
-        runs_loading: false,
-        eval_config_type: "tool_call_check",
-      },
-    })
-    const refField = container.querySelector(
-      '[data-testid="reference-data-field"]',
-    )
-    expect(refField).toBeNull()
-  })
-
-  it("hides reference data field for step_count_check (none mode) in ready state", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(EvalTestRunPane as any, {
-      props: {
-        available_runs: [run1],
-        selected_run: run1,
-        runs_loading: false,
-        eval_config_type: "step_count_check",
-      },
-    })
-    const refField = container.querySelector(
-      '[data-testid="reference-data-field"]',
-    )
-    expect(refField).toBeNull()
-  })
-
-  it("shows reference data field for llm_judge in ready state", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(EvalTestRunPane as any, {
-      props: {
-        available_runs: [run1],
-        selected_run: run1,
-        runs_loading: false,
-        eval_config_type: "llm_judge",
-      },
-    })
-    const refField = container.querySelector(
-      '[data-testid="reference-data-field"]',
-    )
-    expect(refField).not.toBeNull()
-  })
-
-  it("shows reference data field for exact_match in ready state", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(EvalTestRunPane as any, {
-      props: {
-        available_runs: [run1],
-        selected_run: run1,
-        runs_loading: false,
-        eval_config_type: "exact_match",
-      },
-    })
-    const refField = container.querySelector(
-      '[data-testid="reference-data-field"]',
-    )
-    expect(refField).not.toBeNull()
-  })
-
-  it("shows reference data field for code_eval in ready state", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(EvalTestRunPane as any, {
-      props: {
-        available_runs: [run1],
-        selected_run: run1,
-        runs_loading: false,
-        eval_config_type: "code_eval",
-      },
-    })
-    const refField = container.querySelector(
-      '[data-testid="reference-data-field"]',
-    )
-    expect(refField).not.toBeNull()
-  })
-
-  it("hides reference data field for pattern_match in results state", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(EvalTestRunPane as any, {
-      props: {
-        available_runs: [run1],
-        selected_run: run1,
-        runs_loading: false,
-        eval_config_type: "pattern_match",
-        test_result: {
-          scores: { match: 1.0 },
-          skipped_reason: null,
+  it("hides reference data field for every eval type in ready state", () => {
+    for (const eval_config_type of ALL_V2_EVAL_TYPES) {
+      cleanup()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          runs_loading: false,
+          eval_config_type,
         },
-        test_has_valid_run: true,
-      },
-    })
-    const refField = container.querySelector(
-      '[data-testid="reference-data-field"]',
-    )
-    expect(refField).toBeNull()
+      })
+      const refField = container.querySelector(
+        '[data-testid="reference-data-field"]',
+      )
+      expect(refField).toBeNull()
+    }
   })
 
-  it("shows reference data field for llm_judge in results state", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { container } = render(EvalTestRunPane as any, {
-      props: {
-        available_runs: [run1],
-        selected_run: run1,
-        runs_loading: false,
-        eval_config_type: "llm_judge",
-        test_result: {
-          scores: { accuracy: 1.0 },
-          skipped_reason: null,
+  it("hides reference data field for every eval type in results state", () => {
+    for (const eval_config_type of ALL_V2_EVAL_TYPES) {
+      cleanup()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          runs_loading: false,
+          eval_config_type,
+          test_result: {
+            scores: { accuracy: 1.0 },
+            skipped_reason: null,
+          },
+          test_has_valid_run: true,
         },
-        test_has_valid_run: true,
-      },
-    })
-    const refField = container.querySelector(
-      '[data-testid="reference-data-field"]',
-    )
-    expect(refField).not.toBeNull()
+      })
+      const refField = container.querySelector(
+        '[data-testid="reference-data-field"]',
+      )
+      expect(refField).toBeNull()
+    }
   })
 })

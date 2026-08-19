@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "324385651255",
+  "created_at": "2026-08-17T21:33:10.134130Z",
+  "created_by": "root",
+  "dataset_id": "141021632869",
+  "task_run_config_id": "140414461876",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"Password reset emails never arrive\", \"body\": \"Three of our users have asked for a password reset today and none of them received the email. Not in spam either. Our own SMTP logs show nothing inbound from you. Everything else about the account works.\", \"customer_plan\": \"pro\"}",
+  "output": "{\"team\": \"technical_support\", \"priority\": \"high\", \"needs_human_review\": false, \"summary\": \"Password reset emails are not being delivered to three PRO users, and the customer’s SMTP logs show nothing inbound from us, so investigate the password-reset email delivery pipeline.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output passes.\n\n- The ticket is about password reset emails not being delivered — a functional delivery/bug issue, not an account compromise, data exposure, billing dispute, or legal/security incident.\n- The model correctly set `needs_human_review: false`, matching the guidance that routine password-reset issues and normal bug reports do not require human review before replying.\n- The high priority is appropriate because multiple users are affected, but urgency alone does not require a human reviewer.\n- The summary is clear and useful for the next engineer to investigate.\n\nVerdict: Pass.",
+    "reasoning": "The user wants me to provide a final result based on my analysis. I already determined it passes. I should give a concise final result."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 897,
+    "output_tokens": 795,
+    "total_tokens": 1692,
+    "cost": 0.00034817999999999996,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 17668
+  },
+  "model_type": "eval_run"
+}

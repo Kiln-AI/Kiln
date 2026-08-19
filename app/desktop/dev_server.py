@@ -1,22 +1,24 @@
 # Run a desktop server for development:
 # - Auto-reload is enabled
 # - Extra logging (level+colors) is enabled
+#
+# The app object lives in app/desktop/dev_app.py and is named here by import
+# string, so only uvicorn's reload worker imports the Kiln app tree. Importing it
+# here too would double the (slow) import cost of every start.
+#
+# The tradeoff: an app that fails to import now fails in that worker, so uvicorn
+# prints the traceback and waits for a file change instead of this process
+# exiting non-zero. Fix the import and it reloads on its own.
 import os
 
 import uvicorn
-
-from app.desktop.desktop_server import make_app
-from app.desktop.util.resource_limits import setup_resource_limits
 from kiln_ai.utils.config import Config
 
-# Skip remote model loading when running the dev server (unless explicitly set)
-os.environ.setdefault("KILN_SKIP_REMOTE_MODEL_LIST", "true")
+from app.desktop.dev_env import set_dev_env_vars
+from app.desktop.util.resource_limits import setup_resource_limits
 
-# top level app object, as that's needed by auto-reload
-dev_app = make_app()
-
-os.environ["DEBUG_EVENT_LOOP"] = "true"
-os.environ["KILN_DEV_MODE"] = "true"
+# Set here as well as in dev_app.py so that reload workers inherit them.
+set_dev_env_vars()
 
 
 if __name__ == "__main__":
@@ -35,7 +37,7 @@ if __name__ == "__main__":
         os.environ["KILN_LOCAL_API_PORT"] = kiln_port
 
     uvicorn.run(
-        "app.desktop.dev_server:dev_app",
+        "app.desktop.dev_app:dev_app",
         host=Config.shared().kiln_local_api_host,
         port=Config.shared().kiln_local_api_port,
         reload=True,

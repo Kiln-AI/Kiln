@@ -1,6 +1,9 @@
 """Tests for app/desktop/studio_server/api_models/copilot_models.py."""
 
 import pytest
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
+from pydantic import ValidationError
+
 from app.desktop.studio_server.api_models.copilot_models import (
     ClarifySpecApiInput,
     ClarifySpecApiOutput,
@@ -17,8 +20,6 @@ from app.desktop.studio_server.api_models.copilot_models import (
     TaskInfoApi,
     TaskMetadataApi,
 )
-from kiln_ai.datamodel.datamodel_enums import ModelProviderName
-from pydantic import ValidationError
 
 
 class TestTaskInfoApi:

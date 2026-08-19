@@ -1,6 +1,6 @@
 import typer
 
-from kiln_ai.cli.commands import package_project, projects, tasks
+from kiln_ai.cli.commands import migrate_eval_runs, package_project, projects, tasks
 
 app = typer.Typer(
     help="Kiln AI CLI - Build AI systems with evals, data gen, fine-tuning, and more.",
@@ -10,3 +10,4 @@ app = typer.Typer(
 app.add_typer(projects.app, name="projects")
 app.add_typer(tasks.app, name="tasks")
 app.command(name="package_project")(package_project.package_project)
+app.command(name="migrate-eval-runs")(migrate_eval_runs.migrate_eval_runs)

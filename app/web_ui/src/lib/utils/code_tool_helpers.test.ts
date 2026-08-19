@@ -143,7 +143,7 @@ describe("generateCodeToolPlaceholder", () => {
     const result = generateCodeToolPlaceholder(schema, "Do something")
     expect(result).toContain("def run() -> str:")
     expect(result).toContain('"""Do something"""')
-    expect(result).toContain("# TODO: implement")
+    expect(result).toContain("# Your code here")
     expect(result).toContain('return "result"')
   })
 

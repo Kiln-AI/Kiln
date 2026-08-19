@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, cleanup } from "@testing-library/svelte"
+import { render, cleanup, fireEvent } from "@testing-library/svelte"
 import * as svelteMod from "svelte"
 import { tick } from "svelte"
 import { writable } from "svelte/store"
@@ -435,6 +435,87 @@ describe("LlmJudgeForm", () => {
       const systemTextarea = container.querySelector("#system_prompt")
       expect(judgeTextarea).not.toBeNull()
       expect(systemTextarea).not.toBeNull()
+    })
+  })
+  describe("Judge criteria field (removed)", () => {
+    it("does not render the old spec-less criteria field", () => {
+      setModels([noLogprobsProvider])
+      const { container } = render(LlmJudgeForm, {
+        props: { task_id: "task1", project_id: "proj1", eval_id: "eval1" },
+      })
+      expect(container.querySelector("#judge_criteria")).toBeNull()
+    })
+  })
+
+  describe("Evaluation instructions steps UI", () => {
+    // The UI is keyed off the server's default prompt: it appears exactly
+    // when the prompt references {{ judge_instructions }} (evals with no
+    // derivable steps), so client and server can never drift.
+    async function renderWithDefaultPrompt(judge_prompt: string) {
+      setModels([noLogprobsProvider])
+      mockGetDefaultLlmJudgePrompt.mockResolvedValueOnce({
+        judge_prompt,
+        system_prompt: "You are an evaluator.",
+      })
+      const onMountCallbacks: Array<() => unknown> = []
+      const spy = vi
+        .spyOn(svelteMod, "onMount")
+        .mockImplementation((fn: () => unknown) => {
+          onMountCallbacks.push(fn)
+        })
+      const rendered = render(LlmJudgeForm, {
+        props: { task_id: "task1", project_id: "proj1", eval_id: "eval1" },
+      })
+      spy.mockRestore()
+      for (const cb of onMountCallbacks) {
+        await cb()
+      }
+      await tick()
+      return rendered
+    }
+
+    it("is hidden when the default prompt has derivable steps", async () => {
+      const { container, queryByText } = await renderWithDefaultPrompt(
+        "Judge {{ final_message }} using baked steps",
+      )
+      expect(container.querySelector("#judge_instruction_0")).toBeNull()
+      expect(queryByText("Evaluation Instructions")).toBeNull()
+      // Judge prompt stays inside the Advanced collapse
+      expect(queryByText("Advanced: Judge Prompt")).not.toBeNull()
+    })
+
+    it("renders steps editor and top-level judge prompt when the default prompt binds instructions", async () => {
+      const { container, queryByText } = await renderWithDefaultPrompt(
+        "Judge {{ final_message }} with <steps>{{ judge_instructions }}</steps>",
+      )
+      expect(queryByText("Evaluation Instructions")).not.toBeNull()
+      const step = container.querySelector(
+        "#judge_instruction_0",
+      ) as HTMLTextAreaElement
+      expect(step).not.toBeNull()
+      expect(step.placeholder).toContain("issue X")
+      // Judge prompt is top-level, not collapsed
+      expect(queryByText("Advanced: Judge Prompt")).toBeNull()
+      expect(container.querySelector("#judge_prompt")).not.toBeNull()
+      // The judge_instructions variable is documented
+      expect(queryByText("{{ judge_instructions }}")).not.toBeNull()
+    })
+
+    it("Add Evaluation Step appends another step row", async () => {
+      const { container, getByText } = await renderWithDefaultPrompt(
+        "Judge {{ final_message }} with <steps>{{ judge_instructions }}</steps>",
+      )
+      expect(container.querySelector("#judge_instruction_1")).toBeNull()
+
+      // Two empty rows must coexist (regression: value-keyed each blew up on
+      // duplicate empty strings, making the button a no-op).
+      await fireEvent.click(getByText("Add Evaluation Step"))
+      await tick()
+      expect(container.querySelector("#judge_instruction_1")).not.toBeNull()
+
+      await fireEvent.click(getByText("Add Evaluation Step"))
+      await tick()
+      expect(container.querySelector("#judge_instruction_2")).not.toBeNull()
     })
   })
 })

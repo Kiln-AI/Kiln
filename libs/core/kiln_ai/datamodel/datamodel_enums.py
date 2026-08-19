@@ -14,6 +14,15 @@ class Priority(IntEnum):
     p3 = 3
 
 
+class EvalStatus(str, Enum):
+    """Lifecycle status of an eval (and, historically, of a spec)."""
+
+    active = "active"
+    future = "future"
+    deprecated = "deprecated"
+    archived = "archived"
+
+
 # Only one rating type for now, but this allows for extensibility if we want to add more in the future
 class TaskOutputRatingType(str, Enum):
     """Defines the types of rating systems available for task outputs."""
@@ -116,6 +125,7 @@ class ModelProviderName(str, Enum):
     siliconflow_cn = "siliconflow_cn"
     cerebras = "cerebras"
     docker_model_runner = "docker_model_runner"
+    featherless_ai = "featherless_ai"
 
 
 class KilnMimeType(str, Enum):

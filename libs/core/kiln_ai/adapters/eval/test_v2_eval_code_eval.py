@@ -1,18 +1,14 @@
 """Tests for CodeEvalAdapter and trust gate helpers."""
 
-import asyncio
-import threading
-import time
-from unittest.mock import Mock, PropertyMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from kiln_ai.adapters.eval.v2_eval_code_eval import (
     CodeEvalAdapter,
-    _trusted_projects,
-    grant_code_eval_trust,
-    is_code_eval_trusted,
-    revoke_code_eval_trust,
+    _reset_add_code_trust,
+    add_code_trust,
+    has_add_code_trust,
 )
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
@@ -21,15 +17,17 @@ from kiln_ai.datamodel.eval import (
     EvalConfigType,
     EvalOutputScore,
     EvalTaskInput,
-    SkippedReason,
 )
+from kiln_ai.tools.sandbox_bridge import BridgeResult
+
+_BRIDGE_PATH = "kiln_ai.adapters.eval.v2_eval_code_eval.run_bridged_child"
 
 
 @pytest.fixture(autouse=True)
 def _clear_trust():
-    _trusted_projects.clear()
+    _reset_add_code_trust()
     yield
-    _trusted_projects.clear()
+    _reset_add_code_trust()
 
 
 def _make_config(
@@ -71,27 +69,29 @@ def _inp(**overrides) -> EvalTaskInput:
 
 
 class TestTrustGate:
-    def test_grant_and_check(self):
-        assert not is_code_eval_trusted("proj-1")
-        grant_code_eval_trust("proj-1")
-        assert is_code_eval_trusted("proj-1")
+    def test_add_and_check(self):
+        assert not has_add_code_trust("proj-1")
+        add_code_trust("proj-1")
+        assert has_add_code_trust("proj-1")
 
-    def test_revoke(self):
-        grant_code_eval_trust("proj-1")
-        revoke_code_eval_trust("proj-1")
-        assert not is_code_eval_trusted("proj-1")
+    def test_add_is_idempotent(self):
+        add_code_trust("proj-1")
+        add_code_trust("proj-1")
+        assert has_add_code_trust("proj-1")
 
-    def test_revoke_nonexistent_is_noop(self):
-        revoke_code_eval_trust("proj-never-added")
+    def test_reset_clears_all(self):
+        add_code_trust("proj-a")
+        add_code_trust("proj-b")
+        _reset_add_code_trust()
+        assert not has_add_code_trust("proj-a")
+        assert not has_add_code_trust("proj-b")
 
     def test_multiple_projects(self):
-        grant_code_eval_trust("proj-a")
-        grant_code_eval_trust("proj-b")
-        assert is_code_eval_trusted("proj-a")
-        assert is_code_eval_trusted("proj-b")
-        revoke_code_eval_trust("proj-a")
-        assert not is_code_eval_trusted("proj-a")
-        assert is_code_eval_trusted("proj-b")
+        add_code_trust("proj-a")
+        add_code_trust("proj-b")
+        assert has_add_code_trust("proj-a")
+        assert has_add_code_trust("proj-b")
+        assert not has_add_code_trust("proj-c")
 
 
 class TestCodeEvalAdapterInit:
@@ -110,22 +110,14 @@ class TestCodeEvalAdapterInit:
 
 class TestCodeEvalAdapterEvaluate:
     @pytest.mark.asyncio
-    async def test_untrusted_project_skips(self):
-        cfg = _make_config()
-        adapter = CodeEvalAdapter(cfg)
-        result = await adapter.evaluate(_inp())
-        assert result.scores == {}
-        assert result.skipped_reason == SkippedReason.code_eval_not_trusted
-        assert result.skipped_detail is not None
-
-    @pytest.mark.asyncio
     async def test_successful_evaluation(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
 
-        with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
-            mock_run.return_value = {"ok": {"accuracy": 0.95}}
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(
+                result_msg={"type": "result", "ok": {"accuracy": 0.95}}
+            )
             result = await adapter.evaluate(_inp())
 
         assert result.scores == {"accuracy": 0.95}
@@ -136,24 +128,44 @@ class TestCodeEvalAdapterEvaluate:
     async def test_timeout_raises_runtime_error(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
-        with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
-            mock_run.side_effect = RuntimeError("Code eval scorer timed out after 30s")
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(timed_out=True)
             with pytest.raises(RuntimeError, match="timed out"):
+                await adapter.evaluate(_inp())
+
+    @pytest.mark.asyncio
+    async def test_crash_raises_runtime_error(self):
+        cfg = _make_config()
+        adapter = CodeEvalAdapter(cfg)
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(crashed=True, exit_code=7)
+            with pytest.raises(RuntimeError, match="exit code 7"):
+                await adapter.evaluate(_inp())
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("exit_code", [0, None])
+    async def test_clean_exit_without_result_is_not_reported_as_a_crash(
+        self, exit_code
+    ):
+        cfg = _make_config()
+        adapter = CodeEvalAdapter(cfg)
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(crashed=True, exit_code=exit_code)
+            with pytest.raises(RuntimeError, match="exited without returning results"):
                 await adapter.evaluate(_inp())
 
     @pytest.mark.asyncio
     async def test_scorer_error_raises_runtime_error(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
-        with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
-            mock_run.return_value = {
-                "error": "NameError: undefined",
-                "traceback": "Traceback...",
-            }
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(
+                result_msg={
+                    "type": "result",
+                    "error": "NameError: undefined",
+                    "traceback": "Traceback...",
+                }
+            )
             with pytest.raises(RuntimeError, match="Code eval scorer failed"):
                 await adapter.evaluate(_inp())
 
@@ -161,10 +173,10 @@ class TestCodeEvalAdapterEvaluate:
     async def test_non_dict_result_raises(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
-        with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
-            mock_run.return_value = {"ok": "not a dict"}
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(
+                result_msg={"type": "result", "ok": "not a dict"}
+            )
             with pytest.raises(RuntimeError, match="Scorer must return a dict"):
                 await adapter.evaluate(_inp())
 
@@ -172,10 +184,10 @@ class TestCodeEvalAdapterEvaluate:
     async def test_inputs_passed_correctly(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
-        with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
-            mock_run.return_value = {"ok": {"accuracy": 1.0}}
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(
+                result_msg={"type": "result", "ok": {"accuracy": 1.0}}
+            )
             await adapter.evaluate(
                 _inp(
                     final_message="test output",
@@ -185,8 +197,7 @@ class TestCodeEvalAdapterEvaluate:
                 )
             )
 
-        call_args = mock_run.call_args
-        inputs = call_args[0][1]
+        inputs = mock_run.call_args.kwargs["args"][1]
         assert inputs["output"] == "test output"
         assert inputs["trace"] == [{"role": "user", "content": "some trace"}]
         assert inputs["reference_data"] == {"key": "ref"}
@@ -198,10 +209,10 @@ class TestScoreValidation:
     async def test_bool_rejected(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
-        with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
-            mock_run.return_value = {"ok": {"accuracy": True}}
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(
+                result_msg={"type": "result", "ok": {"accuracy": True}}
+            )
             with pytest.raises(RuntimeError, match="returned a bool"):
                 await adapter.evaluate(_inp())
 
@@ -209,10 +220,10 @@ class TestScoreValidation:
     async def test_int_converted_to_float(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
-        with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
-            mock_run.return_value = {"ok": {"accuracy": 1}}
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(
+                result_msg={"type": "result", "ok": {"accuracy": 1}}
+            )
             result = await adapter.evaluate(_inp())
 
         assert result.scores == {"accuracy": 1.0}
@@ -223,10 +234,10 @@ class TestScoreValidation:
     async def test_key_mismatch_raises(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
-        with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
-            mock_run.return_value = {"ok": {"wrong_key": 0.5}}
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(
+                result_msg={"type": "result", "ok": {"wrong_key": 0.5}}
+            )
             with pytest.raises(RuntimeError, match="Score key mismatch"):
                 await adapter.evaluate(_inp())
 
@@ -234,10 +245,10 @@ class TestScoreValidation:
     async def test_string_score_rejected(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
-        with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
-            mock_run.return_value = {"ok": {"accuracy": "high"}}
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(
+                result_msg={"type": "result", "ok": {"accuracy": "high"}}
+            )
             with pytest.raises(RuntimeError, match="must be a float"):
                 await adapter.evaluate(_inp())
 
@@ -257,82 +268,10 @@ class TestAsyncScorerEndToEnd:
         )
         cfg = _make_config(code=code)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
-
         result = await adapter.evaluate(_inp(final_message="test"))
         assert result.scores == {"accuracy": 0.75}
         assert result.skipped_reason is None
         assert result.skipped_detail is None
-
-
-class TestResolveProjectPath:
-    def test_no_project_returns_none(self):
-        cfg = _make_config()
-        adapter = CodeEvalAdapter(cfg)
-        adapter.target_task.parent = None
-        assert adapter._resolve_project_path() is None
-
-    def test_no_path_returns_none(self):
-        cfg = _make_config()
-        adapter = CodeEvalAdapter(cfg)
-        adapter.target_task.parent.path = None
-        assert adapter._resolve_project_path() is None
-
-    def test_valid_chain_returns_path(self):
-        cfg = _make_config()
-        adapter = CodeEvalAdapter(cfg)
-        assert adapter._resolve_project_path() == "/fake/project/path"
-
-    def test_exception_returns_none(self):
-        cfg = _make_config()
-        adapter = CodeEvalAdapter(cfg)
-        broken_parent = PropertyMock(side_effect=RuntimeError("broken"))
-        type(adapter.target_task).parent = broken_parent
-        assert adapter._resolve_project_path() is None
-
-
-class TestExecutionSerialization:
-    @pytest.mark.asyncio
-    async def test_concurrent_evaluations_are_serialized(self):
-        """Two concurrent evaluate() calls must not overlap execution.
-
-        run_scorer is called inside run_in_executor (a thread pool thread).
-        We replace it with a slow mock that tracks concurrency via a
-        threading counter. If the asyncio.Lock serialization works, the
-        counter never exceeds 1.
-        """
-        cfg1 = _make_config()
-        cfg2 = _make_config()
-        adapter1 = CodeEvalAdapter(cfg1)
-        adapter2 = CodeEvalAdapter(cfg2)
-        grant_code_eval_trust("/fake/project/path")
-
-        counter_lock = threading.Lock()
-        concurrency_counter = 0
-        max_concurrency = 0
-
-        def slow_run_scorer(code, inputs, timeout):
-            nonlocal concurrency_counter, max_concurrency
-            with counter_lock:
-                concurrency_counter += 1
-                max_concurrency = max(max_concurrency, concurrency_counter)
-            time.sleep(0.05)
-            with counter_lock:
-                concurrency_counter -= 1
-            return {"ok": {"accuracy": 1.0}}
-
-        with patch(
-            "kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer",
-            side_effect=slow_run_scorer,
-        ):
-            await asyncio.gather(
-                adapter1.evaluate(_inp()),
-                adapter2.evaluate(_inp()),
-            )
-
-        assert max_concurrency == 1, (
-            f"Expected serialized execution (max concurrency 1), got {max_concurrency}"
-        )
 
 
 class TestFiniteScoreValidation:
@@ -346,10 +285,11 @@ class TestFiniteScoreValidation:
         saved file unloadable)."""
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
 
-        with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
-            mock_run.return_value = {"ok": {"accuracy": bad}}
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(
+                result_msg={"type": "result", "ok": {"accuracy": bad}}
+            )
             with pytest.raises(RuntimeError, match="finite"):
                 await adapter.evaluate(_inp())
 
@@ -359,10 +299,11 @@ class TestFiniteScoreValidation:
         RuntimeError, not a raw OverflowError from the coercion."""
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
 
-        with patch("kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer") as mock_run:
-            mock_run.return_value = {"ok": {"accuracy": 10**400}}
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(
+                result_msg={"type": "result", "ok": {"accuracy": 10**400}}
+            )
             with pytest.raises(RuntimeError, match="finite"):
                 await adapter.evaluate(_inp())
 
@@ -382,7 +323,6 @@ class TestUsageObjectTransport:
         )
         cfg = _make_config(code=code)
         adapter = CodeEvalAdapter(cfg)
-        grant_code_eval_trust("/fake/project/path")
 
         trace = [
             {"role": "user", "content": "hi"},
