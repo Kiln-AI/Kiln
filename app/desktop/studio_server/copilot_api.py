@@ -786,11 +786,11 @@ def connect_copilot_api(app: FastAPI):
             spec_definition=request.definition,
         )
 
-        # 4. Create TaskRuns for eval, train, val, and golden datasets
+        # 4. Create TaskRuns for test, train, val, and golden datasets
         dataset_runs = create_dataset_task_runs(
             all_examples=all_examples,
             reviewed_examples=request.reviewed_examples,
-            eval_tag=tags.eval_tag,
+            test_tag=tags.test_tag,
             train_tag=tags.train_tag,
             val_tag=tags.val_tag,
             golden_tag=tags.golden_tag,

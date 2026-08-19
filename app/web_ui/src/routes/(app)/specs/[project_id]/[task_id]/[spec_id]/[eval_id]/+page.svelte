@@ -629,16 +629,16 @@
       return
     }
     const test_filter_id = task_run_split_filter_id(evaluator, "test")
-    const eval_tag = test_filter_id
+    const test_tag = test_filter_id
       ? tagFromFilterId(test_filter_id)
       : undefined
     let golden_tag: string | undefined = undefined
     if (evaluator?.eval_configs_filter_id) {
       golden_tag = tagFromFilterId(evaluator.eval_configs_filter_id)
     }
-    if (!eval_tag || (evaluator.template !== "rag" && !golden_tag)) {
+    if (!test_tag || (evaluator.template !== "rag" && !golden_tag)) {
       alert(
-        "No eval or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
+        "No test or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
       )
       return
     }

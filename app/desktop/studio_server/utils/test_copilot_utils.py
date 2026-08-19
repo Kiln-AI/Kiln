@@ -97,36 +97,36 @@ class TestSampleAndRemove:
 class TestCreateTaskRunFromSample:
     def test_creates_task_run_with_correct_input(self):
         sample = SampleApi(input="test input", output="test output")
-        task_run = create_task_run_from_sample(sample, "eval_tag")
+        task_run = create_task_run_from_sample(sample, "some_tag")
         assert task_run.input == "test input"
 
     def test_creates_task_run_with_correct_output(self):
         sample = SampleApi(input="test input", output="test output")
-        task_run = create_task_run_from_sample(sample, "eval_tag")
+        task_run = create_task_run_from_sample(sample, "some_tag")
         assert task_run.output.output == "test output"
 
     def test_creates_task_run_with_tag(self):
         sample = SampleApi(input="test input", output="test output")
-        task_run = create_task_run_from_sample(sample, "eval_tag")
-        assert "eval_tag" in task_run.tags
+        task_run = create_task_run_from_sample(sample, "some_tag")
+        assert "some_tag" in task_run.tags
 
     def test_creates_task_run_with_extra_tags(self):
         sample = SampleApi(input="test input", output="test output")
         task_run = create_task_run_from_sample(
-            sample, "eval_tag", extra_tags=["session_123", "other_tag"]
+            sample, "some_tag", extra_tags=["session_123", "other_tag"]
         )
-        assert "eval_tag" in task_run.tags
+        assert "some_tag" in task_run.tags
         assert "session_123" in task_run.tags
         assert "other_tag" in task_run.tags
 
     def test_creates_task_run_without_extra_tags(self):
         sample = SampleApi(input="test input", output="test output")
-        task_run = create_task_run_from_sample(sample, "eval_tag", extra_tags=None)
-        assert task_run.tags == ["eval_tag"]
+        task_run = create_task_run_from_sample(sample, "some_tag", extra_tags=None)
+        assert task_run.tags == ["some_tag"]
 
     def test_creates_task_run_with_synthetic_data_source(self):
         sample = SampleApi(input="test input", output="test output")
-        task_run = create_task_run_from_sample(sample, "eval_tag")
+        task_run = create_task_run_from_sample(sample, "some_tag")
         assert task_run.input_source.type == DataSourceType.synthetic
         assert task_run.input_source.properties["model_name"] == KILN_COPILOT_MODEL_NAME
         assert (
@@ -263,7 +263,7 @@ class TestCreateDatasetTaskRuns:
         task_runs = create_dataset_task_runs(
             all_examples,
             reviewed_examples,
-            "eval_tag",
+            "test_tag",
             "train_tag",
             "val_tag",
             "golden_tag",
@@ -292,7 +292,7 @@ class TestCreateDatasetTaskRuns:
         task_runs = create_dataset_task_runs(
             all_examples,
             reviewed_examples,
-            "eval_tag",
+            "test_tag",
             "train_tag",
             "val_tag",
             "golden_tag",
@@ -316,7 +316,7 @@ class TestCreateDatasetTaskRuns:
         task_runs = create_dataset_task_runs(
             all_examples,
             reviewed_examples,
-            "eval_tag",
+            "test_tag",
             "train_tag",
             "val_tag",
             "golden_tag",
@@ -340,7 +340,7 @@ class TestCreateDatasetTaskRuns:
         task_runs = create_dataset_task_runs(
             all_examples,
             reviewed_examples,
-            "eval_tag",
+            "test_tag",
             "train_tag",
             "val_tag",
             "golden_tag",
@@ -356,7 +356,7 @@ class TestCreateDatasetTaskRuns:
 
         assert len(session_tags) == 1
 
-    def test_eval_examples_have_eval_tag(self):
+    def test_test_examples_have_test_tag(self):
         all_examples = [
             SampleApi(input=f"input_{i}", output=f"output_{i}")
             for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
@@ -366,17 +366,17 @@ class TestCreateDatasetTaskRuns:
         task_runs = create_dataset_task_runs(
             all_examples,
             reviewed_examples,
-            "eval_tag",
+            "test_tag",
             "train_tag",
             "val_tag",
             "golden_tag",
             "Test Spec",
         ).task_runs
 
-        eval_runs = [tr for tr in task_runs if "eval_tag" in tr.tags]
+        test_runs = [tr for tr in task_runs if "test_tag" in tr.tags]
         num_runs = NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
-        num_eval_runs = (num_runs - MIN_GOLDEN_EXAMPLES) // 2
-        assert len(eval_runs) == num_eval_runs
+        num_test_runs = (num_runs - MIN_GOLDEN_EXAMPLES) // 2
+        assert len(test_runs) == num_test_runs
 
     def test_train_examples_have_train_tag(self):
         all_examples = [
@@ -388,7 +388,7 @@ class TestCreateDatasetTaskRuns:
         task_runs = create_dataset_task_runs(
             all_examples,
             reviewed_examples,
-            "eval_tag",
+            "test_tag",
             "train_tag",
             "val_tag",
             "golden_tag",
@@ -397,8 +397,8 @@ class TestCreateDatasetTaskRuns:
 
         train_runs = [tr for tr in task_runs if "train_tag" in tr.tags]
         num_runs = NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
-        num_eval_runs = (num_runs - MIN_GOLDEN_EXAMPLES) // 2
-        num_remaining = (num_runs - MIN_GOLDEN_EXAMPLES) - num_eval_runs
+        num_test_runs = (num_runs - MIN_GOLDEN_EXAMPLES) // 2
+        num_remaining = (num_runs - MIN_GOLDEN_EXAMPLES) - num_test_runs
         num_val_runs = num_remaining // 3
         num_train_runs = num_remaining - num_val_runs
         assert len(train_runs) == num_train_runs
@@ -413,7 +413,7 @@ class TestCreateDatasetTaskRuns:
         task_runs = create_dataset_task_runs(
             all_examples,
             reviewed_examples,
-            "eval_tag",
+            "test_tag",
             "train_tag",
             "val_tag",
             "golden_tag",
@@ -422,8 +422,8 @@ class TestCreateDatasetTaskRuns:
 
         val_runs = [tr for tr in task_runs if "val_tag" in tr.tags]
         num_runs = NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
-        num_eval_runs = (num_runs - MIN_GOLDEN_EXAMPLES) // 2
-        num_remaining = (num_runs - MIN_GOLDEN_EXAMPLES) - num_eval_runs
+        num_test_runs = (num_runs - MIN_GOLDEN_EXAMPLES) // 2
+        num_remaining = (num_runs - MIN_GOLDEN_EXAMPLES) - num_test_runs
         num_val_runs = num_remaining // 3
         assert len(val_runs) == num_val_runs
 
@@ -437,7 +437,7 @@ class TestCreateDatasetTaskRuns:
         task_runs = create_dataset_task_runs(
             all_examples,
             reviewed_examples,
-            "eval_tag",
+            "test_tag",
             "train_tag",
             "val_tag",
             "golden_tag",
