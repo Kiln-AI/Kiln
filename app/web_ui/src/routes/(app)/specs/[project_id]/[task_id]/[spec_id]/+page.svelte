@@ -12,7 +12,6 @@
     SpecStatus,
     Eval,
     Task,
-    TaskRunConfig,
     EvalResultSummary,
     EvalProgress,
     Priority,
@@ -27,7 +26,7 @@
   } from "$lib/utils/formatters"
   import { eval_type_display } from "$lib/utils/eval_types/eval_type_display"
   import { model_info, load_model_info } from "$lib/stores"
-  import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
+  import { sort_task_run_configs } from "$lib/utils/eval_types/run_config_sort"
   import { load_task, get_task_composite_id } from "$lib/stores"
   import {
     load_task_run_configs,
@@ -420,46 +419,13 @@
   }
 
   $: sorted_task_run_configs = current_task_run_configs
-    ? sortTaskRunConfigs(current_task_run_configs, evaluator, score_summary)
+    ? sort_task_run_configs(
+        current_task_run_configs,
+        evaluator,
+        score_summary,
+        task?.default_run_config_id,
+      )
     : []
-
-  function sortTaskRunConfigs(
-    configs: TaskRunConfig[] | null,
-    evaluator: Eval | null,
-    score_summary: EvalResultSummary | null,
-  ): TaskRunConfig[] {
-    if (!configs || !configs.length) return []
-
-    return [...configs].sort((a, b) => {
-      if (a.id === task?.default_run_config_id) return -1
-      if (b.id === task?.default_run_config_id) return 1
-
-      if (evaluator?.output_scores?.length && score_summary?.results) {
-        const lastScoreKey = string_to_json_key(
-          evaluator.output_scores[evaluator.output_scores.length - 1].name,
-        )
-
-        const scoreA =
-          score_summary.results["" + a.id]?.[lastScoreKey]?.mean_score
-        const scoreB =
-          score_summary.results["" + b.id]?.[lastScoreKey]?.mean_score
-
-        if (
-          scoreA !== null &&
-          scoreA !== undefined &&
-          scoreB !== null &&
-          scoreB !== undefined
-        ) {
-          return scoreB - scoreA
-        }
-
-        if (scoreA !== null && scoreA !== undefined) return -1
-        if (scoreB !== null && scoreB !== undefined) return 1
-      }
-
-      return a.name.localeCompare(b.name)
-    })
-  }
 
   async function save_tags(tags: string[]) {
     try {

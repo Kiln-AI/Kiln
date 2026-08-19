@@ -6,11 +6,7 @@
   import { tick } from "svelte"
   import { page } from "$app/stores"
   import RunEval from "$lib/components/run_eval.svelte"
-  import type {
-    EvalConfig,
-    EvalConfigCompareSummary,
-    EvalOutputScore,
-  } from "$lib/types"
+  import type { EvalConfig, EvalConfigCompareSummary } from "$lib/types"
   import FormElement from "$lib/utils/form_element.svelte"
   import { load_model_info, load_available_models } from "$lib/stores"
   import { load_task_prompts } from "$lib/stores/prompts_store"
@@ -18,6 +14,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
+  import { correlatable_scores } from "$lib/utils/eval_types/run_config_sort"
   import Dialog from "$lib/ui/dialog.svelte"
   import { eval_config_to_detailed_ui_name } from "$lib/utils/formatters"
   import type { TaskOutputRatingType } from "$lib/types"
@@ -100,15 +97,6 @@
   // Sort eval_configs whenever score_type or score_summary changes
   $: if (score_type && eval_configs && score_summary && evaluator) {
     sortEvalConfigs()
-  }
-
-  // Custom-typed scores are code-eval-only metrics with no human-rating
-  // correlation, so the server never returns summary entries for them —
-  // they have no column or sort key on this page.
-  function correlatable_scores(
-    output_scores: EvalOutputScore[] | undefined | null,
-  ): EvalOutputScore[] {
-    return (output_scores || []).filter((score) => score.type !== "custom")
   }
 
   function sortEvalConfigs() {

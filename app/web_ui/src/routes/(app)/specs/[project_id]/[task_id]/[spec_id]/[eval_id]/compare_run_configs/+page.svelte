@@ -8,7 +8,7 @@
   import FormElement, {
     type InlineAction,
   } from "$lib/utils/form_element.svelte"
-  import type { EvalConfig, TaskRunConfig, EvalResultSummary } from "$lib/types"
+  import type { EvalConfig, EvalResultSummary } from "$lib/types"
   import { goto } from "$app/navigation"
   import {
     model_info,
@@ -23,7 +23,7 @@
   } from "$lib/stores/run_configs_store"
   import { set_current_eval_config } from "$lib/stores/evals_store"
   import Warning from "$lib/ui/warning.svelte"
-  import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
+  import { sort_task_run_configs } from "$lib/utils/eval_types/run_config_sort"
   import { formatEvalConfigName } from "$lib/utils/formatters"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
@@ -280,53 +280,14 @@
     (config) => config.id === current_eval_config_id,
   )
 
-  // Sort task run configs - default first, then by last output score
   $: sorted_task_run_configs = current_task_run_configs
-    ? sortTaskRunConfigs(current_task_run_configs, evaluator, score_summary)
+    ? sort_task_run_configs(
+        current_task_run_configs,
+        evaluator,
+        score_summary,
+        task?.default_run_config_id,
+      )
     : []
-
-  function sortTaskRunConfigs(
-    configs: TaskRunConfig[] | null,
-    evaluator: Eval | null,
-    score_summary: EvalResultSummary | null,
-  ): TaskRunConfig[] {
-    if (!configs || !configs.length) return []
-
-    return [...configs].sort((a, b) => {
-      // Default run config always comes first
-      if (a.id === task?.default_run_config_id) return -1
-      if (b.id === task?.default_run_config_id) return 1
-
-      // If we have evaluator and score summary, sort by the last output score
-      if (evaluator?.output_scores?.length && score_summary?.results) {
-        const lastScoreKey = string_to_json_key(
-          evaluator.output_scores[evaluator.output_scores.length - 1].name,
-        )
-
-        const scoreA =
-          score_summary.results["" + a.id]?.[lastScoreKey]?.mean_score
-        const scoreB =
-          score_summary.results["" + b.id]?.[lastScoreKey]?.mean_score
-
-        // If both have scores, sort by score (higher first)
-        if (
-          scoreA !== null &&
-          scoreA !== undefined &&
-          scoreB !== null &&
-          scoreB !== undefined
-        ) {
-          return scoreB - scoreA
-        }
-
-        // If only one has a score, it comes first
-        if (scoreA !== null && scoreA !== undefined) return -1
-        if (scoreB !== null && scoreB !== undefined) return 1
-      }
-
-      // Fallback to sort by name
-      return a.name.localeCompare(b.name)
-    })
-  }
 
   let judge_instructions_dialog: Dialog | null = null
 

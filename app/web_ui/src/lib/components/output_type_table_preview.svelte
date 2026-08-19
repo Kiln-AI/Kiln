@@ -1,6 +1,7 @@
 <script lang="ts">
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import type { TaskOutputRatingType } from "$lib/types"
+  import { rating_name } from "$lib/utils/formatters"
 
   export let output_score_type: TaskOutputRatingType
 </script>
@@ -22,7 +23,13 @@
       tooltip_text="-1 is critical failure, 0 is fail, and 1 is pass"
       no_pad={true}
     />
+  {:else if output_score_type === "custom"}
+    number
+    <InfoTooltip
+      tooltip_text="Any finite number. Custom metrics are unbounded values like token counts, cost, or latency."
+      no_pad={true}
+    />
   {:else}
-    {output_score_type}
+    {rating_name(output_score_type)}
   {/if}
 </div>
