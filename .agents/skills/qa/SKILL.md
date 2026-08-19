@@ -1,6 +1,6 @@
 ---
 name: qa
-description: Manual, browser-driven QA over a branch or PR — reads the commit history to scope what actually changed, drafts a test plan grouped into independent testing areas, gets user approval, fans out one subagent per area (each driving the real UI in its own isolated dev server and browser session), and compiles a single severity-ranked findings report. Use when the user asks for an "E2E test", "QA pass", "manual test", "bug bash", or to "test this branch/PR" by actually clicking through it — as opposed to running the automated e2e suite (see the `playwright` skill) or reviewing a diff (see `code-review`).
+description: Multi-agent, browser-driven QA pass over a branch or PR — scope it, plan it, fan out one subagent per testing area in its own isolated sandbox, compile a severity-ranked markdown report. Use for an "E2E test", "QA pass", "manual test", or "bug bash" request — broader than driving the UI to check one fix (see `playwright`) or reviewing a diff (see `code-review`).
 ---
 
 # QA: manual E2E testing over a branch
@@ -15,22 +15,40 @@ back a findings report, same posture as `kiln-prerelease-check`.
 
 ## When to use this vs. something else
 
-- Automated regression suite (`npm run tests:e2e`) → the `playwright` skill directly.
-- Line-by-line review of a diff → `code-review`.
-- This skill → someone wants to know whether the thing actually works when you click through
-  it, across a branch big enough that one person clicking through it alone would take all day.
+- **Automated regression suite** (`npm run tests:e2e`) — a different thing entirely. Use the
+  `playwright` skill directly to run or debug it.
+- **The `playwright` skill** — the tooling underneath this skill (dev sandbox, driving the
+  browser, screenshots). You read it as part of doing QA here, but it also stands alone — a
+  coding agent reaches for it just to check its own fix rendered correctly. That skill is
+  about the tooling; this skill is about the pass.
+- **This skill** — a QA person's pass over a bigger feature set, not one fix: real UI,
+  end-to-end, looking for bugs, string issues, and inconsistencies across a set of screens or
+  flows big enough that one person clicking through it alone would eat a day. Reach for it on
+  an "E2E test", "QA pass", "manual test", or "bug bash" request.
+- **Line-by-line review of a diff** — `code-review`, for reading code rather than clicking
+  through the running app.
 
 ## Process
 
-### 1. Scope the branch
+### 1. Get oriented, then confirm scope
 
-Before touching a browser, understand what you're actually testing:
+Before touching a browser: if the invocation already tells you what to test and where to
+focus, verify it against reality (see the cutoff-date check below) and move to planning. If
+it doesn't — a bare "QA this branch" — browse for context first, then ask; don't guess at
+scope or silently default to "test everything":
 
-- Identify the branch/PR and its base. `git log --oneline` (with `--since` if the user gave a
-  cutoff date, e.g. "focus on work after the last bug bash") to see what actually landed and
-  when — don't take a stated scope at face value. In this session the "post-bug-bash polish"
-  lane turned up commits that mostly predated the bug bash; say so plainly rather than quietly
-  testing the wrong window.
+- Look around before asking anything: current branch/PR and its base, `git log --oneline` (and
+  a diff against the likely base) to see what's actually there, any obviously-relevant
+  `specs/projects/*` docs, any linked runbook or checklist. Show up to the question with real
+  options, not a blank one.
+- Then ask the user directly what to test and where to focus — a feature area, a date cutoff
+  ("since the last bug bash"), a specific PR, a merge boundary. A branch big enough to need
+  this skill is usually too big to cover exhaustively in one pass; let the user say what
+  matters most rather than assuming "everything."
+- If the user gives a cutoff date, verify it rather than trust it — check when the relevant
+  commits actually landed. In one run, a "post-bug-bash polish" lane turned up commits that
+  mostly predated the stated bug bash; that only surfaced because the dates were checked
+  against `git log`, not assumed from the ask.
 - If the user points at an existing manual-test doc — a runbook, a checklist, an Artifact link
   from another agent — fetch and read it in full before planning. Don't re-derive acceptance
   criteria that already exist; treat that doc as one of your lanes, executed close to verbatim.
@@ -79,9 +97,10 @@ model.
 - Clean up every sandbox you spun up (see below) before declaring done — leftover
   `.agent_dev_home_*` directories are untracked scratch state that will trip a repo's
   untracked-files hook.
-- If the report is substantial, publish it as an Artifact (load `artifact-design` first)
-  instead of a wall of chat text — group by severity, not by lane, since a reader triaging
-  wants "what do I fix first," not "what did lane 3 find."
+- Write the report as **markdown**, not an HTML artifact — this is an internal engineering
+  report, not a designed deliverable. Group by severity, not by lane, since a reader triaging
+  wants "what do I fix first," not "what did lane 3 find." Send it as a file if it's long
+  enough that pasting it into chat would bury the headline.
 
 ## Isolating parallel lanes
 
@@ -163,10 +182,17 @@ expected/partial rather than bugs, while the lane still verifies everything reac
 the gate: form validation, error messages, degrade-gracefully behavior, whatever UI exists
 before the live call would happen.
 
+If a live model call is actually essential to a lane's coverage — the feature can't be
+meaningfully verified any other way — don't just skip it. Ask the user for an OpenRouter API
+key with a small max-spend limit, scoped to this test run, and connect it through the app's
+own Settings UI (not a raw env var) so it behaves exactly like a real user's connected
+provider. OpenRouter covers most models through one key; only ask for a different provider's
+key if the thing under test is specific to that provider.
+
 ## Report shape
 
-Lead with anything blocker-severity in plain language before the supporting detail. Group the
-final write-up by severity, not by lane. For each finding: one-line summary, severity, area,
-concrete repro, expected vs. actual, file:line, and whether it's actually inside the requested
-focus window. Close with a short overall verdict and a recommendation (fix before merge vs.
-a product decision vs. fine to ship as-is).
+Write it in **markdown**, not an HTML artifact. Lead with anything blocker-severity in plain
+language before the supporting detail. Group the final write-up by severity, not by lane. For
+each finding: one-line summary, severity, area, concrete repro, expected vs. actual, file:line,
+and whether it's actually inside the requested focus window. Close with a short overall
+verdict and a recommendation (fix before merge vs. a product decision vs. fine to ship as-is).
