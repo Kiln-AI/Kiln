@@ -2022,36 +2022,24 @@ export interface paths {
          *     copy of it, so a delete that went through would leave records describing content
          *     that no longer exists — an eval trace whose scenario is gone, or a score whose
          *     input can't be read back. To take a referenced item out of an eval's scope,
-         *     retag it instead: that is what the tags endpoint is for.
+         *     retag it with PATCH instead; to correct its ground truth, PATCH its reference.
          */
         delete: operations["delete_eval_input_api_projects__project_id__tasks__task_id__eval_inputs__eval_input_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tasks/{task_id}/eval_inputs/{eval_input_id}/tags": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
         /**
-         * Update Eval Input Tags
-         * @description Retag an eval input item.
+         * Update Eval Input
+         * @description Update an eval input item's tags and/or reference data.
          *
-         *     Deliberately the only mutation on an item: `data` and `reference` are immutable
-         *     once written, because trace reuse and stored scores both key on the item id (see
-         *     UpdateEvalInputTagsRequest). Content edits are a POST of a new item.
+         *     `data` is not editable and sending it is a 422 — see UpdateEvalInputRequest for
+         *     why the scenario is the one field that can't change in place.
+         *
+         *     Reads `model_fields_set` rather than testing each field for None, because for
+         *     `reference` the two are genuinely different requests: omitting it leaves ground
+         *     truth alone, sending null clears it. Testing for None would make clearing
+         *     impossible and silently look like a successful no-op.
          */
-        patch: operations["update_eval_input_tags_api_projects__project_id__tasks__task_id__eval_inputs__eval_input_id__tags_patch"];
+        patch: operations["update_eval_input_api_projects__project_id__tasks__task_id__eval_inputs__eval_input_id__patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs": {
@@ -12220,28 +12208,42 @@ export interface components {
             auth_mode?: ("system_keys" | "pat_token" | "github_oauth") | null;
         };
         /**
-         * UpdateEvalInputTagsRequest
-         * @description Request to retag an eval input item.
+         * UpdateEvalInputRequest
+         * @description Partial update of an eval input item. Omitted fields are left unchanged.
          *
-         *     Tags are the only mutable part of an item. An item's *content* — `data` and
-         *     `reference` — is immutable once written, because two things key on the item id and
-         *     would silently disagree with an in-place edit:
+         *     `data` is deliberately absent, and `extra="forbid"` turns an attempt to send it into
+         *     a 422 rather than a silent no-op the caller reads as success. The scenario is the one
+         *     thing that genuinely cannot be edited in place: trace reuse (`TraceIndex`) keys on
+         *     `(source_type, item_id, run_config_id)`, so a later eval would hand a judge a
+         *     conversation generated from the scenario this item *used to* have. Changing a
+         *     scenario means POSTing a new item.
          *
-         *     - Trace reuse (`TraceIndex`) keys on `(source_type, item_id, run_config_id)`, so a
-         *       later eval would hand a judge a trace generated from the content this item used to
-         *       have.
-         *     - Stored score records (`EvalRun.eval_input_id`) name the item, not a snapshot of it,
-         *       so every past score would read as having been computed over the new content.
+         *     `reference` does not have that problem and is editable. It keys nothing: stored
+         *     scores snapshot the `reference_data` the judge actually saw (`_persist_judgment`)
+         *     rather than pointing back at the item, and drive fingerprints hash the scenario, not
+         *     the reference. So correcting ground truth invalidates nothing already on disk — it
+         *     changes what future runs are graded against, which is the whole point of correcting
+         *     it. Iterating on reference data is a normal part of authoring a corpus, and making it
+         *     mint-a-new-item would leave one dead item behind per correction.
          *
-         *     Editing content means POSTing a new item, which the corpus author then tags into the
-         *     slice; the old item stays as the thing its existing traces and scores describe.
+         *     The cost, stated: scores written either side of a `reference` edit hang off the same
+         *     item id but were graded against different ground truth. Each EvalRun carries the
+         *     reference it saw, so this is auditable, but a rollup that groups scores by item alone
+         *     would mix the two.
          */
-        UpdateEvalInputTagsRequest: {
+        UpdateEvalInputRequest: {
             /**
              * Tags
-             * @description The item's tags, replacing the whole list. Tags decide which eval_input_filter_id slices the item falls into, so this is how an item is added to or removed from an eval's scope.
+             * @description The item's tags, replacing the whole list. Send [] to clear them. Tags decide which eval_input_filter_id slices the item falls into, so this is how an item is added to or removed from an eval's scope.
              */
-            tags: string[];
+            tags?: string[] | null;
+            /**
+             * Reference
+             * @description The item's reference data (ground truth), replacing the whole dict. Send null to clear it — omitting the field leaves it unchanged, which is a different request.
+             */
+            reference?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
         };
         /**
          * UpdateEvalRequest
@@ -17437,7 +17439,7 @@ export interface operations {
             };
         };
     };
-    update_eval_input_tags_api_projects__project_id__tasks__task_id__eval_inputs__eval_input_id__tags_patch: {
+    update_eval_input_api_projects__project_id__tasks__task_id__eval_inputs__eval_input_id__patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -17453,7 +17455,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UpdateEvalInputTagsRequest"];
+                "application/json": components["schemas"]["UpdateEvalInputRequest"];
             };
         };
         responses: {

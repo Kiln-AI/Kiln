@@ -6419,11 +6419,11 @@ def test_create_eval_input_invalid_data(client, mock_task, mock_task_from_id):
 
 
 def test_update_eval_input_tags(client, mock_task, mock_task_from_id):
-    """Tags are the one mutable part of an item; content is untouched by a retag."""
+    """A retag leaves content byte-identical."""
     eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
 
     response = client.patch(
-        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}/tags",
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
         json={"tags": ["corpus", "val_split"]},
     )
     assert response.status_code == 200
@@ -6432,10 +6432,10 @@ def test_update_eval_input_tags(client, mock_task, mock_task_from_id):
     assert result["reference"] == {"scenario": "s1", "expected_facts": ["fact one"]}
     assert result["data"]["first_message"]["text"] == "seed"
 
-    on_disk = mock_task.eval_inputs(readonly=True)
-    assert on_disk[0].tags == ["corpus", "val_split"]
-    assert on_disk[0].reference == {"scenario": "s1", "expected_facts": ["fact one"]}
-    assert on_disk[0].data.first_message.text == "seed"
+    on_disk = mock_task.eval_inputs(readonly=True)[0]
+    assert on_disk.tags == ["corpus", "val_split"]
+    assert on_disk.reference == {"scenario": "s1", "expected_facts": ["fact one"]}
+    assert on_disk.data.first_message.text == "seed"
 
 
 def test_update_eval_input_tags_can_empty_the_list(
@@ -6446,13 +6446,119 @@ def test_update_eval_input_tags_can_empty_the_list(
     eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus", "val_split"])
 
     response = client.patch(
-        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}/tags",
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
         json={"tags": []},
     )
 
     assert response.status_code == 200
     assert response.json()["tags"] == []
     assert mock_task.eval_inputs(readonly=True)[0].tags == []
+
+
+def test_update_eval_input_null_tags_is_rejected(client, mock_task, mock_task_from_id):
+    """null is not the spelling for "remove every tag" — [] is. Accepting it as
+    "unchanged" would drop an edit the caller believes landed."""
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={"tags": None},
+    )
+
+    assert response.status_code == 422
+    assert "Send [] to remove every tag" in response.json()["message"]
+    assert mock_task.eval_inputs(readonly=True)[0].tags == ["corpus"]
+
+
+def test_update_eval_input_reference(client, mock_task, mock_task_from_id):
+    """Correcting ground truth is an in-place edit.
+
+    It keys nothing: stored scores snapshot the reference the judge actually saw, and
+    drive fingerprints hash the scenario rather than the reference, so nothing already on
+    disk is invalidated. Iterating on reference data is normal corpus authoring, and
+    forcing it through a new item would leave one dead item behind per correction.
+    """
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={
+            "reference": {"scenario": "s1", "expected_facts": ["the corrected fact"]}
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["reference"] == {
+        "scenario": "s1",
+        "expected_facts": ["the corrected fact"],
+    }
+    # The whole dict is replaced, and the rest of the item is untouched.
+    assert result["tags"] == ["corpus"]
+    assert result["data"]["first_message"]["text"] == "seed"
+
+    on_disk = mock_task.eval_inputs(readonly=True)[0]
+    assert on_disk.reference == {
+        "scenario": "s1",
+        "expected_facts": ["the corrected fact"],
+    }
+    assert on_disk.data.first_message.text == "seed"
+
+
+def test_update_eval_input_reference_and_tags_together(
+    client, mock_task, mock_task_from_id
+):
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={"tags": ["corpus", "fixed"], "reference": {"scenario": "s2"}},
+    )
+
+    assert response.status_code == 200
+    on_disk = mock_task.eval_inputs(readonly=True)[0]
+    assert on_disk.tags == ["corpus", "fixed"]
+    assert on_disk.reference == {"scenario": "s2"}
+
+
+def test_update_eval_input_null_reference_clears_it(
+    client, mock_task, mock_task_from_id
+):
+    """Explicit null clears ground truth; omitting the field leaves it alone. The two
+    are different requests, which is why the handler reads model_fields_set rather than
+    testing for None — a None test would make clearing impossible."""
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={"reference": None},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reference"] is None
+    assert mock_task.eval_inputs(readonly=True)[0].reference is None
+
+
+def test_update_eval_input_omitting_reference_leaves_it_unchanged(
+    client, mock_task, mock_task_from_id
+):
+    """The other half of the pair above: a tags-only patch must not clear ground truth."""
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={"tags": ["corpus", "val_split"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reference"] == {
+        "scenario": "s1",
+        "expected_facts": ["fact one"],
+    }
+    assert mock_task.eval_inputs(readonly=True)[0].reference == {
+        "scenario": "s1",
+        "expected_facts": ["fact one"],
+    }
 
 
 @pytest.mark.parametrize(
@@ -6470,30 +6576,26 @@ def test_update_eval_input_tags_can_empty_the_list(
             id="data_alongside_tags",
         ),
         pytest.param(
-            {"tags": ["corpus"], "reference": {"scenario": "s2"}},
-            id="reference_alongside_tags",
-        ),
-        pytest.param(
             {"data": {"type": "single_turn", "user_message": {"text": "hi"}}},
             id="data_only",
         ),
     ],
 )
-def test_update_eval_input_rejects_content_edits(
+def test_update_eval_input_rejects_scenario_edits(
     client, mock_task, mock_task_from_id, body
 ):
-    """A content edit must fail loudly, not be silently dropped.
+    """A scenario edit must fail loudly, not be silently dropped.
 
-    Trace reuse keys on the item id, so an in-place content edit would let a later eval
-    hand a judge a trace generated from the old content, and every stored score would
-    read as having been computed over the new one. Content edits are a POST of a new
-    item. `extra="forbid"` is what makes the attempt a 422 instead of a no-op the caller
-    reads as success.
+    Trace reuse keys on the item id, so editing `data` in place would let a later eval
+    hand a judge a conversation generated from the scenario the item used to have.
+    Changing a scenario is a POST of a new item. `extra="forbid"` is what makes the
+    attempt a 422 instead of a no-op the caller reads as success — including when `data`
+    rides along with an otherwise-valid tags edit, which must not half-apply.
     """
     eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
 
     response = client.patch(
-        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}/tags",
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
         json=body,
     )
 
@@ -6505,9 +6607,9 @@ def test_update_eval_input_rejects_content_edits(
     assert on_disk.tags == ["corpus"]
 
 
-def test_update_eval_input_tags_404(client, mock_task, mock_task_from_id):
+def test_update_eval_input_404(client, mock_task, mock_task_from_id):
     response = client.patch(
-        "/api/projects/project1/tasks/task1/eval_inputs/999999/tags",
+        "/api/projects/project1/tasks/task1/eval_inputs/999999",
         json={"tags": ["x"]},
     )
 
