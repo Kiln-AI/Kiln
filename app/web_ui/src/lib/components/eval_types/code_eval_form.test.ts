@@ -207,12 +207,112 @@ describe("CodeEvalForm", () => {
     const tabs = container.querySelectorAll(".tab")
 
     expect(tabs[0].classList.contains("tab-active")).toBe(true)
+    expect(tabs[0].getAttribute("aria-selected")).toBe("true")
     expect(tabs[1].classList.contains("tab-active")).toBe(false)
+    expect(tabs[1].getAttribute("aria-selected")).toBe("false")
 
     await fireEvent.click(tabs[1])
 
     expect(tabs[0].classList.contains("tab-active")).toBe(false)
+    expect(tabs[0].getAttribute("aria-selected")).toBe("false")
     expect(tabs[1].classList.contains("tab-active")).toBe(true)
+    expect(tabs[1].getAttribute("aria-selected")).toBe("true")
+  })
+
+  it("renders example tabs as a named, wrapping boxed tab group", () => {
+    const { container } = render(CodeEvalForm)
+    const tablist = container.querySelector('[role="tablist"]')
+    expect(tablist).not.toBeNull()
+    expect(tablist?.getAttribute("aria-label")).toBe("Examples")
+    expect(tablist?.classList.contains("tabs-boxed")).toBe(true)
+    expect(tablist?.classList.contains("flex-wrap")).toBe(true)
+    expect(container.querySelectorAll('[role="tab"]').length).toBe(5)
+  })
+
+  it("wraps each label so an over-long one ellipsizes", () => {
+    const { container } = render(CodeEvalForm)
+    const tabs = container.querySelectorAll('[role="tab"]')
+    // text-overflow is inert on .tab itself (a flex container), so the label
+    // must stay inside a block child for truncation to work at all
+    expect(tabs[0].querySelector("span")?.classList.contains("truncate")).toBe(
+      true,
+    )
+  })
+
+  it("moves the active example tab with the arrow, home and end keys", async () => {
+    const { container } = render(CodeEvalForm)
+    const tabs = container.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+
+    await fireEvent.keyDown(tabs[0], { key: "ArrowRight" })
+    expect(tabs[1].getAttribute("aria-selected")).toBe("true")
+    expect(document.activeElement).toBe(tabs[1])
+
+    // Wraps around both ends so the group is a single loop
+    await fireEvent.keyDown(tabs[1], { key: "ArrowLeft" })
+    await fireEvent.keyDown(tabs[0], { key: "ArrowLeft" })
+    expect(tabs[4].getAttribute("aria-selected")).toBe("true")
+
+    await fireEvent.keyDown(tabs[4], { key: "ArrowRight" })
+    expect(tabs[0].getAttribute("aria-selected")).toBe("true")
+
+    await fireEvent.keyDown(tabs[0], { key: "End" })
+    expect(tabs[4].getAttribute("aria-selected")).toBe("true")
+
+    await fireEvent.keyDown(tabs[4], { key: "Home" })
+    expect(tabs[0].getAttribute("aria-selected")).toBe("true")
+  })
+
+  it("leaves keys it does not handle to the browser", async () => {
+    const { container } = render(CodeEvalForm)
+    const tabs = container.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+
+    // fireEvent returns false when the default was prevented
+    expect(await fireEvent.keyDown(tabs[0], { key: "ArrowDown" })).toBe(true)
+    expect(tabs[0].getAttribute("aria-selected")).toBe("true")
+
+    // Alt+Left is browser Back, so the tab group must not swallow it
+    expect(
+      await fireEvent.keyDown(tabs[0], { key: "ArrowLeft", altKey: true }),
+    ).toBe(true)
+    expect(tabs[0].getAttribute("aria-selected")).toBe("true")
+  })
+
+  it("keeps only the active example tab in the tab sequence", async () => {
+    const { container } = render(CodeEvalForm)
+    const tabs = container.querySelectorAll('[role="tab"]')
+    const panel = container.querySelector('[role="tabpanel"]')
+
+    expect(tabs[0].getAttribute("tabindex")).toBe("0")
+    expect(tabs[1].getAttribute("tabindex")).toBe("-1")
+    // The panel scrolls horizontally, so it needs to be keyboard reachable
+    expect(panel?.getAttribute("tabindex")).toBe("0")
+
+    await fireEvent.click(tabs[1])
+
+    expect(tabs[0].getAttribute("tabindex")).toBe("-1")
+    expect(tabs[1].getAttribute("tabindex")).toBe("0")
+  })
+
+  it("labels the example code panel with the active tab", async () => {
+    const { container } = render(CodeEvalForm)
+    const panel = container.querySelector('[role="tabpanel"]')
+    const tabs = container.querySelectorAll('[role="tab"]')
+    expect(panel?.getAttribute("aria-labelledby")).toBe(tabs[0].id)
+
+    await fireEvent.click(tabs[2])
+
+    expect(panel?.getAttribute("aria-labelledby")).toBe(tabs[2].id)
+    expect(tabs[2].getAttribute("aria-controls")).toBe(panel?.id)
+  })
+
+  it("scopes example tab ids per instance so two forms cannot collide", () => {
+    const first = render(CodeEvalForm).container
+    const second = render(CodeEvalForm).container
+    const first_tab = first.querySelector('[role="tab"]')
+    const second_tab = second.querySelector('[role="tab"]')
+
+    expect(first_tab?.id).toBeTruthy()
+    expect(first_tab?.id).not.toBe(second_tab?.id)
   })
 
   it("renders code editor stub with default code", () => {
