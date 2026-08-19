@@ -25,9 +25,15 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
-def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
+def tool_from_id(
+    tool_id: str, task: Task | None = None, allow_archived: bool = False
+) -> KilnToolInterface:
     """
     Get a tool from its ID.
+
+    allow_archived lets callers that describe historical runs (fine-tune dataset
+    export, evals) resolve a tool that was archived after the run. Execution paths
+    leave it False so archived tools can't be run.
     """
     # Check built-in tools
     if tool_id in [member.value for member in KilnBuiltInToolId]:
@@ -82,6 +88,11 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
                     f"External tool server not found: {tool_server_id} in project ID {project.id}"
                 )
 
+            if not allow_archived and server.properties.get("is_archived", False):
+                raise ValueError(
+                    f"Tool '{tool_name}' belongs to archived tool server '{server.name}'. Unarchive the server or remove the tool from the run config to run it."
+                )
+
             return MCPServerTool(server, tool_name)
 
         # Check Kiln Task Tools
@@ -101,6 +112,11 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
                     f"Kiln Task External tool server not found: {server_id} in project ID {project.id}"
                 )
 
+            if not allow_archived and server.properties.get("is_archived", False):
+                raise ValueError(
+                    f"Kiln Task tool '{server.name}' is archived. Unarchive it or remove it from the run config to run it."
+                )
+
             return KilnTaskTool(project.id, tool_id, server)
 
     elif tool_id.startswith(RAG_TOOL_ID_PREFIX):
@@ -117,6 +133,11 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
                 f"RAG config not found: {rag_config_id} in project {project.id} for tool {tool_id}"
             )
 
+        if not allow_archived and rag_config.is_archived:
+            raise ValueError(
+                f"Search tool (RAG) '{rag_config.name}' is archived. Unarchive it or remove it from the run config to run it."
+            )
+
         # Lazy import to avoid circular dependency
         from kiln_ai.tools.rag_tools import RagTool
 
@@ -131,7 +152,7 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
 
 
 async def tool_definitions_from_ids(
-    tool_ids: list[str], task: Task | None = None
+    tool_ids: list[str], task: Task | None = None, allow_archived: bool = False
 ) -> list[ToolCallDefinition]:
     """
     Get OpenAI-compatible tool definitions from a list of tool IDs.
@@ -139,7 +160,7 @@ async def tool_definitions_from_ids(
     tool_definitions = []
     for tool_id in tool_ids:
         try:
-            tool = tool_from_id(tool_id, task)
+            tool = tool_from_id(tool_id, task, allow_archived=allow_archived)
             tool_def = await tool.toolcall_definition()
             tool_definitions.append(tool_def)
         except Exception as e:

@@ -445,7 +445,9 @@ class DatasetFormatter:
                 continue
 
             try:
-                tool = tool_from_id(tool_id, task)
+                # Historical runs may reference tools archived after the fact; we
+                # still need their definitions to build the training data.
+                tool = tool_from_id(tool_id, task, allow_archived=True)
                 tool_def = await tool.toolcall_definition()
 
                 self._tool_cache[tool_id] = tool_def

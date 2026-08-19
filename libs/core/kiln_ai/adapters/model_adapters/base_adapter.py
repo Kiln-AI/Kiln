@@ -648,7 +648,12 @@ class BaseAdapter(metaclass=ABCMeta):
             if sid in seen:
                 continue
             seen.add(sid)
-            skills.append(injected[sid])
+            skill = injected[sid]
+            if skill.is_archived:
+                raise ValueError(
+                    f"Skill '{skill.name}' is archived. Unarchive it or remove it from the run config to run it."
+                )
+            skills.append(skill)
 
         self._resolved_skills = skills
         return self._resolved_skills

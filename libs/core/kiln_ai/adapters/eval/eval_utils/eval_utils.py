@@ -39,7 +39,11 @@ class EvalUtils:
 
         for index, tool in enumerate(available_tools):
             try:
-                tool_object = tool_from_id(tool, task_run.parent_task())
+                # Past runs may reference now-archived tools; resolve them so we
+                # can describe what was available when the run happened.
+                tool_object = tool_from_id(
+                    tool, task_run.parent_task(), allow_archived=True
+                )
                 tool_definition = await tool_object.toolcall_definition()
 
                 tool_name = tool_definition["function"]["name"]
