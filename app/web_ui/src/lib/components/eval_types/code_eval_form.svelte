@@ -146,6 +146,43 @@
   let examples_dialog: Dialog
   let active_example_tab: number = 0
 
+  // Unique so the ids stay correct if two eval-type forms are ever rendered
+  // at once (this component is mounted via the eval type registry).
+  const example_tab_id_prefix =
+    "code_eval_example_" + Math.random().toString(36).slice(2)
+
+  let example_tab_buttons: HTMLButtonElement[] = []
+
+  function focus_example_tab(index: number) {
+    active_example_tab = index
+    example_tab_buttons[index]?.focus()
+  }
+
+  function on_example_tab_keydown(event: KeyboardEvent, index: number) {
+    // Leave browser/OS shortcuts alone (Alt+Left is Back on Windows/Linux).
+    if (event.altKey || event.ctrlKey || event.metaKey) {
+      return
+    }
+    const last = examples.length - 1
+    switch (event.key) {
+      case "ArrowRight":
+        focus_example_tab(index === last ? 0 : index + 1)
+        break
+      case "ArrowLeft":
+        focus_example_tab(index === 0 ? last : index - 1)
+        break
+      case "Home":
+        focus_example_tab(0)
+        break
+      case "End":
+        focus_example_tab(last)
+        break
+      default:
+        return
+    }
+    event.preventDefault()
+  }
+
   // Examples follow the same rule as the starter: the real score key once the
   // eval has a valid name, the placeholder before then.
   $: examples = generate_examples(
@@ -260,20 +297,42 @@
   ]}
 >
   <div class="flex flex-col gap-4">
-    <div class="tabs tabs-bordered flex-nowrap overflow-x-auto">
+    <!-- DaisyUI v4 sets .tabs to display:grid, which keeps every tab on one
+         row. flex + flex-wrap lets long labels wrap instead of being clipped. -->
+    <!-- tabs-md is the explicit default size: tabs-sm shrinks the pill to 24px,
+         where DaisyUI's outline-offset:-5px focus ring cuts through the label. -->
+    <div
+      role="tablist"
+      aria-label="Examples"
+      class="tabs tabs-boxed tabs-md flex flex-wrap gap-1 w-fit max-w-full"
+    >
       {#each examples as example, i}
         <button
+          bind:this={example_tab_buttons[i]}
           type="button"
-          class="tab shrink-0 whitespace-nowrap {active_example_tab === i
+          role="tab"
+          id="{example_tab_id_prefix}_tab_{i}"
+          aria-selected={active_example_tab === i}
+          aria-controls="{example_tab_id_prefix}_panel"
+          tabindex={active_example_tab === i ? 0 : -1}
+          class="tab min-w-0 justify-start {active_example_tab === i
             ? 'tab-active'
             : ''}"
           on:click={() => (active_example_tab = i)}
+          on:keydown={(event) => on_example_tab_keydown(event, i)}
         >
-          {example.label}
+          <!-- Truncation needs a block container: text-overflow does nothing on
+               the flex container .tab itself. -->
+          <span class="truncate">{example.label}</span>
         </button>
       {/each}
     </div>
+    <!-- tabindex so keyboard users can scroll the code block (WCAG 2.1.1). -->
     <div
+      role="tabpanel"
+      id="{example_tab_id_prefix}_panel"
+      aria-labelledby="{example_tab_id_prefix}_tab_{active_example_tab}"
+      tabindex="0"
       class="bg-base-200 rounded-lg p-4 overflow-x-auto font-mono text-sm whitespace-pre"
     >
       {examples[active_example_tab].code}
