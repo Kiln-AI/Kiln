@@ -90,7 +90,7 @@ from kiln_server.utils.spec_utils import (
     spec_eval_splits,
     tag_filter_id,
 )
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app.desktop.studio_server.code_tool_api import ToolCallLogEntryResponse
 
@@ -280,6 +280,25 @@ class CreateEvaluatorRequest(BaseModel):
     status: EvalStatus = Field(
         default=EvalStatus.active, description="The status of the eval."
     )
+
+    @field_validator("output_scores")
+    @classmethod
+    def reject_custom_scores(
+        cls, output_scores: list[EvalOutputScore] | None
+    ) -> list[EvalOutputScore] | None:
+        """Reject custom-typed scores, which only code-eval judges can produce.
+
+        No UI offers a custom score type, so an eval created here with one
+        could only ever be finished by hand-building its code-eval config.
+        Callers who want that combination build the eval with the library.
+        """
+        for score in output_scores or []:
+            if score.type == TaskOutputRatingType.custom:
+                raise ValueError(
+                    f"Score '{score.name}' has type 'custom', which is not supported by this endpoint. "
+                    "Custom-typed scores require a code-eval judge and are created with the Kiln library."
+                )
+        return output_scores
 
 
 class CreateEvalConfigRequest(BaseModel):
