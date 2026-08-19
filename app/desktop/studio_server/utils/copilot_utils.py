@@ -42,7 +42,11 @@ KILN_COPILOT_MODEL_PROVIDER = "kiln"
 KILN_ADAPTER_NAME = "kiln-adapter"
 NUM_SAMPLES_PER_TOPIC = 20
 NUM_TOPICS = 15
-MIN_GOLDEN_EXAMPLES = 25
+# Matches the golden-set goal the eval detail page holds users to
+# (MIN_GOLDEN_DATASET_SIZE). Every example above the reviewed ones is minted unrated, so
+# this is the hand-rating backlog a new spec starts with: a floor above the goal asks for
+# work the app never asks for again.
+MIN_GOLDEN_EXAMPLES = 12
 
 
 def get_copilot_api_key() -> str:
