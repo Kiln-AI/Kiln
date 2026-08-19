@@ -178,6 +178,18 @@
     return JSON.stringify(run.reference_data, null, 2)
   }
 
+  // Same key precedence as llm_judge_result.svelte and the run_result page:
+  // judges store their rationale in intermediate_outputs under "reasoning"
+  // (or "chain_of_thought" for older G-Eval configs). Code evals store
+  // neither, so the collapse simply doesn't render for them.
+  function judge_reasoning(run: EvalRun): string | null {
+    return (
+      run.intermediate_outputs?.reasoning ||
+      run.intermediate_outputs?.chain_of_thought ||
+      null
+    )
+  }
+
   $: v2_type = eval_config ? getV2TypeFromEvalConfig(eval_config) : null
   $: code_props = eval_config ? extractV2Props(eval_config, "code_eval") : null
 </script>
@@ -259,6 +271,7 @@
       {#if selected_run}
         {@const trace = parse_trace(selected_run)}
         {@const reference_json = format_reference_data(selected_run)}
+        {@const reasoning = judge_reasoning(selected_run)}
         <!-- Single run drill-down. Compact sticky header, then the trace as
                the primary content: these tasks are multi-turn, so the trace's
                last assistant message IS the output. -->
@@ -291,6 +304,11 @@
             <Output raw_output={selected_run.output} max_height={null} />
           {:else}
             <div class="text-sm text-gray-500">No trace stored.</div>
+          {/if}
+          {#if reasoning}
+            <Collapse title="Judge Reasoning" outlined={true}>
+              <Output raw_output={reasoning} max_height="300px" />
+            </Collapse>
           {/if}
           {#if reference_json}
             <Collapse title="Reference Data" outlined={true}>
