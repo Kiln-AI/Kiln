@@ -45,6 +45,7 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
+    ScoreDirection,
 )
 from kiln_ai.datamodel.prompt import BasePrompt
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
@@ -254,6 +255,53 @@ async def test_create_evaluator(
     assert saved_eval.template_properties is not None
     assert saved_eval.template_properties["test_property"] == "test_value"
     assert saved_eval.template_properties["numeric_property"] == 42
+    assert saved_eval.output_scores[0].direction == ScoreDirection.higher_is_better
+
+
+@pytest.mark.asyncio
+async def test_create_evaluator_with_direction(
+    client, mock_task_from_id, valid_evaluator_request, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+    valid_evaluator_request.output_scores = [
+        EvalOutputScore(
+            name="score1",
+            type=TaskOutputRatingType.five_star,
+            direction=ScoreDirection.informational,
+        ),
+    ]
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json=valid_evaluator_request.model_dump(),
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["output_scores"][0]["direction"] == "informational"
+
+    saved_eval = mock_task.evals()[0]
+    assert saved_eval.output_scores[0].direction == ScoreDirection.informational
+
+
+@pytest.mark.asyncio
+async def test_create_evaluator_direction_omitted_in_request(
+    client, mock_task_from_id, valid_evaluator_request, mock_task
+):
+    """Requests from clients that predate the direction field get the default."""
+    mock_task_from_id.return_value = mock_task
+    request_json = valid_evaluator_request.model_dump()
+    for score in request_json["output_scores"]:
+        del score["direction"]
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json=request_json,
+    )
+
+    assert response.status_code == 200
+    saved_eval = mock_task.evals()[0]
+    assert saved_eval.output_scores[0].direction == ScoreDirection.higher_is_better
 
 
 @pytest.mark.asyncio

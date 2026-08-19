@@ -55,6 +55,21 @@ class EvalConfigType(str, Enum):
     llm_as_judge = "llm_as_judge"
 
 
+class ScoreDirection(str, Enum):
+    """
+    The direction of improvement for an eval output score.
+
+    Tells consumers how to interpret a change in the score's value: 'higher_is_better'
+    means an increase is an improvement, 'lower_is_better' means a decrease is an
+    improvement, and 'informational' scores carry context only and should never drive
+    decisions in either direction.
+    """
+
+    higher_is_better = "higher_is_better"
+    lower_is_better = "lower_is_better"
+    informational = "informational"
+
+
 class EvalOutputScore(BaseModel):
     """
     A definition of a score that an evaluator will produce.
@@ -72,6 +87,10 @@ class EvalOutputScore(BaseModel):
     type: TaskOutputRatingType = Field(
         description="The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical').",
     )
+    direction: ScoreDirection = Field(
+        default=ScoreDirection.higher_is_better,
+        description="The direction of improvement for this score: 'higher_is_better', 'lower_is_better', or 'informational' (context only, no preferred direction). Rating scales ('five_star', 'pass_fail', 'pass_fail_critical') are higher-is-better by definition, so they allow 'higher_is_better' and 'informational' but not 'lower_is_better'.",
+    )
 
     def json_key(self) -> str:
         """
@@ -87,6 +106,25 @@ class EvalOutputScore(BaseModel):
             raise ValueError(
                 f"Custom scores are not supported in evaluators. Score '{self.name}' was set to a custom score."
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_direction(self) -> Self:
+        match self.type:
+            case (
+                TaskOutputRatingType.five_star
+                | TaskOutputRatingType.pass_fail
+                | TaskOutputRatingType.pass_fail_critical
+            ):
+                if self.direction == ScoreDirection.lower_is_better:
+                    raise ValueError(
+                        f"Score '{self.name}' has type '{self.type.value}', which is higher-is-better by definition. 'lower_is_better' is only valid for custom scores."
+                    )
+            case TaskOutputRatingType.custom:
+                # Any direction is valid for custom scores (unbounded numeric metrics).
+                pass
+            case _:
+                raise_exhaustive_enum_error(self.type)
         return self
 
 
