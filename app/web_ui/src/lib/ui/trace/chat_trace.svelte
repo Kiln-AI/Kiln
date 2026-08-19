@@ -1,7 +1,10 @@
 <script lang="ts">
   import { tick } from "svelte"
   import type { Trace, TraceMessage, ToolCallMessageParam } from "$lib/types"
-  import Output from "$lib/ui/output.svelte"
+  // Structured content renders through Output (pretty-print + syntax highlight)
+  // rather than markdown, which collapses 2-space-indented JSON into a run-on
+  // paragraph. Output owns the rule so every surface routes content the same.
+  import Output, { is_non_string_json } from "$lib/ui/output.svelte"
   import ChatMarkdown from "$lib/ui/chat/chat_markdown.svelte"
   import ArrowRightUpIcon from "../icons/arrow_right_up_icon.svelte"
   import ChatMessageActions from "./chat_message_actions.svelte"
@@ -281,7 +284,18 @@
         <div class="group flex flex-col items-end" data-testid="chat-msg-user">
           <div class="rounded-xl bg-primary/10 px-4 py-3 max-w-[70%] text-sm">
             {#if content}
-              <ChatMarkdown text={content} />
+              {#if is_non_string_json(content)}
+                <!-- Transparent so the user turn keeps its tint. Markdown code
+                     blocks already render on the tint here, so a JSON panel on
+                     it matches the bubble's existing visual language. -->
+                <Output
+                  raw_output={content}
+                  no_padding={true}
+                  background_color="transparent"
+                />
+              {:else}
+                <ChatMarkdown text={content} />
+              {/if}
             {:else}
               <span class="text-gray-400 italic">(empty message)</span>
             {/if}
@@ -350,6 +364,11 @@
                               >{seg.mark}</mark
                             >{seg.after}
                           </div>
+                        {:else if reasoning && is_non_string_json(reasoning)}
+                          <!-- The legacy trace view renders reasoning through
+                               Output, so structured reasoning read as a
+                               collapsed paragraph only in the chat view. -->
+                          <Output raw_output={reasoning} no_padding={true} />
                         {:else}
                           <ChatMarkdown text={reasoning} />
                         {/if}
@@ -380,6 +399,8 @@
                           class="bg-warning/40 rounded px-0.5">{seg.mark}</mark
                         >{seg.after}
                       </div>
+                    {:else if content && is_non_string_json(content)}
+                      <Output raw_output={content} no_padding={true} />
                     {:else}
                       <ChatMarkdown text={content} />
                     {/if}

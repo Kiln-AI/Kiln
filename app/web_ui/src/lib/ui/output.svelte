@@ -1,3 +1,16 @@
+<script context="module" lang="ts">
+  // Whether a value should render as structured JSON rather than plain text.
+  // A quoted string parses as JSON but is really prose, so it stays text.
+  // Exported so other surfaces route content the same way this component does.
+  export function is_non_string_json(text: string): boolean {
+    try {
+      return typeof JSON.parse(text) !== "string"
+    } catch (_) {
+      return false
+    }
+  }
+</script>
+
 <script lang="ts">
   import { onMount, onDestroy } from "svelte"
   import hljs from "highlight.js/lib/core"
@@ -8,7 +21,10 @@
   export let max_height: string | null = null
   export let hide_toggle: boolean = false
   export let show_border: boolean = false
-  export let background_color: "default" | "white" = "default"
+  // "transparent" lets a caller show JSON on its own tinted surface. Pair it
+  // with max_height at your peril: the overflow fade and Show All button
+  // paint base-200 and will float visibly over a non-default background.
+  export let background_color: "default" | "white" | "transparent" = "default"
 
   export let no_padding: boolean = false
   let formatted_json_html: string | null = null
@@ -17,20 +33,12 @@
   let is_content_overflowing = false
   let resize_observer: ResizeObserver | null = null
 
-  $: {
-    try {
-      const json_output = JSON.parse(raw_output)
-      // Strings are JSON, but not really
-      if (typeof json_output !== "string") {
-        formatted_json_html = JSON.stringify(json_output, null, 2)
-        formatted_json_html = hljs.highlight(formatted_json_html, {
-          language: "json",
-        }).value
-      }
-    } catch (_) {
-      formatted_json_html = null
-    }
-  }
+  // Guarded by the predicate, so the parse here cannot throw.
+  $: formatted_json_html = is_non_string_json(raw_output)
+    ? hljs.highlight(JSON.stringify(JSON.parse(raw_output), null, 2), {
+        language: "json",
+      }).value
+    : null
 
   function compute_overflow(
     elem: HTMLElement | undefined,
@@ -93,7 +101,9 @@
   <div
     class="flex flex-row gap-2 {background_color === 'white'
       ? 'bg-white'
-      : 'bg-base-200'} p-1 rounded-lg {no_padding ? '' : 'p-1'} {max_height &&
+      : background_color === 'transparent'
+        ? ''
+        : 'bg-base-200'} p-1 rounded-lg {no_padding ? '' : 'p-1'} {max_height &&
     !is_expanded
       ? 'overflow-hidden'
       : ''}"

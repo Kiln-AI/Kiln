@@ -335,6 +335,230 @@ describe("ChatTrace component — layout & roles", () => {
   })
 })
 
+describe("ChatTrace component — JSON content rendering", () => {
+  // Output renders into a <pre> with hljs spans; ChatMarkdown renders a
+  // .chat-markdown wrapper. Which one a bubble used is the assertion here.
+  function contentEl(container: HTMLElement): HTMLElement {
+    return container.querySelector(
+      "[data-testid='chat-msg-content'], [data-testid='chat-msg-user']",
+    ) as HTMLElement
+  }
+  function expectJsonRender(container: HTMLElement, expected_text: string) {
+    const el = contentEl(container)
+    const pre = el.querySelector("pre")
+    expect(pre).not.toBeNull()
+    expect(el.querySelector(".chat-markdown")).toBeNull()
+    expect(pre?.textContent).toBe(expected_text)
+    // Syntax highlighting applied, matching the other JSON surfaces.
+    expect(pre?.innerHTML).toContain("hljs-")
+  }
+  function expectMarkdownRender(container: HTMLElement) {
+    const el = contentEl(container)
+    expect(el.querySelector(".chat-markdown")).not.toBeNull()
+    expect(el.querySelector("pre")).toBeNull()
+  }
+
+  it("renders a pretty-printed JSON object as a highlighted code block", () => {
+    const raw = '{\n  "answer": "yes",\n  "score": 3\n}'
+    const { container } = render(ChatTrace, {
+      props: { trace: [assistantMsg(raw)] as TraceType },
+    })
+    expectJsonRender(container, raw)
+  })
+
+  it("pretty-prints a minified JSON object", () => {
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: [assistantMsg('{"answer":"yes","score":3}')] as TraceType,
+      },
+    })
+    expectJsonRender(container, '{\n  "answer": "yes",\n  "score": 3\n}')
+  })
+
+  it("renders a JSON array as a highlighted code block", () => {
+    const { container } = render(ChatTrace, {
+      props: { trace: [assistantMsg("[1,2,3]")] as TraceType },
+    })
+    expectJsonRender(container, "[\n  1,\n  2,\n  3\n]")
+  })
+
+  it("renders a bare JSON number as a highlighted code block", () => {
+    const { container } = render(ChatTrace, {
+      props: { trace: [assistantMsg("42")] as TraceType },
+    })
+    expectJsonRender(container, "42")
+  })
+
+  it("keeps a quoted JSON string scalar on the markdown path", () => {
+    const { container } = render(ChatTrace, {
+      props: { trace: [assistantMsg('"just some text"')] as TraceType },
+    })
+    expectMarkdownRender(container)
+  })
+
+  it("keeps plain prose on the markdown path", () => {
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: [assistantMsg("**bold** and a list:\n- one")] as TraceType,
+      },
+    })
+    expectMarkdownRender(container)
+    expect(container.querySelector("strong")?.textContent).toBe("bold")
+  })
+
+  it("keeps prose with an inline JSON snippet on the markdown path", () => {
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: [
+          assistantMsg('The tool returned {"ok": true} which means success.'),
+        ] as TraceType,
+      },
+    })
+    expectMarkdownRender(container)
+  })
+
+  it("falls back to markdown for malformed / truncated JSON", () => {
+    const { container } = render(ChatTrace, {
+      props: { trace: [assistantMsg('{"answer": "yes", "sco')] as TraceType },
+    })
+    expectMarkdownRender(container)
+  })
+
+  it("renders JSON in user bubbles too", () => {
+    const { container } = render(ChatTrace, {
+      props: { trace: [userMsg('{"city":"Paris"}')] as TraceType },
+    })
+    expectJsonRender(container, '{\n  "city": "Paris"\n}')
+  })
+
+  it("renders JSON reasoning through Output, matching the legacy trace view", async () => {
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: [
+          assistantMsg("done", { reasoning_content: '{"plan":["a","b"]}' }),
+        ] as TraceType,
+      },
+    })
+    await fireEvent.click(
+      container.querySelector(
+        "[data-testid='chat-msg-thinking'] button",
+      ) as HTMLElement,
+    )
+    const thinking = container.querySelector(
+      "[data-testid='chat-msg-thinking']",
+    ) as HTMLElement
+    const pre = thinking.querySelector("pre")
+    expect(pre).not.toBeNull()
+    expect(thinking.querySelector(".chat-markdown")).toBeNull()
+    expect(pre?.textContent).toBe('{\n  "plan": [\n    "a",\n    "b"\n  ]\n}')
+  })
+
+  it("keeps prose reasoning on the markdown path", async () => {
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: [
+          assistantMsg("done", { reasoning_content: "**weighing** options" }),
+        ] as TraceType,
+      },
+    })
+    await fireEvent.click(
+      container.querySelector(
+        "[data-testid='chat-msg-thinking'] button",
+      ) as HTMLElement,
+    )
+    const thinking = container.querySelector(
+      "[data-testid='chat-msg-thinking']",
+    ) as HTMLElement
+    expect(thinking.querySelector(".chat-markdown")).not.toBeNull()
+    expect(thinking.querySelector("pre")).toBeNull()
+  })
+
+  // The user tint identifies the sender, so it survives both content shapes:
+  // the JSON panel mounts transparent rather than repainting the bubble.
+  it.each([
+    ["prose", "hello there"],
+    ["JSON", '{"city":"Paris"}'],
+  ])("keeps the user tint for %s turns", (_label, content) => {
+    const { container } = render(ChatTrace, {
+      props: { trace: [userMsg(content)] as TraceType },
+    })
+    const bubble = container.querySelector(
+      "[data-testid='chat-msg-user'] > div",
+    ) as HTMLElement
+    expect(bubble.className).toContain("bg-primary/10")
+    // The mounted Output must not paint its own panel over the tint.
+    expect(
+      bubble.querySelector("[class*='bg-base-200'], [class*='bg-white']"),
+    ).toBeNull()
+  })
+
+  it("does not route tool results through the content JSON branch", async () => {
+    const trace: TraceType = [
+      assistantMsg(null, { tool_calls: [makeToolCall("c1", "lookup")] }),
+      toolMsg('{"output": {"temp_c": 21}}', "c1"),
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+    await fireEvent.click(
+      container.querySelector(
+        "[data-testid='chat-msg-toolcall'] button",
+      ) as HTMLElement,
+    )
+    // The tool result keeps mounting Output from inside the tool-call bubble,
+    // pretty-printed, exactly as before.
+    const toolCall = container.querySelector(
+      "[data-testid='chat-tool-call']",
+    ) as HTMLElement
+    const pres = [...toolCall.querySelectorAll("pre")].map((p) => p.textContent)
+    expect(pres).toContain('{\n  "temp_c": 21\n}')
+  })
+
+  it("renders a JSON bubble via Output when a DIFFERENT message is cited", () => {
+    const trace: TraceType = [
+      assistantMsg("some prose to cite"),
+      assistantMsg('{"answer": "yes"}'),
+    ]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: {
+          trace_index: 0,
+          kind: "content" as const,
+          start: 0,
+          end: 4,
+        },
+      },
+    })
+    const bubbles = [
+      ...container.querySelectorAll("[data-testid='chat-msg-content']"),
+    ]
+    expect(bubbles.length).toBe(2)
+    expect(
+      bubbles[0].querySelector("mark[data-highlight-target]"),
+    ).not.toBeNull()
+    const pre = bubbles[1].querySelector("pre")
+    expect(pre).not.toBeNull()
+    expect(pre?.textContent).toBe('{\n  "answer": "yes"\n}')
+  })
+
+  it("citation highlight still wins over the JSON path", () => {
+    const raw = '{"answer": "yes"}'
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: [assistantMsg(raw)] as TraceType,
+        highlight: {
+          trace_index: 0,
+          kind: "content" as const,
+          start: 0,
+          end: 5,
+        },
+      },
+    })
+    const el = contentEl(container)
+    expect(el.querySelector("mark[data-highlight-target]")).not.toBeNull()
+    expect(el.querySelector("pre")).toBeNull()
+  })
+})
+
 describe("ChatTrace component — thinking", () => {
   it("starts with thinking collapsed", () => {
     const trace: TraceType = [
