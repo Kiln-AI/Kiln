@@ -17,45 +17,37 @@ back a findings report, same posture as `kiln-prerelease-check`.
 
 - **Automated regression suite** (`npm run tests:e2e`) — a separate, already-existing thing
   this skill has nothing to do with running or maintaining.
-- **The `playwright` skill** — the tooling this skill drives (dev sandbox, browser commands,
-  screenshots). Read it as part of doing QA here; it also stands alone for a coding agent that
-  just wants to check its own fix rendered correctly. That skill is the tooling; this skill is
-  the pass that uses it.
-- **This skill** — a QA person's pass over a bigger feature set, not one fix: real UI,
-  end-to-end, looking for bugs, string issues, and inconsistencies across a set of screens or
-  flows big enough that one person clicking through it alone would eat a day. Reach for it on
-  an "E2E test", "QA pass", "manual test", or "bug bash" request.
+- **The `playwright` skill** — describes the tooling required for this skill (dev sandbox,
+  browser commands, screenshots). Read it as part of doing QA here; it also stands alone for a
+  coding agent that just wants to check its own fix rendered correctly. That skill is the
+  tooling; this skill is the pass that uses it.
+- **This skill** — a virtual QA team mate, making a pass over a bigger feature set, not one
+  fix: real UI, end-to-end, looking for bugs, string issues, and inconsistencies across a set
+  of screens or flows big enough that one person clicking through it alone would eat a day.
+  Reach for it on an "E2E test", "QA pass", "manual test", or "bug bash" request.
 - **Line-by-line review of a diff** — `code-review`, for reading code rather than clicking
   through the running app.
 
 ## Process
 
-### 1. Get oriented, then confirm scope
+### 1. Ask scope, then get oriented
 
-Before touching a browser: if the invocation already tells you what to test and where to
-focus, verify it against reality (see the cutoff-date check below) and move to planning. If
-it doesn't — a bare "QA this branch" — browse for context first, then ask; don't guess at
-scope or silently default to "test everything":
+If the invocation doesn't already say what to test and where to focus, ask the user directly
+— don't guess, and don't pile the guesswork onto them either by making them spell out every
+detail unprompted. **The whole branch/PR is the default, most common answer**: everything new
+on it is fair game for a QA pass unless the user narrows it. Name the less-common alternatives
+so they're easy to pick if that's what's wanted — a date cutoff ("since the last release"), a
+specific PR, a single feature area — but expect "the whole thing" most of the time.
 
-- Look around before asking anything: current branch/PR and its base, `git log --oneline` (and
-  a diff against the likely base) to see what's actually there, any obviously-relevant
-  `specs/projects/*` docs, any linked runbook or checklist. Show up to the question with real
-  options, not a blank one.
-- Then ask the user directly what to test and where to focus — a feature area, a date cutoff
-  ("since the last bug bash"), a specific PR, a merge boundary. A branch big enough to need
-  this skill is usually too big to cover exhaustively in one pass; let the user say what
-  matters most rather than assuming "everything."
-- If the user gives a cutoff date, verify it rather than trust it — check when the relevant
-  commits actually landed. In one run, a "post-bug-bash polish" lane turned up commits that
-  mostly predated the stated bug bash; that only surfaced because the dates were checked
-  against `git log`, not assumed from the ask.
-- If the user points at an existing manual-test doc — a runbook, a checklist, an Artifact link
-  from another agent — fetch and read it in full before planning. Don't re-derive acceptance
-  criteria that already exist; treat that doc as one of your lanes, executed close to verbatim.
-- Skim `specs/projects/*/project_overview.md` and `functional_spec.md` for anything touched by
-  the branch. These turn "click around and see if it feels right" into an actual checklist —
-  named UI copy, specific modal behavior, specific field-level expectations — worth far more
-  than generic exploration.
+Once scope is set, get oriented before drafting a plan: current branch/PR and its base,
+`git log --oneline` (and a diff against the base) to see what actually landed, any
+obviously-relevant `specs/projects/*/project_overview.md` or `functional_spec.md` docs. These
+turn "click around and see if it feels right" into an actual checklist — named UI copy,
+specific modal behavior, specific field-level expectations — worth far more than generic
+exploration.
+
+If the user gave a date cutoff, verify it rather than trust it at face value — check when the
+relevant commits actually landed before treating that date as the real boundary.
 
 ### 2. Write a plan, get approval before spending anything
 
