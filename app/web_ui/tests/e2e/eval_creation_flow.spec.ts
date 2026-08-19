@@ -86,17 +86,21 @@ test("programmatic check: type picker -> judge-only builder creates a template-l
   expect(specs.length).toBe(0)
 
   // The eval is template-less (the user never claimed a template) but still
-  // carries generated filters and priority/status.
-  const evals = await (
+  // carries generated filters and priority/status. The list endpoint wraps the
+  // evals so it can also report how many eval files this build couldn't read.
+  const evals_response = await (
     await apiRequest.get(`/api/projects/${project.id}/tasks/${task.id}/evals`)
   ).json()
-  expect(evals.length).toBe(1)
-  const evaluator = evals[0]
+  expect(evals_response.load_error_count).toBe(0)
+  expect(evals_response.evals.length).toBe(1)
+  const evaluator = evals_response.evals[0]
   expect(evaluator.template).toBeNull()
   expect(evaluator.priority).toBe(1)
   expect(evaluator.status).toBe("active")
-  expect(evaluator.eval_set_filter_id).toBe("tag::eval_no_hate_regex")
-  expect(evaluator.train_set_filter_id).toBe("tag::train_no_hate_regex")
+  // Splits are the only place filters live; the flat eval_set_filter_id /
+  // train_set_filter_id fields are a load-time migration input and always null.
+  expect(evaluator.splits.test.filter_id).toBe("tag::eval_no_hate_regex")
+  expect(evaluator.splits.train.filter_id).toBe("tag::train_no_hate_regex")
 
   // The judge was created with the eval and set as its default, so the eval
   // is ready to run rather than "Not Ready - Configure".
