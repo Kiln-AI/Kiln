@@ -8,6 +8,7 @@ Stdlib only -- no Pydantic, no Kiln-model/DB/UI imports.
 """
 
 import json
+import math
 import re
 from typing import Any
 
@@ -205,6 +206,16 @@ class KilnEvalHelpers:
                     args = func.get("arguments")
                     if isinstance(args, str):
                         parts.append(args)
+                    elif isinstance(args, dict):
+                        # Some providers/decoders hand back already-decoded
+                        # arguments; serialize so they reach the text surface
+                        # too. sort_keys keeps the output deterministic.
+                        try:
+                            parts.append(json.dumps(args, sort_keys=True))
+                        except (TypeError, ValueError, RecursionError):
+                            # Unserializable arguments are dropped rather than
+                            # raised, so a scorer never dies on a bad trace.
+                            continue
         return "\n".join(p for p in parts if p)
 
     # -- Tool-call matching -------------------------------------------------
@@ -318,7 +329,8 @@ class KilnEvalHelpers:
         to 0.0, indistinguishable from a genuine zero — a budget scorer
         silently passes traces whose provider recorded no usage. Check
         ``count_messages(trace, "assistant")`` if you need to tell them
-        apart.
+        apart. Malformed values are skipped the same way: non-numeric
+        values, NaN/infinity, and integers too large to convert to float.
         """
         totals = {
             "input_tokens": 0.0,
@@ -335,8 +347,19 @@ class KilnEvalHelpers:
                 continue
             for key in totals:
                 value = KilnEvalHelpers._field(usage, key)
-                if isinstance(value, (int, float)) and not isinstance(value, bool):
-                    totals[key] += float(value)
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    continue
+                try:
+                    numeric = float(value)
+                except OverflowError:
+                    # Ints beyond float range (e.g. 10**400) would raise
+                    # mid-scorer; treat them as absent like other bad values.
+                    continue
+                # One NaN/infinity would poison that key's total for the
+                # whole trace, so skip those too.
+                if not math.isfinite(numeric):
+                    continue
+                totals[key] += numeric
         return totals
 
     @staticmethod

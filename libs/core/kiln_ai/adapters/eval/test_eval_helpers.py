@@ -448,6 +448,43 @@ class TestGetAssistantEmittedText:
         assert '{"word": "\\u7aaf"}' in text
         assert "dictionary_lookup" not in text
 
+    def test_include_dict_tool_call_arguments(self, helpers: KilnEvalHelpers):
+        """Providers/decoders may hand back decoded arguments, not a string."""
+        trace = [
+            {
+                "role": "assistant",
+                "content": "hi",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "dictionary_lookup",
+                            "arguments": {"word": "kiln", "limit": 2},
+                        }
+                    }
+                ],
+            }
+        ]
+        text = helpers.get_assistant_emitted_text(trace, include_tool_calls=True)
+        assert '{"limit": 2, "word": "kiln"}' in text
+        assert "dictionary_lookup" not in text
+
+    def test_non_string_non_dict_tool_call_arguments_skipped(
+        self, helpers: KilnEvalHelpers
+    ):
+        trace = [
+            {
+                "role": "assistant",
+                "content": "hi",
+                "tool_calls": [
+                    {"function": {"name": "t", "arguments": ["a", "b"]}},
+                    {"function": {"name": "t", "arguments": 42}},
+                    {"function": {"name": "t", "arguments": None}},
+                ],
+            }
+        ]
+        text = helpers.get_assistant_emitted_text(trace, include_tool_calls=True)
+        assert text == "hi"
+
     def test_null_function_tool_call_never_raises(self, helpers: KilnEvalHelpers):
         trace = [
             {
@@ -550,6 +587,32 @@ class TestGetUsageTotals:
         assert totals["input_tokens"] == 0.0
         assert totals["output_tokens"] == 0.0
         assert totals["cost"] == 1.0
+
+    def test_int_too_large_for_float_skipped(self, helpers: KilnEvalHelpers):
+        """float(10**400) raises OverflowError; skip like an absent value."""
+        trace = [
+            {
+                "role": "assistant",
+                "content": "a",
+                "usage": {"input_tokens": 10**400, "output_tokens": 5},
+            }
+        ]
+        totals = helpers.get_usage_totals(trace)
+        assert totals["input_tokens"] == 0.0
+        assert totals["output_tokens"] == 5.0
+
+    @pytest.mark.parametrize(
+        "bad_value",
+        [float("nan"), float("inf"), float("-inf")],
+        ids=["nan", "inf", "-inf"],
+    )
+    def test_non_finite_values_skipped(self, helpers: KilnEvalHelpers, bad_value):
+        """A single NaN/infinity would poison that key's total for the trace."""
+        trace = [
+            {"role": "assistant", "content": "a", "usage": {"input_tokens": bad_value}},
+            {"role": "assistant", "content": "b", "usage": {"input_tokens": 3}},
+        ]
+        assert helpers.get_usage_totals(trace)["input_tokens"] == 3.0
 
 
 class TestUsageTotalsMatchesDatamodel:
