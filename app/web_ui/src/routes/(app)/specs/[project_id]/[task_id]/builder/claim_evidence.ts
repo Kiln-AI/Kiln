@@ -561,16 +561,30 @@ function graded_claim(claim: Claim, verdict: ClaimVerdict): GradedClaim {
   }
 }
 
+// The final judgement the reviewer actually graded. Dispatches on the same
+// claims_state the review card renders from — "built" shows the distilled
+// judgement, "error" the blind verdict card — so the payload grades exactly
+// what was on screen. Null while the claims build is unbuilt or still
+// running: nothing was presented to grade yet.
+function reviewed_final_judgement(trace: TraceClaims): FinalJudgement | null {
+  if (trace.claims_state === "built") return trace.final_judgement
+  return trace.claims_state === "error" ? blind_final_judgement(trace) : null
+}
+
 // Build the persisted per-claim grades for one reviewed trace. Only claims
 // the reviewer actually graded are included (sub-claim verdicts are
-// optional). Call only for a trace with BUILT claims: it throws otherwise,
-// and a trace reviewed on the blind verdict alone (a failed claims build)
-// carries no grades — the save path sends claim_review: null for those.
+// optional). A trace reviewed on the blind verdict alone (a failed claims
+// build) grades that verdict with claims: [] — an absent claim is no signal,
+// never agreement. The save path deliberately diverges and persists
+// claim_review: null for those: the in-session refine loop consumes the blind
+// grade, but the persisted answer key records only reviews of built claims.
+// Throws while the claims build is unbuilt or still running.
 export function build_claim_review_payload(
   trace: TraceClaims,
   review: TraceReview,
 ): ClaimReviewPayload {
-  if (!trace.final_judgement) {
+  const final_judgement = reviewed_final_judgement(trace)
+  if (!final_judgement) {
     throw new Error("Cannot build a claim review before claims are built.")
   }
   // An ungraded overall call has no honest encoding: graded_claim would write
@@ -588,7 +602,7 @@ export function build_claim_review_payload(
       .filter(({ verdict }) => verdict && verdict.agrees !== null)
       .map(({ claim, verdict }) => graded_claim(claim, verdict)),
     final_judgement: graded_claim(
-      trace.final_judgement,
+      final_judgement,
       review.final_judgement_verdict,
     ),
   }
@@ -633,11 +647,15 @@ export type RefineJudgeProposal = {
 }
 
 // Build the graded-traces payload for the refine call from the in-session
-// review. Only reviewed traces with BUILT claims contribute (a half-reviewed
-// trace is no signal, and refinement grades reference the claim text — a
-// verdict-only review from a failed claims build has nothing to cite);
-// trace_label is the durable run id when present, else the client trace id
-// (opaque — the refine prompt tolerates that).
+// review. Every reviewed trace contributes: one with built claims sends its
+// claim grades, one reviewed on the blind verdict alone sends that verdict
+// with claims: []. Leaving the blind ones out dropped their disagreements
+// from grade_disagreement_count, so a review that disputed only blind
+// verdicts saw the plain Save CTA and shipped an un-refined judge the
+// reviewer had contradicted (disagreed_trace_indices counted that same trace,
+// and an all-blind refine retry had no traces to send). Half-reviewed traces
+// are no signal and stay out; trace_label is the durable run id when present,
+// else the client trace id (opaque — the refine prompt tolerates that).
 export function build_graded_traces(
   traces: TraceClaims[],
   reviews: TraceReview[],
@@ -648,7 +666,7 @@ export function build_graded_traces(
       ({ trace, review }) =>
         review &&
         is_trace_reviewed(trace, review) &&
-        trace.claims_state === "built",
+        reviewed_final_judgement(trace) !== null,
     )
     .map(({ trace, review }) => ({
       trace_label: trace.leaf_run_id || trace.trace_id,

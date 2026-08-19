@@ -208,11 +208,11 @@
         on:click={go_prev}
         disabled={!has_prev}>Previous</button
       >
-      <!-- Next is pagination, not the step's forward action: it's the small
-           twin of Previous, and the wide submit spec below belongs only to
-           the primary action on the last trace. The ⌘↵ hint likewise rides
-           only the enabled save variant — the wizard's shortcut fires the
-           save action, and only once the gate is met. -->
+      <!-- Next carries the wide primary spec (Previous stays small): it is the
+           forward action on every trace but the last, where the same slot
+           becomes the save. The ⌘↵ hint rides only the enabled save variant —
+           the wizard's shortcut fires the save action, and only once the gate
+           is met. -->
       {#if has_next}
         <button
           class="btn btn-primary min-w-64 px-12"

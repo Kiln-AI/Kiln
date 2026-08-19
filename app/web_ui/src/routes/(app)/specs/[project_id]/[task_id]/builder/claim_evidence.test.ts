@@ -313,6 +313,33 @@ describe("build_claim_review_payload", () => {
     expect(payload.final_judgement.human_feedback).toBe("Policy is real.")
     expect(payload.final_judgement.expected_result).toBe("fail")
   })
+
+  it("grades the blind verdict alone when the claims build errored", () => {
+    // No claims were ever presented, so the payload carries the blind final
+    // judgement with claims: [] — an absent claim is no signal server-side.
+    const t = trace({
+      claims: null,
+      final_judgement: null,
+      claims_state: "error",
+      claims_error: "boom",
+    })
+    const review: TraceReview = {
+      trace_id: "trace_0",
+      claim_verdicts: [],
+      final_judgement_verdict: { agrees: false, why: "The policy is real." },
+    }
+    const payload = build_claim_review_payload(t, review)
+    expect(payload.judge_score).toBe("fail")
+    expect(payload.judge_reasoning).toBe("Fabricated the window.")
+    expect(payload.claims).toEqual([])
+    expect(payload.final_judgement).toEqual({
+      claim: "Fabricated the window.",
+      evidence: "",
+      expected_result: "fail",
+      human_grade: "disagree",
+      human_feedback: "The policy is real.",
+    })
+  })
 })
 
 describe("disagreement_feedback", () => {
@@ -359,6 +386,105 @@ describe("build_graded_traces", () => {
       ],
     )
     expect(single[0].trace_label).toBe("trace_1")
+  })
+
+  // A trace reviewed on the blind verdict of a failed claims build.
+  const blind = (overrides: Partial<TraceClaims> = {}) =>
+    trace({
+      claims: null,
+      final_judgement: null,
+      claims_state: "error",
+      claims_error: "boom",
+      ...overrides,
+    })
+  const graded_blind = (trace_id: string): TraceReview => ({
+    trace_id,
+    claim_verdicts: [],
+    final_judgement_verdict: { agrees: true, why: "" },
+  })
+
+  it("emits a final-only graded trace when a review has no built claims", () => {
+    // Leaving these out hid a blind-only disagreement from the CTA, which
+    // then offered a plain save of the judge the reviewer had disputed.
+    const t = blind({ leaf_run_id: "leaf-blind" })
+    const graded = build_graded_traces([t], [graded_blind("trace_0")])
+    expect(graded).toHaveLength(1)
+    expect(graded[0].trace_label).toBe("leaf-blind")
+    expect(graded[0].claims).toEqual([])
+    expect(graded[0].final_judgement.human_grade).toBe("agree")
+    expect(graded[0].final_judgement.claim).toBe("Fabricated the window.")
+  })
+
+  it("pins the final-only verdict to the judge's polarity", () => {
+    // expected_result must equal judge_score: the server validator rejects a
+    // final judgement that argues the other way.
+    const failing = build_graded_traces([blind()], [graded_blind("trace_0")])
+    expect(failing[0].final_judgement.expected_result).toBe("fail")
+    const passing = build_graded_traces(
+      [blind({ judge_score: "pass", judge_reasoning: "Answered correctly." })],
+      [graded_blind("trace_0")],
+    )
+    expect(passing[0].judge_score).toBe("pass")
+    expect(passing[0].final_judgement.expected_result).toBe("pass")
+    expect(passing[0].final_judgement.claim).toBe("Answered correctly.")
+  })
+
+  it("mixes with-claims and claims-less traces, leaving the built path intact", () => {
+    const built_t = trace({ leaf_run_id: "leaf-built" })
+    const built_review: TraceReview = {
+      trace_id: "trace_0",
+      claim_verdicts: [{ agrees: true, why: "" }],
+      final_judgement_verdict: { agrees: false, why: "policy is real" },
+    }
+    const blind_t = blind({ trace_id: "trace_1", leaf_run_id: "leaf-blind" })
+
+    const graded = build_graded_traces(
+      [built_t, blind_t],
+      [built_review, graded_blind("trace_1")],
+    )
+    expect(graded).toHaveLength(2)
+    expect(graded[0]).toEqual({
+      trace_label: "leaf-built",
+      judge_score: "fail",
+      judge_reasoning: "Fabricated the window.",
+      claims: [
+        {
+          claim: "The agent stated a return window as fact.",
+          evidence: "The reply gives 30 days [1].",
+          expected_result: "fail",
+          human_grade: "agree",
+          human_feedback: null,
+        },
+      ],
+      final_judgement: {
+        claim: "Fails Eval: fabricated policy.",
+        evidence: "The reply gives 30 days [1].",
+        expected_result: "fail",
+        human_grade: "disagree",
+        human_feedback: "policy is real",
+      },
+    })
+    expect(graded[1].trace_label).toBe("leaf-blind")
+    expect(graded[1].claims).toEqual([])
+  })
+
+  it("still excludes claims-less traces that were never graded", () => {
+    const t = blind()
+    const ungraded = build_trace_reviews([t])[0]
+    expect(build_graded_traces([t], [ungraded])).toEqual([])
+  })
+
+  it("excludes a trace whose claims build is still in flight", () => {
+    // Nothing has been presented to grade yet, so there is no honest final
+    // judgement to send (build_claim_review_payload throws on this state).
+    const in_flight = trace({
+      claims: null,
+      final_judgement: null,
+      claims_state: "building",
+    })
+    expect(
+      build_graded_traces([in_flight], [graded_blind("trace_0")]),
+    ).toHaveLength(0)
   })
 })
 
@@ -879,10 +1005,10 @@ describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () =>
     ).toBe(0)
   })
 
-  it("banner and tooltip share the built-claims count: blind disagreements don't count", () => {
-    // A disagreement graded on the blind verdict of a claims-errored trace
-    // is excluded by build_graded_traces, so the escape banner, the CTA
-    // tooltip, and the loop-entry predicate all see the same number.
+  it("counts a disagreement graded on the blind verdict alone", () => {
+    // A claims-errored trace reaches the refine feed as a final-only graded
+    // trace, so the opt-out link, the CTA tooltip, and the loop-entry
+    // predicate all see the same number.
     const errored = trace({
       claims_state: "error",
       claims: null,
@@ -895,8 +1021,9 @@ describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () =>
       final_judgement_verdict: { agrees: false, why: "wrong call" },
     }
     const graded_set = build_graded_traces([errored], [review])
-    expect(graded_set).toHaveLength(0)
-    expect(grade_disagreement_count(graded_set)).toBe(0)
+    expect(graded_set).toHaveLength(1)
+    expect(graded_set[0].claims).toEqual([])
+    expect(grade_disagreement_count(graded_set)).toBe(1)
   })
 
   it("tooltip names the count, singular and plural, without em-dashes", () => {
