@@ -52,7 +52,11 @@
         options: group.options.filter((option) => {
           const labelText = option.label.toLowerCase()
           const descriptionText = option.description?.toLowerCase() || ""
-          const combinedText = labelText + " " + descriptionText
+          // Badges carry searchable identity for some options (a tool's function
+          // name, for one), so they take part in matching.
+          const badgeText = option.badge?.toLowerCase() || ""
+          const combinedText =
+            labelText + " " + descriptionText + " " + badgeText
 
           // Check if all search words are present in the combined text
           return searchWords.every((word) => combinedText.includes(word))
