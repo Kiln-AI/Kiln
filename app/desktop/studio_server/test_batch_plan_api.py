@@ -2,7 +2,6 @@ from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
 import httpx
-
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient

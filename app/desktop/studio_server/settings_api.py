@@ -1,5 +1,14 @@
 from typing import Annotated, Any
 
+from fastapi import FastAPI, HTTPException, Path, Query
+from kiln_ai.utils.config import Config
+from kiln_ai.utils.filesystem import open_folder
+from kiln_server.project_api import project_from_id
+from kiln_server.utils.agent_checks.policy import (
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
+
 from app.desktop.log_config import get_log_file_path
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import (
     check_entitlements_v1_check_entitlements_get,
@@ -9,14 +18,6 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
 )
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 from app.desktop.studio_server.utils.response_utils import unwrap_response
-from fastapi import FastAPI, HTTPException, Path, Query
-from kiln_ai.utils.config import Config
-from kiln_ai.utils.filesystem import open_folder
-from kiln_server.project_api import project_from_id
-from kiln_server.utils.agent_checks.policy import (
-    DENY_AGENT,
-    agent_policy_require_approval,
-)
 
 
 def open_logs_folder() -> None:

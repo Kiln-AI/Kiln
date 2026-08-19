@@ -3,6 +3,10 @@
 from unittest.mock import patch
 
 import pytest
+from fastapi import HTTPException
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.task_output import DataSourceType
+
 from app.desktop.studio_server.api_models.copilot_models import (
     ReviewedExample,
     SampleApi,
@@ -20,9 +24,6 @@ from app.desktop.studio_server.utils.copilot_utils import (
     get_copilot_api_key,
     sample_and_remove,
 )
-from fastapi import HTTPException
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
-from kiln_ai.datamodel.task_output import DataSourceType
 
 
 class TestGetCopilotApiKey:
