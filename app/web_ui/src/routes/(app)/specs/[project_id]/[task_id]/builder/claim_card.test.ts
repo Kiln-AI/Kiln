@@ -77,7 +77,7 @@ describe("ClaimCard — final judgement evidence", () => {
 
     expect(cited?.marker).toBe(1)
     // A resolvable chip is the trace path, so no fallback link is offered.
-    expect(queryByText("View full trace")).toBeNull()
+    expect(queryByText("View Full Trace")).toBeNull()
     expect(on_view_trace).not.toHaveBeenCalled()
   })
 
@@ -137,7 +137,7 @@ describe("ClaimCard — final judgement evidence", () => {
     })
 
     expect(queryByTitle("View in trace")).toBeNull()
-    await fireEvent.click(getByText("View full trace"))
+    await fireEvent.click(getByText("View Full Trace"))
     expect(on_view_trace).toHaveBeenCalledTimes(1)
   })
 
@@ -151,6 +151,6 @@ describe("ClaimCard — final judgement evidence", () => {
       },
     })
 
-    expect(queryByText("View full trace")).toBeNull()
+    expect(queryByText("View Full Trace")).toBeNull()
   })
 })

@@ -20,7 +20,7 @@
   export let submitting: boolean
   export let warn_before_unload: boolean
   // Overridable so consumers can match their flow's advance-button wording
-  // (v2 builder uses "Next →"); default preserves v1's label.
+  // (the v2 builder uses "Next"); default preserves v1's label.
   export let submit_label = "Continue"
 
   // Track the selected option for each question (bound to parent to survive remounts)
@@ -131,14 +131,14 @@
       {#each question_set.questions as question, q_index}
         <div class="flex flex-col">
           <!-- Header row -->
-          <h3 class="text-lg font-medium pb-2">
+          <h3 class="text-base font-medium pb-2">
             Question {q_index + 1}: {question.question_title}
           </h3>
 
           <!-- Content row: body on left, options on right -->
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
             <!-- Left column: Question body -->
-            <p class="text-gray-500">{question.question_body}</p>
+            <p class="text-sm text-gray-500">{question.question_body}</p>
 
             <!-- Right column: Options -->
             <div class="flex flex-col gap-3">
@@ -147,13 +147,15 @@
                   <input
                     type="radio"
                     name="question-{q_index}"
-                    class="radio mt-0.5"
+                    class="radio radio-sm mt-0.5"
                     checked={selections[q_index] === o_index}
                     on:change={() => select_option(q_index, o_index)}
                   />
                   <div class="flex flex-col">
-                    <span class="font-medium">{option.answer_title}</span>
-                    <span class="text-sm text-gray-500"
+                    <span class="text-sm font-medium"
+                      >{option.answer_title}</span
+                    >
+                    <span class="text-xs text-gray-500"
                       >{option.answer_description}</span
                     >
                   </div>
@@ -164,14 +166,14 @@
                 <input
                   type="radio"
                   name="question-{q_index}"
-                  class="radio mt-0.5"
+                  class="radio radio-sm mt-0.5"
                   checked={selections[q_index] === "other"}
                   on:change={() => select_other(q_index)}
                 />
                 <div class="flex flex-col grow">
-                  <span class="font-medium">Other</span>
+                  <span class="text-sm font-medium">Other</span>
                   <span
-                    class="text-sm text-gray-500 {selections[q_index] ===
+                    class="text-xs text-gray-500 {selections[q_index] ===
                     'other'
                       ? 'hidden'
                       : ''}">Provide a custom answer to this question.</span

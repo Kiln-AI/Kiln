@@ -103,18 +103,25 @@
   $: needs_reason = verdict.agrees === false && !verdict.why.trim()
 </script>
 
-<!-- The overall card is tinted by verdict — the house callout surface
+<!-- House card chrome (card card-bordered shadow-md); claim cards are not
+     click targets, so no hover treatment.
+     The overall card is tinted by verdict — the house callout surface
      (border border-{color}/40 bg-{color}/5, the assistant chat's exact
      formula) with only the hue keyed to the verdict, so the conclusion
      reads as a different kind of card than the claims above it. The
      verdict is stated in the headline, so the color adds emphasis, not
-     information. -->
+     information. border-base-300 rides the non-final branch instead of the
+     shared class list, a deliberate departure from card_style.md's "always
+     use ... border-base-300": sibling border-color utilities are all
+     equal-specificity single classes, so the winner is decided by generated
+     stylesheet order (Tailwind's own sort), not by class order — branching
+     removes that unknowable rather than betting on it. -->
 <div
-  class="rounded-lg border p-4 {is_final_judgement
+  class="card card-bordered shadow-md p-4 {is_final_judgement
     ? claim.expected_result === 'fail'
       ? 'bg-warning/5 border-warning/40'
       : 'bg-success/5 border-success/40'
-    : 'bg-base-100'}"
+    : 'bg-base-100 border-base-300'}"
 >
   <div class="flex items-start justify-between gap-3">
     <div class="font-medium text-sm min-w-0">
@@ -170,7 +177,7 @@
          the same whichever direction the claim points. -->
     <div class="flex gap-2 flex-none">
       <button
-        class="btn btn-xs {verdict.agrees === true
+        class="btn btn-sm {verdict.agrees === true
           ? 'btn-success'
           : 'btn-outline'}"
         on:click={() => set_agrees(true)}
@@ -178,7 +185,7 @@
         Correct
       </button>
       <button
-        class="btn btn-xs {verdict.agrees === false
+        class="btn btn-sm {verdict.agrees === false
           ? 'btn-error'
           : 'btn-outline'}"
         on:click={() => set_agrees(false)}
@@ -213,8 +220,8 @@
          opens it directly. -->
     <button
       type="button"
-      class="text-xs text-primary hover:underline mt-2"
-      on:click={() => on_view_trace?.()}>View full trace</button
+      class="text-xs text-primary hover:underline mt-2 self-start"
+      on:click={() => on_view_trace?.()}>View Full Trace</button
     >
   {/if}
 

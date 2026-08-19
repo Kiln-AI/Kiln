@@ -15,6 +15,11 @@
   // already has driven results — continuing to those results is the only
   // forward action there. Default keeps /generate unchanged.
   export let hide_generate_button = false
+  // Renders the generate button as an outline primary. The eval builder turns
+  // this on for the screens where another solid primary is already on the
+  // page, so only one solid primary shows at a time. Default keeps /generate
+  // unchanged.
+  export let generate_button_outline = false
   // Header, its sub-line, and the regenerate button label. Defaults equal the
   // /generate strings so that surface renders unchanged; the eval builder
   // overrides all three (it plans "scenarios", not a "batch").
@@ -43,7 +48,9 @@
       >
       {#if !hide_generate_button}
         <button
-          class="btn btn-md btn-primary"
+          class="btn btn-md {generate_button_outline
+            ? 'btn-outline btn-primary'
+            : 'btn-primary'}"
           disabled={count === 0}
           on:click={on_generate_inputs}
         >

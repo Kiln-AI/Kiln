@@ -15,6 +15,9 @@
   import ClaimCard from "./claim_card.svelte"
   import ClaimTraceModal from "./claim_trace_modal.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  // The nav row hand-rolls FormContainer's submit button, so it renders the
+  // same keyboard hint using the same platform check.
+  import { isMacOS } from "$lib/utils/platform"
   import {
     blind_final_judgement,
     is_trace_reviewed,
@@ -39,7 +42,7 @@
   // The primary action's label and optional tooltip, parent-owned so the
   // button can say what the click actually does (a review with disagreements
   // enters a judge-refine round instead of saving).
-  export let save_label = "Save →"
+  export let save_label = "Save"
   export let save_tooltip: string | null = null
   // What the judge judged, for the verdict card's headline: "conversation"
   // for multi-turn, "example" for single-turn.
@@ -57,6 +60,12 @@
   // last as the conclusion. Claims may be EMPTY for trivial evals — the final
   // judgement alone is then the whole review.
   const MAX_CLAIMS = 3
+
+  // Why the primary action is held disabled on the last trace. Stated in the
+  // component's own terms (the parent owns how many grades the gate wants,
+  // but every unmet case comes down to grading that isn't finished).
+  const SAVE_GATE_TOOLTIP =
+    "Finish grading to continue. Disagreements need a reason."
 
   $: selected =
     selected_indices.length > 0 ? selected_indices : traces.map((_, i) => i)
@@ -116,7 +125,7 @@
         class="btn btn-xs btn-ghost"
         on:click={() => current && trace_modal?.open_trace(current)}
       >
-        View full trace
+        View Full Trace
       </button>
     </div>
 
@@ -152,7 +161,7 @@
       <!-- The claims failed, but the overall pass/fail call is still
            answerable from the transcript — render the blind verdict card so
            the reviewer can grade it (and reach the save gate) without a
-           paid re-drive. "View full trace" above opens the transcript. -->
+           paid re-drive. "View Full Trace" above opens the transcript. -->
       <div class="space-y-3 mt-3">
         <ClaimCard
           claim={blind_final_judgement(current)}
@@ -162,11 +171,14 @@
         />
       </div>
       <div class="text-center py-4">
+        <!-- Outline primary: recovering a failed analysis is the obvious next
+             action, but the review's own forward button is on the same
+             screen, and only one solid primary belongs there. -->
         <button
-          class="btn btn-sm btn-ghost"
+          class="btn btn-outline btn-primary"
           on:click={() => on_open_trace(current_index)}
         >
-          Retry analysis →
+          Retry Analysis
         </button>
       </div>
     {:else}
@@ -183,24 +195,29 @@
        [Previous][Next] cluster. Wizard-step navigation is the browser's
        Back/Forward. Previous walks back whenever there's an earlier trace;
        Next is gated on finishing the current one. On the last conversation
-       the Next slot becomes Save once the overall gate is met. -->
+       the Next slot becomes the primary action. -->
   <div class="flex flex-col items-end gap-1 mt-8">
     <div class="flex items-center gap-2">
       <!-- Count inline beside the controls — the run-control pattern
            (see docs/extractors' "Completed N of M"). -->
-      <span class="text-sm font-light text-gray-500 mr-2">
+      <span class="text-xs font-light text-gray-500 mr-2">
         {selected.indexOf(current_index) + 1} of {selected.length}
       </span>
       <button
-        class="btn btn-sm btn-ghost"
+        class="btn btn-sm btn-outline"
         on:click={go_prev}
-        disabled={!has_prev}>← Previous</button
+        disabled={!has_prev}>Previous</button
       >
+      <!-- Next is pagination, not the step's forward action: it's the small
+           twin of Previous, and the wide submit spec below belongs only to
+           the primary action on the last trace. The ⌘↵ hint likewise rides
+           only the enabled save variant — the wizard's shortcut fires the
+           save action, and only once the gate is met. -->
       {#if has_next}
         <button
-          class="btn btn-sm btn-primary"
+          class="btn btn-primary min-w-64 px-12"
           on:click={go_next}
-          disabled={!current_reviewed}>Next →</button
+          disabled={!current_reviewed}>Next</button
         >
       {:else if !save_disabled}
         <!-- Last conversation, gate met: the primary action replaces Next.
@@ -208,19 +225,45 @@
              promises a save that a calibration round would intercept. -->
         {#if save_tooltip}
           <div class="tooltip tooltip-left" data-tip={save_tooltip}>
-            <button class="btn btn-sm btn-primary" on:click={on_save}
-              >{save_label}</button
+            <button
+              class="relative btn btn-primary min-w-64 px-12"
+              on:click={on_save}
             >
+              {save_label}
+              <span class="absolute opacity-80 right-4 text-xs font-light">
+                {#if isMacOS()}
+                  <span class="tracking-widest">⌘↵</span>
+                {:else}
+                  <span>ctrl ↵</span>
+                {/if}
+              </span>
+            </button>
           </div>
         {:else}
-          <button class="btn btn-sm btn-primary" on:click={on_save}
-            >{save_label}</button
+          <button
+            class="relative btn btn-primary min-w-64 px-12"
+            on:click={on_save}
           >
+            {save_label}
+            <span class="absolute opacity-80 right-4 text-xs font-light">
+              {#if isMacOS()}
+                <span class="tracking-widest">⌘↵</span>
+              {:else}
+                <span>ctrl ↵</span>
+              {/if}
+            </span>
+          </button>
         {/if}
       {:else}
-        <!-- Last conversation, not yet answered: no destination and no Save
-             until the gate is met. -->
-        <button class="btn btn-sm btn-primary" disabled>Next →</button>
+        <!-- Last conversation, gate not met: the same primary action, held
+             disabled with the reason on hover. A "Next" here would point at
+             nothing, so the slot stays the save action throughout. No ⌘↵
+             hint: the shortcut is gated on the same rule as this button. -->
+        <div class="tooltip tooltip-left" data-tip={SAVE_GATE_TOOLTIP}>
+          <button class="btn btn-primary min-w-64 px-12" disabled>
+            {save_label}
+          </button>
+        </div>
       {/if}
     </div>
   </div>

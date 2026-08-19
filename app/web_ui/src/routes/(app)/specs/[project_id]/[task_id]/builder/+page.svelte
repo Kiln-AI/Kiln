@@ -136,6 +136,9 @@
   } from "./refine_fields"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { filename_string_short_validator } from "$lib/utils/input_validators"
+  // The wizard hand-rolls its action rows, so it renders FormContainer's
+  // keyboard hint itself — same platform check the shared container uses.
+  import { isMacOS } from "$lib/utils/platform"
   import { sse_data_payloads } from "$lib/utils/sse"
   import { with_deadline } from "$lib/utils/deadline_signal"
   import {
@@ -1083,7 +1086,9 @@
   let judge_model_id: string | null = null
   let judge_provider_id: string | null = null
   let drive_settings_submitting = false
-  let drive_settings_error: string | null = null
+  // Typed as KilnError so the dialog's FormContainer renders it in its own
+  // centered error slot, like every other form in the app.
+  let drive_settings_error: KilnError | null = null
   // One pre-population pass per mount; lanes the draft restored (or the
   // user committed) are never overwritten — only null lanes are filled.
   let lanes_prepopulated = false
@@ -1318,9 +1323,11 @@
     const input_gen_ok =
       is_multi_turn || (input_gen_model_id && input_gen_provider_id)
     if (!su_ok || !input_gen_ok || !judge_model_id || !judge_provider_id) {
-      drive_settings_error = is_multi_turn
-        ? "Select a model to play the user and a judge model to continue."
-        : "Select a model to write the test inputs and a judge model to continue."
+      drive_settings_error = new KilnError(
+        is_multi_turn
+          ? "Select a model to play the user and a judge model to continue."
+          : "Select a model to write the test inputs and a judge model to continue.",
+      )
       return
     }
     if (is_multi_turn && su_model_id && su_provider_id) {
@@ -1816,7 +1823,13 @@
       })
 
       if (!response.ok || !response.body) {
-        generation_error = `multi_turn_pipeline failed (${response.status}): ${await error_detail(response)}`
+        // The banner speaks plain language; the route and status code are
+        // debugging detail, so they go to the console only.
+        const detail = await error_detail(response)
+        console.error(
+          `multi_turn_pipeline failed (${response.status}): ${detail}`,
+        )
+        generation_error = eval_data_error(detail)
         return
       }
 
@@ -1902,7 +1915,10 @@
           posthog.capture("eval_v2_pipeline_batch_failed", {
             code: event.code,
           })
-          generation_error = `The pipeline failed: ${event.message}`
+          // Same sentence as the request-level failure above: the pipeline
+          // name is debugging detail, so it goes to the console only.
+          console.error(`multi_turn_pipeline failed: ${event.message}`)
+          generation_error = eval_data_error(event.message)
           break stream_loop
         } else if (event.type === "batch_aborted") {
           posthog.capture("eval_v2_pipeline_batch_aborted", {
@@ -2260,7 +2276,13 @@
       })
 
       if (!response.ok || !response.body) {
-        generation_error = `single_turn_pipeline failed (${response.status}): ${await error_detail(response)}`
+        // The banner speaks plain language; the route and status code are
+        // debugging detail, so they go to the console only.
+        const detail = await error_detail(response)
+        console.error(
+          `single_turn_pipeline failed (${response.status}): ${detail}`,
+        )
+        generation_error = eval_data_error(detail)
         return
       }
 
@@ -2335,7 +2357,10 @@
           posthog.capture("eval_v2_pipeline_batch_failed", {
             code: event.code,
           })
-          generation_error = `The pipeline failed: ${event.message}`
+          // Same sentence as the request-level failure above: the pipeline
+          // name is debugging detail, so it goes to the console only.
+          console.error(`single_turn_pipeline failed: ${event.message}`)
+          generation_error = eval_data_error(event.message)
           break stream_loop
         } else if (event.type === "batch_aborted") {
           posthog.capture("eval_v2_pipeline_batch_aborted", {
@@ -2757,6 +2782,16 @@
     } catch {
       return await response.text().catch(() => "unknown")
     }
+  }
+
+  // The banner sentence for a failed generation. A detail we couldn't read
+  // ("unknown" or empty) says nothing to the user, so the colon clause is
+  // dropped entirely rather than trailing a placeholder.
+  function eval_data_error(detail: string): string {
+    const readable = detail.trim()
+    if (readable === "" || readable === "unknown")
+      return "Could not create your eval data."
+    return `Could not create your eval data: ${readable}`
   }
 
   // Refine the judge from the current grades. It does NOT fall back: any
@@ -3391,6 +3426,14 @@
   // handle it; skipping them avoids double-firing.
   function handle_global_keydown(event: KeyboardEvent) {
     if (!((event.metaKey || event.ctrlKey) && event.key === "Enter")) return
+    // No step is on screen behind the page-level gates (copilot check, task
+    // load, task error), so the shortcut must not start work the user can't
+    // see — Step 4's forward action spends model calls.
+    if ($kilnCopilotConnected !== true || task_loading || task_error) return
+    // The settings and trace modals cover the step they open over. A keystroke
+    // aimed at an open modal must not reach the page behind it, or the wizard
+    // navigates away while the modal is still on screen.
+    if (document.querySelector("dialog[open]")) return
     if (current_step === "describe") {
       if (description.trim() && !classifying) {
         event.preventDefault()
@@ -3406,8 +3449,41 @@
         event.preventDefault()
         on_refine_submit()
       }
+    } else if (current_step === "generate") {
+      // Mirrors the step's own screen states: the keyboard fires whichever
+      // forward primary is on screen, and nothing while a stage is running or
+      // an error is holding the screen (those offer retry, not forward).
+      if (generation_loading || preparing_review) return
+      if (show_plan_approval && batch_plan) {
+        // The plan surface's own generate button belongs to the shared
+        // component and has no keyboard path; only the continue-to-results
+        // action beside it is ours to fire.
+        if (has_driven_results) {
+          event.preventDefault()
+          on_continue_with_survivors()
+        }
+      } else if (!generation_error && !claims_gate_error) {
+        event.preventDefault()
+        if (trace_claims.length > 0) {
+          continue_to_review()
+        } else {
+          on_plan_batch()
+        }
+      }
     } else if (current_step === "review") {
-      if (save_gate_met) {
+      // The gate/last-trace pair matches the Save button only within the review
+      // component: the gate can be met several traces early, and the shortcut
+      // must not skip traces the reviewer still sees a Next button for. The
+      // screen-level guards exclude the stale-results gate, the calibration
+      // error screen, and in-flight calibration, where that component is
+      // unmounted but its binds still hold their last values.
+      if (
+        !review_results_stale &&
+        !calibration_error &&
+        calibration_phase === "idle" &&
+        save_gate_met &&
+        review_on_last_trace
+      ) {
         event.preventDefault()
         on_advance_to_save()
       }
@@ -3528,27 +3604,39 @@
   $: generate_animation_description =
     generation_phase === "planning"
       ? is_multi_turn
-        ? `Drafting a balanced set of ${NUM_CASES} scenarios for your eval…`
-        : `Drafting a balanced plan of ${NUM_CASES} test inputs for your eval…`
+        ? `Drafting a balanced set of ${NUM_CASES} scenarios for your eval.`
+        : `Drafting a balanced plan of ${NUM_CASES} test inputs for your eval.`
       : generation_phase === "authoring_judge"
-        ? "Authoring a judge rubric tailored to your eval…"
+        ? "Authoring a judge rubric tailored to your eval."
         : generation_phase === "preflight"
           ? `Checking that your run config, the ${
               is_multi_turn
                 ? "model that plays the user"
                 : "model that writes the test inputs"
-            }, and the judge all respond before creating your eval data…`
+            }, and the judge all respond before creating your eval data.`
           : generation_phase === "minting_inputs"
-            ? `Writing ${planned_total} test inputs from the approved plan…`
-            : `Setting up ${planned_total} simulated users from the approved scenarios…`
+            ? `Writing ${planned_total} test inputs from the approved plan.`
+            : `Setting up ${planned_total} simulated users from the approved scenarios.`
+
+  // The long-wait line, on exactly the stages that run one long request with
+  // no progress bar. Stages that show a bar let the bar carry the wait, and
+  // preflight is a reachability check measured in seconds, so a wait warning
+  // there would set the wrong expectation. Both arms share the rule:
+  // generating_cases is multi-turn only, minting_inputs single-turn only.
+  $: generate_animation_warning =
+    generation_phase === "planning" ||
+    generation_phase === "authoring_judge" ||
+    generation_phase === "generating_cases"
+      ? "This may take a while"
+      : null
 
   // Multi-turn save tags existing chains rather than generating a dataset.
   // The single-turn line is a placeholder: its save currently refuses (the
   // writer is moving onto the locally-run data), so the screen shows the
   // refusal, not this caption.
   $: save_animation_description = is_multi_turn
-    ? "Kiln is saving your eval and tagging the generated conversations. Hold tight!"
-    : "Kiln is saving your eval. Hold tight!"
+    ? "Saving your eval and tagging the generated conversations."
+    : "Saving your eval."
 </script>
 
 <svelte:window
@@ -3564,6 +3652,7 @@
     title={page_title}
     subtitle={page_step_line}
     sub_subtitle={page_subtitle ?? ""}
+    breadcrumbs={[{ label: "Evals", href: `/specs/${project_id}/${task_id}` }]}
     no_y_padding
     action_buttons={reset_available
       ? [{ label: "Reset", handler: reset_draft_with_confirm }]
@@ -3585,7 +3674,10 @@
     {:else}
       <div class="py-6">
         {#if task_loading}
-          <div class="text-center text-gray-500 py-12">Loading task…</div>
+          <!-- Same page-level loading block as the copilot check above. -->
+          <div class="w-full min-h-[50vh] flex justify-center items-center">
+            <div class="loading loading-spinner loading-lg"></div>
+          </div>
         {:else if task_error}
           <Warning warning_color="error" warning_message={task_error} />
         {:else if current_step === "describe"}
@@ -3601,11 +3693,15 @@
           />
 
           <div class="flex justify-between mt-8">
-            <button class="btn btn-ghost btn-sm" on:click={back_to_task}
-              >← Cancel</button
+            <button class="btn btn-outline" on:click={back_to_task}
+              >Cancel</button
             >
+            <!-- FormContainer's compact submit spec (wide primary + keyboard
+                 hint), hand-rolled because this row isn't a FormContainer.
+                 The hint hides while the request is in flight, matching the
+                 shared container's submitting state. -->
             <button
-              class="btn btn-primary"
+              class="relative btn btn-primary min-w-64 px-12"
               on:click={classify_then_continue}
               disabled={!description.trim() || classifying}
             >
@@ -3613,7 +3709,14 @@
                 <span class="loading loading-dots loading-sm"></span>
                 Classifying…
               {:else}
-                Next →
+                Next
+                <span class="absolute opacity-80 right-4 text-xs font-light">
+                  {#if isMacOS()}
+                    <span class="tracking-widest">⌘↵</span>
+                  {:else}
+                    <span>ctrl ↵</span>
+                  {/if}
+                </span>
               {/if}
             </button>
           </div>
@@ -3630,7 +3733,7 @@
           {#if questions_loading}
             <QuestioningAnimation
               title="Preparing Clarifying Questions"
-              description="Kiln is analyzing your criteria to identify areas that could use more clarity. Hold tight!"
+              description="Analyzing your criteria for areas that could use more clarity."
             />
           {:else if questions_error}
             <Warning warning_color="error" warning_message={questions_error} />
@@ -3649,7 +3752,7 @@
               bind:error={questions_form_error}
               bind:submitting={questions_submitting}
               warn_before_unload={false}
-              submit_label="Next →"
+              submit_label="Next"
             />
           {/if}
         {:else if current_step === "refine"}
@@ -3657,7 +3760,7 @@
           {#if refined_preview_loading}
             <RefiningAnimation
               title="Refining Eval"
-              description="Kiln is refining your eval with the feedback you provided. Hold tight!"
+              description="Refining your eval with the feedback you provided."
             />
           {:else}
             {#if refine_warning}
@@ -3713,14 +3816,24 @@
               <!-- The name gate runs the same validator the field shows, so
                    an invalid name cannot ride through generation and review
                    only to fail at save. -->
+              <!-- FormContainer's compact submit spec, hand-rolled: this is a
+                   bespoke form, but its action row should read the same as
+                   the FormContainer-backed steps around it. -->
               <button
-                class="btn btn-primary"
+                class="relative btn btn-primary min-w-64 px-12"
                 on:click={on_refine_submit}
                 disabled={refine_submit_in_flight ||
                   filename_string_short_validator(name) !== null ||
                   !(refined_property_values.issue_description ?? "").trim()}
               >
-                Next →
+                Next
+                <span class="absolute opacity-80 right-4 text-xs font-light">
+                  {#if isMacOS()}
+                    <span class="tracking-widest">⌘↵</span>
+                  {:else}
+                    <span>ctrl ↵</span>
+                  {/if}
+                </span>
               </button>
             </div>
           {/if}
@@ -3746,19 +3859,13 @@
               <ConversationAnimation
                 title={generate_animation_title}
                 description={generate_animation_description}
-                warning={generation_phase === "planning" ||
-                generation_phase === "generating_cases"
-                  ? "This may take a while, depending on the number of scenarios"
-                  : null}
+                warning={generate_animation_warning}
               />
             {:else}
               <AnalyzingAnimation
                 title={generate_animation_title}
                 description={generate_animation_description}
-                warning={generation_phase === "planning" ||
-                generation_phase === "minting_inputs"
-                  ? "This may take a while, depending on the number of inputs"
-                  : null}
+                warning={generate_animation_warning}
               />
               {#if generation_phase === "minting_inputs"}
                 <div class="flex flex-col items-center mt-2">
@@ -3781,12 +3888,12 @@
                  tracks TURNS for smooth motion (cases complete in
                  concurrency waves), so its count line LEADS with turns;
                  single-turn cases are one run each, so its bar counts
-                 finished cases directly. The title carries the live
-                 per-case count. -->
+                 finished cases directly. The title stays static: the live
+                 counts belong to the readout under the bar. -->
             {#if is_multi_turn}
               <ConversationAnimation
-                title={`Creating Eval Data ${judged_case_count} of ${pipeline_total_cases}…`}
-                description="Kiln is simulating conversations with your agent and judging each one. Hold tight!"
+                title="Creating Eval Data"
+                description="Simulating conversations with your agent and judging each one."
                 warning={null}
               />
               <div class="flex flex-col items-center mt-2">
@@ -3795,8 +3902,9 @@
                   value={multi_turn_turns_done}
                   max={multi_turn_total_turns}
                 ></progress>
-                <!-- Fine-grained progress only — the coarse case count
-                     already lives in the title above. -->
+                <!-- Turns, not cases: cases finish in concurrency waves, so
+                     the turn count is the one that actually moves while the
+                     batch runs. It's the only live count on this screen. -->
                 <div class="font-light text-xs text-center mt-1">
                   {multi_turn_turns_done} of {multi_turn_total_turns} turns complete{#if pipeline_failed_count > 0},
                     {pipeline_failed_count} failed{/if}
@@ -3804,8 +3912,8 @@
               </div>
             {:else}
               <AnalyzingAnimation
-                title={`Creating Eval Data ${judged_case_count} of ${pipeline_total_cases}…`}
-                description="Kiln is running your task on each test input and judging the result. Hold tight!"
+                title="Creating Eval Data"
+                description="Running your task on each test input and judging the result."
                 warning={null}
               />
               <div class="flex flex-col items-center mt-2">
@@ -3829,7 +3937,7 @@
             <svelte:component
               this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
               title="Preparing Review"
-              description={`Kiln is flagging possible mistakes in each ${judged_noun} for you to review. Hold tight!`}
+              description={`Flagging possible mistakes in each ${judged_noun} for you to review.`}
               warning={null}
             />
             <div class="flex flex-col items-center mt-2">
@@ -3844,6 +3952,9 @@
               </div>
             </div>
           {/if}
+          <!-- The two failure surfaces are one chain so only ever one can
+               render: the claims gate runs after a successful drive, so its
+               error is the later, more specific one and takes priority. -->
           {#if claims_gate_error}
             <!-- Config-class build failure — same error+retry surface as
                  the wizard's other loading stages. -->
@@ -3853,7 +3964,7 @@
             />
             <div class="text-center py-4 flex justify-center gap-2">
               <button
-                class="btn"
+                class="btn btn-outline"
                 on:click={() => {
                   claims_gate_error = null
                 }}
@@ -3864,19 +3975,17 @@
                 class="btn btn-primary"
                 on:click={() => start_claims_gate(true)}
               >
-                Retry →
+                Retry
               </button>
             </div>
-          {/if}
-
-          {#if generation_error}
+          {:else if generation_error}
             <Warning warning_color="error" warning_message={generation_error} />
             <div class="text-center py-4 flex justify-center gap-2">
               {#if batch_plan !== null}
                 <!-- Drive failed after approval — let the user rework the plan
                      instead of only retrying it verbatim. -->
                 <button
-                  class="btn"
+                  class="btn btn-outline"
                   on:click={() => {
                     generation_error = null
                   }}
@@ -3888,7 +3997,7 @@
                 class="btn btn-primary"
                 on:click={on_continue_from_generate_step}
               >
-                Retry →
+                Retry
               </button>
             </div>
           {/if}
@@ -3935,6 +4044,8 @@
               on_regenerate={on_new_plan_with_confirm}
               on_delete_prompt={on_delete_plan_prompt}
               hide_generate_button={has_data_accepted}
+              generate_button_outline={has_driven_results &&
+                drive_stop !== null}
               generate_button_label={is_multi_turn
                 ? `Create ${batch_plan.prompts.length} Eval Input${
                     batch_plan.prompts.length === 1 ? "" : "s"
@@ -3975,11 +4086,23 @@
                       {trace_claims.length} eval inputs created
                     {/if}
                   </span>
+                  <!-- The screen's single solid primary: the re-drive button
+                       on the plan surface above demotes to outline whenever
+                       this one co-renders (see generate_button_outline). -->
                   <button
-                    class="btn btn-sm btn-primary"
+                    class="relative btn btn-primary min-w-64 px-12"
                     on:click={on_continue_with_survivors}
                   >
-                    Next →
+                    Next
+                    <span
+                      class="absolute opacity-80 right-4 text-xs font-light"
+                    >
+                      {#if isMacOS()}
+                        <span class="tracking-widest">⌘↵</span>
+                      {:else}
+                        <span>ctrl ↵</span>
+                      {/if}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -3990,16 +4113,36 @@
                 <!-- Generation already ran (navigated back into this step) —
                      continue to the existing results instead of re-running,
                      matching the browser Forward path. -->
-                <button class="btn btn-primary" on:click={continue_to_review}>
-                  Next →
+                <button
+                  class="relative btn btn-primary min-w-64 px-12"
+                  on:click={continue_to_review}
+                >
+                  Next
+                  <span class="absolute opacity-80 right-4 text-xs font-light">
+                    {#if isMacOS()}
+                      <span class="tracking-widest">⌘↵</span>
+                    {:else}
+                      <span>ctrl ↵</span>
+                    {/if}
+                  </span>
                 </button>
               {:else}
                 <!-- No results (a Back aborted generation). This branch is
                      only reachable with no plan (a plan renders the
                      approval view above), so planning is the next action —
                      both arms are plan-first. -->
-                <button class="btn btn-primary" on:click={on_plan_batch}>
-                  {is_multi_turn ? "Draft Scenarios →" : "Plan Test Inputs →"}
+                <button
+                  class="relative btn btn-primary min-w-64 px-12"
+                  on:click={on_plan_batch}
+                >
+                  {is_multi_turn ? "Draft Scenarios" : "Plan Test Inputs"}
+                  <span class="absolute opacity-80 right-4 text-xs font-light">
+                    {#if isMacOS()}
+                      <span class="tracking-widest">⌘↵</span>
+                    {:else}
+                      <span>ctrl ↵</span>
+                    {/if}
+                  </span>
                 </button>
               {/if}
             </div>
@@ -4018,8 +4161,8 @@
               warning_message="Your eval's description changed since this eval data was created and reviewed. The judge was built from the previous description, so the results below no longer match. Revert the description (Back) to continue reviewing, or discard the results and create your eval data again."
             />
             <div class="flex justify-center gap-2 py-4">
-              <button class="btn" on:click={() => history.back()}>
-                ← Back
+              <button class="btn btn-outline" on:click={() => history.back()}>
+                Back
               </button>
               <button class="btn btn-primary" on:click={discard_stale_results}>
                 Discard Results &amp; Create Again
@@ -4030,15 +4173,16 @@
                  abort rather than something that happens at save. -->
             <RefiningAnimation
               title="Improving Your Judge"
-              description="Kiln is applying your feedback to improve the judge that grades your eval. Hold tight!"
+              description="Applying your feedback to improve the judge that grades your eval."
             />
           {:else if calibration_phase === "rejudging"}
             <!-- The pipeline progress surface in judge-only form: no drive,
-                 no turns — one result per item as the stream lands. -->
+                 no turns — one result per item as the stream lands. Static
+                 title; the live count is the readout under the bar. -->
             <svelte:component
               this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
-              title={`Re-checking Eval Data ${rejudged_done} of ${rejudge_total}…`}
-              description="Re-checking your eval data with the improved judge. Hold tight!"
+              title="Re-checking Eval Data"
+              description="Re-checking your eval data with the improved judge."
               warning={null}
             />
             <div class="flex flex-col items-center mt-2">
@@ -4058,7 +4202,7 @@
             <svelte:component
               this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
               title="Preparing Review"
-              description={`Kiln is flagging possible mistakes in each ${judged_noun} for you to review. Hold tight!`}
+              description={`Flagging possible mistakes in each ${judged_noun} for you to review.`}
               warning={null}
             />
             <div class="flex flex-col items-center mt-2">
@@ -4085,7 +4229,7 @@
             />
             <div class="text-center py-4 flex justify-center gap-2">
               <button
-                class="btn"
+                class="btn btn-outline"
                 on:click={() => {
                   calibration_error = null
                 }}
@@ -4096,7 +4240,7 @@
                 class="btn btn-primary"
                 on:click={() => void run_calibration_round(true)}
               >
-                Retry →
+                Retry
               </button>
             </div>
           {:else if trace_claims.length === 0}
@@ -4136,7 +4280,7 @@
                 save_disabled={!save_gate_met}
                 save_label={review_cta_state === "refine"
                   ? "Refine Judge"
-                  : "Save →"}
+                  : "Save"}
                 save_tooltip={review_cta_state === "refine"
                   ? refine_judge_tooltip(review_disagreement_count, judged_noun)
                   : null}
@@ -4149,10 +4293,8 @@
                    editing grades can drop the save gate (a fresh disagreement
                    without a reason yet), and the failure must not vanish
                    while the user is reacting to it. -->
-              <div class="flex flex-col items-end mt-2">
-                <div class="text-sm text-error">
-                  {calibration_refine_error}
-                </div>
+              <div class="text-sm text-center text-error mt-2">
+                {calibration_refine_error}
               </div>
             {/if}
             {#if review_cta_state === "refine" && save_gate_met && review_on_last_trace}
@@ -4183,8 +4325,7 @@
           {:else if save_error}
             <Warning warning_color="error" warning_message={save_error} />
             <div class="text-center py-4">
-              <button class="btn btn-primary" on:click={on_save}>Retry →</button
-              >
+              <button class="btn btn-primary" on:click={on_save}>Retry</button>
             </div>
           {/if}
         {:else if current_step === "done"}
@@ -4214,7 +4355,7 @@
             </p>
             <div class="flex flex-row gap-4 mt-4">
               <button class="btn btn-primary btn-wide" on:click={back_to_task}>
-                Back to evals
+                Back to Evals
               </button>
             </div>
           </div>
@@ -4241,6 +4382,7 @@
       ? `Create ${planned_total} Eval Input${planned_total === 1 ? "" : "s"}`
       : `Run Task on ${planned_total} Input${planned_total === 1 ? "" : "s"}`}
     bind:submitting={drive_settings_submitting}
+    error={drive_settings_error}
     on:submit={submit_drive_settings}
     keyboard_submit={false}
   >
@@ -4280,8 +4422,5 @@
         suggested_mode: "evals",
       }}
     />
-    {#if drive_settings_error}
-      <div class="text-error text-sm">{drive_settings_error}</div>
-    {/if}
   </FormContainer>
 </Dialog>

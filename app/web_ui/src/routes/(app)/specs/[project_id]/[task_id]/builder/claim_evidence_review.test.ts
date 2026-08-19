@@ -90,22 +90,27 @@ describe("ClaimEvidenceReview — Next gating", () => {
 
     // On the first (unanswered) conversation: Next is present but disabled,
     // and Save is nowhere (not the last conversation).
-    const next = getByText("Next →") as HTMLButtonElement
+    const next = getByText("Next") as HTMLButtonElement
     expect(next.disabled).toBe(true)
-    expect(queryByText("Save →")).toBeNull()
+    expect(queryByText("Save")).toBeNull()
+    // Next carries the step-4 forward spec (wide primary) but no keyboard
+    // hint: on this screen the shortcut fires Save, never Next.
+    expect(next.className).toContain("min-w-64")
+    expect(next.className).not.toContain("btn-sm")
 
     // Answering the current conversation enables Next.
     await fireEvent.click(getByText("Correct"))
-    expect((getByText("Next →") as HTMLButtonElement).disabled).toBe(false)
+    expect((getByText("Next") as HTMLButtonElement).disabled).toBe(false)
   })
 })
 
 describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
-  it("hides Save until the gate is met, then shows it in the Next slot", async () => {
+  it("holds the Save slot disabled until the gate is met, never a dead Next", async () => {
     const traces = [built_trace("only")]
     const verdicts = build_trace_reviews(traces)
 
-    // Gate not met: Save absent, a disabled Next placeholder holds the slot.
+    // Gate not met: the same Save button holds the slot, disabled and
+    // explaining itself. No Next — there's nothing left to advance to.
     const gated = render(ClaimEvidenceReview, {
       props: {
         traces,
@@ -115,11 +120,15 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
         save_disabled: true,
       },
     })
-    expect(gated.queryByText("Save →")).toBeNull()
-    expect((gated.getByText("Next →") as HTMLButtonElement).disabled).toBe(true)
+    const blocked = gated.getByText("Save") as HTMLButtonElement
+    expect(blocked.disabled).toBe(true)
+    expect(gated.queryByText("Next")).toBeNull()
+    expect(
+      gated.container.querySelector(".tooltip")?.getAttribute("data-tip"),
+    ).toContain("Finish grading")
     cleanup()
 
-    // Gate met on the last conversation: Save takes the slot, Next is gone.
+    // Gate met on the last conversation: the same slot, now enabled.
     const open = render(ClaimEvidenceReview, {
       props: {
         traces,
@@ -129,8 +138,13 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
         save_disabled: false,
       },
     })
-    expect(open.getByText("Save →")).toBeTruthy()
-    expect(open.queryByText("Next →")).toBeNull()
+    const live = open.getByText("Save") as HTMLButtonElement
+    expect(live.disabled).toBe(false)
+    expect(open.queryByText("Next")).toBeNull()
+    // The slot keeps one width across that flip, so it doesn't resize as the
+    // gate completes.
+    expect(live.className).toContain("min-w-64")
+    expect(blocked.className).toContain("min-w-64")
   })
 
   it("renders the parent-owned refine label and its tooltip", () => {
@@ -151,7 +165,7 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
       },
     })
     expect(getByText("Refine Judge")).toBeTruthy()
-    expect(queryByText("Save →")).toBeNull()
+    expect(queryByText("Save")).toBeNull()
     const tooltip = container.querySelector(".tooltip")
     expect(tooltip?.getAttribute("data-tip")).toBe(tip)
   })
