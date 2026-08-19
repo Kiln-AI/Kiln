@@ -5,6 +5,24 @@ import tempfile
 from pathlib import Path as PathlibPath
 from typing import Annotated
 
+from fastapi import FastAPI, HTTPException, Path, Query
+from kiln_ai.cli.commands.package_project import (
+    PackageForTrainingConfig,
+    package_project_for_training,
+)
+from kiln_ai.datamodel import Prompt, PromptOptimizationJob
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.task import TaskRunConfig
+from kiln_ai.utils.config import Config
+from kiln_ai.utils.lock import shared_async_lock_manager
+from kiln_ai.utils.name_generator import generate_memorable_name
+from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    agent_policy_require_approval,
+)
+from pydantic import BaseModel
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs import (
     check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get,
     get_job_status_v1_jobs_job_type_job_id_status_get,
@@ -33,23 +51,6 @@ from app.desktop.studio_server.eval_api import (
     task_run_config_from_id,
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
-from fastapi import FastAPI, HTTPException, Path, Query
-from kiln_ai.cli.commands.package_project import (
-    PackageForTrainingConfig,
-    package_project_for_training,
-)
-from kiln_ai.datamodel import Prompt, PromptOptimizationJob
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.task import TaskRunConfig
-from kiln_ai.utils.config import Config
-from kiln_ai.utils.lock import shared_async_lock_manager
-from kiln_ai.utils.name_generator import generate_memorable_name
-from kiln_server.task_api import task_from_id
-from kiln_server.utils.agent_checks.policy import (
-    ALLOW_AGENT,
-    agent_policy_require_approval,
-)
-from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -402,7 +403,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
         except Exception as e:
             logger.error(f"Error checking run config: {e}", exc_info=True)
             raise HTTPException(
-                status_code=500, detail=f"Failed to check run config: {str(e)}"
+                status_code=500, detail=f"Failed to check run config: {e!s}"
             )
 
     @app.get(
@@ -484,9 +485,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             raise
         except Exception as e:
             logger.error(f"Error checking eval: {e}", exc_info=True)
-            raise HTTPException(
-                status_code=500, detail=f"Failed to check eval: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to check eval: {e!s}")
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
@@ -606,7 +605,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
 
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to start Prompt Optimization job: {str(e)}",
+                detail=f"Failed to start Prompt Optimization job: {e!s}",
             )
 
     @app.get(
@@ -757,7 +756,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             )
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to get Prompt Optimization job status: {str(e)}",
+                detail=f"Failed to get Prompt Optimization job status: {e!s}",
             )
 
     @app.get(
@@ -805,5 +804,5 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             )
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to get Prompt Optimization job result: {str(e)}",
+                detail=f"Failed to get Prompt Optimization job result: {e!s}",
             )

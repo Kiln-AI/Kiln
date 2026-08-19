@@ -1,11 +1,12 @@
 import json
 
+from fastapi import HTTPException
+from typing_extensions import TypeVar
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     HTTPValidationError,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import Response
-from fastapi import HTTPException
-from typing_extensions import TypeVar
 
 
 def check_response_error(
