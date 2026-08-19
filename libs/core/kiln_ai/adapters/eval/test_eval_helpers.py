@@ -1,5 +1,6 @@
 """Tests for KilnEvalHelpers -- pure-Python helper class for user scorers."""
 
+import math
 from typing import Any, ClassVar
 
 import pytest
@@ -468,6 +469,24 @@ class TestGetAssistantEmittedText:
         assert '{"limit": 2, "word": "kiln"}' in text
         assert "dictionary_lookup" not in text
 
+    def test_dict_tool_call_arguments_keep_non_ascii_readable(
+        self, helpers: KilnEvalHelpers
+    ):
+        """Serializing to \\uXXXX escapes would hide non-ASCII text from the
+        corruption regexes this surface exists to feed."""
+        trace = [
+            {
+                "role": "assistant",
+                "content": "hi",
+                "tool_calls": [
+                    {"function": {"name": "t", "arguments": {"word": "窯 🔥"}}}
+                ],
+            }
+        ]
+        text = helpers.get_assistant_emitted_text(trace, include_tool_calls=True)
+        assert '{"word": "窯 🔥"}' in text
+        assert "\\u" not in text
+
     def test_non_string_non_dict_tool_call_arguments_skipped(
         self, helpers: KilnEvalHelpers
     ):
@@ -613,6 +632,20 @@ class TestGetUsageTotals:
             {"role": "assistant", "content": "b", "usage": {"input_tokens": 3}},
         ]
         assert helpers.get_usage_totals(trace)["input_tokens"] == 3.0
+
+    def test_overflowing_sum_of_finite_values_skipped(self, helpers: KilnEvalHelpers):
+        """Two finite values can still sum to infinity, poisoning the total the
+        same way a single infinity would."""
+        trace = [
+            {"role": "assistant", "content": "a", "usage": {"cost": 1e308}},
+            {"role": "assistant", "content": "b", "usage": {"cost": 1e308}},
+            {"role": "assistant", "content": "c", "usage": {"cost": 1e307}},
+        ]
+        totals = helpers.get_usage_totals(trace)
+        assert math.isfinite(totals["cost"])
+        # The first value lands; the one that would overflow is dropped, and
+        # later in-range values still accumulate.
+        assert totals["cost"] == 1e308 + 1e307
 
 
 class TestUsageTotalsMatchesDatamodel:

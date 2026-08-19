@@ -10,8 +10,9 @@ import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_te
  * The output scores that can rank run configs or correlate with human ratings.
  *
  * Custom-typed scores are code-eval-only metrics (cost, latency, token counts)
- * with no rating scale, so a higher value is not a better result and the
- * server returns no summary entry for them.
+ * with no rating scale, so a higher value is not a better result. Score
+ * summaries do include a mean for them, hence this filter: they must be kept
+ * out of ranking and human-rating correlation even when a value is present.
  */
 export function correlatable_scores(
   output_scores: EvalOutputScore[] | undefined | null,

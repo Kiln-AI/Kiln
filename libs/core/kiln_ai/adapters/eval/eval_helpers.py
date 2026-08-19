@@ -171,10 +171,10 @@ class KilnEvalHelpers:
         (*include_tool_calls*); tool names are never included — they're
         schema identifiers, not emitted text.
 
-        Caveat: tool-call arguments are JSON-serialized, so non-ASCII text
-        may appear as ``\\uXXXX`` escapes — corruption regexes (e.g. CJK
+        Caveat: tool-call arguments arrive as provider-supplied JSON strings,
+        which may carry ``\\uXXXX`` escapes — corruption regexes (e.g. CJK
         classes) can mismatch on argument content. That's why arguments
-        default to off.
+        default to off. Arguments this code serializes itself stay unescaped.
         """
         parts: list[str] = []
         for msg in trace or []:
@@ -209,9 +209,13 @@ class KilnEvalHelpers:
                     elif isinstance(args, dict):
                         # Some providers/decoders hand back already-decoded
                         # arguments; serialize so they reach the text surface
-                        # too. sort_keys keeps the output deterministic.
+                        # too. sort_keys keeps the output deterministic, and
+                        # ensure_ascii=False keeps CJK/emoji readable so
+                        # corruption regexes still match.
                         try:
-                            parts.append(json.dumps(args, sort_keys=True))
+                            parts.append(
+                                json.dumps(args, sort_keys=True, ensure_ascii=False)
+                            )
                         except (TypeError, ValueError, RecursionError):
                             # Unserializable arguments are dropped rather than
                             # raised, so a scorer never dies on a bad trace.
@@ -330,7 +334,8 @@ class KilnEvalHelpers:
         silently passes traces whose provider recorded no usage. Check
         ``count_messages(trace, "assistant")`` if you need to tell them
         apart. Malformed values are skipped the same way: non-numeric
-        values, NaN/infinity, and integers too large to convert to float.
+        values, NaN/infinity, integers too large to convert to float, and
+        values whose addition would push the running total past float range.
         """
         totals = {
             "input_tokens": 0.0,
@@ -359,7 +364,12 @@ class KilnEvalHelpers:
                 # whole trace, so skip those too.
                 if not math.isfinite(numeric):
                     continue
-                totals[key] += numeric
+                # Finite values can still sum to infinity (two 1e308s), which
+                # poisons the total the same way; treat that value as absent.
+                running = totals[key] + numeric
+                if not math.isfinite(running):
+                    continue
+                totals[key] = running
         return totals
 
     @staticmethod
