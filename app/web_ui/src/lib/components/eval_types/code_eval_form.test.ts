@@ -194,12 +194,11 @@ describe("CodeEvalForm", () => {
   it("renders example tabs including the LLM tool examples", () => {
     const { container } = render(CodeEvalForm)
     const tabs = container.querySelectorAll(".tab")
-    expect(tabs.length).toBe(5)
+    expect(tabs.length).toBe(4)
     expect(tabs[0].textContent?.trim()).toBe("Parse JSON")
     expect(tabs[1].textContent?.trim()).toBe("Check tool usage")
-    expect(tabs[2].textContent?.trim()).toBe("Domain-specific grading")
-    expect(tabs[3].textContent?.trim()).toBe("LLM judge")
-    expect(tabs[4].textContent?.trim()).toBe("Triage then LLM judge")
+    expect(tabs[2].textContent?.trim()).toBe("LLM judge")
+    expect(tabs[3].textContent?.trim()).toBe("Triage then LLM judge")
   })
 
   it("switches active example tab on click", async () => {
@@ -282,8 +281,8 @@ describe("examples grant the tools they call", () => {
     await tick()
   }
 
-  const LLM_JUDGE_TAB = 3
-  const TRIAGE_TAB = 4
+  const LLM_JUDGE_TAB = 2
+  const TRIAGE_TAB = 3
   const PARSE_JSON_TAB = 0
 
   it("grants llm_judge for the LLM judge example", async () => {
@@ -374,25 +373,6 @@ describe("example code correctness", () => {
   function get_example_code(container: HTMLElement): string {
     return container.querySelector(".whitespace-pre")?.textContent ?? ""
   }
-
-  it("Domain-specific grading uses KilnEvalHelpers.pass_fail with assert_contains result", async () => {
-    const { container } = render(CodeEvalForm)
-    const tabs = container.querySelectorAll(".tab")
-    await fireEvent.click(tabs[2])
-    const domainCode = get_example_code(container)
-    expect(domainCode).toContain("KilnEvalHelpers.pass_fail(contains)")
-  })
-
-  it("Domain-specific grading asserts against a literal marker", async () => {
-    const { container } = render(CodeEvalForm)
-    const tabs = container.querySelectorAll(".tab")
-    await fireEvent.click(tabs[2])
-    const domainCode = get_example_code(container)
-    expect(domainCode).toContain(
-      'contains = KilnEvalHelpers.assert_contains(output, "Summary:")',
-    )
-    expect(domainCode).not.toContain("if expected else True")
-  })
 
   it("no example mentions reference data", async () => {
     const { container } = render(CodeEvalForm)

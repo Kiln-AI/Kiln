@@ -42,35 +42,8 @@ describe("generate_default_code (reference data shown)", () => {
   })
 })
 
-describe("generate_examples Domain-specific grading (reference data shown)", () => {
-  it("reads expected_answer from reference_data", () => {
-    const examples = generate_examples(undefined)
-    expect(examples[2].label).toBe("Domain-specific grading")
-    expect(examples[2].code).toContain("def score(output, reference_data):")
-    expect(examples[2].code).toContain(
-      'expected = (reference_data or {}).get("expected_answer", "")',
-    )
-  })
-
-  it("guards assert_contains with if expected else True", () => {
-    const examples = generate_examples(undefined)
-    expect(examples[2].code).toContain("if expected else True")
-  })
-
-  it("uses contains as the bool expression", () => {
-    const examples = generate_examples(undefined)
-    expect(examples[2].code).toContain("KilnEvalHelpers.pass_fail(contains)")
-  })
-
-  it("uses word_count-based rating expression for five_star", () => {
-    const scores = [make_score("R", "five_star")]
-    const examples = generate_examples(scores)
-    expect(examples[2].code).toContain(
-      "KilnEvalHelpers.five_star(5 if word_count < 50 else 3 if word_count < 150 else 1)",
-    )
-  })
-
-  it("leaves the other two examples free of reference data", () => {
+describe("generate_examples (reference data shown)", () => {
+  it("leaves the score-key-driven examples free of reference data", () => {
     const examples = generate_examples(undefined)
     expect(examples[0].code).not.toContain("reference_data")
     expect(examples[1].code).not.toContain("reference_data")
