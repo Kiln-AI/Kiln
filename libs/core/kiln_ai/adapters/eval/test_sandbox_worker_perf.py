@@ -114,7 +114,7 @@ def test_benchmark_raw_subprocess_baseline(benchmark):
         "ns = {}; exec(code, ns); "
         "r = ns['score'](output=inputs['output'], trace=inputs.get('trace'), "
         "reference_data=inputs.get('reference_data'), task_input=inputs['task_input']); "
-        "print(json.dumps(r))"
+        "sys.stdout.write(json.dumps(r))"
     )
     inputs_json = json.dumps(_INPUTS)
 

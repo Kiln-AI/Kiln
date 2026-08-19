@@ -273,7 +273,7 @@ class TestStdoutStderr:
     async def test_stdout_captured(self, tmp_path):
         project = _make_project(tmp_path)
         ct = _make_code_tool(
-            'def run(x):\n    print("debug")\n    return "ok"\n',
+            'import sys\ndef run(x):\n    sys.stdout.write("debug")\n    return "ok"\n',
         )
         ct.parent = project
         pct = PythonCodeTool(ct, project)
@@ -285,7 +285,7 @@ class TestStdoutStderr:
     async def test_stdout_truncation(self, tmp_path):
         project = _make_project(tmp_path)
         ct = _make_code_tool(
-            'def run(x):\n    print("A" * 100000)\n    return "ok"\n',
+            'import sys\ndef run(x):\n    sys.stdout.write("A" * 100000)\n    return "ok"\n',
         )
         ct.parent = project
         pct = PythonCodeTool(ct, project)

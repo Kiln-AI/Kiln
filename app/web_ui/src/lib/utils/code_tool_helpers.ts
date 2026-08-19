@@ -166,7 +166,7 @@ export function generateCodeToolPlaceholder(
 
   return `def run(${paramList}) -> str:
     """${safeDesc}"""
-    # TODO: implement
+    # Your code here
     return "result"
 `
 }
