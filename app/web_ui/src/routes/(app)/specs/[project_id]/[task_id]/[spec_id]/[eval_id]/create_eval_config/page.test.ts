@@ -539,6 +539,53 @@ describe("EvalConfigBuilder", () => {
     cleanup()
   })
 
+  describe("default test run selection", () => {
+    function taskRunWithTrace(id: string, trace: unknown[] | null) {
+      return {
+        ...sampleTaskRun,
+        id,
+        input: `input ${id}`,
+        output: { output: `output ${id}`, source: { type: "human" as const } },
+        trace,
+      }
+    }
+
+    async function selectedRunText(runs: unknown[]) {
+      mockFetchTaskRuns.mockResolvedValue(runs)
+      const { container } = await renderBuilder("step_count_check")
+      const card = container.querySelector(
+        "[data-testid='selected-run-card']",
+      ) as HTMLElement
+      expect(card).not.toBeNull()
+      return card.textContent ?? ""
+    }
+
+    it("auto-selects the newest run that has a trace", async () => {
+      const text = await selectedRunText([
+        taskRunWithTrace("no_trace", null),
+        taskRunWithTrace("traced", [{ role: "user", content: "hi" }]),
+      ])
+      expect(text).toContain("input traced")
+      expect(text).not.toContain("input no_trace")
+    })
+
+    it("treats an empty trace as no trace", async () => {
+      const text = await selectedRunText([
+        taskRunWithTrace("empty_trace", []),
+        taskRunWithTrace("traced", [{ role: "user", content: "hi" }]),
+      ])
+      expect(text).toContain("input traced")
+    })
+
+    it("falls back to the newest run when none have a trace", async () => {
+      const text = await selectedRunText([
+        taskRunWithTrace("newest", null),
+        taskRunWithTrace("older", null),
+      ])
+      expect(text).toContain("input newest")
+    })
+  })
+
   describe("trust modal for code_eval", () => {
     it("shows trust dialog when test returns code_eval_not_trusted", async () => {
       const { container } = await renderBuilder("code_eval")
