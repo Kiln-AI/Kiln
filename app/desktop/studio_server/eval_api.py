@@ -420,15 +420,16 @@ class EvalRunWithTrace(BaseModel):
     Where the trace lives depends on the record: on a TaskRun named by `scored_run_id`,
     inline on the EvalRun for records written before the trace/score split, or nowhere at
     all for a run that was skipped before anything was generated. This resolves whichever
-    applies - falling back to the dataset item for the input of that last kind - so
-    callers see one shape regardless of which it is.
+    applies - falling back to the dataset item for the input whenever the record
+    itself has none - so callers see one shape regardless of which it is.
     """
 
     eval_run: EvalRun = Field(description="The score record itself.")
     input: str | None = Field(
         description="The input the task was run on. From the scored TaskRun, from the "
-        "EvalRun itself for legacy records, or from the dataset item for records that "
-        "were skipped before anything was generated."
+        "EvalRun itself for legacy records, or from the dataset item whenever neither "
+        "of those has it (pre-generation skips, and pointer records whose trace is "
+        "missing)."
     )
     output: str | None = Field(
         description="What the task produced. Always the original output, never a "
@@ -479,6 +480,10 @@ class EvalRunWithTrace(BaseModel):
             task_run_trace=serialize_trace(trace.trace)
             if trace is not None and trace.trace
             else None,
+            # Raw per-record usage, not the summary's blended figure: it omits
+            # synthetic_user_usage and is last-turn-only for chain leaves. No UI
+            # renders it today; a surface that reports cost should use the
+            # summary's blend, not this field.
             task_run_usage=trace.usage if trace is not None else None,
         )
 
@@ -507,7 +512,9 @@ class UpdateEvalRequest(BaseModel):
     description: str | None = Field(
         default=None, description="The updated description."
     )
-    train_set_filter_id: str | None = Field(
+    # Typed so an invalid filter id is a 422 at request validation, not a 500
+    # when TaskRunSplit rejects it inside the handler.
+    train_set_filter_id: DatasetFilterId | None = Field(
         default=None, description="The updated train set filter ID."
     )
 
@@ -558,6 +565,11 @@ class EvalResultSummary(BaseModel):
         description="Percent of dataset processed per run config."
     )
     dataset_size: int = Field(description="Total size of the eval dataset.")
+    multi_turn_item_count: int = Field(
+        description="Items in the eval dataset that are stored multi-turn "
+        "conversations. These are scored from their saved conversation, so "
+        "every run config receives identical scores for them."
+    )
 
 
 class EvalResultsSummaryEvalInfo(BaseModel):
@@ -685,10 +697,13 @@ def load_task_children_by_id(
     every child whose id isn't already cached in order to check it, so calling it with no
     ids to find would read the whole directory off disk. Every bulk load in this module
     goes through here so that guard can't be forgotten at one of them.
+
+    Always readonly: every caller in this module only reads the loaded children, and
+    readonly cache hits skip a deep copy per model - traces make those copies large.
     """
     if not ids:
         return {}
-    return model_type.from_ids_and_parent_path(ids, task.path)
+    return model_type.from_ids_and_parent_path(ids, task.path, readonly=True)
 
 
 def summary_eval_config(eval: Eval) -> EvalConfig | None:
@@ -736,7 +751,48 @@ def scored_trace_usage_for_run_config(
             ):
                 scored_run_ids.add(eval_run.scored_run_id)
     traces = load_task_children_by_id(TaskRun, task, scored_run_ids)
-    return {run_id: trace.usage for run_id, trace in traces.items()}
+    return {run_id: scored_trace_usage(trace) for run_id, trace in traces.items()}
+
+
+def scored_trace_usage(trace: TaskRun) -> Usage | None:
+    """The full generation spend of one scored TaskRun, as a summary reports it.
+
+    Two record shapes need more than `trace.usage`:
+
+    - A multi-turn chain leaf from the dataset (`parent_task_run_id` set) stores
+      last-turn-only usage; its conversation totals live in `cumulative_usage`.
+      Latency still reads from `usage` — `cumulative_usage` deliberately carries
+      none, since per-message latencies don't aggregate meaningfully.
+    - An eval-driven conversation stores the synthetic-user driver model's spend
+      in `synthetic_user_usage`, beside the assistant-only `usage`; the honest
+      total sums the two null-tolerantly. Today that field carries cost only, so
+      token counts pass through from the assistant side. Migrated legacy traces
+      have the blend fused inside `usage` with `synthetic_user_usage` None, so
+      the same sum reads both record generations correctly.
+
+    None when the record has nothing to report, so it contributes nothing to an
+    average instead of counting as a zero.
+    """
+    if trace.parent_task_run_id is not None:
+        cumulative = trace.cumulative_usage
+        base: Usage | None = Usage(
+            input_tokens=cumulative.input_tokens if cumulative else None,
+            output_tokens=cumulative.output_tokens if cumulative else None,
+            total_tokens=cumulative.total_tokens if cumulative else None,
+            cost=cumulative.cost if cumulative else None,
+            cached_tokens=cumulative.cached_tokens if cumulative else None,
+            total_llm_latency_ms=trace.usage.total_llm_latency_ms
+            if trace.usage
+            else None,
+        )
+    else:
+        base = trace.usage
+
+    if trace.synthetic_user_usage is not None:
+        base = (base or Usage()) + trace.synthetic_user_usage
+    if base is None or all(v is None for v in base.model_dump().values()):
+        return None
+    return base
 
 
 def eval_run_task_usage(
@@ -911,8 +967,11 @@ def _cached_test_split(
     return cached if cached.eval_id == eval.id else replace(cached, eval_id=eval.id)
 
 
-def require_golden_set_or_422(eval: Eval) -> None:
-    """422 unless the eval has a golden set, which judge comparison scores against.
+def require_golden_set_or_422(eval: Eval) -> DatasetFilterId:
+    """The eval's golden filter id, or 422 when none is configured.
+
+    Judge comparison scores against the golden set; returning the narrowed id
+    lets callers use it without re-checking for None.
 
     Checked here rather than left to EvalRunner because these are SSE endpoints: the
     response is a StreamingResponse over a generator, so anything raised once the
@@ -928,6 +987,7 @@ def require_golden_set_or_422(eval: Eval) -> None:
     """
     if eval.eval_configs_filter_id is None:
         raise HTTPException(status_code=422, detail=no_golden_set_message(eval))
+    return eval.eval_configs_filter_id
 
 
 def judge_scores_dataset_runs(config_type: EvalConfigType) -> bool:
@@ -1033,13 +1093,14 @@ def human_score_from_task_run(
     if score_key == "overall_rating":
         return task_run.output.rating.value
 
-    # Task requirement ratings
+    # Task requirement ratings. A requirement whose name matches the score
+    # key may still be unrated — fall through to the named lookup rather
+    # than letting the name collision hide a named rating for this score.
     req_id = score_key_to_task_requirement_id.get(score_key, None)
     if req_id:
         req_rating = task_run.output.rating.requirement_ratings.get(req_id, None)
         if req_rating is not None:
             return req_rating.value
-        return None
 
     # Named ratings
     named_score_id = f"named::{score.name}"
@@ -1127,12 +1188,30 @@ def compute_score_summary(
     averaged into a TaskRun-backed split's mean, which no reader could then detect
     (functional spec 5.3).
     """
+    # Stored multi-turn conversations (runs with parent_task_run_id set) are
+    # judged on their saved trace, so their scores can't vary across run
+    # configs; the UI calls this out per summary. Only a TaskRun-backed split
+    # can contain them — EvalInput items are re-driven per run config.
+    # getattr rather than direct access: split.items is a TaskRun/EvalInput
+    # union (and test stubs), and only TaskRuns can be chain leaves. The
+    # positive-case tests below pin the field name against renames.
+    multi_turn_item_count = (
+        sum(
+            1
+            for item in split.items
+            if getattr(item, "parent_task_run_id", None) is not None
+        )
+        if split.source == "task_run"
+        else 0
+    )
+
     split_items = split.item_keys()
     if len(split_items) == 0:
         return EvalResultSummary(
             results={},
             run_config_percent_complete={},
             dataset_size=0,
+            multi_turn_item_count=multi_turn_item_count,
         )
 
     remaining_expected_items: Dict[ID_TYPE, Set[ItemKey]] = {
@@ -1210,6 +1289,7 @@ def compute_score_summary(
         results=results,
         run_config_percent_complete=run_config_percent_complete,
         dataset_size=len(split_items),
+        multi_turn_item_count=multi_turn_item_count,
     )
 
 
@@ -1362,6 +1442,12 @@ def connect_evals_api(app: FastAPI):
         # Partial load: a project folder synced from a newer Kiln can contain an eval this
         # build can't parse. Return the readable evals rather than failing the whole list.
         evals, load_errors = Eval.all_children_of_parent_path_with_errors(task.path)
+        for load_error in load_errors:
+            # The response only carries a count, so log each failure with its path and
+            # reason - it is the only way to tell a corrupt file from a version mismatch.
+            logger.warning(
+                f"Failed to load eval file {load_error.path}: {load_error.message}"
+            )
         return EvalsResponse(evals=evals, load_error_count=len(load_errors))
 
     @app.get(
@@ -1801,6 +1887,20 @@ def connect_evals_api(app: FastAPI):
             save_context=build_save_context(request),
         )
 
+        # Surface drive-config/run-config incompatibilities as one 400 before
+        # the SSE stream opens — otherwise each job fails individually and
+        # clients only see an anonymous error count. (EventSource consumers
+        # can't read a 400 body, but an up-front error state still beats N
+        # silent job errors; API clients get the full message.) Run-config
+        # strictness only applies to a hand-picked list — with
+        # all_run_configs, one incompatible config shouldn't block the rest.
+        try:
+            eval_runner.validate_multi_turn_drive_readiness(
+                check_run_configs=not all_run_configs
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
         return await run_eval_runner_with_status(eval_runner)
 
     @app.post(
@@ -1874,7 +1974,19 @@ def connect_evals_api(app: FastAPI):
     ) -> StreamingResponse:
         """Run all eval configs against each other for calibration and stream progress via SSE. Used to check that eval configs produce consistent scores."""
         eval = eval_from_id(project_id, task_id, eval_id)
-        require_golden_set_or_422(eval)
+        golden_filter_id = require_golden_set_or_422(eval)
+
+        # An empty golden set would "complete" instantly with zero scores — a
+        # vacuous calibration the UI reads as success. Refuse it up front.
+        task = task_from_id(project_id, task_id)
+        if not runs_in_filter(task, golden_filter_id, readonly=True):
+            raise HTTPException(
+                status_code=400,
+                detail="This eval's golden dataset is empty, so there is "
+                "nothing to calibrate the judge against. Add human-rated "
+                "examples to the golden set first.",
+            )
+
         eval_configs = eval.configs()
         eval_runner = EvalRunner(
             eval_configs=eval_configs,
@@ -2177,6 +2289,12 @@ def connect_evals_api(app: FastAPI):
 
         for eval_config in eval_configs:
             for eval_run in eval_config.runs(readonly=True):
+                # Only calibration records enter the judge-vs-human stats: the
+                # same eval config also accumulates task_run_eval records, and a
+                # golden item's fresh-generation score correlated against the
+                # stored item's human rating would be a category error.
+                if not eval_run.eval_config_eval:
+                    continue
                 dataset_item = expected_dataset_items.get(eval_run.dataset_id, None)
                 if dataset_item is None:
                     # A dataset_id can be removed from the dataset filter (ran previously, then removed the tag to remove it from the eval config set filter)
@@ -2386,10 +2504,10 @@ def connect_evals_api(app: FastAPI):
 
                 total_eval_runs += 1
 
-                # The evaluated task's usage: on the scored TaskRun for pointer records,
-                # inline on legacy ones. TaskRun.usage rather than cumulative_usage - it
-                # already accumulates across every call the run made, and it is the one
-                # that carries the latency this summary reports (functional spec 5.1).
+                # The evaluated task's usage: on the scored TaskRun for pointer records
+                # (as scored_trace_usage reports it - conversation totals for multi-turn
+                # chain leaves, synthetic-user spend blended in for driven traces),
+                # inline on legacy ones.
                 usage = eval_run_task_usage(eval_run, usage_by_scored_run_id)
                 if usage:
                     if usage.input_tokens is not None:

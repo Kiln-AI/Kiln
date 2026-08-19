@@ -38,6 +38,14 @@
   export let optional: boolean = false
   export let hide_optional_badge: boolean = false
   export let empty_label: string = "Select a model"
+  // Empty-dropdown affordance (fancy_select's built-in empty state). An
+  // empty model list means no connected provider offers a usable model, so
+  // every picker names the way out by default — a same-tab link, because
+  // connecting clears the models cache in this tab and the return trip
+  // refetches it (a new tab would strand this tab's stale cache).
+  export let empty_state_message: string = "No models available"
+  export let empty_state_subtitle: string | null = "Connect an AI provider"
+  export let empty_state_link: string | null = "/settings/providers"
 
   let default_model_dropdown_settings: ModelDropdownSettings = {
     filter_models_predicate: (_) => true,
@@ -366,6 +374,9 @@
     {optional}
     {hide_optional_badge}
     {empty_label}
+    {empty_state_message}
+    {empty_state_subtitle}
+    {empty_state_link}
     bind:value={model}
     id="model"
     inputType="fancy_select"

@@ -4,6 +4,14 @@
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { client } from "$lib/api_client"
   import { onMount } from "svelte"
+  import { get } from "svelte/store"
+  import { indexedDBStore } from "$lib/stores/index_db_store"
+  import {
+    builder_draft_key,
+    create_eval_button_label,
+    draft_has_content,
+    EMPTY_BUILDER_DRAFT,
+  } from "./builder/builder_draft"
   import Intro from "$lib/ui/intro.svelte"
   import type { Spec, SpecStatus, Eval, Priority } from "$lib/types"
   import { goto, replaceState } from "$app/navigation"
@@ -146,8 +154,30 @@
     load_evals(project_id, task_id)
   }
 
+  // Whether the v2 builder has a resumable draft for this task — the
+  // create button advertises it ("Continue Eval Draft"). Read-only peek at
+  // the draft store; the builder owns all writes.
+  let has_eval_draft = false
+  async function check_eval_draft() {
+    try {
+      const { store, initialized } = indexedDBStore(
+        builder_draft_key(project_id, task_id),
+        EMPTY_BUILDER_DRAFT,
+      )
+      await initialized
+      has_eval_draft = draft_has_content(get(store))
+    } catch {
+      // No draft signal is ever worth an error surface here.
+      has_eval_draft = false
+    }
+  }
+  $: create_eval_label = create_eval_button_label(
+    has_kiln_copilot,
+    has_eval_draft,
+  )
+
   onMount(async () => {
-    await load_has_kiln_copilot()
+    await Promise.all([load_has_kiln_copilot(), check_eval_draft()])
   })
 
   async function load_has_kiln_copilot() {
@@ -728,10 +758,17 @@
   }
 
   async function check_kiln_copilot_and_proceed() {
+    posthog.capture("eval_v2_cta_clicked", {
+      branch: has_kiln_copilot ? "v2" : "v1_manual",
+      has_pro: has_kiln_copilot,
+    })
     if (!has_kiln_copilot) {
       goto(`/specs/${project_id}/${task_id}/select_workflow`)
     } else {
-      goto(`/specs/${project_id}/${task_id}/select_template`)
+      // Pro users land on the v2 builder. The legacy template carousel
+      // remains reachable via the "Evals Legacy" sidebar entry during
+      // the bug bash; remove the fallback once v2 ships GA.
+      goto(`/specs/${project_id}/${task_id}/builder`)
     }
   }
 </script>
@@ -746,7 +783,7 @@
     ? []
     : [
         {
-          label: "Create Eval",
+          label: create_eval_label,
           handler: async () => {
             await check_kiln_copilot_and_proceed()
           },
@@ -784,7 +821,7 @@
           ]}
           action_buttons={[
             {
-              label: "Create Eval",
+              label: create_eval_label,
               onClick: async () => {
                 await check_kiln_copilot_and_proceed()
               },

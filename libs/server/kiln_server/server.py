@@ -74,6 +74,14 @@ tags_metadata = [
         "description": "Generate synthetic data for evals and fine-tuning.",
     },
     {
+        "name": "Multiturn SDG",
+        "description": "Generate multi-turn synthetic-user conversation datasets for eval.",
+    },
+    {
+        "name": "Eval Builder",
+        "description": "Eval builder V2 review pipeline: judge and claim/evidence generation over alignment traces.",
+    },
+    {
         "name": "Fine-tuning",
         "description": "Create and manage fine-tuning jobs.",
     },

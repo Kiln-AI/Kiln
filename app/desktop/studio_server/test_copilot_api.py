@@ -32,16 +32,29 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.job_type 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_spec_api_output import (
     RefineSpecApiOutput,
 )
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_spec_from_answers_and_name_output import (
+    RefineSpecFromAnswersAndNameOutput,
+)
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
     Response as SdkResponse,
 )
+from app.desktop.studio_server.api_models.copilot_models import SampleApi
 from app.desktop.studio_server.copilot_api import connect_copilot_api
-from app.desktop.studio_server.utils.copilot_utils import DatasetTaskRuns
+from app.desktop.studio_server.utils.copilot_utils import SingleTurnDataset
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from kiln_ai.datamodel import Project, Task
-from kiln_ai.datamodel.eval import TaskRunSplit
+from kiln_ai.datamodel import Project, Task, TaskRun
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfigType,
+    EvalDataType,
+    EvalInputSplit,
+    LlmJudgeProperties,
+    TaskRunSplit,
+)
 from kiln_ai.datamodel.spec_properties import SpecType
+from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_server.custom_errors import connect_custom_errors
 
 
@@ -102,6 +115,36 @@ def refine_spec_input():
                 "input": "test input",
                 "output": "test output",
                 "fails_specification": False,
+            }
+        ],
+    }
+
+
+@pytest.fixture
+def submit_answers_input():
+    return {
+        "task_prompt": "Test task prompt",
+        "specification": {
+            "spec_fields": {"tone": "The desired tone"},
+            "spec_field_current_values": {"tone": "friendly"},
+        },
+        "questions_and_answers": [
+            {
+                "question_title": "How formal?",
+                "question_body": "Should the tone be formal or casual?",
+                "answer_options": [
+                    {
+                        "answer_title": "Formal",
+                        "answer_description": "Use a formal tone",
+                        "selected": True,
+                    },
+                    {
+                        "answer_title": "Casual",
+                        "answer_description": "Use a casual tone",
+                        "selected": False,
+                    },
+                ],
+                "custom_answer": None,
             }
         ],
     }
@@ -309,6 +352,140 @@ class TestRefineSpec:
             assert "Validation error from server" in response.json()["message"]
 
 
+NEW_ROUTE = (
+    "app.desktop.studio_server.copilot_api."
+    "refine_spec_with_answers_and_name_v1_copilot_"
+    "refine_spec_with_answers_and_name_post.asyncio_detailed"
+)
+OLD_ROUTE = (
+    "app.desktop.studio_server.copilot_api."
+    "refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post.asyncio_detailed"
+)
+
+
+class TestSubmitQuestionAnswers:
+    def test_no_api_key(self, client, submit_answers_input):
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+        ) as mock_config_shared:
+            mock_config = mock_config_shared.return_value
+            mock_config.kiln_copilot_api_key = None
+
+            response = client.post(
+                "/api/copilot/refine_spec_with_question_answers",
+                json=submit_answers_input,
+            )
+            assert response.status_code == 401
+            assert "API key not configured" in response.json()["message"]
+
+    def test_new_route_success_maps_name(
+        self, client, submit_answers_input, mock_api_key
+    ):
+        # The *_and_name route serves the suggested name; it must reach the caller.
+        new_output = MagicMock(spec=RefineSpecFromAnswersAndNameOutput)
+        new_output.to_dict.return_value = {
+            "new_proposed_spec_edits": [
+                {
+                    "spec_field_name": "tone",
+                    "proposed_edit": "Use a formal tone",
+                    "reason_for_edit": "User chose formal",
+                }
+            ],
+            "suggested_name": "headline_length",
+        }
+        new_response = MagicMock()
+        new_response.status_code = 200
+        new_response.parsed = new_output
+
+        with (
+            patch(NEW_ROUTE, new_callable=AsyncMock, return_value=new_response),
+            patch(OLD_ROUTE, new_callable=AsyncMock) as old_route,
+        ):
+            response = client.post(
+                "/api/copilot/refine_spec_with_question_answers",
+                json=submit_answers_input,
+            )
+            assert response.status_code == 200
+            result = response.json()
+            assert result["suggested_name"] == "headline_length"
+            assert result["not_incorporated_feedback"] is None
+            assert len(result["new_proposed_spec_edits"]) == 1
+            # The new route succeeded, so we never touch the fallback.
+            old_route.assert_not_awaited()
+
+    def test_missing_route_falls_back_without_name(
+        self, client, submit_answers_input, mock_api_key
+    ):
+        # A 404 means the *_and_name route isn't deployed yet: fall back to the
+        # older route, whose response carries no suggested_name.
+        new_response = MagicMock()
+        new_response.status_code = 404
+        new_response.content = b""
+
+        old_output = MagicMock(spec=RefineSpecApiOutput)
+        old_output.to_dict.return_value = {
+            "new_proposed_spec_edits": [],
+            "not_incorporated_feedback": None,
+        }
+        old_response = MagicMock()
+        old_response.status_code = 200
+        old_response.parsed = old_output
+
+        with (
+            patch(NEW_ROUTE, new_callable=AsyncMock, return_value=new_response),
+            patch(
+                OLD_ROUTE, new_callable=AsyncMock, return_value=old_response
+            ) as old_route,
+        ):
+            response = client.post(
+                "/api/copilot/refine_spec_with_question_answers",
+                json=submit_answers_input,
+            )
+            assert response.status_code == 200
+            result = response.json()
+            assert result["suggested_name"] is None
+            old_route.assert_awaited_once()
+
+    def test_other_error_propagates_without_fallback(
+        self, client, submit_answers_input, mock_api_key
+    ):
+        # Non-404 upstream errors propagate as-is; we do not fall back on them.
+        new_response = MagicMock()
+        new_response.status_code = 500
+        new_response.content = b'{"message": "Boom from server"}'
+
+        with (
+            patch(NEW_ROUTE, new_callable=AsyncMock, return_value=new_response),
+            patch(OLD_ROUTE, new_callable=AsyncMock) as old_route,
+        ):
+            response = client.post(
+                "/api/copilot/refine_spec_with_question_answers",
+                json=submit_answers_input,
+            )
+            assert response.status_code == 500
+            assert "Boom from server" in response.json()["message"]
+            old_route.assert_not_awaited()
+
+    def test_validation_error_propagates_without_fallback(
+        self, client, submit_answers_input, mock_api_key
+    ):
+        new_response = MagicMock()
+        new_response.status_code = 422
+        new_response.content = b'{"message": "Validation error from server"}'
+
+        with (
+            patch(NEW_ROUTE, new_callable=AsyncMock, return_value=new_response),
+            patch(OLD_ROUTE, new_callable=AsyncMock) as old_route,
+        ):
+            response = client.post(
+                "/api/copilot/refine_spec_with_question_answers",
+                json=submit_answers_input,
+            )
+            assert response.status_code == 422
+            assert "Validation error from server" in response.json()["message"]
+            old_route.assert_not_awaited()
+
+
 class TestGenerateBatch:
     def test_generate_batch_no_api_key(self, client, generate_batch_input):
         with patch(
@@ -413,13 +590,16 @@ class TestCreateSpecWithCopilot:
                 "core_requirement": "Be polite",
                 "tone_description": "Professional and friendly",
             },
-            "judge_info": step_config,
+            "judge_info": {
+                "prompt": "Test prompt",
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+            },
             "sdg_session_config": {
                 "topic_generation_config": step_config,
                 "input_generation_config": step_config,
                 "output_generation_config": step_config,
             },
-            "task_description": "Test task",
             "task_prompt_with_example": "Test prompt",
         }
 
@@ -443,9 +623,9 @@ class TestCreateSpecWithCopilot:
                 return_value={},
             ),
             patch(
-                "app.desktop.studio_server.copilot_api.create_dataset_task_runs",
-                return_value=DatasetTaskRuns(),
-            ) as mock_create_dataset_task_runs,
+                "app.desktop.studio_server.copilot_api.create_single_turn_dataset",
+                return_value=SingleTurnDataset(),
+            ),
             patch(
                 "app.desktop.studio_server.copilot_api.generate_memorable_name",
                 return_value="test-config-name",
@@ -462,46 +642,1319 @@ class TestCreateSpecWithCopilot:
         assert res["definition"] == "The system should respond politely"
         assert res["eval_id"] is not None
 
-        # Verify the dataset runs were tagged with the spec's split tags. The factory
-        # returns these so the copilot can tag the runs it generates; a mix-up here puts
-        # generated items in the wrong split's dataset, which nothing downstream notices.
-        dataset_run_kwargs = mock_create_dataset_task_runs.call_args.kwargs
-        assert dataset_run_kwargs["eval_tag"] == "eval_test_spec"
-        assert dataset_run_kwargs["train_tag"] == "train_test_spec"
-        assert dataset_run_kwargs["val_tag"] == "val_test_spec"
-        assert dataset_run_kwargs["golden_tag"] == "eval_golden_test_spec"
-
         # Verify models were saved
         evals = task.evals()
         assert len(evals) == 1
         assert evals[0].name == "Test Spec"
         assert evals[0].current_config_id is not None
 
-        assert evals[0].splits == {
-            "test": TaskRunSplit(filter_id="tag::eval_test_spec"),
-            "train": TaskRunSplit(filter_id="tag::train_test_spec"),
-            "val": TaskRunSplit(filter_id="tag::val_test_spec"),
-        }
-        # Golden is not a split, so nothing above covers it: if it pointed at the test
-        # tag, eval-config comparison would score against test items instead of golden.
-        assert evals[0].eval_configs_filter_id == "tag::eval_golden_test_spec"
+        # The saved judge is a V2 config: typed LlmJudgeProperties with the
+        # judge prompt wrapped into a template (single-turn → I/O data blocks),
+        # not the legacy llm_as_judge dict.
+        configs = evals[0].configs()
+        assert len(configs) == 1
+        config = configs[0]
+        assert config.config_type == EvalConfigType.v2
+        assert isinstance(config.properties, LlmJudgeProperties)
+        assert config.properties.model_name == "gpt-4"
+        assert config.properties.model_provider == "openai"
+        assert "Test prompt" in config.properties.prompt_template
+        assert "{{ task_input }}" in config.properties.prompt_template
+        assert config.model_name is None and config.model_provider is None
 
-        # Check the raw saved eval file, not the loaded model: what reaches the bytes
-        # is invisible in eval.splits. All three splits go to `splits`, and the
-        # deprecated flat filter fields are written null rather than left for an older
-        # build to read.
-        saved_eval = json.loads(evals[0].path.read_text())
-        assert saved_eval["eval_set_filter_id"] is None
-        assert saved_eval["train_set_filter_id"] is None
-        assert saved_eval["splits"] == {
-            "test": {"source": "task_run", "filter_id": "tag::eval_test_spec"},
-            "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
-            "val": {"source": "task_run", "filter_id": "tag::val_test_spec"},
-        }
+        # Golden is not a split, so splits below doesn't cover it: if it pointed at
+        # the test tag, eval-config comparison would score against test items
+        # instead of golden.
+        assert evals[0].eval_configs_filter_id == "tag::eval_golden_test_spec"
 
         specs = task.specs()
         assert len(specs) == 1
         assert specs[0].eval_id == evals[0].id
+
+        # Single-turn on disk: the test split is EvalInput-backed (expressible
+        # only in `splits`); train rides beside it. `splits` is the single home:
+        # the deprecated flat fields are written null.
+        on_disk = json.loads(evals[0].path.read_text())
+        assert on_disk["splits"] == {
+            "test": {"source": "eval_input", "filter_id": "tag::eval_test_spec"},
+            "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
+        }
+        assert on_disk["eval_set_filter_id"] is None
+        assert on_disk["train_set_filter_id"] is None
+
+    def test_single_turn_save_writes_eval_inputs_and_splits_to_disk(
+        self, client, project_and_task, copilot_request_data
+    ):
+        # Asserts on the SAVED BYTES, not the in-memory models: the eval slice
+        # moving stores is only visible on disk (which files exist, and what
+        # the eval's splits point at).
+        project, task = project_and_task
+        # 9 generated examples split 2:1 → 6 train runs + a 3-item eval slice;
+        # the 2 reviewed examples become the golden answer key.
+        generated = [
+            SampleApi(input=f"generated input {i}", output=f"generated output {i}")
+            for i in range(9)
+        ]
+        copilot_request_data["reviewed_examples"] = [
+            {
+                "input": "reviewed input 0",
+                "output": "reviewed output 0",
+                "model_says_meets_spec": False,
+                "user_says_meets_spec": False,
+                "feedback": "Fabricated a return window.",
+                "claim_review": {
+                    "judge_score": "fail",
+                    "judge_reasoning": "Judge reasoning here.",
+                    "claims": [
+                        {
+                            "claim": "The agent stated a return window.",
+                            "evidence": "Gives 30 days [1].",
+                            "expected_result": "fail",
+                            "human_grade": "agree",
+                            "human_feedback": None,
+                        }
+                    ],
+                    "final_judgement": {
+                        "claim": "Overall verdict.",
+                        "evidence": "Decisive fact [1].",
+                        "expected_result": "fail",
+                        "human_grade": "agree",
+                        "human_feedback": None,
+                    },
+                },
+            },
+            {
+                "input": "reviewed input 1",
+                "output": "reviewed output 1",
+                "model_says_meets_spec": True,
+                "user_says_meets_spec": True,
+                "feedback": "",
+            },
+        ]
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.get_copilot_api_key",
+                return_value="test_key",
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_copilot_examples",
+                new_callable=AsyncMock,
+                return_value=generated,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_memorable_name",
+                return_value="single-turn-judge",
+            ),
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=copilot_request_data,
+            )
+        assert response.status_code == 200, response.text
+
+        eval_path = task.evals()[0].path
+        first_bytes = eval_path.read_text()
+        on_disk = json.loads(first_bytes)
+
+        # Test split EvalInput-backed, train TaskRun-backed, both in `splits` —
+        # the single home. The deprecated flat fields are written null.
+        assert on_disk["splits"] == {
+            "test": {"source": "eval_input", "filter_id": "tag::eval_test_spec"},
+            "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
+        }
+        # Golden stays in the eval-configs filter the judge is calibrated against.
+        assert on_disk["eval_set_filter_id"] is None
+        assert on_disk["train_set_filter_id"] is None
+        assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_test_spec"
+
+        # Reload → save again is byte-stable: the splits survive a round trip
+        # rather than living only in the freshly-built instance.
+        reloaded = Eval.load_from_file(eval_path)
+        reloaded.save_to_file()
+        assert eval_path.read_text() == first_bytes
+
+        # The eval slice on disk: one EvalInput per eval-slice example,
+        # carrying the generated INPUT verbatim and nothing else.
+        eval_inputs = task.eval_inputs()
+        assert len(eval_inputs) == 3
+        slice_inputs = {ei.data.user_message.text for ei in eval_inputs}
+        assert slice_inputs <= {ex.input for ex in generated}
+        for eval_input in eval_inputs:
+            assert eval_input.data.type == "single_turn"
+            assert "eval_test_spec" in eval_input.tags
+            # The generated output is discarded at mint — the runner writes a
+            # fresh one per run config, so a stored one would never be judged.
+            assert "generated output" not in eval_input.path.read_text()
+
+        # No run carries the eval tag any more: the dataset is the 6 train
+        # runs plus the 2 golden ones, and nothing is in two splits at once.
+        runs = task.runs()
+        assert len(runs) == 8
+        by_tag = {
+            tag: [run for run in runs if tag in run.tags]
+            for tag in ("train_test_spec", "eval_golden_test_spec", "eval_test_spec")
+        }
+        assert len(by_tag["train_test_spec"]) == 6
+        assert len(by_tag["eval_golden_test_spec"]) == 2
+        assert by_tag["eval_test_spec"] == []
+
+        # The golden answer key rides through untouched: human verdicts as
+        # requirement ratings, plus the feedback and per-claim grades.
+        golden_by_input = {run.input: run for run in by_tag["eval_golden_test_spec"]}
+        rating_key = "named::Test Spec"
+        failed = golden_by_input["reviewed input 0"]
+        assert failed.output.rating.requirement_ratings[rating_key].value == 0.0
+        assert (
+            failed.output.rating.requirement_ratings[rating_key].type
+            == TaskOutputRatingType.pass_fail
+        )
+        assert [fb.feedback for fb in failed.feedback()] == [
+            "Fabricated a return window."
+        ]
+        assert len(failed.claim_reviews()) == 1
+        assert failed.claim_reviews()[0].judge_score == "fail"
+
+        passed = golden_by_input["reviewed input 1"]
+        assert passed.output.rating.requirement_ratings[rating_key].value == 1.0
+        assert passed.feedback() == []
+        assert passed.claim_reviews() == []
+
+    def test_single_turn_save_failure_after_eval_slice_rolls_back(
+        self, client, project_and_task, copilot_request_data
+    ):
+        # A failure AFTER the eval slice hit disk reverses everything: the
+        # EvalInputs are Task children, so an incomplete save would otherwise
+        # leave a tagged slice pointing at an eval that no longer exists.
+        project, task = project_and_task
+        generated = [
+            SampleApi(input=f"generated input {i}", output=f"generated output {i}")
+            for i in range(9)
+        ]
+
+        from app.desktop.studio_server.utils import copilot_utils
+
+        def persist_then_boom(*args, **kwargs):
+            copilot_utils.persist_eval_slice(*args, **kwargs)
+            raise RuntimeError("disk full")
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.get_copilot_api_key",
+                return_value="test_key",
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_copilot_examples",
+                new_callable=AsyncMock,
+                return_value=generated,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.persist_eval_slice",
+                side_effect=persist_then_boom,
+            ),
+            # The endpoint re-raises after rollback; TestClient propagates it.
+            pytest.raises(RuntimeError, match="disk full"),
+        ):
+            client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=copilot_request_data,
+            )
+
+        assert task.evals() == []
+        assert task.specs() == []
+        assert task.runs() == []
+        assert task.eval_inputs() == []
+
+
+class TestClassifySpecDescription:
+    """Stub endpoint. Returns 501 until kiln_server ships the real classifier."""
+
+    def test_returns_501(self, client):
+        response = client.post(
+            "/api/copilot/classify_spec_description",
+            json={"description": "A classification request"},
+        )
+
+        assert response.status_code == 501
+
+
+class TestCreateSpecWithCopilotMultiTurn:
+    """Multi-turn save path: tag existing chain leaves (golden/train) and mint
+    EvalInputs from the driven cases instead of synthesising new examples.
+    """
+
+    BATCH_TAG = "abc123def456"
+
+    @pytest.fixture
+    def project_and_task(self, tmp_path):
+        project_path = tmp_path / "test_project" / "project.kiln"
+        project_path.parent.mkdir()
+        project = Project(name="Test Project", path=project_path)
+        project.save_to_file()
+        task = Task(
+            name="Test Task",
+            instruction="Test instruction",
+            description="Test task",
+            parent=project,
+        )
+        task.save_to_file()
+        return project, task
+
+    @pytest.fixture
+    def synthetic_chain_leaves(self, project_and_task):
+        """Persist eight single-run "chains" tagged like the multi-turn runner
+        leaves them. Single TaskRuns (no actual multi-turn parents) are
+        sufficient: the endpoint only cares about the leaf tag. Eight leaves
+        give the split room for a non-empty golden slice (caps at 25% = 2);
+        the rest are train.
+        """
+        _, task = project_and_task
+        source = DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "haiku",
+                "model_provider": "openrouter",
+                "adapter_name": "kiln_synthetic_user_runner",
+            },
+        )
+        leaves = []
+        for i in range(8):
+            run = TaskRun(
+                parent=task,
+                input=f"input {i}",
+                input_source=source,
+                output=TaskOutput(output=f"output {i}", source=source),
+                tags=[
+                    "synthetic_user_case",
+                    f"synthetic_user_batch:{TestCreateSpecWithCopilotMultiTurn.BATCH_TAG}",
+                ],
+            )
+            run.save_to_file()
+            leaves.append(run)
+        return leaves
+
+    @staticmethod
+    def _driven_case(idx: int) -> dict:
+        return {
+            "seed_prompt": f"seed prompt {idx}",
+            "synthetic_user_info": (
+                f"<persona>persona {idx}</persona>"
+                f"<goal>goal {idx}</goal>"
+                f"<behavior_guidance>guidance {idx}</behavior_guidance>"
+            ),
+            "scenario_index": idx,
+        }
+
+    @pytest.fixture
+    def multi_turn_request_data(self):
+        return {
+            "name": "Multi Turn Spec",
+            "definition": "The agent should not fabricate policies",
+            "properties": {
+                "spec_type": SpecType.issue.value,
+                "issue_description": "Don't make stuff up",
+            },
+            "evaluate_full_trace": True,
+            "judge_info": {
+                "prompt": "Test prompt",
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+            },
+            "multi_turn": {
+                "batch_tag": TestCreateSpecWithCopilotMultiTurn.BATCH_TAG,
+                "cases": [self._driven_case(i) for i in range(8)],
+                "drive_config": {
+                    "model_name": "claude_4_5_haiku",
+                    "model_provider": "openrouter",
+                    "turns": 5,
+                },
+            },
+            "task_prompt_with_example": "Test prompt",
+        }
+
+    @staticmethod
+    def _reviewed_chain(leaf_run_id: str, meets_spec: bool) -> dict:
+        return {
+            "leaf_run_id": leaf_run_id,
+            "user_says_meets_spec": meets_spec,
+            "feedback": "" if meets_spec else "Fabricated a return window.",
+            "claim_review": {
+                "judge_score": "pass" if meets_spec else "fail",
+                "judge_reasoning": "Judge reasoning here.",
+                "claims": [
+                    {
+                        "claim": "The agent stated a return window.",
+                        "evidence": "Gives 30 days [1].",
+                        "expected_result": "fail",
+                        "human_grade": "agree",
+                        "human_feedback": None,
+                    }
+                ],
+                "final_judgement": {
+                    "claim": "Overall verdict.",
+                    "evidence": "Decisive fact [1].",
+                    "expected_result": "pass" if meets_spec else "fail",
+                    "human_grade": "agree",
+                    "human_feedback": None,
+                },
+            },
+        }
+
+    def test_multi_turn_save_success_tags_chains_and_creates_eval(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        project, task = project_and_task
+        # Two of the three chains were reviewed: one pass, one fail.
+        multi_turn_request_data["multi_turn"]["reviewed_chains"] = [
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=False),
+            self._reviewed_chain(synthetic_chain_leaves[1].id, meets_spec=True),
+        ]
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_memorable_name",
+                return_value="multi-turn-judge",
+            ),
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 200, response.text
+        res = response.json()
+        assert res["name"] == "Multi Turn Spec"
+        assert res["eval_id"] is not None
+        # Multi-turn doesn't snapshot a generation config on the spec —
+        # the operational state lives on the Eval.
+        assert res["synthetic_data_generation_session_config"] is None
+
+        # Eval: full_trace data type + judge config attached. The eval slice
+        # is EvalInput-typed (re-driven per run config at eval time) with the
+        # drive settings stamped on each item; golden and train stay TaskRun.
+        evals = task.evals()
+        assert len(evals) == 1
+        eval_obj = evals[0]
+        assert eval_obj.evaluation_data_type == EvalDataType.full_trace
+        assert eval_obj.model_dump()["eval_set_filter_id"] is None
+        # The save path writes the EvalInput-backed test split natively; the
+        # on-disk shape is covered by the saved-bytes test below.
+        assert eval_obj.splits["test"] == EvalInputSplit(
+            filter_id="tag::eval_multi_turn_spec"
+        )
+        assert eval_obj.splits["train"] == TaskRunSplit(
+            filter_id="tag::train_multi_turn_spec"
+        )
+        assert eval_obj.model_dump()["train_set_filter_id"] is None
+        assert eval_obj.current_config_id is not None
+
+        # The saved judge is a V2 config with a multi-turn (trace) template.
+        configs = eval_obj.configs()
+        assert len(configs) == 1
+        assert configs[0].config_type == EvalConfigType.v2
+        assert isinstance(configs[0].properties, LlmJudgeProperties)
+        assert "{{ trace | format_trace }}" in configs[0].properties.prompt_template
+
+        # The eval slice: one EvalInput per driven case, carrying the seed,
+        # the typed persona, the stamped drive config, and provenance tags
+        # (batch + scenario).
+        eval_inputs = task.eval_inputs()
+        assert len(eval_inputs) == 8
+        inputs_by_seed = {ei.data.first_message.text: ei for ei in eval_inputs}
+        first = inputs_by_seed["seed prompt 0"]
+        assert first.data.synthetic_user_info.persona == "persona 0"
+        assert first.data.synthetic_user_info.goal == "goal 0"
+        assert first.data.synthetic_user_info.behavior_guidance == "guidance 0"
+        assert set(first.tags) == {
+            "eval_multi_turn_spec",
+            f"synthetic_user_batch:{self.BATCH_TAG}",
+            "scenario:0",
+        }
+        # Every item in the slice is stamped with the batch's drive settings.
+        for ei in eval_inputs:
+            assert ei.data.drive_config is not None
+            assert ei.data.drive_config.model_name == "claude_4_5_haiku"
+            assert ei.data.drive_config.model_provider == "openrouter"
+            assert ei.data.drive_config.turns == 5
+
+        # Chains split into DISJOINT slices: each leaf carries exactly one of
+        # golden/train (on top of its synthetic_user_* tags) — the eval slice
+        # lives on the EvalInputs above, not on chains. Golden caps at 25% of
+        # 8 = 2, which here equals the two rated leaves — so both become
+        # golden (the answer key). The six unreviewed leaves are all train.
+        split_tags = {
+            "train_multi_turn_spec",
+            "eval_golden_multi_turn_spec",
+        }
+        runs_by_id = {run.id: run for run in task.runs()}
+        for leaf in task.runs():
+            assert len(split_tags & set(leaf.tags)) == 1
+            assert "eval_multi_turn_spec" not in leaf.tags
+            assert "synthetic_user_case" in leaf.tags
+        # Golden == exactly the two reviewed leaves (rated count == the 25% cap).
+        for reviewed_leaf in (synthetic_chain_leaves[0], synthetic_chain_leaves[1]):
+            assert "eval_golden_multi_turn_spec" in runs_by_id[reviewed_leaf.id].tags
+        # An unreviewed leaf is held out in train, never golden.
+        unreviewed_tags = set(runs_by_id[synthetic_chain_leaves[2].id].tags)
+        assert "eval_golden_multi_turn_spec" not in unreviewed_tags
+        assert "train_multi_turn_spec" in unreviewed_tags
+
+        # Reviewed leaves carry golden ratings matching the review clicks,
+        # plus feedback + per-claim grades; the unreviewed leaf stays unrated.
+        rating_key = "named::Multi Turn Spec"
+        failed = runs_by_id[synthetic_chain_leaves[0].id]
+        assert failed.output.rating.requirement_ratings[rating_key].value == 0.0
+        assert (
+            failed.output.rating.requirement_ratings[rating_key].type
+            == TaskOutputRatingType.pass_fail
+        )
+        assert len(failed.feedback()) == 1
+        assert failed.feedback()[0].feedback == "Fabricated a return window."
+        assert len(failed.claim_reviews()) == 1
+        assert failed.claim_reviews()[0].judge_score == "fail"
+        assert failed.claim_reviews()[0].final_judgement.expected_result == "fail"
+
+        passed = runs_by_id[synthetic_chain_leaves[1].id]
+        assert passed.output.rating.requirement_ratings[rating_key].value == 1.0
+        assert passed.feedback() == []
+        assert len(passed.claim_reviews()) == 1
+
+        unreviewed = runs_by_id[synthetic_chain_leaves[2].id]
+        assert unreviewed.output.rating is None
+        assert unreviewed.claim_reviews() == []
+
+    def test_multi_turn_save_writes_splits_natively_to_disk(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        # Asserts on the SAVED BYTES, not the in-memory model: a train split
+        # homed by dict assignment instead of set_split would look identical
+        # in memory and only diverge in the serialized file.
+        project, task = project_and_task
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_memorable_name",
+                return_value="multi-turn-judge",
+            ),
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+        assert response.status_code == 200, response.text
+
+        eval_path = task.evals()[0].path
+        first_bytes = eval_path.read_text()
+        on_disk = json.loads(first_bytes)
+
+        # Test split EvalInput-backed, train TaskRun-backed, both in `splits` —
+        # the single home. The deprecated flat fields are written null.
+        assert on_disk["splits"] == {
+            "test": {
+                "source": "eval_input",
+                "filter_id": "tag::eval_multi_turn_spec",
+            },
+            "train": {
+                "source": "task_run",
+                "filter_id": "tag::train_multi_turn_spec",
+            },
+        }
+        assert on_disk["train_set_filter_id"] is None
+        assert on_disk["eval_set_filter_id"] is None
+        # Golden slice rides along unchanged.
+        assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_multi_turn_spec"
+        # The retired pre-splits key never reaches disk, and drive settings
+        # live on the eval items, not the eval.
+        assert "eval_input_filter_id" not in first_bytes
+        assert "multi_turn_drive_config" not in first_bytes
+
+        # The stamped drive config is written per item, nested under data.
+        eval_input_path = task.eval_inputs()[0].path
+        on_disk_item = json.loads(eval_input_path.read_text())
+        assert on_disk_item["data"]["drive_config"] == {
+            "model_name": "claude_4_5_haiku",
+            "model_provider": "openrouter",
+            "turns": 5,
+        }
+
+        # Reload → save again is byte-stable: the split homing survives a
+        # round trip rather than living only in the freshly-built instance.
+        reloaded = Eval.load_from_file(eval_path)
+        reloaded.save_to_file()
+        assert eval_path.read_text() == first_bytes
+
+    def test_multi_turn_save_unknown_leaf_fails_before_any_save(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        # A reviewed chain referencing a leaf outside the batch is rejected up
+        # front — nothing is created and no leaf is mutated.
+        project, task = project_and_task
+        multi_turn_request_data["multi_turn"]["reviewed_chains"] = [
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=False),
+            self._reviewed_chain("not_a_real_leaf", meets_spec=True),
+        ]
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 404
+        assert "not_a_real_leaf" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+        assert len(task.eval_inputs()) == 0
+        for leaf in task.runs():
+            assert leaf.output.rating is None
+            assert leaf.feedback() == []
+            assert leaf.claim_reviews() == []
+            assert "train_multi_turn_spec" not in leaf.tags
+            assert "eval_golden_multi_turn_spec" not in leaf.tags
+
+    def test_multi_turn_save_rejects_duplicate_reviewed_leaves(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        # The same leaf reviewed twice is a malformed request — rejected up
+        # front (422) with nothing created or mutated.
+        project, task = project_and_task
+        multi_turn_request_data["multi_turn"]["reviewed_chains"] = [
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=False),
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=True),
+        ]
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert "at most once" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+        for leaf in task.runs():
+            assert leaf.output.rating is None
+
+    def test_multi_turn_save_failure_mid_rating_rolls_back(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        # A failure AFTER tagging/rating started reverses everything: leaf
+        # tags and ratings revert, created models are deleted.
+        project, task = project_and_task
+        multi_turn_request_data["multi_turn"]["reviewed_chains"] = [
+            self._reviewed_chain(synthetic_chain_leaves[0].id, meets_spec=False),
+        ]
+
+        from app.desktop.studio_server.utils import copilot_utils
+
+        def rate_then_boom(*args, **kwargs):
+            copilot_utils.rate_reviewed_batch_runs(*args, **kwargs)
+            raise RuntimeError("disk full")
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.rate_reviewed_batch_runs",
+                side_effect=rate_then_boom,
+            ),
+            # The endpoint re-raises after rollback; TestClient propagates it.
+            pytest.raises(RuntimeError, match="disk full"),
+        ):
+            client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+        # The eval slice rolled back too: no orphan EvalInputs.
+        assert len(task.eval_inputs()) == 0
+        for leaf in task.runs():
+            assert leaf.output.rating is None
+            assert leaf.feedback() == []
+            assert leaf.claim_reviews() == []
+            assert "train_multi_turn_spec" not in leaf.tags
+            assert "eval_golden_multi_turn_spec" not in leaf.tags
+
+    def test_multi_turn_save_malformed_case_blob_is_422(
+        self,
+        client,
+        project_and_task,
+        synthetic_chain_leaves,
+        multi_turn_request_data,
+    ):
+        # A case whose persona blob doesn't parse fails before anything is
+        # created — the EvalInputs are built (and validated) up front.
+        project, task = project_and_task
+        multi_turn_request_data["multi_turn"]["cases"][3]["synthetic_user_info"] = (
+            "no tags here at all"
+        )
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert "Case 3" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+        assert len(task.eval_inputs()) == 0
+
+    def test_duplicate_spec_name_is_409(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        """A re-submitted save under an existing spec name (any casing) is
+        rejected before any generation or model creation."""
+        from kiln_ai.datamodel.spec import Spec, SpecStatus
+
+        project, task = project_and_task
+        existing = Spec(
+            parent=task,
+            name="MULTI TURN SPEC",
+            definition="already here",
+            properties={
+                "spec_type": SpecType.issue.value,
+                "issue_description": "existing",
+            },
+            status=SpecStatus.active,
+            tags=[],
+            eval_id="unused_eval_id",
+        )
+        existing.save_to_file()
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 409
+        assert "already exists" in response.json()["message"]
+        assert len(task.evals()) == 0
+
+    def test_tag_normalized_spec_name_collision_is_409(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        """ "Multi_Turn_Spec" and "Multi Turn Spec" differ as names but produce
+        identical eval tags (lowercase, spaces→underscores) — saving the
+        second would silently share the first's datasets."""
+        from kiln_ai.datamodel.spec import Spec, SpecStatus
+
+        project, task = project_and_task
+        existing = Spec(
+            parent=task,
+            name="Multi_Turn_Spec",
+            definition="already here",
+            properties={
+                "spec_type": SpecType.issue.value,
+                "issue_description": "existing",
+            },
+            status=SpecStatus.active,
+            tags=[],
+            eval_id="unused_eval_id",
+        )
+        existing.save_to_file()
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 409
+        assert len(task.evals()) == 0
+
+    def test_spec_name_without_json_key_chars_is_422(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        """A name with no [a-z0-9_] characters (e.g. fully non-ASCII) yields
+        an empty judge score key — the save would persist an eval that can
+        never run."""
+        project, task = project_and_task
+        multi_turn_request_data["name"] = "中文规格"
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert "score key" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+
+    def test_reference_answer_spec_type_is_400(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        """The builder's judge template never renders a reference answer;
+        saving one would mis-score every run. Guarded until supported."""
+        project, task = project_and_task
+        multi_turn_request_data["properties"] = {
+            "spec_type": SpecType.reference_answer_accuracy.value,
+            "core_requirement": "Answers must match the reference.",
+            "reference_answer_accuracy_description": "Compare to reference.",
+            "accurate_examples": "example a",
+            "inaccurate_examples": "example b",
+        }
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 400
+        assert "Reference-answer" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+
+    def test_spec_name_over_short_limit_is_422(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        """The spec name becomes the eval's EvalOutputScore.name (max 32) —
+        longer names must fail request validation, not 500 mid-save."""
+        project, task = project_and_task
+        multi_turn_request_data["name"] = "A Spec Name That Is Way Too Long For Scores"
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+
+    def test_multi_turn_save_404_when_batch_tag_matches_nothing(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        project, task = project_and_task
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 404
+        assert "batch_tag" in response.json()["message"]
+        # No models created when the lookup fails up front.
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+
+    def test_validator_rejects_both_multi_turn_and_sdg_config(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        project, task = project_and_task
+        step_config = {
+            "task_metadata": {
+                "model_name": "gpt-4",
+                "model_provider_name": "openai",
+            },
+            "prompt": "Test prompt",
+        }
+        multi_turn_request_data["sdg_session_config"] = {
+            "topic_generation_config": step_config,
+            "input_generation_config": step_config,
+            "output_generation_config": step_config,
+        }
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        body = response.json()
+        # Pydantic surfaces the validator message somewhere in the response.
+        assert "multi_turn" in str(body) and "sdg_session_config" in str(body)
+
+    def test_validator_rejects_neither_multi_turn_nor_sdg_config(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        project, task = project_and_task
+        del multi_turn_request_data["multi_turn"]
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert "multi_turn" in str(response.json())
+
+    def test_validator_rejects_multi_turn_without_evaluate_full_trace(
+        self, client, project_and_task, multi_turn_request_data
+    ):
+        project, task = project_and_task
+        multi_turn_request_data["evaluate_full_trace"] = False
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.task_from_id",
+            return_value=task,
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=multi_turn_request_data,
+            )
+
+        assert response.status_code == 422
+        assert "evaluate_full_trace" in str(response.json())
+
+
+class TestCreateSpecWithCopilotSingleTurnBatch:
+    """The wizard single-turn save path: tag the pipeline's existing
+    batch-tagged runs (golden/train, verdicts onto golden) and mint the eval
+    slice from the generated inputs. Nothing is generated at save time —
+    the sibling of the multi-turn path above, not of the legacy sdg one.
+    """
+
+    BATCH_TAG = "st1234abcd56"
+
+    @pytest.fixture
+    def project_and_task(self, tmp_path):
+        project_path = tmp_path / "test_project" / "project.kiln"
+        project_path.parent.mkdir()
+        project = Project(name="Test Project", path=project_path)
+        project.save_to_file()
+        task = Task(
+            name="Test Task",
+            instruction="Test instruction",
+            description="Test task",
+            parent=project,
+        )
+        task.save_to_file()
+        return project, task
+
+    @pytest.fixture
+    def batch_runs(self, project_and_task):
+        """Persist eight runs tagged like the single-turn pipeline leaves
+        them. Eight give the split room for a non-empty golden slice (caps
+        at 25% = 2); the rest are train."""
+        _, task = project_and_task
+        source = DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "haiku",
+                "model_provider": "openrouter",
+                "adapter_name": "kiln_eval_builder_single_turn",
+            },
+        )
+        runs = []
+        for i in range(8):
+            run = TaskRun(
+                parent=task,
+                input=f"input {i}",
+                input_source=source,
+                output=TaskOutput(output=f"output {i}", source=source),
+                tags=[
+                    "single_turn_drive",
+                    f"single_turn_drive_batch:{TestCreateSpecWithCopilotSingleTurnBatch.BATCH_TAG}",
+                ],
+            )
+            run.save_to_file()
+            runs.append(run)
+        return runs
+
+    @pytest.fixture
+    def single_turn_request_data(self):
+        return {
+            "name": "Single Turn Spec",
+            "definition": "The agent should not fabricate policies",
+            "properties": {
+                "spec_type": SpecType.issue.value,
+                "issue_description": "Don't make stuff up",
+            },
+            "evaluate_full_trace": False,
+            "judge_info": {
+                "prompt": "Test prompt",
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+            },
+            "single_turn": {
+                "batch_tag": TestCreateSpecWithCopilotSingleTurnBatch.BATCH_TAG,
+                "inputs": [f"input {i}" for i in range(8)],
+            },
+            "task_sample": {
+                "input": "What's your return window?",
+                "output": "Returns are accepted within 14 days.",
+            },
+        }
+
+    @staticmethod
+    def _reviewed_run(run_id: str, meets_spec: bool) -> dict:
+        return {
+            "leaf_run_id": run_id,
+            "user_says_meets_spec": meets_spec,
+            "feedback": "" if meets_spec else "Fabricated a return window.",
+            "claim_review": {
+                "judge_score": "pass" if meets_spec else "fail",
+                "judge_reasoning": "Judge reasoning here.",
+                "claims": [
+                    {
+                        "claim": "The agent stated a return window.",
+                        "evidence": "Gives 30 days [1].",
+                        "expected_result": "fail",
+                        "human_grade": "agree",
+                        "human_feedback": None,
+                    }
+                ],
+                "final_judgement": {
+                    "claim": "Overall verdict.",
+                    "evidence": "Decisive fact [1].",
+                    "expected_result": "pass" if meets_spec else "fail",
+                    "human_grade": "agree",
+                    "human_feedback": None,
+                },
+            },
+        }
+
+    def _post(self, client, project, task, request_data):
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_memorable_name",
+                return_value="single-turn-judge",
+            ),
+        ):
+            return client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=request_data,
+            )
+
+    def test_single_turn_save_tags_runs_and_creates_eval(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        project, task = project_and_task
+        # Two of the eight runs were reviewed: one pass, one fail.
+        single_turn_request_data["single_turn"]["reviewed_runs"] = [
+            self._reviewed_run(batch_runs[0].id, meets_spec=False),
+            self._reviewed_run(batch_runs[1].id, meets_spec=True),
+        ]
+
+        response = self._post(client, project, task, single_turn_request_data)
+
+        assert response.status_code == 200, response.text
+        res = response.json()
+        assert res["name"] == "Single Turn Spec"
+        assert res["eval_id"] is not None
+        # The wizard arm generates nothing, so no generation config snapshot
+        # lands on the spec; the picked grounding sample does.
+        assert res["synthetic_data_generation_session_config"] is None
+        assert res["task_sample"]["input"] == "What's your return window?"
+
+        # Eval: final_answer data type (the pipeline judged final answers),
+        # EvalInput-backed test split, TaskRun-backed train in the legacy
+        # field.
+        evals = task.evals()
+        assert len(evals) == 1
+        eval_obj = evals[0]
+        assert eval_obj.evaluation_data_type == EvalDataType.final_answer
+        assert eval_obj.model_dump()["eval_set_filter_id"] is None
+        assert eval_obj.splits["test"] == EvalInputSplit(
+            filter_id="tag::eval_single_turn_spec"
+        )
+        assert eval_obj.splits["train"] == TaskRunSplit(
+            filter_id="tag::train_single_turn_spec"
+        )
+        assert eval_obj.model_dump()["train_set_filter_id"] is None
+        assert eval_obj.current_config_id is not None
+
+        # The saved judge is a V2 config with the single-turn (I/O) template,
+        # never the trace one.
+        configs = eval_obj.configs()
+        assert len(configs) == 1
+        assert configs[0].config_type == EvalConfigType.v2
+        assert isinstance(configs[0].properties, LlmJudgeProperties)
+        assert "format_trace" not in configs[0].properties.prompt_template
+
+        # The eval slice: one inputs-only EvalInput per generated input,
+        # tagged with the eval slice + the drive batch it came from.
+        eval_inputs = task.eval_inputs()
+        assert len(eval_inputs) == 8
+        assert {ei.data.type for ei in eval_inputs} == {"single_turn"}
+        assert {ei.data.user_message.text for ei in eval_inputs} == {
+            f"input {i}" for i in range(8)
+        }
+        assert all(
+            set(ei.tags)
+            == {
+                "eval_single_turn_spec",
+                f"single_turn_drive_batch:{self.BATCH_TAG}",
+            }
+            for ei in eval_inputs
+        )
+
+        # Runs split into DISJOINT golden/train slices on top of their
+        # pipeline tags. Golden caps at 25% of 8 = 2 = the reviewed runs.
+        split_tags = {"train_single_turn_spec", "eval_golden_single_turn_spec"}
+        runs_by_id = {run.id: run for run in task.runs()}
+        for run in task.runs():
+            assert len(split_tags & set(run.tags)) == 1
+            assert "eval_single_turn_spec" not in run.tags
+            assert "single_turn_drive" in run.tags
+        for reviewed_run in (batch_runs[0], batch_runs[1]):
+            assert "eval_golden_single_turn_spec" in runs_by_id[reviewed_run.id].tags
+        unreviewed_tags = set(runs_by_id[batch_runs[2].id].tags)
+        assert "eval_golden_single_turn_spec" not in unreviewed_tags
+        assert "train_single_turn_spec" in unreviewed_tags
+
+        # Reviewed runs carry golden ratings matching the review clicks, plus
+        # feedback + per-claim grades; unreviewed runs stay unrated — REAL
+        # runs fill train now, so no synthesized TaskRuns exist anywhere.
+        rating_key = "named::Single Turn Spec"
+        failed = runs_by_id[batch_runs[0].id]
+        assert failed.output.rating.requirement_ratings[rating_key].value == 0.0
+        assert (
+            failed.output.rating.requirement_ratings[rating_key].type
+            == TaskOutputRatingType.pass_fail
+        )
+        assert failed.feedback()[0].feedback == "Fabricated a return window."
+        assert len(failed.claim_reviews()) == 1
+        assert failed.claim_reviews()[0].judge_score == "fail"
+
+        passed = runs_by_id[batch_runs[1].id]
+        assert passed.output.rating.requirement_ratings[rating_key].value == 1.0
+        assert passed.feedback() == []
+        assert len(passed.claim_reviews()) == 1
+
+        unreviewed = runs_by_id[batch_runs[2].id]
+        assert unreviewed.output.rating is None
+        assert unreviewed.claim_reviews() == []
+
+        # Save-time generation is DEAD on this path: the task's runs are
+        # exactly the eight the pipeline drove — nothing new was minted.
+        assert len(task.runs()) == 8
+
+    def test_single_turn_save_writes_splits_natively_to_disk(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        # Asserts on the SAVED BYTES, not the in-memory model, mirroring the
+        # multi-turn saved-bytes test: the wire shape is the compatibility
+        # contract older clients read.
+        project, task = project_and_task
+        response = self._post(client, project, task, single_turn_request_data)
+        assert response.status_code == 200, response.text
+
+        eval_path = task.evals()[0].path
+        first_bytes = eval_path.read_text()
+        on_disk = json.loads(first_bytes)
+
+        assert on_disk["splits"] == {
+            "test": {
+                "source": "eval_input",
+                "filter_id": "tag::eval_single_turn_spec",
+            },
+            "train": {
+                "source": "task_run",
+                "filter_id": "tag::train_single_turn_spec",
+            },
+        }
+        assert on_disk["train_set_filter_id"] is None
+        assert on_disk["eval_set_filter_id"] is None
+        assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_single_turn_spec"
+        assert "eval_input_filter_id" not in first_bytes
+
+    def test_404_when_batch_tag_matches_nothing(
+        self, client, project_and_task, single_turn_request_data
+    ):
+        project, task = project_and_task
+        response = self._post(client, project, task, single_turn_request_data)
+        assert response.status_code == 404
+        assert "batch_tag" in response.json()["message"]
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+
+    def test_404_when_reviewed_run_not_in_batch(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        project, task = project_and_task
+        single_turn_request_data["single_turn"]["reviewed_runs"] = [
+            self._reviewed_run("no-such-run", meets_spec=True),
+        ]
+        response = self._post(client, project, task, single_turn_request_data)
+        assert response.status_code == 404
+        assert "no-such-run" in response.json()["message"]
+        assert len(task.evals()) == 0
+
+    def test_422_on_duplicate_reviewed_runs(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        project, task = project_and_task
+        single_turn_request_data["single_turn"]["reviewed_runs"] = [
+            self._reviewed_run(batch_runs[0].id, meets_spec=True),
+            self._reviewed_run(batch_runs[0].id, meets_spec=False),
+        ]
+        response = self._post(client, project, task, single_turn_request_data)
+        assert response.status_code == 422
+        assert "at most once" in response.json()["message"]
+
+    def test_validator_rejects_single_turn_with_full_trace(
+        self, client, project_and_task, single_turn_request_data
+    ):
+        project, task = project_and_task
+        single_turn_request_data["evaluate_full_trace"] = True
+        response = self._post(client, project, task, single_turn_request_data)
+        assert response.status_code == 422
+        assert "evaluate_full_trace" in str(response.json())
+
+    def test_validator_rejects_blank_eval_slice_input(
+        self, client, project_and_task, single_turn_request_data
+    ):
+        project, task = project_and_task
+        single_turn_request_data["single_turn"]["inputs"][3] = "   "
+        response = self._post(client, project, task, single_turn_request_data)
+        assert response.status_code == 422
+
+    def test_structured_task_rejects_non_schema_input(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        # A structured-input task's eval slice must parse against the input
+        # schema, or the saved eval would fail every job at run time.
+        project, task = project_and_task
+        task.input_json_schema = json.dumps(
+            {
+                "type": "object",
+                "properties": {"question": {"type": "string"}},
+                "required": ["question"],
+            }
+        )
+        single_turn_request_data["single_turn"]["inputs"] = [
+            json.dumps({"question": f"q {i}"}) for i in range(7)
+        ] + ["not json"]
+        response = self._post(client, project, task, single_turn_request_data)
+        assert response.status_code == 422
+        assert "not valid JSON" in response.json()["message"]
+        assert len(task.evals()) == 0
+
+    def test_save_failure_mid_rating_rolls_back(
+        self, client, project_and_task, batch_runs, single_turn_request_data
+    ):
+        # A failure after the eval slice persisted, the runs were tagged, AND
+        # the ratings were written must reverse EVERYTHING: created models
+        # deleted, tags and ratings restored — the batch runs come out
+        # exactly as the pipeline left them.
+        project, task = project_and_task
+        single_turn_request_data["single_turn"]["reviewed_runs"] = [
+            self._reviewed_run(batch_runs[0].id, meets_spec=False),
+        ]
+
+        from app.desktop.studio_server.utils import copilot_utils
+
+        def rate_then_boom(*args, **kwargs):
+            copilot_utils.rate_reviewed_batch_runs(*args, **kwargs)
+            raise RuntimeError("disk full")
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.rate_reviewed_batch_runs",
+                side_effect=rate_then_boom,
+            ),
+            # The endpoint re-raises after rollback; TestClient propagates it.
+            pytest.raises(RuntimeError, match="disk full"),
+        ):
+            client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=single_turn_request_data,
+            )
+
+        assert len(task.evals()) == 0
+        assert len(task.specs()) == 0
+        assert len(task.eval_inputs()) == 0
+        for run in task.runs():
+            assert set(run.tags) == {
+                "single_turn_drive",
+                f"single_turn_drive_batch:{self.BATCH_TAG}",
+            }
+            assert run.output.rating is None
+            assert run.feedback() == []
+            assert run.claim_reviews() == []
 
 
 _JOBS_API = "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs"
@@ -861,7 +2314,7 @@ class TestDataGuideJob:
             response = client.get(self.RESULT_URL)
         assert response.status_code == 200
         draft = response.json()["draft_guide"]
-        # Copilot draft emits the Mike-strict three-section shape.
+        # Copilot draft emits the canonical three-section guide shape.
         assert draft.startswith("# Semantics")
         assert "# Style" in draft
         assert "# Presentation Defaults" in draft
@@ -1106,3 +2559,26 @@ class TestParseImportFile:
             response = self._post(client, b"\xff\xfe invalid bytes")
         assert response.status_code == 422
         assert "UTF-8" in response.json()["message"]
+
+
+def test_claim_review_api_rejects_unpinned_final_judgement():
+    """The request-model mirror of the persisted ClaimReview invariant: a
+    payload whose final judgement contradicts the judge's verdict 422s
+    before any model is written."""
+    import pydantic
+
+    from app.desktop.studio_server.api_models.copilot_models import ClaimReviewApi
+
+    with pytest.raises(pydantic.ValidationError, match="must equal judge_score"):
+        ClaimReviewApi(
+            judge_score="pass",
+            judge_reasoning="Fine.",
+            claims=[],
+            final_judgement={
+                "claim": "Overall verdict.",
+                "evidence": "Decisive fact [1].",
+                "expected_result": "fail",
+                "human_grade": "agree",
+                "human_feedback": None,
+            },
+        )

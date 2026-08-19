@@ -1,9 +1,11 @@
 """Shared Pydantic models for the Copilot API."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
+from kiln_ai.datamodel.claim_review import GradedClaim
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, model_validator
+from typing_extensions import Self
 
 
 # Base models
@@ -48,6 +50,32 @@ class SampleApi(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class ClaimReviewApi(BaseModel):
+    """The reviewer's grades on one trace's claim/evidence distillation.
+
+    Mirrors the persisted ClaimReview shape (judge verdict + per-claim
+    agree/disagree with optional whys) so the save path can write it onto
+    the golden TaskRun and judge refinement can consume it later.
+    """
+
+    judge_score: Literal["pass", "fail"]
+    judge_reasoning: str
+    claims: list[GradedClaim]
+    final_judgement: GradedClaim
+
+    @model_validator(mode="after")
+    def validate_final_judgement_pinned(self) -> Self:
+        # Same invariant the persisted ClaimReview enforces; checking here
+        # turns a corrupt payload into a 422 before any model is written.
+        if self.final_judgement.expected_result != self.judge_score:
+            raise ValueError(
+                "final_judgement.expected_result must equal judge_score "
+                f"(got {self.final_judgement.expected_result!r} vs "
+                f"{self.judge_score!r})"
+            )
+        return self
+
+
 class ReviewedExample(BaseModel):
     """A reviewed example from the spec review process.
 
@@ -60,8 +88,53 @@ class ReviewedExample(BaseModel):
     model_says_meets_spec: bool
     user_says_meets_spec: bool
     feedback: str
+    claim_review: ClaimReviewApi | None = Field(
+        default=None,
+        description="Per-claim grades from the claim/evidence review, when "
+        "the example was reviewed that way (v2 builder).",
+    )
 
     model_config = {"populate_by_name": True}
+
+
+class ReviewedChainApi(BaseModel):
+    """A reviewer's verdict on one multi-turn chain, keyed by its leaf run.
+
+    The leaf TaskRun id is the durable identity that rides from the drive
+    batch through review to save — the save path writes the golden rating
+    (and the claim review) onto that leaf.
+    """
+
+    leaf_run_id: str
+    user_says_meets_spec: bool
+    feedback: str = ""
+    claim_review: ClaimReviewApi | None = None
+
+
+class DrivenSyntheticCaseApi(BaseModel):
+    """One driven synthetic-user case from the builder session.
+
+    The save path mints an EvalInput from each — the re-drivable input the
+    eval runner regenerates a conversation from, per run config.
+    """
+
+    seed_prompt: str = Field(
+        min_length=1,
+        description="The opening user-side message of the conversation.",
+    )
+    synthetic_user_info: str = Field(
+        min_length=1,
+        description="The XML-tagged persona blob as generated "
+        "(persona/goal/behavior_guidance). Wire format only: the save path "
+        "parses it into the structured submodel before anything persists.",
+    )
+    scenario_index: int | None = Field(
+        default=None,
+        description="Zero-based index into the builder's user-approved "
+        "scenario plan identifying the scenario this case was generated "
+        "from. Recorded on the minted EvalInput as a `scenario:{index}` "
+        "provenance tag; omit when the case has no plan scenario.",
+    )
 
 
 # Input models
