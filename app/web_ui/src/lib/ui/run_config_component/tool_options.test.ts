@@ -51,6 +51,25 @@ const kiln_task_set: ToolSetApiDescription = {
   ],
 }
 
+const colliding_kiln_task_set: ToolSetApiDescription = {
+  type: "kiln_task",
+  set_name: "Kiln Tasks as Tools",
+  tools: [
+    {
+      id: "kiln_task::abc",
+      name: "Summarize",
+      description: "Summarize the input",
+      function_name: "summarize",
+    },
+    {
+      id: "kiln_task::def",
+      name: "Summarize",
+      description: "Summarize the input",
+      function_name: "summarize",
+    },
+  ],
+}
+
 const skill_set: ToolSetApiDescription = {
   type: "skill",
   set_name: "Skills",
@@ -84,6 +103,124 @@ describe("build_tool_option_groups labelling", () => {
     expect(option.value).toBe("mcp::remote::demo::search_docs")
     // The function name is not the value here, so it is not worth a badge.
     expect(option.badge).toBeUndefined()
+  })
+})
+
+describe("build_tool_option_groups name disambiguation", () => {
+  it("qualifies colliding Kiln task tools by tool server id", () => {
+    const labels = all_options(
+      build_tool_option_groups([colliding_kiln_task_set]),
+    ).map((option) => option.label)
+    expect(labels).toEqual(["Summarize (abc)", "Summarize (def)"])
+  })
+
+  it("leaves a unique Kiln task tool label untouched", () => {
+    const [option] = all_options(build_tool_option_groups([kiln_task_set]))
+    expect(option.label).toBe("Summarize")
+  })
+
+  it("qualifies a Kiln task tool colliding with a tool in another set", () => {
+    const labels = all_options(
+      build_tool_option_groups([
+        kiln_task_set,
+        { ...mcp_set, tools: [{ ...mcp_set.tools[0], name: "Summarize" }] },
+      ]),
+    ).map((option) => option.label)
+    // Only the Kiln task tool is qualified: the MCP tool is already grouped under
+    // its server.
+    expect(labels).toEqual(["Summarize (abc)", "Summarize"])
+  })
+
+  it("ignores a collision the context filter already hid from this picker", () => {
+    const labels = all_options(
+      build_tool_option_groups([
+        kiln_task_set,
+        {
+          ...ai_models_set,
+          tools: [{ ...ai_models_set.tools[0], name: "Summarize" }],
+        },
+      ]),
+    ).map((option) => option.label)
+    expect(labels).toEqual(["Summarize"])
+  })
+
+  it("ignores a collision with a set this picker does not order", () => {
+    // Skills are not in AGENT_TOOL_SET_ORDER -- they have their own picker -- so a
+    // skill of the same name is not something the user can confuse this option with.
+    const labels = all_options(
+      build_tool_option_groups([
+        kiln_task_set,
+        { ...skill_set, tools: [{ ...skill_set.tools[0], name: "Summarize" }] },
+      ]),
+    ).map((option) => option.label)
+    expect(labels).toEqual(["Summarize"])
+  })
+
+  it("qualifies again once the picker orders the colliding set", () => {
+    const labels = all_options(
+      build_tool_option_groups(
+        [
+          kiln_task_set,
+          {
+            ...skill_set,
+            tools: [{ ...skill_set.tools[0], name: "Summarize" }],
+          },
+        ],
+        { set_order: [...AGENT_TOOL_SET_ORDER, "skill"] },
+      ),
+    ).map((option) => option.label)
+    expect(labels).toEqual(["Summarize (abc)", "Summarize"])
+  })
+})
+
+describe("build_tool_option_groups function-name deduplication", () => {
+  const function_name_args = { value_field: "function_name" as const }
+
+  it("offers one option per function name, not one per tool", () => {
+    // Both tools record the same name in a trace, so a second row would be an
+    // option the user cannot pick: FancySelect check-marks every option whose
+    // value matches the selection, and labels the closed picker from the first.
+    const options = all_options(
+      build_tool_option_groups([colliding_kiln_task_set], function_name_args),
+    )
+    expect(options.map((option) => option.value)).toEqual(["summarize"])
+    expect(options.map((option) => option.label)).toEqual(["Summarize"])
+  })
+
+  it("dedupes across tool sets, keeping the first offered", () => {
+    const groups = build_tool_option_groups(
+      [
+        kiln_task_set,
+        {
+          ...mcp_set,
+          tools: [{ ...mcp_set.tools[0], function_name: "summarize" }],
+        },
+      ],
+      function_name_args,
+    )
+    expect(all_options(groups).map((option) => option.value)).toEqual([
+      "summarize",
+    ])
+    // The MCP group had one tool and lost it, so it is gone rather than an empty
+    // header.
+    expect(groups.map((group) => group.label)).toEqual(["Kiln Tasks as Tools"])
+  })
+
+  it("keeps every distinct function name", () => {
+    const values = all_options(
+      build_tool_option_groups(
+        [colliding_kiln_task_set, mcp_set],
+        function_name_args,
+      ),
+    ).map((option) => option.value)
+    expect(values).toEqual(["summarize", "search_docs"])
+  })
+
+  it("leaves an id-valued picker's options alone", () => {
+    const values = all_options(
+      build_tool_option_groups([colliding_kiln_task_set]),
+    ).map((option) => option.value)
+    expect(values).toEqual(["kiln_task::abc", "kiln_task::def"])
   })
 })
 

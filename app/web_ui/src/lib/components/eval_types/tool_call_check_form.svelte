@@ -18,9 +18,8 @@
     on_unexpected_tools: "ignore",
   }
 
-  // Project/task context, used to load the available tools for the dropdown.
+  // Project context, used to load the available tools for the dropdown.
   export let project_id: string = ""
-  export let task_id: string = ""
 
   $: load_available_tools(project_id)
 

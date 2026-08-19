@@ -631,7 +631,6 @@
             bind:this={v2FormComponentRef}
             {eval_config_type}
             {project_id}
-            {task_id}
             {reference_candidate_keys}
             output_scores={evaluator?.output_scores}
             bind:code_string={code_eval_code}

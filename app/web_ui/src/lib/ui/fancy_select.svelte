@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from "$app/navigation"
   import type { OptionGroup } from "./fancy_select_types"
+  import { filter_option_groups } from "./fancy_select_search"
   import { computePosition, autoUpdate, offset } from "@floating-ui/dom"
   import { onMount, onDestroy } from "svelte"
 
@@ -34,39 +35,8 @@
   let isSearching = false
   let searchInputElement: HTMLInputElement
 
-  // Filter options based on search text - supports multi-word searches
-  function filterOptions(
-    options: OptionGroup[],
-    searchText: string,
-  ): OptionGroup[] {
-    if (!searchText.trim()) {
-      return options
-    }
-
-    // Split search text into words for flexible matching
-    const searchWords = searchText.toLowerCase().trim().split(/\s+/)
-
-    return options
-      .map((group) => ({
-        ...group,
-        options: group.options.filter((option) => {
-          const labelText = option.label.toLowerCase()
-          const descriptionText = option.description?.toLowerCase() || ""
-          // Badges carry searchable identity for some options (a tool's function
-          // name, for one), so they take part in matching.
-          const badgeText = option.badge?.toLowerCase() || ""
-          const combinedText =
-            labelText + " " + descriptionText + " " + badgeText
-
-          // Check if all search words are present in the combined text
-          return searchWords.every((word) => combinedText.includes(word))
-        }),
-      }))
-      .filter((group) => group.options.length > 0)
-  }
-
   // Computed filtered options based on search
-  $: filteredOptions = filterOptions(options, searchText)
+  $: filteredOptions = filter_option_groups(options, searchText)
 
   // Reset search when dropdown closes
   $: if (!listVisible) {

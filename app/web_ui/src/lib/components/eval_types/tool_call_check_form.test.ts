@@ -91,7 +91,6 @@ async function render_options(
   const { container } = render(ToolCallCheckForm, {
     props: {
       project_id,
-      task_id: "task_1",
       properties: {
         type: "tool_call_check",
         expected_tools: expected_tool_names.map((tool_name) => ({
