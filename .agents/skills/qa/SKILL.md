@@ -15,12 +15,12 @@ back a findings report, same posture as `kiln-prerelease-check`.
 
 ## When to use this vs. something else
 
-- **Automated regression suite** (`npm run tests:e2e`) — a different thing entirely. Use the
-  `playwright` skill directly to run or debug it.
-- **The `playwright` skill** — the tooling underneath this skill (dev sandbox, driving the
-  browser, screenshots). You read it as part of doing QA here, but it also stands alone — a
-  coding agent reaches for it just to check its own fix rendered correctly. That skill is
-  about the tooling; this skill is about the pass.
+- **Automated regression suite** (`npm run tests:e2e`) — a separate, already-existing thing
+  this skill has nothing to do with running or maintaining.
+- **The `playwright` skill** — the tooling this skill drives (dev sandbox, browser commands,
+  screenshots). Read it as part of doing QA here; it also stands alone for a coding agent that
+  just wants to check its own fix rendered correctly. That skill is the tooling; this skill is
+  the pass that uses it.
 - **This skill** — a QA person's pass over a bigger feature set, not one fix: real UI,
   end-to-end, looking for bugs, string issues, and inconsistencies across a set of screens or
   flows big enough that one person clicking through it alone would eat a day. Reach for it on
