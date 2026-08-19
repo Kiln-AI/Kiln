@@ -416,7 +416,13 @@ echo "Syncing dependencies for ${branch:-this checkout}..."
 NPM_LOCK="$WEB_UI_DIR/package-lock.json"
 npm_lock_before="$({ cksum <"$NPM_LOCK"; } 2>/dev/null)"
 
-(cd "$PROJECT_ROOT" && uv sync --frozen --all-packages) &
+# --compile-bytecode so the venv's .pyc files are written here, where nothing is
+# waiting on them, rather than by the session's first `import kiln_ai...` — which
+# otherwise compiles thousands of files mid-command, and pays for it again in the
+# reload worker. It walks the whole venv rather than only what this sync installed,
+# every run — but with everything up to date that is well under a second, and it
+# runs alongside the npm install either way.
+(cd "$PROJECT_ROOT" && uv sync --frozen --all-packages --compile-bytecode) &
 py_pid=$!
 (cd "$WEB_UI_DIR" && npm install --no-fund --no-audit) &
 npm_pid=$!
