@@ -17,7 +17,11 @@
    * EvalTypeFormApi and needs model/algo/prompt state its callers own.
    */
   export let eval_config_type: V2EvalType
-  export let project_id: string = ""
+  // Required, with no default: <svelte:component> prop passing isn't
+  // typechecked, so an empty project_id silently reaches the tools pickers and
+  // leaves them loading forever. Keeping this required makes svelte-check catch
+  // a caller that forgets it -- the one relay a test can't guard.
+  export let project_id: string
   export let output_scores: EvalOutputScore[] | undefined = undefined
   export let reference_candidate_keys: string[] = []
   // Creation flow only: the code judge seeds its starter code with a static
@@ -49,11 +53,16 @@
   }
 </script>
 
+<!-- The code judge needs project_id: its tools picker lists that project's
+     tools. It deliberately takes no task_id — ToolsSelector would then
+     overwrite the bound selection with the task's saved tools, clobbering
+     the judge's allowlist. -->
 {#if eval_config_type === "code_eval"}
   <svelte:component
     this={metadata.createFormComponent}
     bind:this={form_ref}
     bind:code_string
+    {project_id}
     {output_scores}
     placeholder_score_key={code_placeholder_score_key}
   />

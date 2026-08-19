@@ -157,20 +157,19 @@ describe("generate_default_code", () => {
 })
 
 describe("generate_examples", () => {
-  // The first three examples are score-key-driven (built via the helper
+  // The first two examples are score-key-driven (built via the helper
   // functions); the last two are hand-written LLM tool examples validated
   // separately below.
   const code_examples = (scores?: EvalOutputScore[]) =>
-    generate_examples(scores).slice(0, 3)
+    generate_examples(scores).slice(0, 2)
 
-  it("returns five examples with correct labels", () => {
+  it("returns four examples with correct labels", () => {
     const examples = generate_examples(undefined)
-    expect(examples).toHaveLength(5)
+    expect(examples).toHaveLength(4)
     expect(examples[0].label).toBe("Parse JSON")
     expect(examples[1].label).toBe("Check tool usage")
-    expect(examples[2].label).toBe("Domain-specific grading")
-    expect(examples[3].label).toBe("LLM judge")
-    expect(examples[4].label).toBe("Triage then LLM judge")
+    expect(examples[2].label).toBe("LLM judge")
+    expect(examples[3].label).toBe("Triage then LLM judge")
   })
 
   it("falls back to quality key when no output_scores", () => {
@@ -210,7 +209,7 @@ describe("generate_examples", () => {
 
   describe("LLM tool examples", () => {
     it("LLM judge example judges the response itself", () => {
-      const example = generate_examples(undefined)[3]
+      const example = generate_examples(undefined)[2]
       expect(example.label).toBe("LLM judge")
       expect(example.code).toContain("from kiln import tools")
       expect(example.code).toContain("tools.llm_judge(")
@@ -221,7 +220,7 @@ describe("generate_examples", () => {
     })
 
     it("Triage example composes tools.llm and tools.llm_judge", () => {
-      const example = generate_examples(undefined)[4]
+      const example = generate_examples(undefined)[3]
       expect(example.label).toBe("Triage then LLM judge")
       expect(example.code).toContain("tools.llm(")
       expect(example.code).toContain("tools.llm_judge(")
@@ -237,7 +236,7 @@ describe("generate_examples", () => {
         make_score("Check", "pass_fail"),
         make_score("Rating", "five_star"),
       ]
-      const example = generate_examples(scores)[4]
+      const example = generate_examples(scores)[3]
       expect(example.code).toContain('return {"check": 1.0, "rating": 5.0}')
     })
   })
@@ -303,30 +302,6 @@ describe("generate_examples", () => {
       const examples = generate_examples(undefined)
       expect(examples[1].code).toContain(
         "KilnEvalHelpers.pass_fail(used_search)",
-      )
-    })
-  })
-
-  describe("Domain-specific grading example", () => {
-    it("asserts against a literal marker instead of reference data", () => {
-      const examples = generate_examples(undefined)
-      expect(examples[2].code).toContain("def score(output):")
-      expect(examples[2].code).toContain(
-        'contains = KilnEvalHelpers.assert_contains(output, "Summary:")',
-      )
-      expect(examples[2].code).not.toContain("if expected else True")
-    })
-
-    it("uses contains as the bool expression", () => {
-      const examples = generate_examples(undefined)
-      expect(examples[2].code).toContain("KilnEvalHelpers.pass_fail(contains)")
-    })
-
-    it("uses word_count-based rating expression for five_star", () => {
-      const scores = [make_score("R", "five_star")]
-      const examples = generate_examples(scores)
-      expect(examples[2].code).toContain(
-        "KilnEvalHelpers.five_star(5 if word_count < 50 else 3 if word_count < 150 else 1)",
       )
     })
   })
