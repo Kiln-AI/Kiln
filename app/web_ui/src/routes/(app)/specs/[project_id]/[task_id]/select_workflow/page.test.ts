@@ -92,10 +92,10 @@ const {
   }
 })
 
-// Svelte 4 async onMount callbacks do not execute in jsdom/vitest, and the page
-// keeps its loading state until the onMount task load settles. Run it here
-// instead, deferred to a microtask so the component's reactive statements (the
-// route params and query the callback reads) have been computed first.
+// Svelte 4 onMount callbacks do not execute in jsdom/vitest, and the page keeps
+// its loading state until the onMount task load settles. Run it here instead,
+// deferred to a microtask so the component's reactive statements (the route
+// params and query the callback reads) have been computed first.
 vi.mock("svelte", async (importOriginal) => {
   const actual = await importOriginal<typeof import("svelte")>()
   return {
@@ -190,9 +190,13 @@ describe("select workflow screen — tool-enabled default run config", () => {
     const { container, getByText } = await render_page()
 
     expect(getByText(TOOLS_NOTE)).toBeTruthy()
-    expect(
-      container.querySelector(`[data-tip="${TOOLS_TOOLTIP}"]`),
-    ).toBeTruthy()
+    const tooltip = container.querySelector(`[data-tip="${TOOLS_TOOLTIP}"]`)
+    expect(tooltip).toBeTruthy()
+    // The button sits in the rightmost column of a table inside an
+    // overflow-x-auto container. A top-positioned bubble is centred on the
+    // button and overhangs the container's right edge, where it gets clipped
+    // and adds phantom horizontal scroll; opening it leftwards keeps it inside.
+    expect(tooltip?.className).toContain("tooltip-left")
     expect(workflow_button(container, "Use Kiln Pro").disabled).toBe(true)
     expect(workflow_button(container, "Create Manually").disabled).toBe(false)
   })
