@@ -193,7 +193,7 @@ describe("select workflow screen — tool-enabled default run config", () => {
     const tooltip = container.querySelector(`[data-tip="${TOOLS_TOOLTIP}"]`)
     expect(tooltip).toBeTruthy()
     // The button sits in the rightmost column of a table inside an
-    // overflow-x-auto container. A top-positioned bubble is centred on the
+    // overflow-x-auto container. A top-positioned bubble is centered on the
     // button and overhangs the container's right edge, where it gets clipped
     // and adds phantom horizontal scroll; opening it leftwards keeps it inside.
     expect(tooltip?.className).toContain("tooltip-left")
