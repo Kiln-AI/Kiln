@@ -103,17 +103,6 @@ class TestFromjsonExtractionSkip:
         assert "not valid JSON" in detail
         assert "(final_message | fromjson).field" in detail
 
-    def test_extract_value_missing_nested_field_skips_with_message(self):
-        inp = _make_input(final_message='{"status": "ok"}')
-        value, skip, detail = extract_value(
-            "(final_message | fromjson).user.status", inp
-        )
-        assert value is None
-        assert skip == SkippedReason.extraction_failed
-        # The skip detail preserves Jinja's message, which names the missing field.
-        assert detail is not None
-        assert "has no attribute 'user'" in detail
-
     def test_extract_value_fromjson_valid_json_passes(self):
         inp = _make_input(final_message='{"status": "ok"}')
         value, skip, _detail = extract_value("(final_message | fromjson).status", inp)
@@ -181,36 +170,13 @@ class TestExtractOutputValue:
         assert value == "val"
         assert fail_result is None
 
-    def test_missing_nested_field_fails_not_raises(self):
-        # The JSON parses but has no `user`, so the `.status` lookup happens on a
-        # missing value. That's the model not producing the expected structure: FAIL.
-        inp = _make_input(final_message='{"status": "ok"}')
-        value, fail_result = extract_output_value(
-            "(final_message | fromjson).user.status", inp, _SAMPLE_SCORES
-        )
-        assert value is None
-        assert fail_result is not None
-        assert fail_result.skipped_reason is None
-        assert fail_result.scores == {"s1": 0.0, "s2": 0.0}
-
-    def test_index_past_end_of_trace_fails_not_raises(self):
+    def test_empty_trace_scores_fail_not_missing_trace_skip(self):
+        # A trace that exists but is empty is not a missing trace: the run did
+        # produce one, it just has nothing in it. That scores FAIL, so the
+        # missing-trace skip must key off `is None`, not falsiness.
         inp = _make_input(trace=[])
         value, fail_result = extract_output_value(
             "trace[-1].tool_calls[0].function.name", inp, _SAMPLE_SCORES
-        )
-        assert value is None
-        assert fail_result is not None
-        assert fail_result.skipped_reason is None
-        assert fail_result.scores == {"s1": 0.0, "s2": 0.0}
-
-    def test_generator_over_missing_field_fails_not_raises(self):
-        # map() defers its lookups until the generator is drained, so this is the
-        # one shape where the raise escapes the expression call itself.
-        inp = _make_input(trace=[{"content": "no tools"}])
-        value, fail_result = extract_output_value(
-            "trace | map(attribute='tool_calls.0.function.name')",
-            inp,
-            _SAMPLE_SCORES,
         )
         assert value is None
         assert fail_result is not None

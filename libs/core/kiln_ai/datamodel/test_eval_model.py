@@ -2557,6 +2557,16 @@ def _make_v2_eval_config(**kwargs) -> EvalConfig:
     return EvalConfig(name="V2 Test", config_type=EvalConfigType.v2, **kwargs)
 
 
+# One value_expression per EvalTaskInput field, keyed by the root variable it
+# reads. Checked against EvalTaskInput.model_fields so the coverage claim holds.
+_EVAL_INPUT_FIELD_EXPRESSIONS = {
+    "final_message": "final_message",
+    "trace": "trace[-1].content",
+    "task_input": "task_input | upper",
+    "reference_data": "reference_data",
+}
+
+
 class TestV2TemplateValidation:
     def test_valid_prompt_template(self):
         """A prompt_template with a Jinja expression passes validation."""
@@ -2667,10 +2677,13 @@ class TestV2TemplateValidation:
             )
 
     @pytest.mark.parametrize(
-        "expression",
-        ["final_message", "trace[-1].content", "task_input | upper", "reference_data"],
+        "root,expression",
+        list(_EVAL_INPUT_FIELD_EXPRESSIONS.items()),
     )
-    def test_value_expression_accepts_every_eval_input_field(self, expression):
+    def test_value_expression_accepts_every_eval_input_field(self, root, expression):
+        # Tied to the model so a new EvalTaskInput field can't leave this test
+        # named "every field" while silently skipping one.
+        assert set(_EVAL_INPUT_FIELD_EXPRESSIONS) == set(EvalTaskInput.model_fields)
         cfg = _make_v2_eval_config(
             properties=ExactMatchProperties(
                 expected_value="yes",
@@ -2688,7 +2701,13 @@ class TestV2TemplateValidation:
         ],
     )
     def test_value_expression_rejects_unknown_variable(self, expression, unknown):
-        """A typo'd root would resolve to Undefined and silently score every row 0.0."""
+        """A typo'd root fails silently at runtime, so it has to fail loudly here.
+
+        Depending on what the expression does with it, the typo either resolves
+        to Undefined and scores every row 0.0, or -- as with `~`, which
+        stringifies Undefined to '' -- produces a plausible-looking wrong value
+        ('hi' for `final_message ~ typo`) that no one notices.
+        """
         with pytest.raises(
             ValidationError, match=f"unknown variable '{unknown}'"
         ) as exc:

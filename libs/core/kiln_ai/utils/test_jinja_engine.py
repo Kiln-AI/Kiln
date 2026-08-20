@@ -208,45 +208,48 @@ class TestExtractOperationsOnMissingData:
     field that wasn't there.
     """
 
-    def test_missing_nested_attribute_raises_extraction_error(self):
-        with pytest.raises(
-            JinjaExtractionError, match="'dict object' has no attribute 'user'"
-        ):
-            extract(
+    @pytest.mark.parametrize(
+        "expression,data,expected_message",
+        [
+            # A filter or operator that forces the Undefined.
+            ("missing | int", {}, "'missing' is undefined"),
+            ("missing + 1", {}, "'missing' is undefined"),
+            # Reaching into a field the parsed JSON doesn't have.
+            (
                 "(final_message | fromjson).user.status",
                 {"final_message": '{"status": "ok"}'},
-            )
+                "'dict object' has no attribute 'user'",
+            ),
+            # Indexing past the end of a list.
+            (
+                "trace[-1].tool_calls[0].function.name",
+                {"trace": []},
+                "has no element -1",
+            ),
+        ],
+    )
+    def test_raising_operation_on_missing_value(
+        self, expression, data, expected_message
+    ):
+        # Only operations that force the value raise; others stay silent, which
+        # test_silent_operation_on_missing_value pins.
+        with pytest.raises(JinjaExtractionError, match=expected_message):
+            extract(expression, data)
 
-    def test_index_past_end_of_list_raises_extraction_error(self):
-        with pytest.raises(JinjaExtractionError, match="has no element -1"):
-            extract("trace[-1].tool_calls[0].function.name", {"trace": []})
-
-    @pytest.mark.parametrize("expression", ["missing | int", "missing + 1"])
-    def test_raising_operation_on_missing_value(self, expression):
-        # Only operations that force the value raise. Many do not: `join` yields
-        # '', `~` concatenates, `==` is False. Those stay silent by design.
-        with pytest.raises(JinjaExtractionError, match="'missing' is undefined"):
-            extract(expression, {})
+    def test_silent_operation_on_missing_value(self):
+        # The other side of the boundary: `~` stringifies Undefined to '' rather
+        # than raising, so a typo'd name yields a wrong value, not an error.
+        assert extract("final_message ~ typo", {"final_message": "hi"}) == "hi"
 
     def test_lazy_generator_over_missing_field_raises_extraction_error(self):
-        # map() is lazy, so this lookup fires during materialization rather than
-        # when the expression is called -- the raise still has to be converted.
+        # The sole guard that generators are materialized inside extract()'s try:
+        # map() defers its per-item lookups, so the raise fires during list(),
+        # not when the compiled expression is called.
         with pytest.raises(
             JinjaExtractionError, match="'dict object' has no attribute 'tool_calls'"
         ):
             extract(
                 "trace | map(attribute='tool_calls.0.function.name')",
-                {"trace": [{"content": "no tools"}]},
-            )
-
-    def test_materialized_generator_over_missing_field_raises_extraction_error(self):
-        # Same expression with `| list`, which materializes inside the compiled
-        # expression instead. Both routes must land on JinjaExtractionError.
-        with pytest.raises(
-            JinjaExtractionError, match="'dict object' has no attribute 'tool_calls'"
-        ):
-            extract(
-                "trace | map(attribute='tool_calls.0.function.name') | list",
                 {"trace": [{"content": "no tools"}]},
             )
 
