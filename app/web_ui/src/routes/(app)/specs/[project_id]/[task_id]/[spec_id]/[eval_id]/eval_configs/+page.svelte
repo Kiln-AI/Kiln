@@ -14,6 +14,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
+  import { correlatable_scores } from "$lib/utils/eval_types/run_config_sort"
   import Dialog from "$lib/ui/dialog.svelte"
   import { eval_config_to_detailed_ui_name } from "$lib/utils/formatters"
   import type { TaskOutputRatingType } from "$lib/types"
@@ -108,20 +109,17 @@
       if (a.id === nonNullEvaluator.current_config_id) return -1
       if (b.id === nonNullEvaluator.current_config_id) return 1
 
+      const sortable_scores = correlatable_scores(
+        nonNullEvaluator.output_scores,
+      )
+
       // If no score summary, keep original order
-      if (
-        !score_summary ||
-        !nonNullEvaluator.output_scores ||
-        nonNullEvaluator.output_scores.length === 0
-      ) {
+      if (!score_summary || sortable_scores.length === 0) {
         return 0
       }
 
       // Get the last output score for sorting
-      const lastOutputScore =
-        nonNullEvaluator.output_scores[
-          nonNullEvaluator.output_scores.length - 1
-        ]
+      const lastOutputScore = sortable_scores[sortable_scores.length - 1]
       const scoreNameKey = string_to_json_key(lastOutputScore.name)
 
       const aScores = score_summary?.results?.["" + a.id]?.[scoreNameKey]
@@ -716,7 +714,7 @@
                 </th>
                 <th class="text-center w-[160px]">Status</th>
                 <th class="w-auto">Eval Details</th>
-                {#each evaluator.output_scores as output_score}
+                {#each correlatable_scores(evaluator.output_scores) as output_score}
                   <th class="text-center w-[130px]">
                     {output_score.name}
                     {#if output_score.type}
@@ -792,7 +790,7 @@
                       </ClampedText>
                     </div>
                   </td>
-                  {#each evaluator.output_scores as output_score}
+                  {#each correlatable_scores(evaluator.output_scores) as output_score}
                     {@const scores =
                       score_summary?.results?.["" + eval_config.id]?.[
                         string_to_json_key(output_score.name)

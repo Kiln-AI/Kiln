@@ -764,6 +764,39 @@ async def test_create_eval_config_invalid_v2_properties(
     assert "v2" in body["message"]
 
 
+@pytest.mark.asyncio
+async def test_create_eval_config_custom_scores_reject_non_code_eval(
+    client, mock_task_from_id, mock_custom_score_eval, mock_task
+):
+    """Only code evals can produce custom metrics, so pairing one with another
+    judge type is a 400 (a client error), not an unhandled 500."""
+    mock_task_from_id.return_value = mock_task
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_custom_score_eval
+
+        response = client.post(
+            "/api/projects/project1/tasks/task1/evals/eval_custom/create_eval_config",
+            json={
+                "name": "Exact Match Config",
+                "type": "v2",
+                "properties": {"type": "exact_match", "expected_value": "hello"},
+            },
+        )
+
+    assert response.status_code == 400
+    # The rule fails as a pydantic ValidationError, and the handler must carry
+    # its text through so the caller learns why, not just that it failed.
+    message = response.json()["message"]
+    assert "Invalid properties for eval config type" in message
+    assert (
+        "Evals with custom-typed output scores can only use code-eval configs"
+        in message
+    )
+    # Nothing should have been persisted.
+    assert len(mock_custom_score_eval.configs()) == 0
+
+
 CODE_EVAL_PROPERTIES = {
     "type": "code_eval",
     "code": "def score(output, **kwargs):\n    return {'accuracy': 1.0}\n",
@@ -2754,6 +2787,92 @@ async def test_get_eval_config_compare_summary(
 
     # Test case 5: Check skipping eval run lowers the percent complete
     assert eval_config_percent_complete["ec5"] == pytest.approx(0 / total_in_dataset)
+
+
+@pytest.mark.asyncio
+async def test_get_eval_config_compare_summary_skips_custom_scores(
+    client,
+    mock_task_from_id,
+    mock_task,
+    mock_eval,
+    mock_eval_config,
+    mock_run_config,
+):
+    """A custom-typed output score whose json_key collides with a human rating
+    (e.g. named "Overall Rating") must be skipped in the correlation loop:
+    normalize_rating raises on custom, which 500'd the whole endpoint."""
+    mock_task_from_id.return_value = mock_task
+
+    # Human-rated item in the golden set, plus an eval run scoring it. Built
+    # while the eval still has its five_star scores, so save validation passes.
+    task_run = TaskRun(
+        input="Test Input",
+        input_source=DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "adapter_name": "langchain_adapter",
+            },
+        ),
+        output=TaskOutput(
+            output="Test Output",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt-4",
+                    "model_provider": "openai",
+                    "adapter_name": "langchain_adapter",
+                },
+            ),
+            rating=TaskOutputRating(
+                value=5.0,
+                requirement_ratings={
+                    mock_task.requirements[0].id: RequirementRating(
+                        value=4.0, type=TaskOutputRatingType.five_star
+                    )
+                },
+            ),
+        ),
+        tags=["golden"],
+        parent=mock_task,
+    )
+    task_run.save_to_file()
+
+    eval_run = EvalRun(
+        task_run_config_id="run_config1",
+        scores={"score1": 3.5, "overall_rating": 4.0},
+        input="input",
+        output="output",
+        dataset_id=task_run.id,
+        parent=mock_eval_config,
+    )
+    eval_run.save_to_file()
+
+    # Swap the eval's "overall_rating" score to custom-typed in memory: a
+    # custom-score eval can't be built with the judge config attached (the
+    # EvalConfig validator rejects that pairing), so stage the collision here.
+    mock_eval.output_scores[1] = EvalOutputScore(
+        name="Overall Rating",
+        type=TaskOutputRatingType.custom,
+    )
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_configs_score_summary"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    results = data["results"]
+    # five_star score still correlated; the custom score is absent, not a 500
+    assert "score1" in results["eval_config1"]
+    assert "overall_rating" not in results["eval_config1"]
+    # Custom scores are unrateable by humans, so they must not block the
+    # rated tally: score1 is human-rated, so the item counts fully rated.
+    assert data["fully_rated_count"] == 1
+    assert data["partially_rated_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -5601,6 +5720,33 @@ def mock_v2_eval(mock_task):
     return eval
 
 
+@pytest.fixture
+def mock_custom_score_eval(mock_task):
+    """An eval carrying a custom-typed score, which only code evals can serve."""
+    eval = Eval(
+        id="eval_custom",
+        name="Custom Score Eval",
+        description="Eval with a custom metric",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                instruction="Is the answer accurate?",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+            EvalOutputScore(
+                name="cost",
+                instruction="Total cost of the run",
+                type=TaskOutputRatingType.custom,
+            ),
+        ],
+        splits={"test": EvalInputSplit(filter_id="tag::v2_eval_set")},
+        evaluation_data_type=None,
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    return eval
+
+
 class TestTestV2Eval:
     def _url(self, eval_id: str = "eval_v2") -> str:
         return f"/api/projects/project1/tasks/task1/evals/{eval_id}/test_v2_eval"
@@ -5639,6 +5785,17 @@ class TestTestV2Eval:
         body = response.json()
         assert body["scores"]["accuracy"] == 0.0
         assert body["skipped_reason"] is None
+
+    def test_custom_scores_reject_non_code_eval(self, client, mock_custom_score_eval):
+        """The transient config build enforces the code-eval rule too, and its
+        failure must surface as a 400 rather than an unhandled 500."""
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_custom_score_eval
+            response = client.post(
+                self._url("eval_custom"), json=self._exact_match_payload()
+            )
+        assert response.status_code == 400
+        assert "code-eval" in response.json()["message"]
 
     def test_code_eval_untrusted_skip(self, client, mock_v2_eval):
         payload = {
@@ -5999,6 +6156,23 @@ class TestCreateLlmJudgeConfig:
         assert props["system_prompt"] is not None
         assert props["thinking_instruction"] is not None
         assert props["reference_keys"] == []
+
+    def test_custom_scores_reject_llm_judge(self, client, mock_custom_score_eval):
+        """An LLM judge structurally can't emit custom metrics, so this is a
+        400 (a client error), not an unhandled 500."""
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_custom_score_eval
+            response = client.post(
+                self._url("eval_custom"),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                },
+            )
+        assert response.status_code == 400
+        assert "code-eval" in response.json()["message"]
+        assert len(mock_custom_score_eval.configs()) == 0
 
     def test_g_eval_true(self, client, mock_v2_eval):
         with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
@@ -6395,6 +6569,21 @@ class TestTestV2EvalDraft:
         # The transient eval must never be saved to the task.
         assert mock_task.evals() == []
 
+    def test_custom_scores_rejected(self, client, mock_task, mock_task_from_id):
+        """create_evaluator refuses custom-typed scores, so drafting a judge
+        for them is refused here too rather than passing a test the caller
+        could never turn into an eval."""
+        mock_task_from_id.return_value = mock_task
+        payload = self._payload()
+        payload["output_scores"].append(
+            {"name": "cost", "instruction": "Total cost", "type": "custom"}
+        )
+        response = client.post(self._url(), json=payload)
+        assert response.status_code == 422
+        message = response.json()["message"]
+        assert "Score 'cost'" in message
+        assert "not yet supported by this endpoint" in message
+
     def test_code_eval_untrusted_skip(self, client, mock_task, mock_task_from_id):
         payload = self._payload()
         payload["properties"] = {
@@ -6711,3 +6900,26 @@ async def test_create_evaluator_rejects_empty_output_scores(
         },
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_evaluator_rejects_custom_output_scores(
+    client, mock_task_from_id, mock_task
+):
+    """Custom-typed scores need a code-eval judge that no UI can create here,
+    so the endpoint refuses rather than persisting an unfinishable eval."""
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json={
+            "name": "My Eval",
+            "evaluation_data_type": "final_answer",
+            "output_scores": [
+                {"name": "Tone", "type": "pass_fail", "instruction": "Check tone"},
+                {"name": "Cost", "type": "custom", "instruction": "Total cost"},
+            ],
+        },
+    )
+    assert response.status_code == 422
+    message = response.json()["message"]
+    assert "Score 'Cost'" in message
+    assert "not yet supported by this endpoint" in message

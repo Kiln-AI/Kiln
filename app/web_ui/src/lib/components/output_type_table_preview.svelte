@@ -22,7 +22,11 @@
       tooltip_text="-1 is critical failure, 0 is fail, and 1 is pass"
       no_pad={true}
     />
-  {:else}
-    {output_score_type}
+  {:else if output_score_type === "custom"}
+    Custom Metric
+    <InfoTooltip
+      tooltip_text="Any finite number. Custom metrics are unbounded values like token counts, cost, or latency."
+      no_pad={true}
+    />
   {/if}
 </div>

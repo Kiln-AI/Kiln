@@ -33,6 +33,7 @@ from kiln_ai.datamodel.basemodel import (
 from kiln_ai.datamodel.datamodel_enums import (
     EvalStatus,
     Priority,
+    TaskOutputRatingType,
 )
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
 from kiln_ai.datamodel.eval import (
@@ -89,7 +90,7 @@ from kiln_server.utils.spec_utils import (
     spec_eval_splits,
     tag_filter_id,
 )
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app.desktop.studio_server.code_tool_api import ToolCallLogEntryResponse
 
@@ -242,6 +243,23 @@ async def run_eval_runner_with_status(eval_runner: EvalRunner) -> StreamingRespo
     )
 
 
+def reject_custom_output_scores(
+    output_scores: list[EvalOutputScore] | None,
+) -> list[EvalOutputScore] | None:
+    """Reject custom-typed scores, which only code-eval judges can produce.
+
+    No UI offers a custom score type, so an eval created through the API with
+    one could only ever be finished by hand-building its code-eval config.
+    """
+    for score in output_scores or []:
+        if score.type == TaskOutputRatingType.custom:
+            raise ValueError(
+                f"Score '{score.name}' has type 'custom'. Custom-typed output scores "
+                "are not yet supported by this endpoint; they require a code-eval judge."
+            )
+    return output_scores
+
+
 class CreateEvaluatorRequest(BaseModel):
     """Request to create a new evaluator."""
 
@@ -279,6 +297,13 @@ class CreateEvaluatorRequest(BaseModel):
     status: EvalStatus = Field(
         default=EvalStatus.active, description="The status of the eval."
     )
+
+    @field_validator("output_scores")
+    @classmethod
+    def reject_custom_scores(
+        cls, output_scores: list[EvalOutputScore] | None
+    ) -> list[EvalOutputScore] | None:
+        return reject_custom_output_scores(output_scores)
 
 
 class CreateEvalConfigRequest(BaseModel):
@@ -378,6 +403,16 @@ class TestV2EvalDraftRequest(BaseModel):
         description="The scores the drafted eval will declare; returned scores are validated against them."
     )
     eval_input: EvalTaskInput = Field(description="The input to evaluate.")
+
+    # Mirror create_evaluator's rule so a draft test can't succeed for a score
+    # combination the creation step would then refuse.
+    @field_validator("output_scores")
+    @classmethod
+    def reject_custom_scores(
+        cls, output_scores: list[EvalOutputScore]
+    ) -> list[EvalOutputScore]:
+        reject_custom_output_scores(output_scores)
+        return output_scores
 
 
 async def run_v2_eval_test(
@@ -1155,6 +1190,10 @@ def count_human_evals(
         has_all_scores = True
         has_any_scores = False
         for output_score in eval.output_scores:
+            # Humans can't rate custom metrics (no rating UI for them), so
+            # counting them would pin every item at "partially rated".
+            if output_score.type == TaskOutputRatingType.custom:
+                continue
             score = human_score_from_task_run(
                 dataset_item, output_score, score_key_to_task_requirement_id
             )
@@ -1708,10 +1747,19 @@ def connect_evals_api(app: FastAPI):
                 model_provider=request.provider,
                 parent=eval,
             )
-        except ValidationError:
+        except ValidationError as e:
+            # Append the underlying validator messages: rules like
+            # "custom scores need a code-eval config" arrive here as a
+            # ValidationError, and the generic text alone hides why it failed.
+            reasons = "; ".join(
+                str(err["msg"]) for err in e.errors(include_url=False) if err.get("msg")
+            )
+            detail = f"Invalid properties for eval config type '{request.type.value}'."
+            if reasons:
+                detail = f"{detail} {reasons}"
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid properties for eval config type '{request.type.value}'.",
+                detail=detail,
             )
         except ValueError as e:
             raise HTTPException(
@@ -2344,6 +2392,12 @@ def connect_evals_api(app: FastAPI):
                     )
 
                 for output_score in eval.output_scores:
+                    # Custom scores are unbounded metrics with no normalization
+                    # (normalize_rating raises on them), so correlation against
+                    # human ratings is undefined — skip them.
+                    if output_score.type == TaskOutputRatingType.custom:
+                        continue
+
                     score_key = output_score.json_key()
                     eval_score: float | None = eval_run.scores.get(score_key, None)
 
