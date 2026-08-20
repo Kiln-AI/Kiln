@@ -121,8 +121,9 @@ def _patch_su_driver(
             else list(replies_per_case)
         )
         instance = Mock(spec=SyntheticUserDriver)
-        # respond() returns (message, cost). Tests that don't care about
-        # cost get 0.0 — the runner adds it to total_cost regardless.
+        # respond() returns (message, Usage | None). Tests that don't care about
+        # the driver's spend hand back None — the shape a provider that reported
+        # nothing produces, which the runner totals as zero.
         instance.respond = AsyncMock(side_effect=[(r, None) for r in replies])
         return instance
 
