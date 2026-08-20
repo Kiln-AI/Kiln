@@ -31,6 +31,7 @@ from kiln_ai.adapters.eval.eval_utils.scoring_utils import (
     raw_output_from_logprobs,
     score_from_token_string,
 )
+from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import check_reference_key
 from kiln_ai.adapters.ml_model_list import (
     ModelProviderName,
     built_in_models_from_provider,
@@ -103,6 +104,26 @@ class LlmJudgeEval(BaseV2EvalBridge):
     async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
         props = self.properties
         assert isinstance(props, LlmJudgeProperties)
+
+        # Before the render and before any model call: a judge that declares a
+        # reference key it cannot get must skip loudly, not score blind. A template can
+        # be permissive (a hand-written one may guard its own lookups), so this declared
+        # requirement is what refuses missing ground truth. It also runs first for the
+        # backend-baked default, whose `<reference_answer>` block is unconditional —
+        # that one would raise below and land on the same skip, one step later.
+        #
+        # Unlike the runner's early skips, this one cannot be hoisted ahead of trace
+        # generation (`eval_runner.py` run_job): the requirement is a property of this
+        # judge's config, and the runner scores one item against many judges. Reading it
+        # there would put per-type properties back in the runner, which is exactly what
+        # the `evaluate()` contract exists to keep out.
+        for reference_key in props.reference_keys:
+            _, skip_reason, skip_detail = check_reference_key(reference_key, eval_input)
+            if skip_reason is not None:
+                return V2EvalResult(
+                    skipped_reason=skip_reason,
+                    skipped_detail=skip_detail,
+                )
 
         namespace = eval_input.model_dump()
         # Always bound (even when unset) so templates referencing it never hit

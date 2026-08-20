@@ -18,6 +18,8 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalTaskInput,
 )
+from kiln_ai.datamodel.task_output import TaskOutput
+from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.tools.sandbox_bridge import BridgeResult
 
 _BRIDGE_PATH = "kiln_ai.adapters.eval.v2_eval_code_eval.run_bridged_child"
@@ -202,6 +204,48 @@ class TestCodeEvalAdapterEvaluate:
         assert inputs["trace"] == [{"role": "user", "content": "some trace"}]
         assert inputs["reference_data"] == {"key": "ref"}
         assert inputs["task_input"] == "input data"
+
+
+class TestScorerNamespace:
+    """What the sandboxed `score(...)` call actually receives."""
+
+    async def _namespace_for(self, eval_input: EvalTaskInput) -> dict:
+        adapter = CodeEvalAdapter(_make_config())
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(
+                result_msg={"type": "result", "ok": {"accuracy": 1.0}}
+            )
+            await adapter.evaluate(eval_input)
+        _code, inputs = mock_run.call_args.kwargs["args"]
+        return inputs
+
+    @pytest.mark.asyncio
+    async def test_a_dataset_item_supplies_reference_answer(self):
+        """A TaskRun-backed dataset item's stored output reaches user scorer code as
+        `reference_data["reference_answer"]`. Scorers written against the older
+        contract - where this was always None for a TaskRun dataset - now take the
+        other branch, so the documented contract has to match this."""
+        item = TaskRun(
+            input="Who wrote Dune?", output=TaskOutput(output="Frank Herbert.")
+        )
+        trace = TaskRun(input="Who wrote Dune?", output=TaskOutput(output="Herbert."))
+
+        inputs = await self._namespace_for(EvalTaskInput.from_trace(trace, item))
+
+        assert inputs["reference_data"] == {"reference_answer": "Frank Herbert."}
+        assert inputs["output"] == "Herbert."
+        assert inputs["task_input"] == "Who wrote Dune?"
+
+    @pytest.mark.asyncio
+    async def test_calibration_supplies_no_reference_data(self):
+        """A TaskRun scored as itself has no separate ground truth to hand the scorer."""
+        golden = TaskRun(
+            input="Who wrote Dune?", output=TaskOutput(output="Frank Herbert.")
+        )
+
+        inputs = await self._namespace_for(EvalTaskInput.from_task_run(golden))
+
+        assert inputs["reference_data"] is None
 
 
 class TestScoreValidation:

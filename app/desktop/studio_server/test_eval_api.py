@@ -30,6 +30,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     StructuredOutputMode,
 )
 from kiln_ai.datamodel.eval import (
+    ContainsProperties,
     Eval,
     EvalConfig,
     EvalConfigType,
@@ -39,7 +40,10 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
+    ExactMatchProperties,
+    LlmJudgeProperties,
     MultiTurnSyntheticEvalInputData,
+    PatternMatchProperties,
     SingleTurnEvalInputData,
     TaskRunSplit,
     UserMessage,
@@ -66,6 +70,7 @@ from app.desktop.studio_server.eval_api import (
     eval_item_input_text,
     eval_run_task_usage,
     get_all_run_configs,
+    judge_requires_reference_data,
     resolve_eval_run_traces,
     resolved_split_or_422,
     reusable_frozen_prompt_id,
@@ -2830,6 +2835,194 @@ async def test_run_eval_config_eval_422s_without_a_golden_set(
     message = response.json()["message"]
     assert "eval_no_golden" in message
     assert "no golden set configured" in message
+
+
+def _llm_judge_properties(reference_keys: list[str]) -> LlmJudgeProperties:
+    return LlmJudgeProperties(
+        model_name="gpt-4",
+        model_provider="openai",
+        prompt_template="Grade {{ final_message }}",
+        reference_keys=reference_keys,
+    )
+
+
+class TestJudgeRequiresReferenceData:
+    """The predicate the Compare Judges page and `run_calibration` both decide from."""
+
+    def test_v2_judge_declaring_a_reference_key(self, mock_eval):
+        eval_config = EvalConfig(
+            name="Reference judge",
+            config_type=EvalConfigType.v2,
+            properties=_llm_judge_properties(["reference_answer"]),
+            parent=mock_eval,
+        )
+        assert judge_requires_reference_data(mock_eval, eval_config) is True
+
+    def test_v2_judge_declaring_no_reference_key(self, mock_eval):
+        eval_config = EvalConfig(
+            name="Ordinary judge",
+            config_type=EvalConfigType.v2,
+            properties=_llm_judge_properties([]),
+            parent=mock_eval,
+        )
+        assert judge_requires_reference_data(mock_eval, eval_config) is False
+
+    @pytest.mark.parametrize(
+        "properties,expected",
+        [
+            (ExactMatchProperties(reference_key="reference_answer"), True),
+            (ExactMatchProperties(expected_value="yes"), False),
+            (ContainsProperties(reference_key="reference_answer"), True),
+            (ContainsProperties(substring="yes"), False),
+            (PatternMatchProperties(pattern="^y"), False),
+        ],
+    )
+    def test_deterministic_judges_follow_their_singular_reference_key(
+        self, mock_eval, properties, expected
+    ):
+        eval_config = EvalConfig(
+            name="Deterministic judge",
+            config_type=EvalConfigType.v2,
+            properties=properties,
+            parent=mock_eval,
+        )
+        assert judge_requires_reference_data(mock_eval, eval_config) is expected
+
+    @pytest.mark.parametrize(
+        "data_type,expected",
+        [
+            (EvalDataType.reference_answer, True),
+            (EvalDataType.final_answer, False),
+            (EvalDataType.full_trace, False),
+            (None, False),
+        ],
+    )
+    def test_v1_judge_follows_the_evals_data_type(self, mock_task, data_type, expected):
+        """V1 fails differently — `GEval` raises per job — but for the same reason."""
+        reference_eval = Eval(
+            id="eval_reference",
+            name="Reference Eval",
+            evaluation_data_type=data_type,
+            output_scores=[
+                EvalOutputScore(
+                    name="score1",
+                    instruction="desc1",
+                    type=TaskOutputRatingType.five_star,
+                ),
+            ],
+            eval_set_filter_id="tag::eval_set",
+            eval_configs_filter_id="tag::golden",
+            parent=mock_task,
+        )
+        eval_config = EvalConfig(
+            name="V1 judge",
+            config_type=EvalConfigType.g_eval,
+            properties={"eval_steps": ["step1"]},
+            model_name="gpt-4",
+            model_provider="openai",
+            parent=reference_eval,
+        )
+        assert judge_requires_reference_data(reference_eval, eval_config) is expected
+
+    def test_v1_judge_on_an_ordinary_eval(self, mock_eval, mock_eval_config):
+        assert mock_eval.evaluation_data_type != EvalDataType.reference_answer
+        assert judge_requires_reference_data(mock_eval, mock_eval_config) is False
+
+    def test_v2_judge_with_untyped_legacy_properties(self, mock_eval):
+        """A dict-properties V2 config declares nothing, so it isn't blocked."""
+        eval_config = EvalConfig.model_construct(
+            name="Legacy shaped",
+            config_type=EvalConfigType.v2,
+            properties={"eval_steps": ["step1"]},
+        )
+        assert judge_requires_reference_data(mock_eval, eval_config) is False
+
+
+@pytest.mark.asyncio
+async def test_run_calibration_skips_judges_that_need_reference_data(
+    client, mock_task_from_id, mock_task, mock_eval
+):
+    """A mixed table still compares the judges it can."""
+    mock_task_from_id.return_value = mock_task
+    comparable = EvalConfig(
+        id="comparable_config",
+        name="Ordinary judge",
+        config_type=EvalConfigType.v2,
+        properties=_llm_judge_properties([]),
+        parent=mock_eval,
+    )
+    comparable.save_to_file()
+    blocked = EvalConfig(
+        id="reference_config",
+        name="Reference judge",
+        config_type=EvalConfigType.v2,
+        properties=_llm_judge_properties(["reference_answer"]),
+        parent=mock_eval,
+    )
+    blocked.save_to_file()
+
+    with patch(
+        "app.desktop.studio_server.eval_api.run_eval_runner_with_status"
+    ) as mock_run_eval:
+        mock_run_eval.return_value = StreamingResponse(
+            content=iter([b"data: test\n\n"]), media_type="text/event-stream"
+        )
+
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/run_calibration"
+        )
+
+    assert response.status_code == 200
+    eval_runner = mock_run_eval.call_args[0][0]
+    assert [config.id for config in eval_runner.eval_configs] == ["comparable_config"]
+
+
+@pytest.mark.asyncio
+async def test_run_calibration_422s_when_every_judge_needs_reference_data(
+    client, mock_task_from_id, mock_task, mock_eval
+):
+    """Refused before the StreamingResponse, so the status and reason are the response.
+
+    Also before the runner, which is the point: the runner's first act would be to write
+    a durable scoreless EvalRun per golden item, and nothing in the UI clears those.
+    """
+    mock_task_from_id.return_value = mock_task
+    blocked = EvalConfig(
+        id="reference_config",
+        name="Reference judge",
+        config_type=EvalConfigType.v2,
+        properties=_llm_judge_properties(["reference_answer"]),
+        parent=mock_eval,
+    )
+    blocked.save_to_file()
+    # A golden item to skip, so "nothing was written" is a claim about the guard rather
+    # than about an empty dataset.
+    TaskRun(
+        input="input1",
+        output=TaskOutput(
+            output="output1",
+            rating=TaskOutputRating(value=4.0, requirement_ratings={}),
+        ),
+        tags=["golden"],
+        parent=mock_task,
+    ).save_to_file()
+
+    with patch(
+        "app.desktop.studio_server.eval_api.run_eval_runner_with_status"
+    ) as mock_run_eval:
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/run_calibration"
+        )
+
+    assert response.status_code == 422
+    message = response.json()["message"]
+    assert "Test Eval" in message
+    assert "compared" in message
+    assert "reference data" in message
+    assert "each golden dataset item as itself" in message
+
+    mock_run_eval.assert_not_called()
+    assert list(blocked.runs()) == []
 
 
 @pytest.mark.asyncio
@@ -5601,6 +5794,27 @@ def mock_v2_eval(mock_task):
     return eval
 
 
+@pytest.fixture
+def mock_v2_reference_answer_eval(mock_task):
+    eval = Eval(
+        id="eval_v2_reference_answer",
+        name="V2 Reference Answer Eval",
+        description="V2 eval graded against a reference answer",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                instruction="Is the answer accurate?",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        splits={"test": EvalInputSplit(filter_id="tag::v2_eval_set")},
+        evaluation_data_type=EvalDataType.reference_answer,
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    return eval
+
+
 class TestTestV2Eval:
     def _url(self, eval_id: str = "eval_v2") -> str:
         return f"/api/projects/project1/tasks/task1/evals/{eval_id}/test_v2_eval"
@@ -6063,14 +6277,54 @@ class TestCreateLlmJudgeConfig:
             response = client.post(
                 self._url(),
                 json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
                     "name": "My Custom Judge",
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["name"] == "My Custom Judge"
+
+    def test_reference_answer_eval_declares_the_key(
+        self, client, mock_v2_reference_answer_eval
+    ):
+        """The baked prompt grades against a reference answer, so the saved config has
+        to require one — otherwise the judge scores items that have none."""
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_reference_answer_eval
+            response = client.post(
+                self._url("eval_v2_reference_answer"),
+                json={
                     "model_name": "gpt-4o",
                     "provider": "openai",
                     "g_eval": False,
                 },
             )
         assert response.status_code == 200
-        assert response.json()["name"] == "My Custom Judge"
+        props = response.json()["properties"]
+        assert props["reference_keys"] == ["reference_answer"]
+        assert "<reference_answer>" in props["prompt_template"]
+
+    def test_client_cannot_clear_the_server_derived_reference_keys(
+        self, client, mock_v2_reference_answer_eval
+    ):
+        """The builder used to post its own `reference_keys`, which the endpoint wrote
+        over the derived value — an empty list from a UI that cannot collect them turned
+        the requirement off. The request field is gone; the server decides."""
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_reference_answer_eval
+            response = client.post(
+                self._url("eval_v2_reference_answer"),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    "reference_keys": [],
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["properties"]["reference_keys"] == ["reference_answer"]
 
 
 class TestV1CoexistenceAPI:
@@ -6177,7 +6431,6 @@ class TestV1CoexistenceAPI:
 
         for v2_field in (
             "eval_input_id",
-            "reference_data",
             "skipped_reason",
             "skipped_detail",
         ):
@@ -6229,7 +6482,6 @@ class TestV1CoexistenceAPI:
         ]
         for r in runs:
             assert r.eval_input_id is None
-            assert r.reference_data is None
             assert r.skipped_reason is None
 
         config.runs.return_value = runs
@@ -6271,6 +6523,44 @@ class TestDefaultLlmJudgePrompt:
         # No spec or derivable template: the steps section defers to the
         # judge_instructions binding instead of baking score instructions.
         assert "{{ judge_instructions }}" in body["judge_prompt"]
+
+    def test_reference_keys_match_what_create_will_require(
+        self, client, mock_v2_reference_answer_eval
+    ):
+        """The builder is told what the saved judge will require so the Test Judge pane
+        can offer a place to supply it. Derived server-side, not re-read from the
+        prompt's text: a user who edits the reference block out has not made the eval
+        stop requiring ground truth, and a pane reading only the prompt would then hide
+        the one input that keeps its test runs from skipping."""
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_reference_answer_eval
+            default = client.get(self._url("eval_v2_reference_answer"))
+            created = client.post(
+                "/api/projects/project1/tasks/task1/evals/eval_v2_reference_answer"
+                "/create_llm_judge_config",
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    # The edited-down prompt the user saves: no reference block left.
+                    "judge_prompt": "Score {{ final_message }} for accuracy.",
+                },
+            )
+
+        assert default.status_code == 200
+        assert created.status_code == 200
+        assert default.json()["reference_keys"] == ["reference_answer"]
+        assert (
+            default.json()["reference_keys"]
+            == created.json()["properties"]["reference_keys"]
+        )
+
+    def test_reference_keys_empty_for_an_ordinary_eval(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.get(self._url())
+        assert response.status_code == 200
+        assert response.json()["reference_keys"] == []
 
     def test_eval_not_found(self, client):
         with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:

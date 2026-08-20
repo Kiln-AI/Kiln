@@ -5356,11 +5356,6 @@ export interface components {
              * @description The name of the eval config.
              */
             name?: string | null;
-            /**
-             * Reference Keys
-             * @description Reference data keys this judge needs (captured from test).
-             */
-            reference_keys?: string[];
         };
         /**
          * CreateMcpRunConfigRequest
@@ -5997,6 +5992,11 @@ export interface components {
             judge_prompt: string;
             /** System Prompt */
             system_prompt: string;
+            /**
+             * Reference Keys
+             * @description Reference data keys the server will require of a judge for this eval, derived the same way `create_llm_judge_config` derives them. Returned so the builder can offer a place to supply them when testing, rather than re-deriving the rule client-side from the prompt's text.
+             */
+            reference_keys?: string[];
         };
         /**
          * DeleteConfigResponse
@@ -6837,13 +6837,6 @@ export interface components {
              */
             eval_input_id?: string | null;
             /**
-             * Reference Data
-             * @description Structured reference data from EvalInput.reference, used by V2 eval types.
-             */
-            reference_data?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            } | null;
-            /**
              * Skipped Reason
              * @description If set, this run was skipped. Stored as str for back/forward-compat; conventionally a SkippedReason value.
              */
@@ -6914,7 +6907,9 @@ export interface components {
          * EvalTaskInput
          * @description The runtime data bundle passed to V2 evaluators.
          *
-         *     Assembled by the eval runner from an EvalInput and a task run result.
+         *     Assembled by the eval runner from the item being evaluated and the task run that
+         *     was scored. The item is either an EvalInput or a TaskRun drawn from the dataset;
+         *     which one it is determines where `reference_data` and `task_input` come from.
          */
         EvalTaskInput: {
             /**
@@ -6931,7 +6926,7 @@ export interface components {
             }[] | null;
             /**
              * Reference Data
-             * @description Reference/ground-truth data from EvalInput.reference.
+             * @description Ground-truth data for the item being evaluated, keyed by reference name. Taken from EvalInput.reference for an EvalInput-backed item; for a TaskRun-backed dataset item it is the item's own stored output under the key 'reference_answer', since that output is the curated answer. None when a TaskRun is scored as itself (judge calibration), where the item and the scored run are the same record.
              */
             reference_data?: {
                 [key: string]: components["schemas"]["JsonValue"];

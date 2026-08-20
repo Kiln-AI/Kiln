@@ -575,7 +575,9 @@ class EvalInput(KilnParentedModel):
 class EvalTaskInput(BaseModel):
     """The runtime data bundle passed to V2 evaluators.
 
-    Assembled by the eval runner from an EvalInput and a task run result.
+    Assembled by the eval runner from the item being evaluated and the task run that
+    was scored. The item is either an EvalInput or a TaskRun drawn from the dataset;
+    which one it is determines where `reference_data` and `task_input` come from.
     """
 
     final_message: str = Field(
@@ -587,7 +589,14 @@ class EvalTaskInput(BaseModel):
     )
     reference_data: dict[str, JsonValue] | None = Field(
         default=None,
-        description="Reference/ground-truth data from EvalInput.reference.",
+        description=(
+            "Ground-truth data for the item being evaluated, keyed by reference name. "
+            "Taken from EvalInput.reference for an EvalInput-backed item; for a "
+            "TaskRun-backed dataset item it is the item's own stored output under the "
+            "key 'reference_answer', since that output is the curated answer. None "
+            "when a TaskRun is scored as itself (judge calibration), where the item "
+            "and the scored run are the same record."
+        ),
     )
     task_input: str | None = Field(
         default=None,
@@ -622,7 +631,14 @@ class EvalTaskInput(BaseModel):
             # statement of the input, and the adapter may have reserialized it.
             task_input = source.data.user_message.text
         elif isinstance(source, _TaskRun):
-            reference_data = None
+            # A TaskRun-backed dataset item stores the curated answer as its output, so
+            # that output is the ground truth to compare the trace against. Skipped when
+            # source *is* trace (calibration, and `from_task_run`): there the golden item
+            # is itself what gets scored, so a reference would be byte-identical to
+            # `final_message` and every judge comparing them would pass.
+            reference_data = (
+                None if source is trace else {"reference_answer": source.output.output}
+            )
             task_input = trace.input
         else:
             raise TypeError("Expected a TaskRun or EvalInput instance for source")
@@ -789,10 +805,6 @@ class EvalRun(KilnParentedModel):
     eval_input_id: ID_TYPE | None = Field(
         default=None,
         description="ID of the EvalInput used for this run (V2 evals). Mutually exclusive with dataset_id.",
-    )
-    reference_data: dict[str, JsonValue] | None = Field(
-        default=None,
-        description="Structured reference data from EvalInput.reference, used by V2 eval types.",
     )
     skipped_reason: str | None = Field(
         default=None,

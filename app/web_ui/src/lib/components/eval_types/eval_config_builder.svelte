@@ -65,6 +65,17 @@
   // so there's no persisted value to load. If a judge-edit path is ever
   // added, this must be initialized from the config's judge_instructions.
   let llm_judge_instructions: string[] = [""]
+  // Filled by LlmJudgeForm from the default-prompt endpoint. The server decides what a
+  // judge for this eval requires; the Test Judge pane offers a place to supply it
+  // rather than re-deriving the rule from the prompt's text.
+  let llm_server_reference_keys: string[] = []
+  let llm_default_prompt_unavailable = false
+
+  $: judge_reference_signals = {
+    prompt_template: llm_judge_prompt ?? "",
+    server_reference_keys: llm_server_reference_keys,
+    prompt_unavailable: llm_default_prompt_unavailable,
+  }
 
   function cleaned_judge_instructions(): string[] | null {
     const cleaned = llm_judge_instructions
@@ -478,11 +489,6 @@
 
       let data: components["schemas"]["EvalConfig"]
 
-      // Compute reference_keys from on-page reference data for types that use it.
-      const save_reference_keys = config_uses_reference_data
-        ? reference_candidate_keys
-        : []
-
       if (is_llm_judge) {
         if (!llm_model_name || !llm_provider_name || !llm_selected_algo) {
           throw new Error("No model or algorithm selected")
@@ -496,7 +502,6 @@
           judge_prompt: llm_judge_prompt ?? null,
           system_prompt: llm_system_prompt ?? null,
           judge_instructions: cleaned_judge_instructions(),
-          reference_keys: save_reference_keys,
         })
       } else if (eval_config_type && v2FormComponent) {
         if (v2FormComponent.validate) {
@@ -510,7 +515,13 @@
           unknown
         >
         if (eval_config_type === "code_eval") {
-          properties.reference_keys = save_reference_keys
+          // code_eval is the one type whose reference_keys the client owns: they name
+          // what the user's scoring code reads, which only this page knows. An
+          // llm_judge's are derived server-side from the eval, so its request above
+          // carries none.
+          properties.reference_keys = config_uses_reference_data
+            ? reference_candidate_keys
+            : []
         }
         data = await createEvalConfig(project_id, task_id, eval_id, {
           type: "v2",
@@ -626,6 +637,8 @@
             bind:judge_prompt={llm_judge_prompt}
             bind:system_prompt={llm_system_prompt}
             bind:judge_instructions={llm_judge_instructions}
+            bind:default_reference_keys={llm_server_reference_keys}
+            bind:default_prompt_unavailable={llm_default_prompt_unavailable}
           />
         {:else}
           <JudgeConfigFields
@@ -679,6 +692,7 @@
       {test_has_valid_run}
       {is_llm_judge}
       {can_submit_llm}
+      {judge_reference_signals}
       manual_example_supported={manual_example_support.supported}
       on:select={(e) => select_task_run(e.detail)}
       on:run={run_test}

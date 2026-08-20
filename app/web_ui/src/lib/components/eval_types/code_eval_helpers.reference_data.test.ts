@@ -30,7 +30,7 @@ describe("generate_default_code (reference data shown)", () => {
   it("documents the reference_data parameter", () => {
     const code = generate_default_code(undefined)
     expect(code).toContain(
-      "reference_data: Dict of reference/expected data (if any).",
+      "reference_data: Dict of expected data, or None. Dataset items supply their stored output as 'reference_answer'.",
     )
   })
 

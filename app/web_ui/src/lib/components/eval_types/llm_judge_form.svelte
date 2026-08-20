@@ -46,8 +46,25 @@
 
   let prompt_fetch_error: string | null = null
 
+  /**
+   * The reference data keys the server will require of this judge, and whether they
+   * could be fetched at all. Bound out so the Test Judge pane can offer a place to
+   * supply them: the server derives the requirement from the eval, not from the prompt
+   * text, so editing the reference block out of the prompt does not remove it.
+   *
+   * `default_prompt_unavailable` tracks the outcome of each fetch attempt, not just
+   * its failures — see the clear in `onMount`. The pane fails open on "unknown", so a
+   * value left set from a previous attempt would keep offering an input nothing needs.
+   */
+  export let default_reference_keys: string[] = []
+  export let default_prompt_unavailable: boolean = false
+
   onMount(async () => {
     try {
+      // Cleared up front, not left to the initializer: `bind:` seeds this child from
+      // the parent's retained value, so a form recreated after one failed fetch starts
+      // at `true` and would stay there for the session.
+      default_prompt_unavailable = false
       const defaults = await getDefaultLlmJudgePrompt(
         project_id,
         task_id,
@@ -62,9 +79,11 @@
       if (system_prompt === undefined) {
         system_prompt = defaults.system_prompt
       }
+      default_reference_keys = defaults.reference_keys ?? []
     } catch (e) {
       prompt_fetch_error =
         "Could not load default judge prompt. The server will use its default."
+      default_prompt_unavailable = true
       console.warn("Failed to fetch default LLM judge prompt:", e)
     }
   })

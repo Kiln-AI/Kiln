@@ -238,13 +238,18 @@ describe("EvalTestRunPane", () => {
       expect(handler).toHaveBeenCalled()
     })
 
-    it("does not show reference data field (reference data UI hidden)", () => {
+    it("does not show reference data field for a judge that never reads one", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { container } = render(EvalTestRunPane as any, {
         props: {
           available_runs: [run1],
           selected_run: run1,
           runs_loading: false,
+          judge_reference_signals: {
+            prompt_template: "Rate {{ final_message }} for quality.",
+            server_reference_keys: [],
+            prompt_unavailable: false,
+          },
         },
       })
 
@@ -252,6 +257,134 @@ describe("EvalTestRunPane", () => {
         '[data-testid="reference-data-field"]',
       )
       expect(refField).toBeNull()
+    })
+
+    it("shows reference data field for a judge whose prompt reads one", () => {
+      // Not behind SHOW_REFERENCE_DATA_UI: this pane is the only place a reference
+      // answer can be typed, and a reference-answer judge tested without one is
+      // tested against a prompt missing the block the saved judge renders.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          runs_loading: false,
+          judge_reference_signals: {
+            prompt_template:
+              "Grade {{ final_message }} against {{ reference_data.reference_answer }}",
+            server_reference_keys: [],
+            prompt_unavailable: false,
+          },
+        },
+      })
+
+      const refField = container.querySelector(
+        '[data-testid="reference-data-field"]',
+      )
+      expect(refField).not.toBeNull()
+    })
+
+    it("names the key the saved judge will require", () => {
+      // check_reference_key wants `reference_answer` exactly; without the hint the
+      // tester learns that only by burning a run on a missing_reference_key skip.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          runs_loading: false,
+          judge_reference_signals: {
+            prompt_template:
+              "Grade {{ final_message }} against {{ reference_data.reference_answer }}",
+            server_reference_keys: ["reference_answer"],
+            prompt_unavailable: false,
+          },
+        },
+      })
+
+      const required = container.querySelector(
+        '[data-testid="ref-data-required-keys"]',
+      )
+      expect(required).not.toBeNull()
+      expect(required?.textContent).toContain("reference_answer")
+      // Already named as required; not repeated as a merely-read key.
+      expect(
+        container.querySelector('[data-testid="ref-data-prompt-keys"]'),
+      ).toBeNull()
+    })
+
+    it("shows the input for a judge the server requires a key of, whatever the prompt says", () => {
+      // The user can edit the reference block out; the server keeps requiring the key,
+      // so every test run would skip with nowhere to supply one.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          runs_loading: false,
+          judge_reference_signals: {
+            prompt_template: "Rate {{ final_message }} for quality.",
+            server_reference_keys: ["reference_answer"],
+            prompt_unavailable: false,
+          },
+        },
+      })
+
+      expect(
+        container.querySelector('[data-testid="reference-data-field"]'),
+      ).not.toBeNull()
+      expect(
+        container.querySelector('[data-testid="ref-data-required-keys"]')
+          ?.textContent,
+      ).toContain("reference_answer")
+    })
+
+    it("shows the input when the default prompt could not be fetched", () => {
+      // Nothing is known and the save path bakes the server default either way, so
+      // fail open rather than leaving a judge the pane cannot test.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          runs_loading: false,
+          judge_reference_signals: {
+            prompt_template: "",
+            server_reference_keys: [],
+            prompt_unavailable: true,
+          },
+        },
+      })
+
+      expect(
+        container.querySelector('[data-testid="reference-data-field"]'),
+      ).not.toBeNull()
+    })
+
+    it("names a prompt-only key separately from a required one", () => {
+      // A `.get()` lookup renders around a missing value instead of skipping, so it
+      // must not be promised as required.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { container } = render(EvalTestRunPane as any, {
+        props: {
+          available_runs: [run1],
+          selected_run: run1,
+          runs_loading: false,
+          judge_reference_signals: {
+            prompt_template: "{{ reference_data.get('tone') }}",
+            server_reference_keys: [],
+            prompt_unavailable: false,
+          },
+        },
+      })
+
+      expect(
+        container.querySelector('[data-testid="ref-data-required-keys"]'),
+      ).toBeNull()
+      expect(
+        container.querySelector('[data-testid="ref-data-prompt-keys"]')
+          ?.textContent,
+      ).toContain("tone")
     })
 
     it("selected card shows Change button that opens browse dialog (D15)", () => {

@@ -166,7 +166,7 @@ export function generate_default_code(
     Args:
         output: The model's final output string.
         trace: List of message dicts from the conversation.
-        reference_data: Dict of reference/expected data (if any).
+        reference_data: Dict of expected data, or None. Dataset items supply their stored output as 'reference_answer'.
         task_input: The original task input string.
 
     Return dictionary:

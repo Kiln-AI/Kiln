@@ -2501,15 +2501,40 @@ class TestEvalTaskInputFromTrace:
         assert result.task_input == "2+2?"
 
     def test_from_a_task_run_source(self, trace):
-        item = TaskRun(input="the dataset input", output=TaskOutput(output="old"))
+        item = TaskRun(
+            input="the dataset input", output=TaskOutput(output="the curated answer")
+        )
 
         result = EvalTaskInput.from_trace(trace, item)
 
         assert result.final_message == "what the model said"
-        assert result.reference_data is None
+        # A TaskRun-backed dataset item stores the curated answer as its output, so it
+        # is the ground truth the judge compares the trace against.
+        assert result.reference_data == {"reference_answer": "the curated answer"}
         # No separate statement of the input exists for a TaskRun-backed item, so the
         # trace's own input is what was actually scored.
         assert result.task_input == "what the model saw"
+
+    def test_a_task_run_scored_as_itself_has_no_reference(self, trace):
+        """Calibration scores the golden item as itself: a reference populated there
+        would be byte-identical to final_message, and every judge would pass."""
+        result = EvalTaskInput.from_trace(trace, trace)
+
+        assert result.final_message == "what the model said"
+        assert result.reference_data is None
+
+    def test_from_task_run_has_no_reference(self, trace):
+        """`from_task_run` is `from_trace(run, run)`, so one identity check covers it."""
+        assert EvalTaskInput.from_task_run(trace).reference_data is None
+
+    def test_an_equal_but_distinct_source_still_populates(self, trace):
+        """The carve-out is identity, not equality: a separate item that happens to
+        match the trace is still a real dataset item with a real reference answer."""
+        twin = trace.model_copy(deep=True)
+
+        assert EvalTaskInput.from_trace(trace, twin).reference_data == {
+            "reference_answer": "what the model said"
+        }
 
     def test_existing_constructors_are_from_trace(self, trace):
         """The two named constructors are the two shapes of `from_trace`."""
@@ -2843,7 +2868,6 @@ class TestV1EvalRunCoexistence:
             scores={"accuracy": 1.0},
         )
         assert run.eval_input_id is None
-        assert run.reference_data is None
         assert run.skipped_reason is None
         assert run.skipped_detail is None
 
@@ -2886,7 +2910,6 @@ class TestV1EvalRunCoexistence:
         loaded = EvalRun.load_from_file(str(run.path))
         assert loaded.dataset_id == "ds1"
         assert loaded.eval_input_id is None
-        assert loaded.reference_data is None
         assert loaded.skipped_reason is None
         assert loaded.skipped_detail is None
         assert loaded.scores == {"acc": 0.8}
@@ -2951,6 +2974,26 @@ class TestV1EvalRunCoexistence:
         assert loaded.task_run_usage is not None
         assert loaded.task_run_usage.total_tokens == 7
         assert loaded.scores == {"accuracy": 1.0}
+
+    def test_retired_reference_data_key_loads_and_is_dropped(self):
+        """`reference_data` was declared on EvalRun on an unreleased branch and never
+        shipped, so it was deleted outright rather than deprecated. Dev-build files
+        that carry it must still load: EvalRun sets no `extra=` override, so pydantic's
+        default `extra="ignore"` drops the key rather than rejecting the record."""
+        run = EvalRun.model_validate(
+            {
+                "dataset_id": "ds1",
+                "task_run_config_id": "rc1",
+                "input": "What is 2+2?",
+                "output": "4",
+                "scores": {"accuracy": 1.0},
+                "reference_data": {"expected": "4"},
+            }
+        )
+
+        assert not hasattr(run, "reference_data")
+        assert "reference_data" not in run.model_dump()
+        assert run.scores == {"accuracy": 1.0}
 
 
 class TestV1EvalConfigCoexistence:
