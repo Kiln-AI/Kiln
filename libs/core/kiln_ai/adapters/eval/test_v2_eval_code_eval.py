@@ -33,6 +33,7 @@ def _clear_trust():
 def _make_config(
     code: str = "def score(output, trace, reference_data, task_input):\n    return {'accuracy': 1.0}\n",
     timeout: int = 30,
+    score_type: TaskOutputRatingType = TaskOutputRatingType.five_star,
 ) -> EvalConfig:
     props = CodeEvalProperties(code=code, timeout_seconds=timeout)
     parent_eval = Mock()
@@ -40,7 +41,7 @@ def _make_config(
         EvalOutputScore(
             name="accuracy",
             instruction="Rate accuracy",
-            type=TaskOutputRatingType.five_star,
+            type=score_type,
         ),
     ]
     parent_task = Mock()
@@ -319,9 +320,11 @@ class TestUsageObjectTransport:
         code = (
             "from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers as H\n"
             "def score(output, trace, reference_data, task_input):\n"
-            "    return {'accuracy': min(H.get_usage_totals(trace)['total_tokens'], 5.0)}\n"
+            "    return {'accuracy': H.get_usage_totals(trace)['total_tokens']}\n"
         )
-        cfg = _make_config(code=code)
+        # A custom-typed score so the raw total comes back unclamped: the
+        # assertion has to distinguish 150 from any other number that survived.
+        cfg = _make_config(code=code, score_type=TaskOutputRatingType.custom)
         adapter = CodeEvalAdapter(cfg)
 
         trace = [
@@ -336,4 +339,4 @@ class TestUsageObjectTransport:
             },
         ]
         result = await adapter.evaluate(_inp(trace=trace))
-        assert result.scores == {"accuracy": 5.0}
+        assert result.scores == {"accuracy": 150.0}

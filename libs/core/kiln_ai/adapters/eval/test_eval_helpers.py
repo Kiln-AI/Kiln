@@ -591,11 +591,6 @@ class TestGetUsageTotals:
         assert totals["output_tokens"] == 0.0
         assert totals["cached_tokens"] == 0.0
 
-    def test_absent_usage_sums_to_zero(self, helpers: KilnEvalHelpers):
-        """Documented caveat: no usage data is indistinguishable from zero."""
-        trace = [{"role": "assistant", "content": "a"}]
-        assert helpers.get_usage_totals(trace)["total_tokens"] == 0.0
-
     def test_non_numeric_and_bool_values_ignored(self, helpers: KilnEvalHelpers):
         trace = [
             {

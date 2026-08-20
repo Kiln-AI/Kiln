@@ -67,6 +67,21 @@ describe("sort_task_run_configs", () => {
     expect(sorted.map((c) => c.id)).toEqual(["good", "cheap"])
   })
 
+  it("ranks by the last correlatable score, not the first", () => {
+    // The two scores disagree, so ranking by either end gives a different
+    // order — and both differ from the alphabetical fallback.
+    const sorted = sort_task_run_configs(
+      configs,
+      evaluator([score("Accuracy", "pass_fail"), score("Tone", "five_star")]),
+      summary({
+        cheap: { accuracy: { mean_score: 0.9 }, tone: { mean_score: 0.2 } },
+        good: { accuracy: { mean_score: 0.2 }, tone: { mean_score: 0.9 } },
+      }),
+      null,
+    )
+    expect(sorted.map((c) => c.id)).toEqual(["good", "cheap"])
+  })
+
   it("ignores a trailing custom metric so cost does not rank run configs", () => {
     // Ranking by the trailing cost metric would put the expensive config
     // first, since higher wins.

@@ -788,72 +788,68 @@ def test_eval_custom_scores_allowed():
     assert eval.output_scores[0].json_key() == "total_cost_usd"
 
 
+@pytest.fixture
+def custom_score_eval() -> Eval:
+    """An eval whose only output score is an unbounded custom metric."""
+    return Eval(
+        name="Custom Metric Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
+        ],
+    )
+
+
 @pytest.mark.parametrize(
-    "config_type,properties",
+    "config_type,properties,extra_kwargs",
     [
-        (EvalConfigType.g_eval, {"eval_steps": ["step"]}),
-        (EvalConfigType.llm_as_judge, {"eval_steps": ["step"]}),
-    ],
-    ids=["g_eval", "llm_as_judge"],
-)
-def test_judge_config_rejected_on_custom_score_eval(config_type, properties):
-    """Judges structurally can't emit custom-typed keys — the config is
-    rejected up front instead of failing every EvalRun save."""
-    eval = Eval(
-        name="Custom Metric Eval",
-        eval_set_filter_id="tag::tag1",
-        eval_configs_filter_id="tag::tag2",
-        output_scores=[
-            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
-        ],
-    )
-    with pytest.raises(ValueError, match="custom-typed"):
-        EvalConfig(
-            name="judge",
-            config_type=config_type,
-            properties=properties,
-            model_name="gpt-4",
-            model_provider="openai",
-            parent=eval,
-        )
-
-
-def test_v2_llm_judge_config_rejected_on_custom_score_eval():
-    eval = Eval(
-        name="Custom Metric Eval",
-        eval_set_filter_id="tag::tag1",
-        eval_configs_filter_id="tag::tag2",
-        output_scores=[
-            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
-        ],
-    )
-    with pytest.raises(ValueError, match="custom-typed"):
-        EvalConfig(
-            name="judge",
-            config_type=EvalConfigType.v2,
-            properties=LlmJudgeProperties(
+        (
+            EvalConfigType.g_eval,
+            {"eval_steps": ["step"]},
+            {"model_name": "gpt-4", "model_provider": "openai"},
+        ),
+        (
+            EvalConfigType.llm_as_judge,
+            {"eval_steps": ["step"]},
+            {"model_name": "gpt-4", "model_provider": "openai"},
+        ),
+        (
+            EvalConfigType.v2,
+            LlmJudgeProperties(
                 model_name="gpt-4",
                 model_provider="openai",
                 prompt_template="Judge this: {{ output }}",
             ),
-            parent=eval,
+            {},
+        ),
+        (EvalConfigType.v2, PatternMatchProperties(pattern="ok"), {}),
+    ],
+    ids=["g_eval", "llm_as_judge", "v2_llm_judge", "v2_pattern_match"],
+)
+def test_non_code_eval_config_rejected_on_custom_score_eval(
+    custom_score_eval, config_type, properties, extra_kwargs
+):
+    """Only a code eval can serve a custom-score eval. Judges structurally can't
+    emit custom-typed keys, and check types fill every declared key with
+    0.0/1.0, which would record a meaningless value for an unbounded metric.
+    Both are rejected up front instead of failing every EvalRun save."""
+    with pytest.raises(ValueError, match="custom-typed"):
+        EvalConfig(
+            name="not a code eval",
+            config_type=config_type,
+            properties=properties,
+            parent=custom_score_eval,
+            **extra_kwargs,
         )
 
 
-def test_code_eval_config_allowed_on_custom_score_eval():
-    eval = Eval(
-        name="Custom Metric Eval",
-        eval_set_filter_id="tag::tag1",
-        eval_configs_filter_id="tag::tag2",
-        output_scores=[
-            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
-        ],
-    )
+def test_code_eval_config_allowed_on_custom_score_eval(custom_score_eval):
     config = EvalConfig(
         name="code",
         config_type=EvalConfigType.v2,
         properties=CodeEvalProperties(code="def score(output):\n    return {}\n"),
-        parent=eval,
+        parent=custom_score_eval,
     )
     assert config.is_code_eval() is True
 
@@ -896,27 +892,6 @@ def test_custom_score_eval_run_round_trip(tmp_path):
 
     reloaded = EvalRun.load_from_file(run.path)
     assert reloaded.scores == {"quality": 1.0, "total_tokens": 12345.0}
-
-
-def test_check_type_config_rejected_on_custom_score_eval():
-    """Check-type adapters fill every declared score key with 0.0/1.0, which
-    would silently record meaningless values for an unbounded metric — only
-    code evals may serve custom-score evals."""
-    eval = Eval(
-        name="Custom Metric Eval",
-        eval_set_filter_id="tag::tag1",
-        eval_configs_filter_id="tag::tag2",
-        output_scores=[
-            EvalOutputScore(name="latency seconds", type=TaskOutputRatingType.custom)
-        ],
-    )
-    with pytest.raises(ValueError, match="custom-typed"):
-        EvalConfig(
-            name="check",
-            config_type=EvalConfigType.v2,
-            properties=PatternMatchProperties(pattern="ok"),
-            parent=eval,
-        )
 
 
 def test_eval_run_eval_config_eval_validation():
@@ -3433,12 +3408,9 @@ class TestValidateScoresAgainstOutputScores:
 
     @pytest.mark.parametrize(
         "score_type",
-        [
-            TaskOutputRatingType.five_star,
-            TaskOutputRatingType.pass_fail,
-            TaskOutputRatingType.pass_fail_critical,
-            TaskOutputRatingType.custom,
-        ],
+        # The finite check runs ahead of any type-specific range logic, so two
+        # score types are enough: one unbounded, one with a range to fall through.
+        [TaskOutputRatingType.custom, TaskOutputRatingType.five_star],
     )
     @pytest.mark.parametrize(
         "value", [float("nan"), float("inf"), float("-inf")], ids=["nan", "inf", "-inf"]
