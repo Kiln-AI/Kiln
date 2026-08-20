@@ -20,7 +20,7 @@ import json
 import types
 from typing import TYPE_CHECKING, Any
 
-from jinja2 import StrictUndefined, TemplateSyntaxError, Undefined
+from jinja2 import StrictUndefined, TemplateSyntaxError, Undefined, UndefinedError
 from jinja2.sandbox import SandboxedEnvironment
 
 if TYPE_CHECKING:
@@ -28,10 +28,13 @@ if TYPE_CHECKING:
 
 
 class JinjaExtractionError(ValueError):
-    """Raised when a Jinja2 filter encounters invalid data during extraction.
+    """Raised when a Jinja2 expression encounters missing or invalid data during extraction.
 
-    For example, the ``fromjson`` filter raises this when the input string is
-    not valid JSON.
+    Covers both filters that reject their input (``fromjson`` on a non-JSON
+    string) and expressions that operate on a value that isn't there (reaching
+    into a missing nested field, indexing past the end of a list). Callers treat
+    it as "this input didn't have what the expression asked for" rather than an
+    unexpected crash.
     """
 
 
@@ -108,6 +111,7 @@ def extract(expression: str, data: dict) -> Any:
     - Missing keys return Undefined (not None, not a raise).
     - Explicit null values return None.
     - Generators are auto-materialized to lists.
+    - Operating on a missing value raises JinjaExtractionError, never UndefinedError.
     """
     try:
         compiled = _expression_env.compile_expression(
@@ -117,7 +121,14 @@ def extract(expression: str, data: dict) -> Any:
         raise ValueError(
             f"Invalid Jinja2 expression: {e.message} (line {e.lineno})"
         ) from e
-    result = compiled(**data)
+    try:
+        result = compiled(**data)
+    except UndefinedError as e:
+        # A single missing lookup yields Undefined, but any further operation on
+        # it (attribute access, indexing, a filter) raises. That's still just
+        # missing data, so surface it as an extraction error callers handle --
+        # keeping Jinja's message, which names the field that wasn't there.
+        raise JinjaExtractionError(str(e)) from e
     if isinstance(result, types.GeneratorType):
         result = list(result)
     return result

@@ -6388,6 +6388,23 @@ class TestTestV2EvalDraft:
         assert response.status_code == 200
         assert response.json()["scores"]["accuracy"] == 0.0
 
+    def test_missing_nested_field_scores_fail(
+        self, client, mock_task, mock_task_from_id
+    ):
+        # The output JSON has no `user`, so the expression reaches into a value
+        # that isn't there. That's a scored FAIL, not a request error.
+        mock_task_from_id.return_value = mock_task
+        payload = self._payload()
+        payload["properties"]["value_expression"] = (
+            "(final_message | fromjson).user.status"
+        )
+        payload["eval_input"]["final_message"] = '{"status": "ok"}'
+        response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"]["accuracy"] == 0.0
+        assert body["skipped_reason"] is None
+
     def test_nothing_is_persisted(self, client, mock_task, mock_task_from_id):
         mock_task_from_id.return_value = mock_task
         response = client.post(self._url(), json=self._payload())

@@ -173,6 +173,48 @@ class TestExtract:
             extract("{{ invalid", {})
 
 
+class TestExtractOperationsOnMissingData:
+    """Operating on a missing value is an extraction error, not an unhandled raise.
+
+    A single missing lookup returns Undefined, but anything done to that
+    Undefined raises inside Jinja. Callers only handle JinjaExtractionError, so
+    extract() must convert -- while keeping Jinja's message, which names the
+    field that wasn't there.
+    """
+
+    def test_missing_nested_attribute_raises_extraction_error(self):
+        with pytest.raises(
+            JinjaExtractionError, match="'dict object' has no attribute 'user'"
+        ):
+            extract(
+                "(final_message | fromjson).user.status",
+                {"final_message": '{"status": "ok"}'},
+            )
+
+    def test_index_past_end_of_list_raises_extraction_error(self):
+        with pytest.raises(JinjaExtractionError, match="has no element -1"):
+            extract("trace[-1].tool_calls[0].function.name", {"trace": []})
+
+    def test_filter_on_missing_value_raises_extraction_error(self):
+        with pytest.raises(JinjaExtractionError, match="'missing' is undefined"):
+            extract("missing | int", {})
+
+    def test_operator_on_missing_value_raises_extraction_error(self):
+        with pytest.raises(JinjaExtractionError, match="'missing' is undefined"):
+            extract("missing + 1", {})
+
+    def test_missing_top_level_key_still_returns_undefined(self):
+        # Contract unchanged: a bare missing lookup is not an error.
+        assert isinstance(extract("missing", {}), Undefined)
+
+    def test_valid_nested_expression_still_extracts(self):
+        result = extract(
+            "(final_message | fromjson).user.status",
+            {"final_message": '{"user": {"status": "active"}}'},
+        )
+        assert result == "active"
+
+
 class TestTrimAndLstripBlocks:
     def test_trim_blocks_strips_newline_after_block_tag(self):
         template = "{% if True %}\nyes\n{% endif %}"
