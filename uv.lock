@@ -2,12 +2,12 @@ version = 1
 revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
-    "python_full_version < '3.11'",
-    "python_full_version == '3.11.*'",
-    "python_full_version >= '3.12' and python_full_version < '3.12.4'",
-    "python_full_version >= '3.12.4' and python_full_version < '3.13'",
     "python_full_version >= '3.14'",
     "python_full_version == '3.13.*'",
+    "python_full_version >= '3.12.4' and python_full_version < '3.13'",
+    "python_full_version >= '3.12' and python_full_version < '3.12.4'",
+    "python_full_version == '3.11.*'",
+    "python_full_version < '3.11'",
 ]
 
 [options]
@@ -1567,7 +1567,7 @@ wheels = [
 
 [[package]]
 name = "kiln-ai"
-version = "1.0.4"
+version = "1.1.0"
 source = { editable = "libs/core" }
 dependencies = [
     { name = "anyio" },
@@ -1707,7 +1707,7 @@ dev = [
 
 [[package]]
 name = "kiln-server"
-version = "1.0.4"
+version = "1.1.0"
 source = { editable = "libs/server" }
 dependencies = [
     { name = "fastapi" },
@@ -1754,7 +1754,7 @@ dev = [
 
 [[package]]
 name = "kiln-studio-desktop"
-version = "1.0.4"
+version = "1.1.0"
 source = { editable = "app/desktop" }
 dependencies = [
     { name = "kiln-server" },
