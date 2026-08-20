@@ -517,10 +517,10 @@
         evals_with_configs[index].has_train_set = data.has_train_set
         evals_with_configs[index].model_is_supported = data.model_is_supported
 
-        // If has train set, fetch the size. has_train_set is already
-        // TaskRun-backed-only (the remote optimizer resolves the train filter over the
-        // project zip's runs/), so the filter id read here has to be too, or the two
-        // disagree and the size fetch is silently skipped.
+        // If has train set, fetch the size. The size fetch reads tag counts over
+        // dataset runs, so it only applies to TaskRun-backed train splits. For an
+        // EvalInput-backed train split (now valid for optimization) the size stays
+        // unknown (null) and the empty-set error below does not apply.
         const train_filter_id = task_run_split_filter_id(item.eval, "train")
         if (data.has_train_set && train_filter_id) {
           const train_tag = tagFromFilterId(train_filter_id)
