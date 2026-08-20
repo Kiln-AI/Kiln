@@ -9,14 +9,12 @@ code_eval_helpers.ts branches on the SHOW_REFERENCE_DATA_UI flag
 here:
 
   - **Flag OFF (currently shipped).** The reference_data parameter is hidden from the UI.
-    generate_default_code() emits `def score(output, trace, task_input)` and the
-    "Domain-specific grading" example greps the output for a literal string instead of
-    reading reference_data. These fixtures carry no suffix (e.g. DEFAULT_MULTI_CODE,
-    DOMAIN_GRADING_CODE).
+    generate_default_code() emits `def score(output, trace, task_input)`. These fixtures
+    carry no suffix (e.g. DEFAULT_MULTI_CODE).
   - **Flag ON.** The original reference_data-aware snippets. The sandbox still fully
     supports reference_data, so these must keep passing — they are what ships the moment
     SHOW_REFERENCE_DATA_UI flips back to true. These fixtures use a `_REF_DATA` suffix
-    (e.g. DEFAULT_MULTI_CODE_REF_DATA, DOMAIN_GRADING_CODE_REF_DATA).
+    (e.g. DEFAULT_MULTI_CODE_REF_DATA).
 
 The "Parse JSON" and "Check tool usage" examples do not branch on the flag, so they have a
 single fixture each.
@@ -105,20 +103,12 @@ PFC = TaskOutputRatingType.pass_fail_critical
 # ---------------------------------------------------------------------------
 # Sample code fixtures — mirror of code_eval_helpers.ts generate_examples()
 # Each example uses a test eval with both pass_fail and five_star scores
-# (plus pass_fail_critical in the domain example) to exercise the type mapping.
+# to exercise the type mapping.
 # ---------------------------------------------------------------------------
 
 # Scores used by the "See examples" tests: pass_fail + five_star
 EXAMPLE_SCORES_PF_FS = [_score("Check", PF), _score("Rating", FS)]
 EXAMPLE_KEYS_PF_FS = {"check", "rating"}
-
-# Scores with an additional pass_fail_critical
-EXAMPLE_SCORES_PF_FS_PFC = [
-    _score("Check", PF),
-    _score("Rating", FS),
-    _score("Safety", PFC),
-]
-EXAMPLE_KEYS_PF_FS_PFC = {"check", "rating", "safety"}
 
 # Mirror of code_eval_helpers.ts "Parse JSON" example (multi-score).
 PARSE_JSON_CODE = """\
@@ -157,44 +147,6 @@ def score(trace):
     }
 """
 
-# Mirror of code_eval_helpers.ts "Domain-specific grading" example (3-score),
-# SHOW_REFERENCE_DATA_UI = false branch (currently shipped).
-DOMAIN_GRADING_CODE = """\
-from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
-
-def score(output):
-    \"\"\"Grade output against domain-specific criteria.\"\"\"
-    contains = KilnEvalHelpers.assert_contains(output, "Summary:")
-
-    word_count = len(output.split())
-
-    return {  # Adjust each score's logic for your eval
-        "check": KilnEvalHelpers.pass_fail(contains),
-        "rating": KilnEvalHelpers.five_star(5 if word_count < 50 else 3 if word_count < 150 else 1),
-        "safety": KilnEvalHelpers.pass_fail(contains),
-    }
-"""
-
-# Mirror of code_eval_helpers.ts "Domain-specific grading" example (3-score),
-# SHOW_REFERENCE_DATA_UI = true branch.
-DOMAIN_GRADING_CODE_REF_DATA = """\
-from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
-
-def score(output, reference_data):
-    \"\"\"Grade output against domain-specific criteria.\"\"\"
-    expected = (reference_data or {}).get("expected_answer", "")
-
-    contains = KilnEvalHelpers.assert_contains(output, expected) if expected else True
-
-    word_count = len(output.split())
-
-    return {  # Adjust each score's logic for your eval
-        "check": KilnEvalHelpers.pass_fail(contains),
-        "rating": KilnEvalHelpers.five_star(5 if word_count < 50 else 3 if word_count < 150 else 1),
-        "safety": KilnEvalHelpers.pass_fail(contains),
-    }
-"""
-
 
 # ---------------------------------------------------------------------------
 # Single-score (quality fallback) example fixtures — byte-exact mirror of
@@ -230,34 +182,6 @@ def score(trace):
     call_count = KilnEvalHelpers.count_tool_calls(tool_calls, "search")
 
     return {"quality": KilnEvalHelpers.pass_fail(used_search)}
-"""
-
-# SHOW_REFERENCE_DATA_UI = false branch (currently shipped).
-DOMAIN_GRADING_CODE_SINGLE = """\
-from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
-
-def score(output):
-    \"\"\"Grade output against domain-specific criteria.\"\"\"
-    contains = KilnEvalHelpers.assert_contains(output, "Summary:")
-
-    word_count = len(output.split())
-
-    return {"quality": KilnEvalHelpers.pass_fail(contains)}
-"""
-
-# SHOW_REFERENCE_DATA_UI = true branch.
-DOMAIN_GRADING_CODE_SINGLE_REF_DATA = """\
-from kiln_ai.adapters.eval.eval_helpers import KilnEvalHelpers
-
-def score(output, reference_data):
-    \"\"\"Grade output against domain-specific criteria.\"\"\"
-    expected = (reference_data or {}).get("expected_answer", "")
-
-    contains = KilnEvalHelpers.assert_contains(output, expected) if expected else True
-
-    word_count = len(output.split())
-
-    return {"quality": KilnEvalHelpers.pass_fail(contains)}
 """
 
 
@@ -592,196 +516,6 @@ class TestCheckToolUsageExample:
         assert scores["rating"] == 5.0  # max(min(10, 5), 1) == 5
 
 
-class TestDomainGradingExample:
-    """Domain-specific grading example (SHOW_REFERENCE_DATA_UI = false, shipped)."""
-
-    SCORES: ClassVar = EXAMPLE_SCORES_PF_FS_PFC
-    KEYS: ClassVar = EXAMPLE_KEYS_PF_FS_PFC
-
-    @pytest.mark.asyncio
-    async def test_output_contains_marker(self):
-        cfg = _make_config(DOMAIN_GRADING_CODE, self.SCORES)
-        adapter = CodeEvalAdapter(cfg)
-        output = "Summary: the answer is 42, with a little extra context to pad it out"
-        result = await adapter.evaluate(_inp(final_message=output))
-        scores = result.scores
-
-        assert result.skipped_reason is None
-        _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["check"] == 1.0
-        assert scores["safety"] == 1.0
-        assert scores["rating"] == 5.0
-
-    @pytest.mark.asyncio
-    async def test_output_missing_marker(self):
-        cfg = _make_config(DOMAIN_GRADING_CODE, self.SCORES)
-        adapter = CodeEvalAdapter(cfg)
-        output = " ".join(["word"] * 20)
-        result = await adapter.evaluate(_inp(final_message=output))
-        scores = result.scores
-
-        assert result.skipped_reason is None
-        _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["check"] == 0.0
-        assert scores["safety"] == 0.0
-
-    @pytest.mark.asyncio
-    async def test_short_output_high_rating(self):
-        """Output with fewer than 50 words gets rating of 5."""
-        cfg = _make_config(DOMAIN_GRADING_CODE, self.SCORES)
-        adapter = CodeEvalAdapter(cfg)
-        result = await adapter.evaluate(_inp(final_message="Summary: short"))
-        scores = result.scores
-
-        assert result.skipped_reason is None
-        _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["rating"] == 5.0
-
-    @pytest.mark.asyncio
-    async def test_long_output_low_rating(self):
-        """Output with 150+ words gets rating of 1."""
-        cfg = _make_config(DOMAIN_GRADING_CODE, self.SCORES)
-        adapter = CodeEvalAdapter(cfg)
-        output = "Summary: " + " ".join(["word"] * 160)
-        result = await adapter.evaluate(_inp(final_message=output))
-        scores = result.scores
-
-        assert result.skipped_reason is None
-        _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["rating"] == 1.0
-
-    @pytest.mark.asyncio
-    async def test_medium_output_mid_rating(self):
-        """Output with 50-149 words gets rating of 3."""
-        cfg = _make_config(DOMAIN_GRADING_CODE, self.SCORES)
-        adapter = CodeEvalAdapter(cfg)
-        output = "Summary: " + " ".join(["word"] * 80)
-        result = await adapter.evaluate(_inp(final_message=output))
-        scores = result.scores
-
-        assert result.skipped_reason is None
-        _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["rating"] == 3.0
-
-
-class TestDomainGradingExampleRefData:
-    """Domain-specific grading example (SHOW_REFERENCE_DATA_UI = true branch).
-
-    The sandbox still supports reference_data, so this must keep passing even though the
-    flag currently hides it from the UI.
-    """
-
-    SCORES: ClassVar = EXAMPLE_SCORES_PF_FS_PFC
-    KEYS: ClassVar = EXAMPLE_KEYS_PF_FS_PFC
-
-    @pytest.mark.asyncio
-    async def test_output_contains_expected_answer(self):
-        cfg = _make_config(DOMAIN_GRADING_CODE_REF_DATA, self.SCORES)
-        adapter = CodeEvalAdapter(cfg)
-        output = "The answer is 42 and here is some additional context to pad it out a bit more words"
-        inp = _inp(
-            final_message=output,
-            reference_data={"expected_answer": "42"},
-        )
-        result = await adapter.evaluate(inp)
-        scores = result.scores
-
-        assert result.skipped_reason is None
-        _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["check"] == 1.0
-        assert scores["safety"] == 1.0
-        assert scores["rating"] == 5.0
-
-    @pytest.mark.asyncio
-    async def test_output_missing_expected_answer(self):
-        cfg = _make_config(DOMAIN_GRADING_CODE_REF_DATA, self.SCORES)
-        adapter = CodeEvalAdapter(cfg)
-        output = " ".join(["word"] * 20)
-        inp = _inp(
-            final_message=output,
-            reference_data={"expected_answer": "UNICORN_NOT_PRESENT"},
-        )
-        result = await adapter.evaluate(inp)
-        scores = result.scores
-
-        assert result.skipped_reason is None
-        _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["check"] == 0.0
-        assert scores["safety"] == 0.0
-
-    @pytest.mark.asyncio
-    async def test_empty_reference_data(self):
-        """Empty/missing reference_data should not raise -- expected defaults to ''."""
-        cfg = _make_config(DOMAIN_GRADING_CODE_REF_DATA, self.SCORES)
-        adapter = CodeEvalAdapter(cfg)
-        output = " ".join(["word"] * 30)
-        inp = _inp(final_message=output, reference_data=None)
-        result = await adapter.evaluate(inp)
-        scores = result.scores
-
-        assert result.skipped_reason is None
-        _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["check"] == 1.0
-        assert scores["safety"] == 1.0
-
-    @pytest.mark.asyncio
-    async def test_empty_reference_data_dict(self):
-        """reference_data={} (no expected_answer key) should not raise."""
-        cfg = _make_config(DOMAIN_GRADING_CODE_REF_DATA, self.SCORES)
-        adapter = CodeEvalAdapter(cfg)
-        output = " ".join(["word"] * 30)
-        inp = _inp(final_message=output, reference_data={})
-        result = await adapter.evaluate(inp)
-        scores = result.scores
-
-        assert result.skipped_reason is None
-        _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["check"] == 1.0
-        assert scores["safety"] == 1.0
-
-    @pytest.mark.asyncio
-    async def test_short_output_high_rating(self):
-        """Output with fewer than 50 words gets rating of 5."""
-        cfg = _make_config(DOMAIN_GRADING_CODE_REF_DATA, self.SCORES)
-        adapter = CodeEvalAdapter(cfg)
-        output = "short"
-        inp = _inp(final_message=output, reference_data=None)
-        result = await adapter.evaluate(inp)
-        scores = result.scores
-
-        assert result.skipped_reason is None
-        _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["rating"] == 5.0
-
-    @pytest.mark.asyncio
-    async def test_long_output_low_rating(self):
-        """Output with 150+ words gets rating of 1."""
-        cfg = _make_config(DOMAIN_GRADING_CODE_REF_DATA, self.SCORES)
-        adapter = CodeEvalAdapter(cfg)
-        output = " ".join(["word"] * 160)
-        inp = _inp(final_message=output, reference_data=None)
-        result = await adapter.evaluate(inp)
-        scores = result.scores
-
-        assert result.skipped_reason is None
-        _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["rating"] == 1.0
-
-    @pytest.mark.asyncio
-    async def test_medium_output_mid_rating(self):
-        """Output with 50-149 words gets rating of 3."""
-        cfg = _make_config(DOMAIN_GRADING_CODE_REF_DATA, self.SCORES)
-        adapter = CodeEvalAdapter(cfg)
-        output = " ".join(["word"] * 80)
-        inp = _inp(final_message=output, reference_data=None)
-        result = await adapter.evaluate(inp)
-        scores = result.scores
-
-        assert result.skipped_reason is None
-        _assert_valid_scores(scores, self.KEYS, self.SCORES)
-        assert scores["rating"] == 3.0
-
-
 # ---------------------------------------------------------------------------
 # Tests: single-score (quality fallback) example variants — inline-return path
 # ---------------------------------------------------------------------------
@@ -850,66 +584,6 @@ class TestCheckToolUsageExampleSingleScore:
         cfg = _make_config(CHECK_TOOL_USAGE_CODE_SINGLE, SINGLE_SCORE)
         adapter = CodeEvalAdapter(cfg)
         result = await adapter.evaluate(_inp(final_message="result", trace=None))
-        scores = result.scores
-
-        assert result.skipped_reason is None
-        _assert_valid_scores(scores, SINGLE_KEYS, SINGLE_SCORE)
-        assert scores["quality"] == 0.0
-
-
-class TestDomainGradingExampleSingleScore:
-    """Single-score Domain-specific grading (SHOW_REFERENCE_DATA_UI = false, shipped)."""
-
-    @pytest.mark.asyncio
-    async def test_output_contains_marker(self):
-        cfg = _make_config(DOMAIN_GRADING_CODE_SINGLE, SINGLE_SCORE)
-        adapter = CodeEvalAdapter(cfg)
-        result = await adapter.evaluate(_inp(final_message="Summary: the answer is 42"))
-        scores = result.scores
-
-        assert result.skipped_reason is None
-        _assert_valid_scores(scores, SINGLE_KEYS, SINGLE_SCORE)
-        assert scores["quality"] == 1.0
-
-    @pytest.mark.asyncio
-    async def test_output_missing_marker(self):
-        cfg = _make_config(DOMAIN_GRADING_CODE_SINGLE, SINGLE_SCORE)
-        adapter = CodeEvalAdapter(cfg)
-        result = await adapter.evaluate(_inp(final_message="nothing relevant here"))
-        scores = result.scores
-
-        assert result.skipped_reason is None
-        _assert_valid_scores(scores, SINGLE_KEYS, SINGLE_SCORE)
-        assert scores["quality"] == 0.0
-
-
-class TestDomainGradingExampleSingleScoreRefData:
-    """Single-score Domain-specific grading (SHOW_REFERENCE_DATA_UI = true branch)."""
-
-    @pytest.mark.asyncio
-    async def test_output_contains_expected(self):
-        cfg = _make_config(DOMAIN_GRADING_CODE_SINGLE_REF_DATA, SINGLE_SCORE)
-        adapter = CodeEvalAdapter(cfg)
-        inp = _inp(
-            final_message="The answer is 42",
-            reference_data={"expected_answer": "42"},
-        )
-        result = await adapter.evaluate(inp)
-        scores = result.scores
-
-        assert result.skipped_reason is None
-        _assert_valid_scores(scores, SINGLE_KEYS, SINGLE_SCORE)
-        assert scores["quality"] == 1.0
-
-    @pytest.mark.asyncio
-    async def test_output_missing_expected(self):
-        cfg = _make_config(DOMAIN_GRADING_CODE_SINGLE_REF_DATA, SINGLE_SCORE)
-        adapter = CodeEvalAdapter(cfg)
-        inp = _inp(
-            final_message="nothing relevant here",
-            reference_data={"expected_answer": "UNICORN_NOT_PRESENT"},
-        )
-        result = await adapter.evaluate(inp)
         scores = result.scores
 
         assert result.skipped_reason is None

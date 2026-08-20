@@ -99,7 +99,7 @@ test("programmatic check: type picker -> judge-only builder creates a template-l
   expect(evaluator.status).toBe("active")
   // Splits are the only place filters live; the flat eval_set_filter_id /
   // train_set_filter_id fields are a load-time migration input and always null.
-  expect(evaluator.splits.test.filter_id).toBe("tag::eval_no_hate_regex")
+  expect(evaluator.splits.test.filter_id).toBe("tag::test_no_hate_regex")
   expect(evaluator.splits.train.filter_id).toBe("tag::train_no_hate_regex")
 
   // The judge was created with the eval and set as its default, so the eval

@@ -2,6 +2,13 @@ import json
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.basemodel import string_to_valid_name
+from kiln_ai.tools.mcp_server_tool import MCPServerTool
+from kiln_server.custom_errors import connect_custom_errors
+
 from app.desktop.studio_server.run_config_api import (
     _create_mcp_run_config_properties,
     _load_mcp_input_schema,
@@ -14,12 +21,6 @@ from app.desktop.studio_server.run_config_api import (
     _validate_mcp_output_schema,
     connect_run_config_api,
 )
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from kiln_server.custom_errors import connect_custom_errors
-from kiln_ai.datamodel import Project, Task
-from kiln_ai.datamodel.basemodel import string_to_valid_name
-from kiln_ai.tools.mcp_server_tool import MCPServerTool
 
 
 @pytest.fixture

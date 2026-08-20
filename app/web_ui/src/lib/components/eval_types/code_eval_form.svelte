@@ -260,7 +260,8 @@
   ]}
 >
   <div class="flex flex-col gap-4">
-    <div class="tabs tabs-bordered flex-nowrap overflow-x-auto">
+    <!-- .tabs is a grid in DaisyUI v4, so flex is needed for the row to wrap. -->
+    <div class="tabs tabs-bordered flex flex-wrap">
       {#each examples as example, i}
         <button
           type="button"

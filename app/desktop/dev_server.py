@@ -12,10 +12,10 @@
 import os
 
 import uvicorn
+from kiln_ai.utils.config import Config
 
 from app.desktop.dev_env import set_dev_env_vars
 from app.desktop.util.resource_limits import setup_resource_limits
-from kiln_ai.utils.config import Config
 
 # Set here as well as in dev_app.py so that reload workers inherit them.
 set_dev_env_vars()

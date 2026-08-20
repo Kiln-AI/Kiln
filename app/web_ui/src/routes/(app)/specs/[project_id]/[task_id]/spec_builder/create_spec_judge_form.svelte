@@ -23,6 +23,7 @@
   import { filename_string_short_validator } from "$lib/utils/input_validators"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import { validate_result_shape } from "$lib/utils/eval_types/test_run_shape"
+  import { select_default_test_run } from "$lib/utils/eval_types/test_run_selection"
   import {
     parse_reference_data,
     parse_reference_keys,
@@ -131,7 +132,7 @@
       runs_loading = true
       runs_error = null
       available_runs = await fetchTaskRuns(project_id, task_id)
-      selected_task_run = available_runs[0] ?? null
+      selected_task_run = select_default_test_run(available_runs)
     } catch (e) {
       runs_error = createKilnError(e)
     } finally {
@@ -333,7 +334,6 @@
           {reference_candidate_keys}
           code_placeholder_score_key={true}
           {project_id}
-          {task_id}
         />
       </div>
     </FormContainer>

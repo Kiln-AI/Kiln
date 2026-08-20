@@ -1,34 +1,15 @@
 import json
 import logging
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Tuple
+from typing import ClassVar, Dict, Iterable, List, Tuple
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from app.desktop.studio_server.eval_api import (
-    CreateEvalConfigRequest,
-    CreateEvaluatorRequest,
-    _cached_test_split,
-    compute_score_summary,
-    connect_evals_api,
-    eval_config_from_id,
-    eval_item_input_text,
-    eval_run_task_usage,
-    get_all_run_configs,
-    judge_requires_reference_data,
-    resolve_eval_run_traces,
-    resolved_split_or_422,
-    reusable_frozen_prompt_id,
-    scored_trace_usage_for_run_config,
-    split_size,
-    summary_eval_config,
-    task_run_config_from_id,
-)
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
-from kiln_server.custom_errors import connect_custom_errors
 from kiln_ai.adapters.ml_model_list import ModelProviderName
+from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -73,11 +54,31 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import TaskRunConfig
-from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.task_run import EvalItemSource, Usage
 from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.tools.base_tool import ToolCallResult
 from kiln_ai.tools.sandbox_bridge import BridgeResult
+from kiln_server.custom_errors import connect_custom_errors
+
+from app.desktop.studio_server.eval_api import (
+    CreateEvalConfigRequest,
+    CreateEvaluatorRequest,
+    _cached_test_split,
+    compute_score_summary,
+    connect_evals_api,
+    eval_config_from_id,
+    eval_item_input_text,
+    eval_run_task_usage,
+    get_all_run_configs,
+    judge_requires_reference_data,
+    resolve_eval_run_traces,
+    resolved_split_or_422,
+    reusable_frozen_prompt_id,
+    scored_trace_usage_for_run_config,
+    split_size,
+    summary_eval_config,
+    task_run_config_from_id,
+)
 
 
 def stub_split(
@@ -5427,7 +5428,7 @@ class TestEvalResultsSummaryResolutionCaching:
     sequencing it behind the other two means it only ever runs if they pass.
     """
 
-    OUTPUT_SCORES = [
+    OUTPUT_SCORES: ClassVar[List[EvalOutputScore]] = [
         EvalOutputScore(
             name="accuracy",
             instruction="Test accuracy",
@@ -5437,7 +5438,7 @@ class TestEvalResultsSummaryResolutionCaching:
 
     # Every (source, filter) pair used below resolves to the same single item, so a
     # resolution count is the only thing that varies between the cases.
-    ALL_DS1 = {
+    ALL_DS1: ClassVar[Dict[Tuple[ItemSource, str], set]] = {
         ("task_run", "tag::set1"): {"ds1"},
         ("task_run", "tag::set2"): {"ds1"},
         ("eval_input", "tag::set1"): {"ds1"},
@@ -6850,10 +6851,10 @@ async def test_create_evaluator_generates_filters_scores_priority_status(
 
     assert response.status_code == 200
     result = response.json()
-    assert result["splits"]["test"]["filter_id"] == "tag::eval_my_issue_eval"
+    assert result["splits"]["test"]["filter_id"] == "tag::test_my_issue_eval"
     assert result["splits"]["train"]["filter_id"] == "tag::train_my_issue_eval"
     assert result["splits"]["val"]["filter_id"] == "tag::val_my_issue_eval"
-    assert result["eval_configs_filter_id"] == "tag::eval_golden_my_issue_eval"
+    assert result["eval_configs_filter_id"] == "tag::golden_my_issue_eval"
     assert result["priority"] == 2
     assert result["status"] == "future"
     assert len(result["output_scores"]) == 1
@@ -6863,7 +6864,7 @@ async def test_create_evaluator_generates_filters_scores_priority_status(
     saved_eval = mock_task.evals()[0]
     assert saved_eval.priority == Priority.p2
     assert saved_eval.status == SpecStatus.future
-    assert saved_eval.splits["test"].filter_id == "tag::eval_my_issue_eval"
+    assert saved_eval.splits["test"].filter_id == "tag::test_my_issue_eval"
 
 
 @pytest.mark.asyncio
