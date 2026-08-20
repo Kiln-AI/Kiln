@@ -41,6 +41,9 @@ vi.mock("$lib/api/v2_eval_api", () => ({
 }))
 
 const LlmJudgeForm = (await import("./llm_judge_form.svelte")).default
+const LlmJudgeFormHarness = (
+  await import("./__tests__/llm_judge_form_harness.svelte")
+).default
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -517,5 +520,72 @@ describe("LlmJudgeForm", () => {
       await tick()
       expect(container.querySelector("#judge_instruction_2")).not.toBeNull()
     })
+  })
+})
+
+describe("state bound out to the builder", () => {
+  async function renderHarness() {
+    setModels([noLogprobsProvider])
+    const onMountCallbacks: Array<() => unknown> = []
+    const spy = vi
+      .spyOn(svelteMod, "onMount")
+      .mockImplementation((fn: () => unknown) => {
+        onMountCallbacks.push(fn)
+      })
+    const rendered = render(LlmJudgeFormHarness)
+    spy.mockRestore()
+    for (const cb of onMountCallbacks) {
+      await cb()
+    }
+    await tick()
+    return rendered
+  }
+
+  it("clears default_prompt_unavailable once a fetch succeeds", async () => {
+    // The harness starts it true, standing in for a builder that kept it from an
+    // earlier failure. Switching eval type away from llm_judge and back recreates this
+    // form, and `bind:` seeds it from the parent — so without an explicit clear one
+    // transient network error would pin the reference-data input open for the session.
+    mockGetDefaultLlmJudgePrompt.mockResolvedValueOnce({
+      judge_prompt: "Rate {{ final_message }}",
+      system_prompt: "You are an evaluator.",
+      reference_keys: [],
+    })
+
+    const { container } = await renderHarness()
+
+    expect(
+      container.querySelector('[data-testid="harness-prompt-unavailable"]')
+        ?.textContent,
+    ).toBe("false")
+  })
+
+  it("keeps default_prompt_unavailable set when the fetch fails", async () => {
+    mockGetDefaultLlmJudgePrompt.mockRejectedValueOnce(
+      new Error("Network error"),
+    )
+
+    const { container } = await renderHarness()
+
+    expect(
+      container.querySelector('[data-testid="harness-prompt-unavailable"]')
+        ?.textContent,
+    ).toBe("true")
+  })
+
+  it("binds out the reference keys the server derived", async () => {
+    mockGetDefaultLlmJudgePrompt.mockResolvedValueOnce({
+      judge_prompt: "Grade against {{ reference_data.reference_answer }}",
+      system_prompt: "You are an evaluator.",
+      reference_keys: ["reference_answer"],
+    })
+
+    const { container } = await renderHarness()
+
+    expect(
+      container
+        .querySelector('[data-testid="harness-reference-keys"]')
+        ?.textContent?.trim(),
+    ).toBe("reference_answer")
   })
 })

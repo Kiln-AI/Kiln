@@ -806,11 +806,6 @@ class EvalRun(KilnParentedModel):
         default=None,
         description="ID of the EvalInput used for this run (V2 evals). Mutually exclusive with dataset_id.",
     )
-    reference_data: dict[str, JsonValue] | None = Field(
-        default=None,
-        json_schema_extra={"deprecated": True},
-        description="DEPRECATED: nothing writes this field any more, and nothing ever read it. The reference data a V2 judge saw is derived at scoring time from the item `dataset_id` or `eval_input_id` names; a pointer-mode record must not carry a second copy of it. Kept declared and loadable for records written before the field was retired.",
-    )
     skipped_reason: str | None = Field(
         default=None,
         description="If set, this run was skipped. Stored as str for back/forward-compat; conventionally a SkippedReason value.",

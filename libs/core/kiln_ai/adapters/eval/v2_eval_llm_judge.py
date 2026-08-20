@@ -106,9 +106,11 @@ class LlmJudgeEval(BaseV2EvalBridge):
         assert isinstance(props, LlmJudgeProperties)
 
         # Before the render and before any model call: a judge that declares a
-        # reference key it cannot get must skip loudly, not score blind. The template
-        # itself is permissive (optional blocks render empty), so this declared
-        # requirement is the only thing that refuses missing ground truth.
+        # reference key it cannot get must skip loudly, not score blind. A template can
+        # be permissive (a hand-written one may guard its own lookups), so this declared
+        # requirement is what refuses missing ground truth. It also runs first for the
+        # backend-baked default, whose `<reference_answer>` block is unconditional —
+        # that one would raise below and land on the same skip, one step later.
         #
         # Unlike the runner's early skips, this one cannot be hoisted ahead of trace
         # generation (`eval_runner.py` run_job): the requirement is a property of this

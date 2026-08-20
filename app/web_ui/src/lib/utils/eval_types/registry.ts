@@ -1,6 +1,7 @@
 import type { ComponentType } from "svelte"
 import { assertNever } from "$lib/utils/exhaustive"
 import { SHOW_REFERENCE_DATA_UI } from "$lib/utils/eval_types/reference_data_ui"
+import { uses_reference_data_llm_judge } from "$lib/utils/eval_types/reference_data_gate"
 import type { V2EvalConfigProperties } from "$lib/api/v2_eval_api"
 import type { components } from "$lib/api_schema"
 import type { EvalConfig } from "$lib/types"
@@ -74,17 +75,69 @@ export type ReferenceDataUsageMode =
   | "none"
 
 /**
- * Maps a V2 eval type to its reference-data usage mode.
+ * What the builder knows about the llm_judge being drafted, as far as reference data
+ * is concerned. Required by `referenceDataUsageMode` rather than defaulted: omitting it
+ * would silently hide the reference-data input, which is the failure item 3 exists to
+ * remove. Non-LLM callers pass `NO_JUDGE_PROMPT`.
+ */
+export interface JudgeReferenceSignals {
+  /** The judge prompt as currently drafted. */
+  prompt_template: string
+  /**
+   * `reference_keys` the server derived for this eval, from the default-prompt
+   * endpoint. Authoritative: it is what the saved judge will require, whatever the
+   * prompt now says.
+   */
+  server_reference_keys: string[]
+  /** True when the default-prompt fetch failed, so neither field above is known. */
+  prompt_unavailable: boolean
+}
+
+/** For judge types that have no prompt at all. */
+export const NO_JUDGE_PROMPT: JudgeReferenceSignals = {
+  prompt_template: "",
+  server_reference_keys: [],
+  prompt_unavailable: false,
+}
+
+/**
+ * Maps a V2 eval type to its reference-data usage mode, for the judge currently
+ * being built.
  *
- * While SHOW_REFERENCE_DATA_UI is off, every type reports "none", which hides
- * the Reference Data field from the Test Judge pane for all judge types. The
- * declared mode is still resolved first, so an unknown type throws in every
- * configuration rather than silently reporting "none".
+ * An llm_judge resolves per config, because the Test Judge pane is the only place a
+ * reference answer can be supplied: without the input, a reference-answer judge is
+ * validated against a prompt whose reference block is missing and then saved as one
+ * that renders it. Three ways to earn the input, any one of them enough:
+ *
+ * - the server declared a `reference_keys` requirement for this eval. Authoritative,
+ *   and the only signal that survives the user editing the reference block out of the
+ *   prompt — the server keeps requiring the key either way, so a pane that read only
+ *   the prompt would hide the input for a judge whose every test run needs it.
+ * - the prompt reads reference data. Covers hand-written prompts the server derives
+ *   nothing for.
+ * - the prompt could not be fetched, so nothing is known. Fail open: offering an
+ *   unused input is the harmless direction (see `reference_data_gate.ts`), and the
+ *   save path bakes the server's default — reference block and required key included —
+ *   whether or not the client ever saw it.
+ *
+ * Every other type stays behind SHOW_REFERENCE_DATA_UI, which also still gates their
+ * "Reference Data Field" pickers in the judge forms.
+ *
+ * The declared mode is resolved first in every branch, so an unknown type throws in
+ * every configuration rather than silently reporting "none".
  */
 export function referenceDataUsageMode(
   type: V2EvalType,
+  judge: JudgeReferenceSignals,
 ): ReferenceDataUsageMode {
   const declared = declaredReferenceDataUsageMode(type)
+  if (declared === "llm_judge") {
+    const needs_reference =
+      judge.prompt_unavailable ||
+      judge.server_reference_keys.length > 0 ||
+      uses_reference_data_llm_judge(judge.prompt_template)
+    return needs_reference ? declared : "none"
+  }
   return SHOW_REFERENCE_DATA_UI ? declared : "none"
 }
 

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from litellm.types.utils import ModelResponse
 
+from kiln_ai.adapters.eval.base_eval import materialize_llm_judge_properties
 from kiln_ai.adapters.eval.v2_eval_llm_judge import (
     _DEFAULT_SYSTEM_PROMPT,
     LlmJudgeEval,
@@ -14,13 +15,16 @@ from kiln_ai.adapters.eval.v2_eval_llm_judge import (
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
+    Eval,
     EvalConfig,
     EvalConfigType,
+    EvalDataType,
     EvalOutputScore,
     EvalTaskInput,
     LlmJudgeProperties,
     SkippedReason,
 )
+from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_run import Usage
 
 
@@ -568,7 +572,8 @@ class TestLlmJudgeEvalDeclaredReferenceKeys:
     async def test_no_declared_keys_does_not_require_reference_data(
         self, mock_adapter_for_task
     ):
-        """The default template is permissive; only a declaration refuses."""
+        """A judge that declares nothing is not required to have anything: the
+        requirement is the declaration, not the presence of reference data."""
         mock_adapter = AsyncMock()
         mock_adapter.invoke_returning_run_output.return_value = (
             _judge_run(),
@@ -581,6 +586,75 @@ class TestLlmJudgeEvalDeclaredReferenceKeys:
 
         assert result.scores == {"quality": 2.0}
         assert result.skipped_reason is None
+
+
+class TestBackendBakedReferenceAnswerJudge:
+    """The declared-key guard is only worth having if a shipped path reaches it.
+    `materialize_llm_judge_properties` is that path: it bakes both the prompt block and
+    the declaration for a reference-answer eval, so these tests use the real properties
+    rather than hand-written ones."""
+
+    @staticmethod
+    def _baked_props() -> LlmJudgeProperties:
+        task = Task(name="QnA Task", instruction="Answer questions about the docs")
+        eval_obj = Eval(
+            name="Reference Answer Eval",
+            evaluation_data_type=EvalDataType.reference_answer,
+            output_scores=[
+                EvalOutputScore(
+                    name="quality",
+                    instruction="Rate quality",
+                    type=TaskOutputRatingType.five_star,
+                )
+            ],
+            eval_set_filter_id="tag::test",
+            parent=task,
+        )
+        return materialize_llm_judge_properties(
+            eval_obj, "gpt-4o", "openai", g_eval=False
+        )
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_item_without_a_reference_skips_before_the_model_call(
+        self, mock_adapter_for_task
+    ):
+        """Judge calibration scores the golden item as itself, so it supplies no
+        reference data by design — every calibration item of such a judge skips. That
+        is the right answer for "does this match the reference" with no reference, and
+        it costs no inference."""
+        cfg = _make_config(self._baked_props())
+
+        result = await LlmJudgeEval(cfg).evaluate(_inp(reference_data=None))
+
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.missing_reference_key
+        mock_adapter_for_task.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_the_reference_reaches_the_rendered_prompt(
+        self, mock_adapter_for_task
+    ):
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(),
+            RunOutput(output={"quality": "5"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+        cfg = _make_config(self._baked_props())
+
+        result = await LlmJudgeEval(cfg).evaluate(
+            _inp(
+                final_message="Herbert, 1965.",
+                task_input="Who wrote Dune?",
+                reference_data={"reference_answer": "Frank Herbert."},
+            )
+        )
+
+        assert result.skipped_reason is None
+        rendered = mock_adapter.invoke_returning_run_output.call_args[0][0]
+        assert "<reference_answer>\nFrank Herbert.\n</reference_answer>" in rendered
 
 
 class TestLlmJudgeEvalNoParentEval:

@@ -2868,7 +2868,6 @@ class TestV1EvalRunCoexistence:
             scores={"accuracy": 1.0},
         )
         assert run.eval_input_id is None
-        assert run.reference_data is None
         assert run.skipped_reason is None
         assert run.skipped_detail is None
 
@@ -2911,7 +2910,6 @@ class TestV1EvalRunCoexistence:
         loaded = EvalRun.load_from_file(str(run.path))
         assert loaded.dataset_id == "ds1"
         assert loaded.eval_input_id is None
-        assert loaded.reference_data is None
         assert loaded.skipped_reason is None
         assert loaded.skipped_detail is None
         assert loaded.scores == {"acc": 0.8}
@@ -2976,6 +2974,26 @@ class TestV1EvalRunCoexistence:
         assert loaded.task_run_usage is not None
         assert loaded.task_run_usage.total_tokens == 7
         assert loaded.scores == {"accuracy": 1.0}
+
+    def test_retired_reference_data_key_loads_and_is_dropped(self):
+        """`reference_data` was declared on EvalRun on an unreleased branch and never
+        shipped, so it was deleted outright rather than deprecated. Dev-build files
+        that carry it must still load: EvalRun sets no `extra=` override, so pydantic's
+        default `extra="ignore"` drops the key rather than rejecting the record."""
+        run = EvalRun.model_validate(
+            {
+                "dataset_id": "ds1",
+                "task_run_config_id": "rc1",
+                "input": "What is 2+2?",
+                "output": "4",
+                "scores": {"accuracy": 1.0},
+                "reference_data": {"expected": "4"},
+            }
+        )
+
+        assert not hasattr(run, "reference_data")
+        assert "reference_data" not in run.model_dump()
+        assert run.scores == {"accuracy": 1.0}
 
 
 class TestV1EvalConfigCoexistence:

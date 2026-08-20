@@ -8,6 +8,8 @@ import {
   evalTypeJudgeLabel,
   manualExampleSupport,
   referenceDataUsageMode,
+  NO_JUDGE_PROMPT,
+  type JudgeReferenceSignals,
   type V2EvalType,
   type V2EvalTypeMetadata,
   type EvalTypeTag,
@@ -467,25 +469,99 @@ describe("manualExampleSupport", () => {
   })
 })
 
+function signals(
+  overrides: Partial<JudgeReferenceSignals>,
+): JudgeReferenceSignals {
+  return { ...NO_JUDGE_PROMPT, ...overrides }
+}
+
 // Behavior with SHOW_REFERENCE_DATA_UI off (the shipped default). The flag-on
 // behavior is covered in registry.reference_data.test.ts.
 describe("referenceDataUsageMode", () => {
   it("reports 'none' for every V2EvalType while reference data is hidden", () => {
     for (const t of ALL_V2_EVAL_TYPES) {
-      expect(referenceDataUsageMode(t)).toBe("none")
+      expect(referenceDataUsageMode(t, NO_JUDGE_PROMPT)).toBe("none")
+    }
+  })
+
+  it("shows the input for an llm_judge whose prompt uses reference data", () => {
+    // Not behind the flag: the Test Judge pane is the only place a reference answer
+    // can be supplied, and without it a reference-answer judge is validated against a
+    // prompt with no reference block and then saved as one that renders it.
+    expect(
+      referenceDataUsageMode(
+        "llm_judge",
+        signals({
+          prompt_template:
+            "Grade {{ final_message }} against {{ reference_data.reference_answer }}",
+        }),
+      ),
+    ).toBe("llm_judge")
+  })
+
+  it("shows the input when the server declared a key, whatever the prompt says", () => {
+    // The user can edit the reference block out of the prompt; the server keeps
+    // requiring the key, so every test run would skip with no way to supply one.
+    expect(
+      referenceDataUsageMode(
+        "llm_judge",
+        signals({
+          prompt_template: "Rate {{ final_message }}",
+          server_reference_keys: ["reference_answer"],
+        }),
+      ),
+    ).toBe("llm_judge")
+  })
+
+  it("shows the input when the prompt could not be fetched", () => {
+    // Nothing is known, and the save path bakes the server default either way.
+    // Offering an unused input is the harmless direction.
+    expect(
+      referenceDataUsageMode(
+        "llm_judge",
+        signals({ prompt_unavailable: true }),
+      ),
+    ).toBe("llm_judge")
+  })
+
+  it("hides the input for an llm_judge that needs no reference data", () => {
+    expect(
+      referenceDataUsageMode(
+        "llm_judge",
+        signals({ prompt_template: "Rate {{ final_message }}" }),
+      ),
+    ).toBe("none")
+  })
+
+  it("hides the input for an llm_judge with no prompt yet", () => {
+    expect(referenceDataUsageMode("llm_judge", NO_JUDGE_PROMPT)).toBe("none")
+  })
+
+  it("keeps every other type behind the flag, signals or not", () => {
+    for (const t of ALL_V2_EVAL_TYPES.filter((t) => t !== "llm_judge")) {
+      expect(
+        referenceDataUsageMode(
+          t,
+          signals({
+            prompt_template: "{{ reference_data.anything }}",
+            server_reference_keys: ["anything"],
+            prompt_unavailable: true,
+          }),
+        ),
+      ).toBe("none")
     }
   })
 
   it("covers every eval type without throwing", () => {
     for (const t of ALL_V2_EVAL_TYPES) {
-      expect(() => referenceDataUsageMode(t)).not.toThrow()
+      expect(() => referenceDataUsageMode(t, NO_JUDGE_PROMPT)).not.toThrow()
     }
   })
 
   it("still throws for an invalid type via assertNever", () => {
     expect(() =>
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      referenceDataUsageMode("invalid_type" as any),
+      referenceDataUsageMode("invalid_type" as any, NO_JUDGE_PROMPT),
     ).toThrow("Unexpected value")
   })
 
@@ -497,7 +573,7 @@ describe("referenceDataUsageMode", () => {
       "none",
     ]
     for (const t of ALL_V2_EVAL_TYPES) {
-      expect(validModes).toContain(referenceDataUsageMode(t))
+      expect(validModes).toContain(referenceDataUsageMode(t, NO_JUDGE_PROMPT))
     }
   })
 

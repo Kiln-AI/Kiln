@@ -2323,11 +2323,11 @@ class TestReferenceDataReachesTheJudge:
         assert seen.reference_data == {"reference_answer": "Frank Herbert."}
 
         # The judge saw it; the record does not keep it. A pointer-mode record carries
-        # no second copy of what it scored, and `validate_record_mode` cannot catch a
-        # regression here — `reference_data` is deliberately outside LEGACY_TRACE_FIELDS.
+        # no second copy of what it scored: the reference is derived from the item
+        # `dataset_id` names, and `EvalRun` has no field to hold one.
         (saved,) = mock_v2_task_run_eval_config.runs(readonly=True)
         assert saved.dataset_id == item.id
-        assert saved.reference_data is None
+        assert not hasattr(saved, "reference_data")
 
     @pytest.mark.asyncio
     async def test_calibration_gives_the_judge_no_reference_answer(
@@ -2437,9 +2437,6 @@ class TestV2EvalInputFreshGeneration:
         assert saved.dataset_id is None
         assert saved.eval_config_eval is False
         assert saved.scores == {"accuracy": 1.0}
-        # A pointer-mode record never carries a second copy of what it scored: the
-        # reference lives on the item `eval_input_id` names, and nothing reads it here.
-        assert saved.reference_data is None
         assert saved.skipped_reason is None
         assert saved.input is None
         assert saved.output is None
@@ -2481,7 +2478,6 @@ class TestV2EvalInputFreshGeneration:
         assert saved.scored_run_id == trace.id
         assert saved.output is None
         assert saved.scores == {}
-        assert saved.reference_data is None
 
     @pytest.mark.asyncio
     async def test_eval_input_task_run_eval_no_reference(
@@ -2489,6 +2485,7 @@ class TestV2EvalInputFreshGeneration:
         mock_task,
         mock_v2_ei_tr_eval_config,
         mock_run_config,
+        recorded_judge_inputs,
     ):
         ei_no_ref = EvalInput(
             id="ei_no_ref",
@@ -2511,12 +2508,13 @@ class TestV2EvalInputFreshGeneration:
             task_run_config=mock_run_config,
         )
 
-        with generating(TraceGenerator(runner.task)):
+        with generating(TraceGenerator(runner.task), RecordingStubV2Eval):
             result = await runner.run_job(job)
 
         assert result is True
+        (seen,) = recorded_judge_inputs
+        assert seen.reference_data is None
         (saved,) = mock_v2_ei_tr_eval_config.runs(readonly=True)
-        assert saved.reference_data is None
         assert saved.eval_input_id == "ei_no_ref"
 
 
@@ -3310,7 +3308,6 @@ class TestV1LegacyRunnerCoexistence:
         assert saved.dataset_id == task_run.id
         assert saved.eval_input_id is None
         assert saved.skipped_reason is None
-        assert saved.reference_data is None
         assert saved.scores == mock_scores
         assert saved.output == "legacy output"
         assert saved.eval_config_eval is False

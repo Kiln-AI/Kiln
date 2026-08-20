@@ -314,6 +314,43 @@ def template_eval_steps(eval: Eval) -> list[str] | None:
     return None
 
 
+def derived_reference_keys(eval: Eval) -> list[str]:
+    """The reference data keys a default judge for this eval requires.
+
+    The one place this is decided. `materialize_llm_judge_properties` bakes it onto the
+    saved config, and `get_default_llm_judge_prompt` returns it to the builder so the
+    Test Judge pane can offer a place to supply it — two consumers of one answer rather
+    than two derivations of one rule.
+    """
+    return ["reference_answer"] if judge_shows_reference_answer(eval) else []
+
+
+def judge_shows_reference_answer(eval: Eval) -> bool:
+    """Whether this eval's default judge is told to grade against a reference answer.
+
+    One predicate decides both halves of the contract: the prompt shows the
+    `<reference_answer>` block, and `materialize_llm_judge_properties` declares the key
+    as required. Splitting them lets a judge ask the question without the data.
+
+    Presence of runtime `reference_data` is not the test: it is populated for every
+    TaskRun-backed item (the dataset item's stored output), and on an ordinary eval
+    that output is a prior model response — often the badly-rated one the eval exists
+    to catch — so labelling it `<reference_answer>` would grade every run against a
+    stale answer. `evaluation_data_type` is the same gate V1 applies in
+    `GEval.run_eval` (g_eval.py, reference-answer branch).
+
+    The rag template is checked too because it is the other producer of steps that name
+    a reference answer (`template_eval_steps`), and the generic create-eval API takes
+    `template` and `evaluation_data_type` as independent fields — so the two can
+    disagree. Either signal alone means the judge is being told to compare against
+    ground truth, and a judge told that must be given it.
+    """
+    return (
+        eval.evaluation_data_type == EvalDataType.reference_answer
+        or eval.template == EvalTemplateId.rag
+    )
+
+
 def build_default_llm_judge_prompt(eval: Eval) -> str:
     """Assemble a rich default Jinja2 judge-prompt template from eval data.
 
@@ -334,24 +371,7 @@ def build_default_llm_judge_prompt(eval: Eval) -> str:
             "</task_description>"
         )
 
-    # Show a reference answer exactly when this eval's steps ask the judge to use one.
-    #
-    # Presence of runtime `reference_data` is not the test: it is populated for every
-    # TaskRun-backed item (the dataset item's stored output), and on an ordinary eval
-    # that output is a prior model response — often the badly-rated one the eval exists
-    # to catch — so labelling it `<reference_answer>` would grade every run against a
-    # stale answer. `evaluation_data_type` is the same gate V1 applies in
-    # `GEval.run_eval` (g_eval.py, reference-answer branch).
-    #
-    # The rag template is checked too because it is the other producer of steps that
-    # name a reference answer (`template_eval_steps`), and the generic create-eval API
-    # takes `template` and `evaluation_data_type` as independent fields — so the two can
-    # disagree. Either signal alone means the judge is being told to compare against
-    # ground truth, and a judge told that must be given it.
-    shows_reference_answer = (
-        eval.evaluation_data_type == EvalDataType.reference_answer
-        or eval.template == EvalTemplateId.rag
-    )
+    shows_reference_answer = judge_shows_reference_answer(eval)
 
     guarded_tags = (
         "task_input, model_response and reference_answer"
@@ -368,27 +388,19 @@ def build_default_llm_judge_prompt(eval: Eval) -> str:
         "<model_response>\n{{ final_message }}\n</model_response>"
     )
     if shows_reference_answer:
-        # Jinja-conditional on top of the build-time gate because a reference-answer
-        # eval can still meet an item with no ground truth, and `_template_env` uses
-        # StrictUndefined: an unconditional `{{ reference_data.reference_answer }}`
-        # raises there, which the judge turns into a skip. `.get` rather than attribute
-        # access for the same reason — attribute access on a dict without the key
-        # yields StrictUndefined, which raises when tested for truth.
+        # Unconditional: the same predicate declares `reference_answer` in
+        # `reference_keys`, so `v2_eval_llm_judge` refuses an item without one before
+        # this template is ever rendered. A conditional block would only be reachable
+        # by rendering the steps' "as per the reference answer" question with the
+        # answer omitted — the judge then answers from nothing.
         #
-        # `is not none` rather than a truthiness test so this agrees exactly with
-        # `check_reference_key`, which declares a key satisfied unless its value is
-        # None. Under truthiness an empty reference answer would clear that guard and
-        # then render nothing, scoring with no ground truth in the prompt — the failure
-        # the guard exists to prevent. An empty reference renders an empty block, which
-        # says "the reference is blank" rather than silently saying nothing.
+        # Attribute access rather than `.get`: under `_template_env`'s StrictUndefined
+        # a missing key raises, which `v2_eval_llm_judge` turns into the same
+        # `missing_reference_key` skip. `.get` would render the string "None" instead.
         data_blocks += (
-            "\n"
-            "{% if reference_data and "
-            "reference_data.get('reference_answer') is not none %}\n"
-            "\n<reference_answer>\n"
-            "{{ reference_data.get('reference_answer') }}\n"
-            "</reference_answer>\n"
-            "{% endif %}"
+            "\n\n<reference_answer>\n"
+            "{{ reference_data.reference_answer }}\n"
+            "</reference_answer>"
         )
     parts.append(data_blocks)
 
@@ -471,6 +483,9 @@ def materialize_llm_judge_properties(
     overrides the default when provided (even if empty).  *judge_instructions*
     are user-written steps stored on the config and bound to
     ``{{ judge_instructions }}`` at render time; blank steps are dropped.
+
+    ``reference_keys`` is derived from the eval, never taken from the caller: a judge
+    told to grade against a reference answer declares it as required.
     """
     prompt_template = (
         judge_prompt
@@ -483,6 +498,34 @@ def materialize_llm_judge_properties(
     cleaned_instructions = [
         s.strip() for s in judge_instructions or [] if s.strip()
     ] or None
+
+    # Same predicate that gates the `<reference_answer>` block in the default prompt, so
+    # for that prompt "show the reference" and "require the reference" are one decision.
+    # A caller-supplied `judge_prompt` is the deliberate exception: this function never
+    # inspects it, and the eval still grades against ground truth, so the key is still
+    # required even if the user edited the block out. Skipping an item is the safe side
+    # of that. Either way the server decides; a client does not get to clear it (see
+    # `create_llm_judge_config`).
+    #
+    # Consequence worth knowing before it is discovered: for every judge this declares a
+    # key for, judge calibration comes back all-skipped. Calibration scores the golden
+    # item as itself, so `EvalTaskInput.from_trace` supplies no reference data by design
+    # and `v2_eval_llm_judge` skips each item with `missing_reference_key`. That is the
+    # correct answer — calibrating "does this match the reference" against items that
+    # have no reference is empty — but it should be written down, not discovered.
+    #
+    # This covers both signals, rag included. Nothing makes rag calibration
+    # unreachable: `create_evaluator` (eval_api.py) auto-mints
+    # `eval_configs_filter_id` from the eval's golden tag whenever the caller supplies
+    # no `eval_set_filter_id`, and `build_spec_eval` (spec_utils.py) sets one
+    # unconditionally, so a rag eval does have a golden filter and Compare Judges will
+    # run against it. What makes it quiet in practice is that the set behind that filter
+    # is normally empty: `build_eval_generation_splits`
+    # (app/web_ui/src/lib/utils/eval_generation_splits.ts) deliberately allocates no
+    # generated data to golden for rag, so calibration collects zero jobs and reports
+    # nothing. Tag data into that golden tag by hand and every item skips.
+    reference_keys = derived_reference_keys(eval)
+
     return LlmJudgeProperties(
         model_name=model_name,
         model_provider=model_provider,
@@ -491,6 +534,7 @@ def materialize_llm_judge_properties(
         thinking_instruction=_DEFAULT_THINKING_INSTRUCTION,
         g_eval=g_eval,
         judge_instructions=cleaned_instructions,
+        reference_keys=reference_keys,
     )
 
 

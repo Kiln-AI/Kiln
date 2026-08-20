@@ -25,6 +25,7 @@ from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_fr
 from kiln_ai.adapters.eval.base_eval import (
     DEFAULT_SYSTEM_PROMPT,
     build_default_llm_judge_prompt,
+    derived_reference_keys,
     materialize_llm_judge_properties,
 )
 from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
@@ -324,16 +325,21 @@ class DefaultLlmJudgePromptResponse(BaseModel):
 
     judge_prompt: str
     system_prompt: str
+    reference_keys: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Reference data keys the server will require of a judge for this eval, "
+            "derived the same way `create_llm_judge_config` derives them. Returned so "
+            "the builder can offer a place to supply them when testing, rather than "
+            "re-deriving the rule client-side from the prompt's text."
+        ),
+    )
 
 
 class CreateLlmJudgeConfigRequest(LlmJudgeBuilderInput):
     """Request to create a V2 llm_judge eval config with server-baked template."""
 
     name: str | None = Field(default=None, description="The name of the eval config.")
-    reference_keys: list[str] = Field(
-        default_factory=list,
-        description="Reference data keys this judge needs (captured from test).",
-    )
 
 
 class TestV2EvalRequest(BaseModel):
@@ -1763,7 +1769,6 @@ def connect_evals_api(app: FastAPI):
                 system_prompt=request.system_prompt,
                 judge_instructions=request.judge_instructions,
             )
-            properties.reference_keys = list(request.reference_keys)
             eval_config = EvalConfig(
                 name=name,
                 config_type=EvalConfigType.v2,
@@ -1795,9 +1800,14 @@ def connect_evals_api(app: FastAPI):
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> DefaultLlmJudgePromptResponse:
         eval = eval_from_id(project_id, task_id, eval_id)
+        # `reference_keys` comes from the same predicate `materialize_llm_judge_properties`
+        # uses, so what the builder is told to collect is what the saved judge requires —
+        # including when the user edits the reference block out of the prompt, which the
+        # server ignores.
         return DefaultLlmJudgePromptResponse(
             judge_prompt=build_default_llm_judge_prompt(eval),
             system_prompt=DEFAULT_SYSTEM_PROMPT,
+            reference_keys=derived_reference_keys(eval),
         )
 
     @app.post(

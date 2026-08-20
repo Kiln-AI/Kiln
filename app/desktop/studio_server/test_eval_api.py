@@ -5600,6 +5600,27 @@ def mock_v2_eval(mock_task):
     return eval
 
 
+@pytest.fixture
+def mock_v2_reference_answer_eval(mock_task):
+    eval = Eval(
+        id="eval_v2_reference_answer",
+        name="V2 Reference Answer Eval",
+        description="V2 eval graded against a reference answer",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                instruction="Is the answer accurate?",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        splits={"test": EvalInputSplit(filter_id="tag::v2_eval_set")},
+        evaluation_data_type=EvalDataType.reference_answer,
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    return eval
+
+
 class TestTestV2Eval:
     def _url(self, eval_id: str = "eval_v2") -> str:
         return f"/api/projects/project1/tasks/task1/evals/{eval_id}/test_v2_eval"
@@ -6062,14 +6083,54 @@ class TestCreateLlmJudgeConfig:
             response = client.post(
                 self._url(),
                 json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
                     "name": "My Custom Judge",
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["name"] == "My Custom Judge"
+
+    def test_reference_answer_eval_declares_the_key(
+        self, client, mock_v2_reference_answer_eval
+    ):
+        """The baked prompt grades against a reference answer, so the saved config has
+        to require one — otherwise the judge scores items that have none."""
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_reference_answer_eval
+            response = client.post(
+                self._url("eval_v2_reference_answer"),
+                json={
                     "model_name": "gpt-4o",
                     "provider": "openai",
                     "g_eval": False,
                 },
             )
         assert response.status_code == 200
-        assert response.json()["name"] == "My Custom Judge"
+        props = response.json()["properties"]
+        assert props["reference_keys"] == ["reference_answer"]
+        assert "<reference_answer>" in props["prompt_template"]
+
+    def test_client_cannot_clear_the_server_derived_reference_keys(
+        self, client, mock_v2_reference_answer_eval
+    ):
+        """The builder used to post its own `reference_keys`, which the endpoint wrote
+        over the derived value — an empty list from a UI that cannot collect them turned
+        the requirement off. The request field is gone; the server decides."""
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_reference_answer_eval
+            response = client.post(
+                self._url("eval_v2_reference_answer"),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    "reference_keys": [],
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["properties"]["reference_keys"] == ["reference_answer"]
 
 
 class TestV1CoexistenceAPI:
@@ -6176,7 +6237,6 @@ class TestV1CoexistenceAPI:
 
         for v2_field in (
             "eval_input_id",
-            "reference_data",
             "skipped_reason",
             "skipped_detail",
         ):
@@ -6228,7 +6288,6 @@ class TestV1CoexistenceAPI:
         ]
         for r in runs:
             assert r.eval_input_id is None
-            assert r.reference_data is None
             assert r.skipped_reason is None
 
         config.runs.return_value = runs
@@ -6270,6 +6329,44 @@ class TestDefaultLlmJudgePrompt:
         # No spec or derivable template: the steps section defers to the
         # judge_instructions binding instead of baking score instructions.
         assert "{{ judge_instructions }}" in body["judge_prompt"]
+
+    def test_reference_keys_match_what_create_will_require(
+        self, client, mock_v2_reference_answer_eval
+    ):
+        """The builder is told what the saved judge will require so the Test Judge pane
+        can offer a place to supply it. Derived server-side, not re-read from the
+        prompt's text: a user who edits the reference block out has not made the eval
+        stop requiring ground truth, and a pane reading only the prompt would then hide
+        the one input that keeps its test runs from skipping."""
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_reference_answer_eval
+            default = client.get(self._url("eval_v2_reference_answer"))
+            created = client.post(
+                "/api/projects/project1/tasks/task1/evals/eval_v2_reference_answer"
+                "/create_llm_judge_config",
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    # The edited-down prompt the user saves: no reference block left.
+                    "judge_prompt": "Score {{ final_message }} for accuracy.",
+                },
+            )
+
+        assert default.status_code == 200
+        assert created.status_code == 200
+        assert default.json()["reference_keys"] == ["reference_answer"]
+        assert (
+            default.json()["reference_keys"]
+            == created.json()["properties"]["reference_keys"]
+        )
+
+    def test_reference_keys_empty_for_an_ordinary_eval(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.get(self._url())
+        assert response.status_code == 200
+        assert response.json()["reference_keys"] == []
 
     def test_eval_not_found(self, client):
         with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:

@@ -3,6 +3,7 @@ from typing import Dict
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from jinja2 import UndefinedError
 
 from kiln_ai.adapters.eval.base_eval import (
     BaseEval,
@@ -11,6 +12,7 @@ from kiln_ai.adapters.eval.base_eval import (
     conditionally_raw_wrap,
     defuse_endraw,
     format_judge_instructions,
+    judge_shows_reference_answer,
     materialize_llm_judge_properties,
     score_scale_instruction,
     template_eval_steps,
@@ -1392,54 +1394,92 @@ def test_build_default_llm_judge_prompt_rag_renders_reference_answer():
     assert "accurate as per the reference answer" in rendered
 
 
-@pytest.mark.parametrize(
-    "reference_data",
-    [None, {}, {"retrieved_context": ["unrelated"]}, {"reference_answer": None}],
-    ids=["none", "empty", "other-keys-only", "explicit-null"],
-)
-def test_build_default_llm_judge_prompt_omits_reference_block(reference_data):
-    """StrictUndefined makes a bare reference lookup a hard skip, so the block must
-    render away cleanly for every shape of missing reference answer - leaving the same
-    data blocks a judge with no reference data at all would see."""
-    rendered = _render_default_prompt(_rag_eval(), reference_data)
-    assert "<reference_answer>" not in rendered
+def test_build_default_llm_judge_prompt_reference_block_is_unconditional():
+    """The steps ask "is the output accurate as per the reference answer". A branch
+    that drops the block keeps the question and removes the data, so the judge answers
+    from nothing — `reference_keys` refuses the item before the render instead."""
+    prompt = build_default_llm_judge_prompt(_rag_eval())
     assert (
-        "<model_response>\n"
-        "Frank Herbert, in 1965.\n"
-        "</model_response>\n"
-        "\n"
-        "When evaluating"
-    ) in rendered
+        "<reference_answer>\n{{ reference_data.reference_answer }}\n</reference_answer>"
+        in prompt
+    )
+    # Scoped to the block rather than the whole prompt: a conditional somewhere else in
+    # the template is not this test's business, and failing on one would send the next
+    # reader to the wrong place.
+    block_start = prompt.index("<reference_answer>")
+    block_end = prompt.index("</reference_answer>") + len("</reference_answer>")
+    surrounding = prompt[max(0, block_start - 200) : block_end + 200]
+    assert "{%" not in surrounding
 
 
 @pytest.mark.parametrize(
     "reference_data",
+    [None, {}, {"retrieved_context": ["unrelated"]}],
+    ids=["none", "empty", "other-keys-only"],
+)
+def test_build_default_llm_judge_prompt_raises_without_a_reference(reference_data):
+    """The guard stops these before the render. If one ever got past it, StrictUndefined
+    raises and `v2_eval_llm_judge` turns that into the same `missing_reference_key`
+    skip — never a prompt that asks the question with the answer missing."""
+    with pytest.raises(UndefinedError):
+        _render_default_prompt(_rag_eval(), reference_data)
+
+
+@pytest.mark.parametrize(
+    "reference_data, expected_value",
     [
-        None,
-        {},
-        {"retrieved_context": ["unrelated"]},
-        {"reference_answer": None},
-        {"reference_answer": ""},
-        {"reference_answer": "Frank Herbert."},
+        (None, None),
+        ({}, None),
+        ({"retrieved_context": ["unrelated"]}, None),
+        ({"reference_answer": None}, None),
+        ({"reference_answer": ""}, ""),
+        ({"reference_answer": "Frank Herbert."}, "Frank Herbert."),
     ],
     ids=["none", "empty", "other-keys-only", "explicit-null", "empty-string", "value"],
 )
-def test_reference_block_and_declared_key_guard_agree(reference_data):
-    """The template renders what is there and `check_reference_key` refuses what is
-    not — so a key the guard calls satisfied must be a key the prompt actually shows.
-    If these drift, a judge clears the guard and then scores with no ground truth."""
+def test_reference_block_and_declared_key_guard_agree(reference_data, expected_value):
+    """The question is asked unconditionally now, so every shape of reference data has
+    to be accounted for by something: the declared key skips the item before the render,
+    or the render raises, or the block carries the reference. Nothing may reach a model
+    with "as per the reference answer" asked and the answer absent.
+
+    `expected_value` is what the block must contain when neither refusal fires; None
+    marks the shapes where one of them has to.
+    """
     from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import check_reference_key
+
+    eval_obj = _rag_eval()
+    # Both halves of the safety argument, and both unconditional: the judge is always
+    # asked the question, and the key is always declared.
+    assert "as per the reference answer" in build_default_llm_judge_prompt(eval_obj)
+    assert materialize_llm_judge_properties(
+        eval_obj, "gpt-4o", "openai", g_eval=False
+    ).reference_keys == ["reference_answer"]
 
     _, skip_reason, _ = check_reference_key(
         "reference_answer",
         EvalTaskInput(final_message="x", reference_data=reference_data),
     )
-    guard_satisfied = skip_reason is None
+    guard_skips = skip_reason is not None
 
-    rendered = _render_default_prompt(_rag_eval(), reference_data)
-    block_rendered = "<reference_answer>" in rendered
+    render_raised = False
+    rendered = ""
+    try:
+        rendered = _render_default_prompt(eval_obj, reference_data)
+    except UndefinedError:
+        render_raised = True
 
-    assert guard_satisfied == block_rendered
+    reference_shown = expected_value is not None and (
+        f"<reference_answer>\n{expected_value}\n</reference_answer>" in rendered
+    )
+
+    assert guard_skips or render_raised or reference_shown, (
+        f"this shape asks the reference-answer question with no reference: {rendered}"
+    )
+    # The converse, so the guard cannot start refusing data the prompt would have shown:
+    # anything it lets through has to arrive in the block, value and all.
+    if not guard_skips:
+        assert reference_shown, rendered
 
 
 def _eval_with(template, evaluation_data_type) -> Eval:
@@ -1647,3 +1687,98 @@ def test_materialize_system_prompt_empty_string_allowed():
         eval_obj, "gpt-4o", "openai", g_eval=False, system_prompt=""
     )
     assert props.system_prompt == ""
+
+
+@pytest.mark.parametrize(
+    "template, evaluation_data_type",
+    [
+        (EvalTemplateId.rag, EvalDataType.reference_answer),
+        (None, EvalDataType.reference_answer),
+        (EvalTemplateId.rag, EvalDataType.final_answer),
+    ],
+    ids=["both-signals", "data-type-only", "template-only"],
+)
+def test_materialize_declares_the_reference_key_it_grades_against(
+    template, evaluation_data_type
+):
+    """A judge told to grade against a reference answer requires one: without the
+    declaration the guard in `v2_eval_llm_judge` never fires and the judge scores an
+    item with no ground truth."""
+    props = materialize_llm_judge_properties(
+        _eval_with(template, evaluation_data_type), "gpt-4o", "openai", g_eval=False
+    )
+    assert props.reference_keys == ["reference_answer"]
+
+
+@pytest.mark.parametrize(
+    "template, evaluation_data_type",
+    [
+        (None, EvalDataType.final_answer),
+        (None, EvalDataType.full_trace),
+        (None, None),
+        (EvalTemplateId.issue, EvalDataType.final_answer),
+    ],
+    ids=["final-answer", "full-trace", "unset", "issue-template"],
+)
+def test_materialize_declares_no_reference_key_for_ordinary_evals(
+    template, evaluation_data_type
+):
+    """An ordinary eval's dataset item carries a prior model response, not ground
+    truth. Requiring it would skip every item for a reference the judge never asks for."""
+    props = materialize_llm_judge_properties(
+        _eval_with(template, evaluation_data_type), "gpt-4o", "openai", g_eval=False
+    )
+    assert props.reference_keys == []
+
+
+@pytest.mark.parametrize(
+    "template, evaluation_data_type",
+    [
+        (EvalTemplateId.rag, EvalDataType.reference_answer),
+        (None, EvalDataType.reference_answer),
+        (EvalTemplateId.rag, EvalDataType.final_answer),
+        (None, EvalDataType.final_answer),
+        (None, None),
+        (EvalTemplateId.issue, EvalDataType.final_answer),
+    ],
+)
+def test_showing_the_reference_and_requiring_it_are_one_decision(
+    template, evaluation_data_type
+):
+    """Two predicates would drift, and either direction is a bug: shown-but-not-required
+    renders the question without the answer, required-but-not-shown skips every item for
+    data the prompt never uses."""
+    eval_obj = _eval_with(template, evaluation_data_type)
+    prompt = build_default_llm_judge_prompt(eval_obj)
+
+    shown = "<reference_answer>" in prompt
+    required = (
+        "reference_answer"
+        in materialize_llm_judge_properties(
+            eval_obj, "gpt-4o", "openai", g_eval=False
+        ).reference_keys
+    )
+    # A third consumer of the same decision, in the web UI: the Test Judge pane offers
+    # a reference-data input by substring-testing the assembled prompt for
+    # `reference_data` (`uses_reference_data_llm_judge`,
+    # app/web_ui/src/lib/utils/eval_types/reference_data_gate.ts). That is only correct
+    # while the string appears in a default prompt exactly when the block does — put a
+    # `reference_data` lookup in some other default template and the pane silently
+    # flips on for judges that never use one.
+    offered_in_ui = "reference_data" in prompt
+
+    assert shown == required == offered_in_ui == judge_shows_reference_answer(eval_obj)
+
+
+def test_materialize_declares_the_key_for_a_custom_prompt_too():
+    """The eval decides, not the prompt text: a user who edits the reference block out
+    of a reference-answer judge's prompt has not made the eval stop grading against
+    ground truth, and a skipped item is safer than one scored without it."""
+    props = materialize_llm_judge_properties(
+        _eval_with(None, EvalDataType.reference_answer),
+        "gpt-4o",
+        "openai",
+        g_eval=False,
+        judge_prompt="Score {{ final_message }} against {{ task_input }}",
+    )
+    assert props.reference_keys == ["reference_answer"]

@@ -9,6 +9,7 @@
   import {
     getV2EvalTypeMetadata,
     manualExampleSupport,
+    NO_JUDGE_PROMPT,
   } from "$lib/utils/eval_types/registry"
   import type { V2EvalType } from "$lib/utils/eval_types/registry"
   import type { V2EvalConfigProperties } from "$lib/api/v2_eval_api"
@@ -111,9 +112,17 @@
   let test_abort_controller: AbortController | null = null
   let trust_dialog: TrustCodeDialog
 
-  // Reference data plumbing, mirroring the add-judge builder. Dormant while
-  // SHOW_REFERENCE_DATA_UI is off (the pane hides the field), but wired so the
-  // creation pane doesn't silently drop it the day the flag flips.
+  // Reference data plumbing, mirroring the add-judge builder. Dormant for every judge
+  // this form builds: they are all non-LLM types, which the pane keeps behind
+  // SHOW_REFERENCE_DATA_UI. Wired so the creation pane doesn't silently drop it the
+  // day the flag flips.
+  //
+  // Passed to the pane explicitly rather than left to its default, so the next reader
+  // doesn't take it for an oversight: the pane reads a judge's prompt and the server's
+  // derived reference keys to decide whether to offer a reference-data input, and this
+  // form has neither to give. `is_non_llm_judge` gates it upstream and
+  // JudgeConfigFields has no llm_judge branch, so there never will be one here.
+  const judge_reference_signals = NO_JUDGE_PROMPT
   let advanced_reference_data = ""
   let required_reference_fields: string[] = []
   $: reference_candidate_keys = parse_reference_keys(advanced_reference_data)
@@ -350,6 +359,7 @@
       {test_shape_warning}
       {test_score_range_warning}
       {test_has_valid_run}
+      {judge_reference_signals}
       manual_example_supported={manual_example_support.supported}
       on:select={(e) => select_task_run(e.detail)}
       on:run={run_test}

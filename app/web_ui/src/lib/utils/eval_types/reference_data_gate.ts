@@ -1,26 +1,62 @@
 /**
- * Detect whether a judge config references `reference_data`, which gates
- * the test-before-save requirement.
+ * Detect whether a judge config references `reference_data`. Gates the
+ * test-before-save requirement, and (for llm_judge) whether the Test Judge pane
+ * offers a reference-data input.
  */
 
 /**
  * For llm_judge: returns true when the string `reference_data` appears
  * anywhere in the prompt template.
  *
- * NOTE for whoever flips SHOW_REFERENCE_DATA_UI on: the backend-assembled default
- * judge prompt for a reference-answer eval now contains a `reference_data` block, so
- * this returns true for every such judge built from the default. Today that is inert —
- * compute_uses_reference_data() in eval_config_builder.svelte short-circuits while the
- * flag is off. Once it is on, those judges get forced through the test-before-save gate
- * and save `reference_keys` from whatever the Test Judge pane holds. A stored
- * `reference_keys: ["reference_answer"]` makes every *calibration* item skip, because
- * judge calibration scores the golden item as itself and so has no reference data by
- * design (EvalTaskInput.from_trace). Decide that deliberately rather than inheriting it.
+ * One of the signals `referenceDataUsageMode` uses to decide whether the Test Judge
+ * pane offers a reference-data input, whatever SHOW_REFERENCE_DATA_UI is set to. It is
+ * the signal for prompts the server derives nothing for — a hand-written one, or one
+ * still being edited. What the *saved* judge will require comes from the server
+ * instead (`DefaultLlmJudgePromptResponse.reference_keys`), so this test no longer has
+ * to be right on its own: a user who edits the reference block out of a default prompt
+ * flips this to false while the server keeps requiring the key, and the pane still
+ * offers the input.
+ *
+ * A user-edited prompt is taken at its word — it says `reference_data`, so the pane
+ * offers a place to put some. It is a substring test, so a mention inside prose or a
+ * Jinja comment counts too; offering an unused input is the harmless direction.
  */
 export function uses_reference_data_llm_judge(
   prompt_template: string,
 ): boolean {
   return prompt_template.includes("reference_data")
+}
+
+/**
+ * The reference-data keys an llm_judge prompt reads, in first-appearance order.
+ *
+ * Drives the Test Judge pane's hint for names the server did not declare, so the tester
+ * has something to type rather than guessing. Whether a missing one actually skips
+ * depends on how the prompt reads it — a bare `{{ reference_data.x }}` raises under
+ * StrictUndefined, a `.get("x")` renders around it — so the pane words these as read,
+ * not required, and takes required names from the server. Same textual approximation as
+ * `uses_reference_data_llm_judge` — it reads Jinja source, not an AST — covering
+ * `reference_data.key`, `reference_data["key"]`, and `reference_data.get("key")`.
+ */
+export function reference_keys_in_llm_judge_prompt(
+  prompt_template: string,
+): string[] {
+  // Dict methods a template may call on `reference_data`. They match as attributes but
+  // naming one as a key to type would send the user somewhere wrong.
+  const NOT_KEYS = new Set(["get", "items", "keys", "values"])
+  // Alternatives in precedence order: `.get("key")` before the bare attribute, so the
+  // argument is read as the key rather than `get` itself.
+  const pattern =
+    /\breference_data\s*(?:\.\s*get\s*\(\s*['"]([^'"]+)['"]|\.\s*([A-Za-z_]\w*)|\[\s*['"]([^'"]+)['"]\s*\])/g
+
+  const keys: string[] = []
+  for (const match of prompt_template.matchAll(pattern)) {
+    const key = match[1] ?? match[2] ?? match[3]
+    if (key && !NOT_KEYS.has(key) && !keys.includes(key)) {
+      keys.push(key)
+    }
+  }
+  return keys
 }
 
 /**

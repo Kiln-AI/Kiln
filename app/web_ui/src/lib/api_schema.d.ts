@@ -5354,11 +5354,6 @@ export interface components {
              * @description The name of the eval config.
              */
             name?: string | null;
-            /**
-             * Reference Keys
-             * @description Reference data keys this judge needs (captured from test).
-             */
-            reference_keys?: string[];
         };
         /**
          * CreateMcpRunConfigRequest
@@ -5995,6 +5990,11 @@ export interface components {
             judge_prompt: string;
             /** System Prompt */
             system_prompt: string;
+            /**
+             * Reference Keys
+             * @description Reference data keys the server will require of a judge for this eval, derived the same way `create_llm_judge_config` derives them. Returned so the builder can offer a place to supply them when testing, rather than re-deriving the rule client-side from the prompt's text.
+             */
+            reference_keys?: string[];
         };
         /**
          * DeleteConfigResponse
@@ -6834,14 +6834,6 @@ export interface components {
              * @description ID of the EvalInput used for this run (V2 evals). Mutually exclusive with dataset_id.
              */
             eval_input_id?: string | null;
-            /**
-             * Reference Data
-             * @deprecated
-             * @description DEPRECATED: nothing writes this field any more, and nothing ever read it. The reference data a V2 judge saw is derived at scoring time from the item `dataset_id` or `eval_input_id` names; a pointer-mode record must not carry a second copy of it. Kept declared and loadable for records written before the field was retired.
-             */
-            reference_data?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            } | null;
             /**
              * Skipped Reason
              * @description If set, this run was skipped. Stored as str for back/forward-compat; conventionally a SkippedReason value.

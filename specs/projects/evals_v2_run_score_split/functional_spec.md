@@ -127,7 +127,6 @@ Retained and meaningful:
 | `dataset_id` / `eval_input_id` | the dataset item — **this is the `ItemKey`** |
 | `intermediate_outputs` | judge thinking |
 | `skipped_reason` / `skipped_detail` | scoring skips |
-| `reference_data` | what the scorer actually saw |
 | `eval_usage` | **new** — the judge's own token/cost usage |
 | `eval_config_eval` | unchanged; shipped V1 field (D18) |
 
