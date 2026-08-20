@@ -13,8 +13,11 @@ import { client } from "$lib/api_client"
  * @throws Error if the studio_server call itself fails.
  */
 export async function checkKilnCopilotAvailable(): Promise<boolean> {
+  // Bounded: callers gate UI (e.g. the Kiln Pro button's spinner) on this
+  // call, so a hung request must fail rather than stick forever.
   const { data, error } = await client.GET(
     "/api/provider/verify_kiln_copilot_api_key",
+    { signal: AbortSignal.timeout(10_000) },
   )
   if (error) {
     throw error

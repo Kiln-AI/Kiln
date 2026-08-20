@@ -10,7 +10,15 @@ from kiln_ai.cli.commands.package_project import (
     PackageForTrainingConfig,
     package_project_for_training,
 )
-from kiln_ai.datamodel import Prompt, PromptOptimizationJob
+from kiln_ai.datamodel import Prompt, PromptOptimizationJob, Task, TaskOutputRatingType
+from kiln_ai.datamodel.eval import (
+    V2_PROPERTY_TYPES,
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    LlmJudgeProperties,
+    V2EvalType,
+)
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.utils.config import Config
@@ -55,6 +63,90 @@ from app.desktop.studio_server.utils.response_utils import unwrap_response
 logger = logging.getLogger(__name__)
 
 
+def has_train_split(eval: Eval) -> bool:
+    """Whether this eval has a train split.
+
+    The optimization service resolves both split types from the project package:
+    TaskRun-backed splits from `runs/` and EvalInput-backed splits from
+    `eval_inputs/`, so any declared train split counts.
+    """
+    return eval.splits.get("train") is not None
+
+
+# V2 eval types the optimization service does not support: these need data the
+# service cannot produce (a full conversation trace) or a runtime it does not
+# provide (sandboxed code execution).
+_UNSUPPORTED_OPTIMIZATION_EVAL_TYPES = {
+    V2EvalType.tool_call_check,
+    V2EvalType.step_count_check,
+    V2EvalType.code_eval,
+}
+
+# Deterministic V2 eval types: they produce binary pass/fail scores, so only
+# pass_fail output scores are meaningful for optimization.
+_DETERMINISTIC_EVAL_TYPES = {
+    V2EvalType.exact_match,
+    V2EvalType.pattern_match,
+    V2EvalType.contains,
+    V2EvalType.set_check,
+}
+
+
+def optimization_unsupported_reason(eval: Eval, config: EvalConfig) -> str | None:
+    """Why the optimization service cannot score this eval, or None if it can.
+
+    The single source of truth for eval-type support: check_eval reports it so
+    the UI marks the eval invalid, and reject_unsupported_evals refuses the job
+    with it, so the two cannot drift apart.
+    """
+    if config.config_type != EvalConfigType.v2:
+        return None
+    props = config.properties
+    if not isinstance(props, V2_PROPERTY_TYPES):
+        return None
+    if props.type in _UNSUPPORTED_OPTIMIZATION_EVAL_TYPES:
+        return (
+            f"Eval '{eval.name}' uses eval type '{props.type.value}', which "
+            "prompt optimization does not support yet."
+        )
+    if props.type in _DETERMINISTIC_EVAL_TYPES and any(
+        score.type != TaskOutputRatingType.pass_fail for score in eval.output_scores
+    ):
+        return (
+            f"Eval '{eval.name}' uses the deterministic eval type "
+            f"'{props.type.value}', which produces pass/fail scores, but has "
+            "output scores that are not pass/fail. Change them to pass/fail "
+            "to use this eval for prompt optimization."
+        )
+    return None
+
+
+def reject_unsupported_evals(task: Task, eval_ids: list[str]) -> None:
+    """Refuse a job whose evals the optimization service cannot score.
+
+    This runs before the job is submitted (and billed), so a job that would fail
+    the service's own validation fails here first, for the same reasons the
+    check_eval endpoint reports (see optimization_unsupported_reason).
+
+    Ids that name no eval on the task are left alone: this endpoint does not validate eval
+    ids, and this guard is not the place to start.
+    """
+    evals_by_id = {eval.id: eval for eval in task.evals(readonly=True)}
+    for eval_id in eval_ids:
+        eval = evals_by_id.get(eval_id)
+        if eval is None or eval.current_config_id is None:
+            continue
+        config = next(
+            (c for c in eval.configs(readonly=True) if c.id == eval.current_config_id),
+            None,
+        )
+        if config is None:
+            continue
+        reason = optimization_unsupported_reason(eval, config)
+        if reason is not None:
+            raise HTTPException(status_code=400, detail=reason)
+
+
 def is_job_status_final(status: str) -> bool:
     """
     Check if a job status is final (succeeded, failed, or cancelled).
@@ -92,6 +184,7 @@ class CheckEvalResponse(BaseModel):
     has_default_config: bool
     has_train_set: bool
     model_is_supported: bool
+    unsupported_reason: str | None = None
 
 
 def _get_api_key() -> str:
@@ -434,7 +527,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             if not eval.current_config_id:
                 return CheckEvalResponse(
                     has_default_config=False,
-                    has_train_set=bool(eval.train_set_filter_id),
+                    has_train_set=has_train_split(eval),
                     model_is_supported=False,
                 )
 
@@ -446,18 +539,43 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             except HTTPException:
                 return CheckEvalResponse(
                     has_default_config=False,
-                    has_train_set=bool(eval.train_set_filter_id),
+                    has_train_set=has_train_split(eval),
                     model_is_supported=False,
                 )
 
-            # Extract model info from config
+            # The same support rules the submission guard enforces, reported so
+            # the UI marks unsupported evals invalid before submission.
+            unsupported_reason = optimization_unsupported_reason(eval, config)
+            if unsupported_reason is not None:
+                return CheckEvalResponse(
+                    has_default_config=True,
+                    has_train_set=has_train_split(eval),
+                    model_is_supported=False,
+                    unsupported_reason=unsupported_reason,
+                )
+
+            # Extract model info from config. Legacy configs carry it at the
+            # root; V2 LLM-judge configs carry it in their typed properties;
+            # deterministic V2 configs call no model at all, so there is
+            # nothing to check and the model counts as supported.
             model_name = config.model_name
             model_provider = config.model_provider
+            if config.config_type == EvalConfigType.v2:
+                props = config.properties
+                if isinstance(props, LlmJudgeProperties):
+                    model_name = props.model_name
+                    model_provider = props.model_provider
+                else:
+                    return CheckEvalResponse(
+                        has_default_config=True,
+                        has_train_set=has_train_split(eval),
+                        model_is_supported=True,
+                    )
 
             if not model_name or not model_provider:
                 return CheckEvalResponse(
                     has_default_config=True,
-                    has_train_set=bool(eval.train_set_filter_id),
+                    has_train_set=has_train_split(eval),
                     model_is_supported=False,
                 )
 
@@ -477,7 +595,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
 
             return CheckEvalResponse(
                 has_default_config=True,
-                has_train_set=bool(eval.train_set_filter_id),
+                has_train_set=has_train_split(eval),
                 model_is_supported=response.is_model_supported,
             )
 
@@ -512,6 +630,8 @@ def connect_prompt_optimization_job_api(app: FastAPI):
         project = task.parent_project()
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
+
+        reject_unsupported_evals(task, request.eval_ids)
 
         try:
             # Validate the run config doesn't use tools

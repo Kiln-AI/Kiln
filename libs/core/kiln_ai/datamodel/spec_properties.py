@@ -205,11 +205,14 @@ LocalizationPropertiesValidator = Annotated[
 class AppropriateToolUseProperties(TypedDict, total=True):
     spec_type: Literal[SpecType.appropriate_tool_use]
     core_requirement: str
-    tool_id: str
-    tool_function_name: str
     tool_use_guidelines: str
     appropriate_tool_use_examples: str
     inappropriate_tool_use_examples: str
+    # Optional: only set by specs created before the tool-call judge existed, when
+    # the user had to pick a single tool up front. Tool-call-check judges carry
+    # their own expected-tool list, so new specs don't collect these.
+    tool_id: NotRequired[str]
+    tool_function_name: NotRequired[str]
 
 
 def validate_appropriate_tool_use_properties(
@@ -219,12 +222,11 @@ def validate_appropriate_tool_use_properties(
         properties,
         required_fields=[
             "core_requirement",
-            "tool_id",
-            "tool_function_name",
             "tool_use_guidelines",
             "appropriate_tool_use_examples",
             "inappropriate_tool_use_examples",
         ],
+        optional_fields=["tool_id", "tool_function_name"],
     )
 
 

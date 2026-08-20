@@ -1,7 +1,9 @@
 """Tests for OpenAI types wrapper to ensure compatibility."""
 
+import json
 from typing import get_args, get_origin
 
+import pytest
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam as OpenAIChatCompletionAssistantMessageParam,
 )
@@ -12,11 +14,14 @@ from openai.types.chat import (
     ChatCompletionToolMessageParam as OpenAIChatCompletionToolMessageParam,
 )
 
+from kiln_ai.datamodel.task_output import TaskOutput
+from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.utils.open_ai_types import (
     KILN_ONLY_MESSAGE_FIELDS,
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionToolMessageParamWrapper,
     sanitize_messages_for_provider,
+    serialize_trace,
     trace_has_pending_client_tool_calls,
 )
 from kiln_ai.utils.open_ai_types import (
@@ -407,3 +412,183 @@ def test_trace_has_pending_client_tool_calls_mixed_task_response_and_external():
         },
     ]
     assert trace_has_pending_client_tool_calls(trace) is True
+
+
+class TestSerializeTrace:
+    """`serialize_trace` is what stands between a trace and `json.dumps`.
+
+    A trace is not plain data once pydantic has validated it: the per-message
+    `usage` key is a `MessageUsage` model, which the stdlib encoder refuses. These
+    pin both halves of that - that the model shapes encode, and that the ordinary
+    all-plain-data trace encodes to exactly the same bytes as before.
+    """
+
+    def test_serializes_a_message_usage_model_that_json_dumps_cannot(self):
+        trace: list[KilnChatCompletionMessageParam] = [
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": "yo",
+                "usage": MessageUsage(input_tokens=4, output_tokens=2, cost=0.01),
+            },
+        ]
+
+        with pytest.raises(TypeError, match="MessageUsage is not JSON serializable"):
+            json.dumps(trace, indent=2, ensure_ascii=False)
+
+        assert json.loads(serialize_trace(trace))[1]["usage"] == {
+            "input_tokens": 4,
+            "output_tokens": 2,
+            "total_tokens": None,
+            "cost": 0.01,
+            "cached_tokens": None,
+        }
+
+    def test_output_is_byte_identical_to_json_dumps_for_a_plain_data_trace(self):
+        """The string reaches the UI and the OpenAPI surface, so existing data must
+        render exactly as it did before, formatting included."""
+        trace: list[KilnChatCompletionMessageParam] = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "héllo \U0001f600"},
+            {
+                "role": "assistant",
+                "content": "resp",
+                "latency_ms": 12,
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {"name": "f", "arguments": "{}"},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "c1", "content": "r", "is_error": False},
+        ]
+
+        assert serialize_trace(trace) == json.dumps(trace, indent=2, ensure_ascii=False)
+
+    def test_shapes_the_wrappers_do_not_declare_survive_byte_identically(self):
+        """The riskiest parity case, because nothing about it is declared.
+
+        A key or a role the wrappers don't know about matches no union member, so
+        pydantic drops to duck-typed inference and copies the message through
+        verbatim. That fallback is what makes this function a safe swap for
+        `json.dumps`, and it is version-sensitive: a pydantic upgrade that
+        tightened union serialization would start silently dropping data. This is
+        the test that would fail first.
+        """
+        trace: list[KilnChatCompletionMessageParam] = [
+            {
+                "role": "assistant",
+                "content": "resp",
+                # Keys LiteLLM and Anthropic put on messages that Kiln never declared.
+                "provider_specific_fields": {"thinking_blocks": [{"n": 1}]},
+                "cache_control": {"type": "ephemeral"},
+            },
+            {"role": "wizard", "content": "a role from a newer Kiln"},
+        ]
+
+        assert serialize_trace(trace) == json.dumps(trace, indent=2, ensure_ascii=False)
+
+    def test_matches_what_the_task_run_writes_to_disk(self):
+        """Same bytes the trace is persisted with - one shape for stored and
+        displayed traces, whichever path produced them."""
+        task_run = TaskRun(
+            input="in",
+            output=TaskOutput(output="out"),
+            trace=[
+                {"role": "user", "content": "hi"},
+                {
+                    "role": "assistant",
+                    "content": "yo",
+                    "usage": MessageUsage(input_tokens=4, cost=0.01),
+                },
+            ],
+        )
+
+        persisted = json.loads(task_run.model_dump_json())["trace"]
+
+        assert json.loads(serialize_trace(task_run.trace)) == persisted
+
+    def test_a_trace_loaded_back_off_disk_still_needs_this(self, tmp_path):
+        """The bug is not confined to freshly built traces. Pydantic re-validates
+        `usage` into a `MessageUsage` on load too, so a TaskRun read from disk hits
+        the same `json.dumps` failure the in-memory one does."""
+        path = tmp_path / "task_run.kiln"
+        path.write_text(
+            TaskRun(
+                input="in",
+                output=TaskOutput(output="out"),
+                trace=[
+                    {
+                        "role": "assistant",
+                        "content": "yo",
+                        "usage": MessageUsage(input_tokens=4),
+                    }
+                ],
+            ).model_dump_json(exclude={"path"}),
+            encoding="utf-8",
+        )
+
+        loaded = TaskRun.load_from_file(path)
+
+        assert loaded.trace is not None
+        assert isinstance(loaded.trace[0]["usage"], MessageUsage)
+        with pytest.raises(TypeError, match="MessageUsage is not JSON serializable"):
+            json.dumps(loaded.trace, indent=2, ensure_ascii=False)
+        assert (
+            json.loads(serialize_trace(loaded.trace))[0]["usage"]["input_tokens"] == 4
+        )
+
+    def test_a_list_valued_content_survives_being_serialized(self):
+        """Serializing must not damage the trace it was handed.
+
+        Pydantic validates a list-valued `content` into a single-use
+        `ValidatorIterator`, and reading it empties it. Without the materializing
+        walk this serialized correctly once and as `content: []` forever after,
+        and a `save_to_file` on the same object persisted the empty version.
+        """
+        task_run = TaskRun(
+            input="in",
+            output=TaskOutput(output="out"),
+            trace=[
+                {"role": "assistant", "content": [{"type": "text", "text": "KEEP"}]}
+            ],
+        )
+
+        first = serialize_trace(task_run.trace)
+        second = serialize_trace(task_run.trace)
+
+        assert json.loads(first)[0]["content"] == [{"text": "KEEP", "type": "text"}]
+        assert second == first
+        # And the trace is still intact for whoever else holds it - the failure mode
+        # here was a persisted `content: []`, not just a bad second read.
+        #
+        # This dump prints a `PydanticSerializationUnexpectedValue` warning, which is
+        # expected, not a defect: a materialized list matches neither the `str` nor the
+        # `generator` branch of the union the way the lazy iterator did. The bytes it
+        # writes are what this asserts, and they are correct.
+        assert json.loads(task_run.model_dump_json())["trace"][0]["content"] == [
+            {"text": "KEEP", "type": "text"}
+        ]
+
+    def test_materializing_content_leaves_a_usage_model_alone(self):
+        """The walk is scoped to `content` and must not be generalized.
+
+        A pydantic model is iterable - it yields `(name, value)` pairs - so a walk
+        over "any iterable value" would turn `usage` into a list of pairs. This is
+        the test that catches that.
+        """
+        trace: list[KilnChatCompletionMessageParam] = [
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "hi"}],
+                "usage": MessageUsage(input_tokens=4, cost=0.01),
+            }
+        ]
+
+        serialized = json.loads(serialize_trace(trace))[0]
+
+        assert serialized["content"] == [{"text": "hi", "type": "text"}]
+        assert serialized["usage"]["input_tokens"] == 4
+        assert serialized["usage"]["cost"] == 0.01

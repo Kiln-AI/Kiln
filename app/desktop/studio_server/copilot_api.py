@@ -10,7 +10,7 @@ import jsonschema
 from fastapi import FastAPI, File, HTTPException, Path, UploadFile
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.basemodel import FilenameString
-from kiln_ai.datamodel.datamodel_enums import Priority
+from kiln_ai.datamodel.datamodel_enums import EvalStatus, Priority
 from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalConfigType
 from kiln_ai.datamodel.json_schema import validate_schema
 from kiln_ai.datamodel.spec import (
@@ -27,13 +27,7 @@ from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     agent_policy_require_approval,
 )
-from kiln_server.utils.spec_utils import (
-    generate_spec_eval_filter_ids,
-    generate_spec_eval_tags,
-    spec_eval_data_type,
-    spec_eval_output_score,
-    spec_eval_template,
-)
+from kiln_server.utils.spec_utils import build_spec_eval
 from pydantic import BaseModel, Field
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
@@ -737,37 +731,22 @@ def connect_copilot_api(app: FastAPI):
         """
         task = task_from_id(project_id, task_id)
 
-        # Generate tags and filter IDs
-        eval_tag, train_tag, golden_tag = generate_spec_eval_tags(request.name)
-        eval_set_filter_id, train_set_filter_id, eval_configs_filter_id = (
-            generate_spec_eval_filter_ids(eval_tag, train_tag, golden_tag)
-        )
-
         # Extract spec_type from properties (discriminated union)
         spec_type = request.properties["spec_type"]
-
-        # Determine eval properties
-        template = spec_eval_template(spec_type)
-        output_scores = [spec_eval_output_score(request.name)]
-        evaluation_data_type = spec_eval_data_type(
-            spec_type, request.evaluate_full_trace
-        )
 
         # Build models but don't save yet, collect all models first
         models_to_save: list[Eval | EvalConfig | TaskRun | Spec] = []
 
-        # 1. Create the Eval
-        eval = Eval(
-            parent=task,
+        # 1. Create the Eval, and the dataset tags its generated runs must carry.
+        # Priority/status live on the eval; the spec below mirrors them at
+        # creation for a truthful spec file.
+        eval, tags = build_spec_eval(
+            task=task,
             name=request.name,
-            description=None,
-            template=template,
-            output_scores=output_scores,
-            eval_set_filter_id=eval_set_filter_id,
-            train_set_filter_id=train_set_filter_id,
-            eval_configs_filter_id=eval_configs_filter_id,
-            template_properties=None,
-            evaluation_data_type=evaluation_data_type,
+            spec_type=spec_type,
+            evaluate_full_trace=request.evaluate_full_trace,
+            priority=Priority.p1,
+            status=EvalStatus.active,
         )
         models_to_save.append(eval)
 
@@ -807,13 +786,14 @@ def connect_copilot_api(app: FastAPI):
             spec_definition=request.definition,
         )
 
-        # 4. Create TaskRuns for eval, train, and golden datasets
+        # 4. Create TaskRuns for test, train, val, and golden datasets
         dataset_runs = create_dataset_task_runs(
             all_examples=all_examples,
             reviewed_examples=request.reviewed_examples,
-            eval_tag=eval_tag,
-            train_tag=train_tag,
-            golden_tag=golden_tag,
+            test_tag=tags.test_tag,
+            train_tag=tags.train_tag,
+            val_tag=tags.val_tag,
+            golden_tag=tags.golden_tag,
             spec_name=request.name,
         )
         task_runs = dataset_runs.task_runs

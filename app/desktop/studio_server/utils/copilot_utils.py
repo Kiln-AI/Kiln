@@ -43,7 +43,11 @@ KILN_COPILOT_MODEL_PROVIDER = "kiln"
 KILN_ADAPTER_NAME = "kiln-adapter"
 NUM_SAMPLES_PER_TOPIC = 20
 NUM_TOPICS = 15
-MIN_GOLDEN_EXAMPLES = 25
+# Matches the golden-set goal the eval detail page holds users to
+# (MIN_GOLDEN_DATASET_SIZE). Every example above the reviewed ones is minted unrated, so
+# this is the hand-rating backlog a new spec starts with: a floor above the goal asks for
+# work the app never asks for again.
+MIN_GOLDEN_EXAMPLES = 12
 
 
 def get_copilot_api_key() -> str:
@@ -247,17 +251,19 @@ class DatasetTaskRuns:
 def create_dataset_task_runs(
     all_examples: list[SampleApi],
     reviewed_examples: list[ReviewedExample],
-    eval_tag: str,
+    test_tag: str,
     train_tag: str,
+    val_tag: str,
     golden_tag: str,
     spec_name: str,
 ) -> DatasetTaskRuns:
-    """Create TaskRuns for eval, train, and golden datasets.
+    """Create TaskRuns for test, train, val, and golden datasets.
 
     Samples from all_examples (mutating it) and creates TaskRuns for:
-    - Eval dataset
-    - Train dataset
     - Golden dataset (reviewed examples + unrated examples to reach MIN_GOLDEN_EXAMPLES)
+    - Test dataset (half of the remaining examples)
+    - Val dataset (one third of the other half)
+    - Train dataset (the rest)
 
     Returns DatasetTaskRuns without parent set - caller must set parent and call
     save_pending_feedback after saving each run.
@@ -283,16 +289,24 @@ def create_dataset_task_runs(
         for example in unrated_golden_examples:
             result.add_run(create_task_run_from_sample(example, golden_tag, extra_tags))
 
-    # Sample half the remaining examples for eval vs train datasets
+    # Sample half the remaining examples for the test dataset, then split the
+    # other half between val (one third) and train (two thirds)
     example_count = len(all_examples)
-    eval_count = example_count // 2
-    train_count = example_count - eval_count
-    eval_examples = sample_and_remove(all_examples, eval_count)
+    test_count = example_count // 2
+    remaining_count = example_count - test_count
+    val_count = remaining_count // 3
+    train_count = remaining_count - val_count
+    test_examples = sample_and_remove(all_examples, test_count)
+    val_examples = sample_and_remove(all_examples, val_count)
     train_examples = sample_and_remove(all_examples, train_count)
 
-    # Create TaskRuns for eval examples
-    for example in eval_examples:
-        result.add_run(create_task_run_from_sample(example, eval_tag, extra_tags))
+    # Create TaskRuns for test examples
+    for example in test_examples:
+        result.add_run(create_task_run_from_sample(example, test_tag, extra_tags))
+
+    # Create TaskRuns for val examples
+    for example in val_examples:
+        result.add_run(create_task_run_from_sample(example, val_tag, extra_tags))
 
     # Create TaskRuns for train examples
     for example in train_examples:

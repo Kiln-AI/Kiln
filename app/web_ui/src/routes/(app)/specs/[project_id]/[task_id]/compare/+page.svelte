@@ -38,6 +38,8 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import { tagFromFilterId } from "../spec_utils"
+  import { eval_split, task_run_split_filter_id } from "$lib/utils/eval_splits"
+  import { build_eval_generation_splits_param } from "$lib/utils/eval_generation_splits"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import RunEval from "$lib/components/run_eval.svelte"
@@ -594,6 +596,31 @@
     return value.toFixed(2)
   }
 
+  function getModelExcluded(
+    modelKey: string | null,
+    evalID: string | null,
+  ): { n_excluded: number; n_used: number } {
+    if (
+      evalID === "kiln_cost_section" ||
+      !modelKey ||
+      !eval_scores_cache[modelKey]
+    )
+      return { n_excluded: 0, n_used: 0 }
+
+    const evalScores = eval_scores_cache[modelKey]
+    const evalResult = evalScores.eval_results.find((e) => e.eval_id === evalID)
+    if (!evalResult?.eval_config_result) return { n_excluded: 0, n_used: 0 }
+
+    // Read both n_excluded and n_used from the first available ScoreSummary
+    // to keep the data source consistent (same approach as run_config_comparison_table)
+    const results = evalResult.eval_config_result.results
+    for (const key of Object.keys(results)) {
+      const ss = results[key]
+      if (ss) return { n_excluded: ss.n_excluded ?? 0, n_used: ss.n_used ?? 0 }
+    }
+    return { n_excluded: 0, n_used: 0 }
+  }
+
   function getModelPercentComplete(
     modelKey: string | null,
     evalID: string | null,
@@ -647,6 +674,38 @@
     const evalData = eval_data_cache[eval_id]
     if (!evalData) return
 
+    // Same refusal the eval detail page and the data-gen dialog make: this flow adds
+    // TaskRuns, and an EvalInput-backed test dataset can't receive them.
+    if (eval_split(evalData, "test")?.source === "eval_input") {
+      alert(
+        "This eval uses our new eval dataset format, which can't be generated from this UI.",
+      )
+      return
+    }
+
+    // Adding data means adding TaskRuns, so only a TaskRun-backed test split has a
+    // tag to add them under.
+    const test_filter_id = task_run_split_filter_id(evalData, "test")
+    const test_tag = test_filter_id
+      ? tagFromFilterId(test_filter_id)
+      : undefined
+    const golden_tag = evalData.eval_configs_filter_id
+      ? tagFromFilterId(evalData.eval_configs_filter_id)
+      : undefined
+
+    // Refuse before navigating, matching the eval detail page's identical guard. Without
+    // it, a missing tag falls through to a navigation with no `splits` param at all, and
+    // the user adds rows that silently never join the eval's set. The golden half is
+    // reachable in ordinary use: a non-rag eval with no golden set is the expected V2
+    // state (functional spec 6.1), and this button appears precisely when the eval's
+    // test split is empty.
+    if (!test_tag || (evalData.template !== "rag" && !golden_tag)) {
+      alert(
+        "No test or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
+      )
+      return
+    }
+
     const params = new URLSearchParams()
     params.set("reason", "eval")
     if (evalData.template) {
@@ -661,18 +720,11 @@
       `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}`,
     )
 
-    const eval_tag = tagFromFilterId(evalData.eval_set_filter_id)
-    if (evalData.template === "rag") {
-      if (eval_tag) {
-        params.set("splits", `${eval_tag}:1.0`)
-      }
-    } else {
-      const golden_tag = evalData.eval_configs_filter_id
-        ? tagFromFilterId(evalData.eval_configs_filter_id)
-        : undefined
-      if (eval_tag && golden_tag) {
-        params.set("splits", `${eval_tag}:0.8,${golden_tag}:0.2`)
-      }
+    // Every entry into this flow allocates generated data the same way, so the eval's
+    // splits decide the allocation rather than which button reached here.
+    const splits_param = build_eval_generation_splits_param(evalData)
+    if (splits_param) {
+      params.set("splits", splits_param)
     }
 
     if (evalData.template === "tool_call") {
@@ -1033,10 +1085,31 @@
                                   runConfigId,
                                   section.eval_id,
                                 )}
+                              {@const incomplete_excluded = getModelExcluded(
+                                selectedModels[i],
+                                section.eval_id,
+                              )}
                               <div class="flex flex-col items-center gap-1">
                                 <div class="text-warning text-sm font-medium">
                                   Eval Incomplete
                                 </div>
+                                {#if incomplete_excluded.n_excluded > 0}
+                                  {@const incomplete_ratio =
+                                    incomplete_excluded.n_excluded /
+                                    (incomplete_excluded.n_used +
+                                      incomplete_excluded.n_excluded)}
+                                  <span
+                                    class={incomplete_ratio > 0.2
+                                      ? "text-error"
+                                      : "text-warning"}
+                                  >
+                                    <InfoTooltip
+                                      symbol="info"
+                                      position="top"
+                                      tooltip_text={`${incomplete_excluded.n_excluded} of ${incomplete_excluded.n_used + incomplete_excluded.n_excluded} cases were skipped and are not reflected in this score.`}
+                                    />
+                                  </span>
+                                {/if}
                                 <div class="text-left">
                                   {#if getEvalDatasetSize(section.eval_id) === 0}
                                     <button
@@ -1087,6 +1160,13 @@
                           </div>
                         {/if}
                       {:else}
+                        {@const excluded_info =
+                          item_index === 0
+                            ? getModelExcluded(
+                                selectedModels[i],
+                                section.eval_id,
+                              )
+                            : null}
                         <div
                           class="px-6 py-4 text-center flex items-center justify-center border-b border-gray-100"
                         >
@@ -1094,6 +1174,23 @@
                           <div class="flex flex-col items-center">
                             <span class="text-gray-900">
                               {getModelValue(selectedModels[i], item.key)}
+                              {#if excluded_info && excluded_info.n_excluded > 0}
+                                {@const ratio =
+                                  excluded_info.n_excluded /
+                                  (excluded_info.n_used +
+                                    excluded_info.n_excluded)}
+                                <span
+                                  class={ratio > 0.2
+                                    ? "text-error"
+                                    : "text-warning"}
+                                >
+                                  <InfoTooltip
+                                    symbol="info"
+                                    position="top"
+                                    tooltip_text={`${excluded_info.n_excluded} of ${excluded_info.n_used + excluded_info.n_excluded} cases were skipped and are not reflected in this score.`}
+                                  />
+                                </span>
+                              {/if}
                             </span>
                             {#if i > 0 && selectedModels[0] !== null}
                               {@const baseRaw = getModelValueRaw(

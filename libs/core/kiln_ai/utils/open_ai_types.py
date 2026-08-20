@@ -30,6 +30,7 @@ from openai.types.chat.chat_completion_assistant_message_param import (
     ContentArrayOfContentPart,
     FunctionCall,
 )
+from pydantic import TypeAdapter
 from typing_extensions import Required, TypedDict
 
 from kiln_ai.utils.usage import MessageUsage
@@ -162,6 +163,77 @@ def sanitize_messages_for_provider(messages: Iterable[Any]) -> list[Any]:
         else:
             sanitized.append(message)
     return sanitized
+
+
+_trace_adapter: TypeAdapter[list[ChatCompletionMessageParam]] = TypeAdapter(
+    list[ChatCompletionMessageParam]
+)
+
+
+def _materialize_lazy_content(trace: Iterable[Any]) -> None:
+    """Replace each message's lazily-validated `content` with the list it yields.
+
+    Pydantic validates the wrappers' ``Iterable[...]``-typed fields into a lazy,
+    single-use ``ValidatorIterator``. Serializing reads it, and a read empties it, so
+    without this a trace would serialize correctly once and as ``content: []`` every
+    time after - and any ``save_to_file`` on the same object would persist the empty
+    version. The read is unavoidable; writing the result back in place is what makes
+    it harmless.
+
+    Scoped to ``content`` deliberately, and it needs to stay that way. ``content`` is
+    the only ``Iterable[...]``-typed field across all six union members (``tool_calls``
+    is a ``List``, which pydantic materializes eagerly). Widening this to "any iterable
+    value" would also sweep in ``usage`` - and iterating a pydantic model yields its
+    ``(name, value)`` pairs, so a ``MessageUsage`` would serialize as a list of pairs.
+
+    Takes ``Iterable[Any]``, the same structural shape
+    :func:`sanitize_messages_for_provider` uses - though for a different reason: that
+    one is loose because its callers really do pass heterogeneous values, while here
+    the sole caller passes a precise ``list[ChatCompletionMessageParam]`` and the
+    ``Any`` exists only to make the write expressible. One union member declares
+    ``content`` as ``str | None`` (the function role), so no tighter signature type
+    checks, and ``typing.cast`` is banned repo-wide. The guard below still means only
+    a message actually holding a lazy iterator is ever written to.
+
+    One side effect, not a defect: a lazy ``content`` matched the union's ``generator``
+    branch, so ``TaskRun.model_dump_json`` emitted no warning for it. A materialized
+    ``list`` matches neither ``str`` nor ``generator``, so each later dump of the same
+    object emits one ``PydanticSerializationUnexpectedValue`` warning. The bytes
+    written are unchanged - this is stderr noise only.
+    """
+    for message in trace:
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if content is None or isinstance(content, (str, bytes, list, dict)):
+            continue
+        message["content"] = list(content)
+
+
+def serialize_trace(trace: list[ChatCompletionMessageParam]) -> str:
+    """Serialize a trace to the pretty-printed JSON that Kiln stores and displays.
+
+    Not `json.dumps`: a validated trace is not plain data. Pydantic coerces the
+    per-message `usage` key to a `MessageUsage` model (both in memory and when a
+    TaskRun is loaded back off disk), and the stdlib encoder cannot serialize it.
+    For an otherwise-plain trace this returns byte-for-byte what `json.dumps(...,
+    indent=2, ensure_ascii=False)` returned, so stored traces render unchanged.
+
+    Normalizes a lazily-validated `content` to a plain list in place first, so that
+    serializing is repeatable and leaves the trace intact for whoever holds it - see
+    :func:`_materialize_lazy_content`.
+    """
+    _materialize_lazy_content(trace)
+    # warnings=False: every message with a key the wrappers don't declare, a
+    # list-valued `content`, or a `Usage` in the `usage` slot fails to match a
+    # union member and emits a six-line serializer warning - on every message, on
+    # every eval-results request. The mismatch is not a defect: pydantic then falls
+    # back to duck-typed inference, which is exactly what keeps the output
+    # byte-identical to the `json.dumps` this replaced. Silencing it loses no signal
+    # a test wouldn't catch first - TestSerializeTrace pins that parity, including
+    # the unknown-key and unknown-role cases that rely on the fallback, so a pydantic
+    # upgrade that tightened union serialization fails there rather than in a log.
+    return _trace_adapter.dump_json(trace, indent=2, warnings=False).decode()
 
 
 def trace_has_pending_client_tool_calls(

@@ -244,6 +244,160 @@ describe("SynthDataGuidanceDataModel", () => {
       )
     })
 
+    it("should keep the custom template for tool_call evals with no resolvable tool", async () => {
+      const mockEval = {
+        id: "eval1",
+        name: "Tool Eval",
+        template: "tool_call",
+        template_properties: null,
+      } as unknown as Eval
+
+      mockClient.GET.mockResolvedValue({
+        data: mockEval,
+        error: null,
+      })
+
+      await model.load(
+        null,
+        "proj1::task1::eval1",
+        "proj1",
+        "task1",
+        "eval",
+        mockTask,
+        {},
+      )
+
+      expect(get(model.selected_template)).toBe("custom")
+      expect(get(model.loading_error)).toBe(null)
+    })
+
+    it("should select the tool use template for template-less evals with a tool_call_check judge", async () => {
+      const mockEval = {
+        id: "eval1",
+        name: "Tool Eval",
+        template: null,
+        template_properties: null,
+        current_config_id: "config1",
+      } as unknown as Eval
+
+      ;(client.GET as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+        (url: string) => {
+          if (url.includes("eval_configs")) {
+            return Promise.resolve({
+              data: [
+                {
+                  id: "config1",
+                  config_type: "v2",
+                  properties: {
+                    type: "tool_call_check",
+                    expected_tools: [
+                      { tool_name: "search_tool" },
+                      { tool_name: "lookup_tool" },
+                    ],
+                  },
+                },
+              ],
+              error: null,
+            })
+          }
+          return Promise.resolve({ data: mockEval, error: null })
+        },
+      )
+
+      await model.load(
+        null,
+        "proj1::task1::eval1",
+        "proj1",
+        "task1",
+        "eval",
+        mockTask,
+        {},
+      )
+
+      expect(get(model.selected_template)).toBe(
+        "appropriate_tool_use_eval_template",
+      )
+      expect(get(model.topic_guidance)).toContain("search_tool, lookup_tool")
+    })
+
+    it("should derive guidance from the judge check for judge-only programmatic evals", async () => {
+      const mockEval = {
+        id: "eval1",
+        name: "Exact Answer",
+        template: null,
+        template_properties: null,
+        current_config_id: "config1",
+      } as unknown as Eval
+
+      ;(client.GET as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+        (url: string) => {
+          if (url.includes("eval_configs")) {
+            return Promise.resolve({
+              data: [
+                {
+                  id: "config1",
+                  config_type: "v2",
+                  properties: {
+                    type: "exact_match",
+                    expected_value: "XYZ",
+                    case_sensitive: true,
+                  },
+                },
+              ],
+              error: null,
+            })
+          }
+          return Promise.resolve({ data: mockEval, error: null })
+        },
+      )
+
+      await model.load(
+        null,
+        "proj1::task1::eval1",
+        "proj1",
+        "task1",
+        "eval",
+        mockTask,
+        {},
+      )
+
+      expect(get(model.selected_template)).toBe("programmatic_eval_template")
+      expect(get(model.topic_guidance)).toContain('exactly matches "XYZ"')
+      expect(get(model.input_guidance)).toContain("deterministic check")
+      expect(get(model.output_guidance)).toContain(
+        "without any additional instructions",
+      )
+    })
+
+    it("should select the tool use template for tool_call evals with a legacy tool property", async () => {
+      const mockEval = {
+        id: "eval1",
+        name: "Tool Eval",
+        template: "tool_call",
+        template_properties: { tool: "search_tool" },
+      } as unknown as Eval
+
+      mockClient.GET.mockResolvedValue({
+        data: mockEval,
+        error: null,
+      })
+
+      await model.load(
+        null,
+        "proj1::task1::eval1",
+        "proj1",
+        "task1",
+        "eval",
+        mockTask,
+        {},
+      )
+
+      expect(get(model.selected_template)).toBe(
+        "appropriate_tool_use_eval_template",
+      )
+      expect(get(model.topic_guidance)).toContain("search_tool")
+    })
+
     it("should handle API errors gracefully", async () => {
       mockClient.GET.mockResolvedValue({
         data: null,
@@ -499,6 +653,50 @@ describe("SynthDataGuidanceDataModel", () => {
       expect(guidance).toContain("Good example")
       expect(guidance).toContain("Bad example")
       expect(guidance).toContain("fail to exhibit")
+    })
+
+    it("should apply appropriate_tool_use eval template when the tool name is available", () => {
+      const mockEval = {
+        id: "eval1",
+        name: "Tool Eval",
+        template: "tool_call",
+        template_properties: { tool: "search_tool" },
+      } as unknown as Eval
+
+      model["evaluator"] = mockEval
+      model["apply_selected_template"]("appropriate_tool_use_eval_template")
+
+      const guidance = get(model.topic_guidance)
+      expect(guidance).toContain("search_tool")
+      expect(get(model.loading_error)).toBe(null)
+    })
+
+    it("should set loading_error instead of throwing when the tool name is missing", () => {
+      const mockEval = {
+        id: "eval1",
+        name: "Tool Eval",
+        template: "tool_call",
+        template_properties: null,
+      } as unknown as Eval
+
+      model["evaluator"] = mockEval
+
+      // Applied via the selected_template subscription, exactly like the real
+      // flow. A throw escaping a store subscriber permanently breaks every
+      // svelte store subscription in the app, so it must be caught inside.
+      expect(() =>
+        model.selected_template.set("appropriate_tool_use_eval_template"),
+      ).not.toThrow()
+
+      expect(get(model.loading_error)).toBeTruthy()
+      expect(get(model.topic_guidance)).toBe(null)
+
+      // Store subscriptions must keep working after the failed template apply
+      let observed: string | null = null
+      const unsub = model.selected_template.subscribe((v) => (observed = v))
+      model.selected_template.set("custom")
+      expect(observed).toBe("custom")
+      unsub()
     })
   })
 
@@ -763,6 +961,48 @@ describe("SynthDataGuidanceDataModel", () => {
       expect(prefill).not.toContain("<eval_definition>")
     })
 
+    it("uses a v2 LLM judge's judge_instructions when there are no legacy steps", () => {
+      model.gen_type = "eval"
+      model["evaluator"] = { id: "eval1", name: "Politeness" } as Eval
+      model["default_judge"] = {
+        id: "cfg1",
+        config_type: "v2",
+        properties: {
+          type: "llm_judge",
+          judge_instructions: ["Is the reply polite?"],
+        },
+      } as unknown as EvalConfig
+
+      const prefill = model.kiln_pro_batch_plan_prefill()
+
+      expect(prefill).toContain('run the eval "Politeness" on')
+      expect(prefill).toContain("1. Is the reply polite?")
+      expect(prefill).toContain("<judge_instructions>")
+    })
+
+    it("describes a programmatic judge's check for judge-only evals", () => {
+      // Judge-only evals have no spec, template, or written steps — the
+      // judge's own config is the eval's entire definition.
+      model.gen_type = "eval"
+      model["evaluator"] = { id: "eval1", name: "Exact Answer" } as Eval
+      model["default_judge"] = {
+        id: "cfg1",
+        config_type: "v2",
+        properties: {
+          type: "exact_match",
+          expected_value: "XYZ",
+          case_sensitive: true,
+        },
+      } as unknown as EvalConfig
+
+      const prefill = model.kiln_pro_batch_plan_prefill()
+
+      expect(prefill).toContain('run the eval "Exact Answer" on')
+      expect(prefill).toContain("<judge_check>")
+      expect(prefill).toContain('exactly matches "XYZ"')
+      expect(prefill).not.toContain("<judge_instructions>")
+    })
+
     it("reconstructs eval steps from the template when there is no default judge", () => {
       model.gen_type = "eval"
       model["evaluator"] = {
@@ -838,7 +1078,7 @@ describe("SynthDataGuidanceDataModel", () => {
 
       const options = get(model.select_options)
       expect(options).toHaveLength(3)
-      expect(options[0].label).toBe("Eval Template")
+      expect(options[0].label).toBe("Eval Type")
       expect(options[0].options[0].value).toBe("issue_eval_template")
       expect(options[1].label).toBe("Custom Guidance")
       expect(options[2].label).toBe("Built-in Templates")
