@@ -390,9 +390,7 @@ def build_default_llm_judge_prompt(eval: Eval) -> str:
     if shows_reference_answer:
         # Unconditional: the same predicate declares `reference_answer` in
         # `reference_keys`, so `v2_eval_llm_judge` refuses an item without one before
-        # this template is ever rendered. A conditional block would only be reachable
-        # by rendering the steps' "as per the reference answer" question with the
-        # answer omitted — the judge then answers from nothing.
+        # this template is ever rendered.
         #
         # Attribute access rather than `.get`: under `_template_env`'s StrictUndefined
         # a missing key raises, which `v2_eval_llm_judge` turns into the same
@@ -500,30 +498,12 @@ def materialize_llm_judge_properties(
     ] or None
 
     # Same predicate that gates the `<reference_answer>` block in the default prompt, so
-    # for that prompt "show the reference" and "require the reference" are one decision.
-    # A caller-supplied `judge_prompt` is the deliberate exception: this function never
-    # inspects it, and the eval still grades against ground truth, so the key is still
-    # required even if the user edited the block out. Skipping an item is the safe side
-    # of that. Either way the server decides; a client does not get to clear it (see
-    # `create_llm_judge_config`).
-    #
-    # Consequence worth knowing before it is discovered: for every judge this declares a
-    # key for, judge calibration comes back all-skipped. Calibration scores the golden
-    # item as itself, so `EvalTaskInput.from_trace` supplies no reference data by design
-    # and `v2_eval_llm_judge` skips each item with `missing_reference_key`. That is the
-    # correct answer — calibrating "does this match the reference" against items that
-    # have no reference is empty — but it should be written down, not discovered.
-    #
-    # This covers both signals, rag included. Nothing makes rag calibration
-    # unreachable: `create_evaluator` (eval_api.py) auto-mints
-    # `eval_configs_filter_id` from the eval's golden tag whenever the caller supplies
-    # no `eval_set_filter_id`, and `build_spec_eval` (spec_utils.py) sets one
-    # unconditionally, so a rag eval does have a golden filter and Compare Judges will
-    # run against it. What makes it quiet in practice is that the set behind that filter
-    # is normally empty: `build_eval_generation_splits`
-    # (app/web_ui/src/lib/utils/eval_generation_splits.ts) deliberately allocates no
-    # generated data to golden for rag, so calibration collects zero jobs and reports
-    # nothing. Tag data into that golden tag by hand and every item skips.
+    # "show the reference" and "require the reference" are one decision. A caller-supplied
+    # `judge_prompt` is the deliberate exception: this function never inspects it, and the
+    # eval still grades against ground truth, so the key is still required even if the user
+    # edited the block out. A judge this declares a key for skips every judge-calibration
+    # item by design: calibration scores the golden item as itself, so it has no reference
+    # data to supply.
     reference_keys = derived_reference_keys(eval)
 
     return LlmJudgeProperties(

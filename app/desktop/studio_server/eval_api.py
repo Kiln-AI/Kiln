@@ -58,7 +58,9 @@ from kiln_ai.datamodel.eval import (
     SkippedReason,
     SplitRef,
     TaskRunSplit,
+    V2_PROPERTY_TYPES,
     V2EvalConfigProperties,
+    reference_data_keys,
     validate_scores_against_output_scores,
 )
 from kiln_ai.datamodel.eval_splits import (
@@ -76,6 +78,7 @@ from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.datamodel.usage import Usage
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_ai.utils.open_ai_types import serialize_trace
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
@@ -1027,6 +1030,100 @@ def require_golden_set_or_422(eval: Eval) -> None:
     """
     if eval.eval_configs_filter_id is None:
         raise HTTPException(status_code=422, detail=no_golden_set_message(eval))
+
+
+def eval_grades_against_reference_data(data_type: EvalDataType | None) -> bool:
+    """Whether an eval's data type means its V1 judges grade against ground truth.
+
+    An exhaustive match rather than an `== reference_answer` equality test: a fourth
+    `EvalDataType` that needs reference data would answer False silently, which is the
+    same failure the "anything that isn't v2" spelling below exists to prevent, one level
+    down. Adding a member fails `ty` here until it is classified.
+
+    `None` means the eval never declared one, so nothing asks for a reference.
+    """
+    match data_type:
+        case EvalDataType.reference_answer:
+            return True
+        case EvalDataType.final_answer | EvalDataType.full_trace:
+            return False
+        case None:
+            return False
+        case _:
+            raise_exhaustive_enum_error(data_type)
+
+
+def judge_requires_reference_data(eval: Eval, eval_config: EvalConfig) -> bool:
+    """Whether this judge grades against reference data, which judge comparison has none of.
+
+    Judge comparison scores each golden dataset item as itself, so `EvalTaskInput.from_trace`
+    yields `reference_data = None` by design — populating it would make the reference
+    byte-identical to the output being graded, and every judge would pass every item.
+
+    Two judge kinds hit that, so one predicate covers both:
+
+    - a V2 judge declaring reference keys: `check_reference_key` turns each item into a
+      `missing_reference_key` skip, which `run_job` reports as success and `_persist_score`
+      writes as a durable scoreless `EvalRun` — a "Complete" row with no scores, and a
+      record that suppresses any later re-run.
+    - a V1 judge on a `reference_answer` eval: `_run_legacy_job` calls `run_eval` without
+      the item, so `GEval` raises for every job.
+
+    The V1 arm is spelled "anything that isn't v2" for the same reason as
+    `judge_scores_dataset_runs`: a judge type added to the enum later is refused here
+    rather than reaching one of those two failures.
+
+    Mirrored client-side by `compute_run_disallowed_missing_ref_data`
+    (`app/web_ui/src/lib/utils/eval_types/judge_comparison_gate.ts`), which decides what
+    the Compare Judges page shows. This is what decides whether the run happens.
+    """
+    if eval_config.config_type != EvalConfigType.v2:
+        return eval_grades_against_reference_data(eval.evaluation_data_type)
+    if not isinstance(eval_config.properties, V2_PROPERTY_TYPES):
+        return False
+    return len(reference_data_keys(eval_config.properties)) > 0
+
+
+def no_comparable_judges_message(eval: Eval) -> str:
+    """Why judge comparison has nothing to run for this eval. One wording, one raiser.
+
+    Named for the eval-level fact it states, alongside `no_golden_set_message`. A
+    per-judge refusal cannot share it: in a mixed set "every judge it has" is false, so
+    such a caller needs its own per-judge wording rather than this one.
+    """
+    return (
+        f"Eval '{eval.name}' has no judges that can be compared. Every judge it has grades "
+        "against reference data, and comparing judges scores each golden dataset item as "
+        "itself — there is no separate reference answer to compare against, so every item "
+        "would be skipped without a score. Add a judge that grades the output on its own "
+        "to compare judges for this eval."
+    )
+
+
+def comparable_eval_configs_or_422(eval: Eval) -> List[EvalConfig]:
+    """The eval's judges minus the ones judge comparison can't score.
+
+    A mixed set still runs: dropping the judges that can't be scored is what lets the
+    others be compared. Only an eval where nothing is left is refused.
+
+    Refused here rather than inside the runner for the reason spelled out on
+    `require_golden_set_or_422`: this is an SSE endpoint, so anything raised once the
+    StreamingResponse's generator is running arrives after a 200 with an empty body. It
+    also has to beat the runner because the runner's first act is to write a durable
+    scoreless `EvalRun` per item — records nothing in the UI clears, which then read as
+    "already run" and suppress the re-run a later fix would need (functional spec 6.2).
+
+    An eval with no judges at all is left to `EvalRunner`, which already names that case.
+    """
+    eval_configs = eval.configs()
+    comparable = [
+        eval_config
+        for eval_config in eval_configs
+        if not judge_requires_reference_data(eval, eval_config)
+    ]
+    if eval_configs and not comparable:
+        raise HTTPException(status_code=422, detail=no_comparable_judges_message(eval))
+    return comparable
 
 
 def judge_scores_dataset_runs(config_type: EvalConfigType) -> bool:
@@ -2033,7 +2130,7 @@ def connect_evals_api(app: FastAPI):
         """Run all eval configs against each other for calibration and stream progress via SSE. Used to check that eval configs produce consistent scores."""
         eval = eval_from_id(project_id, task_id, eval_id)
         require_golden_set_or_422(eval)
-        eval_configs = eval.configs()
+        eval_configs = comparable_eval_configs_or_422(eval)
         eval_runner = EvalRunner(
             eval_configs=eval_configs,
             run_configs=None,

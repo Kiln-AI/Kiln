@@ -117,11 +117,8 @@
   // SHOW_REFERENCE_DATA_UI. Wired so the creation pane doesn't silently drop it the
   // day the flag flips.
   //
-  // Passed to the pane explicitly rather than left to its default, so the next reader
-  // doesn't take it for an oversight: the pane reads a judge's prompt and the server's
-  // derived reference keys to decide whether to offer a reference-data input, and this
-  // form has neither to give. `is_non_llm_judge` gates it upstream and
-  // JudgeConfigFields has no llm_judge branch, so there never will be one here.
+  // The pane decides from a judge's prompt and the server's derived reference keys, and
+  // this form has neither to give, so it passes the no-prompt signals explicitly.
   const judge_reference_signals = NO_JUDGE_PROMPT
   let advanced_reference_data = ""
   let required_reference_fields: string[] = []

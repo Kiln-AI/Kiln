@@ -7,6 +7,7 @@ import {
   extractV2Props,
   evalTypeJudgeLabel,
   manualExampleSupport,
+  referenceDataKeys,
   referenceDataUsageMode,
   NO_JUDGE_PROMPT,
   type JudgeReferenceSignals,
@@ -16,6 +17,7 @@ import {
   type ReferenceDataUsageMode,
 } from "./registry"
 import type { EvalConfig } from "$lib/types"
+import type { V2EvalConfigProperties } from "$lib/api/v2_eval_api"
 
 const EXPECTED_TYPES: V2EvalType[] = [
   "exact_match",
@@ -592,5 +594,45 @@ describe("referenceDataUsageMode", () => {
         .toLowerCase()
       expect(copy).not.toContain("reference")
     }
+  })
+})
+
+describe("referenceDataKeys", () => {
+  it.each([
+    [{ type: "exact_match", reference_key: "answer" }, ["answer"]],
+    [{ type: "exact_match", expected_value: "yes" }, []],
+    [{ type: "contains", reference_key: "answer" }, ["answer"]],
+    [{ type: "contains", substring: "yes" }, []],
+    [{ type: "set_check", reference_key: "answer" }, ["answer"]],
+    [{ type: "set_check", expected_set: ["a"] }, []],
+    [{ type: "llm_judge", reference_keys: ["a", "b"] }, ["a", "b"]],
+    [{ type: "llm_judge", reference_keys: [] }, []],
+    [{ type: "code_eval", reference_keys: ["a"] }, ["a"]],
+    [{ type: "pattern_match", pattern: "^y" }, []],
+    [{ type: "tool_call_check" }, []],
+    [{ type: "step_count_check" }, []],
+  ])("mirrors the backend keys for %o", (props, expected) => {
+    expect(
+      referenceDataKeys(props as unknown as V2EvalConfigProperties),
+    ).toEqual(expected)
+  })
+
+  it("covers every V2 eval type without throwing", () => {
+    for (const t of ALL_V2_EVAL_TYPES) {
+      expect(() =>
+        referenceDataKeys({
+          type: t,
+          reference_keys: [],
+        } as unknown as V2EvalConfigProperties),
+      ).not.toThrow()
+    }
+  })
+
+  it("throws via assertNever for a type it does not know", () => {
+    expect(() =>
+      referenceDataKeys({
+        type: "invented_type",
+      } as unknown as V2EvalConfigProperties),
+    ).toThrow("Unexpected value")
   })
 })

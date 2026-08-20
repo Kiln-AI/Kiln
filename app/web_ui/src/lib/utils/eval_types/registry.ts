@@ -167,6 +167,36 @@ function declaredReferenceDataUsageMode(
   }
 }
 
+/**
+ * The reference-data keys a single V2 judge declares as required.
+ *
+ * TypeScript mirror of `reference_data_keys` (`libs/core/kiln_ai/datamodel/eval.py`).
+ * Kept client-side rather than fetched: eval config `properties` are already on the
+ * wire, so a round-trip would only re-derive what the page holds. Guarded with
+ * assertNever for the same reason the mode map above is — adding a V2 type without
+ * declaring its reference keys breaks the build.
+ *
+ * Note the singular/plural split: the deterministic comparison types carry one
+ * optional `reference_key`, the judge types carry a `reference_keys` list.
+ */
+export function referenceDataKeys(props: V2EvalConfigProperties): string[] {
+  switch (props.type) {
+    case "exact_match":
+    case "contains":
+    case "set_check":
+      return props.reference_key ? [props.reference_key] : []
+    case "llm_judge":
+    case "code_eval":
+      return [...props.reference_keys]
+    case "pattern_match":
+    case "tool_call_check":
+    case "step_count_check":
+      return []
+    default:
+      return assertNever(props)
+  }
+}
+
 export interface ManualExampleSupport {
   /** Whether an input/output-only manual example can be used with this judge. */
   supported: boolean
