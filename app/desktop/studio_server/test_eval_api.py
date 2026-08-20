@@ -2488,6 +2488,66 @@ class TestScoredTraceUsage:
         assert trace.synthetic_user_usage is None
         assert scored_trace_usage(trace) == blended
 
+    def test_synthetic_user_blends_cost_only(self, mock_task, data_source):
+        """The driver's cost joins the total; its tokens and latency do not.
+
+        The synthetic user is normally a different model on a different provider
+        from the agent under test. Folding its tokens in would attribute them to
+        the agent (~3.5k input per conversation) and make cost/token meaningless,
+        and folding its latency in would make every driven run config look slower
+        than it is. Cost alone is total-spend semantics, and it is what migrated
+        legacy records already blend — so all three quantities keep one meaning
+        across record generations.
+        """
+        trace = TaskRun(
+            parent=mock_task,
+            input="in",
+            input_source=data_source,
+            output=TaskOutput(output="out", source=data_source),
+            usage=Usage(
+                input_tokens=100,
+                output_tokens=50,
+                total_tokens=150,
+                cost=1.0,
+                total_llm_latency_ms=4000,
+            ),
+            synthetic_user_usage=Usage(
+                input_tokens=3548,
+                output_tokens=61,
+                total_tokens=3609,
+                cost=0.25,
+                total_llm_latency_ms=9000,
+            ),
+        )
+
+        usage = scored_trace_usage(trace)
+
+        assert usage is not None
+        # Cost blends: both models' spend produced this trace.
+        assert usage.cost == pytest.approx(1.25)
+        # Tokens and latency stay the agent's alone.
+        assert usage.input_tokens == 100
+        assert usage.output_tokens == 50
+        assert usage.total_tokens == 150
+        assert usage.total_llm_latency_ms == 4000
+
+    def test_synthetic_user_without_cost_leaves_the_total_alone(
+        self, mock_task, data_source
+    ):
+        """A driver that reported tokens but no cost must not perturb anything —
+        including not turning an all-agent figure into a different object."""
+        agent = Usage(input_tokens=100, total_tokens=150, cost=1.0)
+        trace = TaskRun(
+            parent=mock_task,
+            input="in",
+            input_source=data_source,
+            output=TaskOutput(output="out", source=data_source),
+            usage=agent,
+            synthetic_user_usage=Usage(input_tokens=3548, total_tokens=3609),
+        )
+
+        assert scored_trace_usage(trace) == agent
+
     def test_nothing_to_report_reads_as_none(self, mock_task, data_source):
         trace = TaskRun(
             parent=mock_task,

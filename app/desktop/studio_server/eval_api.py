@@ -764,11 +764,26 @@ def scored_trace_usage(trace: TaskRun) -> Usage | None:
       Latency still reads from `usage` — `cumulative_usage` deliberately carries
       none, since per-message latencies don't aggregate meaningfully.
     - An eval-driven conversation stores the synthetic-user driver model's spend
-      in `synthetic_user_usage`, beside the assistant-only `usage`; the honest
-      total sums the two null-tolerantly. Today that field carries cost only, so
-      token counts pass through from the assistant side. Migrated legacy traces
-      have the blend fused inside `usage` with `synthetic_user_usage` None, so
-      the same sum reads both record generations correctly.
+      in `synthetic_user_usage`, beside the assistant-only `usage`. Only its
+      **cost** is blended in here, deliberately, even though the field carries
+      the driver's tokens and latency too:
+
+      * Cost is total-spend semantics — what this trace cost to produce, both
+        models included. That is what a run-config summary should report, and it
+        matches migrated legacy traces, which have the blend fused inside
+        `usage` with `synthetic_user_usage` None.
+      * Tokens are not. The synthetic user is usually a different model on a
+        different provider from the agent under test, so folding its ~3.5k input
+        tokens per conversation into this figure would attribute them to the
+        agent and make `cost / total_tokens` meaningless — the exact conflation
+        `synthetic_user_usage` exists to undo.
+      * Latency is not. This summary reports how responsive the agent is;
+        driver-side wall clock is not the agent's, and summing it would make
+        every driven run config look slower than it is.
+
+      Blending everything would also make this field mean two different
+      quantities depending on record age: legacy records blend cost only, since
+      that is all the old field carried.
 
     None when the record has nothing to report, so it contributes nothing to an
     average instead of counting as a zero.
@@ -789,7 +804,9 @@ def scored_trace_usage(trace: TaskRun) -> Usage | None:
         base = trace.usage
 
     if trace.synthetic_user_usage is not None:
-        base = (base or Usage()) + trace.synthetic_user_usage
+        # Cost only — see the docstring. Adding the whole object would fold the
+        # driver's tokens and latency into the agent's figures.
+        base = (base or Usage()) + Usage(cost=trace.synthetic_user_usage.cost)
     if base is None or all(v is None for v in base.model_dump().values()):
         return None
     return base

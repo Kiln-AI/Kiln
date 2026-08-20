@@ -46,7 +46,7 @@ async def drive_case_for_eval(
 
     The result's leaf (`chain[-1]`) has `.trace` holding the full cumulative
     conversation and its id is None (nothing touches disk). The result also
-    carries `su_total_cost` — the synthetic user's LLM spend, which surfaces
+    carries `su_usage` — the synthetic user model's spend, which surfaces
     nowhere else since SU turns aren't persisted. `skills` must be preloaded
     by the caller — the adapter raises on skill tools with no injected dict.
     """

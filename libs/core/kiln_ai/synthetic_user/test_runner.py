@@ -21,6 +21,7 @@ from kiln_ai.datamodel.datamodel_enums import (
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.usage import Usage
 from kiln_ai.synthetic_user import runner as runner_mod
 from kiln_ai.synthetic_user.case import SyntheticUserCase
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
@@ -120,9 +121,10 @@ def _patch_su_driver(
             else list(replies_per_case)
         )
         instance = Mock(spec=SyntheticUserDriver)
-        # respond() returns (message, cost). Tests that don't care about
-        # cost get 0.0 — the runner adds it to total_cost regardless.
-        instance.respond = AsyncMock(side_effect=[(r, 0.0) for r in replies])
+        # respond() returns (message, Usage | None). Tests that don't care about
+        # the driver's spend hand back None — the shape a provider that reported
+        # nothing produces, which the runner totals as zero.
+        instance.respond = AsyncMock(side_effect=[(r, None) for r in replies])
         return instance
 
     monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)
@@ -254,7 +256,7 @@ async def test_total_cost_sums_target_and_su_driver_spend(
     # at $0.01 → $0.01 SU per case.
     def _ctor(info, config):
         instance = Mock(spec=SyntheticUserDriver)
-        instance.respond = AsyncMock(side_effect=[("u2", 0.01)])
+        instance.respond = AsyncMock(side_effect=[("u2", Usage(cost=0.01))])
         return instance
 
     monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)
@@ -450,7 +452,7 @@ async def test_malformed_blob_surfaces_as_case_failed(
 
     def _ctor(info, config):
         instance = Mock(spec=SyntheticUserDriver)
-        instance.respond = AsyncMock(return_value=("ok", 0.0))
+        instance.respond = AsyncMock(return_value=("ok", None))
         return instance
 
     _patch_su_driver_factory(monkeypatch, _ctor)
@@ -574,7 +576,7 @@ async def test_su_failure_deletes_chain_including_just_persisted_run(
         instance = Mock(spec=SyntheticUserDriver)
         # Turn 1's SU reply succeeds; turn 2's SU call dies mid-case.
         instance.respond = AsyncMock(
-            side_effect=[("u2", 0.0), ValueError("su blew up")]
+            side_effect=[("u2", None), ValueError("su blew up")]
         )
         return instance
 
@@ -774,7 +776,7 @@ async def test_retried_case_batch_total_includes_both_attempts_costs(
     # One SU call per attempt (turns=2), at $0.01.
     def _ctor(info, config):
         instance = Mock(spec=SyntheticUserDriver)
-        instance.respond = AsyncMock(side_effect=[("u2", 0.01)])
+        instance.respond = AsyncMock(side_effect=[("u2", Usage(cost=0.01))])
         return instance
 
     monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)
@@ -824,7 +826,7 @@ async def test_dead_case_failed_event_reports_all_attempts_spend(
 
     def _ctor(info, config):
         instance = Mock(spec=SyntheticUserDriver)
-        instance.respond = AsyncMock(side_effect=[("u2", 0.01)])
+        instance.respond = AsyncMock(side_effect=[("u2", Usage(cost=0.01))])
         return instance
 
     monkeypatch.setattr(runner_mod, "SyntheticUserDriver", _ctor)

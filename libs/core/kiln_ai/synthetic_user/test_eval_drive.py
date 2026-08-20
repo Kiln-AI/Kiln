@@ -96,7 +96,7 @@ def fake_adapter(monkeypatch: pytest.MonkeyPatch) -> tuple[_FakeAdapter, dict]:
 def fake_su_driver(monkeypatch: pytest.MonkeyPatch) -> Mock:
     instance = Mock(spec=SyntheticUserDriver)
     instance.respond = AsyncMock(
-        side_effect=[(f"follow-up-{i}", 0.0) for i in range(1, 10)]
+        side_effect=[(f"follow-up-{i}", None) for i in range(1, 10)]
     )
     captured_ctor: dict[str, Any] = {}
 
