@@ -123,14 +123,17 @@ def extract(expression: str, data: dict) -> Any:
         ) from e
     try:
         result = compiled(**data)
+        # Materializing inside the try is load-bearing: map/selectattr/groupby
+        # return lazy generators, so their per-item lookups don't run until
+        # list() does. A missing field there raises here, not above.
+        if isinstance(result, types.GeneratorType):
+            result = list(result)
     except UndefinedError as e:
         # A single missing lookup yields Undefined, but any further operation on
         # it (attribute access, indexing, a filter) raises. That's still just
         # missing data, so surface it as an extraction error callers handle --
         # keeping Jinja's message, which names the field that wasn't there.
         raise JinjaExtractionError(str(e)) from e
-    if isinstance(result, types.GeneratorType):
-        result = list(result)
     return result
 
 

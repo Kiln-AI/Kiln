@@ -195,24 +195,34 @@ class TestExtractOperationsOnMissingData:
         with pytest.raises(JinjaExtractionError, match="has no element -1"):
             extract("trace[-1].tool_calls[0].function.name", {"trace": []})
 
-    def test_filter_on_missing_value_raises_extraction_error(self):
+    @pytest.mark.parametrize("expression", ["missing | int", "missing + 1"])
+    def test_raising_operation_on_missing_value(self, expression):
+        # Only operations that force the value raise. Many do not: `join` yields
+        # '', `~` concatenates, `==` is False. Those stay silent by design.
         with pytest.raises(JinjaExtractionError, match="'missing' is undefined"):
-            extract("missing | int", {})
+            extract(expression, {})
 
-    def test_operator_on_missing_value_raises_extraction_error(self):
-        with pytest.raises(JinjaExtractionError, match="'missing' is undefined"):
-            extract("missing + 1", {})
+    def test_lazy_generator_over_missing_field_raises_extraction_error(self):
+        # map() is lazy, so this lookup fires during materialization rather than
+        # when the expression is called -- the raise still has to be converted.
+        with pytest.raises(
+            JinjaExtractionError, match="'dict object' has no attribute 'tool_calls'"
+        ):
+            extract(
+                "trace | map(attribute='tool_calls.0.function.name')",
+                {"trace": [{"content": "no tools"}]},
+            )
 
-    def test_missing_top_level_key_still_returns_undefined(self):
-        # Contract unchanged: a bare missing lookup is not an error.
-        assert isinstance(extract("missing", {}), Undefined)
-
-    def test_valid_nested_expression_still_extracts(self):
-        result = extract(
-            "(final_message | fromjson).user.status",
-            {"final_message": '{"user": {"status": "active"}}'},
-        )
-        assert result == "active"
+    def test_materialized_generator_over_missing_field_raises_extraction_error(self):
+        # Same expression with `| list`, which materializes inside the compiled
+        # expression instead. Both routes must land on JinjaExtractionError.
+        with pytest.raises(
+            JinjaExtractionError, match="'dict object' has no attribute 'tool_calls'"
+        ):
+            extract(
+                "trace | map(attribute='tool_calls.0.function.name') | list",
+                {"trace": [{"content": "no tools"}]},
+            )
 
 
 class TestTrimAndLstripBlocks:

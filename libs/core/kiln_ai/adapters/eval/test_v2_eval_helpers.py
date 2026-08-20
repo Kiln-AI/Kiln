@@ -110,7 +110,7 @@ class TestFromjsonExtractionSkip:
         )
         assert value is None
         assert skip == SkippedReason.extraction_failed
-        # Jinja's message names the field that wasn't there; the test pane shows it.
+        # The skip detail preserves Jinja's message, which names the missing field.
         assert detail is not None
         assert "has no attribute 'user'" in detail
 
@@ -197,6 +197,20 @@ class TestExtractOutputValue:
         inp = _make_input(trace=[])
         value, fail_result = extract_output_value(
             "trace[-1].tool_calls[0].function.name", inp, _SAMPLE_SCORES
+        )
+        assert value is None
+        assert fail_result is not None
+        assert fail_result.skipped_reason is None
+        assert fail_result.scores == {"s1": 0.0, "s2": 0.0}
+
+    def test_generator_over_missing_field_fails_not_raises(self):
+        # map() defers its lookups until the generator is drained, so this is the
+        # one shape where the raise escapes the expression call itself.
+        inp = _make_input(trace=[{"content": "no tools"}])
+        value, fail_result = extract_output_value(
+            "trace | map(attribute='tool_calls.0.function.name')",
+            inp,
+            _SAMPLE_SCORES,
         )
         assert value is None
         assert fail_result is not None
