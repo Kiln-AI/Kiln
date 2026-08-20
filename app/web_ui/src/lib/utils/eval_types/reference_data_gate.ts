@@ -6,6 +6,16 @@
 /**
  * For llm_judge: returns true when the string `reference_data` appears
  * anywhere in the prompt template.
+ *
+ * NOTE for whoever flips SHOW_REFERENCE_DATA_UI on: the backend-assembled default
+ * judge prompt for a reference-answer eval now contains a `reference_data` block, so
+ * this returns true for every such judge built from the default. Today that is inert —
+ * compute_uses_reference_data() in eval_config_builder.svelte short-circuits while the
+ * flag is off. Once it is on, those judges get forced through the test-before-save gate
+ * and save `reference_keys` from whatever the Test Judge pane holds. A stored
+ * `reference_keys: ["reference_answer"]` makes every *calibration* item skip, because
+ * judge calibration scores the golden item as itself and so has no reference data by
+ * design (EvalTaskInput.from_trace). Decide that deliberately rather than inheriting it.
  */
 export function uses_reference_data_llm_judge(
   prompt_template: string,

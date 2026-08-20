@@ -491,6 +491,98 @@ class TestLlmJudgeEvalMissingReferenceData:
         assert result.skipped_reason is None
 
 
+class TestLlmJudgeEvalDeclaredReferenceKeys:
+    """`reference_keys` is a declared requirement: a judge that cannot get one skips
+    loudly instead of scoring against ground truth it never saw."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "reference_data, expected_detail",
+        [
+            (None, "No reference_data"),
+            ({"other": "x"}, "missing key 'reference_answer'"),
+            ({"reference_answer": None}, "key 'reference_answer' is None"),
+        ],
+        ids=["no-reference-data", "wrong-key", "null-value"],
+    )
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_missing_declared_key_skips_without_calling_the_model(
+        self, mock_adapter_for_task, reference_data, expected_detail
+    ):
+        props = _make_props(reference_keys=["reference_answer"])
+        cfg = _make_config(props)
+
+        result = await LlmJudgeEval(cfg).evaluate(_inp(reference_data=reference_data))
+
+        assert result.scores == {}
+        assert result.skipped_reason == SkippedReason.missing_reference_key
+        assert result.skipped_detail is not None
+        assert expected_detail in result.skipped_detail
+        mock_adapter_for_task.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_skips_on_the_first_unsatisfied_key(self, mock_adapter_for_task):
+        props = _make_props(reference_keys=["reference_answer", "retrieved_context"])
+        cfg = _make_config(props)
+
+        result = await LlmJudgeEval(cfg).evaluate(
+            _inp(reference_data={"reference_answer": "Frank Herbert."})
+        )
+
+        assert result.skipped_reason == SkippedReason.missing_reference_key
+        assert result.skipped_detail is not None
+        assert "retrieved_context" in result.skipped_detail
+        mock_adapter_for_task.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_satisfied_keys_score_normally(self, mock_adapter_for_task):
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(),
+            RunOutput(output={"quality": "5"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+
+        props = _make_props(
+            reference_keys=["reference_answer"],
+            prompt_template=(
+                "Reference: {{ reference_data.reference_answer }} "
+                "Output: {{ final_message }}"
+            ),
+        )
+        cfg = _make_config(props)
+
+        result = await LlmJudgeEval(cfg).evaluate(
+            _inp(reference_data={"reference_answer": "Frank Herbert."})
+        )
+
+        assert result.scores == {"quality": 5.0}
+        assert result.skipped_reason is None
+        rendered = mock_adapter.invoke_returning_run_output.call_args[0][0]
+        assert "Frank Herbert." in rendered
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
+    async def test_no_declared_keys_does_not_require_reference_data(
+        self, mock_adapter_for_task
+    ):
+        """The default template is permissive; only a declaration refuses."""
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke_returning_run_output.return_value = (
+            _judge_run(),
+            RunOutput(output={"quality": "2"}, intermediate_outputs=None),
+        )
+        mock_adapter_for_task.return_value = mock_adapter
+
+        cfg = _make_config(_make_props())
+        result = await LlmJudgeEval(cfg).evaluate(_inp(reference_data=None))
+
+        assert result.scores == {"quality": 2.0}
+        assert result.skipped_reason is None
+
+
 class TestLlmJudgeEvalNoParentEval:
     def test_no_parent_eval_raises(self):
         cfg = _make_config()

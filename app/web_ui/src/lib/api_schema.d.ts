@@ -6836,7 +6836,8 @@ export interface components {
             eval_input_id?: string | null;
             /**
              * Reference Data
-             * @description Structured reference data from EvalInput.reference, used by V2 eval types.
+             * @deprecated
+             * @description DEPRECATED: nothing writes this field any more, and nothing ever read it. The reference data a V2 judge saw is derived at scoring time from the item `dataset_id` or `eval_input_id` names; a pointer-mode record must not carry a second copy of it. Kept declared and loadable for records written before the field was retired.
              */
             reference_data?: {
                 [key: string]: components["schemas"]["JsonValue"];
@@ -6912,7 +6913,9 @@ export interface components {
          * EvalTaskInput
          * @description The runtime data bundle passed to V2 evaluators.
          *
-         *     Assembled by the eval runner from an EvalInput and a task run result.
+         *     Assembled by the eval runner from the item being evaluated and the task run that
+         *     was scored. The item is either an EvalInput or a TaskRun drawn from the dataset;
+         *     which one it is determines where `reference_data` and `task_input` come from.
          */
         EvalTaskInput: {
             /**
@@ -6929,7 +6932,7 @@ export interface components {
             }[] | null;
             /**
              * Reference Data
-             * @description Reference/ground-truth data from EvalInput.reference.
+             * @description Ground-truth data for the item being evaluated, keyed by reference name. Taken from EvalInput.reference for an EvalInput-backed item; for a TaskRun-backed dataset item it is the item's own stored output under the key 'reference_answer', since that output is the curated answer. None when a TaskRun is scored as itself (judge calibration), where the item and the scored run are the same record.
              */
             reference_data?: {
                 [key: string]: components["schemas"]["JsonValue"];
