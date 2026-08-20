@@ -56,6 +56,9 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     RefineSpecInput,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    ModelProviderName as ServerModelProviderName,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     QuestionSet as QuestionSetServerApi,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
@@ -407,7 +410,21 @@ def connect_copilot_api(app: FastAPI):
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
-        clarify_input = ClarifySpecInput.from_dict(input.model_dump())
+        # The generated server client's ModelProviderName enum is a snapshot of
+        # the server's API, so it can lag behind the core enum. Send only the
+        # providers it knows rather than failing the whole request.
+        supported_provider_values = {p.value for p in ServerModelProviderName}
+        input_dict = input.model_dump()
+        input_dict["providers"] = [
+            p for p in input.providers if p.value in supported_provider_values
+        ]
+        if not input_dict["providers"]:
+            raise HTTPException(
+                status_code=422,
+                detail="None of your connected model providers are supported for spec clarification. Updating Kiln may resolve this.",
+            )
+
+        clarify_input = ClarifySpecInput.from_dict(input_dict)
 
         detailed_result = (
             await clarify_spec_v1_copilot_clarify_spec_post.asyncio_detailed(

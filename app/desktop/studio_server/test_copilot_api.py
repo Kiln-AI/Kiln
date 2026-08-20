@@ -35,6 +35,9 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.job_statu
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.job_type import (
     JobType,
 )
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.model_provider_name import (
+    ModelProviderName as ServerModelProviderName,
+)
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_spec_api_output import (
     RefineSpecApiOutput,
 )
@@ -82,6 +85,51 @@ def clarify_spec_input():
         "providers": ["openai"],
         "num_exemplars": 10,
     }
+
+
+@pytest.fixture
+def clarify_spec_mock_output():
+    mock_output = MagicMock(spec=ClarifySpecOutput)
+    mock_output.to_dict.return_value = {
+        "examples_for_feedback": [
+            {
+                "input": "test input",
+                "output": "test output",
+                "fails_specification": False,
+            }
+        ],
+        "judge_result": {
+            "task_metadata": {
+                "model_name": "gpt-4",
+                "model_provider_name": "openai",
+            },
+            "prompt": "Test judge prompt",
+        },
+        "sdg_session_config": {
+            "topic_generation_config": {
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
+                "prompt": "Test topic generation prompt",
+            },
+            "input_generation_config": {
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
+                "prompt": "Test input generation prompt",
+            },
+            "output_generation_config": {
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
+                "prompt": "Test output generation prompt",
+            },
+        },
+    }
+    return mock_output
 
 
 @pytest.fixture
@@ -212,6 +260,42 @@ class TestClarifySpec:
             result = response.json()
             assert "examples_for_feedback" in result
             assert result["judge_result"]["task_metadata"]["model_name"] == "gpt-4"
+
+    def test_clarify_spec_drops_providers_unknown_to_server_client(
+        self, client, clarify_spec_input, clarify_spec_mock_output, mock_api_key
+    ):
+        # Providers can exist in the core enum before the generated server
+        # client's snapshot of it knows them (e.g. featherless_ai). They should
+        # be dropped from the request, not fail it.
+        clarify_spec_input["providers"] = ["openai", "featherless_ai"]
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = clarify_spec_mock_output
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.clarify_spec_v1_copilot_clarify_spec_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ) as mock_call:
+            response = client.post("/api/copilot/clarify_spec", json=clarify_spec_input)
+            assert response.status_code == 200
+            sent_body = mock_call.call_args.kwargs["body"]
+            assert sent_body.providers == [ServerModelProviderName.OPENAI]
+
+    def test_clarify_spec_no_supported_providers_returns_422(
+        self, client, clarify_spec_input, mock_api_key
+    ):
+        clarify_spec_input["providers"] = ["featherless_ai"]
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.clarify_spec_v1_copilot_clarify_spec_post.asyncio_detailed",
+            new_callable=AsyncMock,
+        ) as mock_call:
+            response = client.post("/api/copilot/clarify_spec", json=clarify_spec_input)
+            assert response.status_code == 422
+            assert "providers" in response.json()["message"]
+            mock_call.assert_not_called()
 
     def test_clarify_spec_no_response(self, client, clarify_spec_input, mock_api_key):
         mock_response = MagicMock()
