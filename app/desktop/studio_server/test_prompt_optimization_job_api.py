@@ -3804,3 +3804,79 @@ def test_check_eval_v2_deterministic_needs_no_model(client, mock_api_key, tmp_pa
     assert result["has_train_set"] is True
     assert result["model_is_supported"] is True
     mock_check.assert_not_called()
+
+
+def test_check_eval_v2_unsupported_type_reports_reason(client, mock_api_key, tmp_path):
+    """check_eval reports the same unsupported reason the submission guard
+    refuses with, so the UI marks the eval invalid before submission."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(name="Test Task", instruction="Test instruction", parent=project)
+    task.save_to_file()
+
+    mock_eval = _eval_with_train_split(TaskRunSplit(filter_id="tag::train"))
+    v2_config = EvalConfig(
+        name="v2-tool-call-check",
+        config_type=EvalConfigType.v2,
+        properties=ToolCallCheckProperties(
+            expected_tools=[ToolCallSpec(tool_name="some_tool")]
+        ),
+    )
+
+    with (
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_from_id",
+            return_value=mock_eval,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_config_from_id",
+            return_value=v2_config,
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompt_optimization_jobs/check_eval",
+            params={"eval_id": "test-eval-id"},
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["has_default_config"] is True
+    assert result["model_is_supported"] is False
+    assert "does not support" in result["unsupported_reason"]
+
+
+def test_check_eval_supported_evals_have_no_unsupported_reason(
+    client, mock_api_key, tmp_path
+):
+    """A supported deterministic V2 eval reports no unsupported reason."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(name="Test Task", instruction="Test instruction", parent=project)
+    task.save_to_file()
+
+    mock_eval = _eval_with_train_split(TaskRunSplit(filter_id="tag::train"))
+    v2_config = EvalConfig(
+        name="v2-exact-match",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="x"),
+    )
+
+    with (
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_from_id",
+            return_value=mock_eval,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_config_from_id",
+            return_value=v2_config,
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompt_optimization_jobs/check_eval",
+            params={"eval_id": "test-eval-id"},
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["model_is_supported"] is True
+    assert result["unsupported_reason"] is None

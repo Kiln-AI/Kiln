@@ -516,6 +516,14 @@
         evals_with_configs[index].has_default_config = data.has_default_config
         evals_with_configs[index].has_train_set = data.has_train_set
         evals_with_configs[index].model_is_supported = data.model_is_supported
+        if (data.unsupported_reason) {
+          evals_with_configs[index].other_error = data.unsupported_reason
+        }
+
+        // Reset before the conditional size fetch below: a stale count from a
+        // previous TaskRun-backed split must not survive a switch to an
+        // EvalInput-backed split, where the size is unknown.
+        evals_with_configs[index].train_set_size = null
 
         // If has train set, fetch the size. The size fetch reads tag counts over
         // dataset runs, so it only applies to TaskRun-backed train splits. For an
@@ -565,7 +573,8 @@
 
         const has_errors =
           evals_with_configs[index].judge_error !== null ||
-          evals_with_configs[index].train_error !== null
+          evals_with_configs[index].train_error !== null ||
+          evals_with_configs[index].other_error !== null
         evals_with_configs[index].validation_status = has_errors
           ? "invalid"
           : "valid"

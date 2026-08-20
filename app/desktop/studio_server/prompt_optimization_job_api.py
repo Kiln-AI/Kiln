@@ -14,6 +14,7 @@ from kiln_ai.datamodel import Prompt, PromptOptimizationJob, Task, TaskOutputRat
 from kiln_ai.datamodel.eval import (
     V2_PROPERTY_TYPES,
     Eval,
+    EvalConfig,
     EvalConfigType,
     LlmJudgeProperties,
     V2EvalType,
@@ -91,13 +92,41 @@ _DETERMINISTIC_EVAL_TYPES = {
 }
 
 
+def optimization_unsupported_reason(eval: Eval, config: EvalConfig) -> str | None:
+    """Why the optimization service cannot score this eval, or None if it can.
+
+    The single source of truth for eval-type support: check_eval reports it so
+    the UI marks the eval invalid, and reject_unsupported_evals refuses the job
+    with it, so the two cannot drift apart.
+    """
+    if config.config_type != EvalConfigType.v2:
+        return None
+    props = config.properties
+    if not isinstance(props, V2_PROPERTY_TYPES):
+        return None
+    if props.type in _UNSUPPORTED_OPTIMIZATION_EVAL_TYPES:
+        return (
+            f"Eval '{eval.name}' uses eval type '{props.type.value}', which "
+            "prompt optimization does not support yet."
+        )
+    if props.type in _DETERMINISTIC_EVAL_TYPES and any(
+        score.type != TaskOutputRatingType.pass_fail for score in eval.output_scores
+    ):
+        return (
+            f"Eval '{eval.name}' uses the deterministic eval type "
+            f"'{props.type.value}', which produces pass/fail scores, but has "
+            "output scores that are not pass/fail. Change them to pass/fail "
+            "to use this eval for prompt optimization."
+        )
+    return None
+
+
 def reject_unsupported_evals(task: Task, eval_ids: list[str]) -> None:
     """Refuse a job whose evals the optimization service cannot score.
 
     This runs before the job is submitted (and billed), so a job that would fail
-    the service's own validation fails here first, with the same reasons: eval
-    types the service does not support, and deterministic evals whose output
-    scores are not pass/fail.
+    the service's own validation fails here first, for the same reasons the
+    check_eval endpoint reports (see optimization_unsupported_reason).
 
     Ids that name no eval on the task are left alone: this endpoint does not validate eval
     ids, and this guard is not the place to start.
@@ -111,31 +140,11 @@ def reject_unsupported_evals(task: Task, eval_ids: list[str]) -> None:
             (c for c in eval.configs(readonly=True) if c.id == eval.current_config_id),
             None,
         )
-        if config is None or config.config_type != EvalConfigType.v2:
+        if config is None:
             continue
-        props = config.properties
-        if not isinstance(props, V2_PROPERTY_TYPES):
-            continue
-        if props.type in _UNSUPPORTED_OPTIMIZATION_EVAL_TYPES:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Eval '{eval.name}' uses eval type '{props.type.value}', which "
-                    "prompt optimization does not support yet."
-                ),
-            )
-        if props.type in _DETERMINISTIC_EVAL_TYPES and any(
-            score.type != TaskOutputRatingType.pass_fail for score in eval.output_scores
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Eval '{eval.name}' uses the deterministic eval type "
-                    f"'{props.type.value}', which produces pass/fail scores, but has "
-                    "output scores that are not pass/fail. Change them to pass/fail "
-                    "to use this eval for prompt optimization."
-                ),
-            )
+        reason = optimization_unsupported_reason(eval, config)
+        if reason is not None:
+            raise HTTPException(status_code=400, detail=reason)
 
 
 def is_job_status_final(status: str) -> bool:
@@ -175,6 +184,7 @@ class CheckEvalResponse(BaseModel):
     has_default_config: bool
     has_train_set: bool
     model_is_supported: bool
+    unsupported_reason: str | None = None
 
 
 def _get_api_key() -> str:
@@ -531,6 +541,17 @@ def connect_prompt_optimization_job_api(app: FastAPI):
                     has_default_config=False,
                     has_train_set=has_train_split(eval),
                     model_is_supported=False,
+                )
+
+            # The same support rules the submission guard enforces, reported so
+            # the UI marks unsupported evals invalid before submission.
+            unsupported_reason = optimization_unsupported_reason(eval, config)
+            if unsupported_reason is not None:
+                return CheckEvalResponse(
+                    has_default_config=True,
+                    has_train_set=has_train_split(eval),
+                    model_is_supported=False,
+                    unsupported_reason=unsupported_reason,
                 )
 
             # Extract model info from config. Legacy configs carry it at the

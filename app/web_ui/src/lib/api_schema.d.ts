@@ -4662,6 +4662,8 @@ export interface components {
             has_train_set: boolean;
             /** Model Is Supported */
             model_is_supported: boolean;
+            /** Unsupported Reason */
+            unsupported_reason?: string | null;
         };
         /**
          * CheckRunConfigResponse
