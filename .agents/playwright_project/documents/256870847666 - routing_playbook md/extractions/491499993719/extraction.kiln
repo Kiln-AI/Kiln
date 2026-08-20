@@ -1,0 +1,12 @@
+{
+  "v": 1,
+  "id": "491499993719",
+  "created_at": "2026-08-17T22:17:43.611752Z",
+  "created_by": "root",
+  "source": "passthrough",
+  "extractor_config_id": "117940161350",
+  "output": {
+    "path": "262720395456.md"
+  },
+  "model_type": "extraction"
+}

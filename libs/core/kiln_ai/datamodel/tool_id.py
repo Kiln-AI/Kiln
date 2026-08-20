@@ -30,6 +30,8 @@ class KilnBuiltInToolId(str, Enum):
     MULTIPLY_NUMBERS = "kiln_tool::multiply_numbers"
     DIVIDE_NUMBERS = "kiln_tool::divide_numbers"
     CALL_KILN_API = "kiln_tool::call_kiln_api"
+    LLM = "kiln_tool::llm"
+    LLM_JUDGE = "kiln_tool::llm_judge"
 
 
 MCP_REMOTE_TOOL_ID_PREFIX = "mcp::remote::"
@@ -38,6 +40,7 @@ MCP_LOCAL_TOOL_ID_PREFIX = "mcp::local::"
 KILN_TASK_TOOL_ID_PREFIX = "kiln_task::"
 SKILL_TOOL_ID_PREFIX = "kiln_tool::skill::"
 KILN_UNMANAGED_TOOL_ID_PREFIX = "kiln_unmanaged::"
+CODE_TOOL_ID_PREFIX = "kiln_tool::code::"
 
 
 def kiln_unmanaged_tool_slug_from_id(id: str) -> str:
@@ -124,6 +127,15 @@ def _check_tool_id(id: str) -> str:
             )
         return id
 
+    # Code tools must have format: kiln_tool::code::<code_tool_id>
+    if id.startswith(CODE_TOOL_ID_PREFIX):
+        ct_id = code_tool_id_from_tool_id(id)
+        if not ct_id:
+            raise ValueError(
+                f"Invalid code tool ID: {id}. Expected format: 'kiln_tool::code::<code_tool_id>'."
+            )
+        return id
+
     # SDK / AdapterConfig.unmanaged_tools — not resolved by tool_from_id
     if id.startswith(KILN_UNMANAGED_TOOL_ID_PREFIX):
         kiln_unmanaged_tool_slug_from_id(id)
@@ -192,6 +204,21 @@ def build_skill_tool_id(skill_id: str) -> str:
     return f"{SKILL_TOOL_ID_PREFIX}{skill_id}"
 
 
+def build_code_tool_id(code_tool_id: ID_TYPE) -> str:
+    """Construct the tool ID for a code tool."""
+    return f"{CODE_TOOL_ID_PREFIX}{code_tool_id}"
+
+
+def code_tool_id_from_tool_id(tool_id: str) -> str:
+    """Extract the code tool ID from a code tool tool ID."""
+    parts = tool_id.split("::")
+    if not tool_id.startswith(CODE_TOOL_ID_PREFIX) or len(parts) != 3 or not parts[2]:
+        raise ValueError(
+            f"Invalid code tool ID: {tool_id}. Expected format: 'kiln_tool::code::<code_tool_id>'."
+        )
+    return parts[2]
+
+
 def kiln_task_server_id_from_tool_id(tool_id: str) -> str:
     """
     Get the server ID from the tool ID.
@@ -215,3 +242,41 @@ def kiln_task_server_id_from_tool_id(tool_id: str) -> str:
         )
 
     return parts[0]  # server_id
+
+
+def validate_tool_allowlist(
+    tool_allowlist: list[ToolId],
+    *,
+    caller: str,
+    self_tool_id: ToolId | None = None,
+) -> None:
+    """Validate a sandboxed-code tool allowlist, raising ValueError on the first problem.
+
+    Shared by every model that carries one (code tools, code evals) so the rules
+    cannot drift apart: the sandbox bridge resolves them all through the same path,
+    so what one accepts the other must too.
+
+    ``caller`` names the owner in error messages ("code tools", "code evals").
+    ``self_tool_id`` is the owner's own tool id, when it has one, to reject
+    self-reference.
+    """
+    seen: set[str] = set()
+    for tool_id in tool_allowlist:
+        if tool_id.startswith(SKILL_TOOL_ID_PREFIX):
+            raise ValueError(
+                f"Skill tool IDs cannot be used in tool_allowlist: {tool_id}. "
+                f"Skills are adapter-resolved and not callable from {caller}."
+            )
+        if tool_id.startswith(KILN_UNMANAGED_TOOL_ID_PREFIX):
+            raise ValueError(
+                f"Unmanaged tool IDs cannot be used in tool_allowlist: {tool_id}. "
+                "Unmanaged tools are SDK-injected and not resolvable by the registry."
+            )
+        if tool_id in seen:
+            raise ValueError(f"Duplicate tool ID in tool_allowlist: {tool_id}")
+        seen.add(tool_id)
+
+    # Only code tools are themselves tools, so only they can self-reference; the
+    # wording stays concrete rather than being generated from `caller`.
+    if self_tool_id is not None and self_tool_id in seen:
+        raise ValueError("A code tool cannot reference itself in tool_allowlist.")

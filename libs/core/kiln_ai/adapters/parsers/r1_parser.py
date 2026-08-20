@@ -1,3 +1,5 @@
+import dataclasses
+
 from kiln_ai.adapters.parsers.base_parser import BaseParser
 from kiln_ai.adapters.run_output import RunOutput
 
@@ -82,7 +84,10 @@ class R1ThinkingParser(BaseParser):
         if thinking_content is not None and len(thinking_content) > 0:
             intermediate_outputs["reasoning"] = thinking_content
 
-        return RunOutput(
+        # replace() rather than a fresh RunOutput so fields we don't touch
+        # (trace, output_logprobs, and anything added later) carry through.
+        return dataclasses.replace(
+            original_output,
             output=result,
             intermediate_outputs=intermediate_outputs,
         )

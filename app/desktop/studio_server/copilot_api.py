@@ -7,6 +7,28 @@ from typing import Annotated
 
 import httpx
 import jsonschema
+from fastapi import FastAPI, File, HTTPException, Path, UploadFile
+from kiln_ai.datamodel import TaskRun
+from kiln_ai.datamodel.basemodel import FilenameString
+from kiln_ai.datamodel.datamodel_enums import EvalStatus, Priority
+from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalConfigType
+from kiln_ai.datamodel.json_schema import validate_schema
+from kiln_ai.datamodel.spec import (
+    Spec,
+    SpecStatus,
+    SyntheticDataGenerationSessionConfig,
+    SyntheticDataGenerationStepConfig,
+    TaskSample,
+)
+from kiln_ai.datamodel.spec_properties import SpecProperties
+from kiln_ai.utils.name_generator import generate_memorable_name
+from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    agent_policy_require_approval,
+)
+from kiln_server.utils.spec_utils import build_spec_eval
+from pydantic import BaseModel, Field
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     clarify_spec_v1_copilot_clarify_spec_post,
@@ -19,6 +41,9 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs import 
     get_data_guide_job_result_v1_jobs_data_guide_job_job_id_result_get,
     get_job_status_v1_jobs_job_type_job_id_status_get,
     start_data_guide_job_v1_jobs_data_guide_job_start_post,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
+    AuthenticatedClient,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     ClarifySpecInput,
@@ -42,32 +67,29 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     SubmitAnswersRequest as SubmitAnswersRequestServerApi,
 )
-from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
-    AuthenticatedClient,
-)
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
-from app.desktop.studio_server.data_gen_api import (
-    _resolve_task_runtime_prompt,
-)
 from app.desktop.studio_server.api_models.copilot_models import (
     DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH,
-    DataGuideJobResultApiOutput,
-    DataGuideJobStatusApiOutput,
-    ParseImportFileApiOutput,
-    StartDataGuideJobApiInput,
-    StartDataGuideJobApiOutput,
     ClarifySpecApiInput,
     ClarifySpecApiOutput,
+    DataGuideJobResultApiOutput,
+    DataGuideJobStatusApiOutput,
     GenerateBatchApiInput,
     GenerateBatchApiOutput,
+    ParseImportFileApiOutput,
     RefineSpecApiInput,
     ReviewedExample,
     SpecQuestionerApiInput,
+    StartDataGuideJobApiInput,
+    StartDataGuideJobApiOutput,
     SyntheticDataGenerationSessionConfigApi,
     SyntheticDataGenerationStepConfigApi,
     TaskInfoApi,
+)
+from app.desktop.studio_server.data_gen_api import (
+    _resolve_task_runtime_prompt,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
     create_dataset_task_runs,
@@ -79,39 +101,11 @@ from app.desktop.studio_server.utils.response_utils import (
     upstream_route_missing,
     upstream_unreachable,
 )
-from fastapi import FastAPI, File, HTTPException, Path, UploadFile
-from kiln_ai.datamodel import TaskRun
-from kiln_ai.datamodel.basemodel import FilenameString
-from kiln_ai.datamodel.datamodel_enums import Priority
-from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalConfigType
-from kiln_ai.datamodel.json_schema import validate_schema
-from kiln_ai.datamodel.spec import (
-    Spec,
-    SpecStatus,
-    SyntheticDataGenerationSessionConfig,
-    SyntheticDataGenerationStepConfig,
-    TaskSample,
-)
-from kiln_ai.datamodel.spec_properties import SpecProperties
-from kiln_ai.utils.name_generator import generate_memorable_name
-from kiln_server.task_api import task_from_id
-from kiln_server.utils.spec_utils import (
-    generate_spec_eval_filter_ids,
-    generate_spec_eval_tags,
-    spec_eval_data_type,
-    spec_eval_output_score,
-    spec_eval_template,
-)
 from libs.core.kiln_ai.datamodel.copilot_models.questions import (
     QuestionSet,
     RefineSpecApiOutput,
     SubmitAnswersRequest,
 )
-from kiln_server.utils.agent_checks.policy import (
-    ALLOW_AGENT,
-    agent_policy_require_approval,
-)
-from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -737,37 +731,22 @@ def connect_copilot_api(app: FastAPI):
         """
         task = task_from_id(project_id, task_id)
 
-        # Generate tags and filter IDs
-        eval_tag, train_tag, golden_tag = generate_spec_eval_tags(request.name)
-        eval_set_filter_id, train_set_filter_id, eval_configs_filter_id = (
-            generate_spec_eval_filter_ids(eval_tag, train_tag, golden_tag)
-        )
-
         # Extract spec_type from properties (discriminated union)
         spec_type = request.properties["spec_type"]
-
-        # Determine eval properties
-        template = spec_eval_template(spec_type)
-        output_scores = [spec_eval_output_score(request.name)]
-        evaluation_data_type = spec_eval_data_type(
-            spec_type, request.evaluate_full_trace
-        )
 
         # Build models but don't save yet, collect all models first
         models_to_save: list[Eval | EvalConfig | TaskRun | Spec] = []
 
-        # 1. Create the Eval
-        eval = Eval(
-            parent=task,
+        # 1. Create the Eval, and the dataset tags its generated runs must carry.
+        # Priority/status live on the eval; the spec below mirrors them at
+        # creation for a truthful spec file.
+        eval, tags = build_spec_eval(
+            task=task,
             name=request.name,
-            description=None,
-            template=template,
-            output_scores=output_scores,
-            eval_set_filter_id=eval_set_filter_id,
-            train_set_filter_id=train_set_filter_id,
-            eval_configs_filter_id=eval_configs_filter_id,
-            template_properties=None,
-            evaluation_data_type=evaluation_data_type,
+            spec_type=spec_type,
+            evaluate_full_trace=request.evaluate_full_trace,
+            priority=Priority.p1,
+            status=EvalStatus.active,
         )
         models_to_save.append(eval)
 
@@ -807,13 +786,14 @@ def connect_copilot_api(app: FastAPI):
             spec_definition=request.definition,
         )
 
-        # 4. Create TaskRuns for eval, train, and golden datasets
+        # 4. Create TaskRuns for test, train, val, and golden datasets
         dataset_runs = create_dataset_task_runs(
             all_examples=all_examples,
             reviewed_examples=request.reviewed_examples,
-            eval_tag=eval_tag,
-            train_tag=train_tag,
-            golden_tag=golden_tag,
+            test_tag=tags.test_tag,
+            train_tag=tags.train_tag,
+            val_tag=tags.val_tag,
+            golden_tag=tags.golden_tag,
             spec_name=request.name,
         )
         task_runs = dataset_runs.task_runs
