@@ -1,6 +1,7 @@
 import hashlib
 import json
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Annotated, Any, Dict, List, Literal, Set, Tuple
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
@@ -119,35 +120,74 @@ def eval_from_id(project_id: str, task_id: str, eval_id: str) -> Eval:
     )
 
 
-def split_filter_id_from_eval(eval: Eval, split: EvalSplitName) -> DatasetFilterId:
-    """Resolve a split name to the eval's stored dataset filter id.
+@dataclass(frozen=True)
+class ResolvedSplit:
+    """One split name resolved against one eval, in that eval's own item source.
 
-    422 when the eval has no filter configured for that split, or is an
-    EvalInput-backed (V2) eval — splits are TaskRun dataset filters, which V2
-    evals don't run against (rejected up front: the lazy migration mints
-    train/val tag filters even on V2 evals, so train/val would otherwise
-    resolve and then fail downstream). "train" and "val" can be unset on evals
-    constructed without them; "test" resolves to eval_set_filter_id (its
-    legacy name).
+    Exactly one field is set: `dataset_filter_id` for TaskRun-backed (V1) evals,
+    `eval_input_filter_id` for EvalInput-backed (V2) evals. Callers branch on
+    which one is populated rather than re-deriving the eval's item source.
+    """
+
+    dataset_filter_id: DatasetFilterId | None = None
+    eval_input_filter_id: EvalInputFilterId | None = None
+
+
+def _split_field_name(split: EvalSplitName) -> str:
+    # The field name matches the split for train/val; for test the backing
+    # field is the legacy-named eval_set_filter_id.
+    return "eval_set_filter_id" if split == "test" else f"{split}_set_filter_id"
+
+
+def resolve_split(eval: Eval, split: EvalSplitName) -> ResolvedSplit:
+    """Resolve a split name to a filter over the eval's own item universe.
+
+    Replace-universe semantics: the resolved filter *replaces* the eval's
+    default item filter for this run or read, it does not intersect with it.
+
+    TaskRun-backed (V1) evals resolve to a TaskRun dataset filter, as before.
+    EvalInput-backed (V2) evals resolve to an EvalInput filter: "test" is the
+    eval's own eval_input_filter_id (V2's test universe by definition), while
+    "train"/"val" reinterpret the tag stored in train_set_filter_id /
+    val_set_filter_id as an EvalInput filter. The two filter-id types share the
+    `tag::<tag>` form, so this reads existing data unchanged — but a V1-only
+    filter id (e.g. "high_rating") cannot scope EvalInputs, and 422s here
+    rather than raising ValueError deep in the runner.
+
+    422 when the eval has no filter configured for that split. "train" and
+    "val" can be unset on evals constructed without them.
     """
     if eval.eval_input_filter_id is not None:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Eval '{eval.id}' is EvalInput-backed (V2); dataset splits are "
-            "not supported for it.",
-        )
+        if split == "test":
+            # V2's test universe is the eval's own filter; the lazy migration
+            # never mints a separate test tag for it.
+            return ResolvedSplit(eval_input_filter_id=eval.eval_input_filter_id)
+        filter_id = eval.filter_id_for_split(split)
+        if filter_id is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Eval '{eval.id}' has no {split} split configured "
+                f"(no {_split_field_name(split)}).",
+            )
+        try:
+            eval_input_filter_from_id(filter_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Eval '{eval.id}' is EvalInput-backed (V2), but its {split} "
+                f"split filter '{filter_id}' is not a valid eval-input filter. "
+                "Use a 'tag::<tag>' filter.",
+            )
+        return ResolvedSplit(eval_input_filter_id=filter_id)
+
     filter_id = eval.filter_id_for_split(split)
     if filter_id is None:
-        # The field name matches the split for train/val; for test the backing
-        # field is the legacy-named eval_set_filter_id.
-        field_name = (
-            "eval_set_filter_id" if split == "test" else f"{split}_set_filter_id"
-        )
         raise HTTPException(
             status_code=422,
-            detail=f"Eval '{eval.id}' has no {split} split configured (no {field_name}).",
+            detail=f"Eval '{eval.id}' has no {split} split configured "
+            f"(no {_split_field_name(split)}).",
         )
-    return filter_id
+    return ResolvedSplit(dataset_filter_id=filter_id)
 
 
 def eval_config_from_id(
@@ -1895,10 +1935,11 @@ def connect_evals_api(app: FastAPI):
         split: Annotated[
             EvalSplitName | None,
             Query(
-                description="Only return results for dataset items in this split of "
-                "the eval (train, val, or test). 422 if the eval has no filter "
-                "configured for the split. Omit to return all results (no split "
-                "filtering)."
+                description="Only return results for items in this split of the eval "
+                "(train, val, or test). Resolved in the eval's own item source: a "
+                "dataset filter over TaskRuns, or an EvalInput filter for "
+                "EvalInput-backed (V2) evals. 422 if the eval has no filter configured "
+                "for the split. Omit to return all results (no split filtering)."
             ),
         ] = None,
     ) -> EvalRunResult:
@@ -1911,44 +1952,27 @@ def connect_evals_api(app: FastAPI):
             if run_result.task_run_config_id == run_config_id
         ]
         if split is not None:
+            resolved = resolve_split(eval, split)
             task = task_from_id(project_id, task_id)
-            # Resolved against the store this eval's items live in, so the
-            # filter means the same thing here as it does in the summaries. A
-            # V2 eval keys its runs on eval_input_id, and matching those
-            # against TaskRun ids silently returned nothing at all.
-            split_item_ids = split_item_ids_for_eval(task, eval, split, readonly=True)
-            if split_item_ids is None:
-                # A 422 rather than an empty list: this endpoint is asked for
-                # one eval's runs, so a split it does not have is a bad
-                # request. The task-wide summaries make the opposite call -
-                # there, one eval without the split must not fail the page.
-                #
-                # An unset filter keeps split_filter_id_from_eval's wording, so
-                # the two paths a caller can hit read the same; what reaches
-                # the second branch is a filter that IS set and does not
-                # resolve, which is a V2 eval carrying a TaskRun-only filter id.
-                if eval.filter_id_for_split(split) is None:
-                    field_name = (
-                        "eval_set_filter_id"
-                        if split == "test"
-                        else f"{split}_set_filter_id"
-                    )
-                    raise HTTPException(
-                        status_code=422,
-                        detail=f"Eval '{eval.id}' has no {split} split configured "
-                        f"(no {field_name}).",
-                    )
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Eval '{eval.id}' has a {split} split filter that does "
-                    "not resolve against its own dataset "
-                    f"({'EvalInputs' if eval_uses_eval_inputs(eval) else 'TaskRuns'}).",
+            if resolved.eval_input_filter_id is not None:
+                # EvalInput-backed (V2): results are keyed by eval_input_id.
+                split_input_ids = eval_input_ids_in_filter(
+                    task, resolved.eval_input_filter_id, readonly=True
                 )
-            results = [
-                run_result
-                for run_result in results
-                if eval_run_item_id(run_result) in split_item_ids
-            ]
+                results = [
+                    run_result
+                    for run_result in results
+                    if run_result.eval_input_id in split_input_ids
+                ]
+            elif resolved.dataset_filter_id is not None:
+                split_dataset_ids = dataset_ids_in_filter(
+                    task, resolved.dataset_filter_id, readonly=True
+                )
+                results = [
+                    run_result
+                    for run_result in results
+                    if run_result.dataset_id in split_dataset_ids
+                ]
         return EvalRunResult(
             results=results,
             eval=eval,

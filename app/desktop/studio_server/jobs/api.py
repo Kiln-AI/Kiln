@@ -13,7 +13,7 @@ from kiln_server.utils.agent_checks.policy import (
 )
 from pydantic import BaseModel, Field
 
-from ..eval_api import eval_from_id, split_filter_id_from_eval
+from ..eval_api import eval_from_id, resolve_split
 from . import error_log
 from .events import JobEvent
 from .models import BackgroundJobStatus, JobRecord
@@ -185,7 +185,7 @@ def connect_jobs_api(app: FastAPI) -> None:
         if params.split is not None:
             split = params.split
             await asyncio.to_thread(
-                lambda: split_filter_id_from_eval(
+                lambda: resolve_split(
                     eval_from_id(params.project_id, params.task_id, params.eval_id),
                     split,
                 )

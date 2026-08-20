@@ -15,6 +15,7 @@ from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.dataset_filters import (
     DatasetFilterId,
+    EvalInputFilterId,
     dataset_filter_from_id,
     eval_input_filter_from_id,
 )
@@ -87,8 +88,11 @@ class EvalRunner:
 
     `eval_set_filter_id_override` replaces the eval's eval_set_filter_id as the
     dataset filter in task_run_eval mode (e.g. to run one of the eval's other
-    dataset splits). Passing it in eval_config_eval mode, or for an
-    EvalInput-backed (V2) eval, raises ValueError.
+    dataset splits). `eval_input_filter_id_override` is its EvalInput-backed
+    (V2) counterpart, replacing eval_input_filter_id as the item universe.
+    Each override applies to exactly one source mode: passing the TaskRun one
+    for a V2 eval, the EvalInput one for a V1 eval, both at once, or either in
+    eval_config_eval mode, raises ValueError.
     """
 
     def __init__(
@@ -98,6 +102,7 @@ class EvalRunner:
         eval_run_type: Literal["eval_config_eval", "task_run_eval"],
         save_context: SaveContext | None = None,
         eval_set_filter_id_override: DatasetFilterId | None = None,
+        eval_input_filter_id_override: EvalInputFilterId | None = None,
     ):
         if len(eval_configs) == 0:
             raise ValueError("Eval runner requires at least one eval config")
@@ -130,11 +135,25 @@ class EvalRunner:
         else:
             if run_configs is not None:
                 raise ValueError("Mode 'eval_config_eval' does not support run configs")
-            if eval_set_filter_id_override is not None:
+            if (
+                eval_set_filter_id_override is not None
+                or eval_input_filter_id_override is not None
+            ):
                 raise ValueError(
                     "Mode 'eval_config_eval' does not support an eval set filter override. "
                     "It scopes items by the eval's eval_configs_filter_id."
                 )
+
+        if (
+            eval_set_filter_id_override is not None
+            and eval_input_filter_id_override is not None
+        ):
+            # An eval has exactly one source mode, so only one override can
+            # apply. Two means the caller resolved the split twice.
+            raise ValueError(
+                "eval_set_filter_id_override and eval_input_filter_id_override are "
+                "mutually exclusive; an eval has exactly one item source."
+            )
 
         self._source_mode: Literal["task_run", "eval_input"] = "task_run"
         if target_eval.eval_input_filter_id is not None:
@@ -150,9 +169,20 @@ class EvalRunner:
                 "eval_set_filter_id_override is not supported for EvalInput-backed "
                 "(V2) evals, which scope items by eval_input_filter_id."
             )
+        if (
+            eval_input_filter_id_override is not None
+            and self._source_mode != "eval_input"
+        ):
+            # Mirror image of the check above: an EvalInput filter cannot scope
+            # a TaskRun-backed eval.
+            raise ValueError(
+                "eval_input_filter_id_override is only supported for EvalInput-backed "
+                "(V2) evals, which scope items by eval_input_filter_id."
+            )
 
         self.eval_run_type = eval_run_type
         self.eval_set_filter_id_override = eval_set_filter_id_override
+        self.eval_input_filter_id_override = eval_input_filter_id_override
         self.eval_configs = eval_configs
         self.run_configs = run_configs
         self.task = target_task
@@ -228,7 +258,7 @@ class EvalRunner:
                 "EvalInput collection only supports task_run_eval; "
                 "eval_config_eval uses eval_configs_filter_id over TaskRuns"
             )
-        filter_id = self.eval.eval_input_filter_id
+        filter_id = self.eval_input_filter_id_override or self.eval.eval_input_filter_id
         if filter_id is None:
             raise ValueError(
                 "eval_input_filter_id is required for eval_input source mode"

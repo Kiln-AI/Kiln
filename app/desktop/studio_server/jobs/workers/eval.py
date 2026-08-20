@@ -10,7 +10,6 @@ from kiln_ai.adapters.eval.eval_runner import (
     EvalRunner,
 )
 from kiln_ai.datamodel.dataset_filters import (
-    DatasetFilterId,
     dataset_filter_from_id,
     eval_input_filter_from_id,
 )
@@ -23,8 +22,9 @@ from kiln_ai.utils.async_job_runner import AsyncJobRunnerObserver
 from pydantic import BaseModel, Field
 
 from ...eval_api import (
+    ResolvedSplit,
     eval_config_from_id,
-    split_filter_id_from_eval,
+    resolve_split,
     task_run_config_from_id,
 )
 from ..models import (
@@ -103,9 +103,11 @@ class EvalJobParams(BaseModel):
     )
     split: EvalSplitName | None = Field(
         default=None,
-        description="Which of the eval's dataset splits to run: train, val, or test. "
-        "Fails with 422 if the eval has no filter configured for the split. Leave "
-        "null to run the eval set (the test set — today's default behavior).",
+        description="Which of the eval's splits to run: train, val, or test. Resolved "
+        "in the eval's own item source: a dataset filter over TaskRuns, or an "
+        "EvalInput filter for EvalInput-backed (V2) evals. Fails with 422 if the eval "
+        "has no filter configured for the split. Leave null to run the eval's own "
+        "filter (the test set — today's default behavior).",
     )
 
 
@@ -291,11 +293,12 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
         )
         eval, task = self._eval_and_task(eval_config)
 
-        # The job's dataset filter defines the universe of dataset items in
-        # scope: the requested split's filter, or the eval's own filter — an
-        # eval has exactly one of the two filter ids (datamodel invariant),
-        # mirroring EvalRunner's two collect paths: TaskRun-backed datasets use
-        # eval_set_filter_id; EvalInput-backed datasets use eval_input_filter_id.
+        # The job's filter defines the universe of items in scope: the requested
+        # split's filter, or the eval's own filter — an eval has exactly one of
+        # the two filter ids (datamodel invariant), mirroring EvalRunner's two
+        # collect paths: TaskRun-backed datasets use eval_set_filter_id;
+        # EvalInput-backed datasets use eval_input_filter_id. resolve_split
+        # answers in the eval's OWN item source, so a split never crosses lanes.
         # EvalRunner only works items that BOTH pass this filter AND lack a
         # matching EvalRun, so progress must be measured against this same set.
         #
@@ -304,22 +307,15 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
         # or success/is_complete would overcount and a resume could short-circuit
         # to succeeded while real work remains.
         if params.split is not None:
-            # The requested split's TaskRun dataset filter is the universe.
-            # split_filter_id_from_eval rejects EvalInput-backed (V2) evals,
-            # which have no TaskRun dataset splits.
-            filter = dataset_filter_from_id(
-                split_filter_id_from_eval(eval, params.split)
-            )
-            in_filter_ids = {
-                task_run.id for task_run in task.runs(readonly=True) if filter(task_run)
-            }
-            scored_ids = {
-                run.dataset_id
-                for run in eval_config.runs(readonly=True)
-                if run.task_run_config_id == params.run_config_id
-            }
-        elif eval.eval_input_filter_id is not None:
-            input_filter = eval_input_filter_from_id(eval.eval_input_filter_id)
+            resolved = resolve_split(eval, params.split)
+            eval_input_filter_id = resolved.eval_input_filter_id
+            dataset_filter_id = resolved.dataset_filter_id
+        else:
+            eval_input_filter_id = eval.eval_input_filter_id
+            dataset_filter_id = eval.eval_set_filter_id
+
+        if eval_input_filter_id is not None:
+            input_filter = eval_input_filter_from_id(eval_input_filter_id)
             in_filter_ids = {
                 eval_input.id
                 for eval_input in task.eval_inputs(readonly=True)
@@ -330,8 +326,8 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
                 for run in eval_config.runs(readonly=True)
                 if run.task_run_config_id == params.run_config_id
             }
-        elif eval.eval_set_filter_id is not None:
-            filter = dataset_filter_from_id(eval.eval_set_filter_id)
+        elif dataset_filter_id is not None:
+            filter = dataset_filter_from_id(dataset_filter_id)
             in_filter_ids = {
                 task_run.id for task_run in task.runs(readonly=True) if filter(task_run)
             }
@@ -406,22 +402,25 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
             context=f"eval job {params.eval_id}/{params.run_config_id}",
         )
         eval, _ = self._eval_and_task(eval_config)
+        override = self._split_override(eval, params)
         return EvalRunner(
             eval_configs=[eval_config],
             run_configs=[run_config],
             eval_run_type="task_run_eval",
             save_context=save_context,
-            eval_set_filter_id_override=self._split_override(eval, params),
+            eval_set_filter_id_override=override.dataset_filter_id,
+            eval_input_filter_id_override=override.eval_input_filter_id,
         )
 
-    def _split_override(
-        self, eval: Eval, params: EvalJobParams
-    ) -> DatasetFilterId | None:
-        """The requested split's filter id, or None when no split was requested —
-        the single resolution point for a job's split."""
+    def _split_override(self, eval: Eval, params: EvalJobParams) -> ResolvedSplit:
+        """The requested split resolved in the eval's own item source, or an
+        empty ResolvedSplit when no split was requested — the single resolution
+        point for a job's split. EvalRunner takes whichever override matches its
+        source mode and rejects the other, so passing both fields is safe: at
+        most one is ever set."""
         if params.split is None:
-            return None
-        return split_filter_id_from_eval(eval, params.split)
+            return ResolvedSplit()
+        return resolve_split(eval, params.split)
 
     def _eval_and_task(self, eval_config: EvalConfig) -> tuple[Eval, Task]:
         eval = eval_config.parent_eval()

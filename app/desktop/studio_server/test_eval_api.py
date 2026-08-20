@@ -2104,6 +2104,178 @@ async def test_get_eval_run_results_invalid_split_422(
     assert response.status_code == 422
 
 
+@pytest.fixture
+def v2_eval_runs_across_splits(mock_task, mock_run_config):
+    """A V2 (EvalInput-backed) eval with one EvalInput + EvalRun per split tag.
+
+    The eval's own eval_input_filter_id IS the test universe; train/val come
+    from the tags in train_set_filter_id / val_set_filter_id, reinterpreted as
+    EvalInput filters. Returns eval run ids keyed by tag.
+    """
+    eval = Eval(
+        id="eval1",
+        name="V2 Eval",
+        output_scores=[
+            EvalOutputScore(
+                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
+            ),
+        ],
+        eval_input_filter_id="tag::v2_test",
+        eval_configs_filter_id="tag::golden",
+        train_set_filter_id="tag::v2_train",
+        val_set_filter_id="tag::v2_val",
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    eval_config = EvalConfig(
+        id="eval_config1",
+        name="Judge",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+        model_name="gpt-4",
+        model_provider="openai",
+        parent=eval,
+    )
+    eval_config.save_to_file()
+
+    eval_run_ids = {}
+    for tag in ["v2_test", "v2_train", "v2_val", "no_split"]:
+        eval_input = EvalInput(
+            data=MultiTurnSyntheticEvalInputData(
+                first_message=UserMessage(text=f"seed {tag}"),
+                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
+            ),
+            tags=[tag],
+            parent=mock_task,
+        )
+        eval_input.save_to_file()
+        eval_run = EvalRun(
+            task_run_config_id="run_config1",
+            scores={"score1": 3.0},
+            input=f"input {tag}",
+            output=f"output {tag}",
+            eval_input_id=eval_input.id,
+            parent=eval_config,
+        )
+        eval_run.save_to_file()
+        eval_run_ids[tag] = eval_run.id
+    return eval_run_ids
+
+
+@pytest.mark.asyncio
+async def test_get_eval_run_results_split_filtering_v2(
+    client,
+    mock_task_from_id,
+    mock_task,
+    mock_run_config,
+    v2_eval_runs_across_splits,
+):
+    """A V2 eval's splits resolve as EvalInput filters, and results are matched
+    on eval_input_id rather than dataset_id."""
+    mock_task_from_id.return_value = mock_task
+
+    # No split param: every eval run for the pair, including the item outside
+    # all three splits.
+    response = client.get(_RESULTS_PATH)
+    assert response.status_code == 200
+    result_ids = {r["id"] for r in response.json()["results"]}
+    assert result_ids == set(v2_eval_runs_across_splits.values())
+
+    # "test" is the eval's own eval_input_filter_id; train/val are the stored
+    # tags read as EvalInput filters.
+    for split, tag in [
+        ("test", "v2_test"),
+        ("train", "v2_train"),
+        ("val", "v2_val"),
+    ]:
+        response = client.get(_RESULTS_PATH, params={"split": split})
+        assert response.status_code == 200
+        result_ids = {r["id"] for r in response.json()["results"]}
+        assert result_ids == {v2_eval_runs_across_splits[tag]}, split
+
+
+@pytest.mark.asyncio
+async def test_get_eval_run_results_v2_split_unset_422(
+    client, mock_task_from_id, mock_task, mock_run_config
+):
+    """A V2 eval constructed without a train filter 422s on split=train, while
+    split=test still resolves to eval_input_filter_id."""
+    mock_task_from_id.return_value = mock_task
+
+    eval = Eval(
+        id="eval1",
+        name="V2 Eval",
+        output_scores=[
+            EvalOutputScore(
+                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
+            ),
+        ],
+        eval_input_filter_id="tag::v2_test",
+        eval_configs_filter_id="tag::golden",
+        parent=mock_task,
+    )
+    eval_config = EvalConfig(
+        id="eval_config1",
+        name="Judge",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+        model_name="gpt-4",
+        model_provider="openai",
+        parent=eval,
+    )
+    eval.save_to_file()
+    eval_config.save_to_file()
+
+    # Loading from disk lazily mints train/val filter ids, so return the
+    # in-memory eval directly to observe the unset state.
+    with patch("app.desktop.studio_server.eval_api.eval_from_id", return_value=eval):
+        assert eval.train_set_filter_id is None
+        response = client.get(_RESULTS_PATH, params={"split": "train"})
+        assert response.status_code == 422
+        assert "no train split configured" in response.json()["message"]
+
+        response = client.get(_RESULTS_PATH, params={"split": "test"})
+        assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_get_eval_run_results_v2_non_tag_split_filter_422(
+    client, mock_task_from_id, mock_task, mock_run_config
+):
+    """A V1-only filter id stored in a V2 eval's train slot cannot scope
+    EvalInputs: 422 here rather than a ValueError deep in the runner."""
+    mock_task_from_id.return_value = mock_task
+
+    eval = Eval(
+        id="eval1",
+        name="V2 Eval",
+        output_scores=[
+            EvalOutputScore(
+                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
+            ),
+        ],
+        eval_input_filter_id="tag::v2_test",
+        eval_configs_filter_id="tag::golden",
+        train_set_filter_id="high_rating",
+        parent=mock_task,
+    )
+    eval_config = EvalConfig(
+        id="eval_config1",
+        name="Judge",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+        model_name="gpt-4",
+        model_provider="openai",
+        parent=eval,
+    )
+    eval.save_to_file()
+    eval_config.save_to_file()
+
+    response = client.get(_RESULTS_PATH, params={"split": "train"})
+    assert response.status_code == 422
+    assert "not a valid eval-input filter" in response.json()["message"]
+
+
 @pytest.mark.asyncio
 async def test_get_eval_config_compare_summary(
     client,
