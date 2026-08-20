@@ -1,9 +1,10 @@
 import logging
 from typing import Any
 
-from app.desktop.studio_server.chat.constants import TOOL_EXECUTOR_SERVER
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+
+from app.desktop.studio_server.chat.constants import TOOL_EXECUTOR_SERVER
 
 logger = logging.getLogger(__name__)
 

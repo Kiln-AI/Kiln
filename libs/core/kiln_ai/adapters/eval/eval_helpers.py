@@ -66,13 +66,18 @@ class KilnEvalHelpers:
 
     @staticmethod
     def get_tool_results(trace: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-        """Return all tool-result entries from a trace."""
+        """Return all tool-result entries from a trace.
+
+        Kiln traces store tool results as OpenAI-style ``role: "tool"``
+        messages; ``tool_result``-shaped entries are also matched.
+        """
         if not trace:
             return []
         return [
             entry
             for entry in trace
-            if entry.get("role") == "tool_result" or entry.get("type") == "tool_result"
+            if entry.get("role") in ("tool", "tool_result")
+            or entry.get("type") == "tool_result"
         ]
 
     # -- Tool-call matching -------------------------------------------------

@@ -5,6 +5,30 @@ from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
+from kiln_ai.cli.commands.package_project import PackageForTrainingConfig
+from kiln_ai.datamodel import Project, PromptOptimizationJob, Task
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
+from kiln_ai.datamodel.eval import (
+    CodeEvalProperties,
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalInputSplit,
+    EvalOutputScore,
+    ExactMatchProperties,
+    LlmJudgeProperties,
+    SplitRef,
+    StepCountCheckProperties,
+    TaskRunSplit,
+    ToolCallCheckProperties,
+    ToolCallSpec,
+)
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.task import TaskRunConfig
+from kiln_server.custom_errors import connect_custom_errors
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
     AuthenticatedClient,
 )
@@ -34,30 +58,6 @@ from app.desktop.studio_server.prompt_optimization_job_api import (
     prompt_optimization_job_from_id,
     update_prompt_optimization_job_and_create_artifacts,
 )
-from fastapi import FastAPI, HTTPException
-from fastapi.testclient import TestClient
-from kiln_server.custom_errors import connect_custom_errors
-from kiln_ai.cli.commands.package_project import PackageForTrainingConfig
-from kiln_ai.datamodel import Project, PromptOptimizationJob, Task
-from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
-from kiln_ai.datamodel.eval import (
-    CodeEvalProperties,
-    Eval,
-    EvalConfig,
-    EvalConfigType,
-    EvalInputSplit,
-    EvalOutputScore,
-    ExactMatchProperties,
-    LlmJudgeProperties,
-    SplitRef,
-    StepCountCheckProperties,
-    TaskRunSplit,
-    ToolCallCheckProperties,
-    ToolCallSpec,
-)
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.task import TaskRunConfig
-
 
 # Every check_eval return site reports has_train_set, so each is parametrized over the
 # same cases: absent, TaskRun-backed, and EvalInput-backed. The optimization service
@@ -2683,7 +2683,7 @@ def test_prompt_optimization_job_creates_run_config_on_success(
         # Check that exactly 1 new run config was created (2 total including target)
         run_configs = task.run_configs()
         assert len(run_configs) == 2
-        new_run_config = [rc for rc in run_configs if rc.id != target_run_config.id][0]
+        new_run_config = next(rc for rc in run_configs if rc.id != target_run_config.id)
 
         assert new_run_config.name
         assert new_run_config.name != target_run_config.name

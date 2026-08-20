@@ -5,14 +5,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from app.desktop.studio_server.tool_api import (
-    ExternalToolApiDescription,
-    ToolSetType,
-    available_mcp_tools,
-    connect_tool_servers_api,
-    tool_server_from_id,
-    validate_tool_server_connectivity,
-)
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
@@ -30,6 +22,15 @@ from kiln_ai.tools.mcp_session_manager import KilnMCPError
 from kiln_ai.utils.config import MCP_SECRETS_KEY
 from kiln_server.custom_errors import connect_custom_errors
 from mcp.types import ListToolsResult, Tool
+
+from app.desktop.studio_server.tool_api import (
+    ExternalToolApiDescription,
+    ToolSetType,
+    available_mcp_tools,
+    connect_tool_servers_api,
+    tool_server_from_id,
+    validate_tool_server_connectivity,
+)
 
 
 @pytest.fixture

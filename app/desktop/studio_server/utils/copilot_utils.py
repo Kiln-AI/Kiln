@@ -7,6 +7,18 @@ spec creation workflow.
 
 import random
 
+from fastapi import HTTPException
+from kiln_ai.datamodel import Feedback, FeedbackSource, TaskRun
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.task_output import (
+    DataSource,
+    DataSourceType,
+    RequirementRating,
+    TaskOutput,
+    TaskOutputRating,
+)
+from kiln_ai.utils.config import Config
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     generate_batch_v1_copilot_generate_batch_post,
 )
@@ -24,17 +36,6 @@ from app.desktop.studio_server.api_models.copilot_models import (
     TaskInfoApi,
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
-from fastapi import HTTPException
-from kiln_ai.datamodel import Feedback, FeedbackSource, TaskRun
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
-from kiln_ai.datamodel.task_output import (
-    DataSource,
-    DataSourceType,
-    RequirementRating,
-    TaskOutput,
-    TaskOutputRating,
-)
-from kiln_ai.utils.config import Config
 
 # Constants for copilot spec creation
 KILN_COPILOT_MODEL_NAME = "kiln-copilot"
@@ -42,7 +43,11 @@ KILN_COPILOT_MODEL_PROVIDER = "kiln"
 KILN_ADAPTER_NAME = "kiln-adapter"
 NUM_SAMPLES_PER_TOPIC = 20
 NUM_TOPICS = 15
-MIN_GOLDEN_EXAMPLES = 25
+# Matches the golden-set goal the eval detail page holds users to
+# (MIN_GOLDEN_DATASET_SIZE). Every example above the reviewed ones is minted unrated, so
+# this is the hand-rating backlog a new spec starts with: a floor above the goal asks for
+# work the app never asks for again.
+MIN_GOLDEN_EXAMPLES = 12
 
 
 def get_copilot_api_key() -> str:
