@@ -37,6 +37,7 @@ from kiln_ai.datamodel.datamodel_enums import (
 )
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
 from kiln_ai.datamodel.eval import (
+    V2_PROPERTY_TYPES,
     CodeEvalProperties,
     Eval,
     EvalConfig,
@@ -54,7 +55,6 @@ from kiln_ai.datamodel.eval import (
     SkippedReason,
     SplitRef,
     TaskRunSplit,
-    V2_PROPERTY_TYPES,
     V2EvalConfigProperties,
     reference_data_keys,
     validate_scores_against_output_scores,
