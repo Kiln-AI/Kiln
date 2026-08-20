@@ -93,7 +93,6 @@
 
   interface ConfigData {
     model_list: Model[]
-    provider_names?: Record<string, string>
   }
 
   let models: Model[] = []
@@ -113,16 +112,6 @@
 
   // Available filter options
   let providers: string[] = []
-  // Friendly provider names from the remote config. Preferred over the local
-  // provider name map so providers newer than this client build still get a
-  // friendly name instead of the raw provider ID.
-  let remote_provider_names: Record<string, string> = {}
-
-  function provider_label(provider_id: string): string {
-    return (
-      remote_provider_names[provider_id] || provider_name_from_id(provider_id)
-    )
-  }
   let capabilities = [
     { value: "featured", label: "Featured" },
     { value: "data_gen", label: "Data Generation" },
@@ -145,7 +134,7 @@
       options: [
         { label: "All Providers", value: "" },
         ...providers.map((provider) => ({
-          label: provider_label(provider),
+          label: provider_name_from_id(provider),
           value: provider,
         })),
       ],
@@ -171,7 +160,7 @@
           {
             type: "provider",
             value: selectedProvider,
-            label: provider_label(selectedProvider),
+            label: provider_name_from_id(selectedProvider),
           },
         ]
       : []),
@@ -209,7 +198,6 @@
     }
 
     const data: ConfigData = await response.json()
-    remote_provider_names = data.provider_names || {}
     models = data.model_list
       .map((model) => ({
         ...model,
@@ -991,7 +979,7 @@
                               />
                               <div>
                                 <p class="text-sm font-medium text-gray-900">
-                                  {provider_label(provider.name)}
+                                  {provider_name_from_id(provider.name)}
                                 </p>
                                 <p class="text-xs text-gray-500 break-all">
                                   {provider.model_id ||
@@ -1023,7 +1011,7 @@
                               />
                               <div>
                                 <p class="text-sm font-medium text-gray-900">
-                                  {provider_label(provider.name)}
+                                  {provider_name_from_id(provider.name)}
                                 </p>
                                 <p class="text-xs text-gray-500 break-all">
                                   {provider.model_id}
@@ -1150,7 +1138,7 @@
               }}
             />
             <span class="text-sm text-gray-700"
-              >{provider_label(provider.name)}</span
+              >{provider_name_from_id(provider.name)}</span
             >
           </div>
         {/each}

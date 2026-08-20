@@ -110,22 +110,6 @@ def mock_reranker_model() -> KilnRerankerModel:
     )
 
 
-def test_serialize_includes_provider_names(tmp_path):
-    path = tmp_path / "models.json"
-    serialize_config(
-        built_in_models, built_in_embedding_models, built_in_rerankers, path
-    )
-    data = json.loads(path.read_text())
-    provider_names = data["provider_names"]
-    # every provider ID gets a friendly name, so config consumers (including
-    # clients older than a newly added provider) never show a raw provider ID
-    assert set(provider_names.keys()) == {p.value for p in ModelProviderName}
-    assert provider_names["featherless_ai"] == "Featherless AI"
-    assert provider_names["openrouter"] == "OpenRouter"
-    for provider_id, name in provider_names.items():
-        assert name and name != provider_id
-
-
 def test_round_trip(tmp_path):
     path = tmp_path / "models.json"
     serialize_config(
