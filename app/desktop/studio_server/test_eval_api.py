@@ -6866,6 +6866,463 @@ class TestTestV2EvalOverrides:
         assert call_kwargs.kwargs["system_prompt"] == "Be strict."
 
 
+def make_multi_turn_eval_input(mock_task, tags: list[str], text: str = "seed"):
+    eval_input = EvalInput(
+        data=MultiTurnSyntheticEvalInputData(
+            first_message=UserMessage(text=text),
+            synthetic_user_info={"persona": "p", "goal": "g"},
+        ),
+        reference={"scenario": "s1", "expected_facts": ["fact one"]},
+        tags=tags,
+        parent=mock_task,
+    )
+    eval_input.save_to_file()
+    return eval_input
+
+
+def test_list_eval_inputs_empty(client, mock_task, mock_task_from_id):
+    response = client.get("/api/projects/project1/tasks/task1/eval_inputs")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_eval_inputs_all_and_filtered(client, mock_task, mock_task_from_id):
+    tagged = make_multi_turn_eval_input(mock_task, tags=["corpus", "nm_app_crit"])
+    corpus_only = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.get("/api/projects/project1/tasks/task1/eval_inputs")
+    assert response.status_code == 200
+    assert {item["id"] for item in response.json()} == {tagged.id, corpus_only.id}
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        params={"filter_id": "tag::nm_app_crit"},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert [item["id"] for item in result] == [tagged.id]
+    assert result[0]["reference"] == {"scenario": "s1", "expected_facts": ["fact one"]}
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        params={"filter_id": "all"},
+    )
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+
+
+def test_list_eval_inputs_invalid_filter(client, mock_task, mock_task_from_id):
+    response = client.get(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        params={"filter_id": "not_a_filter"},
+    )
+
+    assert response.status_code == 422
+    assert "Invalid eval-input filter ID" in response.json()["message"]
+
+
+def test_get_eval_input(client, mock_task, mock_task_from_id):
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.get(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}"
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["id"] == eval_input.id
+    assert result["data"]["type"] == "multi_turn_synthetic"
+    assert result["data"]["first_message"]["text"] == "seed"
+
+    response = client.get("/api/projects/project1/tasks/task1/eval_inputs/999999")
+    assert response.status_code == 404
+
+
+def test_create_eval_input_multi_turn(client, mock_task, mock_task_from_id):
+    response = client.post(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        json={
+            "data": {
+                "type": "multi_turn_synthetic",
+                "first_message": {"text": "How many open work orders?"},
+                "synthetic_user_info": {
+                    "persona": "maintenance manager",
+                    "goal": "get an overdue-WO count",
+                    "behavior_guidance": "terse",
+                },
+            },
+            "reference": {"scenario": "overdue_wos", "expected_facts": ["190 open"]},
+            "tags": ["corpus", "nm_app_crit"],
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["data"]["type"] == "multi_turn_synthetic"
+    assert result["reference"]["scenario"] == "overdue_wos"
+    assert result["tags"] == ["corpus", "nm_app_crit"]
+
+    on_disk = mock_task.eval_inputs(readonly=True)
+    assert len(on_disk) == 1
+    assert on_disk[0].id == result["id"]
+    # synthetic_user_info is a typed SyntheticUserInfo on this base, not a bare dict,
+    # so the posted JSON has to have been coerced into the model on the way in.
+    assert on_disk[0].data.synthetic_user_info.persona == "maintenance manager"
+    assert on_disk[0].data.synthetic_user_info.goal == "get an overdue-WO count"
+    assert on_disk[0].data.synthetic_user_info.behavior_guidance == "terse"
+
+
+def test_create_eval_input_single_turn_defaults(client, mock_task, mock_task_from_id):
+    response = client.post(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        json={"data": {"type": "single_turn", "user_message": {"text": "hi"}}},
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["data"]["type"] == "single_turn"
+    assert result["reference"] is None
+    assert result["tags"] == []
+
+
+def test_create_eval_input_invalid_data(client, mock_task, mock_task_from_id):
+    # first_message present but missing its required text field
+    response = client.post(
+        "/api/projects/project1/tasks/task1/eval_inputs",
+        json={"data": {"type": "multi_turn_synthetic", "first_message": {}}},
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_eval_input_tags(client, mock_task, mock_task_from_id):
+    """A retag leaves content byte-identical."""
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={"tags": ["corpus", "val_split"]},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["tags"] == ["corpus", "val_split"]
+    assert result["reference"] == {"scenario": "s1", "expected_facts": ["fact one"]}
+    assert result["data"]["first_message"]["text"] == "seed"
+
+    on_disk = mock_task.eval_inputs(readonly=True)[0]
+    assert on_disk.tags == ["corpus", "val_split"]
+    assert on_disk.reference == {"scenario": "s1", "expected_facts": ["fact one"]}
+    assert on_disk.data.first_message.text == "seed"
+
+
+def test_update_eval_input_tags_can_empty_the_list(
+    client, mock_task, mock_task_from_id
+):
+    """Removing every tag takes the item out of every tag:: slice. It is a replacement,
+    not a merge, so an empty list has to be accepted rather than read as 'unset'."""
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus", "val_split"])
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={"tags": []},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["tags"] == []
+    assert mock_task.eval_inputs(readonly=True)[0].tags == []
+
+
+def test_update_eval_input_null_tags_is_rejected(client, mock_task, mock_task_from_id):
+    """null is not the spelling for "remove every tag" — [] is. Accepting it as
+    "unchanged" would drop an edit the caller believes landed."""
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={"tags": None},
+    )
+
+    assert response.status_code == 422
+    assert "Send [] to remove every tag" in response.json()["message"]
+    assert mock_task.eval_inputs(readonly=True)[0].tags == ["corpus"]
+
+
+def test_update_eval_input_reference(client, mock_task, mock_task_from_id):
+    """Correcting ground truth is an in-place edit.
+
+    It keys nothing: stored scores snapshot the reference the judge actually saw, and
+    drive fingerprints hash the scenario rather than the reference, so nothing already on
+    disk is invalidated. Iterating on reference data is normal corpus authoring, and
+    forcing it through a new item would leave one dead item behind per correction.
+    """
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={
+            "reference": {"scenario": "s1", "expected_facts": ["the corrected fact"]}
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["reference"] == {
+        "scenario": "s1",
+        "expected_facts": ["the corrected fact"],
+    }
+    # The whole dict is replaced, and the rest of the item is untouched.
+    assert result["tags"] == ["corpus"]
+    assert result["data"]["first_message"]["text"] == "seed"
+
+    on_disk = mock_task.eval_inputs(readonly=True)[0]
+    assert on_disk.reference == {
+        "scenario": "s1",
+        "expected_facts": ["the corrected fact"],
+    }
+    assert on_disk.data.first_message.text == "seed"
+
+
+def test_update_eval_input_reference_and_tags_together(
+    client, mock_task, mock_task_from_id
+):
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={"tags": ["corpus", "fixed"], "reference": {"scenario": "s2"}},
+    )
+
+    assert response.status_code == 200
+    on_disk = mock_task.eval_inputs(readonly=True)[0]
+    assert on_disk.tags == ["corpus", "fixed"]
+    assert on_disk.reference == {"scenario": "s2"}
+
+
+def test_update_eval_input_null_reference_clears_it(
+    client, mock_task, mock_task_from_id
+):
+    """Explicit null clears ground truth; omitting the field leaves it alone. The two
+    are different requests, which is why the handler reads model_fields_set rather than
+    testing for None — a None test would make clearing impossible."""
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={"reference": None},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reference"] is None
+    assert mock_task.eval_inputs(readonly=True)[0].reference is None
+
+
+def test_update_eval_input_omitting_reference_leaves_it_unchanged(
+    client, mock_task, mock_task_from_id
+):
+    """The other half of the pair above: a tags-only patch must not clear ground truth."""
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json={"tags": ["corpus", "val_split"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reference"] == {
+        "scenario": "s1",
+        "expected_facts": ["fact one"],
+    }
+    assert mock_task.eval_inputs(readonly=True)[0].reference == {
+        "scenario": "s1",
+        "expected_facts": ["fact one"],
+    }
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(
+            {
+                "tags": ["corpus"],
+                "data": {
+                    "type": "multi_turn_synthetic",
+                    "first_message": {"text": "new seed"},
+                    "synthetic_user_info": {"persona": "p2", "goal": "g2"},
+                },
+            },
+            id="data_alongside_tags",
+        ),
+        pytest.param(
+            {"data": {"type": "single_turn", "user_message": {"text": "hi"}}},
+            id="data_only",
+        ),
+    ],
+)
+def test_update_eval_input_rejects_scenario_edits(
+    client, mock_task, mock_task_from_id, body
+):
+    """A scenario edit must fail loudly, not be silently dropped.
+
+    Trace reuse keys on the item id, so editing `data` in place would let a later eval
+    hand a judge a conversation generated from the scenario the item used to have.
+    Changing a scenario is a POST of a new item. `extra="forbid"` is what makes the
+    attempt a 422 instead of a no-op the caller reads as success — including when `data`
+    rides along with an otherwise-valid tags edit, which must not half-apply.
+    """
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    response = client.patch(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}",
+        json=body,
+    )
+
+    assert response.status_code == 422
+
+    on_disk = mock_task.eval_inputs(readonly=True)[0]
+    assert on_disk.data.first_message.text == "seed"
+    assert on_disk.reference == {"scenario": "s1", "expected_facts": ["fact one"]}
+    assert on_disk.tags == ["corpus"]
+
+
+def test_update_eval_input_404(client, mock_task, mock_task_from_id):
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/eval_inputs/999999",
+        json={"tags": ["x"]},
+    )
+
+    assert response.status_code == 404
+
+
+def test_delete_eval_input(client, mock_task, mock_task_from_id):
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+    keep = make_multi_turn_eval_input(mock_task, tags=["corpus"], text="keep")
+
+    response = client.delete(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}"
+    )
+    assert response.status_code == 200
+
+    on_disk = mock_task.eval_inputs(readonly=True)
+    assert [item.id for item in on_disk] == [keep.id]
+
+    response = client.get(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}"
+    )
+    assert response.status_code == 404
+
+
+def test_delete_eval_input_blocked_by_eval_trace(
+    client, mock_task, mock_task_from_id, data_source
+):
+    """A trace names its item by id and holds no copy of it, so deleting the item would
+    leave a conversation nothing can say the scenario for."""
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    trace = TaskRun(
+        parent=mock_task,
+        input="seed",
+        input_source=data_source,
+        output=TaskOutput(output="response", source=data_source),
+        eval_source=EvalItemSource(
+            source_type="eval_input", source_id=str(eval_input.id)
+        ),
+    )
+    trace.save_to_file()
+
+    response = client.delete(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}"
+    )
+
+    assert response.status_code == 409
+    assert "1 eval trace(s)" in response.json()["message"]
+    assert "0 score record(s)" in response.json()["message"]
+    assert [item.id for item in mock_task.eval_inputs(readonly=True)] == [eval_input.id]
+
+
+def test_delete_eval_input_blocked_by_score_record(
+    client, mock_task, mock_task_from_id, mock_eval_config, data_source
+):
+    """A stored score names the item it scored. Deleting the item would leave the score
+    describing an input that can no longer be read back."""
+    eval_input = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+
+    # A scored run with no `eval_source`, so this pins the score-record half of the guard
+    # on its own: the trace count stays 0 and only `EvalRun.eval_input_id` blocks.
+    scored_run = TaskRun(
+        parent=mock_task,
+        input="seed",
+        input_source=data_source,
+        output=TaskOutput(output="response", source=data_source),
+    )
+    scored_run.save_to_file()
+
+    EvalRun(
+        parent=mock_eval_config,
+        task_run_config_id="run_config1",
+        eval_input_id=eval_input.id,
+        scored_run_id=scored_run.id,
+        scores={"score1": 4.0, "overall_rating": 4.0},
+    ).save_to_file()
+
+    response = client.delete(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{eval_input.id}"
+    )
+
+    assert response.status_code == 409
+    assert "0 eval trace(s)" in response.json()["message"]
+    assert "1 score record(s)" in response.json()["message"]
+    assert [item.id for item in mock_task.eval_inputs(readonly=True)] == [eval_input.id]
+
+
+def test_delete_eval_input_ignores_references_to_other_items(
+    client, mock_task, mock_task_from_id, mock_eval_config, data_source
+):
+    """The guard is keyed on this item, not on 'the task has eval records at all'.
+
+    Also pins that a `task_run`-sourced trace whose source_id happens to equal this
+    EvalInput's id does not count: ids are only unique within a store, so matching on the
+    id alone would block deletes for a record about a different item entirely.
+    """
+    target = make_multi_turn_eval_input(mock_task, tags=["corpus"])
+    other = make_multi_turn_eval_input(mock_task, tags=["corpus"], text="other")
+
+    TaskRun(
+        parent=mock_task,
+        input="seed",
+        input_source=data_source,
+        output=TaskOutput(output="response", source=data_source),
+        eval_source=EvalItemSource(source_type="eval_input", source_id=str(other.id)),
+    ).save_to_file()
+    TaskRun(
+        parent=mock_task,
+        input="seed",
+        input_source=data_source,
+        output=TaskOutput(output="response", source=data_source),
+        eval_source=EvalItemSource(source_type="task_run", source_id=str(target.id)),
+    ).save_to_file()
+    other_scored_run = TaskRun(
+        parent=mock_task,
+        input="seed",
+        input_source=data_source,
+        output=TaskOutput(output="response", source=data_source),
+    )
+    other_scored_run.save_to_file()
+    EvalRun(
+        parent=mock_eval_config,
+        task_run_config_id="run_config1",
+        eval_input_id=other.id,
+        scored_run_id=other_scored_run.id,
+        scores={"score1": 4.0, "overall_rating": 4.0},
+    ).save_to_file()
+
+    response = client.delete(
+        f"/api/projects/project1/tasks/task1/eval_inputs/{target.id}"
+    )
+
+    assert response.status_code == 200
+    assert [item.id for item in mock_task.eval_inputs(readonly=True)] == [other.id]
+
+
 @pytest.mark.asyncio
 async def test_run_calibration_empty_golden_set_400(
     client, mock_task_from_id, mock_task, mock_eval, mock_eval_config

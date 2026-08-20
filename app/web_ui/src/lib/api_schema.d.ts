@@ -2026,6 +2026,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Eval Inputs
+         * @description List a task's eval input items, optionally restricted to a filter.
+         */
+        get: operations["get_eval_inputs_api_projects__project_id__tasks__task_id__eval_inputs_get"];
+        put?: never;
+        /**
+         * Create Eval Input
+         * @description Create an eval input item. Evals pick it up via their eval_input_filter_id, so tag it accordingly.
+         */
+        post: operations["create_eval_input_api_projects__project_id__tasks__task_id__eval_inputs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_inputs/{eval_input_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Eval Input */
+        get: operations["get_eval_input_api_projects__project_id__tasks__task_id__eval_inputs__eval_input_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Eval Input
+         * @description Delete an eval input item, if nothing on disk still points at it.
+         *
+         *     409 when anything does. Both kinds of reference name the item by id and hold no
+         *     copy of it, so a delete that went through would leave records describing content
+         *     that no longer exists — an eval trace whose scenario is gone, or a score whose
+         *     input can't be read back. To take a referenced item out of an eval's scope,
+         *     retag it with PATCH instead; to correct its ground truth, PATCH its reference.
+         */
+        delete: operations["delete_eval_input_api_projects__project_id__tasks__task_id__eval_inputs__eval_input_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Eval Input
+         * @description Update an eval input item's tags and/or reference data.
+         *
+         *     `data` is not editable and sending it is a 422 — see UpdateEvalInputRequest for
+         *     why the scenario is the one field that can't change in place.
+         *
+         *     Reads `model_fields_set` rather than testing each field for None, because for
+         *     `reference` the two are genuinely different requests: omitting it leaves ground
+         *     truth alone, sending null clears it. Testing for None would make clearing
+         *     impossible and silently look like a successful no-op.
+         */
+        patch: operations["update_eval_input_api_projects__project_id__tasks__task_id__eval_inputs__eval_input_id__patch"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs": {
         parameters: {
             query?: never;
@@ -5623,6 +5686,29 @@ export interface components {
             provider?: components["schemas"]["ModelProviderName"] | null;
         };
         /**
+         * CreateEvalInputRequest
+         * @description Request to create an eval input item.
+         */
+        CreateEvalInputRequest: {
+            /**
+             * Data
+             * @description The input data for this eval item.
+             */
+            data: components["schemas"]["SingleTurnEvalInputData"] | components["schemas"]["MultiTurnSyntheticEvalInputData-Input"];
+            /**
+             * Reference
+             * @description Optional reference data (ground truth) for this eval input, keyed by reference name.
+             */
+            reference?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Tags
+             * @description Tags for filtering eval inputs (matched by tag:: eval_input_filter_ids).
+             */
+            tags?: string[];
+        };
+        /**
          * CreateEvaluatorRequest
          * @description Request to create a new evaluator.
          */
@@ -6994,6 +7080,61 @@ export interface components {
          * @enum {string}
          */
         EvalDataType: "final_answer" | "full_trace" | "reference_answer";
+        /**
+         * EvalInput
+         * @description A single evaluation input item, stored as a child of a Task.
+         *
+         *     Each EvalInput contains the data needed to run an evaluation (e.g. a user
+         *     message) plus optional reference data for comparison and tags for filtering.
+         */
+        EvalInput: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Data
+             * @description The input data for this eval item.
+             */
+            data: components["schemas"]["SingleTurnEvalInputData"] | components["schemas"]["MultiTurnSyntheticEvalInputData-Output"];
+            /**
+             * Reference
+             * @description Optional reference data (ground truth) for this eval input, keyed by reference name.
+             */
+            reference?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Tags
+             * @description Tags for filtering eval inputs.
+             */
+            tags?: string[];
+            /** Model Type */
+            readonly model_type: string;
+        };
         /**
          * EvalInputSplit
          * @description A split whose items are EvalInputs, selected by an eval-input filter.
@@ -9676,6 +9817,40 @@ export interface components {
             drive_config: components["schemas"]["MultiTurnDriveConfig"];
         };
         /**
+         * MultiTurnSyntheticEvalInputData
+         * @description A re-drivable multi-turn case: the opening user message, the synthetic
+         *     user who continues the conversation at eval time, and the drive settings
+         *     that synthetic user runs with.
+         *
+         *     Together these make the item a self-contained replication recipe: with the
+         *     persona, first_message, and drive_config it re-drives identically under any
+         *     eval that references it, which is what makes conversation traces keyed to
+         *     the item reusable across evals.
+         *
+         *     first_message may be None; such items carry no seed to open a
+         *     conversation with, so the eval runner skips them instead of re-driving.
+         */
+        "MultiTurnSyntheticEvalInputData-Input": {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "multi_turn_synthetic";
+            first_message?: components["schemas"]["UserMessage"] | null;
+            synthetic_user_info: components["schemas"]["SyntheticUserInfo"];
+            /** @description How this item's conversation is re-driven: the synthetic-user model and turn count, stamped when the item is minted. This is the ONLY home for drive settings — no eval-level copy exists; displays and prefills derive from items. Held constant across run configs so a comparison varies only the agent under test. Immutable once minted: changing the synthetic-user setup means minting new items, which keeps traces keyed to this item valid. None only on items minted before drive settings were stamped; the eval runner skips such items with a clear reason rather than guessing a config. */
+            drive_config?: components["schemas"]["MultiTurnDriveConfig"] | null;
+        };
+        "MultiTurnSyntheticEvalInputData-Output": {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "multi_turn_synthetic";
+        } & {
+            [key: string]: unknown;
+        };
+        /**
          * NewProposedSpecEditApi
          * @description A proposed edit to a spec field.
          */
@@ -11484,6 +11659,15 @@ export interface components {
              */
             mode: "subset" | "superset" | "equal";
         };
+        /** SingleTurnEvalInputData */
+        SingleTurnEvalInputData: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "single_turn";
+            user_message: components["schemas"]["UserMessage"];
+        };
         /**
          * SingleTurnPipelineRequest
          * @description The single-turn pipeline's request: the generated inputs to run the
@@ -12055,6 +12239,28 @@ export interface components {
             /** Model Name */
             model_name: string;
             model_provider: components["schemas"]["ModelProviderName"];
+        };
+        /**
+         * SyntheticUserInfo
+         * @description The synthetic user's character sheet: who they are and what they want.
+         *
+         *     This is both the persisted form on multi-turn synthetic eval inputs and
+         *     the runtime shape the synthetic-user driver renders its system prompt
+         *     from. The XML-tagged blob some wire formats carry is parsed into this at
+         *     the wire boundary (kiln_ai.synthetic_user.parser) — it is never stored.
+         *
+         *     extra="allow": unknown fields from newer generators survive load/save
+         *     round-trips instead of being dropped.
+         */
+        SyntheticUserInfo: {
+            /** Persona */
+            persona: string;
+            /** Goal */
+            goal: string;
+            /** Behavior Guidance */
+            behavior_guidance?: string | null;
+        } & {
+            [key: string]: unknown;
         };
         /** TabooProperties */
         TabooProperties: {
@@ -13168,6 +13374,44 @@ export interface components {
             auth_mode?: ("system_keys" | "pat_token" | "github_oauth") | null;
         };
         /**
+         * UpdateEvalInputRequest
+         * @description Partial update of an eval input item. Omitted fields are left unchanged.
+         *
+         *     `data` is deliberately absent, and `extra="forbid"` turns an attempt to send it into
+         *     a 422 rather than a silent no-op the caller reads as success. The scenario is the one
+         *     thing that genuinely cannot be edited in place: trace reuse (`TraceIndex`) keys on
+         *     `(source_type, item_id, run_config_id)`, so a later eval would hand a judge a
+         *     conversation generated from the scenario this item *used to* have. Changing a
+         *     scenario means POSTing a new item.
+         *
+         *     `reference` does not have that problem and is editable. It keys nothing: stored
+         *     scores snapshot the `reference_data` the judge actually saw (`_persist_judgment`)
+         *     rather than pointing back at the item, and drive fingerprints hash the scenario, not
+         *     the reference. So correcting ground truth invalidates nothing already on disk — it
+         *     changes what future runs are graded against, which is the whole point of correcting
+         *     it. Iterating on reference data is a normal part of authoring a corpus, and making it
+         *     mint-a-new-item would leave one dead item behind per correction.
+         *
+         *     The cost, stated: scores written either side of a `reference` edit hang off the same
+         *     item id but were graded against different ground truth. Each EvalRun carries the
+         *     reference it saw, so this is auditable, but a rollup that groups scores by item alone
+         *     would mix the two.
+         */
+        UpdateEvalInputRequest: {
+            /**
+             * Tags
+             * @description The item's tags, replacing the whole list. Send [] to clear them. Tags decide which eval_input_filter_id slices the item falls into, so this is how an item is added to or removed from an eval's scope.
+             */
+            tags?: string[] | null;
+            /**
+             * Reference
+             * @description The item's reference data (ground truth), replacing the whole dict. Send null to clear it — omitting the field leaves it unchanged, which is a different request.
+             */
+            reference?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+        };
+        /**
          * UpdateEvalRequest
          * @description Request to update an eval.
          */
@@ -13317,6 +13561,11 @@ export interface components {
              * @description Total time spent waiting on LLM API calls in milliseconds. Sum of per-call latencies, excludes tool execution time.
              */
             total_llm_latency_ms?: number | null;
+        };
+        /** UserMessage */
+        UserMessage: {
+            /** Text */
+            text: string;
         };
         /**
          * UserModelEntry
@@ -18269,6 +18518,193 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvalsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_eval_inputs_api_projects__project_id__tasks__task_id__eval_inputs_get: {
+        parameters: {
+            query?: {
+                /** @description Optional eval-input filter to apply, e.g. 'all' or 'tag::my_tag' (the same IDs evals use as eval_input_filter_id). */
+                filter_id?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalInput"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_eval_input_api_projects__project_id__tasks__task_id__eval_inputs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEvalInputRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalInput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_eval_input_api_projects__project_id__tasks__task_id__eval_inputs__eval_input_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the eval input. */
+                eval_input_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalInput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_eval_input_api_projects__project_id__tasks__task_id__eval_inputs__eval_input_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the eval input. */
+                eval_input_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_eval_input_api_projects__project_id__tasks__task_id__eval_inputs__eval_input_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the eval input. */
+                eval_input_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEvalInputRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalInput"];
                 };
             };
             /** @description Validation Error */

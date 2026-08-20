@@ -17,7 +17,12 @@ from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import BasePrompt, Task, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE, KilnParentedModel
-from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
+from kiln_ai.datamodel.dataset_filters import (
+    DatasetFilterId,
+    EvalInputFilterId,
+    dataset_filter_from_id,
+    eval_input_filter_from_id,
+)
 from kiln_ai.adapters.eval.base_eval import (
     DEFAULT_SYSTEM_PROMPT,
     build_default_llm_judge_prompt,
@@ -36,6 +41,7 @@ from kiln_ai.datamodel.eval import (
     EvalConfigType,
     EvalDataType,
     EvalInput,
+    EvalInputData,
     EvalOutputScore,
     EvalRun,
     EvalScores,
@@ -75,7 +81,7 @@ from kiln_server.utils.agent_checks.policy import (
     DENY_AGENT,
     agent_policy_require_approval,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from .correlation_calculator import (
     CorrelationCalculator,
@@ -138,6 +144,84 @@ def eval_config_from_id(
     raise HTTPException(
         status_code=404,
         detail=f"Eval config not found. ID: {eval_config_id}",
+    )
+
+
+def eval_input_from_id(project_id: str, task_id: str, eval_input_id: str) -> EvalInput:
+    task = task_from_id(project_id, task_id)
+    eval_input = EvalInput.from_id_and_parent_path(eval_input_id, task.path)
+    if eval_input is not None:
+        return eval_input
+
+    raise HTTPException(
+        status_code=404,
+        detail=f"Eval input not found. ID: {eval_input_id}",
+    )
+
+
+class EvalInputReferences(BaseModel):
+    """What still points at an eval input item, by id.
+
+    Counts rather than the records themselves: the caller is deciding whether a delete is
+    safe, and loading every trace to render a 409 body would make the guard cost more
+    than the delete it is protecting.
+    """
+
+    trace_count: int = Field(
+        description="Eval traces generated for this item (TaskRun.eval_source.source_id)."
+    )
+    score_count: int = Field(
+        description="Stored score records naming this item (EvalRun.eval_input_id)."
+    )
+
+    def __bool__(self) -> bool:
+        return self.trace_count > 0 or self.score_count > 0
+
+
+def eval_input_references(task: Task, eval_input_id: str) -> EvalInputReferences:
+    """Everything on disk that names `eval_input_id`.
+
+    Two kinds, and both are id-only — neither copies the item's content, which is exactly
+    why a delete has to be refused rather than cascaded:
+
+    - Eval traces: `TaskRun.eval_source` is `("eval_input", item_id)`, and `TraceIndex`
+      reuses a trace on that pair plus the run config. `include_eval_generated=True`
+      because these runs are excluded from `task.runs()` by default.
+    - Score records: `EvalRun.eval_input_id`, over every eval config of every eval on the
+      task. Read-only: nothing here mutates them.
+    """
+    trace_count = sum(
+        1
+        for run in task.runs(readonly=True, include_eval_generated=True)
+        if run.eval_source is not None
+        and run.eval_source.source_type == "eval_input"
+        and run.eval_source.source_id == eval_input_id
+    )
+
+    score_count = 0
+    for eval in task.evals(readonly=True):
+        for eval_config in eval.configs(readonly=True):
+            score_count += sum(
+                1
+                for eval_run in eval_config.runs(readonly=True)
+                if eval_run.eval_input_id == eval_input_id
+            )
+
+    return EvalInputReferences(trace_count=trace_count, score_count=score_count)
+
+
+def references_conflict_detail(references: EvalInputReferences) -> str:
+    """The 409 body for a delete that would orphan records.
+
+    Names both counts even when one is zero, so the reader can tell "no traces" from "we
+    didn't look at traces", and says what to do instead — retagging is the supported way
+    to take an item out of an eval's scope.
+    """
+    return (
+        f"Eval input is still referenced by {references.trace_count} eval trace(s) and "
+        f"{references.score_count} score record(s), which name it by id and hold no copy "
+        "of its content. Deleting it would leave those records describing an item that "
+        "no longer exists. Retag the item to take it out of an eval's scope instead."
     )
 
 
@@ -516,6 +600,56 @@ class UpdateEvalRequest(BaseModel):
     # when TaskRunSplit rejects it inside the handler.
     train_set_filter_id: DatasetFilterId | None = Field(
         default=None, description="The updated train set filter ID."
+    )
+
+
+class CreateEvalInputRequest(BaseModel):
+    """Request to create an eval input item."""
+
+    data: EvalInputData = Field(description="The input data for this eval item.")
+    reference: dict[str, JsonValue] | None = Field(
+        default=None,
+        description="Optional reference data (ground truth) for this eval input, keyed by reference name.",
+    )
+    tags: list[str] = Field(
+        default_factory=list,
+        description="Tags for filtering eval inputs (matched by tag:: eval_input_filter_ids).",
+    )
+
+
+class UpdateEvalInputRequest(BaseModel):
+    """Partial update of an eval input item. Omitted fields are left unchanged.
+
+    `data` is deliberately absent, and `extra="forbid"` turns an attempt to send it into
+    a 422 rather than a silent no-op the caller reads as success. The scenario is the one
+    thing that genuinely cannot be edited in place: trace reuse (`TraceIndex`) keys on
+    `(source_type, item_id, run_config_id)`, so a later eval would hand a judge a
+    conversation generated from the scenario this item *used to* have. Changing a
+    scenario means POSTing a new item.
+
+    `reference` does not have that problem and is editable. It keys nothing: stored
+    scores snapshot the `reference_data` the judge actually saw (`_persist_judgment`)
+    rather than pointing back at the item, and drive fingerprints hash the scenario, not
+    the reference. So correcting ground truth invalidates nothing already on disk — it
+    changes what future runs are graded against, which is the whole point of correcting
+    it. Iterating on reference data is a normal part of authoring a corpus, and making it
+    mint-a-new-item would leave one dead item behind per correction.
+
+    The cost, stated: scores written either side of a `reference` edit hang off the same
+    item id but were graded against different ground truth. Each EvalRun carries the
+    reference it saw, so this is auditable, but a rollup that groups scores by item alone
+    would mix the two.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    tags: list[str] | None = Field(
+        default=None,
+        description="The item's tags, replacing the whole list. Send [] to clear them. Tags decide which eval_input_filter_id slices the item falls into, so this is how an item is added to or removed from an eval's scope.",
+    )
+    reference: dict[str, JsonValue] | None = Field(
+        default=None,
+        description="The item's reference data (ground truth), replacing the whole dict. Send null to clear it — omitting the field leaves it unchanged, which is a different request.",
     )
 
 
@@ -1449,6 +1583,172 @@ def connect_evals_api(app: FastAPI):
                 f"Failed to load eval file {load_error.path}: {load_error.message}"
             )
         return EvalsResponse(evals=evals, load_error_count=len(load_errors))
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_inputs",
+        summary="List Eval Inputs",
+        tags=["Eval Inputs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_eval_inputs(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        filter_id: Annotated[
+            EvalInputFilterId | None,
+            Query(
+                description="Optional eval-input filter to apply, e.g. 'all' or 'tag::my_tag' (the same IDs evals use as eval_input_filter_id)."
+            ),
+        ] = None,
+    ) -> list[EvalInput]:
+        """List a task's eval input items, optionally restricted to a filter."""
+        task = task_from_id(project_id, task_id)
+        eval_inputs = task.eval_inputs(readonly=True)
+        if filter_id is None:
+            return eval_inputs
+        try:
+            filter = eval_input_filter_from_id(filter_id)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        return [eval_input for eval_input in eval_inputs if filter(eval_input)]
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_inputs/{eval_input_id}",
+        summary="Get Eval Input",
+        tags=["Eval Inputs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_eval_input(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_input_id: Annotated[
+            str, Path(description="The unique identifier of the eval input.")
+        ],
+    ) -> EvalInput:
+        return eval_input_from_id(project_id, task_id, eval_input_id)
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_inputs",
+        summary="Create Eval Input",
+        tags=["Eval Inputs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def create_eval_input(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        request: CreateEvalInputRequest,
+    ) -> EvalInput:
+        """Create an eval input item. Evals pick it up via their eval_input_filter_id, so tag it accordingly."""
+        task = task_from_id(project_id, task_id)
+        eval_input = EvalInput(
+            data=request.data,
+            reference=request.reference,
+            tags=request.tags,
+            parent=task,
+        )
+        eval_input.save_to_file()
+        return eval_input
+
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_inputs/{eval_input_id}",
+        summary="Update Eval Input",
+        tags=["Eval Inputs"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit eval inputs? Tags decide which slice an item falls into, and reference data is the ground truth an item is scored against, so both change what an eval reports. Ensure you backup your project before allowing agentic edits."
+        ),
+    )
+    async def update_eval_input(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_input_id: Annotated[
+            str, Path(description="The unique identifier of the eval input.")
+        ],
+        request: UpdateEvalInputRequest,
+    ) -> EvalInput:
+        """Update an eval input item's tags and/or reference data.
+
+        `data` is not editable and sending it is a 422 — see UpdateEvalInputRequest for
+        why the scenario is the one field that can't change in place.
+
+        Reads `model_fields_set` rather than testing each field for None, because for
+        `reference` the two are genuinely different requests: omitting it leaves ground
+        truth alone, sending null clears it. Testing for None would make clearing
+        impossible and silently look like a successful no-op.
+        """
+        eval_input = eval_input_from_id(project_id, task_id, eval_input_id)
+        provided = request.model_fields_set
+
+        if "tags" in provided:
+            if request.tags is None:
+                # Not silently ignored: a client sending null here means to remove the
+                # tags, and an empty list is how that is spelled. Leaving it unchanged
+                # would drop an intended edit.
+                raise HTTPException(
+                    status_code=422,
+                    detail="tags cannot be null. Send [] to remove every tag, or omit the field to leave tags unchanged.",
+                )
+            eval_input.tags = request.tags
+        if "reference" in provided:
+            eval_input.reference = request.reference
+
+        eval_input.save_to_file()
+        return eval_input
+
+    @app.delete(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_inputs/{eval_input_id}",
+        summary="Delete Eval Input",
+        tags=["Eval Inputs"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def delete_eval_input(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_input_id: Annotated[
+            str, Path(description="The unique identifier of the eval input.")
+        ],
+    ) -> None:
+        """Delete an eval input item, if nothing on disk still points at it.
+
+        409 when anything does. Both kinds of reference name the item by id and hold no
+        copy of it, so a delete that went through would leave records describing content
+        that no longer exists — an eval trace whose scenario is gone, or a score whose
+        input can't be read back. To take a referenced item out of an eval's scope,
+        retag it with PATCH instead; to correct its ground truth, PATCH its reference.
+        """
+        task = task_from_id(project_id, task_id)
+        eval_input = eval_input_from_id(project_id, task_id, eval_input_id)
+
+        references = eval_input_references(task, eval_input_id)
+        if references:
+            raise HTTPException(
+                status_code=409, detail=references_conflict_detail(references)
+            )
+
+        eval_input.delete()
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
