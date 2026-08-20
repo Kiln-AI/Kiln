@@ -1754,7 +1754,7 @@ dev = [
 
 [[package]]
 name = "kiln-studio-desktop"
-version = "1.1.0"
+version = "1.1.1"
 source = { editable = "app/desktop" }
 dependencies = [
     { name = "kiln-server" },
