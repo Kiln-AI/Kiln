@@ -11350,6 +11350,36 @@ export interface components {
              */
             mean_score: number | null;
             /**
+             * Min Score
+             * @description The lowest score across all used runs. None when n_used == 0.
+             */
+            min_score?: number | null;
+            /**
+             * P25 Score
+             * @description The 25th-percentile score across all used runs. None when n_used == 0.
+             */
+            p25_score?: number | null;
+            /**
+             * Median Score
+             * @description The median (50th-percentile) score across all used runs. None when n_used == 0.
+             */
+            median_score?: number | null;
+            /**
+             * P75 Score
+             * @description The 75th-percentile score across all used runs. None when n_used == 0.
+             */
+            p75_score?: number | null;
+            /**
+             * P90 Score
+             * @description The 90th-percentile score across all used runs. None when n_used == 0.
+             */
+            p90_score?: number | null;
+            /**
+             * Max Score
+             * @description The highest score across all used runs. None when n_used == 0.
+             */
+            max_score?: number | null;
+            /**
              * N Used
              * @description Number of EvalRuns with all expected scores and not skipped.
              */
