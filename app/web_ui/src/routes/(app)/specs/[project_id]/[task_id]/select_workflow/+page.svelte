@@ -3,6 +3,7 @@
   import { page } from "$app/stores"
   import { onMount } from "svelte"
   import AppPage from "../../../../app_page.svelte"
+  import Warning from "$lib/ui/warning.svelte"
   import { load_task } from "$lib/stores"
   import {
     checkDefaultRunConfigHasTools,
@@ -26,14 +27,27 @@
 
   let loading = true
   let connecting_pro = false
+  let default_run_config_has_tools = false
   let error: KilnError | null = null
 
+  const tools_not_supported_message =
+    "Tool calling is not yet supported in Kiln Pro. Please create this eval manually for now."
+  // Short form for the disabled button's tooltip: the full sentence is already
+  // on screen in the note above it, and a wide bubble overflows the table's
+  // horizontal scroll container.
+  const tools_not_supported_tooltip = "Not supported for tasks with tools"
+
   // This screen sits between the template/judge pickers and the spec builder,
-  // and only renders when Kiln Pro could actually assist. Landing here without
-  // a template (stale bookmark, or the pre-reorder entry URL) restarts the
-  // flow; landing with an unsupported combo — including tasks whose default
-  // run config has tools — skips straight to the manual builder.
-  // replaceState keeps the skipped screen out of back-button history.
+  // and only renders when the spec type and judge are ones Kiln Pro can build.
+  // Landing here without a template (stale bookmark, or the pre-reorder entry
+  // URL) restarts the flow; landing with a spec type or judge Kiln Pro can't
+  // build skips straight to the manual builder. replaceState keeps the skipped
+  // screen out of back-button history.
+  //
+  // A tool-enabled default run config is deliberately not a skip: it's a
+  // task-level limit rather than a spec-type one, so the screen renders with
+  // Kiln Pro disabled and explained instead of silently forcing the manual
+  // builder.
   onMount(async () => {
     if (!spec_type || !judge) {
       goto(`/specs/${project_id}/${task_id}/select_template`, {
@@ -52,19 +66,13 @@
       if (!task) {
         throw new Error("Failed to load task")
       }
-      const has_tools = await checkDefaultRunConfigHasTools(project_id, task)
-      if (has_tools) {
-        goto(
-          spec_builder_url(project_id, task_id, spec_type, "manual", judge),
-          { replaceState: true },
-        )
-        // Keep the spinner up until the redirect lands: clearing loading here
-        // would flash the Pro/Manual table before goto completes.
-        return
-      }
-      loading = false
+      default_run_config_has_tools = await checkDefaultRunConfigHasTools(
+        project_id,
+        task,
+      )
     } catch (e) {
       error = createKilnError(e)
+    } finally {
       loading = false
     }
   })
@@ -126,6 +134,16 @@
         <div class="font-medium text-xl text-center">
           Choose your Eval Creation Workflow
         </div>
+        {#if default_run_config_has_tools}
+          <div class="mt-4">
+            <Warning
+              warning_message={tools_not_supported_message}
+              warning_color="gray"
+              warning_icon="info"
+              tight={true}
+            />
+          </div>
+        {/if}
         <div class="overflow-x-auto">
           <table class="table w-full mt-4">
             <colgroup>
@@ -202,16 +220,25 @@
                   </button>
                 </td>
                 <td class="text-center pt-4">
-                  <button
-                    class="btn btn-primary btn-sm whitespace-nowrap"
-                    disabled={loading || connecting_pro}
-                    on:click={proceed_with_kiln_pro}
+                  <div
+                    class={default_run_config_has_tools
+                      ? "tooltip tooltip-left"
+                      : ""}
+                    data-tip={default_run_config_has_tools
+                      ? tools_not_supported_tooltip
+                      : undefined}
                   >
-                    {#if connecting_pro}
-                      <span class="loading loading-spinner loading-xs"></span>
-                    {/if}
-                    Use Kiln Pro
-                  </button>
+                    <button
+                      class="btn btn-primary btn-sm whitespace-nowrap"
+                      disabled={connecting_pro || default_run_config_has_tools}
+                      on:click={proceed_with_kiln_pro}
+                    >
+                      {#if connecting_pro}
+                        <span class="loading loading-spinner loading-xs"></span>
+                      {/if}
+                      Use Kiln Pro
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>

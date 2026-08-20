@@ -5,6 +5,7 @@
   export let sub_subtitle_link: string | undefined = undefined
   export let limit_max_width: boolean = false
   export let action_buttons: Array<Record<string, unknown>> = []
+  export let breadcrumbs: Array<Record<string, unknown>> = []
 </script>
 
 <div
@@ -15,6 +16,7 @@
   data-sub-subtitle-link={sub_subtitle_link || undefined}
   data-limit-max-width={limit_max_width}
   data-action-button-count={action_buttons.length}
+  data-breadcrumb-count={breadcrumbs.length}
 >
   <slot />
 </div>

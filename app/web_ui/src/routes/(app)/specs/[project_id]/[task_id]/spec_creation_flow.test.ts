@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeEach } from "vitest"
 import {
   parseSpecWorkflow,
   implied_judge_for_spec_type,
@@ -9,12 +9,15 @@ import {
   judge_only_builder_url,
   spec_builder_url,
   buildSpecDefinition,
+  checkDefaultRunConfigHasTools,
 } from "./spec_utils"
 import {
   spec_field_configs,
   core_field_config,
 } from "./select_template/spec_templates"
-import type { SpecType } from "$lib/types"
+import { get_task_composite_id } from "$lib/stores"
+import { run_configs_by_task_composite_id } from "$lib/stores/run_configs_store"
+import type { SpecType, Task, TaskRunConfig } from "$lib/types"
 
 const ALL_SPEC_TYPES = Object.keys(spec_field_configs) as SpecType[]
 
@@ -197,5 +200,110 @@ describe("spec_builder_url", () => {
     expect(url.searchParams.get("type")).toBe("issue")
     expect(url.searchParams.get("workflow")).toBe("manual")
     expect(url.searchParams.get("judge")).toBe("pattern_match")
+  })
+})
+
+describe("checkDefaultRunConfigHasTools", () => {
+  const PROJECT_ID = "p1"
+  const TASK_ID = "t1"
+
+  function make_task(default_run_config_id: string | null): Task {
+    return {
+      v: 1,
+      id: TASK_ID,
+      name: "Test Task",
+      instruction: "Do the thing.",
+      requirements: [],
+      default_run_config_id,
+      model_type: "task",
+    }
+  }
+
+  function make_run_config(id: string, tools: string[] | null): TaskRunConfig {
+    return {
+      v: 1,
+      id,
+      name: `Run Config ${id}`,
+      run_config_properties: {
+        type: "kiln_agent",
+        model_name: "gpt-4o",
+        model_provider_name: "openai",
+        prompt_id: "simple_prompt_builder",
+        top_p: 1,
+        temperature: 1,
+        structured_output_mode: "default",
+        tools_config: tools === null ? null : { tools },
+      },
+      starred: false,
+      model_type: "task_run_config",
+    }
+  }
+
+  // Seeding the store short-circuits load_task_run_configs, so the check reads
+  // the cached configs instead of calling the API.
+  function seed_run_configs(configs: TaskRunConfig[]) {
+    run_configs_by_task_composite_id.set({
+      [get_task_composite_id(PROJECT_ID, TASK_ID)]: configs,
+    })
+  }
+
+  beforeEach(() => {
+    run_configs_by_task_composite_id.set({})
+  })
+
+  // The workflow screen disables Kiln Pro on this, so a false negative would
+  // offer a workflow that can't build the eval.
+  it("reports tools when the default run config has them", async () => {
+    seed_run_configs([
+      make_run_config("rc_other", ["search::web_search"]),
+      make_run_config("rc_default", ["mcp::local::weather"]),
+    ])
+
+    expect(
+      await checkDefaultRunConfigHasTools(PROJECT_ID, make_task("rc_default")),
+    ).toBe(true)
+  })
+
+  it("reports no tools when the default run config has an empty tool list", async () => {
+    seed_run_configs([make_run_config("rc_default", [])])
+
+    expect(
+      await checkDefaultRunConfigHasTools(PROJECT_ID, make_task("rc_default")),
+    ).toBe(false)
+  })
+
+  it("reports no tools when the default run config has no tools config", async () => {
+    seed_run_configs([make_run_config("rc_default", null)])
+
+    expect(
+      await checkDefaultRunConfigHasTools(PROJECT_ID, make_task("rc_default")),
+    ).toBe(false)
+  })
+
+  // Only the default run config gates Kiln Pro: tools on any other config are
+  // irrelevant to how the eval's runs are produced.
+  it("ignores tools on run configs that aren't the default", async () => {
+    seed_run_configs([
+      make_run_config("rc_default", []),
+      make_run_config("rc_other", ["search::web_search"]),
+    ])
+
+    expect(
+      await checkDefaultRunConfigHasTools(PROJECT_ID, make_task("rc_default")),
+    ).toBe(false)
+  })
+
+  it("reports no tools when the task has no default run config", async () => {
+    expect(
+      await checkDefaultRunConfigHasTools(PROJECT_ID, make_task(null)),
+    ).toBe(false)
+  })
+
+  it("reports no tools when the default run config is missing", async () => {
+    seed_run_configs([make_run_config("rc_other", ["search::web_search"])])
+
+    expect(
+      await checkDefaultRunConfigHasTools(PROJECT_ID, make_task("rc_deleted")),
+    ).toBe(false)
   })
 })
