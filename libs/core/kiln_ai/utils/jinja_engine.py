@@ -10,6 +10,7 @@ Both envs share trim_blocks=True and lstrip_blocks=True for prompt-friendly outp
 Public API:
   - compile_template_or_raise(template) -> None
   - compile_expression_or_raise(expression) -> None
+  - expression_variables(expression) -> set[str]
   - render_input_transform(transform, task_input) -> str
   - extract(expression, data) -> Any
 """
@@ -86,6 +87,24 @@ def compile_expression_or_raise(expression: str) -> None:
         raise ValueError(
             f"Invalid Jinja2 expression: {e.message} (line {e.lineno})"
         ) from e
+
+
+def expression_variables(expression: str) -> set[str]:
+    """Return the namespace variables a Jinja2 expression reads.
+
+    An expression is not a template -- ``final_message.strip()`` parsed as a
+    template is just literal text with no variables -- so it is wrapped in an
+    output block before the AST walk. Raises ValueError on syntax error.
+    """
+    from jinja2 import meta
+
+    try:
+        ast = _expression_env.parse("{{ " + expression + " }}")
+    except TemplateSyntaxError as e:
+        raise ValueError(
+            f"Invalid Jinja2 expression: {e.message} (line {e.lineno})"
+        ) from e
+    return meta.find_undeclared_variables(ast)
 
 
 def render_input_transform(

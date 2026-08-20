@@ -2666,6 +2666,60 @@ class TestV2TemplateValidation:
                 ),
             )
 
+    @pytest.mark.parametrize(
+        "expression",
+        ["final_message", "trace[-1].content", "task_input | upper", "reference_data"],
+    )
+    def test_value_expression_accepts_every_eval_input_field(self, expression):
+        cfg = _make_v2_eval_config(
+            properties=ExactMatchProperties(
+                expected_value="yes",
+                value_expression=expression,
+            ),
+        )
+        assert cfg.properties.value_expression == expression
+
+    @pytest.mark.parametrize(
+        "expression,unknown",
+        [
+            ("outpt.status", "outpt"),
+            ("messages[-1].content", "messages"),
+            ("final_message ~ typo", "typo"),
+        ],
+    )
+    def test_value_expression_rejects_unknown_variable(self, expression, unknown):
+        """A typo'd root would resolve to Undefined and silently score every row 0.0."""
+        with pytest.raises(
+            ValidationError, match=f"unknown variable '{unknown}'"
+        ) as exc:
+            _make_v2_eval_config(
+                properties=ExactMatchProperties(
+                    expected_value="yes",
+                    value_expression=expression,
+                ),
+            )
+        assert "final_message, reference_data, task_input, trace" in str(exc.value)
+
+    def test_value_expression_unknown_variable_still_loads_from_file(self):
+        """Already-saved configs keep loading; the check gates writes, not reads."""
+        cfg = EvalConfig.model_validate(
+            {
+                "v": 1,
+                "id": "123",
+                "name": "Saved before the check existed",
+                "config_type": "v2",
+                "model_type": "eval_config",
+                "properties": {
+                    "type": "exact_match",
+                    "expected_value": "yes",
+                    "value_expression": "outpt.status",
+                },
+            },
+            context={"loading_from_file": True},
+        )
+        assert isinstance(cfg.properties, ExactMatchProperties)
+        assert cfg.properties.value_expression == "outpt.status"
+
     def test_none_value_expression_skipped(self):
         """value_expression=None (default) should not be validated."""
         cfg = _make_v2_eval_config(

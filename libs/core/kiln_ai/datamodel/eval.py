@@ -1028,7 +1028,7 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
             raise ValueError(f"Invalid eval config type: {self.config_type}")
 
     @model_validator(mode="after")
-    def validate_v2_templates_and_expressions(self) -> Self:
+    def validate_v2_templates_and_expressions(self, info: ValidationInfo) -> Self:
         if self.config_type != EvalConfigType.v2 or not isinstance(
             self.properties, BaseModel
         ):
@@ -1037,6 +1037,7 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
         from kiln_ai.utils.jinja_engine import (
             compile_expression_or_raise,
             compile_template_or_raise,
+            expression_variables,
         )
 
         props = self.properties
@@ -1069,6 +1070,25 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
         ):
             if props.value_expression is not None:
                 compile_expression_or_raise(props.value_expression)
+                # Syntax alone isn't enough: a typo'd root variable resolves to
+                # Undefined at eval time, which scores every row a silent 0.0.
+                # Catch it while the author can still see what they typed.
+                #
+                # Authoring-time only. A config written before this check exists
+                # may name a variable we now reject, and refusing to load it would
+                # take the whole eval down rather than the one check that was
+                # already scoring zeros.
+                if not self.loading_from_file(info):
+                    allowed = set(EvalTaskInput.model_fields.keys())
+                    unknown = sorted(
+                        expression_variables(props.value_expression) - allowed
+                    )
+                    if unknown:
+                        raise ValueError(
+                            f"value_expression references unknown variable "
+                            f"'{unknown[0]}'. Available variables: "
+                            f"{', '.join(sorted(allowed))}."
+                        )
 
         return self
 

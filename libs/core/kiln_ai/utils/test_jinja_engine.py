@@ -7,6 +7,7 @@ from kiln_ai.utils.jinja_engine import (
     JinjaExtractionError,
     compile_expression_or_raise,
     compile_template_or_raise,
+    expression_variables,
     extract,
     render_input_transform,
 )
@@ -171,6 +172,31 @@ class TestExtract:
     def test_malformed_expression_raises_value_error(self):
         with pytest.raises(ValueError, match="Invalid Jinja2 expression"):
             extract("{{ invalid", {})
+
+
+class TestExpressionVariables:
+    @pytest.mark.parametrize(
+        "expression,expected",
+        [
+            # A bare expression has no {{ }} of its own, so it only reports
+            # variables once the function wraps it.
+            ("final_message", {"final_message"}),
+            ("final_message.strip()", {"final_message"}),
+            ("(final_message | fromjson).user.status", {"final_message"}),
+            ("trace | map(attribute='x') | list", {"trace"}),
+            ("outpt.status", {"outpt"}),
+            # Delimiters inside a string literal are lexed as text, not as the
+            # end of the wrapper block.
+            ('final_message ~ "}}"', {"final_message"}),
+            ("'literal'", set()),
+        ],
+    )
+    def test_reports_referenced_variables(self, expression, expected):
+        assert expression_variables(expression) == expected
+
+    def test_syntax_error_raises_value_error(self):
+        with pytest.raises(ValueError, match="Invalid Jinja2 expression"):
+            expression_variables("final_message[")
 
 
 class TestExtractOperationsOnMissingData:
