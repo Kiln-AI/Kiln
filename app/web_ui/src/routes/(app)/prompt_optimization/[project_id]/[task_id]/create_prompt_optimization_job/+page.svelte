@@ -516,11 +516,19 @@
         evals_with_configs[index].has_default_config = data.has_default_config
         evals_with_configs[index].has_train_set = data.has_train_set
         evals_with_configs[index].model_is_supported = data.model_is_supported
+        if (data.unsupported_reason) {
+          evals_with_configs[index].other_error = data.unsupported_reason
+        }
 
-        // If has train set, fetch the size. has_train_set is already
-        // TaskRun-backed-only (the remote optimizer resolves the train filter over the
-        // project zip's runs/), so the filter id read here has to be too, or the two
-        // disagree and the size fetch is silently skipped.
+        // Reset before the conditional size fetch below: a stale count from a
+        // previous TaskRun-backed split must not survive a switch to an
+        // EvalInput-backed split, where the size is unknown.
+        evals_with_configs[index].train_set_size = null
+
+        // If has train set, fetch the size. The size fetch reads tag counts over
+        // dataset runs, so it only applies to TaskRun-backed train splits. For an
+        // EvalInput-backed train split (now valid for optimization) the size stays
+        // unknown (null) and the empty-set error below does not apply.
         const train_filter_id = task_run_split_filter_id(item.eval, "train")
         if (data.has_train_set && train_filter_id) {
           const train_tag = tagFromFilterId(train_filter_id)
@@ -565,7 +573,8 @@
 
         const has_errors =
           evals_with_configs[index].judge_error !== null ||
-          evals_with_configs[index].train_error !== null
+          evals_with_configs[index].train_error !== null ||
+          evals_with_configs[index].other_error !== null
         evals_with_configs[index].validation_status = has_errors
           ? "invalid"
           : "valid"

@@ -11,11 +11,19 @@ from kiln_ai.cli.commands.package_project import PackageForTrainingConfig
 from kiln_ai.datamodel import Project, PromptOptimizationJob, Task
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.eval import (
+    CodeEvalProperties,
     Eval,
+    EvalConfig,
+    EvalConfigType,
     EvalInputSplit,
     EvalOutputScore,
+    ExactMatchProperties,
+    LlmJudgeProperties,
     SplitRef,
+    StepCountCheckProperties,
     TaskRunSplit,
+    ToolCallCheckProperties,
+    ToolCallSpec,
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
@@ -52,9 +60,11 @@ from app.desktop.studio_server.prompt_optimization_job_api import (
 )
 
 # Every check_eval return site reports has_train_set, so each is parametrized over the
-# same cases: absent, usable, and present-but-unusable. A site left reading the legacy
-# train_set_filter_id reports False for all three (these evals carry their splits in
-# `splits`, so the legacy field is None in memory), which the True case catches.
+# same cases: absent, TaskRun-backed, and EvalInput-backed. The optimization service
+# resolves both backing stores from the project package, so both present cases report
+# True. A site left reading the legacy train_set_filter_id reports False for all three
+# (these evals carry their splits in `splits`, so the legacy field is None in memory),
+# which the True cases catch.
 #
 # Factories rather than constructed instances: pydantic's default
 # revalidate_instances='never' means `Eval(splits={"train": s})` stores `s` by reference,
@@ -64,7 +74,7 @@ from app.desktop.studio_server.prompt_optimization_job_api import (
 TRAIN_SPLIT_CASES = [
     (lambda: None, False),
     (lambda: TaskRunSplit(filter_id="tag::train"), True),
-    (lambda: EvalInputSplit(filter_id="tag::train"), False),
+    (lambda: EvalInputSplit(filter_id="tag::train"), True),
 ]
 
 
@@ -1888,19 +1898,101 @@ def test_check_eval_has_train_set_by_split_backing(
         assert result["model_is_supported"] is True
 
 
+def _attach_eval_config(eval: Eval, **config_kwargs) -> EvalConfig:
+    """Attach a saved EvalConfig to an eval and mark it current."""
+    config = EvalConfig(name="cfg", parent=eval, **config_kwargs)
+    config.save_to_file()
+    eval.current_config_id = config.id
+    eval.save_to_file()
+    return config
+
+
+# (description, config_kwargs factory, expected status, expected message fragment)
+UNSUPPORTED_EVAL_CASES = [
+    (
+        "tool_call_check",
+        lambda: {
+            "config_type": EvalConfigType.v2,
+            "properties": ToolCallCheckProperties(
+                expected_tools=[ToolCallSpec(tool_name="some_tool")]
+            ),
+        },
+        400,
+        "does not support",
+    ),
+    (
+        "step_count_check",
+        lambda: {
+            "config_type": EvalConfigType.v2,
+            "properties": StepCountCheckProperties(
+                count_type="tool_calls", max_count=3
+            ),
+        },
+        400,
+        "does not support",
+    ),
+    (
+        "code_eval",
+        lambda: {
+            "config_type": EvalConfigType.v2,
+            "properties": CodeEvalProperties(
+                code="def score(output):\n    return {}\n"
+            ),
+        },
+        400,
+        "does not support",
+    ),
+    (
+        "exact_match_pass_fail",
+        lambda: {
+            "config_type": EvalConfigType.v2,
+            "properties": ExactMatchProperties(expected_value="x"),
+        },
+        200,
+        None,
+    ),
+    (
+        "llm_judge",
+        lambda: {
+            "config_type": EvalConfigType.v2,
+            "properties": LlmJudgeProperties(
+                model_name="gpt-4o",
+                model_provider="openai",
+                prompt_template="Judge {{ final_message }}",
+            ),
+        },
+        200,
+        None,
+    ),
+    (
+        "legacy_g_eval",
+        lambda: {
+            "config_type": EvalConfigType.g_eval,
+            "model_name": "gpt-4o",
+            "model_provider": "openai",
+            "properties": {"eval_steps": ["Check it."]},
+        },
+        200,
+        None,
+    ),
+]
+
+
 @pytest.mark.parametrize(
-    "train_split_factory,expected_status",
-    [
-        (lambda: EvalInputSplit(filter_id="tag::train"), 400),
-        (lambda: TaskRunSplit(filter_id="tag::train"), 200),
-        # Unchanged behavior: an eval with no train split is not this guard's business.
-        (lambda: None, 200),
-    ],
+    "case_name,config_kwargs_factory,expected_status,expected_fragment",
+    UNSUPPORTED_EVAL_CASES,
+    ids=[case[0] for case in UNSUPPORTED_EVAL_CASES],
 )
-def test_start_prompt_optimization_job_refuses_unusable_train_splits(
-    client, mock_api_key, tmp_path, train_split_factory, expected_status
+def test_start_prompt_optimization_job_refuses_unsupported_evals(
+    client,
+    mock_api_key,
+    tmp_path,
+    case_name,
+    config_kwargs_factory,
+    expected_status,
+    expected_fragment,
 ):
-    """Only a present, non-TaskRun train split is refused, and before any work happens."""
+    """Eval types the optimization service cannot score are refused before any work happens."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
     task = Task(
@@ -1910,8 +2002,9 @@ def test_start_prompt_optimization_job_refuses_unusable_train_splits(
     )
     task.save_to_file()
 
-    eval = _eval_with_train_split(train_split_factory(), parent=task)
+    eval = _eval_with_train_split(TaskRunSplit(filter_id="tag::train"), parent=task)
     eval.save_to_file()
+    _attach_eval_config(eval, **config_kwargs_factory())
 
     mock_run_config = MagicMock()
     mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
@@ -1950,12 +2043,110 @@ def test_start_prompt_optimization_job_refuses_unusable_train_splits(
     if expected_status == 400:
         message = response.json()["message"]
         assert "Test Eval" in message
-        assert "train split that isn't backed by dataset runs" in message
+        assert expected_fragment in message
         # Nothing was packaged, uploaded or recorded before the refusal
         mock_package.assert_not_called()
         assert task.prompt_optimization_jobs() == []
     else:
         assert len(task.prompt_optimization_jobs()) == 1
+
+
+def test_start_prompt_optimization_job_refuses_non_pass_fail_deterministic_eval(
+    client, mock_api_key, tmp_path
+):
+    """A deterministic eval with non-pass_fail output scores is refused."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(name="Test Task", instruction="Test instruction", parent=project)
+    task.save_to_file()
+
+    eval = Eval(
+        name="Five Star Deterministic",
+        splits={
+            "test": TaskRunSplit(filter_id="tag::eval_set"),
+            "train": TaskRunSplit(filter_id="tag::train"),
+        },
+        output_scores=[
+            EvalOutputScore(name="quality", type="five_star", instruction="Rate it.")
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    _attach_eval_config(
+        eval,
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="x"),
+    )
+
+    with patch(
+        "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+        return_value=task,
+    ):
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompt_optimization_jobs/start",
+            json={
+                "target_run_config_id": "test-run-config-id",
+                "eval_ids": [eval.id],
+            },
+        )
+
+    assert response.status_code == 400
+    assert "not pass/fail" in response.json()["message"]
+
+
+def test_start_prompt_optimization_job_accepts_eval_input_train_split(
+    client, mock_api_key, tmp_path
+):
+    """An EvalInput-backed train split is no longer refused: the optimization
+    service resolves eval inputs from the project package."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(name="Test Task", instruction="Test instruction", parent=project)
+    task.save_to_file()
+
+    eval = _eval_with_train_split(EvalInputSplit(filter_id="tag::train"), parent=task)
+    eval.save_to_file()
+    _attach_eval_config(
+        eval,
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(reference_key="expected"),
+    )
+
+    mock_run_config = MagicMock()
+    mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
+    mock_run_config.run_config_properties.tools_config = None
+
+    with (
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
+            return_value=mock_run_config,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.package_project_for_training",
+            side_effect=_mock_package_project_for_training,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=_make_sdk_response(
+                parsed=JobStartResponse(job_id="remote-job-123")
+            ),
+        ),
+    ):
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompt_optimization_jobs/start",
+            json={
+                "target_run_config_id": "test-run-config-id",
+                "eval_ids": [eval.id],
+            },
+        )
+
+    assert response.status_code == 200
+    assert len(task.prompt_optimization_jobs()) == 1
 
 
 def test_start_prompt_optimization_job_ignores_unrequested_evals(
@@ -1977,9 +2168,16 @@ def test_start_prompt_optimization_job_ignores_unrequested_evals(
     task.save_to_file()
 
     refusable_eval = _eval_with_train_split(
-        EvalInputSplit(filter_id="tag::train"), parent=task
+        TaskRunSplit(filter_id="tag::train"), parent=task
     )
     refusable_eval.save_to_file()
+    _attach_eval_config(
+        refusable_eval,
+        config_type=EvalConfigType.v2,
+        properties=ToolCallCheckProperties(
+            expected_tools=[ToolCallSpec(tool_name="some_tool")]
+        ),
+    )
 
     mock_run_config = MagicMock()
     mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
@@ -3516,3 +3714,169 @@ def test_update_prompt_optimization_job_pending_to_running_no_artifacts(
     assert updated_job.created_prompt_id is None
     assert updated_job.created_run_config_id is None
     assert updated_job.optimized_prompt is None
+
+
+def test_check_eval_v2_llm_judge_uses_properties_model(client, mock_api_key, tmp_path):
+    """For a V2 LLM-judge config, the model check uses the model from the typed
+    properties (the config root fields are None for V2)."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(name="Test Task", instruction="Test instruction", parent=project)
+    task.save_to_file()
+
+    mock_eval = _eval_with_train_split(TaskRunSplit(filter_id="tag::train"))
+    v2_config = EvalConfig(
+        name="v2-judge",
+        config_type=EvalConfigType.v2,
+        properties=LlmJudgeProperties(
+            model_name="gpt-4o",
+            model_provider="openai",
+            prompt_template="Judge {{ final_message }}",
+        ),
+    )
+
+    with (
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_from_id",
+            return_value=mock_eval,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_config_from_id",
+            return_value=v2_config,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=_make_sdk_response(parsed=MagicMock(is_model_supported=True)),
+        ) as mock_check,
+    ):
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompt_optimization_jobs/check_eval",
+            params={"eval_id": "test-eval-id"},
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["has_default_config"] is True
+    assert result["has_train_set"] is True
+    assert result["model_is_supported"] is True
+    assert mock_check.call_args.kwargs["model_name"] == "gpt-4o"
+    assert mock_check.call_args.kwargs["model_provider_name"] == "openai"
+
+
+def test_check_eval_v2_deterministic_needs_no_model(client, mock_api_key, tmp_path):
+    """A deterministic V2 config calls no model, so the model counts as
+    supported and no server model check is made."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(name="Test Task", instruction="Test instruction", parent=project)
+    task.save_to_file()
+
+    mock_eval = _eval_with_train_split(TaskRunSplit(filter_id="tag::train"))
+    v2_config = EvalConfig(
+        name="v2-exact-match",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="x"),
+    )
+
+    with (
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_from_id",
+            return_value=mock_eval,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_config_from_id",
+            return_value=v2_config,
+        ),
+        patch(
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio_detailed",
+            new_callable=AsyncMock,
+        ) as mock_check,
+    ):
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompt_optimization_jobs/check_eval",
+            params={"eval_id": "test-eval-id"},
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["has_default_config"] is True
+    assert result["has_train_set"] is True
+    assert result["model_is_supported"] is True
+    mock_check.assert_not_called()
+
+
+def test_check_eval_v2_unsupported_type_reports_reason(client, mock_api_key, tmp_path):
+    """check_eval reports the same unsupported reason the submission guard
+    refuses with, so the UI marks the eval invalid before submission."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(name="Test Task", instruction="Test instruction", parent=project)
+    task.save_to_file()
+
+    mock_eval = _eval_with_train_split(TaskRunSplit(filter_id="tag::train"))
+    v2_config = EvalConfig(
+        name="v2-tool-call-check",
+        config_type=EvalConfigType.v2,
+        properties=ToolCallCheckProperties(
+            expected_tools=[ToolCallSpec(tool_name="some_tool")]
+        ),
+    )
+
+    with (
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_from_id",
+            return_value=mock_eval,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_config_from_id",
+            return_value=v2_config,
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompt_optimization_jobs/check_eval",
+            params={"eval_id": "test-eval-id"},
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["has_default_config"] is True
+    assert result["model_is_supported"] is False
+    assert "does not support" in result["unsupported_reason"]
+
+
+def test_check_eval_supported_evals_have_no_unsupported_reason(
+    client, mock_api_key, tmp_path
+):
+    """A supported deterministic V2 eval reports no unsupported reason."""
+    project = Project(name="Test Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(name="Test Task", instruction="Test instruction", parent=project)
+    task.save_to_file()
+
+    mock_eval = _eval_with_train_split(TaskRunSplit(filter_id="tag::train"))
+    v2_config = EvalConfig(
+        name="v2-exact-match",
+        config_type=EvalConfigType.v2,
+        properties=ExactMatchProperties(expected_value="x"),
+    )
+
+    with (
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_from_id",
+            return_value=mock_eval,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_config_from_id",
+            return_value=v2_config,
+        ),
+    ):
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/prompt_optimization_jobs/check_eval",
+            params={"eval_id": "test-eval-id"},
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["model_is_supported"] is True
+    assert result["unsupported_reason"] is None
