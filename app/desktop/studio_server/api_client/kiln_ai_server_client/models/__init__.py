@@ -132,6 +132,7 @@ from .task_run_intermediate_outputs_type_0 import TaskRunIntermediateOutputsType
 from .tools_run_config import ToolsRunConfig
 from .usage import Usage
 from .validation_error import ValidationError
+from .validation_error_context import ValidationErrorContext
 
 __all__ = (
     "AnswerOption",
@@ -254,4 +255,5 @@ __all__ = (
     "ToolsRunConfig",
     "Usage",
     "ValidationError",
+    "ValidationErrorContext",
 )
