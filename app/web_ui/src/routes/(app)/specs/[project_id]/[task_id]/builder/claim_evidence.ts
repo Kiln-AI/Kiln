@@ -500,8 +500,8 @@ export function reviewed_trace_count(
 
 // Output length at or above which a review keeps the claim stack: past this
 // the trace costs more to read than the claims that distill it.
-// PLACEHOLDER pending calibration — every captured single-turn output sits
-// far below it, so there is no measured boundary to fit yet.
+// PLACEHOLDER pending calibration — captured single-turn outputs now span
+// both sides of it, but the boundary has not been fit to reviewer data yet.
 export const CHAR_CUTOFF = 600
 
 // Which review shape a trace gets. Trace-first (read the trace, label the
