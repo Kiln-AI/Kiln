@@ -1231,7 +1231,7 @@
                                 {/if}
                                 <div class="text-left">
                                   {#if getEvalDatasetSize(section.eval_id) === 0}
-                                    {#if eval_data_cache[section.eval_id]?.eval_input_filter_id}
+                                    {#if eval_data_cache[section.eval_id]?.splits?.["test"]?.source === "eval_input"}
                                       <!-- EvalInput-typed slice: data is minted by the
                                         eval builder; the add-data flow tags TaskRuns,
                                         which doesn't apply. -->

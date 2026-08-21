@@ -4,10 +4,7 @@
   import type { InlineAction } from "$lib/utils/form_element.svelte"
   import CodeEditor from "$lib/components/code_editor.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
-<<<<<<< HEAD
-=======
   import Warning from "$lib/ui/warning.svelte"
->>>>>>> 721c4941b
   import ToolsSelector from "$lib/ui/run_config_component/tools_selector.svelte"
   import type { EvalOutputScore } from "$lib/types"
   import { generate_default_code, generate_examples } from "./code_eval_helpers"
@@ -16,8 +13,6 @@
 
   export let output_scores: EvalOutputScore[] | undefined = undefined
   export let project_id: string = ""
-<<<<<<< HEAD
-=======
 
   // Creation flow: the score is named after the eval, which the user is still
   // typing. The starter code begins with a static "score_name_placeholder" key
@@ -43,7 +38,6 @@
       } as EvalOutputScore,
     ]
   }
->>>>>>> 721c4941b
 
   export let properties: components["schemas"]["CodeEvalProperties"] & {
     timeout_seconds?: number
@@ -89,8 +83,6 @@
     }
   }
 
-<<<<<<< HEAD
-=======
   // The starter was never edited if the generated placeholder key is still in
   // the code — a string this codebase generated, so blocking on its presence
   // at save time carries none of the false-positive risk of asserting the
@@ -129,7 +121,6 @@
           } ${expected_score_keys.map((key) => `"${key}"`).join(", ")}.`
       : null
 
->>>>>>> 721c4941b
   let timeout_seconds: number = properties.timeout_seconds ?? 180
 
   $: properties.timeout_seconds = timeout_seconds
@@ -250,11 +241,7 @@
       hide_create_kiln_task_tool_button: true,
       optional: true,
       empty_label: "None (no tool access)",
-<<<<<<< HEAD
-      code_eval_context: true,
-=======
       sandbox_code_context: "code_eval",
->>>>>>> 721c4941b
     }}
     bind:tools={tool_allowlist}
   />
@@ -273,12 +260,8 @@
   ]}
 >
   <div class="flex flex-col gap-4">
-<<<<<<< HEAD
-    <div class="tabs tabs-bordered flex-nowrap overflow-x-auto">
-=======
     <!-- .tabs is a grid in DaisyUI v4, so flex is needed for the row to wrap. -->
     <div class="tabs tabs-bordered flex flex-wrap">
->>>>>>> 721c4941b
       {#each examples as example, i}
         <button
           type="button"

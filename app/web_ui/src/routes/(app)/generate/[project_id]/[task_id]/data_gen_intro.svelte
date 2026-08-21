@@ -116,21 +116,6 @@
       alert("This eval is not ready yet. Please configure its judge first.")
       return
     }
-<<<<<<< HEAD
-    const eval_set_filter_id = evaluator.eval_set_filter_id
-    if (!eval_set_filter_id) {
-      // EvalInput-typed slices ARE tag-defined, but this flow generates tagged
-      // TaskRuns, which such evals don't read — don't blame the tags.
-      if (evaluator.eval_input_filter_id) {
-        alert(
-          "This eval's data was created by the eval builder and can't be extended with this synthetic data flow. Select a different eval.",
-        )
-      } else {
-        alert(
-          "We can't generate synthetic data for this eval as its eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
-        )
-      }
-=======
     // Synthetic data generation writes TaskRuns into the dataset, so an
     // EvalInput-backed test split has no tag for it to target. That is a different
     // refusal from "the filter isn't tag-shaped", and gets its own message: telling
@@ -142,7 +127,6 @@
       alert(
         "This eval uses our new eval dataset format, which can't be generated from this UI.",
       )
->>>>>>> 721c4941b
       return
     }
     // Generated data is spread over whichever of the eval's splits can receive it. The test

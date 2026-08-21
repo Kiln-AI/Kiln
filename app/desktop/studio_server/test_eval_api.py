@@ -5,21 +5,6 @@ from typing import ClassVar, Dict, Iterable, List, Tuple
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-<<<<<<< HEAD
-from app.desktop.studio_server.eval_api import (
-    CreateEvalConfigRequest,
-    CreateEvaluatorRequest,
-    UpdateRunConfigRequest,
-    compute_score_summary,
-    connect_evals_api,
-    eval_config_from_id,
-    get_all_run_configs,
-    reusable_frozen_prompt_id,
-    score_summary_from_values,
-    task_run_config_from_id,
-)
-=======
->>>>>>> 721c4941b
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
@@ -51,15 +36,6 @@ from kiln_ai.datamodel.eval import (
     EvalConfigType,
     EvalDataType,
     EvalInput,
-<<<<<<< HEAD
-    EvalOutputScore,
-    EvalRun,
-    EvalTemplateId,
-    MultiTurnSyntheticEvalInputData,
-    ScoreDirection,
-    SingleTurnEvalInputData,
-    SyntheticUserInfo,
-=======
     EvalInputSplit,
     EvalOutputScore,
     EvalRun,
@@ -68,9 +44,10 @@ from kiln_ai.datamodel.eval import (
     LlmJudgeProperties,
     MultiTurnSyntheticEvalInputData,
     PatternMatchProperties,
+    ScoreDirection,
     SingleTurnEvalInputData,
+    SyntheticUserInfo,
     TaskRunSplit,
->>>>>>> 721c4941b
     UserMessage,
 )
 from kiln_ai.datamodel.eval_splits import ItemSource, ResolvedSplit
@@ -79,11 +56,6 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import TaskRunConfig
-<<<<<<< HEAD
-from kiln_ai.adapters.run_output import RunOutput
-from kiln_ai.datamodel.task_run import Usage
-from kiln_ai.tools.sandbox_bridge import BridgeResult
-=======
 from kiln_ai.datamodel.task_run import EvalItemSource, Usage
 from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.tools.base_tool import ToolCallResult
@@ -93,6 +65,7 @@ from kiln_server.custom_errors import connect_custom_errors
 from app.desktop.studio_server.eval_api import (
     CreateEvalConfigRequest,
     CreateEvaluatorRequest,
+    UpdateRunConfigRequest,
     _cached_test_split,
     compute_score_summary,
     connect_evals_api,
@@ -104,6 +77,7 @@ from app.desktop.studio_server.eval_api import (
     resolve_eval_run_traces,
     resolved_split_or_422,
     reusable_frozen_prompt_id,
+    score_summary_from_values,
     scored_trace_usage_for_run_config,
     split_size,
     summary_eval_config,
@@ -197,7 +171,6 @@ class _FakeLlmTool:
 
     async def run(self, context=None, **kwargs):
         return ToolCallResult(output="a judgement")
->>>>>>> 721c4941b
 
 
 @pytest.fixture
@@ -1968,9 +1941,11 @@ def test_score_summary_percentiles(mock_eval_for_score_summary):
     config.runs.return_value = runs
 
     task_run_configs = [Mock(spec=TaskRunConfig, id="rc1")]
-    expected_dataset_ids: set[ID_TYPE] = {f"ds{i}" for i in range(4)} | {"ds_skipped"}
+    expected_items = {("task_run", f"ds{i}") for i in range(4)} | {
+        ("task_run", "ds_skipped")
+    }
 
-    result = compute_score_summary(eval, config, task_run_configs, expected_dataset_ids)
+    result = compute_score_summary(eval, config, task_run_configs, expected_items)
 
     scores = result.results["rc1"]["accuracy"]
     assert scores.n_used == 4
@@ -2080,171 +2055,6 @@ def test_score_summary_all_skipped(mock_eval_for_score_summary):
     assert result.run_config_percent_complete["rc1"] == 1.0
 
 
-<<<<<<< HEAD
-def test_score_summary_eval_input_keyed(mock_eval_for_score_summary):
-    """EvalInput-sourced evals key their runs on eval_input_id; a run keyed by
-    dataset_id (TaskRun source) never matches an EvalInput expected set."""
-    eval = mock_eval_for_score_summary
-    config = Mock(spec=EvalConfig)
-
-    runs = [
-        EvalRun(
-            task_run_config_id="rc1",
-            scores={"accuracy": 0.8, "relevance": 0.9},
-            input="input",
-            output="output",
-            eval_input_id="ei1",
-        ),
-        EvalRun(
-            task_run_config_id="rc1",
-            scores={"accuracy": 0.6, "relevance": 0.7},
-            input="input",
-            output="output",
-            eval_input_id="ei2",
-        ),
-        EvalRun(
-            task_run_config_id="rc1",
-            scores={"accuracy": 0.0, "relevance": 0.0},
-            input="input",
-            output="output",
-            dataset_id="ds1",
-        ),
-    ]
-    config.runs.return_value = runs
-
-    task_run_configs = [Mock(spec=TaskRunConfig, id="rc1")]
-    expected_item_ids: set[ID_TYPE] = {"ei1", "ei2", "ei3"}
-
-    result = compute_score_summary(eval, config, task_run_configs, expected_item_ids)
-
-    assert result.dataset_size == 3
-    scores = result.results["rc1"]
-    assert scores["accuracy"].mean_score == pytest.approx(0.7)
-    assert scores["accuracy"].n_used == 2
-    assert scores["relevance"].mean_score == pytest.approx(0.8)
-    # ei3 has no run yet; the dataset_id run must not count toward completion
-    assert result.run_config_percent_complete["rc1"] == pytest.approx(2 / 3)
-
-
-@pytest.mark.asyncio
-async def test_get_eval_config_score_summary_eval_input_eval(
-    client, mock_task_from_id, mock_task
-):
-    """EvalInput-typed evals get a real score summary sized from
-    eval_input_filter_id (was a 400) — the post-save spec detail page and
-    compare_run_configs read this endpoint."""
-    mock_task_from_id.return_value = mock_task
-
-    eval = Eval(
-        id="eval_input_eval",
-        name="EvalInput Eval",
-        output_scores=[
-            EvalOutputScore(
-                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
-            ),
-        ],
-        eval_input_filter_id="tag::eval_slice",
-        eval_configs_filter_id="tag::golden",
-        parent=mock_task,
-    )
-    eval.save_to_file()
-    eval_config = EvalConfig(
-        id="eval_config1",
-        name="Judge",
-        config_type=EvalConfigType.g_eval,
-        properties={"eval_steps": ["step1"]},
-        model_name="gpt-4",
-        model_provider="openai",
-        parent=eval,
-    )
-    eval_config.save_to_file()
-
-    eval_input_ids = []
-    for i in range(2):
-        eval_input = EvalInput(
-            data=MultiTurnSyntheticEvalInputData(
-                first_message=UserMessage(text=f"seed {i}"),
-                synthetic_user_info=SyntheticUserInfo(persona="p", goal="g"),
-            ),
-            tags=["eval_slice"],
-            parent=mock_task,
-        )
-        eval_input.save_to_file()
-        eval_input_ids.append(eval_input.id)
-
-    run_config = TaskRunConfig(
-        parent=mock_task,
-        id="rc1",
-        name="Run Config 1",
-        run_config_properties=KilnAgentRunConfigProperties(
-            model_name="gpt-4",
-            model_provider_name=ModelProviderName.openai,
-            prompt_id="simple_chain_of_thought_prompt_builder",
-            structured_output_mode=StructuredOutputMode.json_schema,
-        ),
-    )
-    run_config.save_to_file()
-
-    EvalRun(
-        task_run_config_id="rc1",
-        scores={"score1": 4.0},
-        input="input",
-        output="output",
-        eval_input_id=eval_input_ids[0],
-        parent=eval_config,
-    ).save_to_file()
-
-    response = client.get(
-        "/api/projects/project1/tasks/task1/evals/eval_input_eval/eval_config/eval_config1/score_summary"
-    )
-
-    assert response.status_code == 200
-    result = response.json()
-    assert result["dataset_size"] == 2
-    assert result["results"]["rc1"]["score1"]["mean_score"] == 4.0
-    assert result["results"]["rc1"]["score1"]["n_used"] == 1
-    assert result["run_config_percent_complete"]["rc1"] == 0.5
-
-
-@pytest.mark.asyncio
-async def test_get_eval_config_score_summary_eval_input_eval_empty(
-    client, mock_task_from_id, mock_task
-):
-    """An EvalInput-typed eval whose filter matches nothing still 400s with an
-    actionable message, mirroring the TaskRun-typed empty case."""
-    mock_task_from_id.return_value = mock_task
-
-    eval = Eval(
-        id="eval_input_eval",
-        name="EvalInput Eval",
-        output_scores=[
-            EvalOutputScore(
-                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
-            ),
-        ],
-        eval_input_filter_id="tag::eval_slice",
-        eval_configs_filter_id="tag::golden",
-        parent=mock_task,
-    )
-    eval.save_to_file()
-    eval_config = EvalConfig(
-        id="eval_config1",
-        name="Judge",
-        config_type=EvalConfigType.g_eval,
-        properties={"eval_steps": ["step1"]},
-        model_name="gpt-4",
-        model_provider="openai",
-        parent=eval,
-    )
-    eval_config.save_to_file()
-
-    response = client.get(
-        "/api/projects/project1/tasks/task1/evals/eval_input_eval/eval_config/eval_config1/score_summary"
-    )
-
-    assert response.status_code == 400
-    assert "No items match" in response.json()["message"]
-=======
 RUN_RESULTS_PATH = (
     "/api/projects/project1/tasks/task1/evals/eval1"
     "/eval_config/eval_config1/run_config/run_config1/results"
@@ -2285,7 +2095,6 @@ def _scored(eval_config: EvalConfig, **item) -> EvalRun:
     )
     run.save_to_file()
     return run
->>>>>>> 721c4941b
 
 
 @pytest.mark.asyncio
@@ -2349,171 +2158,6 @@ async def test_get_eval_run_results(
     assert response.status_code == 404
 
 
-<<<<<<< HEAD
-@pytest.fixture
-def eval_runs_across_splits(mock_task, mock_eval, mock_eval_config):
-    """One saved task run + eval run per split tag, plus one outside every split.
-
-    Sets explicit train/val filter ids on the eval so split membership is
-    driven by the tags below. Returns eval run ids keyed by tag.
-    """
-    mock_eval.train_set_filter_id = "tag::train_set"
-    mock_eval.val_set_filter_id = "tag::val_set"
-    mock_eval.save_to_file()
-
-    data_source = DataSource(
-        type=DataSourceType.synthetic,
-        properties={
-            "model_name": "gpt-4",
-            "model_provider": "openai",
-            "adapter_name": "test_adapter",
-        },
-    )
-    eval_run_ids = {}
-    for tag in ["eval_set", "train_set", "val_set", "no_split"]:
-        task_run = TaskRun(
-            input=f"input {tag}",
-            input_source=data_source,
-            output=TaskOutput(output=f"output {tag}"),
-            tags=[tag],
-            parent=mock_task,
-        )
-        task_run.save_to_file()
-        eval_run = EvalRun(
-            task_run_config_id="run_config1",
-            scores={"score1": 3.0, "overall_rating": 1.0},
-            input=f"input {tag}",
-            output=f"output {tag}",
-            dataset_id=task_run.id,
-            parent=mock_eval_config,
-        )
-        eval_run.save_to_file()
-        eval_run_ids[tag] = eval_run.id
-    return eval_run_ids
-
-
-_RESULTS_PATH = (
-    "/api/projects/project1/tasks/task1/evals/eval1"
-    "/eval_config/eval_config1/run_config/run_config1/results"
-)
-
-
-@pytest.mark.asyncio
-async def test_get_eval_run_results_split_filtering(
-    client,
-    mock_task_from_id,
-    mock_task,
-    mock_eval,
-    mock_eval_config,
-    mock_run_config,
-    eval_runs_across_splits,
-):
-    mock_task_from_id.return_value = mock_task
-
-    # No split param: today's behavior — every eval run for the pair, including
-    # the one whose dataset item is outside all split filters.
-    response = client.get(_RESULTS_PATH)
-    assert response.status_code == 200
-    result_ids = {r["id"] for r in response.json()["results"]}
-    assert result_ids == set(eval_runs_across_splits.values())
-
-    # Each split returns only its members. "test" is the eval set filter.
-    for split, tag in [
-        ("test", "eval_set"),
-        ("train", "train_set"),
-        ("val", "val_set"),
-    ]:
-        response = client.get(_RESULTS_PATH, params={"split": split})
-        assert response.status_code == 200
-        result_ids = {r["id"] for r in response.json()["results"]}
-        assert result_ids == {eval_runs_across_splits[tag]}, split
-
-
-@pytest.mark.asyncio
-async def test_get_eval_run_results_split_filtering_v2_eval(
-    client,
-    mock_task_from_id,
-    mock_task,
-    mock_eval,
-    mock_eval_config,
-    mock_run_config,
-):
-    """A V2 eval's runs key on eval_input_id, so its split filters have to be
-    resolved against EvalInputs. Matching them against TaskRun ids returned an
-    empty list for every split — the bug this covers."""
-    mock_task_from_id.return_value = mock_task
-
-    # Built rather than mutated from the V1 fixture: Eval validates that
-    # exactly one of the two filter ids is set, so there is no order of
-    # assignments that gets from one shape to the other.
-    v2_eval = Eval(
-        id="eval_v2",
-        name="V2 Eval",
-        output_scores=[
-            EvalOutputScore(
-                name="score1", instruction="desc1", type=TaskOutputRatingType.five_star
-            ),
-            EvalOutputScore(
-                name="overall_rating",
-                instruction="desc2",
-                type=TaskOutputRatingType.five_star,
-            ),
-        ],
-        eval_input_filter_id="tag::v2_test",
-        train_set_filter_id="tag::v2_train",
-        val_set_filter_id="tag::v2_val",
-        eval_configs_filter_id="tag::golden",
-        parent=mock_task,
-    )
-    v2_eval.save_to_file()
-    v2_config = EvalConfig(
-        id="eval_config1",
-        name="V2 Judge",
-        config_type=EvalConfigType.g_eval,
-        properties={"eval_steps": ["step1"]},
-        parent=v2_eval,
-        model_name="gpt-4",
-        model_provider="openai",
-    )
-    v2_config.save_to_file()
-
-    eval_run_ids = {}
-    for tag in ["v2_test", "v2_train"]:
-        eval_input = EvalInput(
-            data=SingleTurnEvalInputData(user_message=UserMessage(text=f"input {tag}")),
-            tags=[tag],
-            parent=mock_task,
-        )
-        eval_input.save_to_file()
-        eval_run = EvalRun(
-            task_run_config_id="run_config1",
-            scores={"score1": 3.0, "overall_rating": 1.0},
-            input=f"input {tag}",
-            output=f"output {tag}",
-            eval_input_id=eval_input.id,
-            parent=v2_config,
-        )
-        eval_run.save_to_file()
-        eval_run_ids[tag] = eval_run.id
-
-    with (
-        patch("app.desktop.studio_server.eval_api.eval_from_id", return_value=v2_eval),
-        patch(
-            "app.desktop.studio_server.eval_api.eval_config_from_id",
-            return_value=v2_config,
-        ),
-    ):
-        for split, tag in [("test", "v2_test"), ("train", "v2_train")]:
-            response = client.get(_RESULTS_PATH, params={"split": split})
-            assert response.status_code == 200, response.text
-            assert {r["id"] for r in response.json()["results"]} == {
-                eval_run_ids[tag]
-            }, split
-
-        # A declared split that no EvalInput carries is empty, not an error:
-        # nothing has been run on it yet.
-        response = client.get(_RESULTS_PATH, params={"split": "val"})
-=======
 class TestGetEvalRunResultsSplits:
     """Every response about eval results is scoped to exactly one split (spec 5)."""
 
@@ -2626,52 +2270,10 @@ class TestGetEvalRunResultsSplits:
 
         response = client.get(RUN_RESULTS_PATH, params={"split": "test"})
 
->>>>>>> 721c4941b
         assert response.status_code == 200
         assert response.json()["results"] == []
 
 
-<<<<<<< HEAD
-@pytest.mark.asyncio
-async def test_get_eval_run_results_split_unset_422(
-    client,
-    mock_task_from_id,
-    mock_task,
-    mock_eval,
-    mock_eval_config,
-    mock_run_config,
-):
-    mock_task_from_id.return_value = mock_task
-
-    # Loading from disk lazily mints train/val filter ids, so an unset split
-    # only occurs for evals constructed without one — return that state directly.
-    with patch(
-        "app.desktop.studio_server.eval_api.eval_from_id", return_value=mock_eval
-    ):
-        assert mock_eval.train_set_filter_id is None
-        response = client.get(_RESULTS_PATH, params={"split": "train"})
-        assert response.status_code == 422
-        assert "no train split configured" in response.json()["message"]
-
-        # The test split is the required eval_set_filter_id: it always resolves.
-        response = client.get(_RESULTS_PATH, params={"split": "test"})
-        assert response.status_code == 200
-
-
-@pytest.mark.asyncio
-async def test_get_eval_run_results_invalid_split_422(
-    client,
-    mock_task_from_id,
-    mock_task,
-    mock_eval,
-    mock_eval_config,
-    mock_run_config,
-):
-    mock_task_from_id.return_value = mock_task
-
-    response = client.get(_RESULTS_PATH, params={"split": "golden"})
-    assert response.status_code == 422
-=======
 def _eval_trace(
     task: Task,
     data_source: DataSource,
@@ -2804,13 +2406,22 @@ class TestResolveEvalRunTraces:
             (
                 lambda: EvalInput(
                     data=MultiTurnSyntheticEvalInputData(
-                        first_message=UserMessage(text="first turn")
+                        first_message=UserMessage(text="first turn"),
+                        synthetic_user_info=SyntheticUserInfo(
+                            persona="a customer", goal="get an answer"
+                        ),
                     )
                 ),
                 "first turn",
             ),
             (
-                lambda: EvalInput(data=MultiTurnSyntheticEvalInputData()),
+                lambda: EvalInput(
+                    data=MultiTurnSyntheticEvalInputData(
+                        synthetic_user_info=SyntheticUserInfo(
+                            persona="a customer", goal="get an answer"
+                        )
+                    )
+                ),
                 None,
             ),
         ],
@@ -3239,7 +2850,10 @@ class TestPreGenerationSkipInput:
         eval_input = EvalInput(
             parent=mock_task,
             data=MultiTurnSyntheticEvalInputData(
-                first_message=UserMessage(text="first turn")
+                first_message=UserMessage(text="first turn"),
+                synthetic_user_info=SyntheticUserInfo(
+                    persona="a customer", goal="get an answer"
+                ),
             ),
             tags=["inputs"],
         )
@@ -3264,7 +2878,6 @@ class TestPreGenerationSkipInput:
 
         with patch_resolve_split(test=stub_split({"900000000002"})):
             assert self._input_of_only_result(client) is None
->>>>>>> 721c4941b
 
 
 @pytest.mark.asyncio
@@ -5301,7 +4914,7 @@ class TestRunConfigUsageRollup:
 
     def _mean_usage(self, client) -> Dict:
         response = client.get(EVAL_SCORES_PATH)
-        assert response.status_code == 200
+        assert response.status_code == 200, response.text
         return response.json()["mean_usage"]
 
     def test_reports_the_scored_task_runs_usage_for_a_pointer_record(
@@ -6269,7 +5882,7 @@ async def test_eval_results_summary_happy_path(client):
 
 @pytest.mark.asyncio
 async def test_eval_results_summary_includes_eval_input_evals(
-    client, mock_task_from_id, mock_task
+    client, mock_task_from_id, mock_task, data_source
 ):
     """EvalInput-typed evals appear in the cross-eval summary with real sizing
     and scores instead of being silently omitted. Both evals here filter on the
@@ -6302,6 +5915,11 @@ async def test_eval_results_summary_includes_eval_input_evals(
         parent=mock_task,
     )
     dataset_eval.save_to_file()
+
+    # The TaskRun store has TWO items tagged "shared" (vs three EvalInputs below), so a
+    # cache or a lookup that ignored the store would report one eval's size for both.
+    for i in range(2):
+        _tagged_task_run(mock_task, data_source, "shared")
 
     eval_input_ids = []
     for i in range(3):
@@ -6350,12 +5968,7 @@ async def test_eval_results_summary_includes_eval_input_evals(
     )
     run_config.save_to_file()
 
-    # The TaskRun store has TWO items tagged "shared" (vs three EvalInputs)
-    with patch(
-        "app.desktop.studio_server.eval_api.dataset_ids_in_filter",
-        return_value={"ds1", "ds2"},
-    ):
-        response = client.get("/api/projects/project1/tasks/task1/eval_results_summary")
+    response = client.get("/api/projects/project1/tasks/task1/eval_results_summary")
 
     assert response.status_code == 200
     data = response.json()
@@ -6898,32 +6511,28 @@ def _build_mock_v2_eval(
     train_filter_id: str | None = None,
     val_filter_id: str | None = None,
 ) -> Mock:
+    """An EvalInput-backed eval: every split it has selects EvalInputs."""
     mock = Mock(spec=Eval)
     mock.id = eval_id
     mock.name = name
     mock.current_config_id = current_config_id
-    mock.eval_set_filter_id = None
-    mock.eval_input_filter_id = eval_input_filter_id
-    mock.train_set_filter_id = train_filter_id
-    mock.val_set_filter_id = val_filter_id
     mock.output_scores = output_scores
     mock.configs.return_value = configs
-    mock.filter_id_for_split.side_effect = lambda split: {
-        "train": train_filter_id,
-        "val": val_filter_id,
-        "test": None,
-    }[split]
+    splits: Dict[str, EvalInputSplit] = {
+        "test": EvalInputSplit(filter_id=eval_input_filter_id)
+    }
+    if train_filter_id is not None:
+        splits["train"] = EvalInputSplit(filter_id=train_filter_id)
+    if val_filter_id is not None:
+        splits["val"] = EvalInputSplit(filter_id=val_filter_id)
+    mock.splits = splits
     return mock
 
 
-_V2_ITEMS_BY_FILTER = {
-    "tag::x_test": {"ei1", "ei2"},
-    "tag::x_train": {"ei3", "ei4"},
+_V2_ITEMS_BY_REF: Dict[Tuple[ItemSource, str], set] = {
+    ("eval_input", "tag::x_test"): {"ei1", "ei2"},
+    ("eval_input", "tag::x_train"): {"ei3", "ei4"},
 }
-
-
-def _v2_eval_input_ids_in_filter(task, filter_id, readonly):
-    return set(_V2_ITEMS_BY_FILTER.get(filter_id, set()))
 
 
 def _v2_summary_fixtures():
@@ -6970,6 +6579,7 @@ def _v2_summary_fixtures():
     mock_task.finetunes.return_value = []
     mock_task.evals.return_value = [eval1]
     mock_task.specs.return_value = []
+    mock_task.path = None
     return mock_task
 
 
@@ -6977,10 +6587,7 @@ def _summary_for_split(client, split: str | None):
     mock_task = _v2_summary_fixtures()
     with (
         patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
-        patch(
-            "app.desktop.studio_server.eval_api.eval_input_ids_in_filter",
-            side_effect=_v2_eval_input_ids_in_filter,
-        ),
+        patch_resolve_split_by_ref(_V2_ITEMS_BY_REF),
     ):
         mock_task_from_id.return_value = mock_task
         params = {} if split is None else {"split": split}
@@ -7057,10 +6664,7 @@ async def test_run_config_eval_scores_split_scopes_scores_and_usage(client):
                 "app.desktop.studio_server.eval_api.task_run_config_from_id",
                 return_value=rc1_mock,
             ),
-            patch(
-                "app.desktop.studio_server.eval_api.eval_input_ids_in_filter",
-                side_effect=_v2_eval_input_ids_in_filter,
-            ),
+            patch_resolve_split_by_ref(_V2_ITEMS_BY_REF),
         ):
             mock_task_from_id.return_value = mock_task
             params = {} if split is None else {"split": split}
@@ -7103,19 +6707,11 @@ async def test_run_config_eval_scores_split_scopes_scores_and_usage(client):
 # aggregating endpoints use, so a mean recomputed client-side from these rows
 # can only differ from the server's by the filtering the caller applied.
 
-_INDEX_ITEMS_BY_FILTER = {
-    "tag::ix_test": {"ei1", "ei2", "ei3"},
-    "tag::ix_train": {"ei4"},
-    "tag::ix_v1_test": {"ds1", "ds2"},
+_INDEX_ITEMS_BY_REF: Dict[Tuple[ItemSource, str], set] = {
+    ("eval_input", "tag::ix_test"): {"ei1", "ei2", "ei3"},
+    ("eval_input", "tag::ix_train"): {"ei4"},
+    ("task_run", "tag::ix_v1_test"): {"ds1", "ds2"},
 }
-
-
-def _index_eval_input_ids_in_filter(task, filter_id, readonly):
-    return set(_INDEX_ITEMS_BY_FILTER.get(filter_id, set()))
-
-
-def _index_dataset_ids_in_filter(task, filter_id, readonly):
-    return set(_INDEX_ITEMS_BY_FILTER.get(filter_id, set()))
 
 
 def _index_output_scores() -> list[EvalOutputScore]:
@@ -7233,6 +6829,7 @@ def _index_v2_task() -> Mock:
     mock_task.finetunes.return_value = []
     mock_task.evals.return_value = [eval1]
     mock_task.specs.return_value = []
+    mock_task.path = None
     return mock_task
 
 
@@ -7244,14 +6841,7 @@ def _get_index(client, mock_task, split: str | None, run_config_id: str = "rc1")
             "app.desktop.studio_server.eval_api.task_run_config_from_id",
             return_value=rc_mock,
         ),
-        patch(
-            "app.desktop.studio_server.eval_api.eval_input_ids_in_filter",
-            side_effect=_index_eval_input_ids_in_filter,
-        ),
-        patch(
-            "app.desktop.studio_server.eval_api.dataset_ids_in_filter",
-            side_effect=_index_dataset_ids_in_filter,
-        ),
+        patch_resolve_split_by_ref(_INDEX_ITEMS_BY_REF),
     ):
         mock_task_from_id.return_value = mock_task
         params = {} if split is None else {"split": split}
@@ -7309,7 +6899,7 @@ async def test_eval_run_index_v1_keys_on_dataset_id(client):
         eval_id="v1_eval",
         name="V1 Eval",
         current_config_id="ec1",
-        eval_set_filter_id="tag::ix_v1_test",
+        test_split=TaskRunSplit(filter_id="tag::ix_v1_test"),
         output_scores=_index_output_scores(),
         configs=[_build_mock_eval_config("ec1", "Judge", runs)],
     )
@@ -7407,7 +6997,7 @@ async def test_eval_run_index_dedupes_items_the_way_the_summary_does(client):
         eval1,
         eval_config,
         [Mock(spec=TaskRunConfig, id="rc1")],
-        {"ei1"},
+        {("eval_input", "ei1")},
     )
     kept = summary.results["rc1"]["accuracy"].mean_score
     assert summary.results["rc1"]["accuracy"].n_used == 1
@@ -7454,9 +7044,9 @@ def _index_two_eval_task(
 ) -> Mock:
     """Two evals over the same items, so a caller can join their rows.
 
-    Each eval's run for an item carries whatever trace the caller names, which
-    is how a reused conversation (same trace) is told from two separate drives
-    of the same scenario (different traces).
+    Each eval's run for an item names whichever trace the caller gives it, which is how
+    a reused conversation (one scored_run_id, scored twice) is told from two separate
+    drives of the same scenario (two ids) and from a record with no trace at all (None).
     """
 
     def runs(traces: dict[str, str | None], score: float) -> list[EvalRun]:
@@ -7464,15 +7054,17 @@ def _index_two_eval_task(
             EvalRun(
                 task_run_config_id="rc1",
                 scores={"accuracy": score},
-                input="i",
-                output="o",
+                # A record with no trace to point at is a legacy one, which the
+                # datamodel requires to carry its input inline.
+                input=None if scored_run_id else "i",
+                output=None if scored_run_id else "o",
+                scored_run_id=scored_run_id,
                 eval_input_id=item,
-                task_run_trace=trace,
                 # Equal on every row: the fingerprint is the drive's inputs,
                 # so two independent drives of one scenario share it.
                 drive_fingerprint="fp_v1_same_for_every_row",
             )
-            for item, trace in traces.items()
+            for item, scored_run_id in traces.items()
         ]
 
     judge = _build_mock_v2_eval(
@@ -7498,6 +7090,7 @@ def _index_two_eval_task(
     mock_task.finetunes.return_value = []
     mock_task.evals.return_value = [judge, metrics]
     mock_task.specs.return_value = []
+    mock_task.path = None
     return mock_task
 
 
@@ -7512,8 +7105,8 @@ async def test_eval_run_index_execution_id_matches_across_a_reused_trace(client)
     body = _get_index(
         client,
         _index_two_eval_task(
-            judge_traces={"ei1": '[{"role":"user","content":"a"}]'},
-            metrics_traces={"ei1": '[{"role":"user","content":"a"}]'},
+            judge_traces={"ei1": "trace_1"},
+            metrics_traces={"ei1": "trace_1"},
         ),
         None,
     )
@@ -7521,7 +7114,7 @@ async def test_eval_run_index_execution_id_matches_across_a_reused_trace(client)
     metrics = _rows_by_item(body, "metrics")["ei1"]
 
     assert judge["execution_id"] == metrics["execution_id"]
-    assert judge["execution_id"].startswith("trace:")
+    assert judge["execution_id"] == "run:trace_1"
     # ...and it is the conversation's identity, not the record's
     assert judge["eval_run_id"] != metrics["eval_run_id"]
 
@@ -7538,8 +7131,8 @@ async def test_eval_run_index_execution_id_separates_two_drives_of_one_item(clie
     body = _get_index(
         client,
         _index_two_eval_task(
-            judge_traces={"ei1": '[{"role":"user","content":"first drive"}]'},
-            metrics_traces={"ei1": '[{"role":"user","content":"second drive"}]'},
+            judge_traces={"ei1": "trace_first_drive"},
+            metrics_traces={"ei1": "trace_second_drive"},
         ),
         None,
     )
@@ -7569,30 +7162,28 @@ async def test_eval_run_index_execution_id_falls_back_to_the_record(client):
     judge = _rows_by_item(body, "judge")["ei1"]
     metrics = _rows_by_item(body, "metrics")["ei1"]
 
-    assert judge["execution_id"] == f"run:{judge['eval_run_id']}"
+    assert judge["execution_id"] == f"record:{judge['eval_run_id']}"
     assert judge["execution_id"] != metrics["execution_id"]
 
 
 @pytest.mark.asyncio
 async def test_eval_run_index_execution_id_is_stable_and_row_identity_is_not(client):
-    """Two different items driven identically would collide on trace alone -
-    they do not here because they are different conversations, but the point
-    of the assertion is that the id is a pure function of the trace: the same
-    conversation text always yields the same id, so a caller can compare ids
-    from two payloads fetched at different times."""
+    """The id names the conversation, not the record it was read from, so a caller can
+    compare ids across two payloads fetched at different times — and two items scored
+    over different conversations never share one."""
     first = _get_index(
         client,
         _index_two_eval_task(
-            judge_traces={"ei1": "same-text", "ei2": "other-text"},
-            metrics_traces={"ei1": "same-text", "ei2": "other-text"},
+            judge_traces={"ei1": "trace_1", "ei2": "trace_2"},
+            metrics_traces={"ei1": "trace_1", "ei2": "trace_2"},
         ),
         None,
     )
     second = _get_index(
         client,
         _index_two_eval_task(
-            judge_traces={"ei1": "same-text", "ei2": "other-text"},
-            metrics_traces={"ei1": "same-text", "ei2": "other-text"},
+            judge_traces={"ei1": "trace_1", "ei2": "trace_2"},
+            metrics_traces={"ei1": "trace_1", "ei2": "trace_2"},
         ),
         None,
     )
@@ -7889,11 +7480,7 @@ class TestTestV2Eval:
         # The adapter's first return value is the judge's own TaskRun, whose usage the
         # V2 result carries as eval_usage.
         mock_adapter.invoke_returning_run_output = AsyncMock(
-<<<<<<< HEAD
-            return_value=(MagicMock(usage=None), mock_run_output)
-=======
             return_value=(Mock(usage=None), mock_run_output)
->>>>>>> 721c4941b
         )
         with (
             patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
@@ -7951,11 +7538,7 @@ class TestTestV2Eval:
         # The adapter's first return value is the judge's own TaskRun, whose usage the
         # V2 result carries as eval_usage.
         mock_adapter.invoke_returning_run_output = AsyncMock(
-<<<<<<< HEAD
-            return_value=(MagicMock(usage=None), mock_run_output)
-=======
             return_value=(Mock(usage=None), mock_run_output)
->>>>>>> 721c4941b
         )
         with (
             patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,

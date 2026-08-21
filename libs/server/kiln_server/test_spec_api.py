@@ -181,12 +181,6 @@ def test_create_spec_success(client, project_and_task):
     assert len(evals) == 1
     assert evals[0].name == "Test Spec"
     assert evals[0].id == res["eval_id"]
-<<<<<<< HEAD
-    assert evals[0].eval_set_filter_id == "tag::eval_test_spec"
-    assert evals[0].train_set_filter_id == "tag::train_test_spec"
-    assert evals[0].val_set_filter_id == "tag::val_test_spec"
-    assert evals[0].eval_configs_filter_id == "tag::eval_golden_test_spec"
-=======
     assert evals[0].eval_configs_filter_id == "tag::golden_test_spec"
     assert evals[0].splits == {
         "test": TaskRunSplit(filter_id="tag::test_test_spec"),
@@ -205,13 +199,6 @@ def test_create_spec_success(client, project_and_task):
         "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
         "val": {"source": "task_run", "filter_id": "tag::val_test_spec"},
     }
->>>>>>> 721c4941b
-
-    # Check the raw saved file: the lazy train/val migrations run on load and would
-    # synthesize these same values, masking missing wiring in the create path
-    saved_eval = json.loads(evals[0].path.read_text())
-    assert saved_eval["train_set_filter_id"] == "tag::train_test_spec"
-    assert saved_eval["val_set_filter_id"] == "tag::val_test_spec"
 
 
 def test_create_spec_minimal(client, project_and_task):

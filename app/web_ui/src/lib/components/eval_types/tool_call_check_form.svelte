@@ -5,13 +5,6 @@
   import Collapse from "$lib/ui/collapse.svelte"
   import CloseIcon from "$lib/ui/icons/close_icon.svelte"
   import { available_tools, load_available_tools } from "$lib/stores"
-<<<<<<< HEAD
-  import {
-    tool_id_to_function_name,
-    CODE_EVAL_ONLY_TOOL_IDS,
-  } from "$lib/stores/tools_store"
-=======
->>>>>>> 721c4941b
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
   import type { ToolSetApiDescription } from "$lib/types"
   import { build_tool_option_groups } from "$lib/ui/run_config_component/tool_options"
@@ -53,44 +46,6 @@
       sandbox_code_context: "none",
     })
 
-<<<<<<< HEAD
-  async function build_tool_options(tool_sets: ToolSetApiDescription[]) {
-    const groups: OptionGroup[] = []
-    const fn_names = new Set<string>()
-    for (const tool_set of tool_sets) {
-      // tool_call_check is never a code-eval context, so code-eval-only tools
-      // (e.g. llm_judge) can never appear in a real trace — exclude them.
-      const selectable_tools = tool_set.tools.filter(
-        (tool) => !CODE_EVAL_ONLY_TOOL_IDS.includes(tool.id),
-      )
-      const resolved = await Promise.all(
-        selectable_tools.map(async (tool): Promise<Option | null> => {
-          try {
-            const function_name = await tool_id_to_function_name(
-              tool.id,
-              project_id,
-              task_id,
-            )
-            return {
-              value: function_name,
-              label: tool.name,
-              description: function_name,
-            }
-          } catch {
-            // Skip tools we can't resolve a function name for (e.g. offline
-            // MCP server). They just won't appear in the dropdown.
-            return null
-          }
-        }),
-      )
-      const options = resolved.filter((o): o is Option => o !== null)
-      for (const option of options) {
-        fn_names.add(option.value as string)
-      }
-      if (options.length > 0) {
-        groups.push({ label: tool_set.set_name, options })
-      }
-=======
     // Every skill is the same `skill` call in the trace, told apart by its name
     // argument, so the whole set collapses to one option instead of one per skill.
     const skill_set = (tool_sets ?? []).find(
@@ -108,7 +63,6 @@
           },
         ],
       })
->>>>>>> 721c4941b
     }
     return groups
   }

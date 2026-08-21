@@ -194,20 +194,11 @@ describe("CodeEvalForm", () => {
   it("renders example tabs including the LLM tool examples", () => {
     const { container } = render(CodeEvalForm)
     const tabs = container.querySelectorAll(".tab")
-<<<<<<< HEAD
-    expect(tabs.length).toBe(5)
-    expect(tabs[0].textContent?.trim()).toBe("Parse JSON")
-    expect(tabs[1].textContent?.trim()).toBe("Check tool usage")
-    expect(tabs[2].textContent?.trim()).toBe("Domain-specific grading")
-    expect(tabs[3].textContent?.trim()).toBe("LLM judge")
-    expect(tabs[4].textContent?.trim()).toBe("Triage then LLM judge")
-=======
     expect(tabs.length).toBe(4)
     expect(tabs[0].textContent?.trim()).toBe("Parse JSON")
     expect(tabs[1].textContent?.trim()).toBe("Check tool usage")
     expect(tabs[2].textContent?.trim()).toBe("LLM judge")
     expect(tabs[3].textContent?.trim()).toBe("Triage then LLM judge")
->>>>>>> 721c4941b
   })
 
   it("switches active example tab on click", async () => {
@@ -242,15 +233,10 @@ describe("tool allowlist picker", () => {
     )
     expect(selector).not.toBeNull()
     expect(selector?.getAttribute("data-project-id")).toBe("proj_123")
-<<<<<<< HEAD
-    // code_eval_context must be true so llm_judge is offered here.
-    expect(selector?.getAttribute("data-code-eval-context")).toBe("true")
-=======
     // The code-eval context is what makes llm_judge offerable here.
     expect(selector?.getAttribute("data-sandbox-code-context")).toBe(
       "code_eval",
     )
->>>>>>> 721c4941b
   })
 
   it("binds the picker to properties.tool_allowlist", () => {
@@ -283,8 +269,6 @@ describe("tool allowlist picker", () => {
   })
 })
 
-<<<<<<< HEAD
-=======
 describe("examples grant the tools they call", () => {
   // Drives the real dialog action the "Use This Example" button is wired to.
   async function use_example(container: HTMLElement, tab_index: number) {
@@ -366,7 +350,6 @@ describe("examples grant the tools they call", () => {
   })
 })
 
->>>>>>> 721c4941b
 describe("dynamic default code via output_scores prop", () => {
   it("uses output_scores to generate the initial code", () => {
     const scores = [make_score("Relevance", "five_star")]

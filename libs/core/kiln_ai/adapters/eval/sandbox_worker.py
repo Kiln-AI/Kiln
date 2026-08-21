@@ -12,10 +12,7 @@ synthetic ``kiln.tools`` / ``kiln.async_tools`` modules.
 
 import inspect
 import io
-<<<<<<< HEAD
 import os
-=======
->>>>>>> 721c4941b
 import sys
 import traceback
 from multiprocessing import Queue
@@ -30,11 +27,8 @@ def execute_scorer_bridged(
     inputs: dict[str, Any],
     requests: Queue,  # type: ignore[type-arg]
     responses: Queue,  # type: ignore[type-arg]
-<<<<<<< HEAD
     episode_id: str | None = None,
     eval_input_id: str | None = None,
-=======
->>>>>>> 721c4941b
 ) -> None:
     """Entry point for the code-eval child process (two-queue bridge protocol).
 
@@ -42,14 +36,11 @@ def execute_scorer_bridged(
     ``async def score`` are supported -- if the call returns a coroutine it is
     transparently awaited via :func:`call_entrypoint`.
 
-<<<<<<< HEAD
     When the eval runner supplies an episode ID or an eval input ID, they are
     exposed to the sandboxed scorer (and any nested tool calls it makes) as the
     KILN_EPISODE_ID / KILN_EVAL_INPUT_ID env vars, mirroring
     :func:`kiln_ai.sandbox.worker.child_main`.
 
-=======
->>>>>>> 721c4941b
     Puts exactly one ``result`` message on *requests* and then returns:
       - success:  {"type":"result","ok":<scores dict>,"stdout":...,"stderr":...}
       - error:    {"type":"result","error":str,"traceback":str,"stdout":...,"stderr":...}

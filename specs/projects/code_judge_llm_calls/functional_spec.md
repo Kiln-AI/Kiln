@@ -152,11 +152,7 @@ async def score(trace):
 
 - **Allowlist.** Add `tool_allowlist: list[ToolId]` to `CodeEvalProperties` (additive, mirrors `CodeTool`). A code judge's `score()` may call any allowlisted tool over the bridge — MCP tools, RAG, other code tools, and the two new LLM tools.
 - **Picker.** `llm` and `llm_judge` are injected as selectable built-in tools in the existing tool picker used to populate the allowlist. No bespoke UI — the same schema-builder/picker experience code tools use.
-<<<<<<< HEAD
-- **Trust gate.** Unchanged: bridge execution (and therefore any tool call) is gated by the existing code-eval project-trust check. A code judge in an untrusted project skips exactly as it does today.
-=======
 - **Trust gate.** Unchanged by this project, but note what it is (it moved during the rebase onto `scosman/evals_v2`, and it is *not* a runtime gate): code trust is conferred at **authoring** time, per project, for the current session. `add_code_trust(project_path)` is required to save a code eval config or to run not-yet-saved code in the test pane (`eval_api.py`; `code_tool_api.py` does the same for code tools). Once code is saved, it is trusted to run: `CodeEvalAdapter.evaluate` performs **no** trust check, so an eval run executes a saved code judge — and its allowlisted LLM calls — with no further prompt. The threat model is therefore "admitting code into the project", not "each execution of it": anyone who can already write an eval config into the project directory can get code executed on the next eval run. That is the base's deliberate design; this project neither loosens nor tightens it, and adds no new path to code execution.
->>>>>>> 721c4941b
 - **`llm_judge` context.** `llm_judge` needs the eval's score schema. It is resolved through the normal `tool_from_id` path; the eval's schema is supplied at call time via `ToolCallContext` (additive field), which the code-eval adapter's pump populates. Generic tools ignore the field. If `llm_judge` is ever invoked without eval context (e.g. selected by a non-eval agent), it returns a clear error: "`llm_judge` is only available inside a code judge; use `llm` with an explicit schema elsewhere."
 
 ## 7. Errors & edge cases
@@ -176,30 +172,18 @@ All surface through the existing bridge error mapping — the tool call raises a
 
 - **Wall clock.** The code judge's `timeout_seconds` (`CodeEvalProperties`) bounds the whole invocation including all nested LLM calls, exactly as it bounds nested tool calls for code tools. **The default is raised from 30 → 180s** (min 1, max 300) to accommodate LLM latency; authors making several calls can raise it further, up to the max.
 - **Parallelism.** The parent serves nested calls concurrently (existing pump); the async mirror lets a judge fan out calls under `asyncio.gather`.
-<<<<<<< HEAD
-- **Process concurrency.** Reuses the existing top-level spawn bound and `_spawn_lock`; no new limits.
-=======
 - **Process concurrency.** Reuses the existing top-level spawn bound and `_spawn_lock`; no new limits. The bridge does get its own thread pool: every in-flight run holds a worker for as long as it polls its child, and on asyncio's default executor (as few as 6 threads) 16 concurrent sandboxes would starve every unrelated `run_in_executor(None, …)` in the server (arch §3.4).
->>>>>>> 721c4941b
 - **Cost/scale.** An eval run executes the code judge once per eval item, so each allowlisted LLM call is billed per item × per call. This is the intended trade (small filtered prompt vs. a full-trace judge), but it is real spend and should be visible (§10).
 
 ## 9. Security model
 
 - Sandbox stays stdlib-only; no secrets or Kiln stack cross the process boundary.
-<<<<<<< HEAD
-- All model access is parent-side and subject to the existing trust gate.
-=======
 - All model access is parent-side. It inherits the trust boundary described in §6 — that is, it is gated where code is *admitted* to the project, not on each run. A saved code judge's LLM calls need no per-run confirmation, so the spend they cause follows from having accepted the code, not from a later prompt.
->>>>>>> 721c4941b
 - The author controls prompt + model + provider + the data they pass; this is their own eval code, already trusted-to-run. No new secret storage; providers own auth (same as code_tools).
 
 ## 10. Observability / cost
 
-<<<<<<< HEAD
-Nested LLM calls should be attributable. Minimum: they flow through the existing tool-call recorder (name, args preview, duration, error) already wired in the pump. *(Open: whether to surface token usage / cost and the judge's intermediate output for a code judge's nested calls, and where — §12.)*
-=======
 Nested LLM calls should be attributable. Minimum: they flow through the existing tool-call recorder (name, args preview, duration, error) already wired in the pump. v1 delivers that on the **test-pane** path — `test_v2_eval` returns the log as `TestV2EvalResponse.tool_call_log`, rendered by the shared `tool_call_log_table.svelte` that the code-tool test pane also uses (function, arguments, result, duration, status). The result column matters: for a failed call the recorder puts the error message in `output_preview`, so it is the only place an author learns *why* a judge call failed. An eval run leaves the recorder unset, because a per-item tool log has nowhere to go in the run UI yet. *(Open: whether to surface token usage / cost and the judge's intermediate output for a code judge's nested calls, and where — §12.)*
->>>>>>> 721c4941b
 
 ## 11. Out of scope (v1)
 

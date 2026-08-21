@@ -20,10 +20,7 @@ import logging
 import multiprocessing
 import queue
 import threading
-<<<<<<< HEAD
-=======
 from concurrent.futures import ThreadPoolExecutor
->>>>>>> 721c4941b
 from dataclasses import dataclass
 from time import monotonic
 from typing import Any, Callable
@@ -50,8 +47,6 @@ _depth: contextvars.ContextVar[int] = contextvars.ContextVar(
 _semaphore: asyncio.Semaphore | None = None
 _semaphore_init_lock = threading.Lock()
 
-<<<<<<< HEAD
-=======
 # Every in-flight bridged run permanently occupies one worker thread: `_pump`
 # re-submits `_poll_get` (a 0.1s blocking Queue.get) the instant the previous one
 # returns, and the spawn and join calls draw from the same pool. asyncio's default
@@ -94,7 +89,6 @@ def _get_bridge_executor() -> ThreadPoolExecutor:
     assert executor is not None
     return executor
 
->>>>>>> 721c4941b
 
 async def _get_semaphore() -> asyncio.Semaphore:
     """Lazily create the semaphore inside the running event loop."""
@@ -117,8 +111,6 @@ class ToolCallLogEntry:
     duration_ms: int
 
 
-<<<<<<< HEAD
-=======
 def describe_crash(subject: str, exit_code: int | None) -> str:
     """Phrase a child that ended without a result. One wording for every caller.
 
@@ -132,7 +124,6 @@ def describe_crash(subject: str, exit_code: int | None) -> str:
     return f"{subject} crashed (exit code {exit_code})"
 
 
->>>>>>> 721c4941b
 @dataclass
 class BridgeResult:
     """Raw outcome of one bridged child run — no result interpretation.
@@ -150,14 +141,11 @@ class BridgeResult:
     stderr: str = ""
     duration_ms: int = 0
 
-<<<<<<< HEAD
-=======
     def crash_description(self, subject: str) -> str:
         """Phrase this run's ``crashed`` outcome for the user."""
         assert self.crashed, "crash_description() is only meaningful for a crash"
         return describe_crash(subject, self.exit_code)
 
->>>>>>> 721c4941b
 
 class NestedToolServer:
     """Handles nested tool-call IPC for one bridged run.
@@ -469,11 +457,7 @@ async def run_bridged_child(
     timeout_s: float,
     server: NestedToolServer,
 ) -> BridgeResult:
-<<<<<<< HEAD
     """Spawn ``target(*args, requests, responses, episode_id, eval_input_id)`` and pump its nested tool calls.
-=======
-    """Spawn ``target(*args, requests, responses)`` and pump its nested tool calls.
->>>>>>> 721c4941b
 
     Owns the full queue lifecycle: it creates the spawn ``requests``/``responses``
     queues (after the depth/semaphore gates) and closes them in its ``finally``, so
@@ -484,15 +468,12 @@ async def run_bridged_child(
     crash. Enforces the nesting-depth cap (>=10 → error result, no spawn) and acquires
     the shared bounded semaphore only at depth 0 (nested runs bypass — counting them
     deadlocks the pool).
-<<<<<<< HEAD
 
     The spawned target is always called as
     ``target(*args, requests, responses, episode_id, eval_input_id)``. The two IDs
     are read from *server*'s :class:`ToolCallContext` (``None`` when no context), so
     the child can expose them to sandboxed code as ``KILN_EPISODE_ID`` /
     ``KILN_EVAL_INPUT_ID`` env vars (see ``child_main`` / ``execute_scorer_bridged``).
-=======
->>>>>>> 721c4941b
     """
     depth = _depth.get()
     if depth >= 10:
@@ -502,13 +483,10 @@ async def run_bridged_child(
             }
         )
 
-<<<<<<< HEAD
     context = server._context
     episode_id = context.episode_id if context else None
     eval_input_id = context.eval_input_id if context else None
 
-=======
->>>>>>> 721c4941b
     token = _depth.set(depth + 1)
     try:
         if depth == 0:
@@ -521,7 +499,6 @@ async def run_bridged_child(
             requests: multiprocessing.Queue[dict[str, Any]] = ctx.Queue()
             responses: multiprocessing.Queue[dict[str, Any]] = ctx.Queue()
             try:
-<<<<<<< HEAD
                 return await _pump(
                     target,
                     args,
@@ -532,9 +509,6 @@ async def run_bridged_child(
                     episode_id,
                     eval_input_id,
                 )
-=======
-                return await _pump(target, args, timeout_s, requests, responses, server)
->>>>>>> 721c4941b
             finally:
                 _close_queues(requests, responses)
     finally:
@@ -548,33 +522,20 @@ async def _pump(
     requests: multiprocessing.Queue[dict[str, Any]],
     responses: multiprocessing.Queue[dict[str, Any]],
     server: NestedToolServer,
-<<<<<<< HEAD
     episode_id: str | None = None,
     eval_input_id: str | None = None,
 ) -> BridgeResult:
     loop = asyncio.get_running_loop()
-=======
-) -> BridgeResult:
-    loop = asyncio.get_running_loop()
     executor = _get_bridge_executor()
->>>>>>> 721c4941b
     ctx = multiprocessing.get_context("spawn")
 
     p = ctx.Process(
         target=target,
-<<<<<<< HEAD
         args=(*args, requests, responses, episode_id, eval_input_id),
         daemon=True,
     )
 
-    await loop.run_in_executor(None, start_process_with_light_main, p)
-=======
-        args=(*args, requests, responses),
-        daemon=True,
-    )
-
     await loop.run_in_executor(executor, start_process_with_light_main, p)
->>>>>>> 721c4941b
 
     deadline = monotonic() + timeout_s
     pending_tasks: set[asyncio.Task[None]] = set()
@@ -582,20 +543,12 @@ async def _pump(
 
     try:
         while True:
-<<<<<<< HEAD
-            msg = await loop.run_in_executor(None, _poll_get, requests)
-=======
             msg = await loop.run_in_executor(executor, _poll_get, requests)
->>>>>>> 721c4941b
 
             if monotonic() > deadline:
                 elapsed = int((monotonic() - start_time) * 1000)
                 p.kill()
-<<<<<<< HEAD
-                await loop.run_in_executor(None, p.join, 5)
-=======
                 await loop.run_in_executor(executor, p.join, 5)
->>>>>>> 721c4941b
                 return BridgeResult(timed_out=True, duration_ms=elapsed)
 
             if msg is None:
@@ -615,11 +568,7 @@ async def _pump(
 
             elif msg["type"] == "result":
                 elapsed = int((monotonic() - start_time) * 1000)
-<<<<<<< HEAD
-                await loop.run_in_executor(None, p.join, 5)
-=======
                 await loop.run_in_executor(executor, p.join, 5)
->>>>>>> 721c4941b
                 return BridgeResult(
                     result_msg=msg,
                     stdout=msg.get("stdout", ""),
@@ -631,11 +580,7 @@ async def _pump(
             t.cancel()
         if p.is_alive():
             p.kill()
-<<<<<<< HEAD
-            await loop.run_in_executor(None, p.join, 5)
-=======
             await loop.run_in_executor(executor, p.join, 5)
->>>>>>> 721c4941b
 
 
 def _render_params_schema(schema: dict[str, Any]) -> str:

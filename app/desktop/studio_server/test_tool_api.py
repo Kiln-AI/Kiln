@@ -533,20 +533,12 @@ def test_get_tool_server_config_not_found(client, test_project):
 
 
 def _builtin_ai_models_set(set_result):
-<<<<<<< HEAD
-    """Return the always-present built-in AI Models tool set (or None)."""
-=======
     """Return the always-present AI Models tool set (or None)."""
->>>>>>> 721c4941b
     return next(
         (
             s
             for s in set_result
-<<<<<<< HEAD
-            if s["type"] == "builtin" and s["set_name"] == "AI Models"
-=======
             if s["type"] == "sandbox_code" and s["set_name"] == "AI Models"
->>>>>>> 721c4941b
         ),
         None,
     )
@@ -969,44 +961,6 @@ def test_get_available_tools_builtin_ai_models_always_present(client, test_proje
         assert by_id["kiln_tool::llm_judge"]["function_name"] == "llm_judge"
 
 
-<<<<<<< HEAD
-def test_get_available_tools_code_tools_use_display_name(client, test_project):
-    """Code tools expose their display name (not the function name), since several
-    code tools can share a function name. The function name is returned separately."""
-    for display_name in ["Doc Search V1", "Doc Search V2"]:
-        CodeTool(
-            parent=test_project,
-            name=display_name,
-            tool_function_name="search_docs",
-            tool_description="Search the docs",
-            parameters_schema={"type": "object", "properties": {}},
-            code="def run():\n    return 1\n",
-        ).save_to_file()
-
-    with (
-        patch(
-            "app.desktop.studio_server.tool_api.project_from_id"
-        ) as mock_project_from_id,
-        patch("app.desktop.studio_server.tool_api.Config.shared") as mock_config,
-    ):
-        mock_project_from_id.return_value = test_project
-        mock_config_instance = Mock()
-        mock_config_instance.enable_demo_tools = False
-        mock_config_instance.user_id = "test_user"
-        mock_config.return_value = mock_config_instance
-
-        response = client.get(f"/api/projects/{test_project.id}/available_tools")
-
-    assert response.status_code == 200
-    code_tool_sets = [s for s in response.json() if s["type"] == "code"]
-    assert len(code_tool_sets) == 1
-    tools = code_tool_sets[0]["tools"]
-    assert sorted(tool["name"] for tool in tools) == [
-        "Doc Search V1",
-        "Doc Search V2",
-    ]
-    assert {tool["function_name"] for tool in tools} == {"search_docs"}
-=======
 def test_ai_models_set_is_typed_sandbox_code(client, test_project):
     """The AI Models set must carry SANDBOX_CODE, not a generic type.
 
@@ -1099,7 +1053,6 @@ def test_code_eval_only_tool_ids_uses_the_shared_constant():
         f"CODE_EVAL_ONLY_TOOL_IDS is [{declaration.group(1).strip()}], expected "
         "[LLM_JUDGE_TOOL_ID] imported from built_in_tool_ids.ts."
     )
->>>>>>> 721c4941b
 
 
 async def test_create_tool_server_whitespace_handling(

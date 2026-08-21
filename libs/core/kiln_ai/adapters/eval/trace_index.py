@@ -25,22 +25,35 @@ from kiln_ai.utils.lock import AsyncLockManager
 
 logger = logging.getLogger(__name__)
 
-TraceKey = Tuple[ItemSource, str, str]
-"""What identifies a reusable eval trace: `(source_type, source_id, run_config_id)`.
+TraceKey = Tuple[ItemSource, str, str, str]
+"""What identifies a reusable eval trace: `(source_type, source_id, run_config_id,
+variant)`.
 
 `str` rather than the `ID_TYPE` (`Optional[str]`) the id fields carry, because this tuple
 is a dict key: an id-less item and an id-less run config would produce one
 `(source_type, None, None)` key that every id-less job collides on, handing them each
-other's traces. `trace_key()` is where that impossibility is enforced."""
+other's traces. `trace_key()` is where that impossibility is enforced.
+
+The variant separates conversations that the item and run config alone cannot: a
+multi-turn case re-driven under two different `multi_turn_drive_config`s is two different
+conversations, and sharing one between them would score a judge against a conversation
+its own eval never asked for. Empty for a single-turn generation, where the item and the
+run config are the whole identity."""
 
 
-def trace_key(item: ItemKey, run_config_id: ID_TYPE) -> TraceKey:
+def trace_key(
+    item: ItemKey, run_config_id: ID_TYPE, variant: str | None = None
+) -> TraceKey:
     """The trace key for running `item` under `run_config_id`.
 
     The one place `ID_TYPE`'s nullability is resolved, so callers holding an `item.id` or
     a `task_run_config.id` don't each grow their own None check. Empty strings are
     rejected with None: they collide identically, and this key's whole purpose is that a
     collision is impossible.
+
+    `variant` is the opposite case and defaults to absent: an unset variant is a real,
+    single value ("this item under this run config"), shared by every single-turn
+    generation, so None and "" mean the same thing here and are stored as "".
     """
     source_type, source_id = item
     if not source_id or not run_config_id:
@@ -49,7 +62,7 @@ def trace_key(item: ItemKey, run_config_id: ID_TYPE) -> TraceKey:
             f"(got item={item}, run_config_id={run_config_id}). Traces are looked up by "
             "the pair, so a missing half would match every other record missing it."
         )
-    return (source_type, source_id, run_config_id)
+    return (source_type, source_id, run_config_id, variant or "")
 
 
 def _stored_trace_key(run: TaskRun) -> TraceKey | None:
@@ -63,7 +76,9 @@ def _stored_trace_key(run: TaskRun) -> TraceKey | None:
     run_config_id = run.output.source.run_config_id if run.output.source else None
     if not run_config_id:
         return None
-    return trace_key(eval_item_key(run.eval_source), run_config_id)
+    return trace_key(
+        eval_item_key(run.eval_source), run_config_id, run.eval_source.variant
+    )
 
 
 class TraceIndex:
@@ -89,10 +104,12 @@ class TraceIndex:
 
     def _seed(self) -> None:
         # include_intermediate_runs stays False, so a trace that is the *parent* of
-        # another run is invisible here. Safe only because architecture §3.2 skips
-        # multi-turn items outright, so no eval trace has children today. If multi-turn
-        # evals ever generate traces, this line has to change with them — otherwise those
-        # traces are never found and the eval regenerates them on every run, silently.
+        # another run is invisible here. Multi-turn drives do generate traces, but each
+        # is persisted as a single childless run carrying the whole conversation on
+        # `.trace` (see EvalRunner._drive_and_persist), so none of them is a parent. A
+        # future lane that persisted a real chain would have to change this line with it
+        # — otherwise those traces are never found and the eval regenerates them on
+        # every run, silently.
         for run in self._task.runs(readonly=True, include_eval_generated=True):
             if run.path is None:
                 continue

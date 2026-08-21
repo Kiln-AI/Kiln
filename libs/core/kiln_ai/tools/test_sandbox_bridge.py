@@ -6,33 +6,23 @@ via the stdlib child entry point (``sandbox.worker.child_main``), mirroring the
 existing ``test_code_tool_execution.py`` style.
 """
 
-<<<<<<< HEAD
-import multiprocessing
-=======
 import asyncio
 import multiprocessing
 import threading
->>>>>>> 721c4941b
 from unittest.mock import patch
 
 import pytest
 
 from kiln_ai.datamodel.project import Project
 from kiln_ai.sandbox.worker import child_main
-<<<<<<< HEAD
-=======
 from kiln_ai.tools import sandbox_bridge
->>>>>>> 721c4941b
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallDefinition,
     ToolCallResult,
 )
 from kiln_ai.tools.sandbox_bridge import (
-<<<<<<< HEAD
-=======
     _BRIDGE_EXECUTOR_MAX_WORKERS,
->>>>>>> 721c4941b
     CODE_SANDBOX_MAX_CONCURRENCY,
     BridgeResult,
     NestedToolServer,
@@ -40,15 +30,10 @@ from kiln_ai.tools.sandbox_bridge import (
     _close_queues,
     _depth,
     _example_kwargs,
-<<<<<<< HEAD
-    _poll_get,
-    _render_params_schema,
-=======
     _get_bridge_executor,
     _poll_get,
     _render_params_schema,
     describe_crash,
->>>>>>> 721c4941b
     run_bridged_child,
 )
 
@@ -130,8 +115,6 @@ def test_shared_concurrency_bound_is_16():
     assert CODE_SANDBOX_MAX_CONCURRENCY == 16
 
 
-<<<<<<< HEAD
-=======
 @pytest.mark.parametrize(
     "exit_code, expected",
     [
@@ -159,7 +142,6 @@ def test_bridge_result_delegates_its_crash_description():
     )
 
 
->>>>>>> 721c4941b
 def test_bridge_result_defaults():
     r = BridgeResult()
     assert r.result_msg is None
@@ -339,8 +321,6 @@ def _empty_server(tmp_path) -> NestedToolServer:
     return NestedToolServer(allowlist=[], project=project, task=None, context=None)
 
 
-<<<<<<< HEAD
-=======
 class _RecordingExecutor:
     """Wraps the real bridge pool and records what was submitted through it.
 
@@ -457,7 +437,6 @@ class TestBridgeExecutor:
         ), f"polled on non-bridge threads: {sorted(set(polling_threads))}"
 
 
->>>>>>> 721c4941b
 class TestRunBridgedChild:
     @pytest.mark.asyncio
     async def test_result_message_returned_raw(self, tmp_path):

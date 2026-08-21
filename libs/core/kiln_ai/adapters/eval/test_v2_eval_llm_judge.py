@@ -24,12 +24,8 @@ from kiln_ai.datamodel.eval import (
     LlmJudgeProperties,
     SkippedReason,
 )
-<<<<<<< HEAD
-from kiln_ai.datamodel.usage import Usage
-=======
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_run import Usage
->>>>>>> 721c4941b
 
 
 def _make_props(**overrides) -> LlmJudgeProperties:
@@ -126,11 +122,7 @@ class TestLlmJudgeEvalLlmAsJudge:
             intermediate_outputs=None,
         )
         mock_adapter.invoke_returning_run_output.return_value = (
-<<<<<<< HEAD
-            Mock(usage=None),
-=======
             _judge_run(),
->>>>>>> 721c4941b
             mock_run_output,
         )
         mock_adapter_for_task.return_value = mock_adapter
@@ -180,11 +172,11 @@ class TestLlmJudgeEvalLlmAsJudge:
         cfg = _make_config()
         result = await LlmJudgeEval(cfg).evaluate(_inp())
 
-        assert result.eval_usage is not None
-        assert result.eval_usage.input_tokens == 1200
-        assert result.eval_usage.output_tokens == 45
-        assert result.eval_usage.total_tokens == 1245
-        assert result.eval_usage.cost == 0.0031
+        assert result.usage is not None
+        assert result.usage.input_tokens == 1200
+        assert result.usage.output_tokens == 45
+        assert result.usage.total_tokens == 1245
+        assert result.usage.cost == 0.0031
 
     @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
@@ -197,11 +189,7 @@ class TestLlmJudgeEvalLlmAsJudge:
             },
         )
         mock_adapter.invoke_returning_run_output.return_value = (
-<<<<<<< HEAD
-            Mock(usage=None),
-=======
             _judge_run(),
->>>>>>> 721c4941b
             mock_run_output,
         )
         mock_adapter_for_task.return_value = mock_adapter
@@ -223,11 +211,7 @@ class TestLlmJudgeEvalLlmAsJudge:
             intermediate_outputs=None,
         )
         mock_adapter.invoke_returning_run_output.return_value = (
-<<<<<<< HEAD
-            Mock(usage=None),
-=======
             _judge_run(),
->>>>>>> 721c4941b
             mock_run_output,
         )
         mock_adapter_for_task.return_value = mock_adapter
@@ -247,11 +231,7 @@ class TestLlmJudgeEvalLlmAsJudge:
             intermediate_outputs=None,
         )
         mock_adapter.invoke_returning_run_output.return_value = (
-<<<<<<< HEAD
-            Mock(usage=None),
-=======
             _judge_run(),
->>>>>>> 721c4941b
             mock_run_output,
         )
         mock_adapter_for_task.return_value = mock_adapter
@@ -274,11 +254,7 @@ class TestLlmJudgeEvalLlmAsJudge:
     async def test_custom_system_prompt(self, mock_adapter_for_task):
         mock_adapter = AsyncMock()
         mock_adapter.invoke_returning_run_output.return_value = (
-<<<<<<< HEAD
-            Mock(usage=None),
-=======
             _judge_run(),
->>>>>>> 721c4941b
             RunOutput(output={"quality": "5"}, intermediate_outputs=None),
         )
         mock_adapter_for_task.return_value = mock_adapter
@@ -295,11 +271,7 @@ class TestLlmJudgeEvalLlmAsJudge:
     async def test_default_system_prompt(self, mock_adapter_for_task):
         mock_adapter = AsyncMock()
         mock_adapter.invoke_returning_run_output.return_value = (
-<<<<<<< HEAD
-            Mock(usage=None),
-=======
             _judge_run(),
->>>>>>> 721c4941b
             RunOutput(output={"quality": "5"}, intermediate_outputs=None),
         )
         mock_adapter_for_task.return_value = mock_adapter
@@ -316,11 +288,7 @@ class TestLlmJudgeEvalLlmAsJudge:
     async def test_adapter_config_llm_as_judge(self, mock_adapter_for_task):
         mock_adapter = AsyncMock()
         mock_adapter.invoke_returning_run_output.return_value = (
-<<<<<<< HEAD
-            Mock(usage=None),
-=======
             _judge_run(),
->>>>>>> 721c4941b
             RunOutput(output={"quality": "5"}, intermediate_outputs=None),
         )
         mock_adapter_for_task.return_value = mock_adapter
@@ -339,11 +307,7 @@ class TestLlmJudgeEvalLlmAsJudge:
     async def test_invalid_score_raises(self, mock_adapter_for_task):
         mock_adapter = AsyncMock()
         mock_adapter.invoke_returning_run_output.return_value = (
-<<<<<<< HEAD
-            Mock(usage=None),
-=======
             _judge_run(),
->>>>>>> 721c4941b
             RunOutput(output={"quality": "garbage"}, intermediate_outputs=None),
         )
         mock_adapter_for_task.return_value = mock_adapter
@@ -357,11 +321,7 @@ class TestLlmJudgeEvalLlmAsJudge:
     async def test_non_dict_output_raises(self, mock_adapter_for_task):
         mock_adapter = AsyncMock()
         mock_adapter.invoke_returning_run_output.return_value = (
-<<<<<<< HEAD
-            Mock(usage=None),
-=======
             _judge_run(),
->>>>>>> 721c4941b
             RunOutput(output="just a string", intermediate_outputs=None),
         )
         mock_adapter_for_task.return_value = mock_adapter
@@ -379,11 +339,7 @@ class TestLlmJudgeEvalLlmAsJudge:
         mock_build_schema.return_value = _VALID_SCHEMA
         mock_adapter = AsyncMock()
         mock_adapter.invoke_returning_run_output.return_value = (
-<<<<<<< HEAD
-            Mock(usage=None),
-=======
             _judge_run(),
->>>>>>> 721c4941b
             RunOutput(output={"quality": "3"}, intermediate_outputs=None),
         )
         mock_adapter_for_task.return_value = mock_adapter
@@ -405,11 +361,7 @@ class TestLlmJudgeEvalGEval:
     async def test_adapter_config_g_eval(self, mock_adapter_for_task):
         mock_adapter = AsyncMock()
         mock_adapter.invoke_returning_run_output.return_value = (
-<<<<<<< HEAD
-            Mock(usage=None),
-=======
             _judge_run(),
->>>>>>> 721c4941b
             RunOutput(output={"quality": "5"}, intermediate_outputs=None),
         )
         mock_adapter_for_task.return_value = mock_adapter
@@ -439,11 +391,7 @@ class TestLlmJudgeEvalGEval:
             intermediate_outputs=None,
         )
         mock_adapter.invoke_returning_run_output.return_value = (
-<<<<<<< HEAD
-            Mock(usage=None),
-=======
             _judge_run(),
->>>>>>> 721c4941b
             mock_run_output,
         )
         mock_adapter_for_task.return_value = mock_adapter
@@ -488,11 +436,7 @@ class TestLlmJudgeEvalGEvalFailFast:
 
         mock_adapter = AsyncMock()
         mock_adapter.invoke_returning_run_output.return_value = (
-<<<<<<< HEAD
-            Mock(usage=None),
-=======
             _judge_run(),
->>>>>>> 721c4941b
             RunOutput(output={"quality": "5"}, intermediate_outputs=None),
         )
         mock_adapter_for_task.return_value = mock_adapter
@@ -520,11 +464,7 @@ class TestLlmJudgeEvalGEvalFailFast:
     async def test_g_eval_proceeds_when_provider_unknown(self, mock_adapter_for_task):
         mock_adapter = AsyncMock()
         mock_adapter.invoke_returning_run_output.return_value = (
-<<<<<<< HEAD
-            Mock(usage=None),
-=======
             _judge_run(),
->>>>>>> 721c4941b
             RunOutput(output={"quality": "5"}, intermediate_outputs=None),
         )
         mock_adapter_for_task.return_value = mock_adapter
@@ -566,11 +506,7 @@ class TestLlmJudgeEvalMissingReferenceData:
     async def test_present_reference_data_proceeds(self, mock_adapter_for_task):
         mock_adapter = AsyncMock()
         mock_adapter.invoke_returning_run_output.return_value = (
-<<<<<<< HEAD
-            Mock(usage=None),
-=======
             _judge_run(),
->>>>>>> 721c4941b
             RunOutput(output={"quality": "3"}, intermediate_outputs=None),
         )
         mock_adapter_for_task.return_value = mock_adapter
@@ -778,11 +714,7 @@ class TestLlmJudgeEvalMultipleScores:
 
         mock_adapter = AsyncMock()
         mock_adapter.invoke_returning_run_output.return_value = (
-<<<<<<< HEAD
-            Mock(usage=None),
-=======
             _judge_run(),
->>>>>>> 721c4941b
             RunOutput(
                 output={"quality": "4", "relevance": "pass"},
                 intermediate_outputs=None,

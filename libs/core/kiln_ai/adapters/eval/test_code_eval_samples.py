@@ -716,8 +716,6 @@ class TestDefaultCodeMultiOutput:
 
 
 # ---------------------------------------------------------------------------
-<<<<<<< HEAD
-=======
 # Tests: Default starter code, SHOW_REFERENCE_DATA_UI = true branch.
 # The sandbox still supports the reference_data parameter, so these must keep passing.
 # ---------------------------------------------------------------------------
@@ -842,7 +840,6 @@ class TestDefaultCodeMultiOutputRefData:
 
 
 # ---------------------------------------------------------------------------
->>>>>>> 721c4941b
 # LLM tool example fixtures — byte-exact mirror of code_eval_helpers.ts
 # generate_examples() "LLM judge" and "Triage then LLM judge" entries.
 #
@@ -874,11 +871,7 @@ def score(output):
         tools.llm_judge(
             prompt=JUDGE_PROMPT,
             input={"response": output},
-<<<<<<< HEAD
-            model="gpt-4.1",
-=======
             model="gpt_4_1",
->>>>>>> 721c4941b
             provider="openai",
         )
     )
@@ -917,11 +910,7 @@ def score(output):
         tools.llm(
             prompt=TRIAGE_PROMPT,
             input={"response": output},
-<<<<<<< HEAD
-            model="gpt-4.1-mini",
-=======
             model="gpt_4_1_mini",
->>>>>>> 721c4941b
             provider="openai",
             schema=TRIAGE_SCHEMA,
         )
@@ -932,11 +921,7 @@ def score(output):
         tools.llm_judge(
             prompt=JUDGE_PROMPT,
             input={"response": output},
-<<<<<<< HEAD
-            model="gpt-4.1",
-=======
             model="gpt_4_1",
->>>>>>> 721c4941b
             provider="openai",
         )
     )
@@ -985,10 +970,7 @@ class TestLlmJudgeExample:
             tool_allowlist=[KilnBuiltInToolId.LLM_JUDGE],
         )
         adapter = CodeEvalAdapter(cfg)
-<<<<<<< HEAD
-=======
 
->>>>>>> 721c4941b
         factory = _stub_adapter(
             RunOutput(output={"quality": "pass"}, intermediate_outputs=None)
         )
@@ -1010,10 +992,7 @@ class TestLlmJudgeExample:
             tool_allowlist=[KilnBuiltInToolId.LLM_JUDGE],
         )
         adapter = CodeEvalAdapter(cfg)
-<<<<<<< HEAD
-=======
 
->>>>>>> 721c4941b
         factory = _stub_adapter(
             RunOutput(output={"quality": "fail"}, intermediate_outputs=None)
         )
@@ -1035,10 +1014,7 @@ class TestTriageExample:
             tool_allowlist=[KilnBuiltInToolId.LLM, KilnBuiltInToolId.LLM_JUDGE],
         )
         adapter = CodeEvalAdapter(cfg)
-<<<<<<< HEAD
-=======
 
->>>>>>> 721c4941b
         # needs_review=False -> the safe branch short-circuits before the judge,
         # even though the judge would say "fail".
         factory = _routing_adapter(False, {"quality": "fail"})
@@ -1057,10 +1033,7 @@ class TestTriageExample:
             tool_allowlist=[KilnBuiltInToolId.LLM, KilnBuiltInToolId.LLM_JUDGE],
         )
         adapter = CodeEvalAdapter(cfg)
-<<<<<<< HEAD
-=======
 
->>>>>>> 721c4941b
         # needs_review=True -> the judge decides; "fail" (0.0) distinguishes it
         # from the safe branch's hard-coded 1.0.
         factory = _routing_adapter(True, {"quality": "fail"})

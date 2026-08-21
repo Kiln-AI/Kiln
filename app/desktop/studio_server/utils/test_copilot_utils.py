@@ -4,9 +4,6 @@ import random
 from unittest.mock import patch
 
 import pytest
-from fastapi import HTTPException
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
-from kiln_ai.datamodel.task_output import DataSourceType
 
 from app.desktop.studio_server.api_models.copilot_models import (
     ClaimReviewApi,
@@ -35,7 +32,6 @@ from app.desktop.studio_server.utils.copilot_utils import (
     warn_if_golden_below_target,
     write_eval_slice_multi_turn,
 )
-<<<<<<< HEAD
 from fastapi import HTTPException
 from kiln_ai.datamodel import GradedClaim, Project, Task, TaskRun
 from kiln_ai.datamodel.datamodel_enums import (
@@ -49,8 +45,6 @@ from kiln_ai.datamodel.task_output import (
     TaskOutput,
     TaskOutputRating,
 )
-=======
->>>>>>> 721c4941b
 
 
 class TestGetCopilotApiKey:
@@ -372,7 +366,6 @@ class TestCreateTaskRunFromReviewed:
 def _samples(n: int) -> list[SampleApi]:
     return [SampleApi(input=f"input_{i}", output=f"output_{i}") for i in range(n)]
 
-<<<<<<< HEAD
 
 def _reviewed(n: int) -> list[ReviewedExample]:
     return [
@@ -382,55 +375,10 @@ def _reviewed(n: int) -> list[ReviewedExample]:
             model_says_meets_spec=True,
             user_says_meets_spec=True,
             feedback="",
-=======
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            reviewed_examples,
-            "test_tag",
-            "train_tag",
-            "val_tag",
-            "golden_tag",
-            "Test Spec",
-        ).task_runs
-
-        # Should have NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
-        expected_count = NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
-        assert len(task_runs) == expected_count
-
-    def test_includes_reviewed_examples_in_golden_set(self):
-        all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
-        ]
-        reviewed_examples = [
-            ReviewedExample(
-                input="reviewed_input",
-                output="reviewed_output",
-                model_says_meets_spec=True,
-                user_says_meets_spec=True,
-                feedback="Great",
-            )
-        ]
-
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            reviewed_examples,
-            "test_tag",
-            "train_tag",
-            "val_tag",
-            "golden_tag",
-            "Test Spec",
-        ).task_runs
-
-        # Find the reviewed example in task runs
-        reviewed_run = next(
-            (tr for tr in task_runs if tr.input == "reviewed_input"), None
->>>>>>> 721c4941b
         )
         for i in range(n)
     ]
 
-<<<<<<< HEAD
 
 def _make_dataset(
     all_examples: list[SampleApi],
@@ -447,83 +395,6 @@ def _make_dataset(
         "Test Spec",
         rng=random.Random(seed),
     ).task_runs
-=======
-    def test_golden_set_is_topped_up_to_the_minimum_when_nothing_was_reviewed(self):
-        # The golden floor is the hand-rating backlog a new spec starts with: every
-        # topped-up example is minted unrated, and the eval detail page holds the golden
-        # set to the same number before its human-ratings step can complete.
-        all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
-        ]
-
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            [],
-            "test_tag",
-            "train_tag",
-            "val_tag",
-            "golden_tag",
-            "Test Spec",
-        ).task_runs
-
-        golden_runs = [tr for tr in task_runs if "golden_tag" in tr.tags]
-        assert len(golden_runs) == MIN_GOLDEN_EXAMPLES
-        # Topped-up examples carry no human rating — they are the work the user is being
-        # asked to do, which is why the floor tracks the page's goal rather than exceeding
-        # it.
-        assert all(tr.output.rating is None for tr in golden_runs)
-
-    def test_golden_set_keeps_every_reviewed_example_past_the_minimum(self):
-        # The floor tops up, it does not cap: a user who reviewed more than the minimum
-        # keeps all of their rated examples, and gets no unrated ones on top.
-        reviewed_count = MIN_GOLDEN_EXAMPLES + 5
-        all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
-        ]
-        reviewed_examples = [
-            ReviewedExample(
-                input=f"reviewed_input_{i}",
-                output=f"reviewed_output_{i}",
-                model_says_meets_spec=True,
-                user_says_meets_spec=True,
-                feedback="",
-            )
-            for i in range(reviewed_count)
-        ]
-
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            reviewed_examples,
-            "test_tag",
-            "train_tag",
-            "val_tag",
-            "golden_tag",
-            "Test Spec",
-        ).task_runs
-
-        golden_runs = [tr for tr in task_runs if "golden_tag" in tr.tags]
-        assert len(golden_runs) == reviewed_count
-        assert all(tr.output.rating is not None for tr in golden_runs)
-
-    def test_all_task_runs_have_session_tag(self):
-        all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
-        ]
-        reviewed_examples: list[ReviewedExample] = []
-
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            reviewed_examples,
-            "test_tag",
-            "train_tag",
-            "val_tag",
-            "golden_tag",
-            "Test Spec",
-        ).task_runs
->>>>>>> 721c4941b
 
 
 def _by_split(task_runs):
@@ -535,18 +406,6 @@ def _by_split(task_runs):
         "golden": [tr for tr in task_runs if "golden_tag" in tr.tags],
     }
 
-<<<<<<< HEAD
-=======
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            reviewed_examples,
-            "test_tag",
-            "train_tag",
-            "val_tag",
-            "golden_tag",
-            "Test Spec",
-        ).task_runs
->>>>>>> 721c4941b
 
 class TestCreateDatasetTaskRuns:
     def test_total_runs_is_pool_plus_rated(self):
@@ -562,7 +421,6 @@ class TestCreateDatasetTaskRuns:
         assert golden[0].input == "reviewed_input_0"
         assert golden[0].output.rating is not None
 
-<<<<<<< HEAD
     def test_golden_is_rated_only_no_unrated_padding(self):
         # Golden holds exactly the rated count — never topped up with unrated
         # machine examples, even when that leaves it small.
@@ -586,29 +444,6 @@ class TestCreateDatasetTaskRuns:
         assert len(buckets["eval"]) + len(buckets["train"]) + len(buckets["val"]) + len(
             buckets["golden"]
         ) == len(task_runs)
-=======
-    def test_test_examples_have_test_tag(self):
-        all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
-        ]
-        reviewed_examples: list[ReviewedExample] = []
-
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            reviewed_examples,
-            "test_tag",
-            "train_tag",
-            "val_tag",
-            "golden_tag",
-            "Test Spec",
-        ).task_runs
-
-        test_runs = [tr for tr in task_runs if "test_tag" in tr.tags]
-        num_runs = NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
-        num_test_runs = (num_runs - MIN_GOLDEN_EXAMPLES) // 2
-        assert len(test_runs) == num_test_runs
->>>>>>> 721c4941b
 
     def test_unrated_pool_split_counts(self):
         # eval keeps its 1-in-3 share; the remainder splits 2:1 train:val.
@@ -618,7 +453,6 @@ class TestCreateDatasetTaskRuns:
         assert len(buckets["val"]) == 13  # 40 // 3
         assert len(buckets["train"]) == 27
 
-<<<<<<< HEAD
     def test_one_rated_small_pool(self):
         # golden=1 (rated); the 3 unrated → eval 1, then 2//3 == 0 val, train 2.
         task_runs = _make_dataset(_samples(3), _reviewed(1))
@@ -635,55 +469,11 @@ class TestCreateDatasetTaskRuns:
         assert len(buckets["train"]) == 2
         assert len(buckets["val"]) == 0
         assert len(buckets["eval"]) == 0
-=======
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            reviewed_examples,
-            "test_tag",
-            "train_tag",
-            "val_tag",
-            "golden_tag",
-            "Test Spec",
-        ).task_runs
-
-        train_runs = [tr for tr in task_runs if "train_tag" in tr.tags]
-        num_runs = NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
-        num_test_runs = (num_runs - MIN_GOLDEN_EXAMPLES) // 2
-        num_remaining = (num_runs - MIN_GOLDEN_EXAMPLES) - num_test_runs
-        num_val_runs = num_remaining // 3
-        num_train_runs = num_remaining - num_val_runs
-        assert len(train_runs) == num_train_runs
->>>>>>> 721c4941b
-
-    def test_val_examples_have_val_tag(self):
-        all_examples = [
-            SampleApi(input=f"input_{i}", output=f"output_{i}")
-            for i in range(NUM_SAMPLES_PER_TOPIC * NUM_TOPICS)
-        ]
-        reviewed_examples: list[ReviewedExample] = []
-
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            reviewed_examples,
-            "test_tag",
-            "train_tag",
-            "val_tag",
-            "golden_tag",
-            "Test Spec",
-        ).task_runs
-
-        val_runs = [tr for tr in task_runs if "val_tag" in tr.tags]
-        num_runs = NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
-        num_test_runs = (num_runs - MIN_GOLDEN_EXAMPLES) // 2
-        num_remaining = (num_runs - MIN_GOLDEN_EXAMPLES) - num_test_runs
-        num_val_runs = num_remaining // 3
-        assert len(val_runs) == num_val_runs
 
     def test_handles_insufficient_examples(self):
         task_runs = _make_dataset(_samples(5), _reviewed(0))
         assert len(task_runs) == 5
 
-<<<<<<< HEAD
     def test_does_not_mutate_all_examples(self):
         all_examples = _samples(30)
         original = list(all_examples)
@@ -967,14 +757,7 @@ class TestSplitAndTagMultiTurnChains:
         split_and_tag_multi_turn_chains(
             leaves,
             reviewed_ids,
-=======
-        task_runs = create_dataset_task_runs(
-            all_examples,
-            reviewed_examples,
-            "test_tag",
->>>>>>> 721c4941b
             "train_tag",
-            "val_tag",
             "golden_tag",
             rng=random.Random(0),
         )

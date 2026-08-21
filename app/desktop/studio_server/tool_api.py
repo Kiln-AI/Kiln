@@ -300,20 +300,6 @@ def connect_tool_servers_api(app: FastAPI):
 
         tool_sets = []
 
-<<<<<<< HEAD
-        # Add built-in AI-model tools. These are always available (not demo-gated):
-        # `llm` calls a model from scorer/tool code, and `llm_judge` runs an
-        # LLM-as-judge call using a code judge's own score schema. `llm_judge` is
-        # only meaningful inside a code judge (it errors off-context), so the tool
-        # picker hides it outside the code-eval allowlist context.
-        tool_sets.append(
-            ToolSetApiDescription(
-                type=ToolSetType.BUILTIN,
-                set_name="AI Models",
-                tools=[
-                    ToolApiDescription(
-                        id=f"{KilnBuiltInToolId.LLM.value}",
-=======
         # AI-model tools, for user-authored sandboxed code to call over the sandbox
         # bridge: `llm` calls a model from a code tool or code judge, and `llm_judge`
         # runs an LLM-as-judge call using a code judge's own score schema. The
@@ -327,17 +313,12 @@ def connect_tool_servers_api(app: FastAPI):
                 tools=[
                     ToolApiDescription(
                         id=KilnBuiltInToolId.LLM.value,
->>>>>>> 721c4941b
                         name="LLM",
                         description="Call a language model with a rendered prompt. Optionally pass a JSON schema for structured output.",
                         function_name="llm",
                     ),
                     ToolApiDescription(
-<<<<<<< HEAD
-                        id=f"{KilnBuiltInToolId.LLM_JUDGE.value}",
-=======
                         id=KilnBuiltInToolId.LLM_JUDGE.value,
->>>>>>> 721c4941b
                         name="LLM Judge",
                         description="Run an LLM-as-judge call using the code judge's own score schema. Only usable inside a code judge.",
                         function_name="llm_judge",

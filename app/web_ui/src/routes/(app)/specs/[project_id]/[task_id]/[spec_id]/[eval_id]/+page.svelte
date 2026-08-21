@@ -290,22 +290,6 @@
       value: evaluator.id || "unknown",
     })
 
-<<<<<<< HEAD
-    let eval_set_size = ""
-    if (eval_progress) {
-      eval_set_size = " (" + eval_progress.dataset_size + " items)"
-    }
-    // The eval slice is TaskRun-typed (eval_set_filter_id) or EvalInput-typed
-    // (eval_input_filter_id). Only the TaskRun kind links to the dataset view
-    // — EvalInput items don't appear there.
-    properties.push({
-      name: "Eval Dataset",
-      value:
-        (evaluator.eval_set_filter_id ??
-          evaluator.eval_input_filter_id ??
-          "unknown") + eval_set_size,
-      link: linkFromFilterId(project_id, task_id, evaluator.eval_set_filter_id),
-=======
     // Every dataset row renders whether or not the eval has that dataset. A dataset is
     // only there if something explicitly wrote one (functional spec 3.2 — unconfigured
     // splits stay unconfigured), so most pre-existing evals are missing several. Hiding a
@@ -379,7 +363,6 @@
       link: golden_filter_id
         ? linkFromFilterId(project_id, task_id, golden_filter_id)
         : undefined,
->>>>>>> 721c4941b
     })
 
     if (eval_progress?.current_eval_method) {
@@ -897,7 +880,7 @@
                             {/if}
                           {/if}
                         </div>
-                        {#if evaluator.eval_input_filter_id}
+                        {#if evaluator.splits?.["test"]?.source === "eval_input"}
                           <!-- EvalInput-typed slice: items are minted by the eval
                             builder at save; the add-data flow tags TaskRuns, which
                             doesn't apply, so offer no dead-end button. -->

@@ -14,12 +14,9 @@ from kiln_ai.utils.open_ai_types import (
     ChatCompletionMessageParam,
     trace_has_pending_client_tool_calls,
 )
-<<<<<<< HEAD
 from kiln_ai.utils.validation import validate_tags
-=======
 from kiln_ai.utils.usage import MessageUsage as MessageUsage
 from kiln_ai.utils.usage import Usage as Usage
->>>>>>> 721c4941b
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.eval_splits import ItemKey
@@ -48,6 +45,17 @@ class EvalItemSource(BaseModel):
     source_id: str = Field(
         min_length=1,
         description="The id of the dataset item this run was generated for. Interpreted within the store named by source_type — ids are only unique within a store.",
+    )
+    # One dataset item under one run config can still have several legitimately different
+    # conversations: a multi-turn case is re-driven by a synthetic user, and two evals
+    # driving the same case with different `multi_turn_drive_config` (model, or turn
+    # count) produce different conversations that must not be handed to each other. The
+    # variant is what tells them apart — the drive fingerprint for a driven trace, and
+    # None for a single-turn generation, where the item and run config are the whole
+    # identity.
+    variant: str | None = Field(
+        default=None,
+        description="Distinguishes several traces for the same item and run config. The drive fingerprint for a re-driven multi-turn conversation; None for a single-turn generation.",
     )
 
 

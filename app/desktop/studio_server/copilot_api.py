@@ -10,10 +10,18 @@ from typing import Annotated
 import httpx
 import jsonschema
 from fastapi import FastAPI, File, HTTPException, Path, UploadFile
-from kiln_ai.datamodel import TaskRun
-from kiln_ai.datamodel.basemodel import FilenameString
+from kiln_ai.datamodel import ClaimReview, Feedback, TaskRun
+from kiln_ai.datamodel.basemodel import FilenameStringShort
 from kiln_ai.datamodel.datamodel_enums import EvalStatus, Priority
-from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalConfigType
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalInput,
+    EvalInputSplit,
+    LlmJudgeProperties,
+    MultiTurnDriveConfig,
+)
 from kiln_ai.datamodel.json_schema import validate_schema
 from kiln_ai.datamodel.spec import (
     Spec,
@@ -22,7 +30,8 @@ from kiln_ai.datamodel.spec import (
     SyntheticDataGenerationStepConfig,
     TaskSample,
 )
-from kiln_ai.datamodel.spec_properties import SpecProperties
+from kiln_ai.datamodel.spec_properties import SpecProperties, SpecType
+from kiln_ai.datamodel.task_output import TaskOutputRating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
@@ -30,7 +39,8 @@ from kiln_server.utils.agent_checks.policy import (
     agent_policy_require_approval,
 )
 from kiln_server.utils.spec_utils import build_spec_eval
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from typing_extensions import Self
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     clarify_spec_v1_copilot_clarify_spec_post,
@@ -74,19 +84,11 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
 )
 from app.desktop.studio_server.api_models.copilot_models import (
     DRAFT_INPUT_DATA_GUIDE_MAX_EXAMPLE_LENGTH,
-<<<<<<< HEAD
-    DataGuideJobResultApiOutput,
-    DataGuideJobStatusApiOutput,
-    DrivenSyntheticCaseApi,
-    ParseImportFileApiOutput,
-    StartDataGuideJobApiInput,
-    StartDataGuideJobApiOutput,
-=======
->>>>>>> 721c4941b
     ClarifySpecApiInput,
     ClarifySpecApiOutput,
     DataGuideJobResultApiOutput,
     DataGuideJobStatusApiOutput,
+    DrivenSyntheticCaseApi,
     GenerateBatchApiInput,
     GenerateBatchApiOutput,
     ParseImportFileApiOutput,
@@ -124,54 +126,11 @@ from app.desktop.studio_server.utils.response_utils import (
     upstream_route_missing,
     upstream_unreachable,
 )
-<<<<<<< HEAD
-from fastapi import FastAPI, File, HTTPException, Path, UploadFile
-from kiln_ai.datamodel import ClaimReview, Feedback, TaskRun
-from kiln_ai.datamodel.basemodel import FilenameStringShort
-from kiln_ai.datamodel.datamodel_enums import Priority
-from kiln_ai.datamodel.eval import (
-    Eval,
-    EvalConfig,
-    EvalConfigType,
-    EvalInput,
-    LlmJudgeProperties,
-    MultiTurnDriveConfig,
-)
-from kiln_ai.datamodel.json_schema import validate_schema
-from kiln_ai.datamodel.spec import (
-    Spec,
-    SpecStatus,
-    SyntheticDataGenerationSessionConfig,
-    SyntheticDataGenerationStepConfig,
-    TaskSample,
-)
-from kiln_ai.datamodel.spec_properties import SpecProperties, SpecType
-from kiln_ai.datamodel.task_output import TaskOutputRating
-from kiln_ai.utils.name_generator import generate_memorable_name
-from kiln_server.task_api import task_from_id
-from kiln_server.utils.spec_utils import (
-    generate_spec_eval_filter_ids,
-    generate_spec_eval_tags,
-    spec_eval_data_type,
-    spec_eval_output_score,
-    spec_eval_template,
-)
-=======
->>>>>>> 721c4941b
 from libs.core.kiln_ai.datamodel.copilot_models.questions import (
     QuestionSet,
     RefineSpecApiOutput,
     SubmitAnswersRequest,
 )
-<<<<<<< HEAD
-from kiln_server.utils.agent_checks.policy import (
-    ALLOW_AGENT,
-    agent_policy_require_approval,
-)
-from pydantic import BaseModel, Field, model_validator
-from typing_extensions import Self
-=======
->>>>>>> 721c4941b
 
 logger = logging.getLogger(__name__)
 
@@ -1009,7 +968,6 @@ def connect_copilot_api(app: FastAPI):
         """
         task = task_from_id(project_id, task_id)
 
-<<<<<<< HEAD
         # Idempotency guard against re-submits after a completed save (the
         # save is slow, so users retry). Case-insensitive because the eval
         # tags and rating keys are derived from the lowercased name — two
@@ -1025,24 +983,8 @@ def connect_copilot_api(app: FastAPI):
                 detail=f"A spec named '{request.name}' already exists for this task.",
             )
 
-        # Generate tags and filter IDs
-        eval_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags(request.name)
-        (
-            eval_set_filter_id,
-            train_set_filter_id,
-            val_set_filter_id,
-            eval_configs_filter_id,
-        ) = generate_spec_eval_filter_ids(eval_tag, train_tag, val_tag, golden_tag)
-
         # Extract spec_type from properties (discriminated union)
         spec_type = request.properties["spec_type"]
-
-        # Determine eval properties
-        template = spec_eval_template(spec_type)
-        output_scores = [spec_eval_output_score(request.name)]
-        evaluation_data_type = spec_eval_data_type(
-            spec_type, request.evaluate_full_trace
-        )
 
         # Multi-turn path: find existing chain leaves up front so we 404 before
         # creating any models if the batch_tag matches nothing. The reviewed
@@ -1093,6 +1035,24 @@ def connect_copilot_api(app: FastAPI):
         # Build and validate all models before saving any; persist_spec_save
         # commits them as one unit of work below.
 
+        # 1. Create the Eval, and the dataset tags its generated runs must carry.
+        # build_spec_eval owns the splits and the tag naming for every spec eval;
+        # priority/status live on the eval, and the spec below mirrors them at
+        # creation for a truthful spec file.
+        eval, tags = build_spec_eval(
+            task=task,
+            name=request.name,
+            spec_type=spec_type,
+            evaluate_full_trace=request.evaluate_full_trace,
+            priority=Priority.p1,
+            status=EvalStatus.active,
+        )
+        # The tags the dataset writers below stamp on the runs they create.
+        eval_tag = tags.test_tag
+        train_tag = tags.train_tag
+        val_tag = tags.val_tag
+        golden_tag = tags.golden_tag
+
         # Multi-turn eval slice: one EvalInput per driven case (validated
         # here, persisted in the unit of work). 422s on a malformed persona
         # blob before anything is written.
@@ -1104,50 +1064,11 @@ def connect_copilot_api(app: FastAPI):
                 task,
                 eval_tag,
             )
-
-        # 1. Create the Eval. Golden and train are TaskRun slices on both
-        # paths; the eval slice is TaskRun-tagged for single-turn and
-        # EvalInput-tagged for multi-turn (re-driven per run config, using
-        # the drive config persisted on the Eval).
-        eval = Eval(
-            parent=task,
-            name=request.name,
-            description=None,
-            template=template,
-            output_scores=output_scores,
-            eval_set_filter_id=None
-            if request.multi_turn is not None
-            else eval_set_filter_id,
-            eval_input_filter_id=f"tag::{eval_tag}"
-            if request.multi_turn is not None
-            else None,
-            train_set_filter_id=train_set_filter_id,
-            val_set_filter_id=val_set_filter_id,
-            eval_configs_filter_id=eval_configs_filter_id,
-            template_properties=None,
-            evaluation_data_type=evaluation_data_type,
-            multi_turn_drive_config=request.multi_turn.drive_config
-            if request.multi_turn is not None
-            else None,
-=======
-        # Extract spec_type from properties (discriminated union)
-        spec_type = request.properties["spec_type"]
-
-        # Build models but don't save yet, collect all models first
-        models_to_save: list[Eval | EvalConfig | TaskRun | Spec] = []
-
-        # 1. Create the Eval, and the dataset tags its generated runs must carry.
-        # Priority/status live on the eval; the spec below mirrors them at
-        # creation for a truthful spec file.
-        eval, tags = build_spec_eval(
-            task=task,
-            name=request.name,
-            spec_type=spec_type,
-            evaluate_full_trace=request.evaluate_full_trace,
-            priority=Priority.p1,
-            status=EvalStatus.active,
->>>>>>> 721c4941b
-        )
+            # Golden and train stay TaskRun slices, but a multi-turn test split is
+            # the driven cases themselves — EvalInputs, re-driven per run config
+            # using the drive config persisted on the Eval — not tagged TaskRuns.
+            eval.set_split("test", EvalInputSplit(filter_id=f"tag::{eval_tag}"))
+            eval.multi_turn_drive_config = request.multi_turn.drive_config
 
         # 2. Create the judge eval config — V2 shape, the same judge the review
         # step ran transiently (one judge, persisted vs transient). V2 rails
@@ -1174,7 +1095,6 @@ def connect_copilot_api(app: FastAPI):
         # multi-turn chains) — injectable so tests are deterministic.
         rng = random.Random()
 
-<<<<<<< HEAD
         # 3. Single-turn: synthesise examples + create TaskRuns.
         #    Multi-turn: skipped — chains already exist on disk.
         task_runs: list[TaskRun] = []
@@ -1199,27 +1119,11 @@ def connect_copilot_api(app: FastAPI):
                 sdg_session_config=request.sdg_session_config,
                 spec_definition=request.definition,
             )
-=======
-        # 4. Create TaskRuns for test, train, val, and golden datasets
-        dataset_runs = create_dataset_task_runs(
-            all_examples=all_examples,
-            reviewed_examples=request.reviewed_examples,
-            test_tag=tags.test_tag,
-            train_tag=tags.train_tag,
-            val_tag=tags.val_tag,
-            golden_tag=tags.golden_tag,
-            spec_name=request.name,
-        )
-        task_runs = dataset_runs.task_runs
-        for run in task_runs:
-            run.parent = task
-        models_to_save.extend(task_runs)
->>>>>>> 721c4941b
 
             dataset_runs = create_dataset_task_runs(
                 all_examples=all_examples,
                 reviewed_examples=request.reviewed_examples,
-                eval_tag=eval_tag,
+                test_tag=eval_tag,
                 train_tag=train_tag,
                 val_tag=val_tag,
                 golden_tag=golden_tag,

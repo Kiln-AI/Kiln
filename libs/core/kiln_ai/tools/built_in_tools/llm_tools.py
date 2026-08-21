@@ -17,29 +17,20 @@ from jinja2 import TemplateSyntaxError, UndefinedError
 
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.json_schema import validate_schema_dict
-<<<<<<< HEAD
-=======
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.task import StructuredOutputMode, Task
->>>>>>> 721c4941b
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import KilnTool, ToolCallContext, ToolCallResult
 from kiln_ai.utils.jinja_engine import JinjaExtractionError, _template_env
 
-<<<<<<< HEAD
-_DEFAULT_SYSTEM_PROMPT = (
-=======
 # Each tool owns its own default. ``run_llm_call`` deliberately has none: it is
 # shared by a scorer and a general-purpose model call, and a default living in the
 # shared helper is how the judge's instruction reached ``llm`` in the first place.
 _DEFAULT_JUDGE_SYSTEM_PROMPT = (
->>>>>>> 721c4941b
     "Your job is to evaluate a model's performance on a task. "
     "Score the output according to the criteria provided."
 )
 
-<<<<<<< HEAD
-=======
 # ``llm`` makes arbitrary model calls (summarize, extract, triage), so telling it to
 # score an output would misdirect every caller that omits a system prompt. There is
 # no "send no system prompt" option here: ``Task.instruction`` is ``min_length=1``,
@@ -65,17 +56,12 @@ class _LlmToolTask(Task, parent_of={}):
             output_json_schema=output_json_schema,
         )
 
->>>>>>> 721c4941b
 
 async def run_llm_call(
     *,
     model: str,
     provider: str,
-<<<<<<< HEAD
-    system_prompt: str | None,
-=======
     system_prompt: str,
->>>>>>> 721c4941b
     rendered_prompt: str,
     output_json_schema: str | None,
 ) -> RunOutput:
@@ -84,12 +70,9 @@ async def run_llm_call(
     Mirrors the machinery ``LlmJudgeEval`` uses for its non-g-eval path: an
     ephemeral judge Task invoked through ``adapter_for_task``.
 
-<<<<<<< HEAD
-=======
     ``system_prompt`` is required and applied verbatim. Callers pick their own
     default, so a scoring instruction cannot leak into a general model call.
 
->>>>>>> 721c4941b
     When ``output_json_schema`` is None the call is free-text and
     ``run_output.output`` is a ``str``; when set it is structured and
     ``run_output.output`` is a ``dict``.
@@ -101,30 +84,15 @@ async def run_llm_call(
         default_structured_output_mode_for_model_provider,
     )
     from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
-<<<<<<< HEAD
-    from kiln_ai.datamodel.project import Project
     from kiln_ai.datamodel.prompt_id import PromptGenerators
     from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-    from kiln_ai.datamodel.task import StructuredOutputMode, Task
-=======
-    from kiln_ai.datamodel.prompt_id import PromptGenerators
-    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
->>>>>>> 721c4941b
 
     if provider not in ModelProviderName.__members__:
         raise ValueError(f"Invalid model provider: {provider}")
     provider_enum = ModelProviderName(provider)
 
-<<<<<<< HEAD
-    tmp_project = Project(name="LlmTool")
-    judge_task = Task(
-        name="LlmTool Task",
-        parent=tmp_project,
-        instruction=system_prompt or _DEFAULT_SYSTEM_PROMPT,
-=======
     llm_task = _LlmToolTask(
         system_prompt=system_prompt,
->>>>>>> 721c4941b
         output_json_schema=output_json_schema,
     )
 
@@ -139,11 +107,7 @@ async def run_llm_call(
     )
 
     adapter = adapter_for_task(
-<<<<<<< HEAD
-        judge_task,
-=======
         llm_task,
->>>>>>> 721c4941b
         run_config_properties=KilnAgentRunConfigProperties(
             model_name=model,
             model_provider_name=provider_enum,
@@ -187,19 +151,11 @@ _LLM_TOOL_PARAMETERS_SCHEMA = {
         },
         "model": {
             "type": "string",
-<<<<<<< HEAD
-            "description": "The model name to call.",
-        },
-        "provider": {
-            "type": "string",
-            "description": "The model provider name to call.",
-=======
             "description": "The Kiln model name to call, e.g. `gpt_4_1`.",
         },
         "provider": {
             "type": "string",
             "description": "The Kiln model provider name to call, e.g. `openai`.",
->>>>>>> 721c4941b
         },
         "input": {
             "type": "object",
@@ -253,11 +209,7 @@ class LlmTool(KilnTool):
         run_output = await run_llm_call(
             model=kwargs["model"],
             provider=kwargs["provider"],
-<<<<<<< HEAD
-            system_prompt=kwargs.get("system_prompt"),
-=======
             system_prompt=kwargs.get("system_prompt") or _DEFAULT_LLM_SYSTEM_PROMPT,
->>>>>>> 721c4941b
             rendered_prompt=rendered_prompt,
             output_json_schema=output_json_schema,
         )
@@ -279,19 +231,11 @@ _LLM_JUDGE_TOOL_PARAMETERS_SCHEMA = {
         },
         "model": {
             "type": "string",
-<<<<<<< HEAD
-            "description": "The model name to call.",
-        },
-        "provider": {
-            "type": "string",
-            "description": "The model provider name to call.",
-=======
             "description": "The Kiln model name to call, e.g. `gpt_4_1`.",
         },
         "provider": {
             "type": "string",
             "description": "The Kiln model provider name to call, e.g. `openai`.",
->>>>>>> 721c4941b
         },
         "input": {
             "type": "object",
@@ -346,11 +290,7 @@ class LlmJudgeTool(KilnTool):
         run_output = await run_llm_call(
             model=kwargs["model"],
             provider=kwargs["provider"],
-<<<<<<< HEAD
-            system_prompt=kwargs.get("system_prompt"),
-=======
             system_prompt=kwargs.get("system_prompt") or _DEFAULT_JUDGE_SYSTEM_PROMPT,
->>>>>>> 721c4941b
             rendered_prompt=rendered_prompt,
             output_json_schema=context.eval_output_schema,
         )

@@ -3,22 +3,9 @@
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import { available_tools, load_available_tools } from "$lib/stores"
   import { onMount } from "svelte"
-<<<<<<< HEAD
-  import type {
-    ToolApiDescription,
-    ToolSetApiDescription,
-    ToolSetType,
-  } from "$lib/types"
-  import {
-    tools_store,
-    tools_store_initialized,
-    CODE_EVAL_ONLY_TOOL_IDS,
-  } from "$lib/stores/tools_store"
-=======
   import type { ToolSetApiDescription } from "$lib/types"
   import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
   import type { SandboxCodeContext } from "$lib/stores/tools_store"
->>>>>>> 721c4941b
   import { goto } from "$app/navigation"
   import type { ToolsSelectorSettings } from "./tools_selector_settings"
   import {
@@ -47,11 +34,7 @@
     empty_label: "None",
     single_select: false,
     optional: true,
-<<<<<<< HEAD
-    code_eval_context: false,
-=======
     sandbox_code_context: "none",
->>>>>>> 721c4941b
   }
   $: tools_selector_settings = {
     ...default_tools_selector_settings,
@@ -200,42 +183,9 @@
     }
   }
 
-<<<<<<< HEAD
-  const tool_set_order: ToolSetType[] = [
-    "builtin",
-    "code",
-    "search",
-    "kiln_task",
-    "mcp",
-    "demo",
-  ]
-
-  // Show the function name alongside the description when it differs from the
-  // display name. Multiple tools (code tools especially) can share a function
-  // name while having distinct display names, so both are needed to tell them
-  // apart. Also makes the function name searchable in the dropdown.
-  function tool_option_description(
-    tool: ToolApiDescription,
-  ): string | undefined {
-    const description = tool.description ? tool.description.trim() : undefined
-    const function_name =
-      tool.function_name && tool.function_name !== tool.name
-        ? tool.function_name
-        : undefined
-    if (!function_name) {
-      return description
-    }
-    return description ? `${function_name}\n${description}` : function_name
-  }
-
-  function get_tool_options(
-    available_tool_sets: ToolSetApiDescription[] | undefined,
-    code_eval_context: boolean,
-=======
   function get_tool_options(
     available_tool_sets: ToolSetApiDescription[] | undefined,
     sandbox_code_context: SandboxCodeContext,
->>>>>>> 721c4941b
   ): OptionGroup[] {
     return build_tool_option_groups(available_tool_sets, {
       value_field: "id",
@@ -251,41 +201,6 @@
         ) {
           return undefined
         }
-<<<<<<< HEAD
-      }
-
-      const tool_sets = available_tool_sets.filter(
-        (tool_set) =>
-          tool_set.type === tool_set_type && tool_set.tools.length > 0,
-      )
-
-      if (tool_sets.length > 0) {
-        for (const tool_set of tool_sets) {
-          let tools = tool_set.tools.filter(
-            (tool) =>
-              code_eval_context || !CODE_EVAL_ONLY_TOOL_IDS.includes(tool.id),
-          )
-
-          if (tools.length === 0) {
-            continue
-          }
-
-          let options = tools.map((tool) => ({
-            value: tool.id,
-            label: tool.name,
-            description: tool_option_description(tool),
-            disabled: tools_selector_settings.mandatory_tools
-              ? tools_selector_settings.mandatory_tools.includes(tool.id)
-              : false,
-          }))
-
-          option_groups.push({
-            label: tool_set.set_name,
-            options,
-            action_label,
-            action_handler,
-          })
-=======
         return {
           action_label: "Create New",
           action_handler: () => {
@@ -294,7 +209,6 @@
           // Keep the group when the project has no Kiln task tools yet, so the
           // "Create New" button stays discoverable.
           empty_group_label: "Kiln Tasks as Tools",
->>>>>>> 721c4941b
         }
       },
     })
@@ -309,11 +223,7 @@
       : tools_selector_settings.info_description,
     fancy_select_options: get_tool_options(
       $available_tools[project_id],
-<<<<<<< HEAD
-      tools_selector_settings.code_eval_context,
-=======
       tools_selector_settings.sandbox_code_context,
->>>>>>> 721c4941b
     ),
     empty_label:
       tools_selector_settings.empty_label ??

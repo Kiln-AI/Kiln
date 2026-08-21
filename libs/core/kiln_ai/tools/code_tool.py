@@ -29,10 +29,7 @@ from kiln_ai.tools.sandbox_bridge import (
     BridgeResult,
     NestedToolServer,
     ToolCallLogEntry,
-<<<<<<< HEAD
-=======
     describe_crash,
->>>>>>> 721c4941b
     run_bridged_child,
 )
 
@@ -57,14 +54,11 @@ class ChildOutcome:
     crashed: bool = False
     exit_code: int | None = None
 
-<<<<<<< HEAD
-=======
     def crash_description(self, subject: str) -> str:
         """Phrase this outcome's ``crashed`` state. Shared with the bridge."""
         assert self.crashed, "crash_description() is only meaningful for a crash"
         return describe_crash(subject, self.exit_code)
 
->>>>>>> 721c4941b
 
 class PythonCodeTool(KilnToolInterface):
     """Wraps a :class:`CodeTool` artifact as a :class:`KilnToolInterface`."""
@@ -144,34 +138,6 @@ class PythonCodeTool(KilnToolInterface):
             args=(self._code_tool.code, kwargs),
             timeout_s=float(self._code_tool.timeout_seconds),
             server=server,
-<<<<<<< HEAD
-        )
-        return _bridge_result_to_outcome(result)
-
-    async def _build_name_map(self) -> dict[str, list[ToolId]]:
-        return await self._build_server(None).name_map()
-
-
-def _bridge_result_to_outcome(result: BridgeResult) -> ChildOutcome:
-    if result.timed_out:
-        return ChildOutcome(timed_out=True, duration_ms=result.duration_ms)
-    if result.crashed:
-        return ChildOutcome(
-            crashed=True,
-            exit_code=result.exit_code,
-            duration_ms=result.duration_ms,
-        )
-
-    msg = result.result_msg
-    assert msg is not None
-    if "ok" in msg:
-        return ChildOutcome(
-            ok=msg["ok"],
-            stdout=msg.get("stdout", ""),
-            stderr=msg.get("stderr", ""),
-            duration_ms=result.duration_ms,
-        )
-=======
         )
         return _bridge_result_to_outcome(result)
 
@@ -195,7 +161,6 @@ def _bridge_result_to_outcome(result: BridgeResult) -> ChildOutcome:
             stderr=msg.get("stderr", ""),
             duration_ms=result.duration_ms,
         )
->>>>>>> 721c4941b
     return ChildOutcome(
         error=msg.get("error", "unknown error"),
         traceback_str=msg.get("traceback"),

@@ -14,7 +14,7 @@ from kiln_ai.datamodel import (
 from kiln_ai.datamodel.eval_splits import ItemSource
 from kiln_ai.datamodel.task_run import EvalItemSource, eval_item_key
 
-KEY: TraceKey = ("eval_input", "item1", "rc1")
+KEY: TraceKey = ("eval_input", "item1", "rc1", "")
 
 
 @pytest.fixture
@@ -64,12 +64,15 @@ def save_trace(
     source_type: ItemSource = "eval_input",
     source_id: str = "item1",
     run_config_id: str | None = "rc1",
+    variant: str | None = None,
     output: str = "generated",
 ) -> TaskRun:
     return save_run(
         task,
         run_config_id=run_config_id,
-        eval_source=EvalItemSource(source_type=source_type, source_id=source_id),
+        eval_source=EvalItemSource(
+            source_type=source_type, source_id=source_id, variant=variant
+        ),
         output=output,
     )
 
@@ -90,7 +93,7 @@ class Generator:
         self.rendezvous: "Rendezvous | None" = None
 
     def for_key(self, key: TraceKey) -> Callable[[], Awaitable[TaskRun]]:
-        source_type, source_id, run_config_id = key
+        source_type, source_id, run_config_id, variant = key
 
         async def generate() -> TaskRun:
             self.calls += 1
@@ -110,7 +113,9 @@ class Generator:
                         output="unsaved", source=output_source(run_config_id)
                     ),
                     eval_source=EvalItemSource(
-                        source_type=source_type, source_id=source_id
+                        source_type=source_type,
+                        source_id=source_id,
+                        variant=variant or None,
                     ),
                 )
             return save_trace(
@@ -118,6 +123,7 @@ class Generator:
                 source_type=source_type,
                 source_id=source_id,
                 run_config_id=run_config_id,
+                variant=variant or None,
                 output=f"generated {self.calls}",
             )
 
@@ -164,7 +170,7 @@ def test_trace_key_rejects_missing_ids(item, run_config_id):
 @pytest.mark.parametrize("source_type", ["eval_input", "task_run"])
 def test_trace_key_from_eval_item_source(source_type: ItemSource):
     source = EvalItemSource(source_type=source_type, source_id="item1")
-    assert trace_key(eval_item_key(source), "rc1") == (source_type, "item1", "rc1")
+    assert trace_key(eval_item_key(source), "rc1") == (source_type, "item1", "rc1", "")
 
 
 @pytest.mark.asyncio
@@ -172,7 +178,7 @@ def test_trace_key_from_eval_item_source(source_type: ItemSource):
 async def test_seed_reuses_existing_trace(task, source_type: ItemSource):
     existing = save_trace(task, source_type=source_type, source_id="item1")
     generate = Generator(task)
-    key: TraceKey = (source_type, "item1", "rc1")
+    key: TraceKey = (source_type, "item1", "rc1", "")
 
     index = TraceIndex(task)
     trace, was_generated = await index.get_or_create(key, generate.for_key(key))
@@ -187,7 +193,7 @@ async def test_seed_reuses_existing_trace(task, source_type: ItemSource):
 async def test_seed_ignores_ordinary_dataset_runs(task):
     dataset_run = save_run(task)
     generate = Generator(task)
-    key: TraceKey = ("task_run", str(dataset_run.id), "rc1")
+    key: TraceKey = ("task_run", str(dataset_run.id), "rc1", "")
 
     index = TraceIndex(task)
     trace, was_generated = await index.get_or_create(key, generate.for_key(key))
@@ -275,9 +281,11 @@ async def test_generated_trace_is_found_by_a_fresh_index(task):
 @pytest.mark.parametrize(
     "stamped_key",
     [
-        ("eval_input", "item1", "rc_other"),
-        ("eval_input", "item_other", "rc1"),
-        ("task_run", "item1", "rc1"),
+        ("eval_input", "item1", "rc_other", ""),
+        ("eval_input", "item_other", "rc1", ""),
+        ("task_run", "item1", "rc1", ""),
+        # A variant is half the key too: same item, same run config, different drive.
+        ("eval_input", "item1", "rc1", "other_fingerprint"),
     ],
 )
 async def test_generated_run_stamped_with_another_key_raises(
@@ -315,17 +323,20 @@ async def test_distinct_keys_do_not_share_a_trace(task):
     generate = Generator(task)
     index = TraceIndex(task)
     keys: list[TraceKey] = [
-        ("eval_input", "item1", "rc1"),
-        ("eval_input", "item1", "rc2"),
-        ("task_run", "item1", "rc1"),
+        ("eval_input", "item1", "rc1", ""),
+        ("eval_input", "item1", "rc2", ""),
+        ("task_run", "item1", "rc1", ""),
+        # One item, one run config, two drive settings: two conversations.
+        ("eval_input", "item1", "rc1", "fingerprint_a"),
+        ("eval_input", "item1", "rc1", "fingerprint_b"),
     ]
 
     traces = [
         (await index.get_or_create(key, generate.for_key(key)))[0] for key in keys
     ]
 
-    assert generate.calls == 3
-    assert len({trace.id for trace in traces}) == 3
+    assert generate.calls == len(keys)
+    assert len({trace.id for trace in traces}) == len(keys)
     # Each is findable on its own key by a later index, not just distinguishable now.
     fresh = TraceIndex(task)
     reused = Generator(task)
@@ -361,7 +372,7 @@ async def test_distinct_keys_generate_concurrently(task):
     generate = Generator(task)
     generate.rendezvous = Rendezvous(count=5)
     index = TraceIndex(task)
-    keys: list[TraceKey] = [("eval_input", f"item{i}", "rc1") for i in range(5)]
+    keys: list[TraceKey] = [("eval_input", f"item{i}", "rc1", "") for i in range(5)]
 
     results = await asyncio.gather(
         *(index.get_or_create(key, generate.for_key(key)) for key in keys)

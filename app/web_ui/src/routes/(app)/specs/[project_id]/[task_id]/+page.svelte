@@ -31,6 +31,7 @@
   import Banner from "$lib/ui/banner.svelte"
   import posthog from "posthog-js"
   import { agentInfo } from "$lib/agent"
+  import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
 
   // ### Spec Table ###
 
@@ -48,6 +49,10 @@
   let evals_error: KilnError | null = null
   let evals_loading = true
   let eval_load_error_count = 0
+  // Whether this user has Kiln Copilot, which decides where the Create Eval CTA goes.
+  // Its own loading flag stays out of `loading`: the table does not wait on it, and the
+  // CTA is only reachable once the page has rendered.
+  let has_kiln_copilot = false
 
   $: loading = specs_loading || evals_loading
   $: error = specs_error || evals_error
@@ -171,7 +176,19 @@
     show_archived = true
   }
 
+  async function load_has_kiln_copilot() {
+    try {
+      has_kiln_copilot = await checkKilnCopilotAvailable()
+    } catch {
+      // Not knowing means not Pro: the CTA falls back to the manual flow, which is
+      // where a non-Pro user goes anyway. A failed capability check is not worth an
+      // error banner over the whole evals table.
+      has_kiln_copilot = false
+    }
+  }
+
   $: if (project_id && task_id) {
+    load_has_kiln_copilot()
     load_specs(project_id, task_id)
     load_evals(project_id, task_id)
     load_judge_types(project_id, task_id)
@@ -648,26 +665,21 @@
     updateEvalStatus(evaluator, value)
   }
 
-<<<<<<< HEAD
   async function check_kiln_copilot_and_proceed() {
     posthog.capture("eval_v2_cta_clicked", {
       branch: has_kiln_copilot ? "v2" : "v1_manual",
       has_pro: has_kiln_copilot,
     })
     if (!has_kiln_copilot) {
-      goto(`/specs/${project_id}/${task_id}/select_workflow`)
+      // Non-Pro users start at the template picker; the Pro-vs-Manual workflow
+      // screen now comes later in that flow, only for templates Kiln Pro can assist with.
+      goto(`/specs/${project_id}/${task_id}/select_template`)
     } else {
       // Pro users land on the v2 builder. The legacy template carousel
       // remains reachable via the "Evals Legacy" sidebar entry during
       // the bug bash; remove the fallback once v2 ships GA.
       goto(`/specs/${project_id}/${task_id}/builder`)
     }
-=======
-  // Every eval starts at the template picker; the Pro-vs-Manual workflow
-  // screen appears later, only for templates Kiln Pro can assist with.
-  function create_eval() {
-    goto(`/specs/${project_id}/${task_id}/select_template`)
->>>>>>> 721c4941b
   }
 </script>
 
@@ -683,7 +695,7 @@
         {
           label: "Create Eval",
           handler: async () => {
-            create_eval()
+            await check_kiln_copilot_and_proceed()
           },
           primary: true,
         },
@@ -721,7 +733,7 @@
             {
               label: "Create Eval",
               onClick: async () => {
-                create_eval()
+                await check_kiln_copilot_and_proceed()
               },
               is_primary: true,
             },

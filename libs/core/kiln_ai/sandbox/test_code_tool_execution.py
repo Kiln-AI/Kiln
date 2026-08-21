@@ -25,10 +25,7 @@ from kiln_ai.tools.code_tool import (
 )
 from kiln_ai.tools.sandbox_bridge import (
     CODE_SANDBOX_MAX_CONCURRENCY,
-<<<<<<< HEAD
-=======
     NestedToolServer,
->>>>>>> 721c4941b
     _depth,
 )
 

@@ -41,15 +41,7 @@ from kiln_ai.datamodel.dataset_filters import DatasetFilterId, EvalInputFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.task_run import Usage
-<<<<<<< HEAD
-from kiln_ai.datamodel.tool_id import (
-    KILN_UNMANAGED_TOOL_ID_PREFIX,
-    SKILL_TOOL_ID_PREFIX,
-    ToolId,
-)
-=======
 from kiln_ai.datamodel.tool_id import ToolId, validate_tool_allowlist
->>>>>>> 721c4941b
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 if TYPE_CHECKING:
@@ -251,25 +243,6 @@ class CodeEvalProperties(BaseModel):
 
     @model_validator(mode="after")
     def validate_allowlist(self) -> Self:
-<<<<<<< HEAD
-        seen: set[str] = set()
-        for tool_id in self.tool_allowlist:
-            if tool_id.startswith(SKILL_TOOL_ID_PREFIX):
-                raise ValueError(
-                    f"Skill tool IDs cannot be used in tool_allowlist: {tool_id}. "
-                    "Skills are adapter-resolved and not callable from code evals."
-                )
-            if tool_id.startswith(KILN_UNMANAGED_TOOL_ID_PREFIX):
-                raise ValueError(
-                    f"Unmanaged tool IDs cannot be used in tool_allowlist: {tool_id}. "
-                    "Unmanaged tools are SDK-injected and not resolvable by the registry."
-                )
-            if tool_id in seen:
-                raise ValueError(f"Duplicate tool ID in tool_allowlist: {tool_id}")
-            seen.add(tool_id)
-
-        return self
-=======
         # No self-reference check: a code eval is not itself a tool.
         validate_tool_allowlist(self.tool_allowlist, caller="code evals")
         return self
@@ -377,7 +350,6 @@ class CodeEvalProperties(BaseModel):
             return schema
 
         return handler(strip_serialization(core_schema))
->>>>>>> 721c4941b
 
     @model_validator(mode="after")
     def validate_code(self) -> Self:
@@ -570,15 +542,9 @@ class V2EvalResult(BaseModel):
     skipped_reason: SkippedReason | None = None
     skipped_detail: str | None = None
     intermediate_outputs: Dict[str, str] | None = None
-<<<<<<< HEAD
-    eval_usage: Usage | None = Field(
-        default=None,
-        description="Usage of the evaluation model (judge) that produced these scores, aggregated across every LLM call the judgment made. None for non-LLM evals.",
-=======
     usage: Usage | None = Field(
         default=None,
         description="What the judgment itself cost, if it called a model. None for the deterministic eval types, which call none. Stored on the resulting EvalRun as eval_usage.",
->>>>>>> 721c4941b
     )
 
 
@@ -704,12 +670,23 @@ class EvalTaskInput(BaseModel):
             trace_data = [dict(msg) for msg in trace.trace]
 
         if isinstance(source, EvalInput):
-            if not isinstance(source.data, SingleTurnEvalInputData):
-                raise ValueError("EvalTaskInput only supports single-turn EvalInput")
             reference_data = source.reference
-            # The item's own text, not the trace's: an EvalInput is the canonical
-            # statement of the input, and the adapter may have reserialized it.
-            task_input = source.data.user_message.text
+            if isinstance(source.data, SingleTurnEvalInputData):
+                # The item's own text, not the trace's: an EvalInput is the canonical
+                # statement of the input, and the adapter may have reserialized it.
+                task_input = source.data.user_message.text
+            elif isinstance(source.data, MultiTurnSyntheticEvalInputData):
+                # Multi-turn: the seed message opened the conversation and the rest of
+                # the exchange is in the trace, so the seed is the canonical input.
+                task_input = (
+                    source.data.first_message.text
+                    if source.data.first_message
+                    else None
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported EvalInput data type: {type(source.data).__name__}"
+                )
         elif isinstance(source, _TaskRun):
             # A TaskRun-backed dataset item stores the curated answer as its output, so
             # that output is the ground truth to compare the trace against. Skipped when
@@ -742,37 +719,7 @@ class EvalTaskInput(BaseModel):
         """A generated run scored against the EvalInput it was generated from."""
         if not isinstance(eval_input, EvalInput):
             raise TypeError("Expected an EvalInput instance")
-<<<<<<< HEAD
-
-        trace_data: list[dict[str, Any]] | None = None
-        if run_output.trace is not None:
-            trace_data = [dict(msg) for msg in run_output.trace]
-
-        task_input: str | None
-        if isinstance(eval_input.data, SingleTurnEvalInputData):
-            task_input = eval_input.data.user_message.text
-        elif isinstance(eval_input.data, MultiTurnSyntheticEvalInputData):
-            # Multi-turn: the seed message opened the conversation; the rest
-            # of the exchange is in the trace.
-            task_input = (
-                eval_input.data.first_message.text
-                if eval_input.data.first_message
-                else None
-            )
-        else:
-            raise ValueError(
-                f"Unsupported EvalInput data type: {type(eval_input.data).__name__}"
-            )
-
-        return cls(
-            final_message=run_output.output.output,
-            trace=trace_data,
-            reference_data=eval_input.reference,
-            task_input=task_input,
-        )
-=======
         return cls.from_trace(run_output, eval_input)
->>>>>>> 721c4941b
 
     @classmethod
     def from_eval_input_trace(
@@ -1333,7 +1280,6 @@ class EvalDataType(str, Enum):
     reference_answer = "reference_answer"
 
 
-<<<<<<< HEAD
 class MultiTurnDriveConfig(BaseModel):
     """Per-eval settings for re-driving multi-turn synthetic inputs at eval time.
 
@@ -1358,7 +1304,8 @@ class MultiTurnDriveConfig(BaseModel):
         description="Exact number of assistant turns per re-driven conversation "
         "(the drive loop has no early termination).",
     )
-=======
+
+
 class TaskRunSplit(BaseModel):
     """A split whose items are TaskRuns, selected by a dataset filter."""
 
@@ -1402,7 +1349,6 @@ LEGACY_SPLIT_FIELDS: Dict[str, str] = {
 in. These fields are an input format and nothing else: `Eval.migrate_legacy_split_fields`
 reads each one once, on the way in, and clears it. Nothing else in the codebase reads or
 writes them, and they are never written to disk again — see `Eval.splits`."""
->>>>>>> 721c4941b
 
 
 class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}):
@@ -1424,12 +1370,8 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
     # name is legacy, kept for file-format compatibility.
     eval_set_filter_id: DatasetFilterId | None = Field(
         default=None,
-<<<<<<< HEAD
-        description="The id of the dataset filter which defines which dataset items are included when running this eval (V1 TaskRun-typed). This is the eval's test set; the 'eval set' name is legacy.",
-=======
         deprecated=True,
         description="Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['test'] once, and the field is then cleared. It is always saved as null. Read splits['test'] instead.",
->>>>>>> 721c4941b
     )
     eval_configs_filter_id: DatasetFilterId | None = Field(
         default=None,
@@ -1440,19 +1382,9 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         deprecated=True,
         description="Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['train'] once, and the field is then cleared. It is always saved as null. Read splits['train'] instead.",
     )
-<<<<<<< HEAD
-    val_set_filter_id: DatasetFilterId | None = Field(
-        default=None,
-        description="The id of the dataset filter which defines which dataset items are included in the validation set.",
-    )
-    eval_input_filter_id: EvalInputFilterId | None = Field(
-        default=None,
-        description="Filter ID for EvalInput-backed datasets (V2). Mutually exclusive with eval_set_filter_id.",
-=======
     splits: Dict[str, SplitRef] = Field(
         default_factory=dict,
         description="The eval's dataset splits, keyed by split name ('test', 'train', 'val'), and the only place they are stored. Each split names the store its items come from and the filter that selects them. Keys this build doesn't know are preserved but not exposed. 'golden' is not a split and does not belong here: the golden set must be dataset (TaskRun) based, because human ratings only exist on dataset items, so it is stored in eval_configs_filter_id instead. Nothing reads splits['golden'] — writing it is accepted and silently ignored. In Python, prefer Eval.set_split() to assigning into this dict: it refuses to mutate a readonly (cached) eval, and marks the field as set so exclude_unset dumps keep it.",
->>>>>>> 721c4941b
     )
     output_scores: List[EvalOutputScore] = Field(
         description="The scores this evaluator should produce."
@@ -1716,49 +1648,6 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         return self.name.lower().replace(" ", "_")
 
     @model_validator(mode="after")
-<<<<<<< HEAD
-    def migrate_train_set_filter_id(self) -> Self:
-        """
-        Migration: Auto-create a train_set_filter_id for legacy evals that don't have one.
-
-        Generates a tag-based filter ID from the eval name following the convention
-        used by spec-based evals (e.g., "train_{name_slug}").
-        """
-        if self.id is None:
-            return self
-
-        if not self._loaded_from_file:
-            return self
-
-        if self.train_set_filter_id is not None:
-            return self
-
-        self.train_set_filter_id = f"tag::train_{self._split_tag_suffix()}"
-        return self
-
-    @model_validator(mode="after")
-    def migrate_val_set_filter_id(self) -> Self:
-        """
-        Migration: Auto-create a val_set_filter_id for evals that don't have one.
-
-        Generates a tag-based filter ID from the eval name following the convention
-        used by spec-based evals (e.g., "val_{name_slug}").
-        """
-        if self.id is None:
-            return self
-
-        if not self._loaded_from_file:
-            return self
-
-        if self.val_set_filter_id is not None:
-            return self
-
-        self.val_set_filter_id = f"tag::val_{self._split_tag_suffix()}"
-        return self
-
-    @model_validator(mode="after")
-=======
->>>>>>> 721c4941b
     def validate_scores(self) -> Self:
         if self.output_scores is None or len(self.output_scores) == 0:
             raise ValueError(

@@ -13,13 +13,6 @@ type ToolsStore = {
   selected_tool_ids_by_task_id: Record<string, string[]>
 }
 
-<<<<<<< HEAD
-// Built-in tools that are only meaningful inside a code judge. They resolve
-// through the normal tool path but error off-context (and can never appear in a
-// real agent trace), so tool pickers hide them everywhere except the code-eval
-// allowlist. Centralized here so every picker applies the same filter.
-export const CODE_EVAL_ONLY_TOOL_IDS = ["kiln_tool::llm_judge"]
-=======
 // Which sandboxed-code allowlist a tool picker is editing, if any. "none" is every
 // picker that selects agent tools.
 export type SandboxCodeContext = "none" | "code_tool" | "code_eval"
@@ -53,7 +46,6 @@ export function is_tool_selectable_in_context(
   }
   return true
 }
->>>>>>> 721c4941b
 
 const tools_store_key = "tools_store"
 export const { store: tools_store, initialized: tools_store_initialized } =

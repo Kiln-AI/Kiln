@@ -640,22 +640,8 @@
             bind:default_reference_keys={llm_server_reference_keys}
             bind:default_prompt_unavailable={llm_default_prompt_unavailable}
           />
-<<<<<<< HEAD
-        {:else if eval_config_type === "code_eval" && metadata}
-          <svelte:component
-            this={metadata.createFormComponent}
-            bind:this={v2FormComponentRef}
-            bind:code_string={code_eval_code}
-            output_scores={evaluator?.output_scores}
-            {project_id}
-          />
-        {:else if (eval_config_type === "exact_match" || eval_config_type === "contains" || eval_config_type === "set_check") && metadata}
-          <svelte:component
-            this={metadata.createFormComponent}
-=======
         {:else}
           <JudgeConfigFields
->>>>>>> 721c4941b
             bind:this={v2FormComponentRef}
             {eval_config_type}
             {project_id}

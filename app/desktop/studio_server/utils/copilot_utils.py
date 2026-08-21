@@ -10,14 +10,23 @@ import random
 from typing import TypeVar
 
 from fastapi import HTTPException
-from kiln_ai.datamodel import Feedback, FeedbackSource, TaskRun
+from kiln_ai.datamodel import ClaimReview, Feedback, FeedbackSource, Task, TaskRun
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.eval import (
+    EvalInput,
+    MultiTurnSyntheticEvalInputData,
+    UserMessage,
+)
 from kiln_ai.datamodel.task_output import (
     DataSource,
     DataSourceType,
     RequirementRating,
     TaskOutput,
     TaskOutputRating,
+)
+from kiln_ai.synthetic_user.parser import (
+    SyntheticUserInfoParseError,
+    parse_synthetic_user_info,
 )
 from kiln_ai.utils.config import Config
 
@@ -41,29 +50,6 @@ from app.desktop.studio_server.api_models.copilot_models import (
     TaskInfoApi,
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
-<<<<<<< HEAD
-from fastapi import HTTPException
-from kiln_ai.datamodel import ClaimReview, Feedback, FeedbackSource, Task, TaskRun
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
-from kiln_ai.datamodel.eval import (
-    EvalInput,
-    MultiTurnSyntheticEvalInputData,
-    UserMessage,
-)
-from kiln_ai.datamodel.task_output import (
-    DataSource,
-    DataSourceType,
-    RequirementRating,
-    TaskOutput,
-    TaskOutputRating,
-)
-from kiln_ai.synthetic_user.parser import (
-    SyntheticUserInfoParseError,
-    parse_synthetic_user_info,
-)
-from kiln_ai.utils.config import Config
-=======
->>>>>>> 721c4941b
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +69,6 @@ KILN_ADAPTER_NAME = "kiln-adapter"
 # advertises the resulting dataset size to the user off these.
 NUM_SAMPLES_PER_TOPIC = 20
 NUM_TOPICS = 15
-<<<<<<< HEAD
 
 # Dataset split — the 50/25/25 spec (train / eval / golden). Golden is the
 # human-rated answer key, filled from RATED items only (never padded with
@@ -118,13 +103,6 @@ def golden_requirement_rating(user_says_meets_spec: bool) -> RequirementRating:
         type=TaskOutputRatingType.pass_fail,
         value=1.0 if user_says_meets_spec else 0.0,
     )
-=======
-# Matches the golden-set goal the eval detail page holds users to
-# (MIN_GOLDEN_DATASET_SIZE). Every example above the reviewed ones is minted unrated, so
-# this is the hand-rating backlog a new spec starts with: a floor above the goal asks for
-# work the app never asks for again.
-MIN_GOLDEN_EXAMPLES = 12
->>>>>>> 721c4941b
 
 
 def get_copilot_api_key() -> str:
@@ -397,7 +375,6 @@ def create_dataset_task_runs(
     spec_name: str,
     rng: random.Random | None = None,
 ) -> DatasetTaskRuns:
-<<<<<<< HEAD
     """Create TaskRuns for the golden, eval, val, and train datasets (disjoint).
 
     - Golden: the human-rated reviewed examples ONLY (the answer key). Never
@@ -406,15 +383,6 @@ def create_dataset_task_runs(
     - Eval + val + train: the unrated machine pool — eval keeps its 1-in-3
       share (the 25 of the 50/25/25 split), then the former train share
       splits 2:1 into train and val.
-=======
-    """Create TaskRuns for test, train, val, and golden datasets.
-
-    Samples from all_examples (mutating it) and creates TaskRuns for:
-    - Golden dataset (reviewed examples + unrated examples to reach MIN_GOLDEN_EXAMPLES)
-    - Test dataset (half of the remaining examples)
-    - Val dataset (one third of the other half)
-    - Train dataset (the rest)
->>>>>>> 721c4941b
 
     The four tag sets never overlap. `rng` is injected for deterministic
     tests; None uses a fresh system-seeded Random. `all_examples` is not
@@ -443,34 +411,11 @@ def create_dataset_task_runs(
     train_examples, val_examples, eval_examples = split_pool_train_val_eval(
         all_examples, rng
     )
-    write_eval_slice(result, eval_examples, eval_tag, extra_tags)
+    write_eval_slice(result, eval_examples, test_tag, extra_tags)
 
-<<<<<<< HEAD
     for example in val_examples:
         result.add_run(create_task_run_from_sample(example, val_tag, extra_tags))
 
-=======
-    # Sample half the remaining examples for the test dataset, then split the
-    # other half between val (one third) and train (two thirds)
-    example_count = len(all_examples)
-    test_count = example_count // 2
-    remaining_count = example_count - test_count
-    val_count = remaining_count // 3
-    train_count = remaining_count - val_count
-    test_examples = sample_and_remove(all_examples, test_count)
-    val_examples = sample_and_remove(all_examples, val_count)
-    train_examples = sample_and_remove(all_examples, train_count)
-
-    # Create TaskRuns for test examples
-    for example in test_examples:
-        result.add_run(create_task_run_from_sample(example, test_tag, extra_tags))
-
-    # Create TaskRuns for val examples
-    for example in val_examples:
-        result.add_run(create_task_run_from_sample(example, val_tag, extra_tags))
-
-    # Create TaskRuns for train examples
->>>>>>> 721c4941b
     for example in train_examples:
         result.add_run(create_task_run_from_sample(example, train_tag, extra_tags))
 

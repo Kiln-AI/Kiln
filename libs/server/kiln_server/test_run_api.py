@@ -24,12 +24,9 @@ from kiln_ai.datamodel import (
     TaskOutputRatingType,
     TaskRun,
 )
-<<<<<<< HEAD
 from kiln_ai.datamodel.datamodel_enums import TurnMode
 from kiln_ai.datamodel.model_cache import ModelCache
-=======
 from kiln_ai.datamodel.task_run import EvalItemSource
->>>>>>> 721c4941b
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.utils.config import Config
 
@@ -1448,8 +1445,8 @@ class TestEvalTraceProtection:
         task = task_run_setup["task"]
         trace = self._eval_trace(task)
 
-        with patch("kiln_server.run_api.run_from_id") as mock_run_from_id:
-            mock_run_from_id.return_value = trace
+        with patch("kiln_server.run_api.task_and_run_from_id") as mock_resolve:
+            mock_resolve.return_value = (task, trace)
             response = client.delete(
                 f"/api/projects/{project.id}/tasks/{task.id}/runs/{trace.id}"
             )
@@ -1464,8 +1461,8 @@ class TestEvalTraceProtection:
         task_run = task_run_setup["task_run"]
         path = task_run.path
 
-        with patch("kiln_server.run_api.run_from_id") as mock_run_from_id:
-            mock_run_from_id.return_value = task_run
+        with patch("kiln_server.run_api.task_and_run_from_id") as mock_resolve:
+            mock_resolve.return_value = (task, task_run)
             response = client.delete(
                 f"/api/projects/{project.id}/tasks/{task.id}/runs/{task_run.id}"
             )

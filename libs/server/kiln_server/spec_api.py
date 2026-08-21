@@ -2,13 +2,8 @@ import logging
 from typing import Annotated, List
 
 from fastapi import FastAPI, HTTPException, Path
-<<<<<<< HEAD
 from kiln_ai.datamodel.basemodel import FilenameString, FilenameStringShort
-from kiln_ai.datamodel.datamodel_enums import Priority
-=======
-from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.datamodel_enums import EvalStatus, Priority
->>>>>>> 721c4941b
 from kiln_ai.datamodel.eval import Eval
 from kiln_ai.datamodel.spec import Spec, SpecStatus, TaskSample
 from kiln_ai.datamodel.spec_properties import SpecProperties
@@ -102,36 +97,6 @@ def connect_spec_api(app: FastAPI):
 
         spec_type = spec_data.properties["spec_type"]
 
-<<<<<<< HEAD
-        eval_tag, train_tag, val_tag, golden_tag = generate_spec_eval_tags(
-            spec_data.name
-        )
-        (
-            eval_set_filter_id,
-            train_set_filter_id,
-            val_set_filter_id,
-            eval_configs_filter_id,
-        ) = generate_spec_eval_filter_ids(eval_tag, train_tag, val_tag, golden_tag)
-
-        template = spec_eval_template(spec_type)
-        output_scores = [spec_eval_output_score(spec_data.name)]
-        evaluation_data_type = spec_eval_data_type(
-            spec_type, spec_data.evaluate_full_trace
-        )
-
-        eval = Eval(
-            parent=task,
-            name=spec_data.name,
-            description=None,
-            template=template,
-            output_scores=output_scores,
-            eval_set_filter_id=eval_set_filter_id,
-            train_set_filter_id=train_set_filter_id,
-            val_set_filter_id=val_set_filter_id,
-            eval_configs_filter_id=eval_configs_filter_id,
-            template_properties=None,
-            evaluation_data_type=evaluation_data_type,
-=======
         # Priority and status live on the eval. They're also written to the spec
         # below so the spec file stays truthful, but the eval is the source of
         # truth for reads and later edits.
@@ -142,7 +107,6 @@ def connect_spec_api(app: FastAPI):
             evaluate_full_trace=spec_data.evaluate_full_trace,
             priority=spec_data.priority,
             status=spec_data.status,
->>>>>>> 721c4941b
         )
 
         spec = Spec(

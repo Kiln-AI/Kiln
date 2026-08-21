@@ -159,22 +159,6 @@ describe("generate_default_code", () => {
 })
 
 describe("generate_examples", () => {
-<<<<<<< HEAD
-  // The first three examples are score-key-driven (built via the helper
-  // functions); the last two are hand-written LLM tool examples validated
-  // separately below.
-  const code_examples = (scores?: EvalOutputScore[]) =>
-    generate_examples(scores).slice(0, 3)
-
-  it("returns five examples with correct labels", () => {
-    const examples = generate_examples(undefined)
-    expect(examples).toHaveLength(5)
-    expect(examples[0].label).toBe("Parse JSON")
-    expect(examples[1].label).toBe("Check tool usage")
-    expect(examples[2].label).toBe("Domain-specific grading")
-    expect(examples[3].label).toBe("LLM judge")
-    expect(examples[4].label).toBe("Triage then LLM judge")
-=======
   // The first two examples are score-key-driven (built via the helper
   // functions); the last two are hand-written LLM tool examples validated
   // separately below.
@@ -188,7 +172,6 @@ describe("generate_examples", () => {
     expect(examples[1].label).toBe("Check tool usage")
     expect(examples[2].label).toBe("LLM judge")
     expect(examples[3].label).toBe("Triage then LLM judge")
->>>>>>> 721c4941b
   })
 
   it("falls back to quality key when no output_scores", () => {
@@ -228,11 +211,7 @@ describe("generate_examples", () => {
 
   describe("LLM tool examples", () => {
     it("LLM judge example judges the response itself", () => {
-<<<<<<< HEAD
-      const example = generate_examples(undefined)[3]
-=======
       const example = generate_examples(undefined)[2]
->>>>>>> 721c4941b
       expect(example.label).toBe("LLM judge")
       expect(example.code).toContain("from kiln import tools")
       expect(example.code).toContain("tools.llm_judge(")
@@ -243,11 +222,7 @@ describe("generate_examples", () => {
     })
 
     it("Triage example composes tools.llm and tools.llm_judge", () => {
-<<<<<<< HEAD
-      const example = generate_examples(undefined)[4]
-=======
       const example = generate_examples(undefined)[3]
->>>>>>> 721c4941b
       expect(example.label).toBe("Triage then LLM judge")
       expect(example.code).toContain("tools.llm(")
       expect(example.code).toContain("tools.llm_judge(")
@@ -263,11 +238,7 @@ describe("generate_examples", () => {
         make_score("Check", "pass_fail"),
         make_score("Rating", "five_star"),
       ]
-<<<<<<< HEAD
-      const example = generate_examples(scores)[4]
-=======
       const example = generate_examples(scores)[3]
->>>>>>> 721c4941b
       expect(example.code).toContain('return {"check": 1.0, "rating": 5.0}')
     })
   })

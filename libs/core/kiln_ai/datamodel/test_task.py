@@ -20,17 +20,9 @@ from kiln_ai.datamodel.spec_properties import (
     ToxicityProperties,
 )
 from kiln_ai.datamodel.task import Task, TaskRunConfig
-<<<<<<< HEAD
-from kiln_ai.datamodel.task_output import (
-    TaskOutput,
-    normalize_rating,
-)
-from kiln_ai.datamodel.task_run import TaskRun
-from kiln_ai.datamodel.test_json_schema import json_joke_schema
-=======
 from kiln_ai.datamodel.task_output import TaskOutput, normalize_rating
 from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun
->>>>>>> 721c4941b
+from kiln_ai.datamodel.test_json_schema import json_joke_schema
 
 
 def test_runconfig_valid_creation():

@@ -2410,7 +2410,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-<<<<<<< HEAD
     "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/eval_run_index": {
         parameters: {
             query?: never;
@@ -2466,36 +2465,12 @@ export interface paths {
         trace?: never;
     };
     "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches": {
-=======
-    "/api/projects/{project_id}/add_code_trust": {
->>>>>>> 721c4941b
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-<<<<<<< HEAD
-=======
-        /** Check code trust for a project */
-        get: operations["check_add_code_trust_endpoint_api_projects__project_id__add_code_trust_get"];
-        put?: never;
-        /** Add code trust for a project */
-        post: operations["add_code_trust_endpoint_api_projects__project_id__add_code_trust_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tasks/{task_id}/judge_feedback_batches": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
->>>>>>> 721c4941b
         /**
          * List Judge Feedback Batches
          * @description List all judge feedback batches for a task.
@@ -7240,12 +7215,8 @@ export interface components {
             current_config_id?: string | null;
             /**
              * Eval Set Filter Id
-<<<<<<< HEAD
-             * @description The id of the dataset filter which defines which dataset items are included when running this eval (V1 TaskRun-typed). This is the eval's test set; the 'eval set' name is legacy.
-=======
              * @deprecated
              * @description Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['test'] once, and the field is then cleared. It is always saved as null. Read splits['test'] instead.
->>>>>>> 721c4941b
              */
             eval_set_filter_id?: string | null;
             /**
@@ -7260,18 +7231,8 @@ export interface components {
              */
             train_set_filter_id?: string | null;
             /**
-<<<<<<< HEAD
-             * Val Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included in the validation set.
-             */
-            val_set_filter_id?: string | null;
-            /**
-             * Eval Input Filter Id
-             * @description Filter ID for EvalInput-backed datasets (V2). Mutually exclusive with eval_set_filter_id.
-=======
              * Splits
              * @description The eval's dataset splits, keyed by split name ('test', 'train', 'val'), and the only place they are stored. Each split names the store its items come from and the filter that selects them. Keys this build doesn't know are preserved but not exposed. 'golden' is not a split and does not belong here: the golden set must be dataset (TaskRun) based, because human ratings only exist on dataset items, so it is stored in eval_configs_filter_id instead. Nothing reads splits['golden'] — writing it is accepted and silently ignored. In Python, prefer Eval.set_split() to assigning into this dict: it refuses to mutate a readonly (cached) eval, and marks the field as set so exclude_unset dumps keep it.
->>>>>>> 721c4941b
              */
             splits?: {
                 [key: string]: components["schemas"]["TaskRunSplit"] | components["schemas"]["EvalInputSplit"];
@@ -7491,6 +7452,11 @@ export interface components {
              * @description The id of the dataset item this run was generated for. Interpreted within the store named by source_type — ids are only unique within a store.
              */
             source_id: string;
+            /**
+             * Variant
+             * @description Distinguishes several traces for the same item and run config. The drive fingerprint for a re-driven multi-turn conversation; None for a single-turn generation.
+             */
+            variant?: string | null;
         };
         /** EvalJobParams */
         EvalJobParams: {
@@ -7526,11 +7492,7 @@ export interface components {
             concurrency?: number | null;
             /**
              * Split
-<<<<<<< HEAD
-             * @description Which of the eval's dataset splits to run: train, val, or test. Fails with 422 if the eval has no filter configured for the split. Leave null to run the eval set (the test set — today's default behavior).
-=======
              * @description Which of the eval's dataset splits to run: train, val, or test. Fails with 422 if the eval has no such split. Leave null to run the test split, which is what running an eval has always meant.
->>>>>>> 721c4941b
              */
             split?: ("train" | "val" | "test") | null;
         };
@@ -7855,11 +7817,8 @@ export interface components {
             task_run_usage?: components["schemas"]["Usage"] | null;
             /** @description The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field. */
             eval_usage?: components["schemas"]["Usage"] | null;
-<<<<<<< HEAD
             /** @description The usage of the synthetic-user (driver) model that played the customer side of a multi-turn drive, summed across the drive's turns. The third and last model in an eval run: task_run_usage is the agent under test, eval_usage is the judge, this is the driver. SU turns are never persisted as TaskRuns and never appear in task_run_trace, so this field is the only record of that spend. None when no drive happened on this record — a reused trace (the spend belongs to the record that drove it), a non-multi-turn lane, a provider that reported no usage, or a record predating this field. */
             synthetic_user_usage?: components["schemas"]["Usage"] | null;
-=======
->>>>>>> 721c4941b
             /**
              * Eval Input Id
              * @description ID of the EvalInput used for this run (V2 evals). Mutually exclusive with dataset_id.
@@ -12844,21 +12803,12 @@ export interface components {
             target_specification: string;
         };
         /**
-<<<<<<< HEAD
-         * SpecStatus
-         * @description Defines the status of a spec.
-         * @enum {string}
-         */
-        SpecStatus: "active" | "future" | "deprecated" | "archived";
-        /**
          * SpecType
          * @description Defines the type of spec.
          * @enum {string}
          */
         SpecType: "desired_behaviour" | "issue" | "tone" | "formatting" | "localization" | "appropriate_tool_use" | "reference_answer_accuracy" | "factual_correctness" | "hallucinations" | "completeness" | "toxicity" | "bias" | "maliciousness" | "nsfw" | "taboo" | "jailbreak" | "prompt_leakage";
         /**
-=======
->>>>>>> 721c4941b
          * SpecificationInput
          * @description The specification to refine.
          */
@@ -20084,15 +20034,9 @@ export interface operations {
     };
     get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get: {
         parameters: {
-<<<<<<< HEAD
-            query?: {
-                /** @description Only return results for dataset items in this split of the eval (train, val, or test). 422 if the eval has no filter configured for the split. Omit to return all results (no split filtering). */
-                split?: ("train" | "val" | "test") | null;
-=======
             query: {
-                /** @description Which of the eval's dataset splits to return results for. Required: every response about eval results is scoped to exactly one split, and reading has no obvious default the way running does. */
-                split: "train" | "val" | "test";
->>>>>>> 721c4941b
+                /** @description Which of the eval's dataset splits to return results for, or 'all' for every run this judge has under this run config. Required: every response about eval results is scoped explicitly, and reading has no obvious default the way running does. */
+                split: "train" | "val" | "test" | "all";
             };
             header?: never;
             path: {
@@ -20317,11 +20261,7 @@ export interface operations {
             };
         };
     };
-<<<<<<< HEAD
     get_run_config_eval_run_index_api_projects__project_id__tasks__task_id__run_configs__run_config_id__eval_run_index_get: {
-=======
-    check_add_code_trust_endpoint_api_projects__project_id__add_code_trust_get: {
->>>>>>> 721c4941b
         parameters: {
             query?: {
                 /** @description Scope the rows to one dataset split: 'train', 'val', 'test', or 'all' (every run that exists). Omit for each eval's own set, which is what 'test' means. An eval with no such split contributes no entry. */
@@ -20331,13 +20271,10 @@ export interface operations {
             path: {
                 /** @description The unique identifier of the project. */
                 project_id: string;
-<<<<<<< HEAD
                 /** @description The unique identifier of the task within the project. */
                 task_id: string;
                 /** @description The unique identifier of the run configuration. */
                 run_config_id: string;
-=======
->>>>>>> 721c4941b
             };
             cookie?: never;
         };
@@ -20349,11 +20286,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-<<<<<<< HEAD
                     "application/json": components["schemas"]["EvalRunIndexResponse"];
-=======
-                    "application/json": components["schemas"]["CodeTrustResponse"];
->>>>>>> 721c4941b
                 };
             };
             /** @description Validation Error */
@@ -20367,7 +20300,6 @@ export interface operations {
             };
         };
     };
-<<<<<<< HEAD
     check_add_code_trust_endpoint_api_projects__project_id__add_code_trust_get: {
         parameters: {
             query?: never;
@@ -20467,84 +20399,12 @@ export interface operations {
         };
     };
     create_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches_post: {
-=======
-    add_code_trust_endpoint_api_projects__project_id__add_code_trust_post: {
->>>>>>> 721c4941b
         parameters: {
             query?: never;
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */
                 project_id: string;
-<<<<<<< HEAD
-=======
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CodeTrustResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_judge_feedback_batches_api_projects__project_id__tasks__task_id__judge_feedback_batches_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-                /** @description The unique identifier of the task within the project. */
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JudgeFeedbackBatch"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_judge_feedback_batch_api_projects__project_id__tasks__task_id__judge_feedback_batches_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
->>>>>>> 721c4941b
                 /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };

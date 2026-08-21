@@ -554,13 +554,12 @@ describe("eval detail page — add eval data", () => {
     return alerts
   }
 
-  it("refuses an eval-input-backed test split with the new-format wording", async () => {
+  it("offers no add-data button for an eval-input-backed test split", async () => {
     // This flow adds TaskRuns, so an EvalInput-backed test split has no tag it can write
-    // under. It gets its own wording rather than the tag-filter one below: "use a tag
-    // filter instead" is not advice that helps when the store is the problem. The copy
-    // names the format rather than the internal types behind it — "eval inputs" and
-    // "task runs" appear nowhere else in the UI. Untested copy is how this branch
-    // already shipped one swapped-description bug (f191e0574).
+    // under. The button is not offered at all rather than offered and then refused on
+    // click: there is nothing the user could do differently, so a dead-end button is
+    // worse than an explanation. The copy names the format rather than the internal
+    // types behind it — "eval inputs" and "task runs" appear nowhere else in the UI.
     setEvalResponse({
       id: "eval1",
       name: "Test Eval",
@@ -571,9 +570,12 @@ describe("eval detail page — add eval data", () => {
       output_scores: [{ name: "accuracy", type: "five_star" }],
     })
 
-    expect(await alert_from_add_eval_data()).toEqual([
-      "This eval uses our new eval dataset format, which can't be generated from this UI.",
-    ])
+    const container = await render_page()
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Add Eval Data",
+    )
+    expect(button).toBeUndefined()
+    expect(container.textContent).toContain("created by the eval builder")
     expect(mockGoto).not.toHaveBeenCalled()
   })
 

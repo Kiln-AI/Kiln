@@ -1,10 +1,7 @@
 import json
-<<<<<<< HEAD
-=======
 import warnings
 from pathlib import Path
 from unittest.mock import patch
->>>>>>> 721c4941b
 
 import pytest
 from pydantic import ValidationError
@@ -37,11 +34,8 @@ from kiln_ai.datamodel.eval import (
     SingleTurnEvalInputData,
     SkippedReason,
     StepCountCheckProperties,
-<<<<<<< HEAD
     SyntheticUserInfo,
-=======
     TaskRunSplit,
->>>>>>> 721c4941b
     ToolCallCheckProperties,
     ToolCallSpec,
     UserMessage,
@@ -53,12 +47,8 @@ from kiln_ai.datamodel.eval import (
 from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import Task
-<<<<<<< HEAD
-from kiln_ai.datamodel.task_output import TaskOutputRatingType
-=======
 from kiln_ai.datamodel.task_output import TaskOutput, TaskOutputRatingType
 from kiln_ai.datamodel.task_run import TaskRun
->>>>>>> 721c4941b
 from kiln_ai.datamodel.usage import Usage
 
 
@@ -257,185 +247,6 @@ def test_no_train_split_minted_on_new_eval():
         ],
     )
     assert "train" not in eval.splits
-
-
-def test_eval_with_val_set_filter_id():
-    """Test that Eval correctly stores val_set_filter_id."""
-    eval = Eval(
-        name="Test Eval",
-        eval_set_filter_id="tag::eval_test",
-        train_set_filter_id="tag::train_test",
-        val_set_filter_id="tag::val_test",
-        eval_configs_filter_id="tag::eval_golden_test",
-        output_scores=[
-            EvalOutputScore(
-                name="accuracy",
-                type=TaskOutputRatingType.pass_fail,
-            )
-        ],
-    )
-
-    assert eval.val_set_filter_id == "tag::val_test"
-
-
-def test_eval_val_set_filter_id_defaults_to_none():
-    """Test that val_set_filter_id defaults to None when not provided."""
-    eval = Eval(
-        name="Test Eval",
-        eval_set_filter_id="tag::tag1",
-        eval_configs_filter_id="tag::tag2",
-        output_scores=[
-            EvalOutputScore(
-                name="score",
-                type=TaskOutputRatingType.pass_fail,
-            )
-        ],
-    )
-
-    assert eval.val_set_filter_id is None
-
-
-def test_migrate_val_set_filter_id_on_load(mock_task, tmp_path):
-    """Test that loading an eval from file auto-creates val_set_filter_id when missing."""
-    task_path = tmp_path / "task.kiln"
-    mock_task.path = task_path
-    mock_task.save_to_file()
-
-    eval = Eval(
-        name="My Eval Name",
-        parent=mock_task,
-        eval_set_filter_id="tag::tag1",
-        eval_configs_filter_id="tag::tag2",
-        val_set_filter_id=None,
-        output_scores=[
-            EvalOutputScore(
-                name="score",
-                type=TaskOutputRatingType.pass_fail,
-            )
-        ],
-    )
-    eval.save_to_file()
-
-    loaded_eval = Eval.load_from_file(str(eval.path))
-    assert loaded_eval.val_set_filter_id == "tag::val_my_eval_name"
-
-
-def test_migrate_val_set_filter_id_preserves_existing(mock_task, tmp_path):
-    """Test that migration does not overwrite an existing val_set_filter_id."""
-    task_path = tmp_path / "task.kiln"
-    mock_task.path = task_path
-    mock_task.save_to_file()
-
-    eval = Eval(
-        name="My Eval",
-        parent=mock_task,
-        eval_set_filter_id="tag::tag1",
-        eval_configs_filter_id="tag::tag2",
-        val_set_filter_id="tag::custom_val_tag",
-        output_scores=[
-            EvalOutputScore(
-                name="score",
-                type=TaskOutputRatingType.pass_fail,
-            )
-        ],
-    )
-    eval.save_to_file()
-
-    loaded_eval = Eval.load_from_file(str(eval.path))
-    assert loaded_eval.val_set_filter_id == "tag::custom_val_tag"
-
-
-def test_migrate_val_set_filter_id_not_on_new_eval():
-    """Test that migration does not trigger on newly created evals (not loaded from file)."""
-    eval = Eval(
-        name="New Eval",
-        eval_set_filter_id="tag::tag1",
-        eval_configs_filter_id="tag::tag2",
-        val_set_filter_id=None,
-        output_scores=[
-            EvalOutputScore(
-                name="score",
-                type=TaskOutputRatingType.pass_fail,
-            )
-        ],
-    )
-    assert eval.val_set_filter_id is None
-
-
-@pytest.mark.parametrize(
-    "eval_name,expected_tag",
-    [
-        ("Simple", "tag::val_simple"),
-        ("Two Words", "tag::val_two_words"),
-        ("UPPER CASE", "tag::val_upper_case"),
-        ("mixed Case Name", "tag::val_mixed_case_name"),
-        ("already_underscored", "tag::val_already_underscored"),
-    ],
-)
-def test_migrate_val_set_filter_id_slugification(
-    mock_task, tmp_path, eval_name, expected_tag
-):
-    """Test that various eval names are correctly slugified into val_set_filter_id."""
-    task_path = tmp_path / "task.kiln"
-    mock_task.path = task_path
-    mock_task.save_to_file()
-
-    eval = Eval(
-        name=eval_name,
-        parent=mock_task,
-        eval_set_filter_id="tag::tag1",
-        eval_configs_filter_id="tag::tag2",
-        output_scores=[
-            EvalOutputScore(
-                name="score",
-                type=TaskOutputRatingType.pass_fail,
-            )
-        ],
-    )
-    eval.save_to_file()
-
-    loaded_eval = Eval.load_from_file(str(eval.path))
-    assert loaded_eval.val_set_filter_id == expected_tag
-
-
-def test_filter_id_for_split_returns_stored_filter_ids():
-    eval = Eval(
-        name="Test Eval",
-        eval_set_filter_id="tag::eval_test",
-        train_set_filter_id="tag::train_test",
-        val_set_filter_id="tag::val_test",
-        eval_configs_filter_id="tag::eval_golden_test",
-        output_scores=[
-            EvalOutputScore(
-                name="accuracy",
-                type=TaskOutputRatingType.pass_fail,
-            )
-        ],
-    )
-
-    assert eval.filter_id_for_split("train") == "tag::train_test"
-    assert eval.filter_id_for_split("val") == "tag::val_test"
-    # "test" is stored in eval_set_filter_id — the "eval set" name is legacy.
-    assert eval.filter_id_for_split("test") == "tag::eval_test"
-
-
-def test_filter_id_for_split_none_for_unset_splits():
-    eval = Eval(
-        name="Test Eval",
-        eval_set_filter_id="tag::eval_test",
-        eval_configs_filter_id="tag::eval_golden_test",
-        output_scores=[
-            EvalOutputScore(
-                name="accuracy",
-                type=TaskOutputRatingType.pass_fail,
-            )
-        ],
-    )
-
-    assert eval.filter_id_for_split("train") is None
-    assert eval.filter_id_for_split("val") is None
-    # The test split resolves to the V1 eval_set_filter_id when it is set.
-    assert eval.filter_id_for_split("test") == "tag::eval_test"
 
 
 def test_filter_id_for_split_test_none_for_v2_eval():
@@ -3223,7 +3034,6 @@ class TestEvalTaskInput:
             EvalTaskInput()  # type: ignore[call-arg]
 
 
-<<<<<<< HEAD
 class TestEvalTaskInputFromEvalInput:
     def _run_output(self, mock_task):
         from kiln_ai.datamodel.task_output import (
@@ -3430,7 +3240,8 @@ class TestMultiTurnDriveConfig:
             parent=mock_task,
         )
         assert eval.multi_turn_drive_config is None
-=======
+
+
 class TestEvalTaskInputFromTrace:
     """The trace and the item it was generated from are two records now."""
 
@@ -3514,21 +3325,11 @@ class TestEvalTaskInputFromTrace:
                 "not an item",
                 TypeError,
             ),
-            (
-                TaskRun(input="i", output=TaskOutput(output="o")),
-                EvalInput(
-                    data=MultiTurnSyntheticEvalInputData(
-                        first_message=UserMessage(text="hi")
-                    )
-                ),
-                ValueError,
-            ),
         ],
     )
     def test_rejects_shapes_it_cannot_describe(self, trace_arg, source, error):
         with pytest.raises(error):
             EvalTaskInput.from_trace(trace_arg, source)
->>>>>>> 721c4941b
 
 
 # ── Save-time Jinja validation (validate_v2_templates_and_expressions) ───
@@ -3716,14 +3517,7 @@ class TestCodeEvalPropertiesValidation:
     def test_valid_code(self):
         props = CodeEvalProperties(code=self.VALID_CODE)
         assert props.code == self.VALID_CODE
-<<<<<<< HEAD
-        assert props.timeout_seconds == 180
-
-    def test_default_timeout_is_180(self):
-        props = CodeEvalProperties(code=self.VALID_CODE)
-=======
         # 180, not 30: the default has to cover nested LLM calls from score().
->>>>>>> 721c4941b
         assert props.timeout_seconds == 180
 
     def test_custom_timeout(self):

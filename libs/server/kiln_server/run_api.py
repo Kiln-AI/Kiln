@@ -38,7 +38,6 @@ logger = logging.getLogger(__name__)
 # Lock to prevent overwriting via concurrent updates. We use a load/update/write pattern that is not atomic.
 update_run_lock = Lock()
 
-<<<<<<< HEAD
 # Defensive cap on parent-chain depth. Real multiturn conversations are tiny
 # compared to this; the guard exists to terminate on disk corruption or cycles.
 _MAX_ANCESTOR_DEPTH = 1000
@@ -151,9 +150,9 @@ def _count_user_messages(trace: list[Any] | None) -> int:
     if not trace:
         return 0
     return sum(1 for m in trace if isinstance(m, dict) and m.get("role") == "user")
-=======
+
+
 EVAL_TRACE_DELETE_MESSAGE = "This run can't be deleted because it's needed for an eval."
->>>>>>> 721c4941b
 
 
 def deep_update(
@@ -493,21 +492,20 @@ def connect_run_api(app: FastAPI):
             str, Path(description="The unique identifier of the task run.")
         ],
     ):
-<<<<<<< HEAD
         task, run = task_and_run_from_id(project_id, task_id, run_id)
-        # For multiturn chains, also delete ancestors whose only remaining child
-        # is in our delete-set. Stop at the first ancestor that still has another
-        # live child (a sibling branch).
-        runs_to_delete = _collect_cascade_delete_runs(task, run)
-        for r in runs_to_delete:
-            r.delete()
-=======
-        run = run_from_id(project_id, task_id, run_id)
         # 409 not 400: the request is well formed, the resource state forbids it.
         if run.eval_source is not None:
             raise HTTPException(status_code=409, detail=EVAL_TRACE_DELETE_MESSAGE)
-        run.delete()
->>>>>>> 721c4941b
+        # For multiturn chains, also delete ancestors whose only remaining child
+        # is in our delete-set. Stop at the first ancestor that still has another
+        # live child (a sibling branch). An ancestor that is itself an eval trace
+        # is left in place rather than cascaded over: the same state that makes a
+        # run undeletable directly makes it undeletable as a side effect.
+        runs_to_delete = _collect_cascade_delete_runs(task, run)
+        for r in runs_to_delete:
+            if r.eval_source is not None:
+                continue
+            r.delete()
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/runs",
@@ -632,15 +630,6 @@ def connect_run_api(app: FastAPI):
     ):
         task = task_from_id(project_id, task_id)
         failed_runs: list[str] = []
-<<<<<<< HEAD
-        last_error: Exception | None = None
-
-        # Cascade behavior matches single DELETE: sweep orphan ancestors. The
-        # cumulative queued_ids set means an ancestor whose remaining children
-        # are all in this batch also gets cascaded.
-        queued_ids: set[str] = set()
-        runs_to_delete: list[TaskRun] = []
-=======
         failure_reasons: list[str] = []
 
         def record_failure(run_id: str, reason: str) -> None:
@@ -652,33 +641,16 @@ def connect_run_api(app: FastAPI):
             if reason and reason not in failure_reasons:
                 failure_reasons.append(reason)
 
->>>>>>> 721c4941b
+        # Cascade behavior matches single DELETE: sweep orphan ancestors. The
+        # cumulative queued_ids set means an ancestor whose remaining children
+        # are all in this batch also gets cascaded.
+        queued_ids: set[str] = set()
+        runs_to_delete: list[TaskRun] = []
+
         for run_id in run_ids:
             try:
                 run = TaskRun.from_id_and_parent_path(run_id, task.path)
                 if run is None:
-<<<<<<< HEAD
-                    failed_runs.append(run_id)
-                    last_error = Exception("Run not found")
-                    continue
-                cascade = _collect_cascade_delete_runs(task, run, queued_ids)
-                for r in cascade:
-                    if r.id is not None:
-                        queued_ids.add(str(r.id))
-                    runs_to_delete.append(r)
-            except Exception as e:
-                last_error = e
-                failed_runs.append(run_id)
-
-        for r in runs_to_delete:
-            try:
-                r.delete()
-            except Exception as e:
-                last_error = e
-                if r.id is not None:
-                    failed_runs.append(str(r.id))
-
-=======
                     record_failure(run_id, "Run not found")
                 elif run.eval_source is not None:
                     # Reported rather than silently skipped, so a partially deleted
@@ -686,10 +658,26 @@ def connect_run_api(app: FastAPI):
                     # instead of raising: the rest of the batch is still deletable.
                     record_failure(run_id, EVAL_TRACE_DELETE_MESSAGE)
                 else:
-                    run.delete()
+                    cascade = _collect_cascade_delete_runs(task, run, queued_ids)
+                    for r in cascade:
+                        if r.id is not None:
+                            queued_ids.add(str(r.id))
+                        runs_to_delete.append(r)
             except Exception as e:
                 record_failure(run_id, str(e))
->>>>>>> 721c4941b
+
+        for r in runs_to_delete:
+            run_id = str(r.id) if r.id is not None else "unknown"
+            if r.eval_source is not None:
+                # A swept ancestor is protected for the same reason a directly
+                # selected run is; it is reported rather than deleted.
+                record_failure(run_id, EVAL_TRACE_DELETE_MESSAGE)
+                continue
+            try:
+                r.delete()
+            except Exception as e:
+                record_failure(run_id, str(e))
+
         if failed_runs:
             raise HTTPException(
                 status_code=500,

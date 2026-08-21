@@ -15,11 +15,7 @@ from kiln_server.utils.agent_checks.policy import (
 )
 from pydantic import BaseModel, Field
 
-<<<<<<< HEAD
-from ..eval_api import eval_from_id, split_filter_id_from_eval
-=======
 from ..eval_api import eval_from_id, resolved_split_or_422
->>>>>>> 721c4941b
 from . import error_log
 from .events import JobEvent
 from .models import BackgroundJobStatus, JobRecord
@@ -205,20 +201,6 @@ def connect_jobs_api(app: FastAPI) -> None:
         Poll `GET /api/jobs/{id}` (or `/api/jobs/wait`) for progress and the
         result.
         """
-<<<<<<< HEAD
-        # Resolve a requested split before creating the job, so an eval with no
-        # such split fails here with a 422 (or a missing eval with a 404) instead
-        # of surfacing later as a failed background job. The worker resolves the
-        # split again at run time; entity loads are blocking IO, so run them off
-        # the event loop.
-        if params.split is not None:
-            split = params.split
-            await asyncio.to_thread(
-                lambda: split_filter_id_from_eval(
-                    eval_from_id(params.project_id, params.task_id, params.eval_id),
-                    split,
-                )
-=======
         # Resolve a named split before creating the job, so a split this eval doesn't
         # have is a 422 on this request (and a missing eval a 404) instead of a
         # background job that starts and then dies.
@@ -236,7 +218,6 @@ def connect_jobs_api(app: FastAPI) -> None:
                 params.task_id,
                 params.eval_id,
                 params.split,
->>>>>>> 721c4941b
             )
         job = await job_registry.create(
             type_name=EvalJobWorker.type_name,
