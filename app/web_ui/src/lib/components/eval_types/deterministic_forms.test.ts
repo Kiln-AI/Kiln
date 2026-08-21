@@ -2,6 +2,8 @@
 import { describe, it, expect, vi, beforeAll } from "vitest"
 import { render, fireEvent } from "@testing-library/svelte"
 import { tick } from "svelte"
+import { available_tools } from "$lib/stores"
+import type { ToolSetApiDescription } from "$lib/types"
 
 vi.mock("$lib/utils/form_element.svelte", async () => {
   const { default: Stub } = await import("./__tests__/form_element_stub.svelte")
@@ -1054,7 +1056,7 @@ describe("Phase 8: StepCountCheckForm section structure and progressive disclosu
     })
     expect(getAllByText("Tool calls").length).toBeGreaterThan(0)
     expect(getAllByText("Model responses").length).toBeGreaterThan(0)
-    expect(getAllByText("Turns").length).toBeGreaterThan(0)
+    expect(getAllByText("Conversation turns").length).toBeGreaterThan(0)
   })
 
   it("renders Bounds header_only FormElement", () => {
@@ -1147,16 +1149,18 @@ describe("Phase 8: StepCountCheckForm section structure and progressive disclosu
       },
     })
     expect(
-      getAllByText("Count each tool or function call the agent made.").length,
-    ).toBeGreaterThan(0)
-    expect(
       getAllByText(
-        "Count each response the model generated (one per inference call).",
+        "Each individual tool invocation. A single response that calls three tools counts as three.",
       ).length,
     ).toBeGreaterThan(0)
     expect(
       getAllByText(
-        "Count conversational turns (each user-then-assistant exchange counts as one turn).",
+        "Each message the model generates, including intermediate messages that only call tools.",
+      ).length,
+    ).toBeGreaterThan(0)
+    expect(
+      getAllByText(
+        "Each user message and everything the agent does to answer it. Tool calls and model responses within a turn don't add to the count.",
       ).length,
     ).toBeGreaterThan(0)
   })
@@ -2052,7 +2056,7 @@ describe("StepCountCheckForm UI polish", () => {
     expect(indent).toBeTruthy()
   })
 
-  it("turns description clarifies user-then-assistant exchange", () => {
+  it("turns description explains what a turn spans", () => {
     const { getAllByText } = render(StepCountCheckForm, {
       props: {
         properties: {
@@ -2065,12 +2069,12 @@ describe("StepCountCheckForm UI polish", () => {
     })
     expect(
       getAllByText(
-        "Count conversational turns (each user-then-assistant exchange counts as one turn).",
+        "Each user message and everything the agent does to answer it. Tool calls and model responses within a turn don't add to the count.",
       ).length,
     ).toBeGreaterThan(0)
   })
 
-  it("model_responses description clarifies one per inference call", () => {
+  it("model_responses description clarifies tool-call-only messages count", () => {
     const { getAllByText } = render(StepCountCheckForm, {
       props: {
         properties: {
@@ -2083,8 +2087,74 @@ describe("StepCountCheckForm UI polish", () => {
     })
     expect(
       getAllByText(
-        "Count each response the model generated (one per inference call).",
+        "Each message the model generates, including intermediate messages that only call tools.",
       ).length,
     ).toBeGreaterThan(0)
+  })
+})
+
+describe("ToolCallCheckForm tool option filtering", () => {
+  const mcp_set: ToolSetApiDescription = {
+    type: "mcp",
+    set_name: "MCP Server: demo",
+    tools: [
+      {
+        id: "mcp::remote::demo::search",
+        name: "Search",
+        description: "Search the web",
+        function_name: "search",
+      },
+    ],
+  }
+
+  const ai_models_set: ToolSetApiDescription = {
+    type: "sandbox_code",
+    set_name: "AI Models",
+    tools: [
+      {
+        id: "kiln_tool::llm",
+        name: "LLM",
+        description: "Call a model",
+        function_name: "llm",
+      },
+      {
+        id: "kiln_tool::llm_judge",
+        name: "LLM Judge",
+        description: "Judge with the eval schema",
+        function_name: "llm_judge",
+      },
+    ],
+  }
+
+  it("excludes the sandbox-only built-ins, keeping real agent tools", async () => {
+    available_tools.set({ proj_tcc: [ai_models_set, mcp_set] })
+
+    const { container } = render(ToolCallCheckForm, {
+      props: {
+        project_id: "proj_tcc",
+        properties: {
+          type: "tool_call_check" as const,
+          expected_tools: [{ tool_name: "", expected_args: null }],
+          match_mode: "all" as const,
+          on_unexpected_tools: "ignore" as const,
+        },
+      },
+    })
+
+    // Let the store subscription fire, then flush reactivity.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await tick()
+
+    // Neither sandbox built-in is an agent tool, so neither can appear in a trace.
+    expect(
+      container.querySelector('[data-testid="fancy-option-llm"]'),
+    ).toBeNull()
+    expect(
+      container.querySelector('[data-testid="fancy-option-llm_judge"]'),
+    ).toBeNull()
+    // A real agent tool is still offered.
+    expect(
+      container.querySelector('[data-testid="fancy-option-search"]'),
+    ).not.toBeNull()
   })
 })

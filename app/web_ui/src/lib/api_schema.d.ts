@@ -1996,6 +1996,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_default_judge_types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Default Judge Types
+         * @description Map of eval ID to its default judge's type discriminator.
+         *
+         *     V2 configs report their properties type (e.g. "code_eval",
+         *     "llm_judge"); legacy configs report their config_type (e.g. "g_eval").
+         *     Evals with no default judge are omitted. Used by the evals list to
+         *     display each eval's type without fetching every config.
+         */
+        get: operations["get_eval_default_judge_types_api_projects__project_id__tasks__task_id__eval_default_judge_types_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs": {
         parameters: {
             query?: never;
@@ -2109,6 +2134,29 @@ export interface paths {
         put?: never;
         /** Test V2 Eval Config */
         post: operations["test_v2_eval_api_projects__project_id__tasks__task_id__evals__eval_id__test_v2_eval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/test_v2_eval_draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test V2 Eval Config Draft
+         * @description Test a judge config for an eval that hasn't been created yet.
+         *
+         *     Builds a transient in-memory eval from the drafted output_scores so
+         *     the creation flow can test its judge before saving anything.
+         */
+        post: operations["test_v2_eval_draft_api_projects__project_id__tasks__task_id__test_v2_eval_draft_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4127,16 +4175,16 @@ export interface components {
             spec_type: "appropriate_tool_use";
             /** Core Requirement */
             core_requirement: string;
-            /** Tool Id */
-            tool_id: string;
-            /** Tool Function Name */
-            tool_function_name: string;
             /** Tool Use Guidelines */
             tool_use_guidelines: string;
             /** Appropriate Tool Use Examples */
             appropriate_tool_use_examples: string;
             /** Inappropriate Tool Use Examples */
             inappropriate_tool_use_examples: string;
+            /** Tool Id */
+            tool_id?: string;
+            /** Tool Function Name */
+            tool_function_name?: string;
         };
         /** ArgMatch */
         ArgMatch: {
@@ -4636,6 +4684,8 @@ export interface components {
             has_train_set: boolean;
             /** Model Is Supported */
             model_is_supported: boolean;
+            /** Unsupported Reason */
+            unsupported_reason?: string | null;
         };
         /**
          * CheckRunConfigResponse
@@ -4813,9 +4863,14 @@ export interface components {
             reference_keys: string[];
             /**
              * Timeout Seconds
-             * @default 30
+             * @default 180
              */
             timeout_seconds: number;
+            /**
+             * Tool Allowlist
+             * @description Explicit per-tool allowlist of tools the scorer code may call.
+             */
+            tool_allowlist?: string[];
         };
         /** CodeToolArchiveRequest */
         CodeToolArchiveRequest: {
@@ -5133,14 +5188,14 @@ export interface components {
             template?: components["schemas"]["EvalTemplateId"] | null;
             /**
              * Output Scores
-             * @description The scores this evaluator should produce.
+             * @description The scores this evaluator should produce. When omitted, a pass/fail score named after the eval is generated.
              */
-            output_scores: components["schemas"]["EvalOutputScore"][];
+            output_scores?: components["schemas"]["EvalOutputScore"][] | null;
             /**
              * Eval Set Filter Id
-             * @description The dataset filter for the eval set.
+             * @description The dataset filter for the eval set. When omitted, tag-based eval/train/golden filters are generated from the eval name, matching what spec-backed evals get.
              */
-            eval_set_filter_id: string;
+            eval_set_filter_id?: string | null;
             /**
              * Eval Configs Filter Id
              * @description The dataset filter for comparing eval configs.
@@ -5155,6 +5210,16 @@ export interface components {
             } | null;
             /** @description The type of task output to evaluate. */
             evaluation_data_type: components["schemas"]["EvalDataType"];
+            /**
+             * @description The priority of the eval.
+             * @default 1
+             */
+            priority: components["schemas"]["Priority"];
+            /**
+             * @description The status of the eval.
+             * @default active
+             */
+            status: components["schemas"]["EvalStatus"];
         };
         /** CreateExtractorConfigRequest */
         CreateExtractorConfigRequest: {
@@ -5304,15 +5369,15 @@ export interface components {
              */
             system_prompt?: string | null;
             /**
+             * Judge Instructions
+             * @description User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.
+             */
+            judge_instructions?: string[] | null;
+            /**
              * Name
              * @description The name of the eval config.
              */
             name?: string | null;
-            /**
-             * Reference Keys
-             * @description Reference data keys this judge needs (captured from test).
-             */
-            reference_keys?: string[];
         };
         /**
          * CreateMcpRunConfigRequest
@@ -5949,6 +6014,11 @@ export interface components {
             judge_prompt: string;
             /** System Prompt */
             system_prompt: string;
+            /**
+             * Reference Keys
+             * @description Reference data keys the server will require of a judge for this eval, derived the same way `create_llm_judge_config` derives them. Returned so the builder can offer a place to supply them when testing, rather than re-deriving the rule client-side from the prompt's text.
+             */
+            reference_keys?: string[];
         };
         /**
          * DeleteConfigResponse
@@ -6289,6 +6359,10 @@ export interface components {
              * @default false
              */
             favourite: boolean;
+            /** @description The priority of the eval. None on evals created before priority lived on evals; read through resolved_priority(), which falls back to the associated spec. */
+            priority?: components["schemas"]["Priority"] | null;
+            /** @description The status of the eval. None on evals created before status lived on evals; read through resolved_status(), which falls back to the associated spec. */
+            status?: components["schemas"]["EvalStatus"] | null;
             /**
              * Template Properties
              * @description Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.
@@ -6785,13 +6859,6 @@ export interface components {
              */
             eval_input_id?: string | null;
             /**
-             * Reference Data
-             * @description Structured reference data from EvalInput.reference, used by V2 eval types.
-             */
-            reference_data?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            } | null;
-            /**
              * Skipped Reason
              * @description If set, this run was skipped. Stored as str for back/forward-compat; conventionally a SkippedReason value.
              */
@@ -6853,10 +6920,18 @@ export interface components {
             task_run_usage: components["schemas"]["Usage"] | null;
         };
         /**
+         * EvalStatus
+         * @description Lifecycle status of an eval (and, historically, of a spec).
+         * @enum {string}
+         */
+        EvalStatus: "active" | "future" | "deprecated" | "archived";
+        /**
          * EvalTaskInput
          * @description The runtime data bundle passed to V2 evaluators.
          *
-         *     Assembled by the eval runner from an EvalInput and a task run result.
+         *     Assembled by the eval runner from the item being evaluated and the task run that
+         *     was scored. The item is either an EvalInput or a TaskRun drawn from the dataset;
+         *     which one it is determines where `reference_data` and `task_input` come from.
          */
         EvalTaskInput: {
             /**
@@ -6873,7 +6948,7 @@ export interface components {
             }[] | null;
             /**
              * Reference Data
-             * @description Reference/ground-truth data from EvalInput.reference.
+             * @description Ground-truth data for the item being evaluated, keyed by reference name. Taken from EvalInput.reference for an EvalInput-backed item; for a TaskRun-backed dataset item it is the item's own stored output under the key 'reference_answer', since that output is the curated answer. None when a TaskRun is scored as itself (judge calibration), where the item and the scored run are the same record.
              */
             reference_data?: {
                 [key: string]: components["schemas"]["JsonValue"];
@@ -8575,6 +8650,11 @@ export interface components {
              * @description Override the judge system prompt. Defaults to 'You are an evaluator.'
              */
             system_prompt?: string | null;
+            /**
+             * Judge Instructions
+             * @description User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.
+             */
+            judge_instructions?: string[] | null;
         };
         /** LlmJudgeProperties */
         LlmJudgeProperties: {
@@ -8603,6 +8683,8 @@ export interface components {
              * @default false
              */
             g_eval: boolean;
+            /** Judge Instructions */
+            judge_instructions?: string[] | null;
         };
         /** LocalServerProperties */
         LocalServerProperties: {
@@ -10671,7 +10753,7 @@ export interface components {
              * @description The status of the spec.
              * @default active
              */
-            status: components["schemas"]["SpecStatus"];
+            status: components["schemas"]["EvalStatus"];
             /**
              * Tags
              * @description The tags of the spec.
@@ -10733,7 +10815,7 @@ export interface components {
              * @description The status of the spec.
              * @default active
              */
-            status: components["schemas"]["SpecStatus"];
+            status: components["schemas"]["EvalStatus"];
             /**
              * Tags
              * @description The tags of the spec.
@@ -10761,12 +10843,6 @@ export interface components {
              */
             target_specification: string;
         };
-        /**
-         * SpecStatus
-         * @description Defines the status of a spec.
-         * @enum {string}
-         */
-        SpecStatus: "active" | "future" | "deprecated" | "archived";
         /**
          * SpecificationInput
          * @description The specification to refine.
@@ -11841,6 +11917,27 @@ export interface components {
             duration_ms: number;
         };
         /**
+         * TestV2EvalDraftRequest
+         * @description Request to test-run a V2 eval config for an eval that doesn't exist yet.
+         *
+         *     Used by the creation flow, where the eval (and its scores) are still being
+         *     drafted; the server builds a transient in-memory eval from output_scores.
+         */
+        TestV2EvalDraftRequest: {
+            /**
+             * Properties
+             * @description The V2 eval config properties to test.
+             */
+            properties: components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"];
+            /**
+             * Output Scores
+             * @description The scores the drafted eval will declare; returned scores are validated against them.
+             */
+            output_scores: components["schemas"]["EvalOutputScore"][];
+            /** @description The input to evaluate. */
+            eval_input: components["schemas"]["EvalTaskInput"];
+        };
+        /**
          * TestV2EvalRequest
          * @description Request to test-run a V2 eval config without persisting.
          */
@@ -11874,6 +11971,11 @@ export interface components {
             intermediate_outputs?: {
                 [key: string]: string;
             } | null;
+            /**
+             * Tool Call Log
+             * @description Tools the scorer code called, in call order. Code evals only.
+             */
+            tool_call_log?: components["schemas"]["ToolCallLogEntryResponse"][];
         };
         /**
          * TestWriteAccessRequest
@@ -11965,7 +12067,10 @@ export interface components {
             /** Requiresapproval */
             requiresApproval: boolean;
         };
-        /** ToolCallLogEntryResponse */
+        /**
+         * ToolCallLogEntryResponse
+         * @description One nested tool call a sandboxed run made, as reported to a test pane.
+         */
         ToolCallLogEntryResponse: {
             /** Tool Name */
             tool_name: string;
@@ -12029,7 +12134,7 @@ export interface components {
          * ToolSetType
          * @enum {string}
          */
-        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin" | "code";
+        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin" | "code" | "sandbox_code";
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.
@@ -12135,6 +12240,10 @@ export interface components {
              * @description The updated description.
              */
             description?: string | null;
+            /** @description The updated priority. */
+            priority?: components["schemas"]["Priority"] | null;
+            /** @description The updated status. */
+            status?: components["schemas"]["EvalStatus"] | null;
             /**
              * Train Set Filter Id
              * @description The updated train set filter ID.
@@ -12222,7 +12331,7 @@ export interface components {
             /** @description The updated priority. */
             priority?: components["schemas"]["Priority"] | null;
             /** @description The updated status. */
-            status?: components["schemas"]["SpecStatus"] | null;
+            status?: components["schemas"]["EvalStatus"] | null;
             /**
              * Tags
              * @description The updated tags.
@@ -17198,6 +17307,42 @@ export interface operations {
             };
         };
     };
+    get_eval_default_judge_types_api_projects__project_id__tasks__task_id__eval_default_judge_types_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_eval_configs_api_projects__project_id__tasks__task_id__evals__eval_id__eval_configs_get: {
         parameters: {
             query?: never;
@@ -17445,6 +17590,44 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TestV2EvalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestV2EvalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_v2_eval_draft_api_projects__project_id__tasks__task_id__test_v2_eval_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestV2EvalDraftRequest"];
             };
         };
         responses: {

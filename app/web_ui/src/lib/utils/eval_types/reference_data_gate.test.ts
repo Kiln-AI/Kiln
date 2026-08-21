@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   uses_reference_data_llm_judge,
   uses_reference_data_code_eval,
+  reference_keys_in_llm_judge_prompt,
 } from "./reference_data_gate"
 
 describe("uses_reference_data_llm_judge", () => {
@@ -159,5 +160,48 @@ describe("uses_reference_data_code_eval", () => {
     val = reference_data["key"]
     return {"q": 1.0}`
     expect(uses_reference_data_code_eval(code)).toBe(true)
+  })
+})
+
+describe("reference_keys_in_llm_judge_prompt", () => {
+  it("names the key a backend-baked reference-answer judge requires", () => {
+    // The exact name the tester has to type: anything else skips the run with
+    // missing_reference_key, which costs a round-trip to find out.
+    expect(
+      reference_keys_in_llm_judge_prompt(
+        "<reference_answer>\n{{ reference_data.reference_answer }}\n</reference_answer>",
+      ),
+    ).toEqual(["reference_answer"])
+  })
+
+  it("reads bracket lookups too", () => {
+    expect(
+      reference_keys_in_llm_judge_prompt(
+        "{{ reference_data['expected'] }} {{ reference_data[\"topic\"] }}",
+      ),
+    ).toEqual(["expected", "topic"])
+  })
+
+  it("keeps first-appearance order and drops duplicates", () => {
+    expect(
+      reference_keys_in_llm_judge_prompt(
+        "{{ reference_data.b }} {{ reference_data.a }} {{ reference_data.b }}",
+      ),
+    ).toEqual(["b", "a"])
+  })
+
+  it("does not offer dict methods as key names", () => {
+    // A hand-written prompt may guard its own lookups; `get` is not something the
+    // tester should be told to type.
+    expect(
+      reference_keys_in_llm_judge_prompt("{{ reference_data.get('answer') }}"),
+    ).toEqual(["answer"])
+  })
+
+  it("returns nothing for a prompt that reads no reference data", () => {
+    expect(
+      reference_keys_in_llm_judge_prompt("Rate {{ final_message }}"),
+    ).toEqual([])
+    expect(reference_keys_in_llm_judge_prompt("")).toEqual([])
   })
 })

@@ -23,8 +23,13 @@
   import PropertyList from "$lib/ui/property_list.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
   import { getDetailedModelNameFromParts } from "$lib/utils/run_config_formatters"
+  import {
+    eval_type_display,
+    judge_type_from_config,
+  } from "$lib/utils/eval_types/eval_type_display"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { tagFromFilterId, linkFromFilterId } from "../../spec_utils"
+  import { available_tools, load_available_tools } from "$lib/stores"
   import {
     eval_split,
     eval_split_filter_id,
@@ -71,6 +76,9 @@
     await tick()
     load_model_info()
     load_available_models()
+    // Used to map a tool_call_check judge's tool names to a tool id when
+    // launching the add-data flow.
+    load_available_tools(req_project_id)
     await Promise.all([
       get_spec(req_project_id, req_task_id, req_spec_id),
       get_eval(req_project_id, req_task_id, req_eval_id),
@@ -241,6 +249,7 @@
 
   function get_eval_properties(
     evaluator: Eval | null,
+    spec: Spec | null,
     eval_progress: EvalProgress | null,
     modelInfo: ProviderModels | null,
   ): UiProperty[] {
@@ -259,13 +268,15 @@
         value: evaluator.description,
       })
     }
-    if (evaluator.template) {
-      properties.push({
-        name: "Template",
-        value: evaluator.template,
-        tooltip: "The template used to create this eval.",
-      })
-    }
+    properties.push({
+      name: "Type",
+      value: eval_type_display(
+        spec,
+        evaluator,
+        judge_type_from_config(eval_progress?.current_eval_method),
+      ),
+      tooltip: "The judge type scoring this eval, and what it checks.",
+    })
     if (evaluator.evaluation_data_type === "full_trace") {
       properties.push({
         name: "Conversation History",
@@ -405,6 +416,13 @@
     | "unknown" = "unknown"
   let required_more_eval_data = false
   let required_more_golden_data = false
+  // Steps jumped over by picking a default judge without completing them.
+  // Rendered distinctly in the stepper so they don't read as completed.
+  let skipped_steps: Set<number> = new Set()
+  // Steps done but below the recommended amount (e.g. some eval data, fewer
+  // than the suggested minimum). Rendered like the current step (dot instead
+  // of a check) to signal there's more worth doing.
+  let partial_steps: Set<number> = new Set()
   let goals: string[] = []
   let golden_dataset_explanation = ""
 
@@ -484,6 +502,8 @@
     update_golden_dataset_explanation(progress)
     current_step = 1
     current_step_id = "goals"
+    skipped_steps = new Set()
+    partial_steps = new Set()
     if (!progress || !evaluator) {
       return
     }
@@ -494,10 +514,38 @@
       goals.push(output.name + " (" + output.type + ")")
     }
 
-    if (has_default_eval_config) {
-      // Not everything is technically setup but the user bypassed recommended steps
-      // And selected a default judge. So we can just set to the final step.
-      current_step = 5
+    if (has_default_eval_config && progress.dataset_size > 0) {
+      // The user bypassed the recommended steps by selecting a default judge,
+      // so the final step is available — but any bypassed step renders as
+      // "skipped", not completed, so it's clear the judge was never validated
+      // against human ratings. An empty eval set still means there is nothing
+      // to run, so that case falls through to the eval-data step instead
+      // (common for non-LLM judges, which are set as the default judge at
+      // creation time).
+      const skipped = new Set<number>()
+      const partial = new Set<number>()
+      // The dataset minimum is a recommendation: with at least one item the
+      // step was genuinely done, so below-minimum renders as partial (hollow
+      // circle), never skipped.
+      required_more_eval_data = progress.dataset_size < MIN_DATASET_SIZE
+      required_more_golden_data =
+        evaluator?.template !== "rag" &&
+        progress.golden_dataset_size < MIN_GOLDEN_DATASET_SIZE
+      if (required_more_eval_data || required_more_golden_data) {
+        partial.add(2)
+      }
+      if (evaluator?.template === "rag") {
+        current_step = 3
+      } else {
+        if (golden_dataset_explanation) {
+          // Human ratings are incomplete. The judge step still shows as done:
+          // a default judge is set, which is what that step establishes.
+          skipped.add(3)
+        }
+        current_step = 5
+      }
+      skipped_steps = skipped
+      partial_steps = partial
       current_step_id = "compare_run_configs"
       return
     }
@@ -581,16 +629,16 @@
       return
     }
     const test_filter_id = task_run_split_filter_id(evaluator, "test")
-    const eval_tag = test_filter_id
+    const test_tag = test_filter_id
       ? tagFromFilterId(test_filter_id)
       : undefined
     let golden_tag: string | undefined = undefined
     if (evaluator?.eval_configs_filter_id) {
       golden_tag = tagFromFilterId(evaluator.eval_configs_filter_id)
     }
-    if (!eval_tag || (evaluator.template !== "rag" && !golden_tag)) {
+    if (!test_tag || (evaluator.template !== "rag" && !golden_tag)) {
       alert(
-        "No eval or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
+        "No test or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
       )
       return
     }
@@ -614,25 +662,63 @@
       params.set("splits", splits_param)
     }
 
-    // Add tool_id for tool call evals
-    // Spec uses different keys than legacy eval template_properties
-    // Spec: tool_function_name, Legacy: tool
+    // Add tool_id for tool call evals so generation can enable the tool.
+    // Each era keeps it somewhere different: appropriate_tool_use specs store
+    // tool_id, legacy tool_call-template evals store it in
+    // template_properties, and new-style tool evals (template-less, scored by
+    // the tool_call_check judge) list tool function names on the judge.
+    let tool_id: string | undefined = undefined
     if (evaluator.template === "tool_call") {
       const spec_properties = spec?.properties
-      let tool_id: string | undefined = undefined
       if (spec_properties?.spec_type === "appropriate_tool_use") {
         tool_id = spec_properties?.tool_id
       } else {
         tool_id = evaluator.template_properties?.tool_id as string | undefined
       }
-      if (tool_id) {
-        params.set("tool_id", String(tool_id))
-      }
+    } else {
+      tool_id = tool_id_from_judge()
+    }
+    if (tool_id) {
+      params.set("tool_id", String(tool_id))
     }
 
     const url = `/dataset/${project_id}/${task_id}/add_data?${params.toString()}`
     show_progress_ui("When you're done adding data, ", 2)
     goto(url)
+  }
+
+  // The tool id for the first expected tool of a tool_call_check default
+  // judge, resolved by function name from the project's available tools.
+  // Undefined for other judge types, unknown tools, or before tools load —
+  // the add-data flow works without it, the tool just isn't pre-enabled.
+  function tool_id_from_judge(): string | undefined {
+    const judge_properties = eval_progress?.current_eval_method?.properties as
+      | Record<string, unknown>
+      | null
+      | undefined
+    if (judge_properties?.["type"] !== "tool_call_check") {
+      return undefined
+    }
+    const expected_tools = judge_properties["expected_tools"]
+    if (!Array.isArray(expected_tools) || expected_tools.length === 0) {
+      return undefined
+    }
+    const first = expected_tools[0]
+    const function_name =
+      first && typeof first === "object"
+        ? (first as { tool_name?: unknown }).tool_name
+        : undefined
+    if (typeof function_name !== "string" || !function_name) {
+      return undefined
+    }
+    for (const tool_set of $available_tools[project_id] ?? []) {
+      for (const tool of tool_set.tools) {
+        if ((tool.function_name ?? tool.name) === function_name) {
+          return tool.id
+        }
+      }
+    }
+    return undefined
   }
 
   function show_progress_ui(body: string, step: number) {
@@ -730,12 +816,18 @@
               {@const step_title = step_titles(evaluator)[step - 1]}
               {@const step_id = step_id_from_title(step_title)}
               <li
-                class="step {current_step >= step ? 'step-primary' : ''}"
-                data-content={current_step == step
-                  ? "●"
-                  : current_step > step
-                    ? "✓"
-                    : ""}
+                class="step {skipped_steps.has(step)
+                  ? ''
+                  : current_step >= step
+                    ? 'step-primary'
+                    : ''}"
+                data-content={skipped_steps.has(step)
+                  ? "–"
+                  : partial_steps.has(step) || current_step == step
+                    ? "●"
+                    : current_step > step
+                      ? "✓"
+                      : ""}
               >
                 <div
                   class="text-left py-3 min-h-[100px] flex flex-col place-content-center pl-4"
@@ -883,6 +975,7 @@
           <PropertyList
             properties={get_eval_properties(
               evaluator,
+              spec,
               eval_progress,
               $model_info,
             )}

@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.basemodel import KilnParentModel, ReadOnlyMutationError
+from kiln_ai.datamodel.datamodel_enums import EvalStatus, Priority
 from kiln_ai.datamodel.eval import (
     LEGACY_TRACE_FIELDS,
     SCORER_CODE_FILENAME,
@@ -40,6 +41,8 @@ from kiln_ai.datamodel.eval import (
     reference_data_keys,
     validate_scores_against_output_scores,
 )
+from kiln_ai.datamodel.spec import Spec
+from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.task_output import TaskOutput, TaskOutputRatingType
 from kiln_ai.datamodel.task_run import TaskRun
@@ -2498,15 +2501,40 @@ class TestEvalTaskInputFromTrace:
         assert result.task_input == "2+2?"
 
     def test_from_a_task_run_source(self, trace):
-        item = TaskRun(input="the dataset input", output=TaskOutput(output="old"))
+        item = TaskRun(
+            input="the dataset input", output=TaskOutput(output="the curated answer")
+        )
 
         result = EvalTaskInput.from_trace(trace, item)
 
         assert result.final_message == "what the model said"
-        assert result.reference_data is None
+        # A TaskRun-backed dataset item stores the curated answer as its output, so it
+        # is the ground truth the judge compares the trace against.
+        assert result.reference_data == {"reference_answer": "the curated answer"}
         # No separate statement of the input exists for a TaskRun-backed item, so the
         # trace's own input is what was actually scored.
         assert result.task_input == "what the model saw"
+
+    def test_a_task_run_scored_as_itself_has_no_reference(self, trace):
+        """Calibration scores the golden item as itself: a reference populated there
+        would be byte-identical to final_message, and every judge would pass."""
+        result = EvalTaskInput.from_trace(trace, trace)
+
+        assert result.final_message == "what the model said"
+        assert result.reference_data is None
+
+    def test_from_task_run_has_no_reference(self, trace):
+        """`from_task_run` is `from_trace(run, run)`, so one identity check covers it."""
+        assert EvalTaskInput.from_task_run(trace).reference_data is None
+
+    def test_an_equal_but_distinct_source_still_populates(self, trace):
+        """The carve-out is identity, not equality: a separate item that happens to
+        match the trace is still a real dataset item with a real reference answer."""
+        twin = trace.model_copy(deep=True)
+
+        assert EvalTaskInput.from_trace(trace, twin).reference_data == {
+            "reference_answer": "what the model said"
+        }
 
     def test_existing_constructors_are_from_trace(self, trace):
         """The two named constructors are the two shapes of `from_trace`."""
@@ -2731,7 +2759,8 @@ class TestCodeEvalPropertiesValidation:
     def test_valid_code(self):
         props = CodeEvalProperties(code=self.VALID_CODE)
         assert props.code == self.VALID_CODE
-        assert props.timeout_seconds == 30
+        # 180, not 30: the default has to cover nested LLM calls from score().
+        assert props.timeout_seconds == 180
 
     def test_custom_timeout(self):
         props = CodeEvalProperties(code=self.VALID_CODE, timeout_seconds=120)
@@ -2773,6 +2802,58 @@ class TestCodeEvalPropertiesValidation:
         props = CodeEvalProperties(code=code)
         assert props.code == code
 
+    def test_default_tool_allowlist_is_empty(self):
+        props = CodeEvalProperties(code=self.VALID_CODE)
+        assert props.tool_allowlist == []
+
+    def test_valid_tool_allowlist(self):
+        props = CodeEvalProperties(
+            code=self.VALID_CODE,
+            tool_allowlist=[
+                "kiln_tool::llm",
+                "kiln_tool::llm_judge",
+                "mcp::remote::server1::tool1",
+            ],
+        )
+        assert len(props.tool_allowlist) == 3
+
+    def test_tool_allowlist_rejects_skill_ids(self):
+        with pytest.raises(ValidationError, match="Skill tool IDs cannot"):
+            CodeEvalProperties(
+                code=self.VALID_CODE,
+                tool_allowlist=["kiln_tool::skill::some_skill"],
+            )
+
+    def test_tool_allowlist_rejects_unmanaged_ids(self):
+        with pytest.raises(ValidationError, match="Unmanaged tool IDs cannot"):
+            CodeEvalProperties(
+                code=self.VALID_CODE,
+                tool_allowlist=["kiln_unmanaged::some_tool"],
+            )
+
+    def test_tool_allowlist_rejects_duplicates(self):
+        with pytest.raises(ValidationError, match="Duplicate tool ID"):
+            CodeEvalProperties(
+                code=self.VALID_CODE,
+                tool_allowlist=["kiln_tool::llm", "kiln_tool::llm"],
+            )
+
+    def test_tool_allowlist_rejects_invalid_tool_id(self):
+        with pytest.raises(ValidationError, match="Invalid tool ID"):
+            CodeEvalProperties(
+                code=self.VALID_CODE,
+                tool_allowlist=["not_a_valid_tool_id"],
+            )
+
+    def test_tool_allowlist_allows_self_referential_code_tool_id(self):
+        # A code eval is not itself a tool, so the CodeTool self-reference check
+        # is intentionally omitted — any valid code tool ID is allowed.
+        props = CodeEvalProperties(
+            code=self.VALID_CODE,
+            tool_allowlist=["kiln_tool::code::123456789012"],
+        )
+        assert props.tool_allowlist == ["kiln_tool::code::123456789012"]
+
 
 # ── V1 Coexistence Regression Guards ─────────────────────────────────
 
@@ -2787,7 +2868,6 @@ class TestV1EvalRunCoexistence:
             scores={"accuracy": 1.0},
         )
         assert run.eval_input_id is None
-        assert run.reference_data is None
         assert run.skipped_reason is None
         assert run.skipped_detail is None
 
@@ -2830,7 +2910,6 @@ class TestV1EvalRunCoexistence:
         loaded = EvalRun.load_from_file(str(run.path))
         assert loaded.dataset_id == "ds1"
         assert loaded.eval_input_id is None
-        assert loaded.reference_data is None
         assert loaded.skipped_reason is None
         assert loaded.skipped_detail is None
         assert loaded.scores == {"acc": 0.8}
@@ -2895,6 +2974,26 @@ class TestV1EvalRunCoexistence:
         assert loaded.task_run_usage is not None
         assert loaded.task_run_usage.total_tokens == 7
         assert loaded.scores == {"accuracy": 1.0}
+
+    def test_retired_reference_data_key_loads_and_is_dropped(self):
+        """`reference_data` was declared on EvalRun on an unreleased branch and never
+        shipped, so it was deleted outright rather than deprecated. Dev-build files
+        that carry it must still load: EvalRun sets no `extra=` override, so pydantic's
+        default `extra="ignore"` drops the key rather than rejecting the record."""
+        run = EvalRun.model_validate(
+            {
+                "dataset_id": "ds1",
+                "task_run_config_id": "rc1",
+                "input": "What is 2+2?",
+                "output": "4",
+                "scores": {"accuracy": 1.0},
+                "reference_data": {"expected": "4"},
+            }
+        )
+
+        assert not hasattr(run, "reference_data")
+        assert "reference_data" not in run.model_dump()
+        assert run.scores == {"accuracy": 1.0}
 
 
 class TestV1EvalConfigCoexistence:
@@ -3557,6 +3656,93 @@ class TestEvalReferenceDataKeys:
         )
         eval_obj = self._make_eval_with_configs([p1, p2])
         assert eval_obj.eval_reference_data_keys() == ["b", "a", "c"]
+
+
+class TestEvalPriorityStatusResolution:
+    """Priority/status live on the eval, falling back to the associated spec
+    for evals created before that (legacy files), then to defaults."""
+
+    def _make_eval(self, **kwargs) -> Eval:
+        return Eval(
+            name="Resolution Eval",
+            eval_set_filter_id="tag::tag1",
+            eval_configs_filter_id="tag::tag2",
+            output_scores=[
+                EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
+            ],
+            **kwargs,
+        )
+
+    def test_fields_default_to_none_and_resolve_to_defaults(self):
+        eval = self._make_eval()
+        assert eval.priority is None
+        assert eval.status is None
+        assert eval.resolved_priority() == Priority.p1
+        assert eval.resolved_status() == EvalStatus.active
+
+    def test_own_values_win(self, mock_task, tmp_path):
+        mock_task.path = tmp_path / "task.kiln"
+        mock_task.save_to_file()
+
+        eval = self._make_eval(
+            parent=mock_task, priority=Priority.p0, status=EvalStatus.deprecated
+        )
+        eval.save_to_file()
+        spec = Spec(
+            name="Backing Spec",
+            definition="definition",
+            properties=DesiredBehaviourProperties(
+                spec_type=SpecType.desired_behaviour,
+                desired_behaviour_description="be nice",
+            ),
+            priority=Priority.p3,
+            status=EvalStatus.archived,
+            eval_id=eval.id,
+            parent=mock_task,
+        )
+        spec.save_to_file()
+
+        assert eval.resolved_priority() == Priority.p0
+        assert eval.resolved_status() == EvalStatus.deprecated
+
+    def test_falls_back_to_spec(self, mock_task, tmp_path):
+        mock_task.path = tmp_path / "task.kiln"
+        mock_task.save_to_file()
+
+        eval = self._make_eval(parent=mock_task)
+        eval.save_to_file()
+        spec = Spec(
+            name="Backing Spec",
+            definition="definition",
+            properties=DesiredBehaviourProperties(
+                spec_type=SpecType.desired_behaviour,
+                desired_behaviour_description="be nice",
+            ),
+            priority=Priority.p2,
+            status=EvalStatus.future,
+            eval_id=eval.id,
+            parent=mock_task,
+        )
+        spec.save_to_file()
+
+        # Resolved via a task scan, and via an explicitly passed spec
+        assert eval.resolved_priority() == Priority.p2
+        assert eval.resolved_status() == EvalStatus.future
+        assert eval.resolved_priority(spec) == Priority.p2
+        assert eval.resolved_status(spec) == EvalStatus.future
+
+    def test_round_trips_through_file(self, mock_task, tmp_path):
+        mock_task.path = tmp_path / "task.kiln"
+        mock_task.save_to_file()
+
+        eval = self._make_eval(
+            parent=mock_task, priority=Priority.p2, status=EvalStatus.future
+        )
+        eval.save_to_file()
+
+        loaded = Eval.load_from_file(str(eval.path))
+        assert loaded.priority == Priority.p2
+        assert loaded.status == EvalStatus.future
 
 
 class TestEvalSplits:

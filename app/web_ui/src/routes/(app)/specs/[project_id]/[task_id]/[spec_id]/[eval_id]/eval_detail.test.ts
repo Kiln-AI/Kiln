@@ -120,6 +120,13 @@ vi.mock("$lib/stores", () => ({
   load_model_info: vi.fn(),
   model_name: () => "",
   load_available_models: vi.fn(),
+  available_tools: {
+    subscribe: (fn: (v: Record<string, never>) => void) => {
+      fn({})
+      return () => {}
+    },
+  },
+  load_available_tools: vi.fn(),
 }))
 
 vi.mock("$lib/stores/progress_ui_store", () => ({
@@ -582,7 +589,7 @@ describe("eval detail page — add eval data", () => {
     })
 
     expect(await alert_from_add_eval_data()).toEqual([
-      "No eval or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
+      "No test or golden dataset tag found. If you're using a custom filter, please setup the dataset manually.",
     ])
     expect(mockGoto).not.toHaveBeenCalled()
   })
@@ -621,6 +628,51 @@ describe("eval detail page — eval data goals", () => {
   })
 
   it("asks for more golden data below 12", async () => {
+    setProgressResponse(progress(25, 11))
+
+    const text = visible_text(await render_page())
+
+    expect(text).toContain(
+      "You require additional eval data. You only have 11 golden items. We suggest at least 12 items.",
+    )
+  })
+
+  it("holds golden to the same 12 once a default judge is set", async () => {
+    // A default judge sends this step down a second branch, and that branch used to
+    // measure golden against the test set's 25 while the copy under it named 12. Every
+    // eval with a judge and 12-24 golden items read "You only have 18 golden items. We
+    // suggest at least 12 golden items." -- a bar it had already cleared.
+    setEvalResponse({
+      id: "eval1",
+      name: "Test Eval",
+      eval_set_filter_id: "tag::test",
+      eval_configs_filter_id: "tag::golden",
+      eval_configs: [],
+      output_scores: [{ name: "accuracy", type: "five_star" }],
+      current_config_id: "eval_config1",
+    })
+    setProgressResponse(progress(25, 12))
+
+    const text = visible_text(await render_page())
+
+    expect(text).toContain(
+      "You have 25 test dataset items and 12 golden items.",
+    )
+    expect(text).not.toContain("You require additional eval data")
+  })
+
+  it("still asks for more golden data below 12 once a default judge is set", async () => {
+    // The pair that pins the branch above to the golden goal rather than to no check at
+    // all.
+    setEvalResponse({
+      id: "eval1",
+      name: "Test Eval",
+      eval_set_filter_id: "tag::test",
+      eval_configs_filter_id: "tag::golden",
+      eval_configs: [],
+      output_scores: [{ name: "accuracy", type: "five_star" }],
+      current_config_id: "eval_config1",
+    })
     setProgressResponse(progress(25, 11))
 
     const text = visible_text(await render_page())

@@ -5,10 +5,20 @@ from dataclasses import replace
 from typing import Annotated, Any, Dict, List, Set, Tuple, Type, TypeVar
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
-from pydantic import ValidationError
 from fastapi.responses import StreamingResponse
+from kiln_ai.adapters.eval.base_eval import (
+    DEFAULT_SYSTEM_PROMPT,
+    build_default_llm_judge_prompt,
+    derived_reference_keys,
+    materialize_llm_judge_properties,
+)
 from kiln_ai.adapters.eval.eval_runner import EvalRunner, no_golden_set_message
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
+from kiln_ai.adapters.eval.v2_eval_code_eval import (
+    CodeEvalAdapter,
+    add_code_trust,
+    has_add_code_trust,
+)
 from kiln_ai.adapters.fine_tune.finetune_run_config_id import (
     finetune_from_finetune_run_config_id,
     finetune_run_config_id,
@@ -16,20 +26,18 @@ from kiln_ai.adapters.fine_tune.finetune_run_config_id import (
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import BasePrompt, Task, TaskRun
-from kiln_ai.datamodel.basemodel import ID_TYPE, KilnParentedModel
+from kiln_ai.datamodel.basemodel import (
+    ID_TYPE,
+    FilenameStringShort,
+    KilnParentedModel,
+)
+from kiln_ai.datamodel.datamodel_enums import (
+    EvalStatus,
+    Priority,
+)
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
-from kiln_ai.adapters.eval.base_eval import (
-    DEFAULT_SYSTEM_PROMPT,
-    build_default_llm_judge_prompt,
-    materialize_llm_judge_properties,
-)
-from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
-from kiln_ai.adapters.eval.v2_eval_code_eval import (
-    CodeEvalAdapter,
-    add_code_trust,
-    has_add_code_trust,
-)
 from kiln_ai.datamodel.eval import (
+    V2_PROPERTY_TYPES,
     CodeEvalProperties,
     Eval,
     EvalConfig,
@@ -45,8 +53,10 @@ from kiln_ai.datamodel.eval import (
     MultiTurnSyntheticEvalInputData,
     SingleTurnEvalInputData,
     SkippedReason,
+    SplitRef,
     TaskRunSplit,
     V2EvalConfigProperties,
+    reference_data_keys,
     validate_scores_against_output_scores,
 )
 from kiln_ai.datamodel.eval_splits import (
@@ -60,12 +70,15 @@ from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
 from kiln_ai.datamodel.prompt_type import generator_label
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.spec import SpecStatus
+from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.datamodel.usage import Usage
+from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_ai.utils.open_ai_types import serialize_trace
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
@@ -74,7 +87,15 @@ from kiln_server.utils.agent_checks.policy import (
     DENY_AGENT,
     agent_policy_require_approval,
 )
-from pydantic import BaseModel, Field
+from kiln_server.utils.spec_utils import (
+    eval_pass_fail_output_score,
+    generate_spec_eval_tags,
+    spec_eval_splits,
+    tag_filter_id,
+)
+from pydantic import BaseModel, Field, ValidationError
+
+from app.desktop.studio_server.code_tool_api import ToolCallLogEntryResponse
 
 from .correlation_calculator import (
     CorrelationCalculator,
@@ -124,6 +145,19 @@ def eval_from_id(project_id: str, task_id: str, eval_id: str) -> Eval:
         status_code=404,
         detail=f"Eval not found. ID: {eval_id}",
     )
+
+
+def resolve_eval_display_fields(eval: Eval, spec: Spec | None = None) -> Eval:
+    """Fill priority/status with their resolved values for API responses.
+
+    Priority/status live on the eval, but evals created before that carry None
+    and fall through to their spec. Responses always return concrete values so
+    the UI never re-implements the fallthrough. Mutates the request-scoped
+    instance without saving, so legacy files stay untouched.
+    """
+    eval.priority = eval.resolved_priority(spec)
+    eval.status = eval.resolved_status(spec)
+    return eval
 
 
 def eval_config_from_id(
@@ -215,18 +249,24 @@ async def run_eval_runner_with_status(eval_runner: EvalRunner) -> StreamingRespo
 class CreateEvaluatorRequest(BaseModel):
     """Request to create a new evaluator."""
 
-    name: str = Field(description="The name of the evaluator.")
+    # FilenameStringShort (not the longer FilenameString): the generated
+    # default output score is named after the eval and score names cap at 32
+    # chars, so longer names must 422 here rather than 500 in the handler.
+    name: FilenameStringShort = Field(description="The name of the evaluator.")
     description: str | None = Field(
         default=None, description="The description of the evaluator."
     )
     template: EvalTemplateId | None = Field(
         default=None, description="The eval template to use."
     )
-    output_scores: list[EvalOutputScore] = Field(
-        description="The scores this evaluator should produce."
+    output_scores: list[EvalOutputScore] | None = Field(
+        default=None,
+        min_length=1,
+        description="The scores this evaluator should produce. When omitted, a pass/fail score named after the eval is generated.",
     )
-    eval_set_filter_id: DatasetFilterId = Field(
-        description="The dataset filter for the eval set."
+    eval_set_filter_id: DatasetFilterId | None = Field(
+        default=None,
+        description="The dataset filter for the eval set. When omitted, tag-based eval/train/golden filters are generated from the eval name, matching what spec-backed evals get.",
     )
     eval_configs_filter_id: DatasetFilterId | None = Field(
         default=None, description="The dataset filter for comparing eval configs."
@@ -236,6 +276,12 @@ class CreateEvaluatorRequest(BaseModel):
     )
     evaluation_data_type: EvalDataType = Field(
         description="The type of task output to evaluate."
+    )
+    priority: Priority = Field(
+        default=Priority.p1, description="The priority of the eval."
+    )
+    status: EvalStatus = Field(
+        default=EvalStatus.active, description="The status of the eval."
     )
 
 
@@ -271,6 +317,10 @@ class LlmJudgeBuilderInput(BaseModel):
         default=None,
         description="Override the judge system prompt. Defaults to 'You are an evaluator.'",
     )
+    judge_instructions: list[str] | None = Field(
+        default=None,
+        description="User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.",
+    )
 
 
 class DefaultLlmJudgePromptResponse(BaseModel):
@@ -278,16 +328,21 @@ class DefaultLlmJudgePromptResponse(BaseModel):
 
     judge_prompt: str
     system_prompt: str
+    reference_keys: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Reference data keys the server will require of a judge for this eval, "
+            "derived the same way `create_llm_judge_config` derives them. Returned so "
+            "the builder can offer a place to supply them when testing, rather than "
+            "re-deriving the rule client-side from the prompt's text."
+        ),
+    )
 
 
 class CreateLlmJudgeConfigRequest(LlmJudgeBuilderInput):
     """Request to create a V2 llm_judge eval config with server-baked template."""
 
     name: str | None = Field(default=None, description="The name of the eval config.")
-    reference_keys: list[str] = Field(
-        default_factory=list,
-        description="Reference data keys this judge needs (captured from test).",
-    )
 
 
 class TestV2EvalRequest(BaseModel):
@@ -312,6 +367,80 @@ class TestV2EvalResponse(BaseModel):
     skipped_detail: str | None = None
     score_range_errors: list[str] | None = None
     intermediate_outputs: dict[str, str] | None = None
+    tool_call_log: list[ToolCallLogEntryResponse] = Field(
+        default_factory=list,
+        description="Tools the scorer code called, in call order. Code evals only.",
+    )
+
+
+class TestV2EvalDraftRequest(BaseModel):
+    """Request to test-run a V2 eval config for an eval that doesn't exist yet.
+
+    Used by the creation flow, where the eval (and its scores) are still being
+    drafted; the server builds a transient in-memory eval from output_scores.
+    """
+
+    properties: V2EvalConfigProperties = Field(
+        description="The V2 eval config properties to test."
+    )
+    output_scores: list[EvalOutputScore] = Field(
+        description="The scores the drafted eval will declare; returned scores are validated against them."
+    )
+    eval_input: EvalTaskInput = Field(description="The input to evaluate.")
+
+
+async def run_v2_eval_test(
+    project_id: str,
+    eval_obj: Eval,
+    properties: V2EvalConfigProperties,
+    eval_input: EvalTaskInput,
+) -> TestV2EvalResponse:
+    """Run a transient (unsaved) V2 eval config against one input.
+
+    Shared by the eval-scoped test endpoint and the creation-flow draft
+    endpoint; *eval_obj* may be an unsaved in-memory eval.
+    """
+    transient_config = EvalConfig(
+        name="test_run",
+        config_type=EvalConfigType.v2,
+        properties=properties,
+        parent=eval_obj,
+    )
+    adapter = v2_eval_adapter_from_config(transient_config)
+
+    tool_call_log: list[ToolCallLogEntry] = []
+
+    # Trust-conferral gate: executing not-yet-saved code in the test pane
+    # requires code trust for this session. Saved code needs no gate.
+    if isinstance(adapter, CodeEvalAdapter):
+        project = project_from_id(project_id)
+        if not has_add_code_trust(str(project.path)):
+            return TestV2EvalResponse(
+                skipped_reason=SkippedReason.code_eval_not_trusted.value,
+                skipped_detail="Project not trusted for code eval execution.",
+            )
+        # The author is iterating on this code right now, so show them what
+        # it called -- nested LLM calls in particular are real spend.
+        adapter.tool_call_recorder = tool_call_log.append
+
+    result = await adapter.evaluate(eval_input)
+
+    score_range_errors: list[str] | None = None
+    if result.skipped_reason is None and result.scores:
+        problems = validate_scores_against_output_scores(
+            result.scores, eval_obj.output_scores
+        )
+        if problems:
+            score_range_errors = problems
+
+    return TestV2EvalResponse(
+        scores=result.scores,
+        skipped_reason=result.skipped_reason.value if result.skipped_reason else None,
+        skipped_detail=result.skipped_detail,
+        score_range_errors=score_range_errors,
+        intermediate_outputs=result.intermediate_outputs,
+        tool_call_log=ToolCallLogEntryResponse.from_log(tool_call_log),
+    )
 
 
 class CodeTrustResponse(BaseModel):
@@ -478,6 +607,8 @@ class UpdateEvalRequest(BaseModel):
     description: str | None = Field(
         default=None, description="The updated description."
     )
+    priority: Priority | None = Field(default=None, description="The updated priority.")
+    status: EvalStatus | None = Field(default=None, description="The updated status.")
     train_set_filter_id: str | None = Field(
         default=None, description="The updated train set filter ID."
     )
@@ -901,6 +1032,100 @@ def require_golden_set_or_422(eval: Eval) -> None:
         raise HTTPException(status_code=422, detail=no_golden_set_message(eval))
 
 
+def eval_grades_against_reference_data(data_type: EvalDataType | None) -> bool:
+    """Whether an eval's data type means its V1 judges grade against ground truth.
+
+    An exhaustive match rather than an `== reference_answer` equality test: a fourth
+    `EvalDataType` that needs reference data would answer False silently, which is the
+    same failure the "anything that isn't v2" spelling below exists to prevent, one level
+    down. Adding a member fails `ty` here until it is classified.
+
+    `None` means the eval never declared one, so nothing asks for a reference.
+    """
+    match data_type:
+        case EvalDataType.reference_answer:
+            return True
+        case EvalDataType.final_answer | EvalDataType.full_trace:
+            return False
+        case None:
+            return False
+        case _:
+            raise_exhaustive_enum_error(data_type)
+
+
+def judge_requires_reference_data(eval: Eval, eval_config: EvalConfig) -> bool:
+    """Whether this judge grades against reference data, which judge comparison has none of.
+
+    Judge comparison scores each golden dataset item as itself, so `EvalTaskInput.from_trace`
+    yields `reference_data = None` by design — populating it would make the reference
+    byte-identical to the output being graded, and every judge would pass every item.
+
+    Two judge kinds hit that, so one predicate covers both:
+
+    - a V2 judge declaring reference keys: `check_reference_key` turns each item into a
+      `missing_reference_key` skip, which `run_job` reports as success and `_persist_score`
+      writes as a durable scoreless `EvalRun` — a "Complete" row with no scores, and a
+      record that suppresses any later re-run.
+    - a V1 judge on a `reference_answer` eval: `_run_legacy_job` calls `run_eval` without
+      the item, so `GEval` raises for every job.
+
+    The V1 arm is spelled "anything that isn't v2" for the same reason as
+    `judge_scores_dataset_runs`: a judge type added to the enum later is refused here
+    rather than reaching one of those two failures.
+
+    Mirrored client-side by `compute_run_disallowed_missing_ref_data`
+    (`app/web_ui/src/lib/utils/eval_types/judge_comparison_gate.ts`), which decides what
+    the Compare Judges page shows. This is what decides whether the run happens.
+    """
+    if eval_config.config_type != EvalConfigType.v2:
+        return eval_grades_against_reference_data(eval.evaluation_data_type)
+    if not isinstance(eval_config.properties, V2_PROPERTY_TYPES):
+        return False
+    return len(reference_data_keys(eval_config.properties)) > 0
+
+
+def no_comparable_judges_message(eval: Eval) -> str:
+    """Why judge comparison has nothing to run for this eval. One wording, one raiser.
+
+    Named for the eval-level fact it states, alongside `no_golden_set_message`. A
+    per-judge refusal cannot share it: in a mixed set "every judge it has" is false, so
+    such a caller needs its own per-judge wording rather than this one.
+    """
+    return (
+        f"Eval '{eval.name}' has no judges that can be compared. Every judge it has grades "
+        "against reference data, and comparing judges scores each golden dataset item as "
+        "itself — there is no separate reference answer to compare against, so every item "
+        "would be skipped without a score. Add a judge that grades the output on its own "
+        "to compare judges for this eval."
+    )
+
+
+def comparable_eval_configs_or_422(eval: Eval) -> List[EvalConfig]:
+    """The eval's judges minus the ones judge comparison can't score.
+
+    A mixed set still runs: dropping the judges that can't be scored is what lets the
+    others be compared. Only an eval where nothing is left is refused.
+
+    Refused here rather than inside the runner for the reason spelled out on
+    `require_golden_set_or_422`: this is an SSE endpoint, so anything raised once the
+    StreamingResponse's generator is running arrives after a 200 with an empty body. It
+    also has to beat the runner because the runner's first act is to write a durable
+    scoreless `EvalRun` per item — records nothing in the UI clears, which then read as
+    "already run" and suppress the re-run a later fix would need (functional spec 6.2).
+
+    An eval with no judges at all is left to `EvalRunner`, which already names that case.
+    """
+    eval_configs = eval.configs()
+    comparable = [
+        eval_config
+        for eval_config in eval_configs
+        if not judge_requires_reference_data(eval, eval_config)
+    ]
+    if eval_configs and not comparable:
+        raise HTTPException(status_code=422, detail=no_comparable_judges_message(eval))
+    return comparable
+
+
 def judge_scores_dataset_runs(config_type: EvalConfigType) -> bool:
     """Whether a judge of this type scores the output stored on a dataset run (TaskRun).
 
@@ -1169,15 +1394,52 @@ def connect_evals_api(app: FastAPI):
         request: CreateEvaluatorRequest,
     ) -> Eval:
         task = task_from_id(project_id, task_id)
+
+        # When no eval set filter is provided, generate the same tag-based
+        # splits a spec-backed eval would get, so downstream features (synth
+        # data gen, fine-tuning, golden sets) work identically.
+        eval_configs_filter_id = request.eval_configs_filter_id
+        splits: dict[str, SplitRef]
+        if request.eval_set_filter_id is not None:
+            # Naming a filter is the caller opting out of generation: they get the test
+            # split they asked for and nothing else. Train and val stay absent rather
+            # than being minted from a name the caller never chose -- an unconfigured
+            # split has no backing store to pick, and materializing an empty one turns
+            # "this eval has no train set" into "this eval has an empty train set",
+            # which reads as configured and isn't. See eval_splits_v1_v2 spec 3.2.
+            splits = {"test": TaskRunSplit(filter_id=request.eval_set_filter_id)}
+        else:
+            tags = generate_spec_eval_tags(request.name)
+            # Eval.splits is keyed by str, and dict key types are invariant, so the
+            # narrower mapping has to be widened rather than passed through.
+            splits = {
+                split_name: split
+                for split_name, split in spec_eval_splits(
+                    test_tag=tags.test_tag,
+                    train_tag=tags.train_tag,
+                    val_tag=tags.val_tag,
+                ).items()
+            }
+            if eval_configs_filter_id is None:
+                eval_configs_filter_id = tag_filter_id(tags.golden_tag)
+
+        output_scores = (
+            request.output_scores
+            if request.output_scores is not None
+            else [eval_pass_fail_output_score(request.name)]
+        )
+
         eval = Eval(
             name=request.name,
             description=request.description,
             template=request.template,
-            output_scores=request.output_scores,
-            eval_set_filter_id=request.eval_set_filter_id,
-            eval_configs_filter_id=request.eval_configs_filter_id,
+            output_scores=output_scores,
+            splits=splits,
+            eval_configs_filter_id=eval_configs_filter_id,
             template_properties=request.template_properties,
             evaluation_data_type=request.evaluation_data_type,
+            priority=request.priority,
+            status=request.status,
             parent=task,
         )
         eval.save_to_file()
@@ -1216,7 +1478,7 @@ def connect_evals_api(app: FastAPI):
         ],
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> Eval:
-        return eval_from_id(project_id, task_id, eval_id)
+        return resolve_eval_display_fields(eval_from_id(project_id, task_id, eval_id))
 
     @app.delete(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
@@ -1262,6 +1524,10 @@ def connect_evals_api(app: FastAPI):
             eval.name = request.name
         if request.description is not None:
             eval.description = request.description
+        if request.priority is not None:
+            eval.priority = request.priority
+        if request.status is not None:
+            eval.status = request.status
 
         # legacy evals (not created with Specs) do not have a train split, but we need one
         # for some features such as prompt optimization
@@ -1278,7 +1544,7 @@ def connect_evals_api(app: FastAPI):
             eval.set_split("train", TaskRunSplit(filter_id=request.train_set_filter_id))
 
         eval.save_to_file()
-        return eval
+        return resolve_eval_display_fields(eval)
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals",
@@ -1300,7 +1566,50 @@ def connect_evals_api(app: FastAPI):
         # Partial load: a project folder synced from a newer Kiln can contain an eval this
         # build can't parse. Return the readable evals rather than failing the whole list.
         evals, load_errors = Eval.all_children_of_parent_path_with_errors(task.path)
+        specs_by_eval_id = {
+            spec.eval_id: spec for spec in task.specs(readonly=True) if spec.eval_id
+        }
+        for eval in evals:
+            resolve_eval_display_fields(eval, specs_by_eval_id.get(eval.id))
         return EvalsResponse(evals=evals, load_error_count=len(load_errors))
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_default_judge_types",
+        summary="Get Default Judge Types",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_eval_default_judge_types(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> dict[str, str]:
+        """Map of eval ID to its default judge's type discriminator.
+
+        V2 configs report their properties type (e.g. "code_eval",
+        "llm_judge"); legacy configs report their config_type (e.g. "g_eval").
+        Evals with no default judge are omitted. Used by the evals list to
+        display each eval's type without fetching every config.
+        """
+        task = task_from_id(project_id, task_id)
+        result: dict[str, str] = {}
+        for eval in task.evals(readonly=True):
+            if not eval.id or not eval.current_config_id:
+                continue
+            for config in eval.configs(readonly=True):
+                if config.id != eval.current_config_id:
+                    continue
+                properties = config.properties
+                if properties is None or isinstance(properties, dict):
+                    result[eval.id] = config.config_type.value
+                else:
+                    result[eval.id] = properties.type.value
+                break
+        return result
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
@@ -1555,8 +1864,8 @@ def connect_evals_api(app: FastAPI):
                 g_eval=request.g_eval,
                 judge_prompt=request.judge_prompt,
                 system_prompt=request.system_prompt,
+                judge_instructions=request.judge_instructions,
             )
-            properties.reference_keys = list(request.reference_keys)
             eval_config = EvalConfig(
                 name=name,
                 config_type=EvalConfigType.v2,
@@ -1588,9 +1897,14 @@ def connect_evals_api(app: FastAPI):
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> DefaultLlmJudgePromptResponse:
         eval = eval_from_id(project_id, task_id, eval_id)
+        # `reference_keys` comes from the same predicate `materialize_llm_judge_properties`
+        # uses, so what the builder is told to collect is what the saved judge requires —
+        # including when the user edits the reference block out of the prompt, which the
+        # server ignores.
         return DefaultLlmJudgePromptResponse(
             judge_prompt=build_default_llm_judge_prompt(eval),
             system_prompt=DEFAULT_SYSTEM_PROMPT,
+            reference_keys=derived_reference_keys(eval),
         )
 
     @app.post(
@@ -1622,6 +1936,7 @@ def connect_evals_api(app: FastAPI):
                     g_eval=builder.g_eval,
                     judge_prompt=builder.judge_prompt,
                     system_prompt=builder.system_prompt,
+                    judge_instructions=builder.judge_instructions,
                 )
             elif request.properties is not None:
                 properties = request.properties
@@ -1631,42 +1946,44 @@ def connect_evals_api(app: FastAPI):
                     detail="Either properties or llm_judge_builder_input must be provided.",
                 )
 
-            transient_config = EvalConfig(
-                name="test_run",
-                config_type=EvalConfigType.v2,
-                properties=properties,
-                parent=eval_obj,
+            return await run_v2_eval_test(
+                project_id, eval_obj, properties, request.eval_input
             )
-            adapter = v2_eval_adapter_from_config(transient_config)
+        except (ValueError, NotImplementedError, ValidationError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
-            # Trust-conferral gate: executing not-yet-saved code in the test pane
-            # requires code trust for this session. Saved code needs no gate.
-            if isinstance(adapter, CodeEvalAdapter):
-                project = project_from_id(project_id)
-                if not has_add_code_trust(str(project.path)):
-                    return TestV2EvalResponse(
-                        skipped_reason=SkippedReason.code_eval_not_trusted.value,
-                        skipped_detail="Project not trusted for code eval execution.",
-                    )
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/test_v2_eval_draft",
+        summary="Test V2 Eval Config Draft",
+        tags=["Evals"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def test_v2_eval_draft(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        request: TestV2EvalDraftRequest,
+    ) -> TestV2EvalResponse:
+        """Test a judge config for an eval that hasn't been created yet.
 
-            result = await adapter.evaluate(request.eval_input)
-
-            score_range_errors: list[str] | None = None
-            if result.skipped_reason is None and result.scores:
-                problems = validate_scores_against_output_scores(
-                    result.scores, eval_obj.output_scores
-                )
-                if problems:
-                    score_range_errors = problems
-
-            return TestV2EvalResponse(
-                scores=result.scores,
-                skipped_reason=result.skipped_reason.value
-                if result.skipped_reason
-                else None,
-                skipped_detail=result.skipped_detail,
-                score_range_errors=score_range_errors,
-                intermediate_outputs=result.intermediate_outputs,
+        Builds a transient in-memory eval from the drafted output_scores so
+        the creation flow can test its judge before saving anything.
+        """
+        try:
+            task = task_from_id(project_id, task_id)
+            eval_obj = Eval(
+                name="Draft Eval Test",
+                output_scores=request.output_scores,
+                eval_set_filter_id="tag::draft_test",
+                eval_configs_filter_id="tag::draft_test",
+                parent=task,
+            )
+            return await run_v2_eval_test(
+                project_id, eval_obj, request.properties, request.eval_input
             )
         except (ValueError, NotImplementedError, ValidationError) as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -1813,7 +2130,7 @@ def connect_evals_api(app: FastAPI):
         """Run all eval configs against each other for calibration and stream progress via SSE. Used to check that eval configs produce consistent scores."""
         eval = eval_from_id(project_id, task_id, eval_id)
         require_golden_set_or_422(eval)
-        eval_configs = eval.configs()
+        eval_configs = comparable_eval_configs_or_422(eval)
         eval_runner = EvalRunner(
             eval_configs=eval_configs,
             run_configs=None,
@@ -2232,23 +2549,23 @@ def connect_evals_api(app: FastAPI):
         # Verify the run config exists
         task_run_config_from_id(project_id, task_id, run_config_id)
 
-        # Build a mapping from eval_id to spec_id for evals that are associated with specs
-        # Also track which eval_ids belong to archived specs so we can exclude them
+        # Build a mapping from eval_id to spec for evals that are associated with
+        # specs. Used to attach spec ids to results and to resolve each eval's
+        # status (status lives on the eval, falling back to the spec for legacy files).
         specs = task.specs()
-        eval_id_to_spec_id: Dict[str, str] = {}
-        archived_eval_ids: set[str] = set()
+        eval_id_to_spec: Dict[str, Spec] = {}
         for spec in specs:
             if spec.eval_id and spec.id:
-                eval_id_to_spec_id[spec.eval_id] = spec.id
-                if spec.status == SpecStatus.archived:
-                    archived_eval_ids.add(spec.eval_id)
+                eval_id_to_spec[spec.eval_id] = spec
 
-        # Evals whose spec was archived are not reported at all, so they are filtered out
-        # once here rather than skipped inside each pass over them.
+        # Archived evals are not reported at all, so they are filtered out once here
+        # rather than skipped inside each pass over them. Status lives on the eval,
+        # falling back to its spec for evals created before that.
         evals = [
             eval
             for eval in task.evals()
-            if not (eval.id and eval.id in archived_eval_ids)
+            if eval.resolved_status(eval_id_to_spec.get(eval.id) if eval.id else None)
+            != EvalStatus.archived
         ]
         eval_results: List[RunConfigEvalResult] = []
 
@@ -2272,6 +2589,8 @@ def connect_evals_api(app: FastAPI):
         total_eval_runs = 0
 
         for eval in evals:
+            associated_spec = eval_id_to_spec.get(eval.id) if eval.id else None
+
             # Get the dataset size for this eval, from whichever store backs its test
             # split. None is unreachable for an eval that loaded (Eval validates a test
             # split); skipping keeps one corrupt file from emptying the whole table.
@@ -2290,7 +2609,7 @@ def connect_evals_api(app: FastAPI):
                         dataset_size=dataset_size,
                         eval_config_result=None,
                         missing_default_eval_config=True,
-                        spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
+                        spec_id=associated_spec.id if associated_spec else None,
                     )
                 )
                 continue
@@ -2391,7 +2710,7 @@ def connect_evals_api(app: FastAPI):
                     eval_name=eval.name,
                     dataset_size=dataset_size,
                     missing_default_eval_config=False,
-                    spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
+                    spec_id=associated_spec.id if associated_spec else None,
                     eval_config_result=EvalConfigResult(
                         eval_config_id=eval_config.id,
                         results=results,

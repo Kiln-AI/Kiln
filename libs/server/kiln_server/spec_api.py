@@ -3,7 +3,7 @@ from typing import Annotated, List
 
 from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.datamodel.basemodel import FilenameString
-from kiln_ai.datamodel.datamodel_enums import Priority
+from kiln_ai.datamodel.datamodel_enums import EvalStatus, Priority
 from kiln_ai.datamodel.eval import Eval
 from kiln_ai.datamodel.spec import Spec, SpecStatus, TaskSample
 from kiln_ai.datamodel.spec_properties import SpecProperties
@@ -95,11 +95,16 @@ def connect_spec_api(app: FastAPI):
 
         spec_type = spec_data.properties["spec_type"]
 
+        # Priority and status live on the eval. They're also written to the spec
+        # below so the spec file stays truthful, but the eval is the source of
+        # truth for reads and later edits.
         eval, _tags = build_spec_eval(
             task=task,
             name=spec_data.name,
             spec_type=spec_type,
             evaluate_full_trace=spec_data.evaluate_full_trace,
+            priority=spec_data.priority,
+            status=spec_data.status,
         )
 
         spec = Spec(
@@ -194,28 +199,51 @@ def connect_spec_api(app: FastAPI):
         if request.tags is not None:
             spec.tags = request.tags
 
-        # Sync eval name when spec name changes
+        # Sync the linked eval when name, priority, or status change: name so
+        # the two files stay coherent, priority/status because they live on the
+        # eval (the spec's copies are only legacy fallbacks).
         eval: Eval | None = None
-        previous_eval_name: str | None = None
-        if request.name is not None and spec.eval_id:
+        # (previous value, so the eval can be rolled back if the spec save fails)
+        name_rollback: tuple[str] | None = None
+        priority_rollback: tuple[Priority | None] | None = None
+        status_rollback: tuple[EvalStatus | None] | None = None
+        needs_eval_sync = (
+            request.name is not None
+            or request.priority is not None
+            or request.status is not None
+        )
+        if needs_eval_sync and spec.eval_id:
             parent_task = task_from_id(project_id, task_id)
             eval = Eval.from_id_and_parent_path(spec.eval_id, parent_task.path)
-            if eval and eval.name != request.name:
-                previous_eval_name = eval.name
-                eval.name = request.name
-                eval.save_to_file()
+            if eval:
+                if request.name is not None and eval.name != request.name:
+                    name_rollback = (eval.name,)
+                    eval.name = request.name
+                if request.priority is not None and eval.priority != request.priority:
+                    priority_rollback = (eval.priority,)
+                    eval.priority = request.priority
+                if request.status is not None and eval.status != request.status:
+                    status_rollback = (eval.status,)
+                    eval.status = request.status
+                if name_rollback or priority_rollback or status_rollback:
+                    eval.save_to_file()
 
         try:
             spec.save_to_file()
         except Exception:
-            if eval is not None and previous_eval_name is not None:
+            if eval is not None and (
+                name_rollback or priority_rollback or status_rollback
+            ):
                 try:
-                    eval.name = previous_eval_name
+                    if name_rollback is not None:
+                        eval.name = name_rollback[0]
+                    if priority_rollback is not None:
+                        eval.priority = priority_rollback[0]
+                    if status_rollback is not None:
+                        eval.status = status_rollback[0]
                     eval.save_to_file()
                 except Exception:
-                    logger.exception(
-                        "Failed to roll back eval name after spec save failure"
-                    )
+                    logger.exception("Failed to roll back eval after spec save failure")
             raise
 
         return spec

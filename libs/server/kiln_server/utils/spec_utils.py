@@ -6,7 +6,11 @@ These functions are used by both the core spec API and the desktop copilot API.
 
 from typing import NamedTuple
 
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.datamodel_enums import (
+    EvalStatus,
+    Priority,
+    TaskOutputRatingType,
+)
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId
 from kiln_ai.datamodel.eval import (
     Eval,
@@ -30,6 +34,20 @@ def spec_eval_output_score(spec_name: str) -> EvalOutputScore:
     )
 
 
+def eval_pass_fail_output_score(eval_name: str) -> EvalOutputScore:
+    """Default score for an eval created without a spec.
+
+    Same shape as spec_eval_output_score, kept beside it so the two creation
+    paths can't drift; only the instruction wording differs (there is no spec
+    to refer to).
+    """
+    return EvalOutputScore(
+        name=eval_name,
+        type=TaskOutputRatingType.pass_fail,
+        instruction=f"Evaluate whether the model's behaviour passes the eval: {eval_name}.",
+    )
+
+
 def spec_eval_data_type(
     spec_type: SpecType, evaluate_full_trace: bool = False
 ) -> EvalDataType:
@@ -44,10 +62,16 @@ def spec_eval_data_type(
 
 
 def spec_eval_template(spec_type: SpecType) -> EvalTemplateId | None:
-    """Get the eval template for a spec type."""
+    """Get the eval template for a spec type.
+
+    Tool use deliberately maps to None: the legacy "tool_call" template means a
+    pre-spec LLM judge over the full trace, while new tool evals are scored by
+    the tool_call_check programmatic judge. Recording the legacy template on
+    them would conflate the two.
+    """
     match spec_type:
         case SpecType.appropriate_tool_use:
-            return EvalTemplateId.tool_call
+            return None
         case SpecType.reference_answer_accuracy:
             return EvalTemplateId.rag
         case SpecType.factual_correctness:
@@ -84,23 +108,25 @@ class SpecEvalTags(NamedTuple):
     want one of four same-typed strings can name it instead of counting positions.
     """
 
-    eval_tag: str
+    test_tag: str
     train_tag: str
     val_tag: str
     golden_tag: str
 
 
 def generate_spec_eval_tags(spec_name: str) -> SpecEvalTags:
-    """Generate eval, train, val, and golden tags for a spec.
+    """Generate test, train, val, and golden tags for a spec.
 
-    `eval_tag` names the TEST set; see spec_eval_splits for why that name persists.
+    Only newly created evals are affected by the names chosen here: an eval stores the
+    concrete tag strings in its saved filters, so evals created by earlier builds keep
+    the tags they were created with.
     """
     tag_suffix = spec_name.lower().replace(" ", "_")
     return SpecEvalTags(
-        eval_tag=f"eval_{tag_suffix}",
+        test_tag=f"test_{tag_suffix}",
         train_tag=f"train_{tag_suffix}",
         val_tag=f"val_{tag_suffix}",
-        golden_tag=f"eval_golden_{tag_suffix}",
+        golden_tag=f"golden_{tag_suffix}",
     )
 
 
@@ -110,7 +136,7 @@ def tag_filter_id(tag: str) -> DatasetFilterId:
 
 
 def spec_eval_splits(
-    *, eval_tag: str, train_tag: str, val_tag: str
+    *, test_tag: str, train_tag: str, val_tag: str
 ) -> dict[EvalSplitName, SplitRef]:
     """The splits a new spec eval is created with, all backed by tagged TaskRuns.
 
@@ -118,16 +144,12 @@ def spec_eval_splits(
     hazard this function exists to remove, so swapping two of them is made unrepresentable
     rather than left to a reader.
 
-    `eval_tag` names the TEST split. "eval_" is the historical prefix for the test set's
-    tag, kept because it is on dataset items in shipped projects; nothing else in this
-    signature carries the legacy vocabulary.
-
     The golden set is not a split and is not returned here: it is TaskRun-only by
     definition, and keeping it out of the splits dict is what keeps that true at the type
     level.
     """
     return {
-        "test": TaskRunSplit(filter_id=tag_filter_id(eval_tag)),
+        "test": TaskRunSplit(filter_id=tag_filter_id(test_tag)),
         "train": TaskRunSplit(filter_id=tag_filter_id(train_tag)),
         "val": TaskRunSplit(filter_id=tag_filter_id(val_tag)),
     }
@@ -139,6 +161,8 @@ def build_spec_eval(
     name: str,
     spec_type: SpecType,
     evaluate_full_trace: bool,
+    priority: Priority | None = None,
+    status: EvalStatus | None = None,
 ) -> tuple[Eval, SpecEvalTags]:
     """A new spec eval, with its test, train and val splits already set.
 
@@ -148,10 +172,14 @@ def build_spec_eval(
     Every spec-eval creation path goes through here, so the three splits and the tags
     naming their items are derived from the eval's name in one place rather than being
     reassembled per caller.
+
+    Priority and status live on the eval. Callers that write a spec alongside it mirror
+    them there so the spec file stays truthful, but the eval is the source of truth for
+    reads and later edits.
     """
     tags = generate_spec_eval_tags(name)
     splits = spec_eval_splits(
-        eval_tag=tags.eval_tag, train_tag=tags.train_tag, val_tag=tags.val_tag
+        test_tag=tags.test_tag, train_tag=tags.train_tag, val_tag=tags.val_tag
     )
     # Eval.splits is keyed by str, and dict key types are invariant, so the narrower
     # mapping has to be widened rather than passed through.
@@ -169,6 +197,8 @@ def build_spec_eval(
         eval_configs_filter_id=tag_filter_id(tags.golden_tag),
         template_properties=None,
         evaluation_data_type=spec_eval_data_type(spec_type, evaluate_full_trace),
+        priority=priority,
+        status=status,
     )
 
     return eval, tags

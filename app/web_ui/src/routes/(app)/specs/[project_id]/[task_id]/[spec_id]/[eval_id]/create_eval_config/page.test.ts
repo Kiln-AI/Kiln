@@ -539,6 +539,53 @@ describe("EvalConfigBuilder", () => {
     cleanup()
   })
 
+  describe("default test run selection", () => {
+    function taskRunWithTrace(id: string, trace: unknown[] | null) {
+      return {
+        ...sampleTaskRun,
+        id,
+        input: `input ${id}`,
+        output: { output: `output ${id}`, source: { type: "human" as const } },
+        trace,
+      }
+    }
+
+    async function selectedRunText(runs: unknown[]) {
+      mockFetchTaskRuns.mockResolvedValue(runs)
+      const { container } = await renderBuilder("step_count_check")
+      const card = container.querySelector(
+        "[data-testid='selected-run-card']",
+      ) as HTMLElement
+      expect(card).not.toBeNull()
+      return card.textContent ?? ""
+    }
+
+    it("auto-selects the newest run that has a trace", async () => {
+      const text = await selectedRunText([
+        taskRunWithTrace("no_trace", null),
+        taskRunWithTrace("traced", [{ role: "user", content: "hi" }]),
+      ])
+      expect(text).toContain("input traced")
+      expect(text).not.toContain("input no_trace")
+    })
+
+    it("treats an empty trace as no trace", async () => {
+      const text = await selectedRunText([
+        taskRunWithTrace("empty_trace", []),
+        taskRunWithTrace("traced", [{ role: "user", content: "hi" }]),
+      ])
+      expect(text).toContain("input traced")
+    })
+
+    it("falls back to the newest run when none have a trace", async () => {
+      const text = await selectedRunText([
+        taskRunWithTrace("newest", null),
+        taskRunWithTrace("older", null),
+      ])
+      expect(text).toContain("input newest")
+    })
+  })
+
   describe("trust modal for code_eval", () => {
     it("shows trust dialog when test returns code_eval_not_trusted", async () => {
       const { container } = await renderBuilder("code_eval")
@@ -1608,7 +1655,10 @@ describe("Reference data save gate", () => {
       expect(showCalls).toContain("Save Without Testing?")
     })
 
-    it("does not render a reference data editor in the test pane", async () => {
+    it("renders a reference data editor when the prompt uses reference data", async () => {
+      // A reference-answer judge's baked prompt renders a <reference_answer> block.
+      // Without an input here the pane can only test it with that block missing, and
+      // the user then saves a judge that renders it.
       setInitialLlmJudgeValues({
         selected_algo: "llm_as_judge",
         combined_model_name: "openai:gpt-4o",
@@ -1625,10 +1675,145 @@ describe("Reference data save gate", () => {
 
       expect(
         container.querySelector('[data-testid="reference-data-field"]'),
+      ).not.toBeNull()
+    })
+
+    it("renders a reference data editor when the server requires a key the prompt no longer shows", async () => {
+      // The dead-end this closes: edit the <reference_answer> block out of a
+      // reference-answer judge's prompt and the server still requires the key, so
+      // every test run skips with missing_reference_key. Reading only the prompt
+      // would hide the one input that can satisfy it.
+      setInitialLlmJudgeValues({
+        selected_algo: "llm_as_judge",
+        combined_model_name: "openai:gpt-4o",
+        model_name: "gpt-4o",
+        provider_name: "openai",
+        judge_prompt: "Score {{ final_message }} for accuracy.",
+        default_reference_keys: ["reference_answer"],
+      })
+
+      const { container } = await renderBuilder("llm_judge")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(
+        container.querySelector('[data-testid="reference-data-field"]'),
+      ).not.toBeNull()
+    })
+
+    it("renders a reference data editor when the default prompt could not be fetched", async () => {
+      // Nothing is known about the judge, and save bakes the server default either
+      // way. Fail open rather than leaving a judge the pane cannot test.
+      setInitialLlmJudgeValues({
+        selected_algo: "llm_as_judge",
+        combined_model_name: "openai:gpt-4o",
+        model_name: "gpt-4o",
+        provider_name: "openai",
+        default_prompt_unavailable: true,
+      })
+
+      const { container } = await renderBuilder("llm_judge")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(
+        container.querySelector('[data-testid="reference-data-field"]'),
+      ).not.toBeNull()
+    })
+
+    it("does not render a reference data editor for a judge that never reads one", async () => {
+      setInitialLlmJudgeValues({
+        selected_algo: "llm_as_judge",
+        combined_model_name: "openai:gpt-4o",
+        model_name: "gpt-4o",
+        provider_name: "openai",
+        judge_prompt: "Score the output for quality.",
+      })
+
+      const { container } = await renderBuilder("llm_judge")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(
+        container.querySelector('[data-testid="reference-data-field"]'),
       ).toBeNull()
       expect(
         container.querySelector('[data-testid="reference-data-edit"]'),
       ).toBeNull()
+    })
+
+    it("sends a typed reference answer to the test run", async () => {
+      setInitialLlmJudgeValues({
+        selected_algo: "llm_as_judge",
+        combined_model_name: "openai:gpt-4o",
+        model_name: "gpt-4o",
+        provider_name: "openai",
+        judge_prompt: "Score based on {{ reference_data.reference_answer }}",
+      })
+
+      const { container } = await renderBuilder("llm_judge")
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      await fireEvent.click(
+        container.querySelector(
+          '[data-testid="reference-data-edit"]',
+        ) as HTMLButtonElement,
+      )
+      await tick()
+
+      await fireEvent.input(
+        container.querySelector(
+          '[data-testid="reference-data-key"]',
+        ) as HTMLInputElement,
+        { target: { value: "reference_answer" } },
+      )
+      await fireEvent.input(
+        container.querySelector(
+          '[data-testid="reference-data-value"]',
+        ) as HTMLInputElement,
+        { target: { value: '"Frank Herbert."' } },
+      )
+      await tick()
+      // The dialog is stubbed, so invoke its Save action directly; that is what
+      // dispatches the change back to the builder.
+      const saveAction = actionButtonsByTitle["Reference Data"].find(
+        (b: Record<string, unknown>) => b.label === "Save",
+      )
+      expect(saveAction).toBeTruthy()
+      ;(saveAction!.action as () => boolean)()
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      mockTestV2EvalLlmJudge.mockResolvedValueOnce({
+        scores: { quality: 1.0 },
+        skipped_reason: null,
+        skipped_detail: null,
+      })
+      await fireEvent.click(
+        container.querySelector(
+          '[data-testid="run-test-btn"]',
+        ) as HTMLButtonElement,
+      )
+
+      await tick()
+      await new Promise((r) => setTimeout(r, 0))
+      await tick()
+
+      expect(mockTestV2EvalLlmJudge).toHaveBeenCalledTimes(1)
+      const eval_input = mockTestV2EvalLlmJudge.mock.calls[0][4]
+      expect(eval_input.reference_data).toEqual({
+        reference_answer: "Frank Herbert.",
+      })
     })
 
     it("shows Save Without Testing when prompt does NOT contain reference_data", async () => {
@@ -1661,7 +1846,7 @@ describe("Reference data save gate", () => {
   })
 
   describe("reference_keys on save", () => {
-    it("llm_judge: reference_keys are empty even when the prompt uses reference_data", async () => {
+    it("llm_judge: the request carries no reference_keys, the server derives them", async () => {
       setInitialLlmJudgeValues({
         selected_algo: "llm_as_judge",
         combined_model_name: "openai:gpt-4o",
@@ -1712,7 +1897,10 @@ describe("Reference data save gate", () => {
 
       expect(mockCreateLlmJudgeConfig).toHaveBeenCalledTimes(1)
       const savedPayload = mockCreateLlmJudgeConfig.mock.calls[0][3]
-      expect(savedPayload.reference_keys).toEqual([])
+      // The client used to post these and the endpoint wrote them over the value it
+      // derived from the eval, so a UI that could not collect them turned the
+      // requirement off. The field is gone from the request.
+      expect(savedPayload).not.toHaveProperty("reference_keys")
     })
 
     it("code_eval: reference_keys are empty when no reference data is entered", async () => {

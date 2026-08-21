@@ -31,10 +31,15 @@ from kiln_ai.datamodel.code_file_storage import (
     read_code_from_sibling_file,
     write_code_to_sibling_file,
 )
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.datamodel_enums import (
+    EvalStatus,
+    Priority,
+    TaskOutputRatingType,
+)
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, EvalInputFilterId
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.task_run import Usage
+from kiln_ai.datamodel.tool_id import ToolId, validate_tool_allowlist
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 if TYPE_CHECKING:
@@ -102,6 +107,10 @@ class LlmJudgeProperties(BaseModel):
     reference_keys: list[str] = []
     thinking_instruction: str | None = None
     g_eval: bool = False
+    # User-written evaluation steps, bound to {{ judge_instructions }} when the
+    # prompt template is rendered. Used by evals with no spec or template to
+    # derive default steps from.
+    judge_instructions: list[str] | None = None
 
 
 class ExactMatchProperties(BaseModel):
@@ -219,7 +228,17 @@ class CodeEvalProperties(BaseModel):
     type: Literal[V2EvalType.code_eval] = V2EvalType.code_eval
     code: str
     reference_keys: list[str] = []
-    timeout_seconds: int = Field(default=30, ge=1, le=300)
+    timeout_seconds: int = Field(default=180, ge=1, le=300)
+    tool_allowlist: list[ToolId] = Field(
+        default_factory=list,
+        description="Explicit per-tool allowlist of tools the scorer code may call.",
+    )
+
+    @model_validator(mode="after")
+    def validate_allowlist(self) -> Self:
+        # No self-reference check: a code eval is not itself a tool.
+        validate_tool_allowlist(self.tool_allowlist, caller="code evals")
+        return self
 
     @model_validator(mode="before")
     @classmethod
@@ -342,7 +361,7 @@ class CodeEvalProperties(BaseModel):
 
         tree = ast.parse(self.code)
         # Both sync and async score functions are accepted here.
-        # Async coroutines are transparently awaited in sandbox_worker._execute_scorer.
+        # Async coroutines are transparently awaited in sandbox_worker.execute_scorer_bridged.
         has_score_fn = any(
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             and node.name == "score"
@@ -556,7 +575,9 @@ class EvalInput(KilnParentedModel):
 class EvalTaskInput(BaseModel):
     """The runtime data bundle passed to V2 evaluators.
 
-    Assembled by the eval runner from an EvalInput and a task run result.
+    Assembled by the eval runner from the item being evaluated and the task run that
+    was scored. The item is either an EvalInput or a TaskRun drawn from the dataset;
+    which one it is determines where `reference_data` and `task_input` come from.
     """
 
     final_message: str = Field(
@@ -568,7 +589,14 @@ class EvalTaskInput(BaseModel):
     )
     reference_data: dict[str, JsonValue] | None = Field(
         default=None,
-        description="Reference/ground-truth data from EvalInput.reference.",
+        description=(
+            "Ground-truth data for the item being evaluated, keyed by reference name. "
+            "Taken from EvalInput.reference for an EvalInput-backed item; for a "
+            "TaskRun-backed dataset item it is the item's own stored output under the "
+            "key 'reference_answer', since that output is the curated answer. None "
+            "when a TaskRun is scored as itself (judge calibration), where the item "
+            "and the scored run are the same record."
+        ),
     )
     task_input: str | None = Field(
         default=None,
@@ -603,7 +631,14 @@ class EvalTaskInput(BaseModel):
             # statement of the input, and the adapter may have reserialized it.
             task_input = source.data.user_message.text
         elif isinstance(source, _TaskRun):
-            reference_data = None
+            # A TaskRun-backed dataset item stores the curated answer as its output, so
+            # that output is the ground truth to compare the trace against. Skipped when
+            # source *is* trace (calibration, and `from_task_run`): there the golden item
+            # is itself what gets scored, so a reference would be byte-identical to
+            # `final_message` and every judge comparing them would pass.
+            reference_data = (
+                None if source is trace else {"reference_answer": source.output.output}
+            )
             task_input = trace.input
         else:
             raise TypeError("Expected a TaskRun or EvalInput instance for source")
@@ -770,10 +805,6 @@ class EvalRun(KilnParentedModel):
     eval_input_id: ID_TYPE | None = Field(
         default=None,
         description="ID of the EvalInput used for this run (V2 evals). Mutually exclusive with dataset_id.",
-    )
-    reference_data: dict[str, JsonValue] | None = Field(
-        default=None,
-        description="Structured reference data from EvalInput.reference, used by V2 eval types.",
     )
     skipped_reason: str | None = Field(
         default=None,
@@ -1159,6 +1190,14 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         default=False,
         description="Whether this eval is a favourite of the user. Rendered as a star icon in the UI.",
     )
+    priority: Priority | None = Field(
+        default=None,
+        description="The priority of the eval. None on evals created before priority lived on evals; read through resolved_priority(), which falls back to the associated spec.",
+    )
+    status: EvalStatus | None = Field(
+        default=None,
+        description="The status of the eval. None on evals created before status lived on evals; read through resolved_status(), which falls back to the associated spec.",
+    )
     template_properties: dict[str, str | int | bool | float] | None = Field(
         default=None,
         description="Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.",
@@ -1289,6 +1328,31 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
             if spec.eval_id == self.id:
                 return spec
         return None
+
+    def resolved_priority(self, spec: Union["Spec", None] = None) -> Priority:
+        """
+        The eval's effective priority. Priority lives on the eval; evals created
+        before that (spec-backed legacy files) fall back to their spec's value.
+        Pass *spec* when the caller already has it, to avoid a re-scan.
+        """
+        if self.priority is not None:
+            return self.priority
+        spec = spec or self.associated_spec(readonly=True)
+        if spec is not None:
+            return spec.priority
+        return Priority.p1
+
+    def resolved_status(self, spec: Union["Spec", None] = None) -> EvalStatus:
+        """
+        The eval's effective status, with the same spec fallthrough as
+        resolved_priority().
+        """
+        if self.status is not None:
+            return self.status
+        spec = spec or self.associated_spec(readonly=True)
+        if spec is not None:
+            return spec.status
+        return EvalStatus.active
 
     def eval_reference_data_keys(self) -> list[str]:
         """Union of reference-data keys across all of this eval's V2 configs.

@@ -3,10 +3,15 @@
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import { available_tools, load_available_tools } from "$lib/stores"
   import { onMount } from "svelte"
-  import type { ToolSetApiDescription, ToolSetType } from "$lib/types"
+  import type { ToolSetApiDescription } from "$lib/types"
   import { tools_store, tools_store_initialized } from "$lib/stores/tools_store"
+  import type { SandboxCodeContext } from "$lib/stores/tools_store"
   import { goto } from "$app/navigation"
   import type { ToolsSelectorSettings } from "./tools_selector_settings"
+  import {
+    build_tool_option_groups,
+    selectable_tool_sets,
+  } from "./tool_options"
 
   export let project_id: string
   export let task_id: string | null = null
@@ -29,6 +34,7 @@
     empty_label: "None",
     single_select: false,
     optional: true,
+    sandbox_code_context: "none",
   }
   $: tools_selector_settings = {
     ...default_tools_selector_settings,
@@ -55,13 +61,24 @@
     tools = []
   }
 
-  function is_tool_available(tool_id: string, project_id: string): boolean {
-    const available = $available_tools[project_id]
-    if (!available) return false
-
-    return available.some((tool_set) =>
-      tool_set.tools.some((tool) => tool.id === tool_id),
-    )
+  // Every tool id this picker may hold in `tools`, given its context. The dropdown,
+  // a pending ?tool_id= injection and anything already persisted all resolve through
+  // this, so filtering the displayed options alone can never leave a context-forbidden
+  // tool sitting in the bound value.
+  function selectable_tool_ids(
+    available_tool_sets: ToolSetApiDescription[] | undefined,
+    sandbox_code_context: SandboxCodeContext,
+  ): Set<string> {
+    const ids = new Set<string>()
+    for (const tool_set of selectable_tool_sets(
+      available_tool_sets,
+      sandbox_code_context,
+    )) {
+      for (const tool of tool_set.tools) {
+        ids.add(tool.id)
+      }
+    }
+    return ids
   }
 
   async function load_tools(project_id: string, task_id: string | null) {
@@ -95,14 +112,19 @@
   }
 
   function apply_pending_tool() {
-    if (
-      pending_tool_id &&
-      !tools.includes(pending_tool_id) &&
-      is_tool_available(pending_tool_id, project_id)
-    ) {
-      const next_tools = [...new Set([...tools, pending_tool_id])]
-      tools = next_tools
+    if (!pending_tool_id || tools.includes(pending_tool_id)) {
+      return
     }
+    // A ?tool_id= in the URL is untrusted input, so it earns a selection only if
+    // this picker could have offered the tool itself.
+    const selectable = selectable_tool_ids(
+      $available_tools[project_id],
+      tools_selector_settings.sandbox_code_context,
+    )
+    if (!selectable.has(pending_tool_id)) {
+      return
+    }
+    tools = [...new Set([...tools, pending_tool_id])]
   }
 
   // If tools load after initial render, re-apply pending tool
@@ -110,7 +132,15 @@
     apply_pending_tool()
   }
 
-  // Update tools_store when tools changes, only after initial load so we don't update it with the empty initial value
+  $: drop_unselectable_tools(
+    $available_tools[project_id],
+    tools,
+    tools_selector_settings.sandbox_code_context,
+  )
+
+  // Update tools_store when tools changes, only after initial load so we don't
+  // update it with the empty initial value. Ordered after drop_unselectable_tools
+  // so a forbidden selection is never persisted, not even transiently.
   $: if (task_id && tools && tools_store_loaded_task_id === task_id) {
     tools_store.update((state) => ({
       ...state,
@@ -121,15 +151,18 @@
     }))
   }
 
-  $: filter_unavailable_tools($available_tools[project_id], tools)
-
-  // Filter out tools that are not in the available tools (server offline, tool removed, etc)
-  function filter_unavailable_tools(
-    available_tools: ToolSetApiDescription[] | undefined,
+  // Drop anything this picker may not hold: tools the server no longer offers
+  // (server offline, tool removed) and tools its sandboxed-code context forbids.
+  // This is the write-path counterpart to the dropdown's filtering — without it a
+  // selection that was persisted earlier, or injected via ?tool_id=, would survive
+  // in `tools` and be saved back out.
+  function drop_unselectable_tools(
+    available_tool_sets: ToolSetApiDescription[] | undefined,
     current_tools: string[],
+    sandbox_code_context: SandboxCodeContext,
   ) {
     if (
-      !available_tools ||
+      !available_tool_sets ||
       !project_id ||
       !current_tools ||
       current_tools.length === 0
@@ -137,92 +170,48 @@
       return
     }
 
-    const available_tool_ids = new Set(
-      available_tools.flatMap((tool_set) =>
-        tool_set.tools.map((tool) => tool.id),
-      ),
+    const selectable = selectable_tool_ids(
+      available_tool_sets,
+      sandbox_code_context,
     )
 
-    const unavailable_tools = tools.filter(
-      (tool_id) => !available_tool_ids.has(tool_id),
-    )
+    const dropped = current_tools.filter((tool_id) => !selectable.has(tool_id))
 
-    if (unavailable_tools.length > 0) {
-      console.warn("Removing unavailable tools:", unavailable_tools)
-      tools = tools.filter((tool_id) => available_tool_ids.has(tool_id))
+    if (dropped.length > 0) {
+      console.warn("Removing tools not selectable in this picker:", dropped)
+      tools = current_tools.filter((tool_id) => selectable.has(tool_id))
     }
   }
 
-  const tool_set_order: ToolSetType[] = [
-    "builtin",
-    "code",
-    "search",
-    "kiln_task",
-    "mcp",
-    "demo",
-  ]
-
   function get_tool_options(
     available_tool_sets: ToolSetApiDescription[] | undefined,
+    sandbox_code_context: SandboxCodeContext,
   ): OptionGroup[] {
-    if (!available_tool_sets || available_tool_sets.length === 0) {
-      // When there are no available tools, we'll show the empty state "Add tools" button
-      return []
-    }
-
-    let option_groups: OptionGroup[] = []
-
-    tool_set_order.forEach((tool_set_type) => {
-      let action_label: string | undefined = undefined
-      let action_handler: (() => void) | undefined = undefined
-
-      const add_create_kiln_task_tool_action =
-        tool_set_type === "kiln_task" &&
-        !tools_selector_settings.hide_create_kiln_task_tool_button
-      if (add_create_kiln_task_tool_action) {
-        action_label = "Create New"
-        action_handler = () => {
-          goto(`/tools/${project_id}/add_tools/kiln_task`)
+    return build_tool_option_groups(available_tool_sets, {
+      value_field: "id",
+      sandbox_code_context,
+      option_disabled: (tool) =>
+        tools_selector_settings.mandatory_tools
+          ? tools_selector_settings.mandatory_tools.includes(tool.id)
+          : false,
+      group_action: (tool_set_type) => {
+        if (
+          tool_set_type !== "kiln_task" ||
+          tools_selector_settings.hide_create_kiln_task_tool_button
+        ) {
+          return undefined
         }
-      }
-
-      const tool_sets = available_tool_sets.filter(
-        (tool_set) =>
-          tool_set.type === tool_set_type && tool_set.tools.length > 0,
-      )
-
-      if (tool_sets.length > 0) {
-        for (const tool_set of tool_sets) {
-          let tools = tool_set.tools
-
-          let options = tools.map((tool) => ({
-            value: tool.id,
-            label: tool.name,
-            description: tool.description ? tool.description.trim() : undefined,
-            disabled: tools_selector_settings.mandatory_tools
-              ? tools_selector_settings.mandatory_tools.includes(tool.id)
-              : false,
-          }))
-
-          option_groups.push({
-            label: tool_set.set_name,
-            options,
-            action_label,
-            action_handler,
-          })
+        return {
+          action_label: "Create New",
+          action_handler: () => {
+            goto(`/tools/${project_id}/add_tools/kiln_task`)
+          },
+          // Keep the group when the project has no Kiln task tools yet, so the
+          // "Create New" button stays discoverable.
+          empty_group_label: "Kiln Tasks as Tools",
         }
-      } else if (add_create_kiln_task_tool_action) {
-        // Manually add the kiln_task option group when there are no kiln task tools
-        // For discoverability since we want to show the "Create New" button
-        option_groups.push({
-          label: "Kiln Tasks as Tools",
-          options: [],
-          action_label,
-          action_handler,
-        })
-      }
+      },
     })
-    return option_groups
   }
 
   $: common_props = {
@@ -232,7 +221,10 @@
     info_description: tools_selector_settings.hide_info_description
       ? undefined
       : tools_selector_settings.info_description,
-    fancy_select_options: get_tool_options($available_tools[project_id]),
+    fancy_select_options: get_tool_options(
+      $available_tools[project_id],
+      tools_selector_settings.sandbox_code_context,
+    ),
     empty_label:
       tools_selector_settings.empty_label ??
       default_tools_selector_settings.empty_label,

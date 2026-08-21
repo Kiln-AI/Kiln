@@ -1,33 +1,15 @@
 import json
 import logging
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Tuple
+from typing import ClassVar, Dict, Iterable, List, Tuple
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from app.desktop.studio_server.eval_api import (
-    CreateEvalConfigRequest,
-    CreateEvaluatorRequest,
-    _cached_test_split,
-    compute_score_summary,
-    connect_evals_api,
-    eval_config_from_id,
-    eval_item_input_text,
-    eval_run_task_usage,
-    get_all_run_configs,
-    resolve_eval_run_traces,
-    resolved_split_or_422,
-    reusable_frozen_prompt_id,
-    scored_trace_usage_for_run_config,
-    split_size,
-    summary_eval_config,
-    task_run_config_from_id,
-)
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
-from kiln_server.custom_errors import connect_custom_errors
 from kiln_ai.adapters.ml_model_list import ModelProviderName
+from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -48,6 +30,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     StructuredOutputMode,
 )
 from kiln_ai.datamodel.eval import (
+    ContainsProperties,
     Eval,
     EvalConfig,
     EvalConfigType,
@@ -57,7 +40,10 @@ from kiln_ai.datamodel.eval import (
     EvalOutputScore,
     EvalRun,
     EvalTemplateId,
+    ExactMatchProperties,
+    LlmJudgeProperties,
     MultiTurnSyntheticEvalInputData,
+    PatternMatchProperties,
     SingleTurnEvalInputData,
     TaskRunSplit,
     UserMessage,
@@ -68,9 +54,31 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import TaskRunConfig
-from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.task_run import EvalItemSource, Usage
 from kiln_ai.datamodel.usage import MessageUsage
+from kiln_ai.tools.base_tool import ToolCallResult
+from kiln_ai.tools.sandbox_bridge import BridgeResult
+from kiln_server.custom_errors import connect_custom_errors
+
+from app.desktop.studio_server.eval_api import (
+    CreateEvalConfigRequest,
+    CreateEvaluatorRequest,
+    _cached_test_split,
+    compute_score_summary,
+    connect_evals_api,
+    eval_config_from_id,
+    eval_item_input_text,
+    eval_run_task_usage,
+    get_all_run_configs,
+    judge_requires_reference_data,
+    resolve_eval_run_traces,
+    resolved_split_or_422,
+    reusable_frozen_prompt_id,
+    scored_trace_usage_for_run_config,
+    split_size,
+    summary_eval_config,
+    task_run_config_from_id,
+)
 
 
 def stub_split(
@@ -125,6 +133,40 @@ def patch_resolve_split_by_ref(items_by_ref: Dict[Tuple[ItemSource, str], set]):
     return patch(
         "app.desktop.studio_server.eval_api.resolve_split", side_effect=resolve
     )
+
+
+class _CollectingResponses:
+    """Stands in for the parent->child responses queue; the payload is not asserted."""
+
+    def __init__(self):
+        self.puts: list[dict] = []
+
+    def put(self, msg: dict) -> None:
+        self.puts.append(msg)
+
+
+class _FakeLlmTool:
+    """Minimal KilnToolInterface stand-in for the `llm` built-in."""
+
+    async def name(self) -> str:
+        return "llm"
+
+    async def toolcall_definition(self):
+        return {
+            "type": "function",
+            "function": {
+                "name": "llm",
+                "description": "Call a model",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"prompt": {"type": "string"}},
+                    "required": ["prompt"],
+                },
+            },
+        }
+
+    async def run(self, context=None, **kwargs):
+        return ToolCallResult(output="a judgement")
 
 
 @pytest.fixture
@@ -2795,6 +2837,194 @@ async def test_run_eval_config_eval_422s_without_a_golden_set(
     assert "no golden set configured" in message
 
 
+def _llm_judge_properties(reference_keys: list[str]) -> LlmJudgeProperties:
+    return LlmJudgeProperties(
+        model_name="gpt-4",
+        model_provider="openai",
+        prompt_template="Grade {{ final_message }}",
+        reference_keys=reference_keys,
+    )
+
+
+class TestJudgeRequiresReferenceData:
+    """The predicate the Compare Judges page and `run_calibration` both decide from."""
+
+    def test_v2_judge_declaring_a_reference_key(self, mock_eval):
+        eval_config = EvalConfig(
+            name="Reference judge",
+            config_type=EvalConfigType.v2,
+            properties=_llm_judge_properties(["reference_answer"]),
+            parent=mock_eval,
+        )
+        assert judge_requires_reference_data(mock_eval, eval_config) is True
+
+    def test_v2_judge_declaring_no_reference_key(self, mock_eval):
+        eval_config = EvalConfig(
+            name="Ordinary judge",
+            config_type=EvalConfigType.v2,
+            properties=_llm_judge_properties([]),
+            parent=mock_eval,
+        )
+        assert judge_requires_reference_data(mock_eval, eval_config) is False
+
+    @pytest.mark.parametrize(
+        "properties,expected",
+        [
+            (ExactMatchProperties(reference_key="reference_answer"), True),
+            (ExactMatchProperties(expected_value="yes"), False),
+            (ContainsProperties(reference_key="reference_answer"), True),
+            (ContainsProperties(substring="yes"), False),
+            (PatternMatchProperties(pattern="^y"), False),
+        ],
+    )
+    def test_deterministic_judges_follow_their_singular_reference_key(
+        self, mock_eval, properties, expected
+    ):
+        eval_config = EvalConfig(
+            name="Deterministic judge",
+            config_type=EvalConfigType.v2,
+            properties=properties,
+            parent=mock_eval,
+        )
+        assert judge_requires_reference_data(mock_eval, eval_config) is expected
+
+    @pytest.mark.parametrize(
+        "data_type,expected",
+        [
+            (EvalDataType.reference_answer, True),
+            (EvalDataType.final_answer, False),
+            (EvalDataType.full_trace, False),
+            (None, False),
+        ],
+    )
+    def test_v1_judge_follows_the_evals_data_type(self, mock_task, data_type, expected):
+        """V1 fails differently — `GEval` raises per job — but for the same reason."""
+        reference_eval = Eval(
+            id="eval_reference",
+            name="Reference Eval",
+            evaluation_data_type=data_type,
+            output_scores=[
+                EvalOutputScore(
+                    name="score1",
+                    instruction="desc1",
+                    type=TaskOutputRatingType.five_star,
+                ),
+            ],
+            eval_set_filter_id="tag::eval_set",
+            eval_configs_filter_id="tag::golden",
+            parent=mock_task,
+        )
+        eval_config = EvalConfig(
+            name="V1 judge",
+            config_type=EvalConfigType.g_eval,
+            properties={"eval_steps": ["step1"]},
+            model_name="gpt-4",
+            model_provider="openai",
+            parent=reference_eval,
+        )
+        assert judge_requires_reference_data(reference_eval, eval_config) is expected
+
+    def test_v1_judge_on_an_ordinary_eval(self, mock_eval, mock_eval_config):
+        assert mock_eval.evaluation_data_type != EvalDataType.reference_answer
+        assert judge_requires_reference_data(mock_eval, mock_eval_config) is False
+
+    def test_v2_judge_with_untyped_legacy_properties(self, mock_eval):
+        """A dict-properties V2 config declares nothing, so it isn't blocked."""
+        eval_config = EvalConfig.model_construct(
+            name="Legacy shaped",
+            config_type=EvalConfigType.v2,
+            properties={"eval_steps": ["step1"]},
+        )
+        assert judge_requires_reference_data(mock_eval, eval_config) is False
+
+
+@pytest.mark.asyncio
+async def test_run_calibration_skips_judges_that_need_reference_data(
+    client, mock_task_from_id, mock_task, mock_eval
+):
+    """A mixed table still compares the judges it can."""
+    mock_task_from_id.return_value = mock_task
+    comparable = EvalConfig(
+        id="comparable_config",
+        name="Ordinary judge",
+        config_type=EvalConfigType.v2,
+        properties=_llm_judge_properties([]),
+        parent=mock_eval,
+    )
+    comparable.save_to_file()
+    blocked = EvalConfig(
+        id="reference_config",
+        name="Reference judge",
+        config_type=EvalConfigType.v2,
+        properties=_llm_judge_properties(["reference_answer"]),
+        parent=mock_eval,
+    )
+    blocked.save_to_file()
+
+    with patch(
+        "app.desktop.studio_server.eval_api.run_eval_runner_with_status"
+    ) as mock_run_eval:
+        mock_run_eval.return_value = StreamingResponse(
+            content=iter([b"data: test\n\n"]), media_type="text/event-stream"
+        )
+
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/run_calibration"
+        )
+
+    assert response.status_code == 200
+    eval_runner = mock_run_eval.call_args[0][0]
+    assert [config.id for config in eval_runner.eval_configs] == ["comparable_config"]
+
+
+@pytest.mark.asyncio
+async def test_run_calibration_422s_when_every_judge_needs_reference_data(
+    client, mock_task_from_id, mock_task, mock_eval
+):
+    """Refused before the StreamingResponse, so the status and reason are the response.
+
+    Also before the runner, which is the point: the runner's first act would be to write
+    a durable scoreless EvalRun per golden item, and nothing in the UI clears those.
+    """
+    mock_task_from_id.return_value = mock_task
+    blocked = EvalConfig(
+        id="reference_config",
+        name="Reference judge",
+        config_type=EvalConfigType.v2,
+        properties=_llm_judge_properties(["reference_answer"]),
+        parent=mock_eval,
+    )
+    blocked.save_to_file()
+    # A golden item to skip, so "nothing was written" is a claim about the guard rather
+    # than about an empty dataset.
+    TaskRun(
+        input="input1",
+        output=TaskOutput(
+            output="output1",
+            rating=TaskOutputRating(value=4.0, requirement_ratings={}),
+        ),
+        tags=["golden"],
+        parent=mock_task,
+    ).save_to_file()
+
+    with patch(
+        "app.desktop.studio_server.eval_api.run_eval_runner_with_status"
+    ) as mock_run_eval:
+        response = client.get(
+            "/api/projects/project1/tasks/task1/evals/eval1/run_calibration"
+        )
+
+    assert response.status_code == 422
+    message = response.json()["message"]
+    assert "Test Eval" in message
+    assert "compared" in message
+    assert "reference data" in message
+    assert "each golden dataset item as itself" in message
+
+    mock_run_eval.assert_not_called()
+    assert list(blocked.runs()) == []
+
+
 @pytest.mark.asyncio
 async def test_set_current_eval_config(
     client, mock_task_from_id, mock_task, mock_eval, mock_eval_config
@@ -4659,6 +4889,8 @@ async def test_get_run_config_eval_scores_excludes_archived_specs(
     mock_eval_for_api.output_scores = mock_eval.output_scores
     mock_eval_for_api.current_config_id = mock_eval_config.id
     mock_eval_for_api.configs.return_value = [mock_eval_config_for_api]
+    # Use the real eval's status resolution so the spec fallthrough is exercised
+    mock_eval_for_api.resolved_status.side_effect = mock_eval.resolved_status
 
     archived_eval_config_for_api = MagicMock()
     archived_eval_config_for_api.id = archived_eval_config.id
@@ -4671,6 +4903,7 @@ async def test_get_run_config_eval_scores_excludes_archived_specs(
     archived_eval_for_api.output_scores = archived_eval.output_scores
     archived_eval_for_api.current_config_id = archived_eval_config.id
     archived_eval_for_api.configs.return_value = [archived_eval_config_for_api]
+    archived_eval_for_api.resolved_status.side_effect = archived_eval.resolved_status
 
     mock_task_for_api = MagicMock()
     mock_task_for_api.evals.return_value = [mock_eval_for_api, archived_eval_for_api]
@@ -5195,7 +5428,7 @@ class TestEvalResultsSummaryResolutionCaching:
     sequencing it behind the other two means it only ever runs if they pass.
     """
 
-    OUTPUT_SCORES = [
+    OUTPUT_SCORES: ClassVar[List[EvalOutputScore]] = [
         EvalOutputScore(
             name="accuracy",
             instruction="Test accuracy",
@@ -5205,7 +5438,7 @@ class TestEvalResultsSummaryResolutionCaching:
 
     # Every (source, filter) pair used below resolves to the same single item, so a
     # resolution count is the only thing that varies between the cases.
-    ALL_DS1 = {
+    ALL_DS1: ClassVar[Dict[Tuple[ItemSource, str], set]] = {
         ("task_run", "tag::set1"): {"ds1"},
         ("task_run", "tag::set2"): {"ds1"},
         ("eval_input", "tag::set1"): {"ds1"},
@@ -5561,6 +5794,27 @@ def mock_v2_eval(mock_task):
     return eval
 
 
+@pytest.fixture
+def mock_v2_reference_answer_eval(mock_task):
+    eval = Eval(
+        id="eval_v2_reference_answer",
+        name="V2 Reference Answer Eval",
+        description="V2 eval graded against a reference answer",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                instruction="Is the answer accurate?",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        splits={"test": EvalInputSplit(filter_id="tag::v2_eval_set")},
+        evaluation_data_type=EvalDataType.reference_answer,
+        parent=mock_task,
+    )
+    eval.save_to_file()
+    return eval
+
+
 class TestTestV2Eval:
     def _url(self, eval_id: str = "eval_v2") -> str:
         return f"/api/projects/project1/tasks/task1/evals/{eval_id}/test_v2_eval"
@@ -5645,8 +5899,12 @@ class TestTestV2Eval:
                 return_value=True,
             ),
             patch(
-                "kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer",
-                return_value={"ok": {"accuracy": 0.75}},
+                "kiln_ai.adapters.eval.v2_eval_code_eval.run_bridged_child",
+                new=AsyncMock(
+                    return_value=BridgeResult(
+                        result_msg={"type": "result", "ok": {"accuracy": 0.75}}
+                    )
+                ),
             ),
         ):
             mock_eid.return_value = mock_v2_eval
@@ -5656,6 +5914,71 @@ class TestTestV2Eval:
         body = response.json()
         assert body["scores"]["accuracy"] == 0.75
         assert body["skipped_reason"] is None
+        assert body["tool_call_log"] == []
+
+    def test_code_eval_reports_nested_tool_calls(self, client, mock_v2_eval):
+        """The test pane records what the scorer called, so nested LLM spend is visible."""
+        payload = {
+            "properties": {
+                "type": "code_eval",
+                "code": "def score(output, **kwargs):\n    return {'accuracy': 1.0}\n",
+                "tool_allowlist": ["kiln_tool::llm"],
+            },
+            "eval_input": {"final_message": "test"},
+        }
+
+        responses = _CollectingResponses()
+
+        async def serve_one_tool_call(**kwargs):
+            """Stand in for the child: hand the server a real tool_call to serve.
+
+            Going through the public ``serve()`` rather than poking the recorder
+            exercises what the endpoint actually depends on -- allowlist resolution,
+            the registry lookup, the tool run, and the recorder the endpoint
+            installed -- end to end.
+            """
+            await kwargs["server"].serve(
+                {
+                    "type": "tool_call",
+                    "call_id": "call-1",
+                    "tool_name": "llm",
+                    "arguments": {"prompt": "hi"},
+                },
+                responses,
+            )
+            return BridgeResult(result_msg={"type": "result", "ok": {"accuracy": 1.0}})
+
+        with (
+            patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid,
+            patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj,
+            patch(
+                "app.desktop.studio_server.eval_api.has_add_code_trust",
+                return_value=True,
+            ),
+            patch(
+                "kiln_ai.tools.tool_registry.tool_from_id_and_project",
+                return_value=_FakeLlmTool(),
+            ),
+            patch(
+                "kiln_ai.adapters.eval.v2_eval_code_eval.run_bridged_child",
+                new=serve_one_tool_call,
+            ),
+        ):
+            mock_eid.return_value = mock_v2_eval
+            mock_proj.return_value = Mock()
+            response = client.post(self._url(), json=payload)
+
+        assert response.status_code == 200
+        log = response.json()["tool_call_log"]
+        assert len(log) == 1
+        assert log[0]["tool_name"] == "llm"
+        assert log[0]["arguments"] == {"prompt": "hi"}
+        assert log[0]["output_preview"] == "a judgement"
+        assert log[0]["is_error"] is False
+        # The parent also answered the child, which is what unblocks the call.
+        assert responses.puts == [
+            {"type": "tool_result", "call_id": "call-1", "ok": "a judgement"}
+        ]
 
     def test_llm_judge_with_mocked_model(self, client, mock_v2_eval):
         payload = {
@@ -5764,6 +6087,7 @@ class TestTestV2Eval:
             g_eval=False,
             judge_prompt=None,
             system_prompt=None,
+            judge_instructions=None,
         )
         body = response.json()
         assert "accuracy" in body["scores"]
@@ -5815,8 +6139,12 @@ class TestTestV2Eval:
                 return_value=True,
             ),
             patch(
-                "kiln_ai.adapters.eval.v2_eval_code_eval.run_scorer",
-                return_value={"ok": {"accuracy": 5.0}},
+                "kiln_ai.adapters.eval.v2_eval_code_eval.run_bridged_child",
+                new=AsyncMock(
+                    return_value=BridgeResult(
+                        result_msg={"type": "result", "ok": {"accuracy": 5.0}}
+                    )
+                ),
             ),
         ):
             mock_eid.return_value = mock_v2_eval
@@ -5949,14 +6277,54 @@ class TestCreateLlmJudgeConfig:
             response = client.post(
                 self._url(),
                 json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
                     "name": "My Custom Judge",
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["name"] == "My Custom Judge"
+
+    def test_reference_answer_eval_declares_the_key(
+        self, client, mock_v2_reference_answer_eval
+    ):
+        """The baked prompt grades against a reference answer, so the saved config has
+        to require one — otherwise the judge scores items that have none."""
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_reference_answer_eval
+            response = client.post(
+                self._url("eval_v2_reference_answer"),
+                json={
                     "model_name": "gpt-4o",
                     "provider": "openai",
                     "g_eval": False,
                 },
             )
         assert response.status_code == 200
-        assert response.json()["name"] == "My Custom Judge"
+        props = response.json()["properties"]
+        assert props["reference_keys"] == ["reference_answer"]
+        assert "<reference_answer>" in props["prompt_template"]
+
+    def test_client_cannot_clear_the_server_derived_reference_keys(
+        self, client, mock_v2_reference_answer_eval
+    ):
+        """The builder used to post its own `reference_keys`, which the endpoint wrote
+        over the derived value — an empty list from a UI that cannot collect them turned
+        the requirement off. The request field is gone; the server decides."""
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_reference_answer_eval
+            response = client.post(
+                self._url("eval_v2_reference_answer"),
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    "reference_keys": [],
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["properties"]["reference_keys"] == ["reference_answer"]
 
 
 class TestV1CoexistenceAPI:
@@ -6063,7 +6431,6 @@ class TestV1CoexistenceAPI:
 
         for v2_field in (
             "eval_input_id",
-            "reference_data",
             "skipped_reason",
             "skipped_detail",
         ):
@@ -6115,7 +6482,6 @@ class TestV1CoexistenceAPI:
         ]
         for r in runs:
             assert r.eval_input_id is None
-            assert r.reference_data is None
             assert r.skipped_reason is None
 
         config.runs.return_value = runs
@@ -6154,7 +6520,47 @@ class TestDefaultLlmJudgePrompt:
         assert body["system_prompt"] == "You are an evaluator."
         assert "{{ task_input }}" in body["judge_prompt"]
         assert "{{ final_message }}" in body["judge_prompt"]
-        assert "Is the answer accurate?" in body["judge_prompt"]
+        # No spec or derivable template: the steps section defers to the
+        # judge_instructions binding instead of baking score instructions.
+        assert "{{ judge_instructions }}" in body["judge_prompt"]
+
+    def test_reference_keys_match_what_create_will_require(
+        self, client, mock_v2_reference_answer_eval
+    ):
+        """The builder is told what the saved judge will require so the Test Judge pane
+        can offer a place to supply it. Derived server-side, not re-read from the
+        prompt's text: a user who edits the reference block out has not made the eval
+        stop requiring ground truth, and a pane reading only the prompt would then hide
+        the one input that keeps its test runs from skipping."""
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_reference_answer_eval
+            default = client.get(self._url("eval_v2_reference_answer"))
+            created = client.post(
+                "/api/projects/project1/tasks/task1/evals/eval_v2_reference_answer"
+                "/create_llm_judge_config",
+                json={
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "g_eval": False,
+                    # The edited-down prompt the user saves: no reference block left.
+                    "judge_prompt": "Score {{ final_message }} for accuracy.",
+                },
+            )
+
+        assert default.status_code == 200
+        assert created.status_code == 200
+        assert default.json()["reference_keys"] == ["reference_answer"]
+        assert (
+            default.json()["reference_keys"]
+            == created.json()["properties"]["reference_keys"]
+        )
+
+    def test_reference_keys_empty_for_an_ordinary_eval(self, client, mock_v2_eval):
+        with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
+            mock_eid.return_value = mock_v2_eval
+            response = client.get(self._url())
+        assert response.status_code == 200
+        assert response.json()["reference_keys"] == []
 
     def test_eval_not_found(self, client):
         with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eid:
@@ -6232,6 +6638,139 @@ class TestCreateLlmJudgeConfigOverrides:
         assert response.status_code == 400
 
 
+class TestTestV2EvalDraft:
+    """The creation-flow endpoint: tests a judge for an eval that doesn't exist."""
+
+    def _url(self) -> str:
+        return "/api/projects/project1/tasks/task1/test_v2_eval_draft"
+
+    def _payload(self) -> dict:
+        return {
+            "properties": {
+                "type": "exact_match",
+                "expected_value": "hello",
+            },
+            "output_scores": [
+                {
+                    "name": "accuracy",
+                    "instruction": "Is the answer accurate?",
+                    "type": "pass_fail",
+                }
+            ],
+            "eval_input": {
+                "final_message": "hello",
+            },
+        }
+
+    def test_exact_match_pass(self, client, mock_task, mock_task_from_id):
+        mock_task_from_id.return_value = mock_task
+        response = client.post(self._url(), json=self._payload())
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"]["accuracy"] == 1.0
+        assert body["skipped_reason"] is None
+
+    def test_exact_match_fail(self, client, mock_task, mock_task_from_id):
+        mock_task_from_id.return_value = mock_task
+        payload = self._payload()
+        payload["eval_input"]["final_message"] = "world"
+        response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        assert response.json()["scores"]["accuracy"] == 0.0
+
+    def test_nothing_is_persisted(self, client, mock_task, mock_task_from_id):
+        mock_task_from_id.return_value = mock_task
+        response = client.post(self._url(), json=self._payload())
+        assert response.status_code == 200
+        # The transient eval must never be saved to the task.
+        assert mock_task.evals() == []
+
+    def test_code_eval_untrusted_skip(self, client, mock_task, mock_task_from_id):
+        payload = self._payload()
+        payload["properties"] = {
+            "type": "code_eval",
+            "code": "def score(output, **kwargs):\n    return {'accuracy': 1.0}\n",
+        }
+        with (
+            patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj,
+            patch(
+                "app.desktop.studio_server.eval_api.has_add_code_trust",
+                return_value=False,
+            ),
+        ):
+            mock_task_from_id.return_value = mock_task
+            mock_proj.return_value = Mock()
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"] == {}
+        assert body["skipped_reason"] == "code_eval_not_trusted"
+
+    def test_score_range_errors_reported(self, client, mock_task, mock_task_from_id):
+        # A code judge returning an out-of-range value for a pass_fail score.
+        payload = self._payload()
+        payload["properties"] = {
+            "type": "code_eval",
+            "code": "def score(output, **kwargs):\n    return {'accuracy': 3.0}\n",
+        }
+        with (
+            patch("app.desktop.studio_server.eval_api.project_from_id") as mock_proj,
+            patch(
+                "app.desktop.studio_server.eval_api.has_add_code_trust",
+                return_value=True,
+            ),
+        ):
+            mock_task_from_id.return_value = mock_task
+            mock_proj.return_value = Mock()
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["score_range_errors"]
+
+    def test_empty_output_scores_400(self, client, mock_task, mock_task_from_id):
+        mock_task_from_id.return_value = mock_task
+        payload = self._payload()
+        payload["output_scores"] = []
+        response = client.post(self._url(), json=payload)
+        assert response.status_code == 400
+
+    def test_llm_judge_through_transient_eval(
+        self, client, mock_task, mock_task_from_id
+    ):
+        # The transient eval has no path; the LLM judge adapter must still be
+        # able to build its score schema from the drafted output_scores.
+        payload = self._payload()
+        payload["properties"] = {
+            "type": "llm_judge",
+            "model_name": "gpt-4o",
+            "model_provider": "openai",
+            "prompt_template": "Is this correct? Output: {{ final_message }}",
+        }
+        mock_run_output = RunOutput(
+            output={"accuracy": "pass"},
+            intermediate_outputs=None,
+        )
+        # The adapter always returns the judge's own TaskRun alongside the output;
+        # only its usage is read, and it must be a real Usage or None because
+        # V2EvalResult validates it.
+        judge_run = MagicMock()
+        judge_run.usage = None
+        mock_adapter = MagicMock()
+        mock_adapter.invoke_returning_run_output = AsyncMock(
+            return_value=(judge_run, mock_run_output)
+        )
+        with patch(
+            "kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task",
+            return_value=mock_adapter,
+        ):
+            mock_task_from_id.return_value = mock_task
+            response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert "accuracy" in body["scores"]
+        assert body["skipped_reason"] is None
+
+
 class TestTestV2EvalOverrides:
     def _url(self, eval_id: str = "eval_v2") -> str:
         return f"/api/projects/project1/tasks/task1/evals/{eval_id}/test_v2_eval"
@@ -6291,3 +6830,174 @@ class TestTestV2EvalOverrides:
             == "Custom {{ task_input }} {{ final_message }}"
         )
         assert call_kwargs.kwargs["system_prompt"] == "Be strict."
+
+
+@pytest.mark.asyncio
+async def test_create_evaluator_generates_filters_scores_priority_status(
+    client, mock_task_from_id, mock_task
+):
+    """Omitting filters/scores generates the same tag-based setup a spec-backed
+    eval gets, and priority/status are stored on the eval."""
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json={
+            "name": "My Issue Eval",
+            "template": "kiln_issue",
+            "evaluation_data_type": "final_answer",
+            "priority": 2,
+            "status": "future",
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["splits"]["test"]["filter_id"] == "tag::test_my_issue_eval"
+    assert result["splits"]["train"]["filter_id"] == "tag::train_my_issue_eval"
+    assert result["splits"]["val"]["filter_id"] == "tag::val_my_issue_eval"
+    assert result["eval_configs_filter_id"] == "tag::golden_my_issue_eval"
+    assert result["priority"] == 2
+    assert result["status"] == "future"
+    assert len(result["output_scores"]) == 1
+    assert result["output_scores"][0]["name"] == "My Issue Eval"
+    assert result["output_scores"][0]["type"] == "pass_fail"
+
+    saved_eval = mock_task.evals()[0]
+    assert saved_eval.priority == Priority.p2
+    assert saved_eval.status == SpecStatus.future
+    assert saved_eval.splits["test"].filter_id == "tag::test_my_issue_eval"
+
+
+@pytest.mark.asyncio
+async def test_create_evaluator_defaults_priority_and_status(
+    client, mock_task_from_id, mock_task, valid_evaluator_request
+):
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json=valid_evaluator_request.model_dump(),
+    )
+
+    assert response.status_code == 200
+    saved_eval = mock_task.evals()[0]
+    assert saved_eval.priority == Priority.p1
+    assert saved_eval.status == SpecStatus.active
+
+
+def test_update_eval_priority_and_status(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/evals/eval1",
+        json={"priority": 0, "status": "archived"},
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["priority"] == 0
+    assert result["status"] == "archived"
+
+    saved_eval = mock_task.evals()[0]
+    assert saved_eval.priority == Priority.p0
+    assert saved_eval.status == SpecStatus.archived
+
+
+def test_get_eval_resolves_priority_status_from_spec(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """A legacy spec-backed eval (no own priority/status) reads through to its spec."""
+    spec = Spec(
+        name="Backing Spec",
+        definition="definition",
+        properties=DesiredBehaviourProperties(
+            spec_type=SpecType.desired_behaviour,
+            desired_behaviour_description="be nice",
+        ),
+        priority=Priority.p3,
+        status=SpecStatus.deprecated,
+        eval_id=mock_eval.id,
+        parent=mock_task,
+    )
+    spec.save_to_file()
+
+    response = client.get("/api/projects/project1/tasks/task1/evals/eval1")
+    assert response.status_code == 200
+    result = response.json()
+    assert result["priority"] == 3
+    assert result["status"] == "deprecated"
+
+    # The resolution is response-only: the eval file keeps None so the
+    # fallthrough continues to track the spec.
+    saved_eval = mock_task.evals()[0]
+    assert saved_eval.priority is None
+    assert saved_eval.status is None
+
+
+def test_get_evals_resolves_priority_status(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """List endpoint resolves spec-backed evals via their spec, and evals with
+    no spec to defaults."""
+    spec = Spec(
+        name="Backing Spec",
+        definition="definition",
+        properties=DesiredBehaviourProperties(
+            spec_type=SpecType.desired_behaviour,
+            desired_behaviour_description="be nice",
+        ),
+        priority=Priority.p0,
+        status=SpecStatus.future,
+        eval_id=mock_eval.id,
+        parent=mock_task,
+    )
+    spec.save_to_file()
+
+    legacy_eval = Eval(
+        id="legacy_eval1",
+        name="Legacy Eval",
+        output_scores=[
+            EvalOutputScore(name="score", type=TaskOutputRatingType.pass_fail)
+        ],
+        eval_set_filter_id="tag::eval_set",
+        eval_configs_filter_id="tag::golden",
+        parent=mock_task,
+    )
+    legacy_eval.save_to_file()
+
+    response = client.get("/api/projects/project1/tasks/task1/evals")
+    assert response.status_code == 200
+    by_id = {e["id"]: e for e in response.json()["evals"]}
+    assert by_id["eval1"]["priority"] == 0
+    assert by_id["eval1"]["status"] == "future"
+    assert by_id["legacy_eval1"]["priority"] == 1
+    assert by_id["legacy_eval1"]["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_create_evaluator_rejects_long_names(
+    client, mock_task_from_id, mock_task
+):
+    """Score names cap at 32 chars, so a longer eval name must 422 rather than
+    500 while generating the default score."""
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json={
+            "name": "a" * 33,
+            "evaluation_data_type": "final_answer",
+        },
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_evaluator_rejects_empty_output_scores(
+    client, mock_task_from_id, mock_task
+):
+    """An explicit empty score list is an error, not a request for defaults."""
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator",
+        json={
+            "name": "My Eval",
+            "evaluation_data_type": "final_answer",
+            "output_scores": [],
+        },
+    )
+    assert response.status_code == 422
