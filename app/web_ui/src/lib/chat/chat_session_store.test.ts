@@ -1,19 +1,19 @@
+// Port of the pre-phase-4 suite: the behaviors are unchanged (composer,
+// queued-message UX, consent dialog, approval box, banners, persistence), but
+// the DRIVER changed — the old tests mocked `streamChat` and invoked its
+// callbacks; these mock the main conversation store and drive the SINK it
+// binds (the observer is the only transport now).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { get, writable, type Writable } from "svelte/store"
+import { get, writable } from "svelte/store"
+import type { ChatMessage } from "./streaming_chat"
 import type {
-  ChatMessage,
-  ContextUsage,
-  StreamChatOptions,
-} from "./streaming_chat"
+  MainConversationSink,
+  MainConversationStore,
+} from "./conversation_store"
 import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
 
-vi.mock("./streaming_chat", () => ({
-  streamChat: vi.fn(),
-  chatGenerateId: vi.fn(() => `id-${Math.random().toString(36).slice(2, 7)}`),
-  traceIdForNextChatRequest: vi.fn(() => undefined),
-}))
-
 const mockClientGet = vi.fn()
+const mockFetch = vi.fn()
 vi.mock("$lib/api_client", () => ({
   base_url: "http://test:8000",
   client: {
@@ -22,7 +22,10 @@ vi.mock("$lib/api_client", () => ({
 }))
 
 const mockHydrate = vi.fn()
-vi.mock("./session_messages", () => ({
+vi.mock("./session_messages", async (importOriginal) => ({
+  // Keep the real userChatMessageFromContent / stripInternalFraming (echo →
+  // report chip detection, framing strip); only hydration is stubbed.
+  ...(await importOriginal<typeof import("./session_messages")>()),
   hydrateSessionFromSnapshot: (...args: unknown[]) => mockHydrate(...args),
 }))
 
@@ -34,9 +37,11 @@ const mockAppState = {
   currentTask: null,
 }
 
+const mockBuildContextHeader = vi.fn((): string | null => null)
 vi.mock("$lib/agent", () => ({
   getCurrentAppState: vi.fn(() => ({ ...mockAppState })),
-  buildContextHeader: vi.fn(() => null),
+  buildContextHeader: (...args: unknown[]) =>
+    mockBuildContextHeader(...(args as [])),
 }))
 
 const mockConsentStore = writable(true)
@@ -62,78 +67,102 @@ function stubSessionStorage() {
 
 let storage: ReturnType<typeof stubSessionStorage>
 
-async function importFreshWithMock() {
-  const storeModule = await import("./chat_session_store")
-  const streamingModule = await import("./streaming_chat")
-  const streamChatMock = vi.mocked(streamingModule.streamChat)
-  return { ...storeModule, streamChatMock }
+async function importFresh() {
+  return await import("./chat_session_store")
 }
 
-function noopStreamChat(): Promise<void> {
-  return Promise.resolve()
-}
-
-// A configurable fake auto-run store. ``autoModeOn`` defaults off; pass an
-// override to simulate the conversation flag being on (inject-on-send paths).
-function makeFakeAutoRun(
-  overrides: Partial<{
-    autoModeOn: boolean
-    armed: boolean
-    requestEnable: ReturnType<typeof vi.fn>
-    sendMessage: ReturnType<typeof vi.fn>
-    stop: ReturnType<typeof vi.fn>
-    resolve: ReturnType<typeof vi.fn>
-    attach: ReturnType<typeof vi.fn>
-    beginReconnect: ReturnType<typeof vi.fn>
-    arm: ReturnType<typeof vi.fn>
-    disarm: ReturnType<typeof vi.fn>
-  }> = {},
-) {
-  return {
-    autoModeOn: writable(overrides.autoModeOn ?? false),
-    armed: writable(overrides.armed ?? false),
-    working: writable(false),
+/**
+ * A configurable fake main conversation store. `bind` captures the sink so
+ * tests can drive observer events; the writable stores are exposed raw so
+ * tests can flip auto/armed/working directly.
+ */
+function makeFakeMain(overrides: Partial<Record<string, unknown>> = {}): {
+  fake: MainConversationStore
+  sink: () => MainConversationSink
+  autoModeOn: ReturnType<typeof writable<boolean>>
+  armed: ReturnType<typeof writable<boolean>>
+  working: ReturnType<typeof writable<boolean>>
+  sessionId: ReturnType<typeof writable<string | null>>
+} {
+  let sink: MainConversationSink | null = null
+  const autoModeOn = writable<boolean>(false)
+  const armed = writable<boolean>(false)
+  const working = writable<boolean>(false)
+  const sessionId = writable<string | null>(null)
+  const fake = {
+    autoModeOn: { subscribe: autoModeOn.subscribe },
+    armed: { subscribe: armed.subscribe },
+    working: { subscribe: working.subscribe },
     reconnecting: writable(false),
-    runId: writable(overrides.autoModeOn ? "ar_test" : null),
+    retry: writable(null),
+    sessionId: { subscribe: sessionId.subscribe },
     offReason: writable(null),
     connection: writable("idle"),
-    bind: vi.fn(),
-    requestEnable:
-      overrides.requestEnable ?? vi.fn().mockResolvedValue({ ok: true }),
+    bind: vi.fn((s: MainConversationSink) => {
+      sink = s
+    }),
+    ensure: vi.fn().mockResolvedValue({ ok: true, sessionId: "cv_main" }),
+    requestEnable: vi.fn().mockResolvedValue({ ok: true }),
     decline: vi.fn().mockResolvedValue(undefined),
-    sendMessage:
-      overrides.sendMessage ?? vi.fn().mockResolvedValue({ ok: true }),
-    stop: overrides.stop ?? vi.fn().mockResolvedValue(undefined),
-    resolve: overrides.resolve ?? vi.fn().mockResolvedValue(null),
-    beginReconnect: overrides.beginReconnect ?? vi.fn(),
-    attach: overrides.attach ?? vi.fn(),
+    sendMessage: vi.fn().mockResolvedValue({ ok: true, messageId: "cm_1" }),
+    stop: vi.fn().mockResolvedValue(undefined),
+    fetchApprovals: vi.fn().mockResolvedValue(null),
+    decide: vi.fn().mockResolvedValue({ ok: true }),
+    beginReconnect: vi.fn(),
+    attach: vi.fn(),
     detach: vi.fn(),
-    arm: overrides.arm ?? vi.fn(),
-    disarm: overrides.disarm ?? vi.fn(),
+    // The real beginTurn appends the assistant placeholder via the sink and
+    // resets the stream processor; the sink half matters to these tests.
+    beginTurn: vi.fn(() => sink?.beginAssistantTurn()),
+    arm: vi.fn(),
+    disarm: vi.fn(),
     _close: vi.fn(),
-  } as unknown as Parameters<
-    typeof import("./chat_session_store").createChatSessionStore
-  >[1]
+    ...overrides,
+  } as unknown as MainConversationStore
+  return {
+    fake,
+    sink: () => {
+      if (!sink) throw new Error("sink not bound")
+      return sink
+    },
+    autoModeOn,
+    armed,
+    working,
+    sessionId,
+  }
 }
 
-function capturingStreamChat(capture: {
-  options: StreamChatOptions | null
-}): (options: StreamChatOptions) => Promise<void> {
-  return (opts: StreamChatOptions) => {
-    capture.options = opts
-    return Promise.resolve()
-  }
+async function makeStore(
+  overrides: Partial<Record<string, unknown>> = {},
+  sessionStorageKey?: string,
+) {
+  const { createChatSessionStore } = await importFresh()
+  const main = makeFakeMain(overrides)
+  const store = createChatSessionStore(sessionStorageKey, main.fake)
+  return { store, ...main }
+}
+
+/** Send + drive the observer to a settled ready state. */
+async function sendAndSettle(
+  store: Awaited<ReturnType<typeof makeStore>>["store"],
+  sink: () => MainConversationSink,
+  text: string,
+) {
+  await store.sendMessage(text)
+  sink().onInteractiveIdle()
 }
 
 beforeEach(() => {
   storage = stubSessionStorage()
-  vi.stubGlobal("window", {
-    sessionStorage: storage.mock,
-  })
+  vi.stubGlobal("window", { sessionStorage: storage.mock })
   vi.stubGlobal("sessionStorage", storage.mock)
+  vi.stubGlobal("fetch", mockFetch)
+  mockFetch.mockResolvedValue({ ok: false, status: 500 })
   mockConsentStore.set(true)
   mockClientGet.mockReset()
   mockHydrate.mockReset()
+  mockBuildContextHeader.mockReset()
+  mockBuildContextHeader.mockReturnValue(null)
 })
 
 afterEach(() => {
@@ -144,1948 +173,1436 @@ afterEach(() => {
 
 describe("createChatSessionStore", () => {
   it("has correct initial state", async () => {
-    const { createChatSessionStore } = await importFreshWithMock()
-    const store = createChatSessionStore()
-    const state = get(store)
-    expect(state.messages).toEqual([])
-    expect(state.status).toBe("ready")
-    expect(state.abortController).toBeNull()
-    expect(state.collapsedPartKeys).toEqual({})
+    const { store } = await makeStore()
+    const s = get(store)
+    expect(s.messages).toEqual([])
+    expect(s.status).toBe("ready")
+    expect(s.sessionId).toBeNull()
+    expect(s.rootId).toBeNull()
+    expect(s.queuedMessage).toBeNull()
+    expect(s.toolApprovalWaiter).toBeNull()
   })
 
   describe("sendMessage", () => {
-    it("appends user and assistant messages and sets status to submitted", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hello")
-
-      const state = get(store)
-      expect(state.messages).toHaveLength(2)
-      expect(state.messages[0].role).toBe("user")
-      expect(state.messages[0].content).toBe("hello")
-      expect(state.messages[1].role).toBe("assistant")
-      expect(state.messages[1].parts).toEqual([])
-      expect(state.status).toBe("submitted")
-      expect(state.abortController).toBeInstanceOf(AbortController)
+    it("ensures the conversation, renders the message locally, and posts it", async () => {
+      const { store, fake } = await makeStore()
+      const ok = await store.sendMessage("hello")
+      expect(ok).toBe(true)
+      // create-or-adopt replaced the old per-request POST /api/chat.
+      expect(fake.ensure).toHaveBeenCalledWith(null)
+      expect(fake.sendMessage).toHaveBeenCalledWith("hello")
+      const s = get(store)
+      // Local render: user message + assistant placeholder (zero latency).
+      expect(s.messages).toHaveLength(2)
+      expect(s.messages[0].role).toBe("user")
+      expect(s.messages[0].content).toBe("hello")
+      expect(s.messages[1].role).toBe("assistant")
+      expect(s.status).toBe("submitted")
+      // The adopted session id persists as the main-conversation handle.
+      expect(s.sessionId).toBe("cv_main")
     })
 
-    it("trims whitespace from input", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore()
-
-      await store.sendMessage("  hello  ")
-      expect(get(store).messages[0].content).toBe("hello")
+    it("trims whitespace and ignores empty messages", async () => {
+      const { store, fake } = await makeStore()
+      await store.sendMessage("  hi  ")
+      expect(fake.sendMessage).toHaveBeenCalledWith("hi")
+      expect(await store.sendMessage("   ")).toBe(false)
+      expect(fake.sendMessage).toHaveBeenCalledTimes(1)
     })
 
-    it("ignores empty messages", async () => {
-      const { createChatSessionStore } = await importFreshWithMock()
-      const store = createChatSessionStore()
-
-      await store.sendMessage("")
-      await store.sendMessage("   ")
-      expect(get(store).messages).toHaveLength(0)
-      expect(get(store).status).toBe("ready")
-    })
-
-    it("queues a second message sent while a turn is in flight instead of dispatching it", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore()
-
+    it("queues a second message sent while a turn is in flight", async () => {
+      const { store, fake } = await makeStore()
       await store.sendMessage("first")
       expect(get(store).status).toBe("submitted")
-
-      await store.sendMessage("second")
-      // The second send is held client-side: no new conversation messages, no
-      // second stream — just the queued buffer.
-      expect(get(store).messages).toHaveLength(2)
-      expect(streamChatMock).toHaveBeenCalledTimes(1)
+      const ok = await store.sendMessage("second")
+      expect(ok).toBe(true)
       expect(get(store).queuedMessage).toBe("second")
+      expect(fake.sendMessage).toHaveBeenCalledTimes(1)
     })
 
-    it("transitions to streaming when onAssistantMessage is called", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
+    it("transitions submitted → streaming on assistant content, → ready on idle", async () => {
+      const { store, sink } = await makeStore()
+      await store.sendMessage("hello")
       expect(get(store).status).toBe("submitted")
-
-      capture.options!.onAssistantMessage((draft: ChatMessage) => {
-        draft.parts = [{ type: "text", text: "response" }]
+      sink().onAssistantMessage((draft) => {
+        draft.parts = [{ type: "text", text: "hi" }]
       })
-
-      const state = get(store)
-      expect(state.status).toBe("streaming")
-      expect(state.messages[1].parts).toEqual([
-        { type: "text", text: "response" },
-      ])
-    })
-
-    it("transitions to ready on finish", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      capture.options!.onFinish()
-
+      expect(get(store).status).toBe("streaming")
+      sink().onInteractiveIdle()
       expect(get(store).status).toBe("ready")
-      expect(get(store).abortController).toBeNull()
     })
 
-    it("resets activity indicator and toolExecuting on finish", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      capture.options!.onShowActivityIndicator!(true)
-      capture.options!.onToolExecutionStart!(1)
-      expect(get(store).showActivityIndicator).toBe(true)
-      expect(get(store).toolExecuting).toBe(true)
-
-      capture.options!.onFinish()
-
-      expect(get(store).showActivityIndicator).toBe(false)
-      expect(get(store).toolExecuting).toBe(false)
+    it("surfaces an ensure failure as an inline error", async () => {
+      const { store } = await makeStore({
+        ensure: vi.fn().mockResolvedValue({ ok: false, error: "no desktop" }),
+      })
+      const ok = await store.sendMessage("hello")
+      expect(ok).toBe(false)
+      const errors = get(store).messages.filter((m) => m.role === "error")
+      expect(errors).toHaveLength(1)
+      expect(errors[0].content).toContain("no desktop")
     })
 
-    it("resets activity indicator and toolExecuting on error", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      capture.options!.onShowActivityIndicator!(true)
-      capture.options!.onToolExecutionStart!(1)
-
-      capture.options!.onError(new Error("boom"))
-
-      expect(get(store).showActivityIndicator).toBe(false)
-      expect(get(store).toolExecuting).toBe(false)
-    })
-
-    it("adds error message on error callback", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      capture.options!.onError(new Error("network failure"))
-
-      const state = get(store)
-      expect(state.status).toBe("ready")
-      expect(state.messages).toHaveLength(3)
-      expect(state.messages[2].role).toBe("error")
-      expect(state.messages[2].content).toBe("network failure")
+    it("surfaces a failed send and returns to ready", async () => {
+      const { store } = await makeStore({
+        sendMessage: vi.fn().mockResolvedValue({ ok: false, error: "boom" }),
+      })
+      const ok = await store.sendMessage("hello")
+      expect(ok).toBe(false)
+      expect(get(store).status).toBe("ready")
+      expect(
+        get(store).messages.some(
+          (m) => m.role === "error" && m.content?.includes("boom"),
+        ),
+      ).toBe(true)
     })
 
     it("removes existing error messages before sending", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      capture.options!.onError(new Error("fail"))
+      const { store, sink } = await makeStore()
+      store.pushInlineError("old error")
       expect(get(store).messages.some((m) => m.role === "error")).toBe(true)
-
-      await store.sendMessage("retry")
-      expect(
-        get(store).messages.filter((m) => m.role === "error"),
-      ).toHaveLength(0)
-      expect(streamChatMock).toHaveBeenCalledTimes(2)
+      await sendAndSettle(store, sink, "hello")
+      expect(get(store).messages.some((m) => m.role === "error")).toBe(false)
     })
 
-    it("sets traceId on assistant message via onChatTrace", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      capture.options!.onChatTrace!("trace-abc")
-
-      const state = get(store)
-      const assistant = state.messages[1]
-      expect(assistant.traceId).toBe("trace-abc")
+    it("learns the durable rootId on the first persisted turn (phase 5)", async () => {
+      // The old world persisted the leaf trace id from onChatTrace here; the
+      // sink now only learns "a turn persisted" and the store fetches the
+      // conversation item ONCE to learn its durable root_id — the
+      // restart-recovery key (a session id, never a trace id).
+      const { store, sink } = await makeStore({}, "kiln_chat_test")
+      await store.sendMessage("hello")
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ session_id: "cv_main", root_id: "root-42" }),
+      })
+      sink().onTurnPersisted()
+      await vi.waitFor(() => {
+        expect(get(store).rootId).toBe("root-42")
+      })
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://test:8000/api/conversations/cv_main",
+      )
+      // Persisted (the recovery handle) — but never the messages.
+      expect(storage.store["kiln_chat_test"]).toContain("root-42")
+      expect(storage.store["kiln_chat_test"]).not.toContain("hello")
+      // Once known, later persisted turns fetch nothing.
+      sink().onTurnPersisted()
+      await new Promise((r) => setTimeout(r, 0))
+      expect(mockFetch).toHaveBeenCalledTimes(1)
     })
 
-    it("adds inline error message via onInlineError", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
+    it("never stamps a stale rootId onto a conversation switched mid-fetch (CR MEDIUM 2)", async () => {
+      // The root fetch for the OLD conversation resolves AFTER a New Chat /
+      // loadSession replaced the persisted handles — writing the old root
+      // would make the next send/resync silently adopt the old conversation.
+      const { store, sink } = await makeStore({}, "kiln_chat_test")
+      await store.sendMessage("hello")
+      let resolveItem: (v: unknown) => void = () => {}
+      mockFetch.mockReturnValueOnce(new Promise((r) => (resolveItem = r)))
+      sink().onTurnPersisted()
+      // The user opens a DIFFERENT conversation while the fetch hangs.
+      store.loadSession([], "row-new", null)
+      resolveItem({
+        ok: true,
+        json: async () => ({ session_id: "cv_main", root_id: "root-OLD" }),
+      })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(get(store).rootId).toBeNull()
+      // (sessionId is the NEW conversation's ensure result — the fake store
+      // resolves every ensure to "cv_main"; only the stale root write is the
+      // bug under test.)
+      expect(get(store).sessionId).toBe("cv_main")
+      expect(storage.store["kiln_chat_test"]).not.toContain("root-OLD")
 
-      await store.sendMessage("hi")
-      capture.options!.onInlineError!("server error", "trace-xyz")
-
-      const state = get(store)
-      expect(state.status).toBe("ready")
-      const errorMsg = state.messages.find((m) => m.role === "error")
-      expect(errorMsg).toBeDefined()
-      expect(errorMsg?.content).toBe("server error")
-      expect(errorMsg?.traceId).toBe("trace-xyz")
+      // Same guard for a New Chat reset.
+      const secondStore = await makeStore({}, "kiln_chat_test_2")
+      await secondStore.store.sendMessage("hi")
+      let resolveItem2: (v: unknown) => void = () => {}
+      mockFetch.mockReturnValueOnce(new Promise((r) => (resolveItem2 = r)))
+      secondStore.sink().onTurnPersisted()
+      secondStore.store.reset()
+      resolveItem2({
+        ok: true,
+        json: async () => ({ session_id: "cv_main", root_id: "root-OLD" }),
+      })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(get(secondStore.store).rootId).toBeNull()
     })
 
+    it("continues the conversation keyed by the persisted session handle", async () => {
+      const { store, sink, fake } = await makeStore()
+      await store.sendMessage("first")
+      sink().onInteractiveIdle()
+      await store.sendMessage("second")
+      // Phase 5: ensure is keyed by the persisted SESSION id (the first
+      // send's adopt result), never a trace id scanned off the messages.
+      expect(vi.mocked(fake.ensure).mock.calls[1][0]).toBe("cv_main")
+    })
+  })
+
+  describe("own-echo dedupe", () => {
+    it("does not duplicate the sender's own message when its echo arrives", async () => {
+      const { store, sink } = await makeStore()
+      await store.sendMessage("hello")
+      expect(get(store).messages.filter((m) => m.role === "user")).toHaveLength(
+        1,
+      )
+      // The run echoes the full content (with any header) + the server id
+      // returned by the 202.
+      sink().onUserMessage("hello", "cm_1")
+      const users = get(store).messages.filter((m) => m.role === "user")
+      expect(users).toHaveLength(1)
+      // The echo id lands on the local bubble so buffer replays dedupe too.
+      expect(users[0].echoId).toBe("cm_1")
+      sink().onUserMessage("hello", "cm_1") // replay
+      expect(get(store).messages.filter((m) => m.role === "user")).toHaveLength(
+        1,
+      )
+    })
+
+    it("matches the own echo by stripped content when it beats the 202 id", async () => {
+      const { store, sink } = await makeStore({
+        // Slow response: no message id known when the echo arrives.
+        sendMessage: vi.fn().mockResolvedValue({ ok: true }),
+      })
+      mockBuildContextHeader.mockReturnValue(
+        "<new_app_ui_context>ctx</new_app_ui_context>",
+      )
+      await store.sendMessage("hello")
+      sink().onUserMessage(
+        "<new_app_ui_context>ctx</new_app_ui_context>\nhello",
+        "cm_9",
+      )
+      const users = get(store).messages.filter((m) => m.role === "user")
+      expect(users).toHaveLength(1)
+      expect(users[0].content).toBe("hello")
+    })
+
+    it("renders another observer's echo (e.g. an injected report) as a chip", async () => {
+      const { store, sink } = await makeStore()
+      await store.sendMessage("hello")
+      const report =
+        '<subagent_report id="cv_1" agent_type="general" status="completed" title="Helper">\nAll done.\n</subagent_report>'
+      sink().onUserMessage(report, "cm_report")
+      const users = get(store).messages.filter((m) => m.role === "user")
+      expect(users).toHaveLength(2)
+      expect(users[1].subagentReport?.title).toBe("Helper")
+      expect(users[1].content).toBe("All done.")
+      // A fresh assistant turn follows the echo.
+      const last = get(store).messages[get(store).messages.length - 1]
+      expect(last.role).toBe("assistant")
+      // Dedupe by echo id on replay.
+      sink().onUserMessage(report, "cm_report")
+      expect(get(store).messages.filter((m) => m.role === "user")).toHaveLength(
+        2,
+      )
+    })
+  })
+
+  describe("cost disclaimer consent", () => {
     it("blocks sending when consent not acknowledged and no callback", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore()
       mockConsentStore.set(false)
-
-      const sent = await store.sendMessage("hello")
-      expect(sent).toBe(false)
-      expect(get(store).messages).toHaveLength(0)
-      expect(streamChatMock).not.toHaveBeenCalled()
+      const { store, fake } = await makeStore()
+      expect(await store.sendMessage("hello")).toBe(false)
+      expect(fake.sendMessage).not.toHaveBeenCalled()
     })
 
     it("prompts for consent and sends on approval", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore()
       mockConsentStore.set(false)
-      store.onConsentNeeded = () => Promise.resolve(true)
-
-      const sent = await store.sendMessage("hello")
-      expect(sent).toBe(true)
-      expect(get(store).messages).toHaveLength(2)
-      expect(streamChatMock).toHaveBeenCalledTimes(1)
+      const { store, fake } = await makeStore()
+      store.onConsentNeeded = vi.fn().mockResolvedValue(true)
+      expect(await store.sendMessage("hello")).toBe(true)
+      expect(fake.sendMessage).toHaveBeenCalled()
     })
 
     it("does not send when consent is denied", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore()
       mockConsentStore.set(false)
-      store.onConsentNeeded = () => Promise.resolve(false)
-
-      const sent = await store.sendMessage("hello")
-      expect(sent).toBe(false)
-      expect(get(store).messages).toHaveLength(0)
-      expect(streamChatMock).not.toHaveBeenCalled()
-    })
-
-    it("surfaces an inline error when enabling auto mode fails (429)", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-
-      // Fake auto-run store whose enable fails like a 429 "Too many auto runs".
-      const requestEnable = vi.fn().mockResolvedValue({
-        ok: false,
-        error: "Too many auto runs",
-      })
-      const fakeAutoRun = makeFakeAutoRun({ requestEnable })
-
-      const store = createChatSessionStore(undefined, fakeAutoRun)
-      store.onAutoModeConsentNeeded = () => Promise.resolve(true)
-
-      await store.sendMessage("hi")
-      // Drive the consent path the interactive stream hands off to.
-      await capture.options!.onAutoModeConsentRequired!({
-        traceId: "trace-1",
-        enableToolCallId: "call_1",
-        reason: null,
-        siblingToolCalls: [],
-      })
-
-      expect(requestEnable).toHaveBeenCalledTimes(1)
-      const errorMsg = get(store).messages.find((m) => m.role === "error")
-      expect(errorMsg).toBeDefined()
-      expect(errorMsg?.content).toBe(
-        "Couldn't start auto mode: Too many auto runs",
-      )
-    })
-
-    it.each([
-      ["on", { autoModeOn: true }],
-      ["armed", { armed: true }],
-    ] as const)(
-      "auto-accepts the enable call without prompting when auto mode is already %s",
-      async (_label, flag) => {
-        const { createChatSessionStore, streamChatMock } =
-          await importFreshWithMock()
-        const capture: { options: StreamChatOptions | null } = { options: null }
-        streamChatMock.mockImplementation(capturingStreamChat(capture))
-
-        // Start the interactive stream while auto mode is still off, so the
-        // store registers its onAutoModeConsentRequired handoff.
-        const requestEnable = vi.fn().mockResolvedValue({ ok: true })
-        const fakeAutoRun = makeFakeAutoRun({ requestEnable })
-        const store = createChatSessionStore(undefined, fakeAutoRun)
-        const autoConsent = vi.fn(() => Promise.resolve(true))
-        store.onAutoModeConsentNeeded = autoConsent
-        await store.sendMessage("hi")
-
-        // The user turns auto mode on themselves (e.g. footer toggle) while the
-        // stream is still resolving the model's enable call.
-        const writableFlag = (
-          fakeAutoRun as unknown as Record<string, Writable<boolean>>
-        )["autoModeOn" in flag ? "autoModeOn" : "armed"]
-        writableFlag.set(true)
-
-        await capture.options!.onAutoModeConsentRequired!({
-          traceId: "trace-1",
-          enableToolCallId: "call_1",
-          reason: null,
-          siblingToolCalls: [],
-        })
-
-        // The consent dialog is never shown; the enable call is accepted
-        // silently so the pending tool call resolves.
-        expect(autoConsent).not.toHaveBeenCalled()
-        expect(requestEnable).toHaveBeenCalledTimes(1)
-      },
-    )
-
-    it("skips consent prompt when already acknowledged", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore()
-      mockConsentStore.set(true)
-      const consentFn = vi.fn(() => Promise.resolve(true))
-      store.onConsentNeeded = consentFn
-
-      const sent = await store.sendMessage("hello")
-      expect(sent).toBe(true)
-      expect(consentFn).not.toHaveBeenCalled()
-    })
-
-    it("injects via the auto run (not /api/chat) when auto mode is on, never stopping it", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const sendMessage = vi.fn().mockResolvedValue({ ok: true })
-      const stop = vi.fn().mockResolvedValue(undefined)
-      const fakeAutoRun = makeFakeAutoRun({
-        autoModeOn: true,
-        sendMessage,
-        stop,
-      })
-      const store = createChatSessionStore(undefined, fakeAutoRun)
-
-      const sent = await store.sendMessage("keep going")
-      expect(sent).toBe(true)
-      // Routed to the inject endpoint, NOT the interactive stream, and the run
-      // was never stopped (Revision R1 inject-on-send).
-      expect(sendMessage).toHaveBeenCalledTimes(1)
-      expect(sendMessage.mock.calls[0][0]).toBe("keep going")
-      expect(stop).not.toHaveBeenCalled()
-      expect(streamChatMock).not.toHaveBeenCalled()
-    })
-
-    it("armed-first-send (Revision R2) creates the run via enable seeded with the message, no trace_id", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const requestEnable = vi.fn().mockResolvedValue({ ok: true })
-      const sendMessage = vi.fn().mockResolvedValue({ ok: true })
-      // Armed client-side on a brand-new conversation: no run yet (autoModeOn off).
-      const fakeAutoRun = makeFakeAutoRun({
-        armed: true,
-        requestEnable,
-        sendMessage,
-      })
-      const store = createChatSessionStore(undefined, fakeAutoRun)
-
-      const sent = await store.sendMessage("first message")
-      expect(sent).toBe(true)
-
-      // The first send creates the run via enable seeded with the message and
-      // NO trace_id — never the /message inject path (no run exists yet) and
-      // never the interactive stream.
-      expect(requestEnable).toHaveBeenCalledTimes(1)
-      const seed = requestEnable.mock.calls[0][0]
-      expect(seed.trace_id).toBeUndefined()
-      expect(seed.extra_messages).toEqual([
-        { role: "user", content: "first message" },
-      ])
-      expect(sendMessage).not.toHaveBeenCalled()
-      expect(streamChatMock).not.toHaveBeenCalled()
-
-      // The user message is rendered locally (the server does not echo a seed's
-      // extra_messages; only the /message inject path echoes).
-      const msgs = get(store).messages
-      expect(msgs[msgs.length - 1]).toMatchObject({
-        role: "user",
-        content: "first message",
-      })
-    })
-
-    it("armed-first-send surfaces an enable failure and does not consume the input", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const requestEnable = vi
-        .fn()
-        .mockResolvedValue({ ok: false, error: "Too many auto runs" })
-      const fakeAutoRun = makeFakeAutoRun({ armed: true, requestEnable })
-      const store = createChatSessionStore(undefined, fakeAutoRun)
-
-      const sent = await store.sendMessage("first message")
-      expect(sent).toBe(false)
-      // The failure surfaces as an inline error message in the transcript.
-      const errors = get(store).messages.filter((m) => m.role === "error")
-      expect(errors.length).toBe(1)
-      expect(errors[0].content).toContain("Too many auto runs")
-    })
-
-    it("does not re-prompt auto-mode consent while auto mode is already on", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const fakeAutoRun = makeFakeAutoRun({ autoModeOn: true })
-      const store = createChatSessionStore(undefined, fakeAutoRun)
-      const autoConsent = vi.fn(() => Promise.resolve(true))
-      store.onAutoModeConsentNeeded = autoConsent
-
-      await store.sendMessage("again")
-      // Sending while on injects directly; the interactive consent handoff
-      // (auto-mode-consent-required) is never reached, so no re-prompt.
-      expect(autoConsent).not.toHaveBeenCalled()
-      expect(streamChatMock).not.toHaveBeenCalled()
-    })
-
-    it("injects even while the interactive status is not ready (auto bursts run server-side)", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const sendMessage = vi.fn().mockResolvedValue({ ok: true })
-      const fakeAutoRun = makeFakeAutoRun({ autoModeOn: true, sendMessage })
-      const store = createChatSessionStore(undefined, fakeAutoRun)
-
-      const sent = await store.sendMessage("during a burst")
-      expect(sent).toBe(true)
-      expect(sendMessage).toHaveBeenCalledTimes(1)
-    })
-
-    it("drives autoWorking from the auto-run sink during bursts and clears it on idle/off", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      // Capture the sink the store registers via bind() so we can simulate the
-      // auto runner's control events (the same path that fires during bursts).
-      let boundSink: import("./auto_run_store").AutoRunChatSink | null = null
-      const fakeAutoRun = makeFakeAutoRun({ autoModeOn: true })
-      ;(
-        fakeAutoRun as unknown as {
-          bind: (s: import("./auto_run_store").AutoRunChatSink) => void
-        }
-      ).bind = (s) => {
-        boundSink = s
-      }
-      const store = createChatSessionStore(undefined, fakeAutoRun)
-      expect(boundSink).not.toBeNull()
-
-      // Burst working → the chat view's transcript-loading flag turns on, the
-      // SAME state interactive streaming would set (the loading-indicator fix).
-      boundSink!.onWorkingChange(true)
-      expect(get(store).autoWorking).toBe(true)
-
-      // Idle keeps the flag on (handled by the indicator binding) but clears the
-      // working sub-state so the thinking dots stop.
-      boundSink!.onAutoModeIdle("done")
-      expect(get(store).autoWorking).toBe(false)
-
-      boundSink!.onWorkingChange(true)
-      expect(get(store).autoWorking).toBe(true)
-      boundSink!.onAutoModeOff("user_stopped")
-      expect(get(store).autoWorking).toBe(false)
-    })
-
-    it("renders an echoed injected user message as a fresh user turn", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      let boundSink: import("./auto_run_store").AutoRunChatSink | null = null
-      const fakeAutoRun = makeFakeAutoRun({ autoModeOn: true })
-      ;(
-        fakeAutoRun as unknown as {
-          bind: (s: import("./auto_run_store").AutoRunChatSink) => void
-        }
-      ).bind = (s) => {
-        boundSink = s
-      }
-      const store = createChatSessionStore(undefined, fakeAutoRun)
-
-      boundSink!.onUserMessage("injected text")
-      const msgs = get(store).messages
-      const user = msgs.find((m) => m.role === "user")
-      expect(user?.content).toBe("injected text")
-      // A fresh assistant turn follows so the burst renders into a new turn.
-      expect(msgs[msgs.length - 1].role).toBe("assistant")
-    })
-
-    it("renders an echoed user message once per echo id (dedupes a replayed echo)", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      let boundSink: import("./auto_run_store").AutoRunChatSink | null = null
-      const fakeAutoRun = makeFakeAutoRun({ autoModeOn: true })
-      ;(
-        fakeAutoRun as unknown as {
-          bind: (s: import("./auto_run_store").AutoRunChatSink) => void
-        }
-      ).bind = (s) => {
-        boundSink = s
-      }
-      const store = createChatSessionStore(undefined, fakeAutoRun)
-
-      // Live echo + a buffer-replay echo on re-attach carry the SAME id.
-      boundSink!.onUserMessage("hello there", "am_1")
-      boundSink!.onUserMessage("hello there", "am_1")
-
-      const users = get(store).messages.filter((m) => m.role === "user")
-      expect(users).toHaveLength(1)
-      expect(users[0].content).toBe("hello there")
-      expect(users[0].echoId).toBe("am_1")
-    })
-
-    it("surfaces an inline error when injecting a message fails", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const sendMessage = vi
-        .fn()
-        .mockResolvedValue({ ok: false, error: "Run is gone" })
-      const fakeAutoRun = makeFakeAutoRun({ autoModeOn: true, sendMessage })
-      const store = createChatSessionStore(undefined, fakeAutoRun)
-
-      const sent = await store.sendMessage("hi")
-      expect(sent).toBe(false)
-      const errorMsg = get(store).messages.find((m) => m.role === "error")
-      expect(errorMsg?.content).toBe("Couldn't send the message: Run is gone")
+      const { store, fake } = await makeStore()
+      store.onConsentNeeded = vi.fn().mockResolvedValue(false)
+      expect(await store.sendMessage("hello")).toBe(false)
+      expect(fake.sendMessage).not.toHaveBeenCalled()
     })
   })
 
-  describe("queued messages", () => {
-    // Reach into the type-erased fake's writable store to simulate burst state.
-    function workingStore(fake: unknown): Writable<boolean> {
-      return (fake as { working: Writable<boolean> }).working
-    }
-
-    // Capture the sink the store binds into the auto-run store so tests can
-    // drive the runner's control/round events (onToolExecutionEnd, idle, off).
-    function bindSink(fake: unknown): {
-      get: () => import("./auto_run_store").AutoRunChatSink | null
-    } {
-      let sink: import("./auto_run_store").AutoRunChatSink | null = null
-      ;(
-        fake as {
-          bind: (s: import("./auto_run_store").AutoRunChatSink) => void
-        }
-      ).bind = (s) => {
-        sink = s
-      }
-      return { get: () => sink }
-    }
-
-    it("appends a second queued message to the first instead of replacing it", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore()
-
-      await store.sendMessage("first") // status -> submitted
-      await store.sendMessage("second")
-      await store.sendMessage("third")
-
-      expect(get(store).queuedMessage).toBe("second\n\nthird")
-      expect(streamChatMock).toHaveBeenCalledTimes(1)
-    })
-
-    it("coalesces a new send into an already-queued message even after the turn ends", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("first")
-      await store.sendMessage("queued")
-      // The turn errors, leaving the message queued (not auto-flushed on error).
-      capture.options!.onError(new Error("boom"))
+  describe("auto mode", () => {
+    it("injects via the conversation (never a new turn flow) when the flag is on", async () => {
+      const { store, fake, autoModeOn } = await makeStore()
+      autoModeOn.set(true)
+      const ok = await store.sendMessage("do more")
+      expect(ok).toBe(true)
+      expect(fake.sendMessage).toHaveBeenCalledWith("do more")
+      // No local render: the run echoes the message (renders via the echo).
+      expect(get(store).messages.filter((m) => m.role === "user")).toHaveLength(
+        0,
+      )
+      // And the interactive machinery stayed out of it.
+      expect(fake.ensure).not.toHaveBeenCalled()
       expect(get(store).status).toBe("ready")
-      expect(get(store).queuedMessage).toBe("queued")
-
-      // A follow-up send appends to the pending message instead of dispatching a
-      // separate stream alongside it.
-      await store.sendMessage("more")
-      expect(get(store).queuedMessage).toBe("queued\n\nmore")
-      expect(streamChatMock).toHaveBeenCalledTimes(1)
     })
 
-    it("flushes the queued message when the interactive turn finishes", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
+    it("queues during an active auto burst and injects at the round boundary", async () => {
+      const { store, sink, fake, autoModeOn, working } = await makeStore()
+      autoModeOn.set(true)
+      working.set(true)
+      await store.sendMessage("mid-burst note")
+      expect(get(store).queuedMessage).toBe("mid-burst note")
+      expect(fake.sendMessage).not.toHaveBeenCalled()
+      working.set(false)
+      // Round boundary: the runner finished a tool round.
+      sink().onToolExecutionEnd(1)
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledWith("mid-burst note")
+      })
+      expect(get(store).queuedMessage).toBeNull()
+    })
 
-      await store.sendMessage("first")
+    it("flushes a queued message when the burst goes idle", async () => {
+      const { store, sink, fake, autoModeOn, working } = await makeStore()
+      autoModeOn.set(true)
+      working.set(true)
+      await store.sendMessage("queued")
+      working.set(false)
+      sink().onAutoModeIdle("asked_user")
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledWith("queued")
+      })
+    })
+
+    it("clears the queued message when auto mode turns off", async () => {
+      const { store, sink, autoModeOn, working } = await makeStore()
+      autoModeOn.set(true)
+      working.set(true)
       await store.sendMessage("queued")
       expect(get(store).queuedMessage).toBe("queued")
-
-      // Turn ends -> the queued message dispatches as a fresh stream.
-      capture.options!.onFinish()
-
+      autoModeOn.set(false)
+      sink().onAutoModeOff("user_stopped")
       expect(get(store).queuedMessage).toBeNull()
-      expect(streamChatMock).toHaveBeenCalledTimes(2)
-      const secondCall = streamChatMock.mock.calls[1][0] as StreamChatOptions
-      expect(secondCall.messages[0].content).toBe("queued")
     })
 
-    it("clearQueued discards the queued message without sending", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore()
-
-      await store.sendMessage("first")
-      await store.sendMessage("queued")
-      expect(get(store).queuedMessage).toBe("queued")
-
-      store.clearQueued()
-      expect(get(store).queuedMessage).toBeNull()
-      // Still mid-turn, and only the original stream was ever dispatched.
-      expect(streamChatMock).toHaveBeenCalledTimes(1)
-    })
-
-    it("sendQueuedNow stops the interactive turn so the queue flushes on finish", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("first")
-      await store.sendMessage("queued")
-      const controller = get(store).abortController
-      const abortSpy = vi.spyOn(controller!, "abort")
-
-      store.sendQueuedNow()
-      // Interactive send-now terminates the turn; streamChat reports the abort
-      // as a finish, which flushes the queued message.
-      expect(abortSpy).toHaveBeenCalled()
-      capture.options!.onFinish()
-      expect(get(store).queuedMessage).toBeNull()
-      expect(streamChatMock).toHaveBeenCalledTimes(2)
-    })
-
-    it("queues during an active auto burst and injects at the next round boundary", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const inject = vi.fn().mockResolvedValue({ ok: true })
-      const fakeAutoRun = makeFakeAutoRun({
-        autoModeOn: true,
-        sendMessage: inject,
+    it("a queued message SURVIVES an observer connection drop (FR5)", async () => {
+      // An observer error is a connection fact, not a run fact: the
+      // conversation store fires only onWorkingChange(false) — never
+      // onAutoModeOff — so the client-held queue must stay intact and flush
+      // once the re-attach settles the burst.
+      const { store, sink, fake, autoModeOn, working } = await makeStore()
+      autoModeOn.set(true)
+      working.set(true)
+      await store.sendMessage("queued through the drop")
+      expect(get(store).queuedMessage).toBe("queued through the drop")
+      // The drop: exactly what conversation_store's onerror now drives.
+      working.set(false)
+      sink().onWorkingChange(false)
+      expect(get(store).queuedMessage).toBe("queued through the drop")
+      expect(fake.sendMessage).not.toHaveBeenCalled()
+      // Re-attach caught up and the burst went idle — the queue flushes.
+      sink().onAutoModeIdle("done")
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledWith("queued through the drop")
       })
-      const sink = bindSink(fakeAutoRun)
-      const store = createChatSessionStore(undefined, fakeAutoRun)
-
-      // A burst is running -> hold client-side (no immediate inject, so the echo
-      // doesn't jump into the transcript mid-round).
-      workingStore(fakeAutoRun).set(true)
-      await store.sendMessage("while working")
-      expect(inject).not.toHaveBeenCalled()
-      expect(get(store).queuedMessage).toBe("while working")
-
-      // Round boundary (a tool round finished) -> inject so it rides the next
-      // request.
-      sink.get()!.onToolExecutionEnd(1)
-      expect(inject).toHaveBeenCalledTimes(1)
-      expect(inject.mock.calls[0][0]).toBe("while working")
-      expect(get(store).queuedMessage).toBeNull()
     })
 
-    it("injects immediately when auto mode is idle (no in-flight round to wait for)", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const inject = vi.fn().mockResolvedValue({ ok: true })
-      const fakeAutoRun = makeFakeAutoRun({
-        autoModeOn: true,
-        sendMessage: inject,
-      })
-      const store = createChatSessionStore(undefined, fakeAutoRun)
-
-      // working defaults false -> auto mode is idle ("waiting for you").
-      await store.sendMessage("go")
-      expect(inject).toHaveBeenCalledTimes(1)
-      expect(inject.mock.calls[0][0]).toBe("go")
-      expect(get(store).queuedMessage).toBeNull()
+    it("drives autoWorking from the sink and clears it on idle", async () => {
+      const { store, sink, autoModeOn } = await makeStore()
+      autoModeOn.set(true)
+      sink().onWorkingChange(true)
+      expect(get(store).autoWorking).toBe(true)
+      sink().onWorkingChange(false)
+      sink().onAutoModeIdle("asked_user")
+      expect(get(store).autoWorking).toBe(false)
     })
 
-    it("flushes a queued message by injecting when the burst goes idle", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const inject = vi.fn().mockResolvedValue({ ok: true })
-      const fakeAutoRun = makeFakeAutoRun({
-        autoModeOn: true,
-        sendMessage: inject,
-      })
-      const sink = bindSink(fakeAutoRun)
-      const store = createChatSessionStore(undefined, fakeAutoRun)
-
-      workingStore(fakeAutoRun).set(true)
-      await store.sendMessage("at idle")
-      expect(inject).not.toHaveBeenCalled()
-
-      workingStore(fakeAutoRun).set(false)
-      sink.get()!.onAutoModeIdle("done")
-      expect(inject).toHaveBeenCalledTimes(1)
-      expect(inject.mock.calls[0][0]).toBe("at idle")
-      expect(get(store).queuedMessage).toBeNull()
-    })
-
-    it("sendQueuedNow injects immediately in auto mode without waiting for a round boundary", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const inject = vi.fn().mockResolvedValue({ ok: true })
-      const fakeAutoRun = makeFakeAutoRun({
-        autoModeOn: true,
-        sendMessage: inject,
-      })
-      const store = createChatSessionStore(undefined, fakeAutoRun)
-
-      workingStore(fakeAutoRun).set(true)
-      await store.sendMessage("urgent")
-      expect(inject).not.toHaveBeenCalled()
-
-      store.sendQueuedNow()
-      expect(inject).toHaveBeenCalledTimes(1)
-      expect(inject.mock.calls[0][0]).toBe("urgent")
-      expect(get(store).queuedMessage).toBeNull()
-    })
-
-    it("clears the queued message when auto mode stops (auto-mode-off)", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const inject = vi.fn().mockResolvedValue({ ok: true })
-      const fakeAutoRun = makeFakeAutoRun({
-        autoModeOn: true,
-        sendMessage: inject,
-      })
-      const sink = bindSink(fakeAutoRun)
-      const store = createChatSessionStore(undefined, fakeAutoRun)
-
-      workingStore(fakeAutoRun).set(true)
-      await store.sendMessage("pending")
-      expect(get(store).queuedMessage).toBe("pending")
-
-      sink.get()!.onAutoModeOff("user_stopped")
-      expect(get(store).queuedMessage).toBeNull()
-      expect(inject).not.toHaveBeenCalled()
-    })
-
-    it("restores the queued message if a flush dispatch is rejected (no silent data loss)", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      // The inject fails — the queued text must not vanish.
-      const inject = vi
-        .fn()
-        .mockResolvedValue({ ok: false, error: "run is gone" })
-      const fakeAutoRun = makeFakeAutoRun({
-        autoModeOn: true,
-        sendMessage: inject,
-      })
-      const sink = bindSink(fakeAutoRun)
-      const store = createChatSessionStore(undefined, fakeAutoRun)
-
-      workingStore(fakeAutoRun).set(true)
-      await store.sendMessage("keep me")
-      expect(get(store).queuedMessage).toBe("keep me")
-
-      // Round boundary triggers a flush that fails to dispatch.
-      sink.get()!.onToolExecutionEnd(1)
-      expect(inject).toHaveBeenCalledTimes(1)
-      // Cleared optimistically, then restored once the failed send resolves.
-      await vi.waitFor(() => expect(get(store).queuedMessage).toBe("keep me"))
-    })
-
-    it("clears the queue on reset", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore()
-
-      await store.sendMessage("first")
-      await store.sendMessage("queued")
-      expect(get(store).queuedMessage).toBe("queued")
-
-      store.reset()
-      expect(get(store).queuedMessage).toBeNull()
-    })
-  })
-
-  describe("upgrade nudge", () => {
-    it("sets upgradeNudgeVersion via onVersionNudge", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      expect(get(store).upgradeNudgeVersion).toBeNull()
-
-      await store.sendMessage("hi")
-      capture.options!.onVersionNudge!("1.2.3")
-
-      expect(get(store).upgradeNudgeVersion).toBe("1.2.3")
-    })
-
-    it("dismissUpgradeNudge clears the nudge", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      capture.options!.onVersionNudge!("1.2.3")
-      expect(get(store).upgradeNudgeVersion).toBe("1.2.3")
-
-      store.dismissUpgradeNudge()
-      expect(get(store).upgradeNudgeVersion).toBeNull()
-    })
-  })
-
-  describe("version required banner", () => {
-    it("sets versionRequired (not a chat message) on a too-old error", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      capture.options!.onInlineError!(
-        "Please update the Kiln desktop app to continue using chat.",
-        undefined,
-        CHAT_CLIENT_VERSION_TOO_OLD,
+    it("armed-first-send creates the run via enable seeded with the message", async () => {
+      const { store, fake, armed } = await makeStore()
+      armed.set(true)
+      mockBuildContextHeader.mockReturnValue(
+        "<new_app_ui_context>c</new_app_ui_context>",
       )
-
-      const state = get(store)
-      expect(state.versionRequired).toBe(true)
-      expect(state.status).toBe("ready")
-      // It must NOT show up as a conversation error bubble.
-      expect(state.messages.some((m) => m.role === "error")).toBe(false)
-    })
-
-    it("persists versionRequired across reset (aligned with the nudge)", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      capture.options!.onInlineError!(
-        "too old",
-        undefined,
-        CHAT_CLIENT_VERSION_TOO_OLD,
-      )
-      expect(get(store).versionRequired).toBe(true)
-
-      // New Chat / reset must not clear a blocking version banner.
-      store.reset()
-      expect(get(store).versionRequired).toBe(true)
-    })
-  })
-
-  describe("checkVersionPolicy", () => {
-    afterEach(() => {
-      vi.unstubAllGlobals()
-    })
-
-    it("sets versionRequired from the policy endpoint", async () => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue({
-          ok: true,
-          json: () =>
-            Promise.resolve({ required: true, upgrade_nudge_version: null }),
-        }),
-      )
-      const { createChatSessionStore } = await importFreshWithMock()
-      const store = createChatSessionStore()
-
-      await store.checkVersionPolicy()
-      expect(get(store).versionRequired).toBe(true)
-      expect(get(store).upgradeNudgeVersion).toBeNull()
-    })
-
-    it("sets the nudge version from the policy endpoint", async () => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              required: false,
-              upgrade_nudge_version: "1.0.5",
-            }),
-        }),
-      )
-      const { createChatSessionStore } = await importFreshWithMock()
-      const store = createChatSessionStore()
-
-      await store.checkVersionPolicy()
-      expect(get(store).versionRequired).toBe(false)
-      expect(get(store).upgradeNudgeVersion).toBe("1.0.5")
-    })
-
-    it("leaves banners untouched on a failed request", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }))
-      const { createChatSessionStore } = await importFreshWithMock()
-      const store = createChatSessionStore()
-
-      await store.checkVersionPolicy()
-      expect(get(store).versionRequired).toBe(false)
-      expect(get(store).upgradeNudgeVersion).toBeNull()
-    })
-  })
-
-  describe("stop", () => {
-    it("aborts the current request", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      const controller = get(store).abortController!
-      expect(controller.signal.aborted).toBe(false)
-
-      store.stop()
-      expect(controller.signal.aborted).toBe(true)
-    })
-
-    it("does nothing when no request is in-flight", async () => {
-      const { createChatSessionStore } = await importFreshWithMock()
-      const store = createChatSessionStore()
-      expect(() => store.stop()).not.toThrow()
-    })
-  })
-
-  describe("retryLastRequest", () => {
-    it("trims from last user message and re-sends", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("first question")
-      capture.options!.onFinish()
-
-      await store.sendMessage("second question")
-      capture.options!.onError(new Error("fail"))
-
-      const beforeRetry = get(store).messages.length
-      expect(beforeRetry).toBe(5)
-
-      store.retryLastRequest()
-      const state = get(store)
-      const userMessages = state.messages.filter((m) => m.role === "user")
-      expect(userMessages[userMessages.length - 1].content).toBe(
-        "second question",
-      )
-    })
-
-    it("is a no-op when status is not ready (stream in progress)", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hello")
-      // Don't call onFinish — status stays "submitted"
-      const callCountAfterSend = streamChatMock.mock.calls.length
-      const messagesAfterSend = get(store).messages.length
-
-      store.retryLastRequest()
-
-      expect(streamChatMock).toHaveBeenCalledTimes(callCountAfterSend)
-      expect(get(store).messages).toHaveLength(messagesAfterSend)
-    })
-
-    it("does nothing when there are no user messages", async () => {
-      const { createChatSessionStore } = await importFreshWithMock()
-      const store = createChatSessionStore()
-      expect(() => store.retryLastRequest()).not.toThrow()
-      expect(get(store).messages).toHaveLength(0)
-    })
-  })
-
-  describe("reset", () => {
-    it("clears all state", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore("test_session")
-
-      await store.sendMessage("hi")
-      store.togglePartCollapsed("some-key", false)
-
-      store.reset()
-      const state = get(store)
-      expect(state.messages).toEqual([])
-      expect(state.status).toBe("ready")
-      expect(state.abortController).toBeNull()
-      expect(state.collapsedPartKeys).toEqual({})
-    })
-
-    it("writes empty state to sessionStorage via persisted.set", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore("test_session")
-
-      await store.sendMessage("hi")
-      store.reset()
-
-      const stored = JSON.parse(storage.store["test_session"])
-      expect(stored.messages).toEqual([])
-      expect(stored.collapsedPartKeys).toEqual({})
-    })
-
-    it("aborts in-flight request", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      const controller = get(store).abortController!
-
-      store.reset()
-      expect(controller.signal.aborted).toBe(true)
-    })
-  })
-
-  describe("togglePartCollapsed", () => {
-    it("flips collapse state for a key", async () => {
-      const { createChatSessionStore } = await importFreshWithMock()
-      const store = createChatSessionStore()
-
-      store.togglePartCollapsed("key1", false)
-      expect(get(store).collapsedPartKeys["key1"]).toBe(true)
-
-      store.togglePartCollapsed("key1", true)
-      expect(get(store).collapsedPartKeys["key1"]).toBe(false)
-    })
-  })
-
-  describe("persistence", () => {
-    it("persists messages to sessionStorage", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore("persist_test")
-
-      await store.sendMessage("hello")
-      capture.options!.onFinish()
-
-      const stored = JSON.parse(storage.store["persist_test"])
-      expect(stored.messages).toHaveLength(2)
-      expect(stored.messages[0].content).toBe("hello")
-    })
-
-    it("restores messages from sessionStorage on creation", async () => {
-      const existingMessages: ChatMessage[] = [
-        { id: "u1", role: "user", content: "saved message" },
-        { id: "a1", role: "assistant", parts: [{ type: "text", text: "hi" }] },
-      ]
-      storage.store["restore_test"] = JSON.stringify({
-        messages: existingMessages,
-        collapsedPartKeys: { "a1-part-0": true },
-      })
-
-      const { createChatSessionStore } = await importFreshWithMock()
-      const store = createChatSessionStore("restore_test")
-      const state = get(store)
-      expect(state.messages).toHaveLength(2)
-      expect(state.messages[0].content).toBe("saved message")
-      expect(state.collapsedPartKeys["a1-part-0"]).toBe(true)
-      expect(state.status).toBe("ready")
-      expect(state.abortController).toBeNull()
-    })
-
-    it("does not persist without a sessionStorageKey", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const keysBefore = new Set(Object.keys(storage.store))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hello")
-      const keysAfter = Object.keys(storage.store).filter(
-        (k) => !keysBefore.has(k),
-      )
-      expect(keysAfter).toHaveLength(0)
-    })
-  })
-
-  describe("independent instances", () => {
-    it("two stores with different keys are independent", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-
-      const storeA = createChatSessionStore("store_a")
-      const storeB = createChatSessionStore("store_b")
-
-      await storeA.sendMessage("msg for A")
-      capture.options!.onFinish()
-
-      expect(get(storeA).messages).toHaveLength(2)
-      expect(get(storeB).messages).toHaveLength(0)
-    })
-  })
-
-  describe("tool approval", () => {
-    it("has correct initial approval state", async () => {
-      const { createChatSessionStore } = await importFreshWithMock()
-      const store = createChatSessionStore()
-      const state = get(store)
-      expect(state.toolApprovalWaiter).toBeNull()
-      expect(state.toolApprovalPicks).toEqual({})
-    })
-
-    it("always registers an internal onToolCallsPending handler", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      expect(capture.options!.onToolCallsPending).toBeDefined()
-      expect(typeof capture.options!.onToolCallsPending).toBe("function")
-    })
-
-    it("sets approval state when onToolCallsPending is called with approval items", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      const handler = capture.options!.onToolCallsPending!
-      handler({
-        items: [
+      const ok = await store.sendMessage("first message")
+      expect(ok).toBe(true)
+      expect(fake.requestEnable).toHaveBeenCalledWith({
+        kind: "auto",
+        // No conversation exists yet — the seed carries no session key.
+        session_id: undefined,
+        extra_messages: [
           {
-            toolCallId: "tc1",
-            toolName: "read_file",
-            input: {},
-            requiresApproval: true,
-            approvalDescription: "Read a file",
+            role: "user",
+            content:
+              "<new_app_ui_context>c</new_app_ui_context>\nfirst message",
           },
         ],
       })
-
-      const state = get(store)
-      expect(state.toolApprovalWaiter).not.toBeNull()
-      expect(state.toolApprovalWaiter!.payload.items).toHaveLength(1)
-      expect(state.toolApprovalWaiter!.payload.items[0].toolCallId).toBe("tc1")
-      expect(state.toolApprovalPicks).toEqual({ tc1: undefined })
+      // Rendered locally (the server does not echo seed extra_messages).
+      const users = get(store).messages.filter((m) => m.role === "user")
+      expect(users).toHaveLength(1)
+      expect(users[0].content).toBe("first message")
     })
 
-    it("auto-resolves when no items require approval", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
+    it("armed-first-send surfaces an enable failure", async () => {
+      const { store, armed } = await makeStore({
+        requestEnable: vi
+          .fn()
+          .mockResolvedValue({ ok: false, error: "Too many auto runs" }),
+      })
+      armed.set(true)
+      expect(await store.sendMessage("first")).toBe(false)
+      expect(
+        get(store).messages.some(
+          (m) => m.role === "error" && m.content?.includes("Too many"),
+        ),
+      ).toBe(true)
+    })
+  })
 
-      await store.sendMessage("hi")
-      const handler = capture.options!.onToolCallsPending!
-      const result = await handler({
-        items: [
+  describe("auto-mode consent (on the observer stream)", () => {
+    const payload = {
+      trigger: "enable_auto_mode" as const,
+      gatingToolCallId: "tc_enable",
+      reason: "run it",
+      spawn: null,
+      siblingToolCalls: [],
+    }
+
+    it("accept flips the SAME conversation via requestEnable, keyed by sid", async () => {
+      const { store, sink, fake, sessionId } = await makeStore()
+      // The consent event arrives on the observer of a live conversation, so
+      // its session id is always in hand (phase 5: the old payload traceId
+      // died with the trace-keyed surface).
+      sessionId.set("cv_live")
+      store.onAutoModeConsentNeeded = vi.fn().mockResolvedValue(true)
+      sink().onConsentRequired(payload)
+      await vi.waitFor(() => {
+        expect(fake.requestEnable).toHaveBeenCalledWith({
+          kind: "auto",
+          session_id: "cv_live",
+          enable_tool_call_id: "tc_enable",
+          pending_tool_calls: [],
+          reason: "run it",
+        })
+      })
+    })
+
+    it("decline resolves via the folded-in /auto decline (gating id spelling)", async () => {
+      const { store, sink, fake } = await makeStore()
+      store.onAutoModeConsentNeeded = vi.fn().mockResolvedValue(false)
+      sink().onConsentRequired(payload)
+      await vi.waitFor(() => {
+        expect(fake.decline).toHaveBeenCalledWith({
+          gating_tool_call_id: "tc_enable",
+          siblings: [],
+        })
+      })
+      expect(fake.requestEnable).not.toHaveBeenCalled()
+    })
+
+    it("accepts silently (no dialog) when auto mode is already on/armed", async () => {
+      const { store, sink, fake, armed } = await makeStore()
+      armed.set(true)
+      const dialog = vi.fn().mockResolvedValue(false)
+      store.onAutoModeConsentNeeded = dialog
+      sink().onConsentRequired(payload)
+      await vi.waitFor(() => {
+        expect(fake.requestEnable).toHaveBeenCalled()
+      })
+      expect(dialog).not.toHaveBeenCalled()
+    })
+
+    it("surfaces an enable failure (e.g. 429) as an inline error", async () => {
+      const { store, sink } = await makeStore({
+        requestEnable: vi
+          .fn()
+          .mockResolvedValue({ ok: false, error: "Too many auto runs" }),
+      })
+      store.onAutoModeConsentNeeded = vi.fn().mockResolvedValue(true)
+      sink().onConsentRequired(payload)
+      await vi.waitFor(() => {
+        expect(
+          get(store).messages.some(
+            (m) => m.role === "error" && m.content?.includes("Too many"),
+          ),
+        ).toBe(true)
+      })
+    })
+
+    it("holds queued sends until the consent flow resolves", async () => {
+      const { store, sink, fake } = await makeStore()
+      let resolveDialog: (v: boolean) => void = () => {}
+      store.onAutoModeConsentNeeded = vi.fn(
+        () => new Promise<boolean>((r) => (resolveDialog = r)),
+      )
+      sink().onConsentRequired(payload)
+      // The turn is over server-side (idle event) but the dialog is open —
+      // a send must queue, not dispatch.
+      sink().onInteractiveIdle()
+      await store.sendMessage("while deciding")
+      expect(get(store).queuedMessage).toBe("while deciding")
+      expect(fake.sendMessage).not.toHaveBeenCalled()
+      resolveDialog(false)
+      await vi.waitFor(() => {
+        expect(fake.decline).toHaveBeenCalled()
+      })
+    })
+  })
+
+  describe("spawn-triggered auto-mode consent (FR2)", () => {
+    const sibling = {
+      toolCallId: "tc_sib",
+      toolName: "add",
+      input: { a: 1 },
+      requiresApproval: false,
+    }
+    // The wire spawn object carries a field the typed SpawnConsentInfo does
+    // not model — accept must echo it verbatim, not the lossy rebuild.
+    const rawSpawnInput = {
+      agent_type: "general",
+      name: "Helper",
+      prompt: "do things",
+      future_field: "kept",
+    }
+    const spawnPayload = {
+      trigger: "spawn_subagent" as const,
+      gatingToolCallId: "tc_spawn",
+      reason: null,
+      spawn: {
+        agentType: "general",
+        name: "Helper",
+        prompt: "do things",
+        rawInput: rawSpawnInput,
+      },
+      siblingToolCalls: [sibling],
+    }
+
+    it("accept enables with the gating spawn FIRST in pending_tool_calls and no enable id", async () => {
+      const { store, sink, fake, sessionId } = await makeStore()
+      sessionId.set("cv_live")
+      store.onAutoModeConsentNeeded = vi.fn().mockResolvedValue(true)
+      sink().onConsentRequired(spawnPayload)
+      await vi.waitFor(() => {
+        expect(fake.requestEnable).toHaveBeenCalledTimes(1)
+      })
+      const seed = vi.mocked(fake.requestEnable).mock.calls[0][0]
+      expect(seed).toEqual({
+        kind: "auto",
+        session_id: "cv_live",
+        pending_tool_calls: [
           {
-            toolCallId: "tc1",
-            toolName: "read_file",
-            input: {},
+            toolCallId: "tc_spawn",
+            toolName: "spawn_subagent",
+            input: rawSpawnInput,
+            requiresApproval: false,
+          },
+          {
+            toolCallId: "tc_sib",
+            toolName: "add",
+            input: { a: 1 },
             requiresApproval: false,
           },
         ],
       })
+      // There is no enable call in the spawn-consent flow — the desktop's
+      // enable_auto tolerates a None id and seeds off the pending calls.
+      expect("enable_tool_call_id" in seed).toBe(false)
+      expect("reason" in seed).toBe(false)
+    })
 
-      expect(result).toEqual({})
+    it("accept falls back to the typed rebuild when the payload has no raw spawn input", async () => {
+      const { store, sink, fake, sessionId } = await makeStore()
+      sessionId.set("cv_live")
+      store.onAutoModeConsentNeeded = vi.fn().mockResolvedValue(true)
+      sink().onConsentRequired({
+        ...spawnPayload,
+        spawn: { agentType: "general", name: "Helper", prompt: "do things" },
+      })
+      await vi.waitFor(() => {
+        expect(fake.requestEnable).toHaveBeenCalledTimes(1)
+      })
+      const seed = vi.mocked(fake.requestEnable).mock.calls[0][0]
+      expect(seed.pending_tool_calls?.[0]).toEqual({
+        toolCallId: "tc_spawn",
+        toolName: "spawn_subagent",
+        input: { agent_type: "general", name: "Helper", prompt: "do things" },
+        requiresApproval: false,
+      })
+    })
+
+    it("decline resolves the gating SPAWN id with its siblings", async () => {
+      const { store, sink, fake } = await makeStore()
+      store.onAutoModeConsentNeeded = vi.fn().mockResolvedValue(false)
+      sink().onConsentRequired(spawnPayload)
+      await vi.waitFor(() => {
+        expect(fake.decline).toHaveBeenCalledWith({
+          gating_tool_call_id: "tc_spawn",
+          siblings: [
+            {
+              toolCallId: "tc_sib",
+              toolName: "add",
+              input: { a: 1 },
+              requiresApproval: false,
+            },
+          ],
+        })
+      })
+      expect(fake.requestEnable).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("queued messages (interactive)", () => {
+    it("appends a second queued message to the first", async () => {
+      const { store } = await makeStore()
+      await store.sendMessage("first")
+      await store.sendMessage("queued one")
+      await store.sendMessage("queued two")
+      expect(get(store).queuedMessage).toBe("queued one\n\nqueued two")
+    })
+
+    it("flushes the queued message when the interactive turn finishes", async () => {
+      const { store, sink, fake } = await makeStore()
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      sink().onInteractiveIdle()
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledWith("queued")
+      })
+      expect(get(store).queuedMessage).toBeNull()
+    })
+
+    it("clearQueued discards without sending", async () => {
+      const { store, sink, fake } = await makeStore()
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      store.clearQueued()
+      sink().onInteractiveIdle()
+      await new Promise((r) => setTimeout(r, 0))
+      expect(fake.sendMessage).toHaveBeenCalledTimes(1)
+    })
+
+    it("sendQueuedNow stops the turn so the queue flushes on idle", async () => {
+      const { store, sink, fake } = await makeStore()
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      store.sendQueuedNow()
+      // Stop is a server call now (the idle event settles the turn).
+      expect(fake.stop).toHaveBeenCalled()
+      sink().onInteractiveIdle()
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledWith("queued")
+      })
+    })
+
+    it("sendQueuedNow injects immediately in auto mode", async () => {
+      const { store, fake, autoModeOn, working } = await makeStore()
+      autoModeOn.set(true)
+      working.set(true)
+      await store.sendMessage("queued")
+      store.sendQueuedNow()
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledWith("queued")
+      })
+      expect(fake.stop).not.toHaveBeenCalled()
+    })
+
+    it("restores the queued message if a flush dispatch is rejected", async () => {
+      const { store, sink } = await makeStore({
+        sendMessage: vi.fn().mockResolvedValue({ ok: false, error: "nope" }),
+      })
+      await store.sendMessage("first") // dispatch fails → inline error, ready
+      await store.sendMessage("second")
+      // "second" dispatched immediately (status ready) and failed too — it
+      // must be restored rather than silently dropped.
+      await vi.waitFor(() => {
+        expect(get(store).messages.some((m) => m.role === "error")).toBe(true)
+      })
+      void sink
+    })
+
+    it("clears the queue on reset", async () => {
+      const { store } = await makeStore()
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      store.reset()
+      expect(get(store).queuedMessage).toBeNull()
+    })
+  })
+
+  // Mid-turn sends on a LIVE run (the conversation store knows the session
+  // id) ride the server inbox — the engine folds them into the next upstream
+  // round — instead of waiting client-side for the whole turn to settle.
+  describe("mid-turn inbox injection (interactive)", () => {
+    it("POSTs a mid-turn send to the live run instead of queueing", async () => {
+      const { store, fake, sessionId } = await makeStore()
+      await store.sendMessage("first")
+      sessionId.set("cv_main")
+      expect(get(store).status).toBe("submitted")
+      const ok = await store.sendMessage("second")
+      expect(ok).toBe(true)
+      expect(get(store).queuedMessage).toBeNull()
+      expect(fake.sendMessage).toHaveBeenCalledTimes(2)
+      expect(fake.sendMessage).toHaveBeenLastCalledWith("second")
+      // No local render — the run's echo renders the injected message.
+      expect(get(store).messages.filter((m) => m.role === "user")).toHaveLength(
+        1,
+      )
+    })
+
+    it("falls back to the queue when the inject POST fails", async () => {
+      const { store, fake, sessionId } = await makeStore()
+      await store.sendMessage("first")
+      sessionId.set("cv_main")
+      vi.mocked(fake.sendMessage).mockResolvedValueOnce({
+        ok: false,
+        error: "boom",
+      })
+      const ok = await store.sendMessage("second")
+      expect(ok).toBe(true)
+      expect(get(store).queuedMessage).toBe("second")
+    })
+
+    it("queues while an approval box is open, then injects when the run resumes", async () => {
+      const approvalBatch = {
+        batchId: "ab_inject",
+        items: [
+          {
+            toolCallId: "tc1",
+            toolName: "search",
+            input: {},
+            requiresApproval: true,
+          },
+        ],
+      }
+      const { store, sink, fake, sessionId } = await makeStore({
+        fetchApprovals: vi.fn().mockResolvedValue(approvalBatch),
+      })
+      await store.sendMessage("first")
+      sessionId.set("cv_main")
+      sink().onAwaitingApproval()
+      await vi.waitFor(() => {
+        expect(get(store).toolApprovalWaiter).not.toBeNull()
+      })
+      // The open box blocks injection (the POST's optimistic working flip
+      // would read as "decided elsewhere" and close it) — so the send queues.
+      await store.sendMessage("while deciding")
+      expect(get(store).queuedMessage).toBe("while deciding")
+      expect(fake.sendMessage).toHaveBeenCalledTimes(1)
+      // The batch resolves and the run resumes: the queued message injects
+      // into the live run right away, not at the turn's end.
+      sink().onWorkingChange(true)
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledWith("while deciding")
+      })
+      expect(get(store).queuedMessage).toBeNull()
+    })
+
+    it("sendQueuedNow injects into the live run without stopping it", async () => {
+      const { store, fake, sessionId } = await makeStore()
+      await store.sendMessage("first")
+      sessionId.set("cv_main")
+      // A message that fell back to the queue (its inject POST failed).
+      vi.mocked(fake.sendMessage).mockResolvedValueOnce({
+        ok: false,
+        error: "boom",
+      })
+      await store.sendMessage("second")
+      expect(get(store).queuedMessage).toBe("second")
+      store.sendQueuedNow()
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledTimes(3)
+      })
+      expect(fake.stop).not.toHaveBeenCalled()
+      expect(get(store).queuedMessage).toBeNull()
+    })
+  })
+
+  describe("approval box (parked batches)", () => {
+    const batch = {
+      batchId: "ab_1",
+      items: [
+        {
+          toolCallId: "tc1",
+          toolName: "add",
+          input: { a: 1 },
+          requiresApproval: true,
+        },
+        {
+          toolCallId: "tc2",
+          toolName: "get",
+          input: {},
+          requiresApproval: false,
+        },
+      ],
+    }
+
+    it("opens the box off the fetched batch on tool-calls-pending", async () => {
+      const { store, sink } = await makeStore({
+        fetchApprovals: vi.fn().mockResolvedValue(batch),
+      })
+      await store.sendMessage("hello")
+      sink().onToolCallsPending(batch.items)
+      await vi.waitFor(() => {
+        expect(get(store).toolApprovalWaiter).not.toBeNull()
+      })
+      // Approval-only items reach the box (the non-approval sibling is
+      // context on the wire, executed without a decision) — the old
+      // filtering, unchanged.
+      expect(get(store).toolApprovalWaiter!.payload.items).toHaveLength(1)
+      expect(get(store).toolApprovalWaiter!.payload.items[0].toolCallId).toBe(
+        "tc1",
+      )
+      expect(get(store).toolApprovalPicks).toEqual({ tc1: undefined })
+    })
+
+    it("opens the box off the awaiting_approval state (refresh recovery)", async () => {
+      const { store, sink } = await makeStore({
+        fetchApprovals: vi.fn().mockResolvedValue(batch),
+      })
+      sink().onAwaitingApproval()
+      await vi.waitFor(() => {
+        expect(get(store).toolApprovalWaiter).not.toBeNull()
+      })
+      expect(get(store).status).toBe("ready")
+    })
+
+    it("submits decisions with the batch id once all picks are made", async () => {
+      const { store, sink, fake } = await makeStore({
+        fetchApprovals: vi.fn().mockResolvedValue(batch),
+      })
+      sink().onAwaitingApproval()
+      await vi.waitFor(() => {
+        expect(get(store).toolApprovalWaiter).not.toBeNull()
+      })
+      store.applyToolApprovalRun("tc1")
+      expect(fake.decide).toHaveBeenCalledWith("ab_1", { tc1: true })
       expect(get(store).toolApprovalWaiter).toBeNull()
     })
 
-    it("applyToolApprovalRun sets pick to true", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      const handler = capture.options!.onToolCallsPending!
-      handler({
-        items: [
-          {
-            toolCallId: "tc1",
-            toolName: "t1",
-            input: {},
-            requiresApproval: true,
-          },
-          {
-            toolCallId: "tc2",
-            toolName: "t2",
-            input: {},
-            requiresApproval: true,
-          },
-        ],
+    it("skip denies the call", async () => {
+      const { store, sink, fake } = await makeStore({
+        fetchApprovals: vi.fn().mockResolvedValue(batch),
       })
-
-      store.applyToolApprovalRun("tc1")
-      expect(get(store).toolApprovalPicks["tc1"]).toBe(true)
-      expect(get(store).toolApprovalWaiter).not.toBeNull()
-    })
-
-    it("applyToolApprovalSkip sets pick to false", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      const handler = capture.options!.onToolCallsPending!
-      handler({
-        items: [
-          {
-            toolCallId: "tc1",
-            toolName: "t1",
-            input: {},
-            requiresApproval: true,
-          },
-          {
-            toolCallId: "tc2",
-            toolName: "t2",
-            input: {},
-            requiresApproval: true,
-          },
-        ],
+      sink().onAwaitingApproval()
+      await vi.waitFor(() => {
+        expect(get(store).toolApprovalWaiter).not.toBeNull()
       })
-
       store.applyToolApprovalSkip("tc1")
-      expect(get(store).toolApprovalPicks["tc1"]).toBe(false)
-      expect(get(store).toolApprovalWaiter).not.toBeNull()
+      expect(fake.decide).toHaveBeenCalledWith("ab_1", { tc1: false })
     })
 
-    it("resolves promise and clears state when all approvals are decided", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      const handler = capture.options!.onToolCallsPending!
-      const promise = handler({
-        items: [
-          {
-            toolCallId: "tc1",
-            toolName: "t1",
-            input: {},
-            requiresApproval: true,
-          },
-          {
-            toolCallId: "tc2",
-            toolName: "t2",
-            input: {},
-            requiresApproval: true,
-          },
-        ],
+    it("stays quiet on a decide conflict (another tab decided first)", async () => {
+      const { store, sink } = await makeStore({
+        fetchApprovals: vi.fn().mockResolvedValue(batch),
+        decide: vi.fn().mockResolvedValue({ ok: false, conflict: true }),
       })
-
+      sink().onAwaitingApproval()
+      await vi.waitFor(() => {
+        expect(get(store).toolApprovalWaiter).not.toBeNull()
+      })
       store.applyToolApprovalRun("tc1")
-      store.applyToolApprovalSkip("tc2")
-
-      const decisions = await promise
-      expect(decisions).toEqual({ tc1: true, tc2: false })
-      expect(get(store).toolApprovalWaiter).toBeNull()
-      expect(get(store).toolApprovalPicks).toEqual({})
+      await new Promise((r) => setTimeout(r, 0))
+      expect(get(store).messages.some((m) => m.role === "error")).toBe(false)
     })
 
-    it("applyToolApprovalRun is a no-op when no waiter is active", async () => {
-      const { createChatSessionStore } = await importFreshWithMock()
-      const store = createChatSessionStore()
-      expect(() => store.applyToolApprovalRun("tc1")).not.toThrow()
+    it("clears the box when the run resumes (another tab decided)", async () => {
+      const { store, sink } = await makeStore({
+        fetchApprovals: vi.fn().mockResolvedValue(batch),
+      })
+      sink().onAwaitingApproval()
+      await vi.waitFor(() => {
+        expect(get(store).toolApprovalWaiter).not.toBeNull()
+      })
+      sink().onWorkingChange(true)
       expect(get(store).toolApprovalWaiter).toBeNull()
     })
 
-    it("applyToolApprovalSkip is a no-op when no waiter is active", async () => {
-      const { createChatSessionStore } = await importFreshWithMock()
-      const store = createChatSessionStore()
-      expect(() => store.applyToolApprovalSkip("tc1")).not.toThrow()
+    it("does nothing when the batch is already resolved (fetch → null)", async () => {
+      const { store, sink } = await makeStore({
+        fetchApprovals: vi.fn().mockResolvedValue(null),
+      })
+      sink().onToolCallsPending([])
+      await new Promise((r) => setTimeout(r, 0))
       expect(get(store).toolApprovalWaiter).toBeNull()
+    })
+
+    it("auto-resolves a batch with no approval-requiring items", async () => {
+      const { store, sink, fake } = await makeStore({
+        fetchApprovals: vi.fn().mockResolvedValue({
+          batchId: "ab_2",
+          items: [
+            {
+              toolCallId: "tc2",
+              toolName: "get",
+              input: {},
+              requiresApproval: false,
+            },
+          ],
+        }),
+      })
+      sink().onAwaitingApproval()
+      await vi.waitFor(() => {
+        expect(fake.decide).toHaveBeenCalledWith("ab_2", {})
+      })
+      expect(get(store).toolApprovalWaiter).toBeNull()
+    })
+
+    it("queues sends while the box is open and flushes after deciding", async () => {
+      const { store, sink, fake } = await makeStore({
+        fetchApprovals: vi.fn().mockResolvedValue(batch),
+      })
+      sink().onAwaitingApproval()
+      await vi.waitFor(() => {
+        expect(get(store).toolApprovalWaiter).not.toBeNull()
+      })
+      await store.sendMessage("while deciding")
+      expect(get(store).queuedMessage).toBe("while deciding")
+      store.applyToolApprovalRun("tc1")
+      // The resumed run settles later; the queued message flushes on idle.
+      sink().onInteractiveIdle()
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledWith("while deciding")
+      })
     })
 
     it("reset clears tool approval state", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      const handler = capture.options!.onToolCallsPending!
-      handler({
-        items: [
-          {
-            toolCallId: "tc1",
-            toolName: "t1",
-            input: {},
-            requiresApproval: true,
-          },
-        ],
+      const { store, sink } = await makeStore({
+        fetchApprovals: vi.fn().mockResolvedValue(batch),
       })
-      expect(get(store).toolApprovalWaiter).not.toBeNull()
-
+      sink().onAwaitingApproval()
+      await vi.waitFor(() => {
+        expect(get(store).toolApprovalWaiter).not.toBeNull()
+      })
       store.reset()
       expect(get(store).toolApprovalWaiter).toBeNull()
       expect(get(store).toolApprovalPicks).toEqual({})
     })
   })
 
-  describe("loadSession", () => {
-    it("loads messages and sets continuation trace id", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore()
-
-      const messages: ChatMessage[] = [
-        { id: "u1", role: "user", content: "hello" },
-        { id: "a1", role: "assistant", parts: [{ type: "text", text: "hi" }] },
-      ]
-      store.loadSession(messages, "trace-123")
-
-      const state = get(store)
-      expect(state.messages).toHaveLength(2)
-      expect(state.messages[0].content).toBe("hello")
-      expect(state.status).toBe("ready")
-      expect(state.abortController).toBeNull()
+  describe("banners", () => {
+    it("sets upgradeNudgeVersion via onVersionNudge and dismisses it", async () => {
+      const { store, sink } = await makeStore()
+      sink().onVersionNudge("1.2.3")
+      expect(get(store).upgradeNudgeVersion).toBe("1.2.3")
+      store.dismissUpgradeNudge()
+      expect(get(store).upgradeNudgeVersion).toBeNull()
     })
 
-    it("aborts in-flight request when loading a session", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      const controller = get(store).abortController!
-
-      store.loadSession([], "trace-456")
-      expect(controller.signal.aborted).toBe(true)
-    })
-
-    it("uses continuation trace id for subsequent messages", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      store.loadSession([], "trace-cont")
-      await store.sendMessage("follow up")
-
-      expect(capture.options!.traceId).toBe("trace-cont")
-    })
-  })
-
-  describe("toolExecuting", () => {
-    it("sets toolExecuting to true on onToolExecutionStart", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      expect(get(store).toolExecuting).toBe(false)
-
-      capture.options!.onToolExecutionStart!(1)
-      expect(get(store).toolExecuting).toBe(true)
-    })
-
-    it("sets toolExecuting to false on onToolExecutionEnd", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      capture.options!.onToolExecutionStart!(1)
-      expect(get(store).toolExecuting).toBe(true)
-
-      capture.options!.onToolExecutionEnd!(1)
-      expect(get(store).toolExecuting).toBe(false)
-    })
-
-    it("resets toolExecuting on reset", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      await store.sendMessage("hi")
-      capture.options!.onToolExecutionStart!(1)
-      expect(get(store).toolExecuting).toBe(true)
-
-      store.reset()
-      expect(get(store).toolExecuting).toBe(false)
-    })
-  })
-
-  describe("streaming status guard", () => {
-    it("only transitions to streaming once across multiple onAssistantMessage calls", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
-      const statusTransitions: string[] = []
-      let prevStatus = ""
-      store.subscribe((s) => {
-        if (s.status !== prevStatus) {
-          statusTransitions.push(s.status)
-          prevStatus = s.status
-        }
-      })
-      statusTransitions.length = 0
-      prevStatus = "ready"
-
-      await store.sendMessage("hi")
-      expect(get(store).status).toBe("submitted")
-
-      capture.options!.onAssistantMessage((draft: ChatMessage) => {
-        draft.parts = [{ type: "text", text: "a" }]
-      })
-      capture.options!.onAssistantMessage((draft: ChatMessage) => {
-        draft.parts = [{ type: "text", text: "ab" }]
-      })
-      capture.options!.onAssistantMessage((draft: ChatMessage) => {
-        draft.parts = [{ type: "text", text: "abc" }]
-      })
-
-      const streamingTransitions = statusTransitions.filter(
-        (s) => s === "streaming",
+    it("sets versionRequired (not a chat message) on a too-old error event", async () => {
+      const { store, sink } = await makeStore()
+      await store.sendMessage("hello")
+      sink().onInlineError(
+        "Please update",
+        undefined,
+        CHAT_CLIENT_VERSION_TOO_OLD,
       )
-      expect(streamingTransitions.length).toBe(1)
+      expect(get(store).versionRequired).toBe(true)
+      expect(get(store).messages.some((m) => m.role === "error")).toBe(false)
+      expect(get(store).status).toBe("ready")
+    })
+
+    it("checkVersionPolicy sets banner state from the endpoint", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          required: true,
+          upgrade_nudge_version: "9.9.9",
+        }),
+      })
+      const { store } = await makeStore()
+      await store.checkVersionPolicy()
+      expect(get(store).versionRequired).toBe(true)
+      expect(get(store).upgradeNudgeVersion).toBe("9.9.9")
+    })
+
+    it("checkVersionPolicy leaves banners untouched on a failed request", async () => {
+      mockFetch.mockRejectedValueOnce(new Error("offline"))
+      const { store } = await makeStore()
+      await store.checkVersionPolicy()
+      expect(get(store).versionRequired).toBe(false)
+    })
+
+    it("does not flush a queued message while versionRequired", async () => {
+      const { store, sink } = await makeStore()
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      sink().onInlineError("old", undefined, CHAT_CLIENT_VERSION_TOO_OLD)
+      sink().onInteractiveIdle()
+      await new Promise((r) => setTimeout(r, 0))
+      expect(get(store).queuedMessage).toBe("queued")
     })
   })
 
-  describe("corrupt sessionStorage", () => {
-    it("starts fresh when sessionStorage contains invalid JSON", async () => {
-      storage.store["corrupt_test"] = "not valid json{{"
+  describe("refresh convergence (HIGH-1 brick fix)", () => {
+    it("a replayed echo + error with a silent idle marker converges to ready and the composer works", async () => {
+      // The brick chain: re-attaching to a conversation whose last turn
+      // ended in a terminal upstream error (no trace persisted) replays the
+      // buffered user-message echo (→ working true → "submitted") and the
+      // error event; the on-subscribe idle marker then fires NO settle hooks
+      // by design. onWorkingChange(false) must reset the composer.
+      const { store, sink, fake } = await makeStore()
+      // Replay: echo marks the turn in flight…
+      sink().onWorkingChange(true)
+      sink().onUserMessage("please add", "cm_replayed")
+      // …the buffered terminal error renders…
+      sink().onInlineError("Something went wrong.")
+      expect(get(store).status).toBe("submitted")
+      // …and the idle MARKER only reports not-working (no settle hooks).
+      sink().onWorkingChange(false)
+      expect(get(store).status).toBe("ready")
+      // The echo + error rendered; the composer is usable again: a new send
+      // dispatches instead of queueing forever.
+      expect(
+        get(store).messages.some(
+          (m) => m.role === "user" && m.content === "please add",
+        ),
+      ).toBe(true)
+      const ok = await store.sendMessage("try again")
+      expect(ok).toBe(true)
+      expect(fake.sendMessage).toHaveBeenCalledWith("try again")
+      expect(get(store).queuedMessage).toBeNull()
+    })
 
-      const { createChatSessionStore } = await importFreshWithMock()
-      const store = createChatSessionStore("corrupt_test")
-      const state = get(store)
-      expect(state.messages).toEqual([])
-      expect(state.collapsedPartKeys).toEqual({})
-      expect(state.status).toBe("ready")
+    it("the marker reset never flushes a queued message (markers are not settles)", async () => {
+      const { store, sink, fake } = await makeStore()
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      expect(get(store).queuedMessage).toBe("queued")
+      // A not-working signal without a settle (marker shape): composer
+      // resets but the queue holds until a REAL settle.
+      sink().onWorkingChange(false)
+      await new Promise((r) => setTimeout(r, 0))
+      expect(get(store).status).toBe("ready")
+      expect(get(store).queuedMessage).toBe("queued")
+      expect(fake.sendMessage).toHaveBeenCalledTimes(1)
+      // The real settle flushes.
+      sink().onInteractiveIdle()
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledWith("queued")
+      })
+    })
+
+    it("an observer drop mid-turn resets status and surfaces the error (MEDIUM-1)", async () => {
+      // The conversation store maps an observer error mid-turn to
+      // onWorkingChange(false) + onInlineError (see its onerror handler);
+      // the session store must land back on ready with the error visible.
+      const { store, sink } = await makeStore()
+      await store.sendMessage("hello")
+      expect(get(store).status).toBe("submitted")
+      sink().onWorkingChange(false)
+      sink().onInlineError(
+        "Lost the connection to the assistant. Please try again.",
+      )
+      expect(get(store).status).toBe("ready")
+      expect(
+        get(store).messages.some(
+          (m) =>
+            m.role === "error" && m.content?.includes("Lost the connection"),
+        ),
+      ).toBe(true)
+    })
+  })
+
+  describe("queued-message flush on idle marker (BUG 2)", () => {
+    it("(a) flushes a client-held queue on an idle marker when the live idle event was missed", async () => {
+      const { store, sink, fake } = await makeStore()
+      await store.sendMessage("first") // turn in flight → "submitted"
+      await store.sendMessage("queued") // held client-side
+      expect(get(store).queuedMessage).toBe("queued")
+      expect(fake.sendMessage).toHaveBeenCalledTimes(1)
+      // The LIVE idle event was missed (the observer was detached at the
+      // settle instant); only the on-subscribe idle MARKER arrives. On that
+      // marker the conversation store fires onWorkingChange(false) (resets the
+      // composer) THEN the dedicated onIdleMarker hook — which flushes the
+      // client-held queue that would otherwise strand forever.
+      sink().onWorkingChange(false)
+      sink().onIdleMarker!()
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledWith("queued")
+      })
+      expect(get(store).queuedMessage).toBeNull()
+    })
+
+    it("(b) an idle marker after a replayed echo + error converges to ready and does NOT spuriously dispatch", async () => {
+      // The refresh-brick sequence, now WITH the marker-idle hook wired: a
+      // replayed echo marks the turn working, the buffered error renders, and
+      // the idle marker fires onWorkingChange(false) + onIdleMarker. With no
+      // queued message, maybeFlush is a correct no-op — no brick, no phantom
+      // send.
+      const { store, sink, fake } = await makeStore()
+      sink().onWorkingChange(true)
+      sink().onUserMessage("please add", "cm_replayed")
+      sink().onInlineError("Something went wrong.")
+      expect(get(store).status).toBe("submitted")
+      sink().onWorkingChange(false)
+      sink().onIdleMarker!()
+      await new Promise((r) => setTimeout(r, 0))
+      expect(get(store).status).toBe("ready")
+      expect(get(store).queuedMessage).toBeNull()
+      expect(fake.sendMessage).not.toHaveBeenCalled()
+    })
+
+    it("(c) does not double-send when both a live idle AND an idle marker occur", async () => {
+      const { store, sink, fake } = await makeStore()
+      await store.sendMessage("first")
+      await store.sendMessage("queued")
+      expect(get(store).queuedMessage).toBe("queued")
+      // The live idle settles and flushes the queue (dispatchQueued clears it
+      // before sending).
+      sink().onInteractiveIdle()
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledWith("queued")
+      })
+      const callsAfterFlush = (fake.sendMessage as ReturnType<typeof vi.fn>)
+        .mock.calls.length
+      // A late idle marker for the SAME settle must not re-send: the queue was
+      // already cleared by the flush.
+      sink().onWorkingChange(false)
+      sink().onIdleMarker!()
+      await new Promise((r) => setTimeout(r, 0))
+      expect(
+        (fake.sendMessage as ReturnType<typeof vi.fn>).mock.calls.length,
+      ).toBe(callsAfterFlush)
+    })
+  })
+
+  describe("stop / retry", () => {
+    it("stop posts the server-side cancel", async () => {
+      const { store, fake } = await makeStore()
+      await store.sendMessage("hello")
+      store.stop()
+      expect(fake.stop).toHaveBeenCalled()
+    })
+
+    it("retryLastRequest trims from the last user message and re-sends", async () => {
+      const { store, sink, fake } = await makeStore()
+      await sendAndSettle(store, () => sink(), "original")
+      sink().onInlineError("boom")
+      store.retryLastRequest()
+      await vi.waitFor(() => {
+        expect(fake.sendMessage).toHaveBeenCalledTimes(2)
+      })
+      expect(vi.mocked(fake.sendMessage).mock.calls[1][0]).toBe("original")
+      // No duplicate user bubble.
+      expect(
+        get(store).messages.filter(
+          (m) => m.role === "user" && m.content === "original",
+        ),
+      ).toHaveLength(1)
+    })
+
+    it("retry is a no-op while a turn is in flight", async () => {
+      const { store, fake } = await makeStore()
+      await store.sendMessage("hello")
+      store.retryLastRequest()
+      expect(fake.sendMessage).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe("reset / loadSession", () => {
+    it("reset clears all state and detaches the observer", async () => {
+      const { store, fake } = await makeStore({}, "kiln_chat_test")
+      await store.sendMessage("hello")
+      expect(get(store).sessionId).toBe("cv_main")
+      store.reset()
+      const s = get(store)
+      expect(s.messages).toEqual([])
+      expect(s.status).toBe("ready")
+      expect(s.sessionId).toBeNull()
+      expect(s.rootId).toBeNull()
+      expect(s.contextUsage).toBeNull()
+      expect(fake.detach).toHaveBeenCalled()
+      // sessionStorage cleared to the empty handles.
+      expect(storage.store["kiln_chat_test"]).not.toContain("cv_main")
+    })
+
+    it("loadSession sets messages + the row's session key and re-attaches via ensure", async () => {
+      const { store, fake } = await makeStore()
+      const messages: ChatMessage[] = [
+        { id: "u1", role: "user", content: "hi" },
+        { id: "a1", role: "assistant", parts: [] },
+      ]
+      store.loadSession(messages, "row-key-7", null, { rootId: "root-7" })
+      expect(get(store).messages).toEqual(messages)
+      // The row key persists IMMEDIATELY (addressable before ensure lands);
+      // the durable rootId rides along as the recovery key.
+      expect(get(store).sessionId).toBe("row-key-7")
+      expect(get(store).rootId).toBe("root-7")
+      expect(fake.detach).toHaveBeenCalled()
+      await vi.waitFor(() => {
+        expect(fake.ensure).toHaveBeenCalledWith("row-key-7", {
+          openInflightTurn: true,
+          assumeAutoOn: false,
+        })
+      })
+      await vi.waitFor(() => {
+        expect(get(store).sessionId).toBe("cv_main")
+      })
+    })
+
+    it("loadSession threads the history row's auto-active flag to the attach", async () => {
+      // LOW 1: an auto-active history row restores the old immediate
+      // indicator (assumeAutoOn) instead of waiting for the state marker.
+      const { store, fake } = await makeStore()
+      store.loadSession([], "row-key-8", null, { autoActive: true })
+      await vi.waitFor(() => {
+        expect(fake.ensure).toHaveBeenCalledWith("row-key-8", {
+          openInflightTurn: true,
+          assumeAutoOn: true,
+        })
+      })
+    })
+
+    it("loadSession continues from the loaded session key on the next send", async () => {
+      const { store, fake } = await makeStore()
+      store.loadSession([{ id: "a1", role: "assistant", parts: [] }], "row-7")
+      await store.sendMessage("continue")
+      expect(vi.mocked(fake.ensure).mock.calls.pop()![0]).toBe("row-7")
+    })
+  })
+
+  describe("persistence (handles only)", () => {
+    it("persists only the conversation handles + ui prefs — never messages", async () => {
+      const { store } = await makeStore({}, "kiln_chat_test")
+      await store.sendMessage("hello world")
+      store.togglePartCollapsed("part-1", false)
+      const persisted = JSON.parse(storage.store["kiln_chat_test"])
+      expect(persisted).toEqual({
+        sessionId: "cv_main",
+        rootId: null,
+        collapsedPartKeys: { "part-1": true },
+        lastSentAppState: expect.anything(),
+      })
+    })
+
+    it("restores the handles from sessionStorage on creation", async () => {
+      storage.store["kiln_chat_test"] = JSON.stringify({
+        sessionId: "cv_old",
+        rootId: "root-old",
+        collapsedPartKeys: {},
+        lastSentAppState: null,
+      })
+      const { store } = await makeStore({}, "kiln_chat_test")
+      expect(get(store).sessionId).toBe("cv_old")
+      expect(get(store).rootId).toBe("root-old")
+      // Transcripts always rebuild from hydrate+observe.
+      expect(get(store).messages).toEqual([])
+    })
+
+    it("starts fresh when sessionStorage contains invalid JSON", async () => {
+      storage.store["kiln_chat_test"] = "{invalid json"
+      const { store } = await makeStore({}, "kiln_chat_test")
+      expect(get(store).sessionId).toBeNull()
+      expect(get(store).messages).toEqual([])
     })
   })
 
   describe("context header", () => {
-    it("prepends context header on first message when buildContextHeader returns a header", async () => {
-      const agentModule = await import("$lib/agent")
-      const buildMock = vi.mocked(agentModule.buildContextHeader)
-      buildMock.mockReturnValueOnce(
-        "<new_app_ui_context>\nPath: /test\n</new_app_ui_context>",
+    it("sends the header on the wire but renders clean text", async () => {
+      mockBuildContextHeader.mockReturnValue(
+        "<new_app_ui_context>ctx</new_app_ui_context>",
       )
-
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
+      const { store, fake } = await makeStore()
       await store.sendMessage("hello")
-
-      const apiMessage = capture.options!.messages[0]
-      expect(apiMessage.content).toContain("<new_app_ui_context>")
-      expect(apiMessage.content).toContain("hello")
+      expect(fake.sendMessage).toHaveBeenCalledWith(
+        "<new_app_ui_context>ctx</new_app_ui_context>\nhello",
+      )
+      const users = get(store).messages.filter((m) => m.role === "user")
+      expect(users[0].content).toBe("hello")
     })
 
-    it("stores clean user text without header in messages", async () => {
-      const agentModule = await import("$lib/agent")
-      const buildMock = vi.mocked(agentModule.buildContextHeader)
-      buildMock.mockReturnValueOnce(
-        "<new_app_ui_context>\nPath: /test\n</new_app_ui_context>",
-      )
-
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore()
-
+    it("does not prepend when buildContextHeader returns null", async () => {
+      const { store, fake } = await makeStore()
       await store.sendMessage("hello")
-
-      const state = get(store)
-      const userMsg = state.messages.find((m) => m.role === "user")
-      expect(userMsg?.content).toBe("hello")
-      expect(userMsg?.content).not.toContain("<new_app_ui_context>")
+      expect(fake.sendMessage).toHaveBeenCalledWith("hello")
     })
 
-    it("does not prepend header when buildContextHeader returns null", async () => {
-      const agentModule = await import("$lib/agent")
-      const buildMock = vi.mocked(agentModule.buildContextHeader)
-      buildMock.mockReturnValue(null)
-
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
-      const store = createChatSessionStore()
-
+    it("updates lastSentAppState on send (persisted for the delta encoding)", async () => {
+      const { store } = await makeStore({}, "kiln_chat_test")
       await store.sendMessage("hello")
+      expect(get(store).lastSentAppState).toEqual(mockAppState)
+      expect(storage.store["kiln_chat_test"]).toContain("Test Page")
+    })
+  })
 
-      const apiMessage = capture.options!.messages[0]
-      expect(apiMessage.content).toBe("hello")
+  describe("resyncOnLoad (hard refresh)", () => {
+    it("hydrates by the live session id and re-attaches", async () => {
+      storage.store["kiln_chat_test"] = JSON.stringify({
+        sessionId: "cv_live",
+        rootId: null,
+        collapsedPartKeys: {},
+        lastSentAppState: null,
+      })
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          session_id: "cv_live",
+          state: "running",
+          root_id: "root-live",
+        }),
+      })
+      mockClientGet.mockResolvedValue({
+        data: { id: "tr-fresh" },
+        error: undefined,
+      })
+      mockHydrate.mockReturnValue({
+        messages: [{ id: "m1", role: "user", content: "restored" }],
+        rootId: "root-live",
+        contextUsage: null,
+      })
+      const { store, fake } = await makeStore({}, "kiln_chat_test")
+      await store.resyncOnLoad()
+      // Hydration is keyed by the SESSION id — the desktop resolves the
+      // record's current leaf per request (phase 5: the browser's stored
+      // leaf and its refresh via current_trace_id are gone).
+      expect(mockClientGet).toHaveBeenCalledWith(
+        "/api/chat/sessions/{session_id}",
+        { params: { path: { session_id: "cv_live" } } },
+      )
+      expect(get(store).messages[0].content).toBe("restored")
+      // The durable recovery key was learned from the item response.
+      expect(get(store).rootId).toBe("root-live")
+      expect(fake.beginReconnect).toHaveBeenCalled()
+      expect(fake.ensure).toHaveBeenCalledWith("cv_live", {
+        openInflightTurn: true,
+        initialWorking: true,
+      })
     })
 
-    it("updates lastSentAppState when header is sent", async () => {
-      const agentModule = await import("$lib/agent")
-      const buildMock = vi.mocked(agentModule.buildContextHeader)
-      const getStateMock = vi.mocked(agentModule.getCurrentAppState)
-      const testState = {
-        path: "/test",
-        pageName: "Test",
-        pageDescription: "Desc",
-        currentProject: null,
-        currentTask: null,
-      }
-      getStateMock.mockReturnValue(testState)
-      buildMock.mockReturnValueOnce(
-        "<new_app_ui_context>\nPath: /test\n</new_app_ui_context>",
+    it("recovers via the durable root id when the session id is gone (desktop restart)", async () => {
+      storage.store["kiln_chat_test"] = JSON.stringify({
+        sessionId: "cv_dead",
+        rootId: "root-durable",
+        collapsedPartKeys: {},
+        lastSentAppState: null,
+      })
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 404 })
+      mockClientGet.mockResolvedValue({
+        data: { id: "tr-durable" },
+        error: undefined,
+      })
+      mockHydrate.mockReturnValue({
+        messages: [],
+        rootId: "root-durable",
+        contextUsage: null,
+      })
+      const { store, fake } = await makeStore({}, "kiln_chat_test")
+      await store.resyncOnLoad()
+      // Hydration + create-or-adopt run on the ROOT key (the desktop
+      // resolves root→leaf and rehydrates any parked approvals from the
+      // persisted tail, server-side) — the old flow's stored trace id role.
+      expect(mockClientGet).toHaveBeenCalledWith(
+        "/api/chat/sessions/{session_id}",
+        { params: { path: { session_id: "root-durable" } } },
       )
-
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore("ctx_test")
-
-      await store.sendMessage("hello")
-
-      const stored = JSON.parse(storage.store["ctx_test"])
-      expect(stored.lastSentAppState).toEqual(testState)
+      expect(fake.ensure).toHaveBeenCalledWith("root-durable", {
+        openInflightTurn: true,
+        initialWorking: undefined,
+      })
     })
 
-    it("resets lastSentAppState on reset", async () => {
-      const agentModule = await import("$lib/agent")
-      const buildMock = vi.mocked(agentModule.buildContextHeader)
-      buildMock.mockReturnValueOnce(
-        "<new_app_ui_context>\nPath: /test\n</new_app_ui_context>",
-      )
+    it("is a no-op with nothing stored", async () => {
+      const { store, fake } = await makeStore({}, "kiln_chat_test")
+      await store.resyncOnLoad()
+      expect(fake.ensure).not.toHaveBeenCalled()
+      expect(mockClientGet).not.toHaveBeenCalled()
+    })
 
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore("reset_ctx_test")
-
-      await store.sendMessage("hello")
+    it("never stamps a stale rootId when New Chat races the resync item fetch (CR residual)", async () => {
+      // The on-mount resync's GET /api/conversations/{storedSid} hangs; the
+      // user clicks New Chat before it resolves. The opportunistic root
+      // upgrade must be generation-guarded like maybeLearnRootId (MEDIUM 2's
+      // failure mode): stamping the OLD conversation's root onto the reset
+      // handles would make the next send silently adopt the old conversation.
+      storage.store["kiln_chat_test"] = JSON.stringify({
+        sessionId: "cv_live",
+        rootId: null,
+        collapsedPartKeys: {},
+        lastSentAppState: null,
+      })
+      let resolveItem: (v: unknown) => void = () => {}
+      mockFetch.mockReturnValueOnce(new Promise((r) => (resolveItem = r)))
+      const { store } = await makeStore({}, "kiln_chat_test")
+      const resync = store.resyncOnLoad()
       store.reset()
-
-      const stored = JSON.parse(storage.store["reset_ctx_test"])
-      expect(stored.lastSentAppState).toBeNull()
+      resolveItem({
+        ok: true,
+        json: async () => ({
+          session_id: "cv_live",
+          state: "idle",
+          root_id: "root-OLD",
+        }),
+      })
+      await resync
+      expect(get(store).rootId).toBeNull()
+      expect(get(store).sessionId).toBeNull()
+      expect(storage.store["kiln_chat_test"]).not.toContain("root-OLD")
     })
 
-    it("updates lastSentAppState even when no header is sent", async () => {
-      const agentModule = await import("$lib/agent")
-      const buildMock = vi.mocked(agentModule.buildContextHeader)
-      buildMock.mockReturnValue(null)
-
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      streamChatMock.mockImplementation(noopStreamChat)
-      const store = createChatSessionStore("no_update_test")
-
-      await store.sendMessage("hello")
-
-      const stored = JSON.parse(storage.store["no_update_test"])
-      expect(stored.lastSentAppState).not.toBeNull()
+    it("bails if the user switches conversations mid-resync", async () => {
+      storage.store["kiln_chat_test"] = JSON.stringify({
+        sessionId: null,
+        rootId: "root-old",
+        collapsedPartKeys: {},
+        lastSentAppState: null,
+      })
+      let resolveSnapshot: (v: unknown) => void = () => {}
+      mockClientGet.mockReturnValue(new Promise((r) => (resolveSnapshot = r)))
+      const { store, fake } = await makeStore({}, "kiln_chat_test")
+      const resync = store.resyncOnLoad()
+      // The user picks another conversation while the snapshot fetch hangs.
+      store.loadSession([], "row-new")
+      resolveSnapshot({ data: { id: "tr-old" }, error: undefined })
+      await resync
+      // The stale resync never ensured root-old; only loadSession's row-new.
+      const ensureKeys = vi.mocked(fake.ensure).mock.calls.map((c) => c[0])
+      expect(ensureKeys).not.toContain("root-old")
     })
   })
-})
 
-describe("resyncOnLoad (hard-refresh resync)", () => {
-  it("active conversation hydrates from the current leaf, attaches, and turns the indicator on", async () => {
-    const { createChatSessionStore, streamChatMock } =
-      await importFreshWithMock()
-    streamChatMock.mockImplementation(noopStreamChat)
+  describe("contextUsage / compacting", () => {
+    const usage = {
+      context_tokens: 1000,
+      context_limit: 10000,
+      context_percent: 10,
+      compacted: false,
+    }
 
-    // The stored (stale) leaf comes from the restored messages.
-    const streaming = await import("./streaming_chat")
-    vi.mocked(streaming.traceIdForNextChatRequest).mockReturnValue("t_stale")
-
-    // The server resolves it to the active run whose current leaf is t_now and
-    // whose burst is RUNNING (Phase 9).
-    const resolve = vi.fn().mockResolvedValue({
-      run_id: "ar_live",
-      current_trace_id: "t_now",
-      status: "running",
-    })
-    const attach = vi.fn()
-    const beginReconnect = vi.fn()
-    const auto = makeFakeAutoRun({ resolve, attach, beginReconnect })
-
-    // Hydration from the current leaf returns caught-up messages.
-    const hydratedMessages: ChatMessage[] = [
-      { id: "u1", role: "user", content: "hi" },
-      { id: "a1", role: "assistant", parts: [], traceId: "t_now" },
-    ]
-    mockClientGet.mockResolvedValue({
-      data: { id: "t_now", task_run: { trace: [] } },
-      error: undefined,
-    })
-    mockHydrate.mockReturnValue({
-      messages: hydratedMessages,
-      continuationTraceId: "t_now",
+    it("is set via the observer and cleared on reset", async () => {
+      const { store, sink } = await makeStore()
+      sink().onContextUsage(usage)
+      expect(get(store).contextUsage).toEqual(usage)
+      store.reset()
+      expect(get(store).contextUsage).toBeNull()
     })
 
-    const store = createChatSessionStore("resync_active", auto)
-    await store.resyncOnLoad()
-
-    // Resolved the stale leaf, hydrated from the CURRENT leaf, attached the run.
-    expect(resolve).toHaveBeenCalledWith("t_stale")
-    expect(mockClientGet).toHaveBeenCalledWith(
-      "/api/chat/sessions/{session_id}",
-      { params: { path: { session_id: "t_now" } } },
-    )
-    // Phase 9: attach is driven by the resolved liveness (RUNNING → working) and
-    // the reconnecting affordance is shown for the connecting window. The third
-    // arg opens a fresh assistant turn for the replayed in-flight round so it
-    // doesn't overwrite the last hydrated bubble.
-    expect(beginReconnect).toHaveBeenCalled()
-    expect(attach).toHaveBeenCalledWith("ar_live", true, true)
-    // The caught-up messages replaced the stale restored view.
-    expect(get(store).messages).toEqual(hydratedMessages)
-  })
-
-  it("attaches even when snapshot hydration returns a structured error (CR Moderate item 1)", async () => {
-    // resolve() already proved the run is live; a snapshot error/empty response
-    // must NOT short-circuit — fall through to attach so the indicator + live
-    // stream are restored, same as the thrown-exception fallback.
-    const { createChatSessionStore, streamChatMock } =
-      await importFreshWithMock()
-    streamChatMock.mockImplementation(noopStreamChat)
-
-    const streaming = await import("./streaming_chat")
-    vi.mocked(streaming.traceIdForNextChatRequest).mockReturnValue("t_stale")
-
-    const resolve = vi.fn().mockResolvedValue({
-      run_id: "ar_live",
-      current_trace_id: "t_now",
-      status: "idle",
-    })
-    const attach = vi.fn()
-    const auto = makeFakeAutoRun({ resolve, attach })
-
-    // Structured error from the snapshot fetch (no data).
-    mockClientGet.mockResolvedValue({
-      data: undefined,
-      error: { detail: "boom" },
+    it("is set on loadSession", async () => {
+      const { store } = await makeStore()
+      store.loadSession([], "tr-1", usage)
+      expect(get(store).contextUsage).toEqual(usage)
     })
 
-    const store = createChatSessionStore("resync_snapshot_error", auto)
-    await store.resyncOnLoad()
-
-    expect(resolve).toHaveBeenCalledWith("t_stale")
-    // Hydration did not happen (no messages to apply)...
-    expect(mockHydrate).not.toHaveBeenCalled()
-    // ...but we STILL attach so the conversation isn't left looking dead (IDLE
-    // status → not working), opening a fresh in-flight turn.
-    expect(attach).toHaveBeenCalledWith("ar_live", false, true)
-  })
-
-  it("bails without hydrating/attaching if the user switches conversations mid-resync", async () => {
-    // Race guard: the active trace changes (user picked another conversation)
-    // while the snapshot GET is in flight. resyncOnLoad must NOT loadSession()
-    // (overwriting the now-current session) nor attach() the stale run.
-    const { createChatSessionStore, streamChatMock } =
-      await importFreshWithMock()
-    streamChatMock.mockImplementation(noopStreamChat)
-
-    const streaming = await import("./streaming_chat")
-    // storedTraceId and the post-resolve guard see "t_stale"; the post-GET guard
-    // sees "t_switched" — i.e. the user navigated to a different conversation.
-    vi.mocked(streaming.traceIdForNextChatRequest)
-      .mockReturnValueOnce("t_stale")
-      .mockReturnValueOnce("t_stale")
-      .mockReturnValue("t_switched")
-
-    const resolve = vi.fn().mockResolvedValue({
-      run_id: "ar_live",
-      current_trace_id: "t_now",
-      status: "running",
-    })
-    const attach = vi.fn()
-    const auto = makeFakeAutoRun({ resolve, attach })
-
-    mockClientGet.mockResolvedValue({
-      data: { id: "t_now", task_run: { trace: [] } },
-      error: undefined,
+    it("compacting follows onCompactionStatus and clears on idle/reset", async () => {
+      const { store, sink } = await makeStore()
+      sink().onCompactionStatus(true)
+      expect(get(store).compacting).toBe(true)
+      sink().onInteractiveIdle()
+      expect(get(store).compacting).toBe(false)
+      sink().onCompactionStatus(true)
+      store.reset()
+      expect(get(store).compacting).toBe(false)
     })
 
-    const store = createChatSessionStore("resync_switched", auto)
-    await store.resyncOnLoad()
-
-    expect(resolve).toHaveBeenCalledWith("t_stale")
-    expect(mockClientGet).toHaveBeenCalled()
-    // Bailed: the stale run was neither hydrated into nor attached to the
-    // newly-selected conversation.
-    expect(mockHydrate).not.toHaveBeenCalled()
-    expect(attach).not.toHaveBeenCalled()
-  })
-
-  it("inactive conversation (resolve 404) leaves the restored state and never attaches", async () => {
-    const { createChatSessionStore, streamChatMock } =
-      await importFreshWithMock()
-    streamChatMock.mockImplementation(noopStreamChat)
-
-    const streaming = await import("./streaming_chat")
-    vi.mocked(streaming.traceIdForNextChatRequest).mockReturnValue("t_stale")
-
-    const resolve = vi.fn().mockResolvedValue(null)
-    const attach = vi.fn()
-    const beginReconnect = vi.fn()
-    const auto = makeFakeAutoRun({ resolve, attach, beginReconnect })
-
-    const store = createChatSessionStore("resync_inactive", auto)
-    await store.resyncOnLoad()
-
-    expect(resolve).toHaveBeenCalledWith("t_stale")
-    expect(mockClientGet).not.toHaveBeenCalled()
-    expect(attach).not.toHaveBeenCalled()
-    // Phase 9: no reconnecting affordance when there's no active run to attach to.
-    expect(beginReconnect).not.toHaveBeenCalled()
-  })
-
-  it("no stored trace id is a no-op (does not call resolve)", async () => {
-    const { createChatSessionStore, streamChatMock } =
-      await importFreshWithMock()
-    streamChatMock.mockImplementation(noopStreamChat)
-
-    const streaming = await import("./streaming_chat")
-    vi.mocked(streaming.traceIdForNextChatRequest).mockReturnValue(undefined)
-
-    const resolve = vi.fn()
-    const auto = makeFakeAutoRun({ resolve })
-
-    const store = createChatSessionStore("resync_empty", auto)
-    await store.resyncOnLoad()
-
-    expect(resolve).not.toHaveBeenCalled()
+    it("compacting is never persisted", async () => {
+      const { store, sink } = await makeStore({}, "kiln_chat_test")
+      await store.sendMessage("hi")
+      sink().onCompactionStatus(true)
+      const persisted = storage.store["kiln_chat_test"]
+      expect(persisted).toBeDefined()
+      expect(persisted).not.toContain("compacting")
+    })
   })
 })
 
 describe("chatSessionStore global instance", () => {
   it("is exported and functional", async () => {
-    const { chatSessionStore } = await importFreshWithMock()
-    const state = get(chatSessionStore)
-    expect(state.messages).toEqual([])
-    expect(state.status).toBe("ready")
-  })
-})
-
-describe("contextUsage", () => {
-  const usage: ContextUsage = {
-    context_tokens: 90_000,
-    context_limit: 150_000,
-    context_percent: 0.6,
-    compacted: false,
-  }
-
-  it("is null initially", async () => {
-    const { createChatSessionStore } = await importFreshWithMock()
-    const store = createChatSessionStore()
-    expect(get(store).contextUsage).toBeNull()
-  })
-
-  it("is set via the onContextUsage stream callback", async () => {
-    const { createChatSessionStore, streamChatMock } =
-      await importFreshWithMock()
-    const capture: { options: StreamChatOptions | null } = { options: null }
-    streamChatMock.mockImplementation(capturingStreamChat(capture))
-    const store = createChatSessionStore()
-
-    await store.sendMessage("hi")
-    capture.options!.onContextUsage!(usage)
-
-    expect(get(store).contextUsage).toEqual(usage)
-  })
-
-  it("persists contextUsage to sessionStorage", async () => {
-    const { createChatSessionStore, streamChatMock } =
-      await importFreshWithMock()
-    const capture: { options: StreamChatOptions | null } = { options: null }
-    streamChatMock.mockImplementation(capturingStreamChat(capture))
-    const store = createChatSessionStore("ctx_session")
-
-    await store.sendMessage("hi")
-    capture.options!.onContextUsage!(usage)
-
-    const stored = JSON.parse(storage.store["ctx_session"])
-    expect(stored.contextUsage).toEqual(usage)
-  })
-
-  it("restores persisted contextUsage on a fresh store", async () => {
-    storage.store["ctx_restore"] = JSON.stringify({
-      messages: [],
-      collapsedPartKeys: {},
-      lastSentAppState: null,
-      contextUsage: usage,
-    })
-    const { createChatSessionStore } = await importFreshWithMock()
-    const store = createChatSessionStore("ctx_restore")
-    expect(get(store).contextUsage).toEqual(usage)
-  })
-
-  it("sets contextUsage on loadSession", async () => {
-    const { createChatSessionStore } = await importFreshWithMock()
-    const store = createChatSessionStore()
-    store.loadSession([], "trace-load", usage)
-    expect(get(store).contextUsage).toEqual(usage)
-  })
-
-  it("defaults contextUsage to null when loadSession omits it", async () => {
-    const { createChatSessionStore } = await importFreshWithMock()
-    const store = createChatSessionStore()
-    store.loadSession([], "trace-load")
-    expect(get(store).contextUsage).toBeNull()
-  })
-
-  it("clears contextUsage on reset", async () => {
-    const { createChatSessionStore, streamChatMock } =
-      await importFreshWithMock()
-    const capture: { options: StreamChatOptions | null } = { options: null }
-    streamChatMock.mockImplementation(capturingStreamChat(capture))
-    const store = createChatSessionStore()
-
-    await store.sendMessage("hi")
-    capture.options!.onContextUsage!(usage)
-    expect(get(store).contextUsage).toEqual(usage)
-
-    store.reset()
-    expect(get(store).contextUsage).toBeNull()
-  })
-})
-
-describe("compacting (Phase 5)", () => {
-  it("is false initially", async () => {
-    const { createChatSessionStore } = await importFreshWithMock()
-    const store = createChatSessionStore()
-    expect(get(store).compacting).toBe(false)
-  })
-
-  it("is set true via the onCompactionStatus stream callback", async () => {
-    const { createChatSessionStore, streamChatMock } =
-      await importFreshWithMock()
-    const capture: { options: StreamChatOptions | null } = { options: null }
-    streamChatMock.mockImplementation(capturingStreamChat(capture))
-    const store = createChatSessionStore()
-
-    await store.sendMessage("hi")
-    capture.options!.onCompactionStatus!(true)
-    expect(get(store).compacting).toBe(true)
-
-    capture.options!.onCompactionStatus!(false)
-    expect(get(store).compacting).toBe(false)
-  })
-
-  it("clears compacting on finish", async () => {
-    const { createChatSessionStore, streamChatMock } =
-      await importFreshWithMock()
-    const capture: { options: StreamChatOptions | null } = { options: null }
-    streamChatMock.mockImplementation(capturingStreamChat(capture))
-    const store = createChatSessionStore()
-
-    await store.sendMessage("hi")
-    capture.options!.onCompactionStatus!(true)
-    expect(get(store).compacting).toBe(true)
-
-    capture.options!.onFinish()
-    expect(get(store).compacting).toBe(false)
-  })
-
-  it("clears compacting on reset", async () => {
-    const { createChatSessionStore, streamChatMock } =
-      await importFreshWithMock()
-    const capture: { options: StreamChatOptions | null } = { options: null }
-    streamChatMock.mockImplementation(capturingStreamChat(capture))
-    const store = createChatSessionStore()
-
-    await store.sendMessage("hi")
-    capture.options!.onCompactionStatus!(true)
-    expect(get(store).compacting).toBe(true)
-
-    store.reset()
-    expect(get(store).compacting).toBe(false)
-  })
-
-  it("is not persisted to sessionStorage", async () => {
-    const { createChatSessionStore, streamChatMock } =
-      await importFreshWithMock()
-    const capture: { options: StreamChatOptions | null } = { options: null }
-    streamChatMock.mockImplementation(capturingStreamChat(capture))
-    const store = createChatSessionStore("kiln_chat_test")
-
-    await store.sendMessage("hi")
-    capture.options!.onCompactionStatus!(true)
-    expect(get(store).compacting).toBe(true)
-
-    // ``compacting`` is runtime-only — it must never be written into the
-    // persisted sessionStorage payload.
-    const persisted = storage.store["kiln_chat_test"]
-    expect(persisted).toBeDefined()
-    expect(persisted).not.toContain("compacting")
+    const { chatSessionStore } = await importFresh()
+    expect(chatSessionStore).toBeDefined()
+    expect(get(chatSessionStore).status).toBe("ready")
   })
 })

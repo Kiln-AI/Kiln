@@ -39,6 +39,17 @@
       ></span>
     {/if}
     <span class="block text-sm font-medium truncate">{displayTitle(row)}</span>
+    {#if row.is_subagent}
+      <span
+        class="shrink-0 rounded-full bg-base-content/[0.06] px-2 py-0.5 text-[10px] text-base-content/60"
+        >sub-agent</span
+      >
+      {#if row.subagent_status}
+        <span class="shrink-0 text-[10px] text-base-content/40"
+          >{row.subagent_status}</span
+        >
+      {/if}
+    {/if}
   </div>
   {#if loading || deleting}
     <span class="loading loading-spinner loading-xs shrink-0 ml-2"></span>
