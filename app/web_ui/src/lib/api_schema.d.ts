@@ -6978,6 +6978,11 @@ export interface components {
              * @description Max dataset items evaluated in parallel by the runner. Leave null to use the runner's default (25).
              */
             concurrency?: number | null;
+            /**
+             * Split
+             * @description Which of the eval's dataset splits to run: train, val, or test. Fails with 422 if the eval has no such split. Leave null to run the test split, which is what running an eval has always meant.
+             */
+            split?: ("train" | "val" | "test") | null;
         };
         /**
          * EvalOutputScore

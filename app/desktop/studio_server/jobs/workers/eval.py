@@ -9,11 +9,17 @@ from kiln_ai.adapters.eval.eval_runner import (
     EvalJob,
     EvalRunner,
 )
-from kiln_ai.datamodel.dataset_filters import dataset_filter_from_id
-from kiln_ai.datamodel.eval import Eval, EvalConfig
+from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalInput, EvalSplitName
+from kiln_ai.datamodel.eval_splits import (
+    ItemSource,
+    ResolvedSplit,
+    eval_run_item_key,
+    resolve_split,
+)
 from kiln_ai.datamodel.prompt_type import generator_label
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task, TaskRunConfig
+from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX
 from kiln_ai.utils.async_job_runner import AsyncJobRunnerObserver
 from pydantic import BaseModel, Field
@@ -73,28 +79,27 @@ class _EvalErrorLogObserver(AsyncJobRunnerObserver[EvalJob]):
         await self._ctx.report_error(
             _error_detail(error),
             dataset_id=job.item.id,
+            # An EvalInput-backed split puts EvalInput ids in dataset_id, which is
+            # named for TaskRuns. The key is kept — the sibling judge-feedback worker
+            # writes the same one, and renaming it would fork the log's shape for no
+            # reader's benefit — so the source is logged next to it instead. Without
+            # this the id is source-blind, and ids collide across the two stores.
+            item_source=_item_source(job.item),
             run_config_id=job.task_run_config.id if job.task_run_config else None,
         )
 
 
-# TODO (ship blocker): these params carry no `split`, so this job can only ever run an
-# eval's default (test) set. Eval datasets are being divided into test/train/val, and every
-# other read and run path is becoming split-aware; until this one is too, there is simply no
-# way to run an eval over its train or val split through the background job system.
-#
-# It is only a TODO today because the splits datamodel does not exist on this branch:
-# `kiln_ai.datamodel.eval_splits` (`resolve_split`, `ResolvedSplit`) arrives with
-# `scosman/evals_v2`. The real change has to wait until this branch syncs with that.
-#
-# Reference implementation: commit 369a32ef8 on `claude/eval-splits-v1-v2-q38412`. It adds
-# `split` to EvalJobParams and resolves it through a single `_resolve_split` helper shared by
-# the runner and `compute_state`, so progress is measured against exactly the items the runner
-# processes; `jobs/api.py` pre-resolves the split at request time so an unknown or
-# unconfigured one returns 422 instead of failing later inside a background job.
-#
-# Design is specified in `specs/projects/eval_splits_v1_v2/` (functional spec §4,
-# architecture §5) — those spec files are not on this branch either, and land with the same
-# merge.
+def _item_source(item: TaskRun | EvalInput) -> ItemSource:
+    """Which store a job's item came from, for the error log.
+
+    An isinstance test rather than the split's own `source`, which is what the runner
+    uses: this is a log label on a per-item callback that is handed only the item, and
+    threading the split down to it would add plumbing whose sole consumer is a string in
+    a JSONL file. The union is closed, so the two agree by construction.
+    """
+    return "eval_input" if isinstance(item, EvalInput) else "task_run"
+
+
 class EvalJobParams(BaseModel):
     project_id: str = Field(description="Id of the project the eval belongs to.")
     task_id: str = Field(description="Id of the task the eval belongs to.")
@@ -110,6 +115,12 @@ class EvalJobParams(BaseModel):
         ge=1,
         description="Max dataset items evaluated in parallel by the runner. Leave null to use the "
         f"runner's default ({DEFAULT_EVAL_CONCURRENCY}).",
+    )
+    split: EvalSplitName | None = Field(
+        default=None,
+        description="Which of the eval's dataset splits to run: train, val, or test. "
+        "Fails with 422 if the eval has no such split. Leave null to run the test "
+        "split, which is what running an eval has always meant.",
     )
 
 
@@ -162,10 +173,10 @@ class EvalJobProperties(BaseModel):
 
 
 class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
-    """Background worker that runs an eval against a single run config.
+    """Background worker that runs one of an eval's splits against a single run config.
 
     Wraps the existing EvalRunner unchanged. Idempotent: EvalRunner excludes
-    already-run (eval_config, run_config, dataset) triples, so a paused-then-
+    already-run (eval_config, run_config, item) triples, so a paused-then-
     resumed (or re-triggered) job skips completed items and writes no duplicate
     EvalRun entities — hence supports_pause = True.
     """
@@ -293,25 +304,26 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
         )
         eval, task = self._eval_and_task(eval_config)
 
-        # The eval-set filter defines the universe of dataset items in scope.
-        # EvalRunner only works items that BOTH pass this filter AND lack a
-        # matching EvalRun, so progress must be measured against this set.
-        filter = dataset_filter_from_id(eval.eval_set_filter_id)
-        in_filter_ids = {
-            task_run.id for task_run in task.runs(readonly=True) if filter(task_run)
-        }
-        total = len(in_filter_ids)
+        # The split defines the universe of dataset items in scope. EvalRunner only
+        # works items that are BOTH in the split AND lack a matching EvalRun, so
+        # progress must be measured against the same split the runner is handed —
+        # hence the shared _resolve_split rather than a second, independent one.
+        split = self._resolve_split(eval, task, params)
+        split_items = split.item_keys()
+        total = len(split)
 
-        # Count only scored items that are still in the filter set. Items that
-        # were scored but later drifted out of the filter must not be counted,
-        # or success/is_complete would overcount and a resume could short-circuit
-        # to succeeded while real work remains.
-        scored_ids = {
-            run.dataset_id
+        # Count only scored items that are still in the split. Items that were
+        # scored but later drifted out of it must not be counted, or
+        # success/is_complete would overcount and a resume could short-circuit to
+        # succeeded while real work remains. Membership is keyed on (source, id),
+        # never a bare id: both stores draw ids from one generator, so a bare id
+        # could credit an EvalInput's result to a TaskRun.
+        scored_items = {
+            eval_run_item_key(run)
             for run in eval_config.runs(readonly=True)
             if run.task_run_config_id == params.run_config_id
         }
-        success = len(scored_ids & in_filter_ids)
+        success = len(scored_items & split_items)
 
         # error is left None: failed items leave no EvalRun to count, so they
         # are not derivable from disk. The registry keeps the live error count
@@ -322,12 +334,37 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
             is_complete=success >= total,
         )
 
+    def _resolve_split(
+        self, eval: Eval, task: Task, params: EvalJobParams
+    ) -> ResolvedSplit:
+        """The items this job runs. The single rule both consumers of a split go through.
+
+        `_build_eval_runner` hands these items to EvalRunner as its work, and
+        `_compute_state_sync` measures progress against the same split. They still call
+        this separately — compute_state is also invoked on its own by the registry, and
+        caching would answer from a stale universe — but going through one rule is what
+        stops them describing different splits. Two independent resolution *rules* is
+        what let progress be computed over a different universe than the runner worked:
+        the old code counted TaskRuns matching the eval-set filter, which is empty for an
+        EvalInput-backed split, so such a job reported a zero total and a resume
+        short-circuited to "complete" with nothing done.
+
+        Raising here is a contract, not a reachable state: jobs/api.py resolves a named
+        split before creating the job, and Eval requires a test split to validate at all.
+        """
+        name: EvalSplitName = params.split or "test"
+        split = resolve_split(task, eval, name)
+        if split is None:
+            raise ValueError(f"Eval '{eval.id}' has no '{name}' split.")
+        return split
+
     async def run(self, params: EvalJobParams, ctx: JobContext) -> EvalJobResult:
-        # Baseline: items already scored (and still in-filter) before this run.
+        # Baseline: items already scored (and still in the split) before this run.
         # EvalRunner only works the unfinished remainder, so its Progress counts
         # are relative to that remainder. We add the baseline back so progress
-        # and the returned result are reported against the FULL eval-set size,
-        # not just the work left for this run.
+        # and the returned result are reported against the FULL split size, not
+        # just the work left for this run. The arithmetic only holds because both
+        # numbers come from the same resolution — see _resolve_split.
         baseline = await self.compute_state(params)
         baseline_success = baseline.success
 
@@ -343,7 +380,7 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
             retry_delay=JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS,
         ):
             # progress.total = full - baseline_success (the unfinished remainder),
-            # so baseline_success + progress.total = the full eval-set size.
+            # so baseline_success + progress.total = the full split size.
             success = baseline_success + progress.complete
             total = baseline_success + progress.total
             error = progress.errors
@@ -371,10 +408,12 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
             params.project_id,
             context=f"eval job {params.eval_id}/{params.run_config_id}",
         )
+        eval, task = self._eval_and_task(eval_config)
         return EvalRunner(
             eval_configs=[eval_config],
             run_configs=[run_config],
             eval_run_type="task_run_eval",
+            split=self._resolve_split(eval, task, params),
             save_context=save_context,
         )
 

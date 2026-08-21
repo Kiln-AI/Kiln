@@ -6,13 +6,16 @@ from datetime import datetime
 from typing import Annotated, Any, AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Path, Query, Response
+from kiln_ai.datamodel.eval import EvalSplitName
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     agent_policy_require_approval,
 )
 from pydantic import BaseModel, Field
 
+from ..eval_api import eval_from_id, resolved_split_or_422
 from . import error_log
 from .events import JobEvent
 from .models import BackgroundJobStatus, JobRecord
@@ -30,7 +33,7 @@ _JOB_MUTATION_APPROVAL = agent_policy_require_approval(
 )
 
 _EVAL_JOB_APPROVAL = agent_policy_require_approval(
-    "Run an eval in the background? This runs LLM calls across the eval set and uses AI credits."
+    "Run an eval in the background? This runs LLM calls across the eval's dataset split and uses AI credits."
 )
 
 _JUDGE_FEEDBACK_BATCH_JOB_APPROVAL = agent_policy_require_approval(
@@ -60,6 +63,21 @@ class WaitForJobsRequest(BaseModel):
         description="Seconds to wait before giving up (504 on timeout). "
         "Omit to wait indefinitely.",
     )
+
+
+def _require_resolvable_split(
+    project_id: str, task_id: str, eval_id: str, split: EvalSplitName
+) -> None:
+    """Raise unless the eval has the named split: 404 if the eval is missing, 422 if
+    the split is.
+
+    Deliberately discards what it resolved. The worker resolves the split again when the
+    job actually runs, because a job runs the items as they are then, not as they were
+    when it was requested.
+    """
+    eval = eval_from_id(project_id, task_id, eval_id)
+    task = task_from_id(project_id, task_id)
+    resolved_split_or_422(task, eval, split)
 
 
 def _format_sse(event: JobEvent) -> str:
@@ -183,6 +201,24 @@ def connect_jobs_api(app: FastAPI) -> None:
         Poll `GET /api/jobs/{id}` (or `/api/jobs/wait`) for progress and the
         result.
         """
+        # Resolve a named split before creating the job, so a split this eval doesn't
+        # have is a 422 on this request (and a missing eval a 404) instead of a
+        # background job that starts and then dies.
+        #
+        # Only when one was named: every eval that loads has a test split (Eval
+        # validates it), so omitting `split` has nothing that can fail to resolve, and
+        # checking anyway would enumerate the whole dataset off disk on every job
+        # creation, moments before the worker enumerates it again.
+        #
+        # Entity loads are blocking IO, so run them off the event loop.
+        if params.split is not None:
+            await asyncio.to_thread(
+                _require_resolvable_split,
+                params.project_id,
+                params.task_id,
+                params.eval_id,
+                params.split,
+            )
         job = await job_registry.create(
             type_name=EvalJobWorker.type_name,
             params=params,
