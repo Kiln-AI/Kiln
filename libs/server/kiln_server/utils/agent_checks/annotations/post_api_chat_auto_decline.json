@@ -1,8 +1,8 @@
 {
   "method": "post",
-  "path": "/api/jobs/{type}",
+  "path": "/api/chat/auto/decline",
   "agent_policy": {
-    "permission": "allow",
+    "permission": "deny",
     "requires_approval": false
   }
 }

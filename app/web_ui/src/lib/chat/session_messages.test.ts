@@ -3,6 +3,7 @@ import { traceIdForNextChatRequest } from "./streaming_chat"
 import {
   hydrateSessionFromSnapshot,
   stripAppUiContext,
+  stripInternalFraming,
   type ChatSessionSnapshot,
 } from "./session_messages"
 
@@ -31,7 +32,7 @@ describe("hydrateSessionFromSnapshot", () => {
     expect(continuationTraceId).toBe("trace-sess")
   })
 
-  it("maps reasoning_content into a reasoning part", () => {
+  it("ignores reasoning_content (reasoning is not surfaced in the UI)", () => {
     const { messages } = hydrateSessionFromSnapshot(
       snap("t2", [
         {
@@ -41,10 +42,7 @@ describe("hydrateSessionFromSnapshot", () => {
         },
       ]),
     )
-    expect(messages[0].parts).toEqual([
-      { type: "reasoning", reasoning: "think" },
-      { type: "text", text: "answer" },
-    ])
+    expect(messages[0].parts).toEqual([{ type: "text", text: "answer" }])
   })
 
   it("maps tool_calls and tool messages", () => {
@@ -232,5 +230,86 @@ describe("stripAppUiContext", () => {
 
   it("handles empty string", () => {
     expect(stripAppUiContext("")).toBe("")
+  })
+})
+
+describe("stripInternalFraming", () => {
+  it("removes a leading auto-mode side-note <system-reminder> wrapper", () => {
+    const input =
+      "<system-reminder>This message arrived while you are working autonomously…</system-reminder>\n\nmy name is bobby"
+    expect(stripInternalFraming(input)).toBe("my name is bobby")
+  })
+
+  it("removes both an app-UI context block and a system-reminder", () => {
+    const input =
+      "<new_app_ui_context>\nPath: /assistant\n</new_app_ui_context>\n<system-reminder>side note</system-reminder>\n\nhello"
+    expect(stripInternalFraming(input)).toBe("hello")
+  })
+
+  it("leaves a plain message untouched", () => {
+    expect(stripInternalFraming("just text")).toBe("just text")
+  })
+
+  it("handles empty string", () => {
+    expect(stripInternalFraming("")).toBe("")
+  })
+})
+
+describe("hydrateSessionFromSnapshot strips injected-message framing", () => {
+  it("renders the raw user message for a persisted side-note-wrapped inject", () => {
+    const snapshot: ChatSessionSnapshot = {
+      id: "trace-inject",
+      task_run: {
+        trace: [
+          {
+            role: "user",
+            content:
+              "<system-reminder>Treat it as a side note…</system-reminder>\n\nmy name is bobby whats yours?",
+          },
+          { role: "assistant", content: "Hey Bobby!" },
+        ],
+      },
+    } as unknown as ChatSessionSnapshot
+    const { messages } = hydrateSessionFromSnapshot(snapshot)
+    expect(messages[0].role).toBe("user")
+    expect(messages[0].content).toBe("my name is bobby whats yours?")
+  })
+})
+
+describe("hydrateSessionFromSnapshot context_usage", () => {
+  it("returns normalized contextUsage from snapshot.context_usage", () => {
+    const snapshot: ChatSessionSnapshot = {
+      id: "trace-ctx",
+      task_run: { trace: [{ role: "user", content: "hi" }] },
+      context_usage: {
+        context_tokens: 120,
+        context_limit: 200,
+        context_percent: 0.6,
+        compacted: true,
+      },
+    }
+    const { contextUsage } = hydrateSessionFromSnapshot(snapshot)
+    expect(contextUsage).toEqual({
+      context_tokens: 120,
+      context_limit: 200,
+      context_percent: 0.6,
+      compacted: true,
+    })
+  })
+
+  it("returns null contextUsage when the field is absent", () => {
+    const { contextUsage } = hydrateSessionFromSnapshot(
+      snap("trace-no-ctx", [{ role: "user", content: "hi" }]),
+    )
+    expect(contextUsage).toBeNull()
+  })
+
+  it("returns null contextUsage when the field carries no numbers", () => {
+    const snapshot: ChatSessionSnapshot = {
+      id: "trace-empty-ctx",
+      task_run: { trace: [{ role: "user", content: "hi" }] },
+      context_usage: { compacted: false },
+    }
+    expect(hydrateSessionFromSnapshot(snapshot).contextUsage).toBeNull()
   })
 })

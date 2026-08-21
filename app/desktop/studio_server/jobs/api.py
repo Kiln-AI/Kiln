@@ -6,18 +6,26 @@ from datetime import datetime
 from typing import Annotated, Any, AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Path, Query, Response
+from kiln_ai.datamodel.eval import EvalSplitName
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     agent_policy_require_approval,
 )
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
+
+from app.desktop.studio_server.eval_api import eval_from_id, resolved_split_or_422
 
 from . import error_log
 from .events import JobEvent
 from .models import BackgroundJobStatus, JobRecord
 from .registry import JobNotFoundError, JobOperationError, job_registry
-from .workers.noop import NoopJobWorker
+from .workers.eval import EvalJobParams, EvalJobWorker
+from .workers.judge_feedback_batch import (
+    JudgeFeedbackBatchJobParams,
+    JudgeFeedbackBatchJobWorker,
+)
 
 KEEPALIVE_SECONDS = 15.0
 
@@ -25,23 +33,13 @@ _JOB_MUTATION_APPROVAL = agent_policy_require_approval(
     "Allow agent to control background jobs (pause, resume, cancel, delete)?"
 )
 
+_EVAL_JOB_APPROVAL = agent_policy_require_approval(
+    "Run an eval in the background? This runs LLM calls across the eval's dataset split and uses AI credits."
+)
 
-class CreateJobRequest(BaseModel):
-    """Request body for creating a job. Params are validated per job type."""
-
-    params: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Type-specific job parameters, validated against the type's params model.",
-    )
-    project_id: str | None = Field(
-        default=None,
-        description="Project to scope this job to (for filtering/visibility). "
-        "Falls back to the params' project_id when omitted.",
-    )
-    metadata: dict[str, Any] | None = Field(
-        default=None,
-        description="Free-form pass-through attribution, stored verbatim.",
-    )
+_JUDGE_FEEDBACK_BATCH_JOB_APPROVAL = agent_policy_require_approval(
+    "Run a judge feedback batch in the background? It makes model calls over the sampled dataset items."
+)
 
 
 class CreateJobResponse(BaseModel):
@@ -53,8 +51,34 @@ class CreateJobResponse(BaseModel):
     )
 
 
-def _project_id_from_params(validated_params: BaseModel) -> str | None:
-    return getattr(validated_params, "project_id", None)
+class WaitForJobsRequest(BaseModel):
+    """Request body for waiting on a set of jobs."""
+
+    ids: list[str] = Field(
+        default_factory=list,
+        description="Job ids to wait for. All must reach a terminal state.",
+    )
+    timeout: float | None = Field(
+        default=None,
+        ge=0,
+        description="Seconds to wait before giving up (504 on timeout). "
+        "Omit to wait indefinitely.",
+    )
+
+
+def _require_resolvable_split(
+    project_id: str, task_id: str, eval_id: str, split: EvalSplitName
+) -> None:
+    """Raise unless the eval has the named split: 404 if the eval is missing, 422 if
+    the split is.
+
+    Deliberately discards what it resolved. The worker resolves the split again when the
+    job actually runs, because a job runs the items as they are then, not as they were
+    when it was requested.
+    """
+    eval = eval_from_id(project_id, task_id, eval_id)
+    task = task_from_id(project_id, task_id)
+    resolved_split_or_422(task, eval, split)
 
 
 def _format_sse(event: JobEvent) -> str:
@@ -96,7 +120,8 @@ async def _event_stream(
 def connect_jobs_api(app: FastAPI) -> None:
     # Register the workers this server exposes. register_type overwrites by
     # type_name, so repeated calls (e.g. multiple make_app() in tests) are safe.
-    job_registry.register_type(NoopJobWorker)
+    job_registry.register_type(EvalJobWorker)
+    job_registry.register_type(JudgeFeedbackBatchJobWorker)
 
     @app.get(
         "/api/jobs/events",
@@ -152,56 +177,107 @@ def connect_jobs_api(app: FastAPI) -> None:
             limit=limit,
         )
 
+    # Two-segment path so it can never collide with the generic single-segment
+    # POST /api/jobs/{type} (i.e. type="evals"), independent of route order.
     @app.post(
-        "/api/jobs/{type}",
-        summary="Create Job",
+        "/api/jobs/evals/run",
+        summary="Run Eval Job",
         tags=["Jobs"],
         status_code=201,
-        response_model=CreateJobResponse | JobRecord,
+        response_model=CreateJobResponse,
+        openapi_extra=_EVAL_JOB_APPROVAL,
+    )
+    # TODO (ship blocker): this route has no `split` handling, so an eval started here always
+    # runs its default (test) set — its train and val splits are unreachable through the job
+    # system. Blocked on the splits datamodel (`kiln_ai.datamodel.eval_splits`), which lands
+    # with `scosman/evals_v2`; once it does, the split should be resolved here, at request
+    # time, so an unknown or unconfigured one 422s instead of becoming a doomed background
+    # job. See the fuller note on `EvalJobParams` in `workers/eval.py`, and reference commit
+    # 369a32ef8 on `claude/eval-splits-v1-v2-q38412`.
+    async def run_eval_job(params: EvalJobParams) -> CreateJobResponse:
+        """Kick off an eval as a background job and return immediately.
+
+        A typed, approval-gated entry point for agents. Unlike the UI's SSE
+        run endpoints, this does not stream — the job runs in the background.
+        Poll `GET /api/jobs/{id}` (or `/api/jobs/wait`) for progress and the
+        result.
+        """
+        # Resolve a named split before creating the job, so a split this eval doesn't
+        # have is a 422 on this request (and a missing eval a 404) instead of a
+        # background job that starts and then dies.
+        #
+        # Only when one was named: every eval that loads has a test split (Eval
+        # validates it), so omitting `split` has nothing that can fail to resolve, and
+        # checking anyway would enumerate the whole dataset off disk on every job
+        # creation, moments before the worker enumerates it again.
+        #
+        # Entity loads are blocking IO, so run them off the event loop.
+        if params.split is not None:
+            await asyncio.to_thread(
+                _require_resolvable_split,
+                params.project_id,
+                params.task_id,
+                params.eval_id,
+                params.split,
+            )
+        job = await job_registry.create(
+            type_name=EvalJobWorker.type_name,
+            params=params,
+            project_id=params.project_id,
+        )
+        return CreateJobResponse(job_id=job.id, status=job.status)
+
+    # Two-segment path so it can never collide with the generic single-segment
+    # POST /api/jobs/{type}, independent of route order.
+    @app.post(
+        "/api/jobs/judge_feedback_batch/run",
+        summary="Run Judge Feedback Batch Job",
+        tags=["Jobs"],
+        status_code=201,
+        response_model=CreateJobResponse,
+        openapi_extra=_JUDGE_FEEDBACK_BATCH_JOB_APPROVAL,
+    )
+    async def run_judge_feedback_batch_job(
+        params: JudgeFeedbackBatchJobParams,
+    ) -> CreateJobResponse:
+        """Run a pre-existing judge feedback batch as a background job, returning immediately.
+
+        Create the batch first via `POST /judge_feedback_batches` (returns its id), then run
+        it here — mirroring how eval jobs run a pre-existing eval, so the batch id lives in the
+        job's params and is retrievable via `GET /api/jobs/{id}` even if the run fails. Lets an
+        agent fire many gates and `POST /api/jobs/wait` on all of them at once instead of
+        blocking on each synchronous call. The aggregate scores/usage/latency are on the job
+        result; the per-item runs (with the judge's feedback) are persisted — fetch them via
+        `GET /judge_feedback_batches/{id}/runs`.
+        """
+        job = await job_registry.create(
+            type_name=JudgeFeedbackBatchJobWorker.type_name,
+            params=params,
+            project_id=params.project_id,
+        )
+        return CreateJobResponse(job_id=job.id, status=job.status)
+
+    @app.post(
+        "/api/jobs/wait",
+        summary="Wait For Jobs",
+        tags=["Jobs"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def create_job(
-        type: Annotated[str, Path(description="The registered job type to run.")],
-        request: CreateJobRequest,
-        wait: Annotated[
-            bool,
-            Query(
-                description="When true, block until the job reaches a terminal "
-                "state and return the full JobRecord instead of CreateJobResponse."
-            ),
-        ] = False,
-        timeout: Annotated[
-            float | None,
-            Query(
-                ge=0,
-                description="Seconds to wait when wait=true (504 on timeout). "
-                "Omit to wait indefinitely.",
-            ),
-        ] = None,
-    ) -> CreateJobResponse | JobRecord:
+    async def wait_for_jobs(request: WaitForJobsRequest) -> list[JobRecord]:
+        """Block until ALL the given jobs reach a terminal state, then return
+        their records (order preserved). A pure observer, like the SSE stream:
+        disconnecting tears down only the awaiter, never the jobs. The timeout
+        bounds the whole set. Empty `ids` returns an empty list."""
+        if not request.ids:
+            return []
         try:
-            worker = job_registry.worker_for(type)
-        except JobOperationError:
-            raise HTTPException(status_code=404, detail=f"Unknown job type: {type}")
-
-        try:
-            validated = worker.params_model.model_validate(request.params)
-        except ValidationError as exc:
-            raise HTTPException(status_code=422, detail=exc.errors())
-
-        job = await job_registry.create(
-            type_name=type,
-            params=validated,
-            project_id=request.project_id or _project_id_from_params(validated),
-            metadata=request.metadata,
-        )
-        if not wait:
-            return CreateJobResponse(job_id=job.id, status=job.status)
-        try:
-            return await job_registry.wait(job.id, timeout=timeout)
+            return await job_registry.wait_many(request.ids, timeout=request.timeout)
+        except JobNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=f"Job not found: {exc}")
         except asyncio.TimeoutError:
             raise HTTPException(
-                status_code=504, detail="Job did not complete within the timeout."
+                status_code=504,
+                detail="Not all jobs completed within the timeout.",
             )
 
     @app.get(
@@ -235,37 +311,6 @@ def connect_jobs_api(app: FastAPI) -> None:
                 status_code=404, detail="No result available for this job."
             )
         return job.result
-
-    @app.get(
-        "/api/jobs/{id}/wait",
-        summary="Wait For Job",
-        tags=["Jobs"],
-        openapi_extra=ALLOW_AGENT,
-    )
-    async def wait_for_job(
-        id: Annotated[str, Path(description="The job id.")],
-        timeout: Annotated[
-            float | None,
-            Query(
-                ge=0,
-                description="Seconds to wait before giving up (504 on timeout). "
-                "Omit to wait indefinitely.",
-            ),
-        ] = None,
-    ) -> JobRecord:
-        """Block until the job reaches a terminal state, then return its record.
-
-        A pure observer, like the SSE stream: if the client disconnects, uvicorn
-        cancels this handler coroutine, which cancels the wait() await and tears
-        down only the awaiter — the job's supervising task keeps running."""
-        try:
-            return await job_registry.wait(id, timeout=timeout)
-        except JobNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Job not found: {id}")
-        except asyncio.TimeoutError:
-            raise HTTPException(
-                status_code=504, detail="Job did not complete within the timeout."
-            )
 
     @app.get(
         "/api/jobs/{id}/errors",

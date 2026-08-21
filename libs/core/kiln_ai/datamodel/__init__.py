@@ -35,6 +35,10 @@ from kiln_ai.datamodel.dataset_split import DatasetSplit, DatasetSplitDefinition
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.feedback import Feedback
 from kiln_ai.datamodel.finetune import Finetune
+from kiln_ai.datamodel.judge_feedback_batch import (
+    JudgeFeedbackBatch,
+    JudgeFeedbackBatchRun,
+)
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.prompt_id import (
@@ -75,6 +79,8 @@ __all__ = [
     "FeedbackSource",
     "FineTuneStatusType",
     "Finetune",
+    "JudgeFeedbackBatch",
+    "JudgeFeedbackBatchRun",
     "MessageUsage",
     "Priority",
     "Project",
