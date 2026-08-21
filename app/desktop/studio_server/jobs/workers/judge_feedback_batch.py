@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 
-from app.desktop.git_sync.save_context import save_context_for_project
 from kiln_ai.adapters.eval.judge_feedback_batch_runner import (
     JudgeFeedbackBatchItemError,
     JudgeFeedbackBatchRunner,
@@ -12,17 +11,18 @@ from kiln_ai.datamodel.usage import Usage
 from kiln_server.task_api import task_from_id
 from pydantic import BaseModel, Field
 
-from ...judge_feedback_batch_api import (
-    eval_config_from_id,
-    judge_feedback_batch_from_id,
-    validate_judge_eval,
-    validate_run_config_id,
-)
-from ..models import (
+from app.desktop.git_sync.save_context import save_context_for_project
+from app.desktop.studio_server.jobs.models import (
     JOB_TRANSIENT_ERROR_MAX_RETRIES,
     JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS,
     JobContext,
     JobWorker,
+)
+from app.desktop.studio_server.judge_feedback_batch_api import (
+    eval_config_from_id,
+    judge_feedback_batch_from_id,
+    validate_judge_eval,
+    validate_run_config_id,
 )
 
 
@@ -198,8 +198,11 @@ class JudgeFeedbackBatchJobWorker(
             eval_name=eval.name if eval is not None else "",
             judge_name=eval_config.name,
             judge_algorithm=eval_config.config_type.value,
-            judge_model_name=eval_config.model_name,
-            judge_model_provider=eval_config.model_provider,
+            # V2 configs have no root-level judge model, so these are Optional on the
+            # model now; the display fields are plain strings, and blank reads the same
+            # way the MCP run-config fields above do.
+            judge_model_name=eval_config.model_name or "",
+            judge_model_provider=eval_config.model_provider or "",
             generate_outputs=batch.generate_outputs,
             run_config_name=run_config_name,
             run_config_model_name=run_config_model_name,

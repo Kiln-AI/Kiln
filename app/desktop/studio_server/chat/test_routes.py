@@ -17,7 +17,6 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
     Response as KilnResponse,
 )
 from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
-from app.desktop.studio_server.chat.routes import ChatSessionSnapshot
 from app.desktop.studio_server.chat.helpers import (
     PATCH_ASYNC_CLIENT,
     PATCH_EXECUTE_TOOL,
@@ -25,6 +24,7 @@ from app.desktop.studio_server.chat.helpers import (
     make_n_round_mock_client,
     sse_text_delta,
 )
+from app.desktop.studio_server.chat.routes import ChatSessionSnapshot
 
 
 class TestChatStreaming:

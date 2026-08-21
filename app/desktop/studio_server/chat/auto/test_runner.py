@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from .models import AutoChatSeed, AutoRunStatus, InboundMessage
 from app.desktop.studio_server.chat.stream_session import MAX_CHAT_RETRIES
 
+from .models import AutoChatSeed, AutoRunStatus, InboundMessage
 from .runner import (
     MAX_TOOL_ROUNDS_MESSAGE,
     AutoChatRunner,
@@ -171,7 +171,7 @@ async def test_no_trace_seed_first_round_posts_message_and_gets_trace():
 async def test_finish_with_text_only_is_asked_user():
     chunks = [text_delta("What should I do next?"), trace("tr-1"), finish("stop")]
     client = FakeUpstreamClient([FakeUpstreamResponse(chunks=chunks)])
-    runner, emitted, _ = _runner(client)
+    runner, _emitted, _ = _runner(client)
 
     with patch.object(httpx, "AsyncClient", return_value=client):
         await runner.run()
@@ -565,7 +565,7 @@ async def test_drain_before_idle_continues_with_queued_message():
     client = FakeUpstreamClient(
         [FakeUpstreamResponse(chunks=round1), FakeUpstreamResponse(chunks=round2)]
     )
-    runner, emitted, _ = _runner(client, inbound=inbound)
+    runner, _emitted, _ = _runner(client, inbound=inbound)
 
     with patch.object(httpx, "AsyncClient", return_value=client):
         await runner.run()

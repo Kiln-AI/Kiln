@@ -5,8 +5,9 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal
 
-from app.desktop.studio_server.chat.stream_session import ToolCallInfo
 from pydantic import BaseModel, Field
+
+from app.desktop.studio_server.chat.stream_session import ToolCallInfo
 
 _RUN_ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567"
 _RUN_ID_LENGTH = 12

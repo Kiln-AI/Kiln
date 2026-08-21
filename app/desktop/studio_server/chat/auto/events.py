@@ -17,8 +17,8 @@ if TYPE_CHECKING:
     from .registry import AutoChatRun
 
 __all__ = [
-    "AutoChatEventBus",
     "KEEPALIVE_PING",
+    "AutoChatEventBus",
     "KeepalivePing",
     "iter_with_keepalive",
 ]

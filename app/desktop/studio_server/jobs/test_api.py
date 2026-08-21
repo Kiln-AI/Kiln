@@ -9,6 +9,11 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
+from kiln_ai.adapters.ml_model_list import ModelProviderName
+from kiln_ai.datamodel import Project, Task, TaskOutputRatingType
+from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalOutputScore
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
 from pydantic import BaseModel
 
 from app.desktop.studio_server.jobs import api as jobs_api
@@ -25,11 +30,6 @@ from app.desktop.studio_server.jobs.workers.eval import (
     EvalJobWorker,
 )
 from app.desktop.studio_server.jobs.workers.noop import NoopJobWorker
-from kiln_ai.adapters.ml_model_list import ModelProviderName
-from kiln_ai.datamodel import Project, Task, TaskOutputRatingType
-from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalOutputScore
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
 
 
 async def _safe_cancel(registry: JobRegistry, job_id: str) -> None:

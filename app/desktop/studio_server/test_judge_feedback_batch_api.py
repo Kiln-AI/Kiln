@@ -1,13 +1,8 @@
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from app.desktop.studio_server.judge_feedback_batch_api import (
-    connect_judge_feedback_batch_api,
-)
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from kiln_server.custom_errors import connect_custom_errors
-
 from kiln_ai.adapters.eval.judge_feedback_batch_runner import (
     JudgeFeedbackBatchItemError,
     JudgeFeedbackBatchRunResult,
@@ -30,6 +25,11 @@ from kiln_ai.datamodel.eval import (
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
 from kiln_ai.datamodel.usage import Usage
+from kiln_server.custom_errors import connect_custom_errors
+
+from app.desktop.studio_server.judge_feedback_batch_api import (
+    connect_judge_feedback_batch_api,
+)
 
 BASE = "/api/projects/project1/tasks/task1/judge_feedback_batches"
 

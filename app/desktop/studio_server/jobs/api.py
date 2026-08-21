@@ -15,7 +15,8 @@ from kiln_server.utils.agent_checks.policy import (
 )
 from pydantic import BaseModel, Field
 
-from ..eval_api import eval_from_id, resolved_split_or_422
+from app.desktop.studio_server.eval_api import eval_from_id, resolved_split_or_422
+
 from . import error_log
 from .events import JobEvent
 from .models import BackgroundJobStatus, JobRecord

@@ -5,16 +5,6 @@ from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
-from pydantic import ValidationError
-from app.desktop.studio_server.jobs.models import (
-    JOB_TRANSIENT_ERROR_MAX_RETRIES,
-    JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS,
-)
-from app.desktop.studio_server.jobs.workers.judge_feedback_batch import (
-    JudgeFeedbackBatchJobParams,
-    JudgeFeedbackBatchJobResult,
-    JudgeFeedbackBatchJobWorker,
-)
 from kiln_ai.adapters.eval.judge_feedback_batch_runner import (
     JudgeFeedbackBatchItemError,
     JudgeFeedbackBatchRunResult,
@@ -29,6 +19,17 @@ from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalOutputScore
 from kiln_ai.datamodel.judge_feedback_batch import JudgeFeedbackBatch
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
+from pydantic import ValidationError
+
+from app.desktop.studio_server.jobs.models import (
+    JOB_TRANSIENT_ERROR_MAX_RETRIES,
+    JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS,
+)
+from app.desktop.studio_server.jobs.workers.judge_feedback_batch import (
+    JudgeFeedbackBatchJobParams,
+    JudgeFeedbackBatchJobResult,
+    JudgeFeedbackBatchJobWorker,
+)
 
 
 @pytest.fixture
