@@ -324,7 +324,7 @@ If template-driven condensation proves too verbose or error-prone, a future vers
 
 ### 9.1. Access pattern
 
-Reference data from `EvalInput.reference` is exposed as `reference_data` in the `EvalTaskInput` (per `components/40` section 2, `components/50` section 6). Templates access it as `{{ reference_data.<key> }}`.
+Reference data for the item being evaluated is exposed as `reference_data` in the `EvalTaskInput` -- from `EvalInput.reference` for an EvalInput-backed item, or from a TaskRun-backed dataset item's own stored output under the `reference_answer` key (per `components/40` section 2, `components/50` section 6). Templates access it as `{{ reference_data.<key> }}`.
 
 ### 9.2. Required vs optional reference keys
 

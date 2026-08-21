@@ -2,7 +2,12 @@
   import { createEventDispatcher, onMount } from "svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
-  import type { EvalConfig, EvalRun, EvalRunResult, Trace } from "$lib/types"
+  import type {
+    EvalConfig,
+    EvalRunResult,
+    EvalRunWithTrace,
+    Trace,
+  } from "$lib/types"
   import {
     formatDate,
     eval_config_to_detailed_ui_name,
@@ -70,7 +75,7 @@
   )
 
   // Inline run drill-down within the Runs tab
-  let selected_run: EvalRun | null = null
+  let selected_run: EvalRunWithTrace | null = null
 
   onMount(() => {
     dialog?.show()
@@ -120,9 +125,9 @@
               eval_config_id,
               run_config_id,
             },
-            // Omitted for "all", which is the unscoped request: every run this
-            // config has under this judge, whatever selected the item.
-            query: requested_split === "all" ? {} : { split: requested_split },
+            // "all" is a value the endpoint takes: every run this config has under
+            // this judge, whatever selected the item.
+            query: { split: requested_split },
           },
         },
       )
@@ -160,7 +165,7 @@
     fetch_results()
   }
 
-  function parse_trace(run: EvalRun): Trace | null {
+  function parse_trace(run: EvalRunWithTrace): Trace | null {
     if (!run.task_run_trace) {
       return null
     }
@@ -171,21 +176,22 @@
     }
   }
 
-  function format_reference_data(run: EvalRun): string | null {
-    if (!run.reference_data) {
+  function format_reference_data(run: EvalRunWithTrace): string | null {
+    const reference_data = run.eval_run.reference_answer
+    if (!reference_data) {
       return null
     }
-    return JSON.stringify(run.reference_data, null, 2)
+    return JSON.stringify(reference_data, null, 2)
   }
 
   // Same key precedence as llm_judge_result.svelte and the run_result page:
   // judges store their rationale in intermediate_outputs under "reasoning"
   // (or "chain_of_thought" for older G-Eval configs). Code evals store
   // neither, so the collapse simply doesn't render for them.
-  function judge_reasoning(run: EvalRun): string | null {
+  function judge_reasoning(run: EvalRunWithTrace): string | null {
     return (
-      run.intermediate_outputs?.reasoning ||
-      run.intermediate_outputs?.chain_of_thought ||
+      run.eval_run.intermediate_outputs?.reasoning ||
+      run.eval_run.intermediate_outputs?.chain_of_thought ||
       null
     )
   }
@@ -285,14 +291,14 @@
           >
             Back
           </button>
-          {#each Object.entries(selected_run.scores) as [key, value] (key)}
+          {#each Object.entries(selected_run.eval_run.scores) as [key, value] (key)}
             <span class="badge badge-ghost badge-sm">
               {score_key_label(key)}: {value.toFixed(2)}
             </span>
           {/each}
-          {#if selected_run.skipped_reason}
+          {#if selected_run.eval_run.skipped_reason}
             <span class="badge badge-warning badge-sm">
-              Skipped: {selected_run.skipped_reason}
+              Skipped: {selected_run.eval_run.skipped_reason}
             </span>
           {/if}
         </div>
@@ -370,7 +376,7 @@
               </tr>
             </thead>
             <tbody>
-              {#each results.results as run (run.id)}
+              {#each results.results as run (run.eval_run.id)}
                 <tr
                   class="hover cursor-pointer"
                   on:click={() => (selected_run = run)}
@@ -382,20 +388,22 @@
                   </td>
                   <td>
                     <div class="flex flex-wrap gap-1">
-                      {#each Object.entries(run.scores) as [key, value] (key)}
+                      {#each Object.entries(run.eval_run.scores) as [key, value] (key)}
                         <span class="badge badge-ghost badge-xs">
                           {score_key_label(key)}: {value.toFixed(2)}
                         </span>
                       {/each}
-                      {#if run.skipped_reason}
+                      {#if run.eval_run.skipped_reason}
                         <span class="badge badge-warning badge-xs">
-                          Skipped: {run.skipped_reason}
+                          Skipped: {run.eval_run.skipped_reason}
                         </span>
                       {/if}
                     </div>
                   </td>
                   <td class="whitespace-nowrap">
-                    {run.created_at ? formatDate(run.created_at) : "—"}
+                    {run.eval_run.created_at
+                      ? formatDate(run.eval_run.created_at)
+                      : "—"}
                   </td>
                 </tr>
               {/each}

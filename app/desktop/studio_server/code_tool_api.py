@@ -17,8 +17,9 @@ from kiln_ai.run_context import (
     set_agent_run_id,
 )
 from kiln_ai.tools.base_tool import ToolCallContext
-from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool, ToolCallLogEntry
+from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
 from kiln_server.project_api import project_from_id
 from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.utils.agent_checks.policy import (
@@ -30,6 +31,8 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+)
+from pydantic import (
     ValidationError as PydanticValidationError,
 )
 
@@ -118,11 +121,29 @@ class TestCodeToolRequest(BaseModel):
 
 
 class ToolCallLogEntryResponse(BaseModel):
+    """One nested tool call a sandboxed run made, as reported to a test pane."""
+
     tool_name: str
     arguments: dict[str, Any]
     output_preview: str
     is_error: bool
     duration_ms: int
+
+    @classmethod
+    def from_log(
+        cls, entries: list[ToolCallLogEntry]
+    ) -> list["ToolCallLogEntryResponse"]:
+        """Map recorder entries for the wire. Shared by the code-tool and eval panes."""
+        return [
+            cls(
+                tool_name=entry.tool_name,
+                arguments=entry.arguments,
+                output_preview=entry.output_preview,
+                is_error=entry.is_error,
+                duration_ms=entry.duration_ms,
+            )
+            for entry in entries
+        ]
 
 
 class TestCodeToolResponse(BaseModel):
@@ -166,16 +187,7 @@ def _outcome_to_test_response(
     outcome: ChildOutcome,
     tool_call_log: list[ToolCallLogEntry],
 ) -> TestCodeToolResponse:
-    log_entries = [
-        ToolCallLogEntryResponse(
-            tool_name=entry.tool_name,
-            arguments=entry.arguments,
-            output_preview=entry.output_preview,
-            is_error=entry.is_error,
-            duration_ms=entry.duration_ms,
-        )
-        for entry in tool_call_log
-    ]
+    log_entries = ToolCallLogEntryResponse.from_log(tool_call_log)
 
     if outcome.ok is not None:
         return TestCodeToolResponse(
@@ -190,7 +202,7 @@ def _outcome_to_test_response(
     if outcome.timed_out:
         error_msg = "Code tool timed out"
     elif outcome.crashed:
-        error_msg = f"Code tool crashed (exit code {outcome.exit_code})"
+        error_msg = outcome.crash_description("Code tool")
 
     return TestCodeToolResponse(
         error=error_msg,

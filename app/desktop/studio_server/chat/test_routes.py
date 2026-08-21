@@ -4,6 +4,8 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     ChatSnapshot,
@@ -23,8 +25,6 @@ from app.desktop.studio_server.chat.helpers import (
     make_n_round_mock_client,
     sse_text_delta,
 )
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
-from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
 
 
 class TestChatStreaming:
@@ -958,7 +958,7 @@ class TestMockedFlows:
             sse_text_delta("Tool was denied."),
             _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
         ]
-        mock_client, get_call_count = make_n_round_mock_client(continuation_chunks)
+        mock_client, _get_call_count = make_n_round_mock_client(continuation_chunks)
         mock_class = MagicMock(return_value=mock_client)
 
         body = {

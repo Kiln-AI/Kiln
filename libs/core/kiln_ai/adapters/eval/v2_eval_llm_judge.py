@@ -13,7 +13,11 @@ from typing import TYPE_CHECKING
 from jinja2 import UndefinedError
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
+from kiln_ai.adapters.eval.base_eval import (
+    BaseEval,
+    BaseV2EvalBridge,
+    format_judge_instructions,
+)
 
 if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
@@ -27,6 +31,7 @@ from kiln_ai.adapters.eval.eval_utils.scoring_utils import (
     raw_output_from_logprobs,
     score_from_token_string,
 )
+from kiln_ai.adapters.eval.eval_utils.v2_eval_helpers import check_reference_key
 from kiln_ai.adapters.ml_model_list import (
     ModelProviderName,
     built_in_models_from_provider,
@@ -100,7 +105,32 @@ class LlmJudgeEval(BaseV2EvalBridge):
         props = self.properties
         assert isinstance(props, LlmJudgeProperties)
 
+        # Before the render and before any model call: a judge that declares a
+        # reference key it cannot get must skip loudly, not score blind. A template can
+        # be permissive (a hand-written one may guard its own lookups), so this declared
+        # requirement is what refuses missing ground truth. It also runs first for the
+        # backend-baked default, whose `<reference_answer>` block is unconditional —
+        # that one would raise below and land on the same skip, one step later.
+        #
+        # Unlike the runner's early skips, this one cannot be hoisted ahead of trace
+        # generation (`eval_runner.py` run_job): the requirement is a property of this
+        # judge's config, and the runner scores one item against many judges. Reading it
+        # there would put per-type properties back in the runner, which is exactly what
+        # the `evaluate()` contract exists to keep out.
+        for reference_key in props.reference_keys:
+            _, skip_reason, skip_detail = check_reference_key(reference_key, eval_input)
+            if skip_reason is not None:
+                return V2EvalResult(
+                    skipped_reason=skip_reason,
+                    skipped_detail=skip_detail,
+                )
+
         namespace = eval_input.model_dump()
+        # Always bound (even when unset) so templates referencing it never hit
+        # StrictUndefined; blank steps render as an empty <steps> body.
+        namespace["judge_instructions"] = format_judge_instructions(
+            props.judge_instructions
+        )
         try:
             rendered_prompt = _template_env.from_string(props.prompt_template).render(
                 **namespace
@@ -165,8 +195,6 @@ class LlmJudgeEval(BaseV2EvalBridge):
             ),
         )
 
-        # The judge TaskRun is never persisted (allow_saving=False), but its usage covers
-        # every LLM call the judgment made, so we keep it for the EvalRun record.
         judge_run, run_output = await adapter.invoke_returning_run_output(
             rendered_prompt
         )
@@ -187,5 +215,7 @@ class LlmJudgeEval(BaseV2EvalBridge):
         return V2EvalResult(
             scores=scores,
             intermediate_outputs=run_output.intermediate_outputs,
-            eval_usage=judge_run.usage,
+            # `usage`, not `cumulative_usage`: it already accumulates every call this
+            # judgment made, and it is the one that carries latency.
+            usage=judge_run.usage,
         )

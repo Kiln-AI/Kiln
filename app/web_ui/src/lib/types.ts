@@ -66,6 +66,7 @@ export type EvalRunResult = components["schemas"]["EvalRunResult"]
 export type EvalConfigCompareSummary =
   components["schemas"]["EvalConfigCompareSummary"]
 export type EvalRun = components["schemas"]["EvalRun"]
+export type EvalRunWithTrace = components["schemas"]["EvalRunWithTrace"]
 export type EvalProgress = components["schemas"]["EvalProgress"]
 export type RatingOption = components["schemas"]["RatingOption"]
 export type RatingOptionResponse = components["schemas"]["RatingOptionResponse"]
@@ -154,7 +155,9 @@ export type ToolCallLogEntryResponse =
 export type Skill = components["schemas"]["SkillResponse"]
 export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
 export type Spec = components["schemas"]["Spec"]
-export type SpecStatus = components["schemas"]["SpecStatus"]
+export type EvalStatus = components["schemas"]["EvalStatus"]
+// Status moved from specs to evals; the old name is kept for existing call sites.
+export type SpecStatus = EvalStatus
 export type Priority = components["schemas"]["Priority"]
 export type Feedback = components["schemas"]["Feedback"]
 export type FeedbackSource = components["schemas"]["FeedbackSource"]

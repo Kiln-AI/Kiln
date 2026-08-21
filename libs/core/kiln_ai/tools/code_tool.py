@@ -29,6 +29,7 @@ from kiln_ai.tools.sandbox_bridge import (
     BridgeResult,
     NestedToolServer,
     ToolCallLogEntry,
+    describe_crash,
     run_bridged_child,
 )
 
@@ -52,6 +53,11 @@ class ChildOutcome:
     timed_out: bool = False
     crashed: bool = False
     exit_code: int | None = None
+
+    def crash_description(self, subject: str) -> str:
+        """Phrase this outcome's ``crashed`` state. Shared with the bridge."""
+        assert self.crashed, "crash_description() is only meaningful for a crash"
+        return describe_crash(subject, self.exit_code)
 
 
 class PythonCodeTool(KilnToolInterface):
@@ -98,7 +104,7 @@ class PythonCodeTool(KilnToolInterface):
             msg = f"Code tool '{tool_name}' timed out after {self._code_tool.timeout_seconds}s"
             return ToolCallResult(output=msg, is_error=True, error_message=msg)
         if outcome.crashed:
-            msg = f"Code tool '{tool_name}' crashed (exit code {outcome.exit_code})"
+            msg = outcome.crash_description(f"Code tool '{tool_name}'")
             return ToolCallResult(output=msg, is_error=True, error_message=msg)
         if outcome.error is not None:
             tb_text = outcome.traceback_str or ""
@@ -134,9 +140,6 @@ class PythonCodeTool(KilnToolInterface):
             server=server,
         )
         return _bridge_result_to_outcome(result)
-
-    async def _build_name_map(self) -> dict[str, list[ToolId]]:
-        return await self._build_server(None).name_map()
 
 
 def _bridge_result_to_outcome(result: BridgeResult) -> ChildOutcome:

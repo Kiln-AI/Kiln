@@ -20,6 +20,7 @@ import logging
 import multiprocessing
 import queue
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from time import monotonic
 from typing import Any, Callable
@@ -46,6 +47,48 @@ _depth: contextvars.ContextVar[int] = contextvars.ContextVar(
 _semaphore: asyncio.Semaphore | None = None
 _semaphore_init_lock = threading.Lock()
 
+# Every in-flight bridged run permanently occupies one worker thread: `_pump`
+# re-submits `_poll_get` (a 0.1s blocking Queue.get) the instant the previous one
+# returns, and the spawn and join calls draw from the same pool. asyncio's default
+# executor is sized `min(32, cpu_count + 4)` -- 6 threads on a 2-core CI box -- so
+# running sandboxes on it would starve every unrelated `run_in_executor(None, ...)`
+# in the server behind sandbox polling. The bridge gets its own pool instead.
+#
+# One slot per in-flight run: a run awaits its spawn, then its polls, then its join,
+# never two at once. Nested runs bypass the depth-0 semaphore, so the bound allows
+# for each top-level run carrying a few levels of nesting. Threads are created
+# lazily, so a large bound costs nothing while few sandboxes are running.
+_BRIDGE_EXECUTOR_MAX_WORKERS = CODE_SANDBOX_MAX_CONCURRENCY * 4
+
+_bridge_executor: ThreadPoolExecutor | None = None
+_bridge_executor_init_lock = threading.Lock()
+
+
+def _get_bridge_executor() -> ThreadPoolExecutor:
+    """Return the process-wide bridge executor, creating it on first use.
+
+    A singleton, so threads are bounded by ``_BRIDGE_EXECUTOR_MAX_WORKERS`` across
+    the process rather than accumulating per run; idle workers are reused by the
+    next run.
+
+    Deliberately no shutdown hook. ``concurrent.futures.thread`` registers its
+    ``_python_exit`` through ``threading._register_atexit``, which CPython runs from
+    ``threading._shutdown()`` -- *before* any user ``atexit`` callback -- and it
+    joins every worker. So the pool is already torn down by the time a hook of ours
+    could run: one here would be a no-op that reads like a safety property.
+    """
+    global _bridge_executor
+    if _bridge_executor is None:
+        with _bridge_executor_init_lock:
+            if _bridge_executor is None:
+                _bridge_executor = ThreadPoolExecutor(
+                    max_workers=_BRIDGE_EXECUTOR_MAX_WORKERS,
+                    thread_name_prefix="kiln-sandbox-bridge",
+                )
+    executor = _bridge_executor
+    assert executor is not None
+    return executor
+
 
 async def _get_semaphore() -> asyncio.Semaphore:
     """Lazily create the semaphore inside the running event loop."""
@@ -68,6 +111,19 @@ class ToolCallLogEntry:
     duration_ms: int
 
 
+def describe_crash(subject: str, exit_code: int | None) -> str:
+    """Phrase a child that ended without a result. One wording for every caller.
+
+    A zero (or absent) exit code is not a crash: the child returned cleanly without
+    ever putting a result on the queue, which is what ``os._exit(0)`` or a hard
+    interpreter exit from user code looks like. Reporting that as "crashed (exit
+    code 0)" tells the author nothing.
+    """
+    if exit_code in (0, None):
+        return f"{subject} exited without returning results"
+    return f"{subject} crashed (exit code {exit_code})"
+
+
 @dataclass
 class BridgeResult:
     """Raw outcome of one bridged child run — no result interpretation.
@@ -84,6 +140,11 @@ class BridgeResult:
     stdout: str = ""
     stderr: str = ""
     duration_ms: int = 0
+
+    def crash_description(self, subject: str) -> str:
+        """Phrase this run's ``crashed`` outcome for the user."""
+        assert self.crashed, "crash_description() is only meaningful for a crash"
+        return describe_crash(subject, self.exit_code)
 
 
 class NestedToolServer:
@@ -465,6 +526,7 @@ async def _pump(
     eval_input_id: str | None = None,
 ) -> BridgeResult:
     loop = asyncio.get_running_loop()
+    executor = _get_bridge_executor()
     ctx = multiprocessing.get_context("spawn")
 
     p = ctx.Process(
@@ -473,7 +535,7 @@ async def _pump(
         daemon=True,
     )
 
-    await loop.run_in_executor(None, start_process_with_light_main, p)
+    await loop.run_in_executor(executor, start_process_with_light_main, p)
 
     deadline = monotonic() + timeout_s
     pending_tasks: set[asyncio.Task[None]] = set()
@@ -481,12 +543,12 @@ async def _pump(
 
     try:
         while True:
-            msg = await loop.run_in_executor(None, _poll_get, requests)
+            msg = await loop.run_in_executor(executor, _poll_get, requests)
 
             if monotonic() > deadline:
                 elapsed = int((monotonic() - start_time) * 1000)
                 p.kill()
-                await loop.run_in_executor(None, p.join, 5)
+                await loop.run_in_executor(executor, p.join, 5)
                 return BridgeResult(timed_out=True, duration_ms=elapsed)
 
             if msg is None:
@@ -506,7 +568,7 @@ async def _pump(
 
             elif msg["type"] == "result":
                 elapsed = int((monotonic() - start_time) * 1000)
-                await loop.run_in_executor(None, p.join, 5)
+                await loop.run_in_executor(executor, p.join, 5)
                 return BridgeResult(
                     result_msg=msg,
                     stdout=msg.get("stdout", ""),
@@ -518,7 +580,7 @@ async def _pump(
             t.cancel()
         if p.is_alive():
             p.kill()
-            await loop.run_in_executor(None, p.join, 5)
+            await loop.run_in_executor(executor, p.join, 5)
 
 
 def _render_params_schema(schema: dict[str, Any]) -> str:
