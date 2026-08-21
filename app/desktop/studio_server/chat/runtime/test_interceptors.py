@@ -14,6 +14,7 @@ An intentional change must update the pin here AND the golden fixtures
 from __future__ import annotations
 
 import json
+from typing import ClassVar
 
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 
@@ -37,10 +38,10 @@ from .interceptors import (
 )
 from .models import (
     ConversationRecord,
+    SubAgentSeed,
     auto_policy,
     interactive_policy,
     subagent_policy,
-    SubAgentSeed,
 )
 
 
@@ -59,7 +60,7 @@ def _ctx(policy, kind="interactive", events=None, record=None):
 # ── Drift guards ───────────────────────────────────────────────────────────────
 #
 # Phase-1 note: these started as equality checks against the OLD modules
-# (chat/subagents/*, chat/auto/runner.py). Phases 2–3 deleted both old homes,
+# (chat/subagents/*, chat/auto/runner.py). Phases 2-3 deleted both old homes,
 # making the runtime the CANONICAL (and only) home of these strings — every
 # assertion below therefore pins the exact bytes, because each string is
 # persisted in traces (tool results, message framings, kickoff text, report
@@ -235,7 +236,11 @@ class TestSpawnRequiresAuto:
     # SAME consent flow as enable_auto_mode, with the spawn in the gating
     # role; flag on (armed / racing user enable) → the spawn may proceed.
 
-    _SPAWN_INPUT = {"agent_type": "general", "name": "helper", "prompt": "Dig in."}
+    _SPAWN_INPUT: ClassVar[dict] = {
+        "agent_type": "general",
+        "name": "helper",
+        "prompt": "Dig in.",
+    }
 
     def test_flag_off_builds_spawn_consent_control_event(self):
         spawn = _event("spawn_subagent", "tc_spawn", dict(self._SPAWN_INPUT))

@@ -7,7 +7,7 @@ from asyncio import Lock
 from datetime import datetime
 from typing import Annotated, Any, Dict
 
-from fastapi import Body, FastAPI, File, Form, HTTPException, Path, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, Path, Query, UploadFile
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
 from kiln_ai.adapters.errors import ErrorWithTrace
 from kiln_ai.adapters.ml_model_list import ModelProviderName
@@ -36,6 +36,8 @@ logger = logging.getLogger(__name__)
 
 # Lock to prevent overwriting via concurrent updates. We use a load/update/write pattern that is not atomic.
 update_run_lock = Lock()
+
+EVAL_TRACE_DELETE_MESSAGE = "This run can't be deleted because it's needed for an eval."
 
 
 def deep_update(
@@ -250,6 +252,9 @@ def connect_run_api(app: FastAPI):
         ],
     ):
         run = run_from_id(project_id, task_id, run_id)
+        # 409 not 400: the request is well formed, the resource state forbids it.
+        if run.eval_source is not None:
+            raise HTTPException(status_code=409, detail=EVAL_TRACE_DELETE_MESSAGE)
         run.delete()
 
     @app.get(
@@ -272,12 +277,28 @@ def connect_run_api(app: FastAPI):
             str,
             Path(description="The unique identifier of the task within the project."),
         ],
+        limit: Annotated[
+            int | None,
+            Query(
+                description="Maximum number of runs to return. When set, the most recent runs (by created_at) are returned. When omitted, all runs are returned.",
+                ge=1,
+            ),
+        ] = None,
     ) -> list[TaskRun]:
         task = task_from_id(project_id, task_id)
+
+        def load_runs() -> list[TaskRun]:
+            runs = list(task.runs(readonly=True))
+            runs.sort(key=lambda r: r.created_at, reverse=True)
+            if limit is not None:
+                runs = runs[:limit]
+            return runs
+
         # Off the event loop: this scans and parses every run file of the task,
         # which can take seconds on large datasets and would stall every other
-        # request on this single-loop server.
-        return await asyncio.to_thread(lambda: list(task.runs(readonly=True)))
+        # request on this single-loop server. The sort and the limit ride along
+        # rather than running back on the loop over the same list.
+        return await asyncio.to_thread(load_runs)
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/runs",
@@ -370,24 +391,37 @@ def connect_run_api(app: FastAPI):
     ):
         task = task_from_id(project_id, task_id)
         failed_runs: list[str] = []
-        last_error: Exception | None = None
+        failure_reasons: list[str] = []
+
+        def record_failure(run_id: str, reason: str) -> None:
+            # Every distinct reason is kept, in first-seen order. A single "last error"
+            # would report only whichever failure came last, which since eval traces
+            # became undeletable can mean a mixed selection says "Run not found" about
+            # runs that are on disk and merely protected.
+            failed_runs.append(run_id)
+            if reason and reason not in failure_reasons:
+                failure_reasons.append(reason)
+
         for run_id in run_ids:
             try:
                 run = TaskRun.from_id_and_parent_path(run_id, task.path)
-                if run:
-                    run.delete()
+                if run is None:
+                    record_failure(run_id, "Run not found")
+                elif run.eval_source is not None:
+                    # Reported rather than silently skipped, so a partially deleted
+                    # selection says why. Collected like any other per-run failure
+                    # instead of raising: the rest of the batch is still deletable.
+                    record_failure(run_id, EVAL_TRACE_DELETE_MESSAGE)
                 else:
-                    failed_runs.append(run_id)
-                    last_error = Exception("Run not found")
+                    run.delete()
             except Exception as e:
-                last_error = e
-                failed_runs.append(run_id)
+                record_failure(run_id, str(e))
         if failed_runs:
             raise HTTPException(
                 status_code=500,
                 detail={
                     "failed_runs": failed_runs,
-                    "error": str(last_error) if last_error else "Unknown error",
+                    "error": "; ".join(failure_reasons) or "Unknown error",
                 },
             )
         return {"success": True}
@@ -636,6 +670,24 @@ def connect_run_api(app: FastAPI):
 async def update_run_util(
     project_id: str, task_id: str, run_id: str, run_data: Dict[str, Any]
 ) -> TaskRun:
+    # eval_source marks a run as a trace the eval runner generated. It hides the run from
+    # the dataset and blocks deletion, so setting it here would let a client make an
+    # ordinary run both invisible and permanently undeletable - the delete guard reads
+    # the same field, so there'd be no way back through the API. It is written by the
+    # eval runner in-process and by nothing else.
+    #
+    # Testing for the key rather than a set value also refuses `{"eval_source": null}`,
+    # which deep_update treats as a clear. That is deliberate: an escape hatch out of the
+    # delete guard would be the guard's own bypass. The accepted cost (D16) is that a
+    # trace orphaned by deleting its eval - `delete_eval` removes the EvalRuns but not
+    # the TaskRuns they scored - stays on disk, invisible to the dataset and removable
+    # only from the filesystem.
+    if "eval_source" in run_data:
+        raise HTTPException(
+            status_code=400,
+            detail="eval_source cannot be set by client. It marks a run as generated by an eval.",
+        )
+
     # Lock to prevent overwriting concurrent updates
     async with update_run_lock:
         task = task_from_id(project_id, task_id)

@@ -26,10 +26,12 @@ from app.desktop.git_sync.middleware import GitSyncMiddleware
 from app.desktop.git_sync.registry import GitSyncRegistry
 from app.desktop.log_config import log_config
 from app.desktop.studio_server.agent_api import connect_agent_api
+from app.desktop.studio_server.batch_plan_api import connect_batch_plan_api
 from app.desktop.studio_server.chat import (
     connect_chat_api,
     connect_conversations_api,
 )
+from app.desktop.studio_server.code_tool_api import connect_code_tool_api
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.data_gen_api import connect_data_gen_api
 from app.desktop.studio_server.dev_tools import connect_dev_tools
@@ -154,9 +156,11 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_run_config_api(app)
     connect_import_api(app, tk_root=tk_root)
     connect_tool_servers_api(app)
+    connect_code_tool_api(app)
     connect_skill_api(app)
     connect_prompt_optimization_job_api(app)
     connect_copilot_api(app)
+    connect_batch_plan_api(app)
     connect_git_sync_api(app)
     connect_agent_api(app)
     connect_dev_tools(app)

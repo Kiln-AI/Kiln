@@ -59,7 +59,6 @@ loop is deleted remain the durable contract.
 
 from .api import ConversationItem, connect_conversations_api
 from .bus import BroadcastBus, ByteEventBus
-
 from .engine import ConversationEngine, EngineIO
 from .models import (
     ConversationPolicy,

@@ -4,6 +4,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     ChatSnapshot,
@@ -15,7 +16,6 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
     Response as KilnResponse,
 )
 from app.desktop.studio_server.chat.routes import ChatSessionSnapshot
-from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
 
 
 def _make_task_run_dict(**overrides):

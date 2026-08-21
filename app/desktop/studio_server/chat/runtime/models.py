@@ -41,9 +41,10 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
 
-from app.desktop.studio_server.chat.constants import MAX_TOOL_ROUNDS
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.desktop.studio_server.chat.constants import MAX_TOOL_ROUNDS
 
 if TYPE_CHECKING:
     # Import cycle avoidance only: interceptors.py imports models for the

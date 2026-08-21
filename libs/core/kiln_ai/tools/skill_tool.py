@@ -35,10 +35,14 @@ class SkillTool(KilnToolInterface):
     async def description(self) -> str:
         return (
             "Load an agent skill by name. Use this tool when a specialized skill "
-            "may help solve the user's task. Calling the tool with a skill name loads that skill's "
-            "full instructions. If the skill references additional files "
-            "relevant to the task, load them by passing a 'resource' path "
-            "(e.g. 'references/guide.md', 'references/subdir/notes.txt', or 'assets/template.csv')."
+            "may help solve the user's task. Skills use progressive disclosure: "
+            "call skill(name) first to load the skill's instruction page. That "
+            "page is the only place a skill's resource files are listed. If it "
+            "points at a file you need, call skill(name, resource) and copy the "
+            "path exactly as the instructions wrote it. Resource paths always "
+            "start with references/ or assets/, but never guess or assemble one: "
+            "a path the instructions do not list does not exist, and many skills "
+            "ship no resource files at all."
         )
 
     async def toolcall_definition(self) -> ToolCallDefinition:
@@ -52,11 +56,11 @@ class SkillTool(KilnToolInterface):
                     "properties": {
                         "name": {
                             "type": "string",
-                            "description": "The name of the skill to load.",
+                            "description": "The name of the skill to load, exactly as listed in the system prompt.",
                         },
                         "resource": {
                             "type": "string",
-                            "description": "Optional. Path to a specific resource file within the skill (e.g. 'references/guide.md', 'assets/data.csv'). If omitted, returns the skill's main instructions.",
+                            "description": "Optional. Leave unset on the first call: that returns the skill's instructions, which list its resource files if it has any. Set this only to a path those instructions listed, copied verbatim (paths start with references/ or assets/). Never guess a path; unlisted paths do not exist.",
                         },
                     },
                     "required": ["name"],

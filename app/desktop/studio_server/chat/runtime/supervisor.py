@@ -54,19 +54,20 @@ import os
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Literal
 
 import httpx
-from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
-from app.desktop.studio_server.chat.debug_log import chat_debug_log
-from app.desktop.studio_server.chat.stream_session import (
-    ToolCallInfo,
-    _pending_item_from_event,
-    execute_tool_batch,
-)
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import (
     DISABLE_AUTO_MODE_TOOL_NAME,
 )
 from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
     ENABLE_AUTO_MODE_TOOL_NAME,
+)
+
+from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
+from app.desktop.studio_server.chat.debug_log import chat_debug_log
+from app.desktop.studio_server.chat.stream_session import (
+    ToolCallInfo,
+    _pending_item_from_event,
+    execute_tool_batch,
 )
 
 from .bus import BroadcastBus, ByteEventBus

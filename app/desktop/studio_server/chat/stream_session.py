@@ -37,6 +37,10 @@ if TYPE_CHECKING:
     )
 
 import httpx
+from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
+from kiln_ai.tools.tool_registry import tool_from_id
+from pydantic import BaseModel, ConfigDict, Field
+
 from app.desktop.studio_server.chat.constants import (
     DENIED_TOOL_OUTPUT,
     FUNCTION_NAME_TO_TOOL_ID,
@@ -48,9 +52,6 @@ from app.desktop.studio_server.chat.sse_parser import EventParser
 from app.desktop.studio_server.chat.tool_metadata import (
     _parse_kiln_tool_metadata,
 )
-from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
-from kiln_ai.tools.tool_registry import tool_from_id
-from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -619,6 +620,6 @@ def _build_openai_tool_continuation(
         }
         if tool_calls:
             assistant_msg["tool_calls"] = tool_calls
-        new_messages = prior_messages + [assistant_msg] + tool_messages
+        new_messages = [*prior_messages, assistant_msg, *tool_messages]
 
     return {**original_body, "messages": new_messages}

@@ -15,7 +15,7 @@ irrelevant on the wire). ``test_golden_protocol.py`` asserts
     old loop == fixture == new engine
 
 While the old loops exist, the first equality keeps the fixtures honest;
-once phases 2–4 delete each old loop, its fixture REMAINS the durable
+once phases 2-4 delete each old loop, its fixture REMAINS the durable
 contract the engine (and the supervisor-driven runs built on it) must keep
 matching. This is what pins the "persisted traces must be indistinguishable"
 requirement (functional spec §3) — the request bodies are exactly what the
@@ -40,6 +40,7 @@ from typing import Any, Awaitable, Callable
 from unittest.mock import patch
 
 import httpx
+
 from app.desktop.studio_server.chat.test_fakes import (
     FakeUpstreamClient,
     FakeUpstreamResponse,
@@ -475,7 +476,7 @@ async def _engine_auto_report_inbox_unwrapped() -> list[dict[str, Any]]:
 class GoldenScenario:
     name: str
     # Captures the upstream request bodies from the OLD loop. Deleted along
-    # with its loop in phases 2–4 (None once the loop is gone — the sub-agent
+    # with its loop in phases 2-4 (None once the loop is gone — the sub-agent
     # loop went in phase 2, the auto loop in phase 3); the JSON fixture then
     # remains the contract.
     run_old: Callable[[], Awaitable[list[dict[str, Any]]]] | None

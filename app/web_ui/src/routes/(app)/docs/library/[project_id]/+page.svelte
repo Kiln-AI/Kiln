@@ -9,12 +9,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import FilterTagsDialog from "$lib/ui/filter_tags_dialog.svelte"
   import EmptyDocsLibraryIntro from "./empty_docs_library_intro.svelte"
-  import FileIcon from "$lib/ui/icons/file_icon.svelte"
-  import {
-    formatDate,
-    formatSize,
-    mime_type_to_string,
-  } from "$lib/utils/formatters"
+  import DocumentsTable from "$lib/ui/documents_table.svelte"
   import UploadFileDialog from "./upload_file_dialog.svelte"
 
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
@@ -68,13 +63,6 @@
       description: desc,
     })
   }
-
-  const columns = [
-    { key: "kind", label: "Type" },
-    { key: "friendly_name", label: "Name" },
-    { key: "original_file.size", label: "Size" },
-    { key: "created_at", label: "Created At" },
-  ]
 
   $: if (project_id) {
     error = null
@@ -576,81 +564,21 @@
             </button>
           {/if}
         </div>
-        <div class="overflow-x-auto rounded-lg border">
-          <table class="table">
-            <thead>
-              <tr>
-                {#if select_mode}
-                  <th>
-                    {#key select_document}
-                      <input
-                        type="checkbox"
-                        class="checkbox checkbox-sm mt-1"
-                        checked={select_document === "all"}
-                        indeterminate={select_document === "some"}
-                        on:change={(e) => select_all_clicked(e)}
-                      />
-                    {/key}
-                  </th>
-                {/if}
-                {#each columns as { key, label }}
-                  <th
-                    on:click={() => handleSort(key)}
-                    class="hover:bg-base-200 cursor-pointer"
-                  >
-                    {label}
-                    {sortColumn === key
-                      ? sortDirection === "asc"
-                        ? "▲"
-                        : "▼"
-                      : ""}
-                  </th>
-                {/each}
-              </tr>
-            </thead>
-            <tbody>
-              {#each (filtered_documents || []).slice((page_number - 1) * page_size, page_number * page_size) as document}
-                <tr
-                  class="{select_mode
-                    ? ''
-                    : 'hover'} cursor-pointer {select_mode &&
-                  document.id &&
-                  selected_documents.has(document.id)
-                    ? 'bg-base-200'
-                    : ''}"
-                  on:click={(event) => {
-                    row_clicked(document.id || null, event)
-                  }}
-                >
-                  {#if select_mode}
-                    <td class="w-12">
-                      <input
-                        type="checkbox"
-                        class="checkbox checkbox-sm"
-                        checked={(document.id &&
-                          selected_documents.has(document.id)) ||
-                          false}
-                      />
-                    </td>
-                  {/if}
-                  <td>
-                    <div class="flex flex-row items-center gap-2">
-                      <div class="h-8 w-8">
-                        <FileIcon kind={document.kind} />
-                      </div>
-                      <span class="text-sm">
-                        {mime_type_to_string(document.original_file.mime_type)}
-                      </span>
-                    </div>
-                  </td>
-                  <td>{document.friendly_name}</td>
-                  <td>{formatSize(document.original_file.size)}</td>
-                  <td>{formatDate(document.created_at)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
+        <DocumentsTable
+          documents={(filtered_documents || []).slice(
+            (page_number - 1) * page_size,
+            page_number * page_size,
+          )}
+          selectable={select_mode}
+          selected_ids={selected_documents}
+          select_all_state={select_document}
+          sortable={true}
+          sort_column={sortColumn}
+          sort_direction={sortDirection}
+          on:sort={(e) => handleSort(e.detail.key)}
+          on:selectAll={(e) => select_all_clicked(e.detail.event)}
+          on:rowClick={(e) => row_clicked(e.detail.id, e.detail.event)}
+        />
       </div>
 
       {#if page_number > 1 || (filtered_documents && filtered_documents.length > page_size)}

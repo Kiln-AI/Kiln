@@ -1,3 +1,7 @@
+# TODO (merge blocker — do not merge toward main until resolved): tests for a runner under design
+# review — see the header of kiln_ai/datamodel/judge_feedback_batch.py. Resolve before merging
+# toward main.
+
 import random
 from typing import Callable, Dict
 
@@ -187,7 +191,7 @@ async def run_job(
 ):
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(
-            "kiln_ai.adapters.eval.judge_feedback_batch_runner.eval_adapter_from_type",
+            "kiln_ai.adapters.eval.judge_feedback_batch_runner.legacy_eval_adapter_from_type",
             lambda _type: scripted_evaluator_factory(
                 score_fn,
                 calls=calls,
@@ -788,7 +792,7 @@ async def test_transient_retries_back_off_exponentially(mock_task, data_source):
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(
-            "kiln_ai.adapters.eval.judge_feedback_batch_runner.eval_adapter_from_type",
+            "kiln_ai.adapters.eval.judge_feedback_batch_runner.legacy_eval_adapter_from_type",
             lambda _type: scripted_evaluator_factory(score_fn, generate=False),
         )
         mp.setattr(

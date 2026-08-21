@@ -13,7 +13,7 @@ Two families live here:
 
 2. **Canonical copies of the generic per-run formatters** that currently live
    in ``chat/auto/sse.py`` (re-exported by ``chat/subagents/sse.py``). Those
-   packages are deleted in phases 2–3, so the runtime owns its own copies now;
+   packages are deleted in phases 2-3, so the runtime owns its own copies now;
    the payload shapes are byte-identical so ``StreamEventProcessor`` consumes
    the new streams unchanged.
 
@@ -61,7 +61,7 @@ def _encode(payload: dict) -> bytes:
 def format_conversation_state(record: ConversationRecord) -> bytes:
     """Snapshot of a conversation's lifecycle for observers.
 
-    Field mapping from the old vocabulary (so the frontend port in phases 2–4
+    Field mapping from the old vocabulary (so the frontend port in phases 2-4
     is mechanical):
 
     - old ``auto-mode-on``            → state=running, auto_flag=true

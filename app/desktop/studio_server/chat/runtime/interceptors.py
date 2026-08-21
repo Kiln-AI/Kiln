@@ -32,15 +32,16 @@ import json
 from dataclasses import dataclass
 from typing import Callable, Literal
 
-from app.desktop.studio_server.chat.stream_session import (
-    _format_consent_required_sse,
-)
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import (
     DISABLE_AUTO_MODE_TOOL_NAME,
 )
 from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
     ENABLE_AUTO_MODE_TOOL_NAME,
+)
+
+from app.desktop.studio_server.chat.stream_session import (
+    _format_consent_required_sse,
 )
 
 from .models import ConversationPolicy, ConversationRecord

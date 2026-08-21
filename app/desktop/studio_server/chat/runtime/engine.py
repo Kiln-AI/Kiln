@@ -41,6 +41,8 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 import httpx
+from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
+
 from app.desktop.studio_server.chat.constants import CHAT_TIMEOUT
 from app.desktop.studio_server.chat.debug_log import chat_debug_log
 from app.desktop.studio_server.chat.stream_session import (
@@ -55,7 +57,6 @@ from app.desktop.studio_server.chat.tool_metadata import (
     tool_input_executor_is_server,
     tool_requires_user_approval,
 )
-from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 
 from .interceptors import (
     InterceptContext,
@@ -680,7 +681,7 @@ class ConversationEngine:
         """Execute an already-decided RUNLESS batch and return the
         continuation body for the round loop (phase 4 recovery entry).
 
-        Mirrors the engine's normal parked execution (steps 6–7) driven from
+        Mirrors the engine's normal parked execution (steps 6-7) driven from
         the batch's stored round context instead of live round state, and —
         through ``_build_openai_tool_continuation`` over the batch's
         ``{trace_id, messages: []}`` base — produces exactly the continuation

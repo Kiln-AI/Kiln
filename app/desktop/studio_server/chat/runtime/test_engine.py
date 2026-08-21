@@ -15,6 +15,9 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+
+from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
+from app.desktop.studio_server.chat.stream_session import MAX_CHAT_RETRIES
 from app.desktop.studio_server.chat.test_fakes import (
     FakeUpstreamClient,
     FakeUpstreamResponse,
@@ -24,8 +27,6 @@ from app.desktop.studio_server.chat.test_fakes import (
     tool_input_available,
     trace,
 )
-from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
-from app.desktop.studio_server.chat.stream_session import MAX_CHAT_RETRIES
 
 from .engine import ConversationEngine, EngineIO
 from .interceptors import (

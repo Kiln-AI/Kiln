@@ -93,6 +93,22 @@ describe("ImportProject local_file conflict handling", () => {
     return result
   }
 
+  // After form submit, the UI now navigates to a trust confirmation page.
+  // This helper clicks "Trust Project" to proceed to the actual import.
+  async function confirmTrustPage(container: HTMLElement) {
+    await waitFor(() => {
+      expect(container.textContent).toContain("Trust this Project?")
+    })
+    const trustBtn = container.querySelector(
+      "button.btn-warning",
+    ) as HTMLButtonElement
+    expect(trustBtn?.textContent?.trim()).toBe("Trust Project")
+    await fireEvent.click(trustBtn)
+    await tick()
+    await new Promise((r) => setTimeout(r, 0))
+    await tick()
+  }
+
   it("shows conflict button on 409 response", async () => {
     vi.mocked(client.POST).mockResolvedValue({
       data: undefined,
@@ -119,6 +135,9 @@ describe("ImportProject local_file conflict handling", () => {
     await tick()
     await new Promise((r) => setTimeout(r, 0))
     await tick()
+
+    // Confirm the trust page to proceed to the actual import
+    await confirmTrustPage(container)
 
     await waitFor(() => {
       expect(container.textContent).toContain("Remove existing and re-import")
@@ -155,6 +174,9 @@ describe("ImportProject local_file conflict handling", () => {
     await tick()
     await new Promise((r) => setTimeout(r, 0))
     await tick()
+
+    // Confirm the trust page to proceed to the actual import
+    await confirmTrustPage(container)
 
     await waitFor(() => {
       expect(container.textContent).toContain("Remove existing and re-import")
@@ -196,6 +218,9 @@ describe("ImportProject local_file conflict handling", () => {
     await new Promise((r) => setTimeout(r, 0))
     await tick()
 
+    // Confirm the trust page to proceed to the actual import
+    await confirmTrustPage(container)
+
     await waitFor(() => {
       expect(container.textContent).toContain("Server error")
     })
@@ -228,6 +253,9 @@ describe("ImportProject local_file conflict handling", () => {
     await tick()
     await new Promise((r) => setTimeout(r, 0))
     await tick()
+
+    // Confirm the trust page to proceed to the actual import
+    await confirmTrustPage(container)
 
     await waitFor(() => {
       expect(container.textContent).toContain("Remove existing and re-import")
@@ -280,14 +308,24 @@ describe("ImportProject local_file conflict handling", () => {
     await new Promise((r) => setTimeout(r, 0))
     await tick()
 
+    // Confirm the trust page to proceed to the actual import
+    await confirmTrustPage(container)
+
     // Confirm conflict state is active
     await waitFor(() => {
       expect(container.textContent).toContain("Remove existing and re-import")
     })
-    expect(submitBtn?.classList.contains("hidden")).toBe(true)
+    // Re-query submit button after step navigation
+    const submitBtnAfterConflict = container.querySelector(
+      'button[type="submit"]',
+    ) as HTMLButtonElement
+    expect(submitBtnAfterConflict?.classList.contains("hidden")).toBe(true)
 
     // Now edit the path via typing - should clear conflict and restore normal submit
-    await fireEvent.input(input, {
+    const inputAfterConflict = container.querySelector(
+      "#import_project_path",
+    ) as HTMLInputElement
+    await fireEvent.input(inputAfterConflict, {
       target: { value: "/different/path/project.kiln" },
     })
     await tick()
@@ -341,7 +379,7 @@ describe("ImportProject local_file conflict handling", () => {
     expect(input).toBeTruthy()
     expect(input.value).toBe("/path/to/project.kiln")
 
-    // Submit -> 409 conflict
+    // Submit -> trust page -> 409 conflict
     vi.mocked(client.POST).mockResolvedValueOnce({
       data: undefined,
       error: { message: "Duplicate project ID" },
@@ -356,15 +394,24 @@ describe("ImportProject local_file conflict handling", () => {
     await new Promise((r) => setTimeout(r, 0))
     await tick()
 
+    // Confirm the trust page to proceed to the actual import
+    await confirmTrustPage(container)
+
     // Conflict button appears (reactive did NOT self-wipe on the 409)
     await waitFor(() => {
       expect(container.textContent).toContain("Remove existing and re-import")
     })
-    expect(submitBtn?.classList.contains("hidden")).toBe(true)
+    const submitBtnAfterConflict = container.querySelector(
+      'button[type="submit"]',
+    ) as HTMLButtonElement
+    expect(submitBtnAfterConflict?.classList.contains("hidden")).toBe(true)
 
     // Clear the path to make the file picker button reappear.
     // This also clears the conflict (expected: path changed from the conflict path).
-    await fireEvent.input(input, { target: { value: "" } })
+    const inputAfterConflict = container.querySelector(
+      "#import_project_path",
+    ) as HTMLInputElement
+    await fireEvent.input(inputAfterConflict, { target: { value: "" } })
     await tick()
 
     await waitFor(() => {
@@ -397,7 +444,7 @@ describe("ImportProject local_file conflict handling", () => {
     ) as HTMLInputElement
     expect(updatedInput?.value).toBe("/different/programmatic/path.kiln")
 
-    // Submit again -> 409
+    // Submit again -> trust page -> 409
     vi.mocked(client.POST).mockResolvedValueOnce({
       data: undefined,
       error: { message: "Duplicate project ID" },
@@ -411,6 +458,9 @@ describe("ImportProject local_file conflict handling", () => {
     await tick()
     await new Promise((r) => setTimeout(r, 0))
     await tick()
+
+    // Confirm the trust page again
+    await confirmTrustPage(container)
 
     // Conflict button appears again -- the reactive block correctly handled the
     // programmatic path set from the file picker without self-wiping on the 409

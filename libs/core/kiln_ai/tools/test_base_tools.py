@@ -3,6 +3,7 @@ import pytest
 from kiln_ai.tools.base_tool import (
     KilnTool,
     KilnToolInterface,
+    ToolCallContext,
     ToolCallResult,
     UnmanagedKilnTool,
 )
@@ -15,6 +16,22 @@ class TestKilnToolInterface:
         """Test that KilnToolInterface cannot be instantiated directly."""
         with pytest.raises(TypeError):
             KilnToolInterface()  # type: ignore
+
+
+class TestToolCallContext:
+    """Tests for the ToolCallContext dataclass defaults."""
+
+    def test_defaults(self):
+        context = ToolCallContext()
+        assert context.allow_saving is True
+        assert context.eval_output_schema is None
+
+    def test_eval_output_schema_can_be_set(self):
+        context = ToolCallContext(
+            allow_saving=False, eval_output_schema='{"type": "object"}'
+        )
+        assert context.allow_saving is False
+        assert context.eval_output_schema == '{"type": "object"}'
 
 
 class TestUnmanagedKilnTool:

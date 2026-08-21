@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+
 from app.desktop.studio_server.chat.test_fakes import text_delta, trace
 
 from .bus import BroadcastBus, ByteEventBus, extract_trace_id

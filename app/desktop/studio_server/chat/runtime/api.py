@@ -25,7 +25,7 @@ Old → new mapping (behavior preserved, vocabulary unified):
 - ``GET  /api/chat/auto/{run}/events``          → ``GET /api/conversations/{sid}/events``
 - ``GET  /api/chat/auto/resolve``               → DELETED in phase 5 (was
                                                   ``GET /api/conversations/resolve``
-                                                  in phases 3–4; the browser
+                                                  in phases 3-4; the browser
                                                   keys conversations on
                                                   session ids, and an observed
                                                   conversation converges via
@@ -61,19 +61,19 @@ import logging
 from typing import Annotated, Any, AsyncGenerator, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Query, Response
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.git_sync_decorators import no_write_lock
+from kiln_server.utils.agent_checks.policy import DENY_AGENT
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.desktop.studio_server.chat.debug_log import chat_debug_enabled
 from app.desktop.studio_server.chat.stream_session import ToolCallInfo
-from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 
 # Keepalive stays the shared jobs helper, exactly as the old auto/sub-agent
 # APIs used it (its feeder-task design is what makes a quiet-window timeout
 # safe for observer streams).
 from app.desktop.studio_server.jobs.events import KeepalivePing, iter_with_keepalive
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
-from kiln_server.git_sync_decorators import no_write_lock
-from kiln_server.utils.agent_checks.policy import DENY_AGENT
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 
 from .models import ConversationKind, ConversationRecord, RunState
 from .sse import format_conversation_state
@@ -117,7 +117,7 @@ class ConversationItem(BaseModel):
     - ``state`` uses the unified ``RunState`` vocabulary; every value the old
       ``SubAgentStatus`` could produce keeps its exact string, so terminal
       checks port mechanically.
-    - ``current_trace_id`` (phases 2–4) is GONE: browsers never see trace ids
+    - ``current_trace_id`` (phases 2-4) is GONE: browsers never see trace ids
       (functional spec §4). History hydration goes through
       ``GET /api/chat/sessions/{session_id}`` and the DESKTOP resolves the
       record's current leaf (``routes.resolve_conversation_key``) — strictly

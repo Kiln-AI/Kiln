@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 
 MAX_CALLS_PER_TURN = 10
-MAX_TOOL_CALLS_PER_TURN = 30
+MAX_TOOL_CALLS_PER_TURN = 100
 
 logger = logging.getLogger(__name__)
 

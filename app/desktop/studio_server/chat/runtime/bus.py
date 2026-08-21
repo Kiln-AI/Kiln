@@ -4,7 +4,7 @@ Generalizes (and will replace) the two near-identical copies that exist
 today — ``chat/auto/events.py``'s ``AutoChatEventBus`` and
 ``chat/subagents/events.py``'s ``SubAgentEventBus`` — plus the buffer-owning
 ``emit()`` methods on ``AutoChatRun`` / ``SubAgentRun``. Both old copies are
-deleted as phases 2–3 port their kinds.
+deleted as phases 2-3 port their kinds.
 
 Contract (identical to both old buses):
 

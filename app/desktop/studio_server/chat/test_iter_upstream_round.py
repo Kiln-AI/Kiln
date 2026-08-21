@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+
 from app.desktop.studio_server.chat.constants import (
     SSE_TYPE_TOOL_EXEC_END,
     SSE_TYPE_TOOL_EXEC_START,

@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+
 from app.desktop.studio_server.chat.test_fakes import (
     FakeUpstreamClient,
     FakeUpstreamResponse,
@@ -960,8 +961,9 @@ async def test_enable_auto_busy_accept_raises_before_spawning(hang_engine):
     # _finish_run would never swap it back) and holding no auto-cap slot.
     from unittest.mock import AsyncMock
 
-    from . import supervisor as supervisor_module
     from app.desktop.studio_server.chat.stream_session import ToolCallInfo
+
+    from . import supervisor as supervisor_module
 
     sup = _sup(auto_max_concurrent=1)
     seeded = _seeded_conversation(sup, "t1")

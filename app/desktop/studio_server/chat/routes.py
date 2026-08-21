@@ -5,6 +5,9 @@ from http import HTTPStatus
 from typing import Annotated, Any, NoReturn
 
 import httpx
+from fastapi import FastAPI, HTTPException, Path, Query
+from kiln_server.utils.agent_checks.policy import DENY_AGENT
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.chat import (
     delete_session_v1_chat_sessions_session_id_delete,
@@ -26,9 +29,6 @@ from app.desktop.studio_server.chat import orchestration
 from app.desktop.studio_server.chat.runtime.models import ConversationRecord
 from app.desktop.studio_server.chat.runtime.supervisor import conversation_supervisor
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
-from fastapi import FastAPI, HTTPException, Path, Query
-from kiln_server.utils.agent_checks.policy import DENY_AGENT
-from pydantic import BaseModel, ConfigDict, ValidationError
 
 
 def _build_upstream_headers(api_key: str) -> dict[str, str]:
@@ -350,7 +350,7 @@ def connect_chat_api(app: FastAPI) -> None:
                 # row's ROOT id, which is how a record adopted by root key
                 # (phase 6: no leaf known until its first persist) still
                 # joins its row. The subagent kind guard matters because
-                # parents live on the same supervisor since phases 3–4 — a
+                # parents live on the same supervisor since phases 3-4 — a
                 # parent's leaf must never stamp its own row as a sub-agent.
                 extra_root = extra.get("root_id")
                 live_sid = conversation_supervisor.session_for_trace(item.id) or (

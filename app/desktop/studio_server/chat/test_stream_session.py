@@ -11,9 +11,24 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
+from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
+
 from app.desktop.studio_server.chat import execute_tool
+from app.desktop.studio_server.chat.constants import SSE_TYPE_TOOL_CALLS_PENDING
+from app.desktop.studio_server.chat.runtime.engine import ConversationEngine, EngineIO
+from app.desktop.studio_server.chat.runtime.models import (
+    ConversationRecord,
+    interactive_policy,
+)
 from app.desktop.studio_server.chat.stream_session import (
+    _RETRY_BACKOFF_SCHEDULE,
+    MAX_CHAT_RETRIES,
+    ToolCallInfo,
     _build_openai_tool_continuation,
+    _format_tool_calls_pending_sse,
+    _retry_backoff_seconds,
+    execute_tool_batch,
 )
 from app.desktop.studio_server.chat.test_fakes import (
     FakeUpstreamClient,
@@ -22,22 +37,6 @@ from app.desktop.studio_server.chat.test_fakes import (
     text_delta,
     trace,
 )
-from app.desktop.studio_server.chat.constants import SSE_TYPE_TOOL_CALLS_PENDING
-from app.desktop.studio_server.chat.runtime.engine import ConversationEngine, EngineIO
-from app.desktop.studio_server.chat.runtime.models import (
-    ConversationRecord,
-    interactive_policy,
-)
-from app.desktop.studio_server.chat.stream_session import (
-    MAX_CHAT_RETRIES,
-    ToolCallInfo,
-    _format_tool_calls_pending_sse,
-    _RETRY_BACKOFF_SCHEDULE,
-    _retry_backoff_seconds,
-    execute_tool_batch,
-)
-from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
-from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
 
 
 async def _run_interactive_turn(fake_client) -> list[bytes]:

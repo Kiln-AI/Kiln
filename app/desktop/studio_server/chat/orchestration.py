@@ -83,7 +83,7 @@ class OrchestrationContext:
         # The session id IS the parent key: stable for the conversation's
         # lifetime, so no trace-alias chaining is needed (this replaced the
         # old ``auto:<run_id>`` / ``trace:<leaf>`` keys as each parent kind
-        # moved onto the supervisor in phases 3–4).
+        # moved onto the supervisor in phases 3-4).
         return self.parent_session_id
 
 

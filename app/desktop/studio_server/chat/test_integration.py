@@ -10,6 +10,8 @@ from unittest.mock import patch
 
 import pytest
 import yaml
+from kiln_ai.utils.config import Config
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.health import (
     ping_ping_get,
 )
@@ -21,7 +23,6 @@ from app.desktop.studio_server.chat.constants import (
     KILN_SSE_CHAT_TRACE,
     SSE_TYPE_TOOL_CALLS_PENDING,
 )
-from kiln_ai.utils.config import Config
 
 logger = logging.getLogger(__name__)
 

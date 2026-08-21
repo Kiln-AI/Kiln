@@ -4,7 +4,7 @@ See ``golden_scenarios.py`` for the scenario definitions and the fixture
 lifecycle. Two assertions per scenario:
 
 - ``test_old_loop_matches_fixture`` keeps the fixture honest while the old
-  loop still exists (it is deleted along with the loop in phases 2–4);
+  loop still exists (it is deleted along with the loop in phases 2-4);
 - ``test_engine_matches_fixture`` is the durable contract: the unified
   engine must produce the identical upstream request-body sequence for the
   same scenario/policy, forever.
