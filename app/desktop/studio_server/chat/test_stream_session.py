@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
+from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
+
 from app.desktop.studio_server.chat import execute_tool
-from app.desktop.studio_server.chat.stream_session import (
-    _build_openai_tool_continuation,
-)
 from app.desktop.studio_server.chat.auto.test_fakes import (
     FakeUpstreamClient,
     FakeUpstreamResponse,
@@ -23,13 +23,12 @@ from app.desktop.studio_server.chat.stream_session import (
     MAX_CHAT_RETRIES,
     ChatStreamSession,
     ToolCallInfo,
+    _build_openai_tool_continuation,
     _format_tool_calls_pending_sse,
     _RETRY_BACKOFF_SCHEDULE,
     _retry_backoff_seconds,
     execute_tool_batch,
 )
-from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
-from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
 
 
 class TestExecuteTool:

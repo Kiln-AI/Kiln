@@ -7,6 +7,10 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable, Literal
 
 import httpx
+from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
+from kiln_ai.tools.tool_registry import tool_from_id
+from pydantic import BaseModel, ConfigDict, Field
+
 from app.desktop.studio_server.chat.constants import (
     CHAT_TIMEOUT,
     DENIED_TOOL_OUTPUT,
@@ -761,6 +765,6 @@ def _build_openai_tool_continuation(
         }
         if tool_calls:
             assistant_msg["tool_calls"] = tool_calls
-        new_messages = prior_messages + [assistant_msg] + tool_messages
+        new_messages = [*prior_messages, assistant_msg, *tool_messages]
 
     return {**original_body, "messages": new_messages}

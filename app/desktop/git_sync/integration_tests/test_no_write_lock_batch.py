@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from kiln_server.git_sync_decorators import no_write_lock
 
 from app.desktop.git_sync.integration_tests.conftest import (
     PROJECT_ID,
@@ -20,7 +21,6 @@ from app.desktop.git_sync.integration_tests.conftest import (
 )
 from app.desktop.git_sync.middleware import GitSyncMiddleware
 from app.desktop.git_sync.registry import GitSyncRegistry
-from kiln_server.git_sync_decorators import no_write_lock
 
 
 def _build_batch_app(
@@ -107,7 +107,7 @@ class TestNoWriteLockPartialFailure:
     @pytest.mark.asyncio
     async def test_partial_failure_iteration3_rolled_back(self, git_repos):
         """Iteration 3's changes are rolled back after failure."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         config = auto_config(str(local_path))
 
         app, endpoint_url = _build_batch_app(local_path, "batch2", "batch_op2")

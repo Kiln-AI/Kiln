@@ -365,6 +365,47 @@ class TestScanProjects:
 
 
 class TestSaveAndGetConfig:
+    def test_save_rejected_when_not_trusted(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
+        with patch(
+            "app.desktop.git_sync.git_sync_api.default_project_path",
+            return_value=str(tmp_path),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/save_config",
+                json={
+                    "project_id": "proj1",
+                    "project_path": "project.kiln",
+                    "git_url": "https://github.com/test/repo.git",
+                    "clone_path": str(clone_dir),
+                    "branch": "main",
+                },
+            )
+        assert resp.status_code == 400
+        assert "you must confirm you trust" in resp.json()["detail"].lower()
+
+    def test_save_rejected_when_trusted_false(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
+        with patch(
+            "app.desktop.git_sync.git_sync_api.default_project_path",
+            return_value=str(tmp_path),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/save_config",
+                json={
+                    "project_id": "proj1",
+                    "project_path": "project.kiln",
+                    "git_url": "https://github.com/test/repo.git",
+                    "clone_path": str(clone_dir),
+                    "branch": "main",
+                    "trusted": False,
+                },
+            )
+        assert resp.status_code == 400
+        assert "you must confirm you trust" in resp.json()["detail"].lower()
+
     def test_save_and_retrieve(self, api_client, tmp_path):
         clone_dir = tmp_path / "kiln_clone_abc"
         clone_dir.mkdir()
@@ -385,6 +426,7 @@ class TestSaveAndGetConfig:
                     "clone_path": str(clone_dir),
                     "branch": "main",
                     "pat_token": "ghp_test",
+                    "trusted": True,
                 },
             )
         data = resp.json()
@@ -415,6 +457,7 @@ class TestSaveAndGetConfig:
                     "git_url": "https://github.com/test/repo.git",
                     "clone_path": str(clone_dir),
                     "branch": "main",
+                    "trusted": True,
                 },
             )
         assert resp.status_code == 409
@@ -444,6 +487,7 @@ class TestSaveAndGetConfig:
                     "git_url": "https://github.com/test/repo.git",
                     "clone_path": str(clone_dir),
                     "branch": "main",
+                    "trusted": True,
                 },
             )
         assert resp.status_code == 409
@@ -472,6 +516,7 @@ class TestSaveAndGetConfig:
                     "git_url": "https://github.com/test/repo.git",
                     "clone_path": str(clone_dir),
                     "branch": "main",
+                    "trusted": True,
                 },
             )
         assert resp.status_code == 200
@@ -1029,6 +1074,7 @@ class TestOAuthTokenInConfig:
                     "branch": "main",
                     "auth_mode": "github_oauth",
                     "oauth_token": "ghu_token",
+                    "trusted": True,
                 },
             )
         data = resp.json()
@@ -1209,6 +1255,7 @@ class TestSaveConfigRemoveConflicting:
                     "clone_path": str(clone_dir),
                     "branch": "main",
                     "remove_conflicting_id": True,
+                    "trusted": True,
                 },
             )
         assert resp.status_code == 200
@@ -1239,6 +1286,7 @@ class TestSaveConfigRemoveConflicting:
                     "clone_path": str(clone_dir),
                     "branch": "main",
                     "remove_conflicting_id": False,
+                    "trusted": True,
                 },
             )
         assert resp.status_code == 409
@@ -1263,6 +1311,7 @@ class TestSaveConfigRemoveConflicting:
                     "clone_path": str(clone_dir),
                     "branch": "main",
                     "remove_conflicting_id": True,
+                    "trusted": True,
                 },
             )
         assert resp.status_code == 200
@@ -1299,6 +1348,7 @@ class TestSaveConfigRemoveConflicting:
                     "clone_path": str(clone_dir),
                     "branch": "main",
                     "remove_conflicting_id": True,
+                    "trusted": True,
                 },
             )
         assert resp.status_code == 200
@@ -1319,6 +1369,7 @@ class TestSaveConfigClonePathValidation:
                     "clone_path": "/some/arbitrary/path",
                     "branch": "main",
                     "auth_mode": "system_keys",
+                    "trusted": True,
                 },
             )
         assert resp.status_code == 400

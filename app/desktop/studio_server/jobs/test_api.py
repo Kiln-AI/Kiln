@@ -7,6 +7,9 @@ import uuid
 import httpx
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI
+from pydantic import BaseModel
+
 from app.desktop.studio_server.jobs import api as jobs_api
 from app.desktop.studio_server.jobs import error_log
 from app.desktop.studio_server.jobs.api import connect_jobs_api
@@ -21,8 +24,6 @@ from app.desktop.studio_server.jobs.workers.eval import (
     EvalJobWorker,
 )
 from app.desktop.studio_server.jobs.workers.noop import NoopJobWorker
-from fastapi import FastAPI
-from pydantic import BaseModel
 
 
 async def _safe_cancel(registry: JobRegistry, job_id: str) -> None:
