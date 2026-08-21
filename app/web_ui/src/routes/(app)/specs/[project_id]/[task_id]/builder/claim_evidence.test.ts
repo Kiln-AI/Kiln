@@ -545,6 +545,71 @@ describe("resolve_citation_span", () => {
   })
 })
 
+describe("resolve_citation_span — curly vs straight punctuation", () => {
+  // The captured shape: the model's output carries typographic quotes, the
+  // anchors it retyped for the citation carry straight ones.
+  const curly = "Please confirm whether you’d like a “refund” or store credit."
+
+  it("resolves straight-quote anchors against curly source text", () => {
+    const span = resolve_citation_span(curly, {
+      from: "you'd like",
+      to: "“refund”",
+    })
+    expect(span).not.toBeNull()
+    // The offsets index the ORIGINAL text, curly characters and all — they
+    // slice the highlight the reviewer sees.
+    expect(curly.slice(span!.start, span!.end)).toBe("you’d like a “refund”")
+  })
+
+  it("resolves curly anchors against straight source text", () => {
+    const straight = "Please confirm whether you'd like a refund."
+    const span = resolve_citation_span(straight, {
+      from: "you’d like",
+      to: "refund",
+    })
+    expect(span).not.toBeNull()
+    expect(straight.slice(span!.start, span!.end)).toBe("you'd like a refund")
+  })
+
+  it("still resolves when both sides are curly", () => {
+    // Straight-on-straight is the suite above; this is the other unchanged
+    // pairing, which one-sided folding would break.
+    const span = resolve_citation_span(curly, {
+      from: "you’d like",
+      to: "store credit",
+    })
+    expect(span).not.toBeNull()
+    expect(curly.slice(span!.start, span!.end)).toBe(
+      "you’d like a “refund” or store credit",
+    )
+  })
+
+  it("keeps offsets exact around every folded and unfolded character", () => {
+    // Folding may only ever swap one code unit for one. Text mixing all four
+    // folded characters with punctuation that is NOT folded (the en dash) puts
+    // any length-changing substitution straight into the slice.
+    const mixed = "Policy — the “30 day” window — you’d like a ‘refund’ now."
+    const span = resolve_citation_span(mixed, {
+      from: '"30 day"',
+      to: "'refund'",
+    })
+    expect(span).not.toBeNull()
+    expect(mixed.slice(span!.start, span!.end)).toBe(
+      "“30 day” window — you’d like a ‘refund’",
+    )
+  })
+
+  it("still returns null when the cited text genuinely isn't there", () => {
+    // Folding punctuation must not turn a real miss into a match.
+    expect(
+      resolve_citation_span(curly, {
+        from: "you'd like",
+        to: "a restocking fee",
+      }),
+    ).toBeNull()
+  })
+})
+
 describe("final_judgement_reason — the verdict card's reason line", () => {
   it("renders the contract's reason-only line verbatim", () => {
     expect(
@@ -650,6 +715,57 @@ describe("map_output_span_to_trace — flattener block layout port", () => {
     })
     expect(span).not.toBeNull()
     expect(map_output_span_to_trace(trace, raw_output, span!)).toBeNull()
+  })
+})
+
+describe("map_output_span_to_trace — single-turn output", () => {
+  // Single-turn raw_output has none of the flattener's headers or tags: it IS
+  // the assistant message's content.
+  const raw_output = "Our return window is 30 days from delivery."
+  const trace = [
+    { role: "system", content: "You are a support agent." },
+    { role: "user", content: "What is the return window?" },
+    { role: "assistant", content: raw_output },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ] as any[]
+
+  it("maps a span onto the message whose content is the whole output", () => {
+    const span = resolve_citation_span(raw_output, {
+      from: "30 days",
+      to: "delivery",
+    })
+    expect(span).not.toBeNull()
+    const h = map_output_span_to_trace(trace, raw_output, span!)
+    expect(h).not.toBeNull()
+    expect(h!.trace_index).toBe(2)
+    expect(h!.kind).toBe("content")
+    // Offsets carry over unchanged — there is no block chrome to subtract.
+    expect(h!.start).toBe(span!.start)
+    expect(h!.end).toBe(span!.end)
+    expect(raw_output.slice(h!.start, h!.end)).toBe("30 days from delivery")
+  })
+
+  it("returns null when no message carries the whole output", () => {
+    const other = [
+      { role: "user", content: "What is the return window?" },
+      { role: "assistant", content: "A different answer entirely." },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ] as any[]
+    expect(
+      map_output_span_to_trace(other, raw_output, { start: 4, end: 10 }),
+    ).toBeNull()
+  })
+
+  it("returns null when two messages both carry the whole output", () => {
+    const echoed = [
+      { role: "user", content: raw_output },
+      { role: "assistant", content: raw_output },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ] as any[]
+    // Which one the citation meant is unknowable, so nothing is highlighted.
+    expect(
+      map_output_span_to_trace(echoed, raw_output, { start: 4, end: 10 }),
+    ).toBeNull()
   })
 })
 

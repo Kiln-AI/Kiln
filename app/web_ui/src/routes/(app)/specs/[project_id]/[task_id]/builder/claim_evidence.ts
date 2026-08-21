@@ -123,11 +123,46 @@ export function resolve_citation_span(
   text: string,
   citation: Pick<Citation, "from" | "to">,
 ): { start: number; end: number } | null {
-  const start = text.indexOf(citation.from)
+  const haystack = fold_typography(text)
+  const from = fold_typography(citation.from)
+  const to = fold_typography(citation.to)
+  const start = haystack.indexOf(from)
   if (start < 0) return null
-  const to_at = text.indexOf(citation.to, start)
+  const to_at = haystack.indexOf(to, start)
   if (to_at < 0) return null
-  return { start, end: to_at + citation.to.length }
+  return { start, end: to_at + to.length }
+}
+
+// Curly punctuation folded to its straight form. Models retype anchors from
+// text they read, so a citation often carries ' where the output has ’ and the
+// anchor then misses. ONLY 1-code-unit-to-1-code-unit pairs belong here: the
+// folded string must stay the same length as the original, since the spans
+// resolved against it index the original text (they drive highlight slicing).
+//
+// Folding widens the match set rather than only rescuing misses: where the same
+// snippet appears in the text in both quote styles, the first match can land on
+// a different occurrence than before. Accepted — the variants are semantically
+// the same sentence, so either occurrence is an honest highlight.
+const TYPOGRAPHIC_FOLD: Record<string, string> = {
+  "‘": "'",
+  "’": "'",
+  "“": '"',
+  "”": '"',
+}
+
+// Derived from the map, never hand-written alongside it: a class listing a
+// character the map lacks would substitute the string "undefined" and shift
+// every offset after it, so the two cannot be allowed to drift.
+const TYPOGRAPHIC_FOLD_PATTERN = new RegExp(
+  `[${Object.keys(TYPOGRAPHIC_FOLD)
+    .map((c) => c.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&"))
+    .join("")}]`,
+  "g",
+)
+
+function fold_typography(text: string): string {
+  // `?? c` keeps an unmapped match length-preserving even if the two ever part.
+  return text.replace(TYPOGRAPHIC_FOLD_PATTERN, (c) => TYPOGRAPHIC_FOLD[c] ?? c)
 }
 
 // ── Structured-trace span mapping ────────────────────────────────────────
@@ -342,7 +377,23 @@ function flatten_output_blocks(trace: TraceMessage[]): FlattenedBlock[] {
 // layout doesn't match raw_output byte-for-byte at that offset — a mismatch
 // means our port drifted from the server, so we surface NO highlight rather
 // than a wrong one.
+//
+// Two raw_output shapes reach this: the flattened multi-turn transcript above,
+// and the single-turn case where raw_output is just the model's answer. The
+// flattened walk runs first and the single-turn match is the fallback, so a
+// trace that fits neither still yields no highlight.
 export function map_output_span_to_trace(
+  trace: TraceMessage[],
+  raw_output: string,
+  span: { start: number; end: number },
+): TraceHighlight | null {
+  return (
+    map_span_in_flattened_layout(trace, raw_output, span) ??
+    map_span_in_whole_message(trace, raw_output, span)
+  )
+}
+
+function map_span_in_flattened_layout(
   trace: TraceMessage[],
   raw_output: string,
   span: { start: number; end: number },
@@ -364,6 +415,30 @@ export function map_output_span_to_trace(
     }
   }
   return null
+}
+
+// Single-turn: raw_output IS one message's content, with none of the
+// flattener's role headers or tags, so the span's offsets carry onto that
+// message unchanged. Requires exactly one byte-identical message — with two the
+// cited one is ambiguous, and we'd rather show no highlight than the wrong one.
+function map_span_in_whole_message(
+  trace: TraceMessage[],
+  raw_output: string,
+  span: { start: number; end: number },
+): TraceHighlight | null {
+  const matches = trace
+    .map((message, index) => ({ message, index }))
+    .filter(
+      ({ message }) => "content" in message && message.content === raw_output,
+    )
+  if (matches.length !== 1) return null
+  if (span.start < 0 || span.end > raw_output.length) return null
+  return {
+    trace_index: matches[0].index,
+    kind: "content",
+    start: span.start,
+    end: span.end,
+  }
 }
 
 // ── Review-state helpers ─────────────────────────────────────────────────

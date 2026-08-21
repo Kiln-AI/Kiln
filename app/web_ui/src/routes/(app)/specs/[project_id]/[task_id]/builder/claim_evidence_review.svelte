@@ -33,6 +33,7 @@
     blind_final_judgement,
     blind_label_agrees,
     blind_label_from_verdict,
+    final_judgement_reason,
     is_trace_first_review,
     is_trace_reviewed,
     review_trace_messages,
@@ -174,6 +175,24 @@
   $: blind_mismatch = current_verdicts?.final_judgement_verdict.agrees === false
   $: blind_needs_reason =
     blind_mismatch && !current_verdicts.final_judgement_verdict.why.trim()
+  // What the reveal reads out under its headline: the final judgement's own
+  // sentence, which is the judge's case-specific explanation and carries the
+  // clickable [n] citations. judge_reasoning stands in only when no final
+  // judgement was built (a failed claims build) or its text is empty — for a
+  // judge model that emits no reasoning trace that field is the server's
+  // placeholder, not an explanation of this trace.
+  $: reveal = current ? judge_reveal(current) : null
+  function judge_reveal(t: TraceClaims): {
+    text: string
+    citations: Citation[]
+  } {
+    const judgement = t.final_judgement
+    const reason = judgement ? final_judgement_reason(judgement.claim) : ""
+    if (judgement && reason) {
+      return { text: reason, citations: judgement.citations }
+    }
+    return { text: t.judge_reasoning.trim(), citations: [] }
+  }
   // Eval v1's "Teach the Judge" wording, both strings keyed off the REVIEWER's
   // label: they describe the verdict just given, so a "Correct" label on a
   // failed case asks why it passes.
@@ -293,9 +312,21 @@
               <div class="text-sm font-medium">
                 The judge marked this {current.judge_score.toUpperCase()}.
               </div>
-              {#if current.judge_reasoning.trim()}
+              {#if reveal?.text}
+                <!-- The explanation, with the judgement's citations appended
+                     as [n] chips. A click runs the same open_citation plumbing
+                     the claim cards use, but the chips are derived differently
+                     on purpose: a card tokenizes the [n] markers written into
+                     its evidence sentence, while this shows the claim
+                     sentence, which carries no inline markers — so its
+                     citations ride at the end as evidence links. -->
                 <p class="text-sm text-gray-600 mt-2 leading-relaxed">
-                  {current.judge_reasoning}
+                  {reveal.text}{#each reveal.citations as citation, i (i)}<button
+                      type="button"
+                      class="align-super text-xs text-primary hover:underline font-medium mx-0.5"
+                      on:click={() => open_citation(citation)}
+                      title="View in trace">[{citation.marker || i + 1}]</button
+                    >{/each}
                 </p>
               {/if}
               <!-- FormElement's label/description typography, hand-rolled so

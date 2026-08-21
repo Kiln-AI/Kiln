@@ -13,6 +13,7 @@ import {
 // track the open state.
 const original_show_modal = HTMLDialogElement.prototype.showModal
 const original_close = HTMLDialogElement.prototype.close
+const original_scroll_into_view = Element.prototype.scrollIntoView
 beforeAll(() => {
   if (!HTMLDialogElement.prototype.showModal) {
     HTMLDialogElement.prototype.showModal = function () {
@@ -24,11 +25,17 @@ beforeAll(() => {
       this.open = false
     }
   }
+  // Nor scrollIntoView, which the trace modal calls on the citation's <mark>
+  // once it has rendered.
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = function () {}
+  }
 })
 
 afterAll(() => {
   HTMLDialogElement.prototype.showModal = original_show_modal
   HTMLDialogElement.prototype.close = original_close
+  Element.prototype.scrollIntoView = original_scroll_into_view
 })
 
 afterEach(() => {
@@ -262,6 +269,13 @@ function claims_dialog(container: HTMLElement): HTMLDialogElement {
   return found
 }
 
+// The span the trace modal highlighted for the citation just clicked — only
+// that view renders a <mark>, so its text identifies both which view opened
+// and where in the trace it landed.
+function cited_text(container: HTMLElement): string | null {
+  return container.querySelector("mark")?.textContent ?? null
+}
+
 describe("ClaimEvidenceReview — trace-first arm", () => {
   it("shows the trace and one blind question, with the judge off screen", () => {
     const traces = [short_single_turn_trace()]
@@ -293,9 +307,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     await fireEvent.click(getByText("Correct"))
     expect(verdicts[0].final_judgement_verdict.agrees).toBe(false)
     expect(getByText("The judge marked this FAIL.")).toBeTruthy()
-    expect(container.textContent).toContain(
-      "The window was asserted with no source.",
-    )
+    expect(container.textContent).toContain("Fails Eval: fabricated policy.")
     // v1's Teach the Judge block, described by the REVIEWER's label.
     expect(getByText("Teach the Judge")).toBeTruthy()
     expect(container.textContent).toContain("Describe why this result passes.")
@@ -510,5 +522,119 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     expect(container.textContent).toContain("no transcript and no raw input")
     // Nothing to read means nothing to label.
     expect(queryByText("Did the agent do the right thing?")).toBeNull()
+  })
+})
+
+// What the server writes into judge_reasoning when the judge model emits no
+// reasoning trace: honest, and about nothing in this trace.
+const PLACEHOLDER_REASONING =
+  "The judge returned a FAIL verdict without an explicit reasoning trace."
+
+// A trace whose judge_reasoning is that placeholder, so the reveal has a real
+// explanation only if it reads the final judgement. It carries the structured
+// trace a real single-turn run records — the assistant message IS raw_output —
+// so a citation click goes through the chat view, not the raw-text panel.
+function trace_with_placeholder_reasoning(): TraceClaims {
+  const base = short_single_turn_trace("fail")
+  return {
+    ...base,
+    judge_reasoning: PLACEHOLDER_REASONING,
+    final_judgement: {
+      claim: "The agent stated a 30 day window it has no source for.",
+      expected_result: "fail",
+      evidence: "The reply asserts the window [1].",
+      citations: [
+        { marker: 1, source: "output", from: "30 days", to: "30 days" },
+      ],
+    },
+    trace: [
+      { role: "system", content: "You are a support agent." },
+      { role: "user", content: base.raw_input },
+      { role: "assistant", content: base.raw_output },
+    ],
+  }
+}
+
+describe("ClaimEvidenceReview — what the mismatch reveal explains", () => {
+  it("reads out the final judgement, not the judge's reasoning field", async () => {
+    const { container, getByText } = render_trace_first([
+      trace_with_placeholder_reasoning(),
+    ])
+
+    await fireEvent.click(getByText("Correct"))
+    expect(container.textContent).toContain(
+      "The agent stated a 30 day window it has no source for.",
+    )
+    expect(container.textContent).not.toContain(PLACEHOLDER_REASONING)
+  })
+
+  it("falls back to judge_reasoning when no final judgement was built", async () => {
+    // The claims build failed, so there is no distilled judgement to read —
+    // the judge's own field is all this trace carries.
+    const { container, getByText } = render_trace_first([
+      {
+        ...trace_with_placeholder_reasoning(),
+        claims: null,
+        final_judgement: null,
+        claims_state: "error" as const,
+        claims_error: "Copilot request failed.",
+      },
+    ])
+
+    await fireEvent.click(getByText("Correct"))
+    expect(container.textContent).toContain(PLACEHOLDER_REASONING)
+  })
+
+  it("falls back to judge_reasoning when the final judgement's text is empty", async () => {
+    // The judgement still carries citations: they belong to the sentence that
+    // was dropped, so they must go with it rather than chip the judge's
+    // placeholder with evidence for text nobody is reading.
+    const { container, getByText } = render_trace_first([
+      {
+        ...trace_with_placeholder_reasoning(),
+        final_judgement: {
+          claim: "   ",
+          expected_result: "fail" as const,
+          evidence: "",
+          citations: [
+            { marker: 1, source: "output" as const, from: "30", to: "days" },
+          ],
+        },
+      },
+    ])
+
+    await fireEvent.click(getByText("Correct"))
+    expect(container.textContent).toContain(PLACEHOLDER_REASONING)
+    expect(container.querySelector('[title="View in trace"]')).toBeNull()
+  })
+
+  it("chips the final judgement's citations into the same trace view the claim cards open", async () => {
+    // The reveal's chip. The trace is structured, so the click lands in the
+    // chat view and the mark proves the output span mapped onto the assistant
+    // message — the single-turn path through map_output_span_to_trace.
+    const revealed = render_trace_first([trace_with_placeholder_reasoning()])
+    await fireEvent.click(revealed.getByText("Correct"))
+    const chip = revealed.getByTitle("View in trace")
+    expect(chip.textContent).toBe("[1]")
+    await fireEvent.click(chip)
+    const from_reveal = cited_text(revealed.container)
+    expect(from_reveal).toBe("30 days")
+    cleanup()
+
+    // The claims-first arm's final-judgement card, citing the same span
+    // through on_cite. Both land on the same highlighted trace, so the reveal
+    // reuses that plumbing rather than opening a view of its own.
+    const traces = [trace_with_placeholder_reasoning()]
+    const carded = render(ClaimEvidenceReview, {
+      props: {
+        traces,
+        verdicts: build_trace_reviews(traces),
+        selected_indices: [0],
+        judged_noun: "conversation",
+        is_multi_turn: true,
+      },
+    })
+    await fireEvent.click(carded.getByTitle("View in trace"))
+    expect(cited_text(carded.container)).toBe(from_reveal)
   })
 })
