@@ -719,7 +719,7 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
 
     tags_tuple = generate_spec_eval_tags(SPEC_NAME)
     eval_tag, train_tag, golden_tag = (
-        tags_tuple.eval_tag,
+        tags_tuple.test_tag,
         tags_tuple.train_tag,
         tags_tuple.golden_tag,
     )
