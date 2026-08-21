@@ -602,7 +602,9 @@
       if (fetch_error) {
         throw fetch_error
       }
-      evals = data
+      // The endpoint reports the evals it could load alongside a count of the ones it
+      // couldn't, rather than failing the whole list for one unreadable file.
+      evals = data.evals
     } catch (err) {
       load_error = createKilnError(err)
     } finally {

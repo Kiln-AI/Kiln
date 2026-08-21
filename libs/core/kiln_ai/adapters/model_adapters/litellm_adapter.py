@@ -67,7 +67,7 @@ from kiln_ai.utils.open_ai_types import (
 )
 
 MAX_CALLS_PER_TURN = 10
-MAX_TOOL_CALLS_PER_TURN = 30
+MAX_TOOL_CALLS_PER_TURN = 100
 
 logger = logging.getLogger(__name__)
 

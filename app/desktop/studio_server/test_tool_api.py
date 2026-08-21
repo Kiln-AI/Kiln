@@ -1,15 +1,10 @@
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from app.desktop.studio_server.tool_api import (
-    ExternalToolApiDescription,
-    available_mcp_tools,
-    connect_tool_servers_api,
-    tool_server_from_id,
-    validate_tool_server_connectivity,
-)
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.code_tool import CodeTool
@@ -20,11 +15,23 @@ from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task, TaskRunConfig
-from kiln_ai.datamodel.tool_id import KILN_TASK_TOOL_ID_PREFIX
+from kiln_ai.datamodel.tool_id import (
+    KILN_TASK_TOOL_ID_PREFIX,
+    KilnBuiltInToolId,
+)
 from kiln_ai.tools.mcp_session_manager import KilnMCPError
 from kiln_ai.utils.config import MCP_SECRETS_KEY
 from kiln_server.custom_errors import connect_custom_errors
 from mcp.types import ListToolsResult, Tool
+
+from app.desktop.studio_server.tool_api import (
+    ExternalToolApiDescription,
+    ToolSetType,
+    available_mcp_tools,
+    connect_tool_servers_api,
+    tool_server_from_id,
+    validate_tool_server_connectivity,
+)
 
 
 @pytest.fixture
@@ -526,12 +533,12 @@ def test_get_tool_server_config_not_found(client, test_project):
 
 
 def _builtin_ai_models_set(set_result):
-    """Return the always-present built-in AI Models tool set (or None)."""
+    """Return the always-present AI Models tool set (or None)."""
     return next(
         (
             s
             for s in set_result
-            if s["type"] == "builtin" and s["set_name"] == "AI Models"
+            if s["type"] == "sandbox_code" and s["set_name"] == "AI Models"
         ),
         None,
     )
@@ -954,42 +961,98 @@ def test_get_available_tools_builtin_ai_models_always_present(client, test_proje
         assert by_id["kiln_tool::llm_judge"]["function_name"] == "llm_judge"
 
 
-def test_get_available_tools_code_tools_use_display_name(client, test_project):
-    """Code tools expose their display name (not the function name), since several
-    code tools can share a function name. The function name is returned separately."""
-    for display_name in ["Doc Search V1", "Doc Search V2"]:
-        CodeTool(
-            parent=test_project,
-            name=display_name,
-            tool_function_name="search_docs",
-            tool_description="Search the docs",
-            parameters_schema={"type": "object", "properties": {}},
-            code="def run():\n    return 1\n",
-        ).save_to_file()
+def test_ai_models_set_is_typed_sandbox_code(client, test_project):
+    """The AI Models set must carry SANDBOX_CODE, not a generic type.
 
-    with (
-        patch(
-            "app.desktop.studio_server.tool_api.project_from_id"
-        ) as mock_project_from_id,
-        patch("app.desktop.studio_server.tool_api.Config.shared") as mock_config,
-    ):
+    That type is the whole contract: it is what tells every tool picker (and any
+    other API consumer) that these are not agent tools. Typed BUILTIN instead, they
+    would silently become selectable in every agent picker.
+    """
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
         mock_project_from_id.return_value = test_project
-        mock_config_instance = Mock()
-        mock_config_instance.enable_demo_tools = False
-        mock_config_instance.user_id = "test_user"
-        mock_config.return_value = mock_config_instance
 
         response = client.get(f"/api/projects/{test_project.id}/available_tools")
 
-    assert response.status_code == 200
-    code_tool_sets = [s for s in response.json() if s["type"] == "code"]
-    assert len(code_tool_sets) == 1
-    tools = code_tool_sets[0]["tools"]
-    assert sorted(tool["name"] for tool in tools) == [
-        "Doc Search V1",
-        "Doc Search V2",
-    ]
-    assert {tool["function_name"] for tool in tools} == {"search_docs"}
+        assert response.status_code == 200
+        sets_by_name = {s["set_name"]: s for s in response.json()}
+        assert sets_by_name["AI Models"]["type"] == ToolSetType.SANDBOX_CODE.value
+        # Every tool the sandbox-only set advertises really is one of the built-in
+        # sandbox tools -- nothing agent-selectable may hide in here.
+        assert {t["id"] for t in sets_by_name["AI Models"]["tools"]} == {
+            KilnBuiltInToolId.LLM.value,
+            KilnBuiltInToolId.LLM_JUDGE.value,
+        }
+
+
+def test_web_ui_built_in_tool_ids_match_the_enum():
+    """Guard the built-in tool ids the web UI has to name literally.
+
+    They are not in the generated OpenAPI client (the API types them as plain tool
+    id strings), so built_in_tool_ids.ts hand-copies them. Two rules downstream key
+    off those literals: `CODE_EVAL_ONLY_TOOL_IDS` keeps `llm_judge` out of the
+    code-tool picker, and the code-judge examples grant themselves the tools their
+    snippets call. Renaming an enum value without updating the .ts would silently
+    break both, so fail here instead.
+    """
+    tool_ids_module = (
+        Path(__file__).resolve().parents[2]
+        / "web_ui"
+        / "src"
+        / "lib"
+        / "utils"
+        / "built_in_tool_ids.ts"
+    )
+    assert tool_ids_module.is_file(), f"expected the web UI module at {tool_ids_module}"
+
+    # Exact ids, not a substring search: "kiln_tool::llm" is a prefix of
+    # "kiln_tool::llm_judge" and of any renamed-but-not-updated value, so a loose
+    # check would pass right through the drift this test exists to catch.
+    declared = dict(
+        re.findall(
+            r'export const (\w+) = "([^"]+)"',
+            tool_ids_module.read_text(),
+        )
+    )
+    assert declared == {
+        "LLM_TOOL_ID": KilnBuiltInToolId.LLM.value,
+        "LLM_JUDGE_TOOL_ID": KilnBuiltInToolId.LLM_JUDGE.value,
+    }, (
+        f"built_in_tool_ids.ts declares {declared} -- update it to match "
+        "KilnBuiltInToolId."
+    )
+
+
+def test_code_eval_only_tool_ids_uses_the_shared_constant():
+    """`CODE_EVAL_ONLY_TOOL_IDS` must reference the guarded constant.
+
+    test_web_ui_built_in_tool_ids_match_the_enum only guards built_in_tool_ids.ts.
+    Re-typing the literal here instead of importing it would put the narrowing rule
+    back outside that guard's reach.
+    """
+    tools_store = (
+        Path(__file__).resolve().parents[2]
+        / "web_ui"
+        / "src"
+        / "lib"
+        / "stores"
+        / "tools_store.ts"
+    )
+    assert tools_store.is_file(), f"expected the web UI store at {tools_store}"
+
+    declaration = re.search(
+        r"const CODE_EVAL_ONLY_TOOL_IDS = \[(.*?)\]",
+        tools_store.read_text(),
+        re.DOTALL,
+    )
+    assert declaration is not None, (
+        "could not find CODE_EVAL_ONLY_TOOL_IDS in tools_store.ts"
+    )
+    assert declaration.group(1).strip() == "LLM_JUDGE_TOOL_ID", (
+        f"CODE_EVAL_ONLY_TOOL_IDS is [{declaration.group(1).strip()}], expected "
+        "[LLM_JUDGE_TOOL_ID] imported from built_in_tool_ids.ts."
+    )
 
 
 async def test_create_tool_server_whitespace_handling(

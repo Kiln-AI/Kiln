@@ -1,180 +1,180 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { tool_id_to_function_name } from "./tools_store"
-import { client } from "$lib/api_client"
-
-// Mock the API client
-vi.mock("$lib/api_client", () => ({
-  client: {
-    GET: vi.fn(),
-  },
-}))
+import { describe, it, expect } from "vitest"
+import type { ToolApiDescription, ToolSetApiDescription } from "$lib/types"
+import {
+  duplicate_tool_names,
+  get_tool_names_from_ids,
+  is_skill_tool_id,
+  kiln_task_tool_server_id,
+  split_tool_and_skill_ids,
+  tool_display_name,
+} from "./tools_store"
 
 describe("tools_store", () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+  describe("is_skill_tool_id", () => {
+    it("returns true for skill tool IDs", () => {
+      expect(is_skill_tool_id("kiln_tool::skill::123")).toBe(true)
+    })
+
+    it("returns false for non-skill tool IDs", () => {
+      expect(is_skill_tool_id("mcp::local::456::read")).toBe(false)
+    })
   })
 
-  afterEach(() => {
-    vi.restoreAllMocks()
+  describe("split_tool_and_skill_ids", () => {
+    it("separates skill IDs from tool IDs", () => {
+      const result = split_tool_and_skill_ids([
+        "mcp::local::1::read",
+        "kiln_tool::skill::100",
+        "mcp::local::2::write",
+        "kiln_tool::skill::200",
+      ])
+      expect(result.tool_ids).toEqual([
+        "mcp::local::1::read",
+        "mcp::local::2::write",
+      ])
+      expect(result.skill_ids).toEqual([
+        "kiln_tool::skill::100",
+        "kiln_tool::skill::200",
+      ])
+    })
+
+    it("returns empty arrays when given empty input", () => {
+      const result = split_tool_and_skill_ids([])
+      expect(result.tool_ids).toEqual([])
+      expect(result.skill_ids).toEqual([])
+    })
   })
 
-  describe("tool_id_to_function_name", () => {
-    it("should return function name for valid tool ID", async () => {
-      const mockResponse = {
-        data: {
-          tool_id: "test_tool_id",
-          function_name: "test_function_name",
-          description: "Test tool description",
-          parameters: {
-            type: "object",
-            properties: {
-              input: {
-                type: "string",
-                description: "Input parameter",
+  describe("kiln task tool disambiguation", () => {
+    const summarize_tool: ToolApiDescription = {
+      id: "kiln_task::111",
+      name: "summarize",
+      description: "Summarize text",
+    }
+    const summarize_tool_clone: ToolApiDescription = {
+      id: "kiln_task::222",
+      name: "summarize",
+      description: "Summarize text",
+    }
+    const kiln_task_set = (
+      tools: ToolApiDescription[],
+    ): ToolSetApiDescription => ({
+      type: "kiln_task",
+      set_name: "Kiln Tasks as Tools",
+      tools,
+    })
+    const mcp_set = (tools: ToolApiDescription[]): ToolSetApiDescription => ({
+      type: "mcp",
+      set_name: "MCP Server: demo",
+      tools,
+    })
+
+    describe("kiln_task_tool_server_id", () => {
+      it("returns the tool server ID of a Kiln task tool", () => {
+        expect(kiln_task_tool_server_id("kiln_task::121377416728")).toBe(
+          "121377416728",
+        )
+      })
+
+      it("returns null for other tool types", () => {
+        expect(kiln_task_tool_server_id("mcp::local::456::read")).toBe(null)
+        expect(kiln_task_tool_server_id("kiln_tool::add_numbers")).toBe(null)
+      })
+
+      it("returns null when the ID carries no server ID", () => {
+        expect(kiln_task_tool_server_id("kiln_task::")).toBe(null)
+      })
+    })
+
+    describe("duplicate_tool_names", () => {
+      it("finds names shared by tools in the same set", () => {
+        expect(
+          duplicate_tool_names([
+            kiln_task_set([summarize_tool, summarize_tool_clone]),
+          ]),
+        ).toEqual(new Set(["summarize"]))
+      })
+
+      it("finds names shared across different tool sets", () => {
+        expect(
+          duplicate_tool_names([
+            kiln_task_set([summarize_tool]),
+            mcp_set([
+              {
+                id: "mcp::local::1::summarize",
+                name: "summarize",
+                description: null,
               },
-            },
-            required: ["input"],
-          },
-          definition: {
-            function: {
-              name: "test_function_name",
-              description: "Test tool description",
-              parameters: {
-                type: "object",
-                properties: {
-                  input: {
-                    type: "string",
-                    description: "Input parameter",
-                  },
-                },
-                required: ["input"],
-              },
-            },
-          },
-        },
-        error: undefined,
-        response: new Response(),
-      }
+            ]),
+          ]),
+        ).toEqual(new Set(["summarize"]))
+      })
 
-      vi.mocked(client.GET).mockResolvedValue(mockResponse)
+      it("returns an empty set when every name is unique", () => {
+        expect(
+          duplicate_tool_names([
+            kiln_task_set([summarize_tool]),
+            mcp_set([
+              { id: "mcp::local::1::read", name: "read", description: null },
+            ]),
+          ]),
+        ).toEqual(new Set())
+      })
 
-      const result = await tool_id_to_function_name(
-        "test_tool_id",
-        "test_project_id",
-        "test_task_id",
-      )
-
-      expect(result).toBe("test_function_name")
-      expect(client.GET).toHaveBeenCalledWith(
-        "/api/projects/{project_id}/tasks/{task_id}/tools/{tool_id}/definition",
-        {
-          params: {
-            path: {
-              project_id: "test_project_id",
-              task_id: "test_task_id",
-              tool_id: "test_tool_id",
-            },
-          },
-        },
-      )
+      it("handles a project with no tool sets", () => {
+        expect(duplicate_tool_names([])).toEqual(new Set())
+      })
     })
 
-    it("should throw error when API call fails", async () => {
-      const mockError = {
-        data: null,
-        error: {
-          status: 404,
-          statusText: "Not Found",
-          body: {
-            detail: "Tool not found",
-          },
-        },
-        response: new Response(),
-      } as any
+    describe("tool_display_name", () => {
+      it("qualifies an ambiguous Kiln task tool with its tool server ID", () => {
+        expect(tool_display_name(summarize_tool, new Set(["summarize"]))).toBe(
+          "summarize (111)",
+        )
+      })
 
-      vi.mocked(client.GET).mockResolvedValue(mockError)
+      it("leaves a unique name alone", () => {
+        expect(tool_display_name(summarize_tool, new Set())).toBe("summarize")
+      })
 
-      await expect(
-        tool_id_to_function_name(
-          "invalid_tool_id",
-          "test_project_id",
-          "test_task_id",
-        ),
-      ).rejects.toEqual(mockError.error)
-
-      expect(client.GET).toHaveBeenCalledWith(
-        "/api/projects/{project_id}/tasks/{task_id}/tools/{tool_id}/definition",
-        {
-          params: {
-            path: {
-              project_id: "test_project_id",
-              task_id: "test_task_id",
-              tool_id: "invalid_tool_id",
+      it("leaves non-Kiln-task tools alone, since their group already names them", () => {
+        expect(
+          tool_display_name(
+            {
+              id: "mcp::local::1::summarize",
+              name: "summarize",
+              description: null,
             },
-          },
-        },
-      )
+            new Set(["summarize"]),
+          ),
+        ).toBe("summarize")
+      })
     })
 
-    it("should handle network errors", async () => {
-      const networkError = new Error("Network error")
-      vi.mocked(client.GET).mockRejectedValue(networkError)
+    describe("get_tool_names_from_ids", () => {
+      it("qualifies only the duplicated names", () => {
+        const project_tools = [
+          kiln_task_set([summarize_tool, summarize_tool_clone]),
+          mcp_set([
+            { id: "mcp::local::1::read", name: "read", description: null },
+          ]),
+        ]
+        expect(
+          get_tool_names_from_ids(
+            ["kiln_task::111", "kiln_task::222", "mcp::local::1::read"],
+            project_tools,
+          ),
+        ).toEqual(["summarize (111)", "summarize (222)", "read"])
+      })
 
-      await expect(
-        tool_id_to_function_name(
-          "test_tool_id",
-          "test_project_id",
-          "test_task_id",
-        ),
-      ).rejects.toThrow("Network error")
-    })
-
-    it("should handle missing function_name in response", async () => {
-      const mockResponse = {
-        data: {
-          tool_id: "test_tool_id",
-          function_name: null, // Missing function name
-          description: "Test tool description",
-          parameters: {},
-          definition: {
-            function: {
-              name: "test_function_name",
-              description: "Test tool description",
-              parameters: {},
-            },
-          },
-        },
-        error: undefined,
-        response: new Response(),
-      }
-
-      vi.mocked(client.GET).mockResolvedValue(mockResponse)
-
-      const result = await tool_id_to_function_name(
-        "test_tool_id",
-        "test_project_id",
-        "test_task_id",
-      )
-
-      expect(result).toBe(null)
-    })
-
-    it("should handle empty response data", async () => {
-      const mockResponse = {
-        data: null,
-        error: undefined,
-        response: new Response(),
-      }
-
-      vi.mocked(client.GET).mockResolvedValue(mockResponse)
-
-      await expect(
-        tool_id_to_function_name(
-          "test_tool_id",
-          "test_project_id",
-          "test_task_id",
-        ),
-      ).rejects.toThrow()
+      it("falls back to the ID when a tool is not in the project", () => {
+        expect(
+          get_tool_names_from_ids(
+            ["kiln_task::999"],
+            [kiln_task_set([summarize_tool])],
+          ),
+        ).toEqual(["kiln_task::999"])
+      })
     })
   })
 })

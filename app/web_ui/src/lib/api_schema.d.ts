@@ -2081,6 +2081,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_default_judge_types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Default Judge Types
+         * @description Map of eval ID to its default judge's type discriminator.
+         *
+         *     V2 configs report their properties type (e.g. "code_eval",
+         *     "llm_judge"); legacy configs report their config_type (e.g. "g_eval").
+         *     Evals with no default judge are omitted. Used by the evals list to
+         *     display each eval's type without fetching every config.
+         */
+        get: operations["get_eval_default_judge_types_api_projects__project_id__tasks__task_id__eval_default_judge_types_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs": {
         parameters: {
             query?: never;
@@ -2200,6 +2225,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/test_v2_eval_draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test V2 Eval Config Draft
+         * @description Test a judge config for an eval that hasn't been created yet.
+         *
+         *     Builds a transient in-memory eval from the drafted output_scores so
+         *     the creation flow can test its judge before saving anything.
+         */
+        post: operations["test_v2_eval_draft_api_projects__project_id__tasks__task_id__test_v2_eval_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison": {
         parameters: {
             query?: never;
@@ -2264,7 +2312,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Eval Run Results */
+        /**
+         * Get Eval Run Results
+         * @description Results for one run config, scoped to one of the eval's splits.
+         */
         get: operations["get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get"];
         put?: never;
         post?: never;
@@ -4716,16 +4767,16 @@ export interface components {
             spec_type: "appropriate_tool_use";
             /** Core Requirement */
             core_requirement: string;
-            /** Tool Id */
-            tool_id: string;
-            /** Tool Function Name */
-            tool_function_name: string;
             /** Tool Use Guidelines */
             tool_use_guidelines: string;
             /** Appropriate Tool Use Examples */
             appropriate_tool_use_examples: string;
             /** Inappropriate Tool Use Examples */
             inappropriate_tool_use_examples: string;
+            /** Tool Id */
+            tool_id?: string;
+            /** Tool Function Name */
+            tool_function_name?: string;
         };
         /** ArgMatch */
         ArgMatch: {
@@ -5281,6 +5332,8 @@ export interface components {
             has_train_set: boolean;
             /** Model Is Supported */
             model_is_supported: boolean;
+            /** Unsupported Reason */
+            unsupported_reason?: string | null;
         };
         /**
          * CheckRunConfigResponse
@@ -5917,14 +5970,14 @@ export interface components {
             template?: components["schemas"]["EvalTemplateId"] | null;
             /**
              * Output Scores
-             * @description The scores this evaluator should produce.
+             * @description The scores this evaluator should produce. When omitted, a pass/fail score named after the eval is generated.
              */
-            output_scores: components["schemas"]["EvalOutputScore"][];
+            output_scores?: components["schemas"]["EvalOutputScore"][] | null;
             /**
              * Eval Set Filter Id
-             * @description The dataset filter for the eval set.
+             * @description The dataset filter for the eval set. When omitted, tag-based eval/train/golden filters are generated from the eval name, matching what spec-backed evals get.
              */
-            eval_set_filter_id: string;
+            eval_set_filter_id?: string | null;
             /**
              * Eval Configs Filter Id
              * @description The dataset filter for comparing eval configs.
@@ -5939,6 +5992,16 @@ export interface components {
             } | null;
             /** @description The type of task output to evaluate. */
             evaluation_data_type: components["schemas"]["EvalDataType"];
+            /**
+             * @description The priority of the eval.
+             * @default 1
+             */
+            priority: components["schemas"]["Priority"];
+            /**
+             * @description The status of the eval.
+             * @default active
+             */
+            status: components["schemas"]["EvalStatus"];
         };
         /** CreateExtractorConfigRequest */
         CreateExtractorConfigRequest: {
@@ -6121,15 +6184,15 @@ export interface components {
              */
             system_prompt?: string | null;
             /**
+             * Judge Instructions
+             * @description User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.
+             */
+            judge_instructions?: string[] | null;
+            /**
              * Name
              * @description The name of the eval config.
              */
             name?: string | null;
-            /**
-             * Reference Keys
-             * @description Reference data keys this judge needs (captured from test).
-             */
-            reference_keys?: string[];
         };
         /**
          * CreateMcpRunConfigRequest
@@ -6791,6 +6854,11 @@ export interface components {
             judge_prompt: string;
             /** System Prompt */
             system_prompt: string;
+            /**
+             * Reference Keys
+             * @description Reference data keys the server will require of a judge for this eval, derived the same way `create_llm_judge_config` derives them. Returned so the builder can offer a place to supply them when testing, rather than re-deriving the rule client-side from the prompt's text.
+             */
+            reference_keys?: string[];
         };
         /**
          * DeleteConfigResponse
@@ -7147,7 +7215,8 @@ export interface components {
             current_config_id?: string | null;
             /**
              * Eval Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included when running this eval (V1 TaskRun-typed). This is the eval's test set; the 'eval set' name is legacy.
+             * @deprecated
+             * @description Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['test'] once, and the field is then cleared. It is always saved as null. Read splits['test'] instead.
              */
             eval_set_filter_id?: string | null;
             /**
@@ -7157,19 +7226,17 @@ export interface components {
             eval_configs_filter_id?: string | null;
             /**
              * Train Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning.
+             * @deprecated
+             * @description Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['train'] once, and the field is then cleared. It is always saved as null. Read splits['train'] instead.
              */
             train_set_filter_id?: string | null;
             /**
-             * Val Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included in the validation set.
+             * Splits
+             * @description The eval's dataset splits, keyed by split name ('test', 'train', 'val'), and the only place they are stored. Each split names the store its items come from and the filter that selects them. Keys this build doesn't know are preserved but not exposed. 'golden' is not a split and does not belong here: the golden set must be dataset (TaskRun) based, because human ratings only exist on dataset items, so it is stored in eval_configs_filter_id instead. Nothing reads splits['golden'] — writing it is accepted and silently ignored. In Python, prefer Eval.set_split() to assigning into this dict: it refuses to mutate a readonly (cached) eval, and marks the field as set so exclude_unset dumps keep it.
              */
-            val_set_filter_id?: string | null;
-            /**
-             * Eval Input Filter Id
-             * @description Filter ID for EvalInput-backed datasets (V2). Mutually exclusive with eval_set_filter_id.
-             */
-            eval_input_filter_id?: string | null;
+            splits?: {
+                [key: string]: components["schemas"]["TaskRunSplit"] | components["schemas"]["EvalInputSplit"];
+            };
             /**
              * Output Scores
              * @description The scores this evaluator should produce.
@@ -7181,6 +7248,10 @@ export interface components {
              * @default false
              */
             favourite: boolean;
+            /** @description The priority of the eval. None on evals created before priority lived on evals; read through resolved_priority(), which falls back to the associated spec. */
+            priority?: components["schemas"]["Priority"] | null;
+            /** @description The status of the eval. None on evals created before status lived on evals; read through resolved_status(), which falls back to the associated spec. */
+            status?: components["schemas"]["EvalStatus"] | null;
             /**
              * Template Properties
              * @description Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.
@@ -7347,6 +7418,46 @@ export interface components {
          * @enum {string}
          */
         EvalDataType: "final_answer" | "full_trace" | "reference_answer";
+        /**
+         * EvalInputSplit
+         * @description A split whose items are EvalInputs, selected by an eval-input filter.
+         */
+        EvalInputSplit: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            source: "eval_input";
+            /** Filter Id */
+            filter_id: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * EvalItemSource
+         * @description The eval dataset item a TaskRun was generated for.
+         *
+         *     Not the run config — that lives on the same TaskRun at
+         *     `output.source.run_config_id`.
+         */
+        EvalItemSource: {
+            /**
+             * Source Type
+             * @description Which store the dataset item came from: an EvalInput (V2) or a TaskRun (V1-backed split).
+             * @enum {string}
+             */
+            source_type: "eval_input" | "task_run";
+            /**
+             * Source Id
+             * @description The id of the dataset item this run was generated for. Interpreted within the store named by source_type — ids are only unique within a store.
+             */
+            source_id: string;
+            /**
+             * Variant
+             * @description Distinguishes several traces for the same item and run config. The drive fingerprint for a re-driven multi-turn conversation; None for a single-turn generation.
+             */
+            variant?: string | null;
+        };
         /** EvalJobParams */
         EvalJobParams: {
             /**
@@ -7381,7 +7492,7 @@ export interface components {
             concurrency?: number | null;
             /**
              * Split
-             * @description Which of the eval's dataset splits to run: train, val, or test. Fails with 422 if the eval has no filter configured for the split. Leave null to run the eval set (the test set — today's default behavior).
+             * @description Which of the eval's dataset splits to run: train, val, or test. Fails with 422 if the eval has no such split. Leave null to run the test split, which is what running an eval has always meant.
              */
             split?: ("train" | "val" | "test") | null;
         };
@@ -7442,9 +7553,14 @@ export interface components {
             golden_dataset_fully_rated_count: number;
             /**
              * Train Dataset Size
-             * @description The total size of the train dataset.
+             * @description The total size of the train split. 0 when the eval has no train split.
              */
             train_dataset_size: number;
+            /**
+             * Val Dataset Size
+             * @description The total size of the val split. 0 when the eval has no val split.
+             */
+            val_dataset_size: number;
             /** @description The currently selected eval config. */
             current_eval_method?: components["schemas"]["EvalConfig"] | null;
         };
@@ -7584,13 +7700,27 @@ export interface components {
         };
         /**
          * EvalRun
-         * @description The results of running an eval on a single dataset item.
+         * @description The scores an eval produced for a single dataset item.
          *
          *     This is a child of an EvalConfig, which specifies how the scores were generated.
          *
          *     Eval runs can be one of 2 types:
-         *     1) eval_config_eval=False: we were evaluating a task run (a method of running the task). We get the task input from the dataset_id.input, run the task with the task_run_config, then ran the evaluator on that output. task_run_config_id must be set. The output saved in this model is the output of the task run.
-         *     2) eval_config_eval=True: we were evaluating an eval config (a method of evaluating the task). We used the existing dataset item input/output, and ran the evaluator on it. task_run_config_id must be None. The input/output saved in this model is the input/output of the dataset item.
+         *     1) eval_config_eval=False (scoring): we were evaluating a task run config (a method of running the task). We take the item's input, run the task with the task_run_config, then run the evaluator on that output. task_run_config_id must be set.
+         *     2) eval_config_eval=True (calibration): we were evaluating an eval config (a method of evaluating the task). We used an existing human-rated dataset item's input/output, and ran the evaluator on it. task_run_config_id must be None.
+         *
+         *     A record is described by two independent facts — whether it points at a TaskRun, and
+         *     whether it was skipped — which `validate_record_mode` constrains to three legal
+         *     shapes. What is exclusive is where the trace lives: on the record, or on the TaskRun,
+         *     never both.
+         *
+         *     - **Pointer** (new): `scored_run_id` names the TaskRun that holds the trace. All
+         *       inline trace fields must be None.
+         *     - **Skipped**: `skipped_reason` set, so scores are not required. It also carries a
+         *       `scored_run_id` if the trace existed and only scoring was skipped — so a skip can
+         *       be a pointer record too — and none if the skip happened before generation.
+         *     - **Legacy inline**: no `scored_run_id`; the trace lives on this record, and `input`
+         *       is required unless the record was skipped. Every record written before the
+         *       trace/score split is in this state, and it stays valid forever.
          */
         EvalRun: {
             /**
@@ -7626,6 +7756,11 @@ export interface components {
              */
             dataset_id?: string | null;
             /**
+             * Scored Run Id
+             * @description The ID of the TaskRun this score was computed over. None for legacy records that carry their trace inline. A dangling reference is tolerated: the score still renders and still aggregates, only the trace drill-through is unavailable.
+             */
+            scored_run_id?: string | null;
+            /**
              * Task Run Config Id
              * @description The ID of the TaskRunConfig that was run, if this eval run was based on a task run. Must belong to the same Task as this eval. Can be None if this eval run is based on an eval config.
              */
@@ -7638,17 +7773,20 @@ export interface components {
             eval_config_eval: boolean;
             /**
              * Input
-             * @description The input to the task. JSON formatted for structured input, plaintext for unstructured input.
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.input instead. The input to the task. JSON formatted for structured input, plaintext for unstructured input. Required on legacy records (those with neither a scored_run_id nor a skipped_reason), never set on new ones.
              */
-            input: string;
+            input?: string | null;
             /**
              * Output
-             * @description The output of the task. None for skipped-before-execution runs.
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.output.output instead. The output of the task. None for skipped-before-execution runs.
              */
             output?: string | null;
             /**
              * Reference Answer
-             * @description The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id. The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.
              */
             reference_answer?: string | null;
             /**
@@ -7660,7 +7798,8 @@ export interface components {
             } | null;
             /**
              * Task Run Trace
-             * @description The JSON formatted trace of the task run that produced the output.
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.trace instead. The JSON formatted trace of the task run that produced the output.
              */
             task_run_trace?: string | null;
             /**
@@ -7671,7 +7810,10 @@ export interface components {
             scores: {
                 [key: string]: number;
             };
-            /** @description The usage of the task run that produced this eval run output (not the usage by the evaluation model). */
+            /**
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.usage instead. The usage of the task run that produced this eval run output (not the usage by the evaluation model).
+             */
             task_run_usage?: components["schemas"]["Usage"] | null;
             /** @description The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field. */
             eval_usage?: components["schemas"]["Usage"] | null;
@@ -7682,13 +7824,6 @@ export interface components {
              * @description ID of the EvalInput used for this run (V2 evals). Mutually exclusive with dataset_id.
              */
             eval_input_id?: string | null;
-            /**
-             * Reference Data
-             * @description Structured reference data from EvalInput.reference, used by V2 eval types.
-             */
-            reference_data?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            } | null;
             /**
              * Skipped Reason
              * @description If set, this run was skipped. Stored as str for back/forward-compat; conventionally a SkippedReason value.
@@ -7813,7 +7948,7 @@ export interface components {
              * Results
              * @description The individual eval run results.
              */
-            results: components["schemas"]["EvalRun"][];
+            results: components["schemas"]["EvalRunWithTrace"][];
             /** @description The parent eval. */
             eval: components["schemas"]["Eval"];
             /** @description The eval config used. */
@@ -7822,10 +7957,49 @@ export interface components {
             run_config: components["schemas"]["TaskRunConfig"];
         };
         /**
+         * EvalRunWithTrace
+         * @description An eval's scores for one item, plus the trace those scores were computed over.
+         *
+         *     Where the trace lives depends on the record: on a TaskRun named by `scored_run_id`,
+         *     inline on the EvalRun for records written before the trace/score split, or nowhere at
+         *     all for a run that was skipped before anything was generated. This resolves whichever
+         *     applies - falling back to the dataset item for the input of that last kind - so
+         *     callers see one shape regardless of which it is.
+         */
+        EvalRunWithTrace: {
+            /** @description The score record itself. */
+            eval_run: components["schemas"]["EvalRun"];
+            /**
+             * Input
+             * @description The input the task was run on. From the scored TaskRun, from the EvalRun itself for legacy records, or from the dataset item for records that were skipped before anything was generated.
+             */
+            input: string | null;
+            /**
+             * Output
+             * @description What the task produced. Always the original output, never a repaired one: a repair can happen after scoring, so it is not what was scored. None when nothing was generated, or when the scored TaskRun is missing.
+             */
+            output: string | null;
+            /**
+             * Task Run Trace
+             * @description The JSON formatted trace of the task run that produced the output, if it recorded one.
+             */
+            task_run_trace: string | null;
+            /** @description The usage of the task run that produced the output. Not the judge's own usage, which is on the EvalRun as eval_usage. */
+            task_run_usage: components["schemas"]["Usage"] | null;
+        };
+        /**
+         * EvalStatus
+         * @description Lifecycle status of an eval (and, historically, of a spec).
+         * @enum {string}
+         */
+        EvalStatus: "active" | "future" | "deprecated" | "archived";
+        /**
          * EvalTaskInput
          * @description The runtime data bundle passed to V2 evaluators.
          *
-         *     Assembled by the eval runner from an EvalInput and a task run result.
+         *     Assembled by the eval runner from the item being evaluated and the task run that
+         *     was scored. The item is either an EvalInput or a TaskRun drawn from the dataset;
+         *     which one it is determines where `reference_data` and `task_input` come from.
          */
         EvalTaskInput: {
             /**
@@ -7842,7 +8016,7 @@ export interface components {
             }[] | null;
             /**
              * Reference Data
-             * @description Reference/ground-truth data from EvalInput.reference.
+             * @description Ground-truth data for the item being evaluated, keyed by reference name. Taken from EvalInput.reference for an EvalInput-backed item; for a TaskRun-backed dataset item it is the item's own stored output under the key 'reference_answer', since that output is the curated answer. None when a TaskRun is scored as itself (judge calibration), where the item and the scored run are the same record.
              */
             reference_data?: {
                 [key: string]: components["schemas"]["JsonValue"];
@@ -7859,6 +8033,22 @@ export interface components {
          * @enum {string}
          */
         EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
+        /**
+         * EvalsResponse
+         * @description The evals of a task, plus how many eval files this version of Kiln couldn't read.
+         */
+        EvalsResponse: {
+            /**
+             * Evals
+             * @description The evals which loaded successfully.
+             */
+            evals: components["schemas"]["Eval"][];
+            /**
+             * Load Error Count
+             * @description How many eval files failed to load. Usually because they were written by a newer version of Kiln.
+             */
+            load_error_count: number;
+        };
         /** ExactMatchProperties */
         ExactMatchProperties: {
             /**
@@ -9951,6 +10141,11 @@ export interface components {
              * @description Override the judge system prompt. Defaults to 'You are an evaluator.'
              */
             system_prompt?: string | null;
+            /**
+             * Judge Instructions
+             * @description User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.
+             */
+            judge_instructions?: string[] | null;
         };
         /** LlmJudgeProperties */
         LlmJudgeProperties: {
@@ -9979,6 +10174,8 @@ export interface components {
              * @default false
              */
             g_eval: boolean;
+            /** Judge Instructions */
+            judge_instructions?: string[] | null;
         };
         /** LocalServerProperties */
         LocalServerProperties: {
@@ -12515,7 +12712,7 @@ export interface components {
              * @description The status of the spec.
              * @default active
              */
-            status: components["schemas"]["SpecStatus"];
+            status: components["schemas"]["EvalStatus"];
             /**
              * Tags
              * @description The tags of the spec.
@@ -12577,7 +12774,7 @@ export interface components {
              * @description The status of the spec.
              * @default active
              */
-            status: components["schemas"]["SpecStatus"];
+            status: components["schemas"]["EvalStatus"];
             /**
              * Tags
              * @description The tags of the spec.
@@ -12605,12 +12802,6 @@ export interface components {
              */
             target_specification: string;
         };
-        /**
-         * SpecStatus
-         * @description Defines the status of a spec.
-         * @enum {string}
-         */
-        SpecStatus: "active" | "future" | "deprecated" | "archived";
         /**
          * SpecType
          * @description Defines the type of spec.
@@ -13339,6 +13530,8 @@ export interface components {
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
              */
             parent_task_run_id?: string | null;
+            /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
+            eval_source?: components["schemas"]["EvalItemSource"] | null;
         };
         /**
          * TaskRun
@@ -13418,6 +13611,8 @@ export interface components {
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
              */
             parent_task_run_id?: string | null;
+            /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
+            eval_source?: components["schemas"]["EvalItemSource"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -13489,6 +13684,21 @@ export interface components {
         TaskRunSnapshot: {
             /** Trace */
             trace?: components["schemas"]["TraceMessage"][] | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * TaskRunSplit
+         * @description A split whose items are TaskRuns, selected by a dataset filter.
+         */
+        TaskRunSplit: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            source: "task_run";
+            /** Filter Id */
+            filter_id: string;
         } & {
             [key: string]: unknown;
         };
@@ -13684,6 +13894,27 @@ export interface components {
             duration_ms: number;
         };
         /**
+         * TestV2EvalDraftRequest
+         * @description Request to test-run a V2 eval config for an eval that doesn't exist yet.
+         *
+         *     Used by the creation flow, where the eval (and its scores) are still being
+         *     drafted; the server builds a transient in-memory eval from output_scores.
+         */
+        TestV2EvalDraftRequest: {
+            /**
+             * Properties
+             * @description The V2 eval config properties to test.
+             */
+            properties: components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"];
+            /**
+             * Output Scores
+             * @description The scores the drafted eval will declare; returned scores are validated against them.
+             */
+            output_scores: components["schemas"]["EvalOutputScore"][];
+            /** @description The input to evaluate. */
+            eval_input: components["schemas"]["EvalTaskInput"];
+        };
+        /**
          * TestV2EvalRequest
          * @description Request to test-run a V2 eval config without persisting.
          */
@@ -13717,6 +13948,11 @@ export interface components {
             intermediate_outputs?: {
                 [key: string]: string;
             } | null;
+            /**
+             * Tool Call Log
+             * @description Tools the scorer code called, in call order. Code evals only.
+             */
+            tool_call_log?: components["schemas"]["ToolCallLogEntryResponse"][];
         };
         /**
          * TestWriteAccessRequest
@@ -13808,7 +14044,10 @@ export interface components {
             /** Requiresapproval */
             requiresApproval: boolean;
         };
-        /** ToolCallLogEntryResponse */
+        /**
+         * ToolCallLogEntryResponse
+         * @description One nested tool call a sandboxed run made, as reported to a test pane.
+         */
         ToolCallLogEntryResponse: {
             /** Tool Name */
             tool_name: string;
@@ -13872,7 +14111,7 @@ export interface components {
          * ToolSetType
          * @enum {string}
          */
-        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin" | "code";
+        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin" | "code" | "sandbox_code";
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.
@@ -13999,6 +14238,10 @@ export interface components {
              * @description The updated description.
              */
             description?: string | null;
+            /** @description The updated priority. */
+            priority?: components["schemas"]["Priority"] | null;
+            /** @description The updated status. */
+            status?: components["schemas"]["EvalStatus"] | null;
             /**
              * Train Set Filter Id
              * @description The updated train set filter ID.
@@ -14113,7 +14356,7 @@ export interface components {
             /** @description The updated priority. */
             priority?: components["schemas"]["Priority"] | null;
             /** @description The updated status. */
-            status?: components["schemas"]["SpecStatus"] | null;
+            status?: components["schemas"]["EvalStatus"] | null;
             /**
              * Tags
              * @description The updated tags.
@@ -19314,7 +19557,43 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Eval"][];
+                    "application/json": components["schemas"]["EvalsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_eval_default_judge_types_api_projects__project_id__tasks__task_id__eval_default_judge_types_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -19598,6 +19877,44 @@ export interface operations {
             };
         };
     };
+    test_v2_eval_draft_api_projects__project_id__tasks__task_id__test_v2_eval_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestV2EvalDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestV2EvalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     run_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_comparison_get: {
         parameters: {
             query?: {
@@ -19717,9 +20034,9 @@ export interface operations {
     };
     get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get: {
         parameters: {
-            query?: {
-                /** @description Only return results for dataset items in this split of the eval (train, val, or test). 422 if the eval has no filter configured for the split. Omit to return all results (no split filtering). */
-                split?: ("train" | "val" | "test") | null;
+            query: {
+                /** @description Which of the eval's dataset splits to return results for, or 'all' for every run this judge has under this run config. Required: every response about eval results is scoped explicitly, and reading has no obvious default the way running does. */
+                split: "train" | "val" | "test" | "all";
             };
             header?: never;
             path: {

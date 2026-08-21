@@ -2,7 +2,7 @@
 
 import math
 from threading import Lock
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 
@@ -20,7 +20,11 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.run_context import get_eval_input_id
 from kiln_ai.tools.base_tool import ToolCallContext
-from kiln_ai.tools.sandbox_bridge import NestedToolServer, run_bridged_child
+from kiln_ai.tools.sandbox_bridge import (
+    NestedToolServer,
+    ToolCallLogEntry,
+    run_bridged_child,
+)
 
 _trust_lock = Lock()
 _trusted_projects: set[str] = set()
@@ -66,6 +70,12 @@ class CodeEvalAdapter(BaseV2EvalBridge):
         super().__init__(eval_config, run_config, skills)
         assert isinstance(self.properties, CodeEvalProperties)
 
+        # Set by the test-pane endpoint, which is the one place a code judge's
+        # nested tool calls (including LLM calls, which cost money) have somewhere
+        # to be shown: the author is iterating on the code right there. An eval run
+        # leaves it None -- per-item logs have no home in the run UI yet.
+        self.tool_call_recorder: Callable[[ToolCallLogEntry], None] | None = None
+
     async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
         props = self.properties
         assert isinstance(props, CodeEvalProperties)
@@ -88,7 +98,7 @@ class CodeEvalAdapter(BaseV2EvalBridge):
                     self.eval, allow_float_scores=False
                 ),
             ),
-            recorder=None,
+            recorder=self.tool_call_recorder,
         )
 
         res = await run_bridged_child(
@@ -103,7 +113,7 @@ class CodeEvalAdapter(BaseV2EvalBridge):
                 f"Code eval scorer timed out after {props.timeout_seconds}s"
             )
         if res.crashed:
-            raise RuntimeError(f"Scorer crashed (exit code {res.exit_code})")
+            raise RuntimeError(res.crash_description("Scorer"))
 
         result_msg = res.result_msg
         assert result_msg is not None

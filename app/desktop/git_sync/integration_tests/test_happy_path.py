@@ -72,7 +72,7 @@ class TestNoOpWrite:
 
     @pytest.mark.asyncio
     async def test_no_op_write_no_commit(self, write_ctx, git_repos):
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         pre_head = get_head_sync(local_path)
         pre_count = get_commit_count(local_path)
 

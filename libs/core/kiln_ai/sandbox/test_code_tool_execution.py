@@ -25,6 +25,7 @@ from kiln_ai.tools.code_tool import (
 )
 from kiln_ai.tools.sandbox_bridge import (
     CODE_SANDBOX_MAX_CONCURRENCY,
+    NestedToolServer,
     _depth,
 )
 
@@ -272,7 +273,7 @@ class TestStdoutStderr:
     async def test_stdout_captured(self, tmp_path):
         project = _make_project(tmp_path)
         ct = _make_code_tool(
-            'def run(x):\n    print("debug")\n    return "ok"\n',
+            'import sys\ndef run(x):\n    sys.stdout.write("debug")\n    return "ok"\n',
         )
         ct.parent = project
         pct = PythonCodeTool(ct, project)
@@ -284,7 +285,7 @@ class TestStdoutStderr:
     async def test_stdout_truncation(self, tmp_path):
         project = _make_project(tmp_path)
         ct = _make_code_tool(
-            'def run(x):\n    print("A" * 100000)\n    return "ok"\n',
+            'import sys\ndef run(x):\n    sys.stdout.write("A" * 100000)\n    return "ok"\n',
         )
         ct.parent = project
         pct = PythonCodeTool(ct, project)
@@ -1113,9 +1114,10 @@ class TestRealBuiltInTools:
                 tool_allowlist=[tool_id],
             )
             ct.parent = project
-            pct = PythonCodeTool(ct, project)
-            name_map = await pct._build_name_map()
-            dispatch_names = list(name_map.keys())
+            server = NestedToolServer(
+                allowlist=ct.tool_allowlist, project=project, task=None, context=None
+            )
+            dispatch_names = list((await server.name_map()).keys())
 
             assert dispatch_names == [real_name], (
                 f"For {builtin_id}: dispatch name {dispatch_names} != "

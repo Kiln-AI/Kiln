@@ -145,6 +145,24 @@ class TestTraceNavigation:
         assert len(results) == 2
         assert results[0]["content"] == "result1"
 
+    def test_get_tool_results_openai_role_tool(self, helpers: KilnEvalHelpers):
+        # Kiln traces store tool results as OpenAI-style role "tool" messages,
+        # so a scorer reading a real trace must get them back.
+        trace = [
+            {"role": "user", "content": "question"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "call_1", "type": "function"}],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "content": "tool output"},
+            {"role": "assistant", "content": "answer"},
+        ]
+        results = helpers.get_tool_results(trace)
+        assert len(results) == 1
+        assert results[0]["tool_call_id"] == "call_1"
+        assert results[0]["content"] == "tool output"
+
     def test_get_tool_results_round_trip_from_task_run(self, helpers: KilnEvalHelpers):
         """End-to-end over the real data path: a TaskRun trace converted via
         EvalTaskInput (exactly what the eval runner hands scorers) must yield
