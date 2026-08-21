@@ -9,6 +9,47 @@ from typing import Annotated
 
 import httpx
 import jsonschema
+from fastapi import FastAPI, File, HTTPException, Path, UploadFile
+from kiln_ai.datamodel import ClaimReview, Feedback, TaskRun
+from kiln_ai.datamodel.basemodel import FilenameStringShort
+from kiln_ai.datamodel.datamodel_enums import EvalStatus, Priority
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalDataType,
+    EvalInput,
+    EvalInputSplit,
+    LlmJudgeProperties,
+    MultiTurnDriveConfig,
+    TaskRunSplit,
+)
+from kiln_ai.datamodel.json_schema import validate_schema
+from kiln_ai.datamodel.spec import (
+    Spec,
+    SpecStatus,
+    SyntheticDataGenerationSessionConfig,
+    SyntheticDataGenerationStepConfig,
+    TaskSample,
+)
+from kiln_ai.datamodel.spec_properties import SpecProperties, SpecType
+from kiln_ai.datamodel.task_output import TaskOutputRating
+from kiln_ai.utils.name_generator import generate_memorable_name
+from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    agent_policy_require_approval,
+)
+from kiln_server.utils.spec_utils import (
+    generate_spec_eval_tags,
+    spec_eval_data_type,
+    spec_eval_output_score,
+    spec_eval_template,
+    tag_filter_id,
+)
+from pydantic import BaseModel, Field, field_validator, model_validator
+from typing_extensions import Self
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     clarify_spec_v1_copilot_clarify_spec_post,
     generate_batch_v1_copilot_generate_batch_post,
@@ -102,51 +143,11 @@ from app.desktop.studio_server.utils.response_utils import (
     upstream_route_missing,
     upstream_unreachable,
 )
-from fastapi import FastAPI, File, HTTPException, Path, UploadFile
-from kiln_ai.datamodel import ClaimReview, Feedback, TaskRun
-from kiln_ai.datamodel.basemodel import FilenameStringShort
-from kiln_ai.datamodel.datamodel_enums import Priority
-from kiln_ai.datamodel.eval import (
-    Eval,
-    EvalConfig,
-    EvalConfigType,
-    EvalDataType,
-    EvalInput,
-    EvalInputSplit,
-    LlmJudgeProperties,
-    MultiTurnDriveConfig,
-    TaskRunSplit,
-)
-from kiln_ai.datamodel.json_schema import validate_schema
-from kiln_ai.datamodel.spec import (
-    Spec,
-    SpecStatus,
-    SyntheticDataGenerationSessionConfig,
-    SyntheticDataGenerationStepConfig,
-    TaskSample,
-)
-from kiln_ai.datamodel.spec_properties import SpecProperties, SpecType
-from kiln_ai.datamodel.task_output import TaskOutputRating
-from kiln_ai.utils.name_generator import generate_memorable_name
-from kiln_server.task_api import task_from_id
-from kiln_server.utils.agent_checks.policy import (
-    ALLOW_AGENT,
-    agent_policy_require_approval,
-)
-from kiln_server.utils.spec_utils import (
-    generate_spec_eval_tags,
-    spec_eval_data_type,
-    spec_eval_output_score,
-    spec_eval_template,
-    tag_filter_id,
-)
 from libs.core.kiln_ai.datamodel.copilot_models.questions import (
     QuestionSet,
     RefineSpecApiOutput,
     SubmitAnswersRequest,
 )
-from pydantic import BaseModel, Field, field_validator, model_validator
-from typing_extensions import Self
 
 logger = logging.getLogger(__name__)
 
@@ -1167,7 +1168,7 @@ def connect_copilot_api(app: FastAPI):
         # address a tag nothing carries. Deliberate on both arms.
         tags = generate_spec_eval_tags(request.name)
         eval_tag, train_tag, golden_tag = (
-            tags.eval_tag,
+            tags.test_tag,
             tags.train_tag,
             tags.golden_tag,
         )
@@ -1276,6 +1277,10 @@ def connect_copilot_api(app: FastAPI):
             description=None,
             template=template,
             output_scores=output_scores,
+            # Priority and status live on the eval; the spec below mirrors
+            # them at creation so the spec file stays truthful.
+            priority=Priority.p1,
+            status=EvalStatus.active,
             # `splits` is the single home for both splits: the EvalInput-backed
             # test split and the TaskRun-backed train split. The deprecated flat
             # filter fields are never written.

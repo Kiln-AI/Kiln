@@ -14,8 +14,6 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
-
 from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
@@ -29,6 +27,15 @@ from kiln_ai.datamodel.run_config import (
 )
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.usage import MessageUsage
+from kiln_ai.synthetic_user.runner import (
+    NUM_CASES_MAX,
+    BatchCompletedEvent,
+    BatchStartedEvent,
+    CaseCompletedEvent,
+    CaseFailedEvent,
+    TurnCompletedEvent,
+)
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.custom_errors import connect_custom_errors
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
@@ -39,15 +46,6 @@ from app.desktop.studio_server.synthetic_user.client import (
     SyntheticUserRequestError,
     SyntheticUserServerError,
 )
-from kiln_ai.synthetic_user.runner import (
-    NUM_CASES_MAX,
-    BatchCompletedEvent,
-    BatchStartedEvent,
-    CaseCompletedEvent,
-    CaseFailedEvent,
-    TurnCompletedEvent,
-)
-
 
 # ───────────────────────── fixtures ─────────────────────────
 

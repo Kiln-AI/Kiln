@@ -181,6 +181,7 @@ describe("tool_set_type_label", () => {
     expect(tool_set_type_label("demo")).toBe("Demo")
     expect(tool_set_type_label("skill")).toBe("Skill")
     expect(tool_set_type_label("builtin")).toBe("Built-in")
+    expect(tool_set_type_label("sandbox_code")).toBe("Sandbox Code")
   })
 
   it("throws for an invalid type via assertNever", () => {

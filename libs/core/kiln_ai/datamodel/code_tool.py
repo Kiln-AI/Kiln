@@ -23,10 +23,9 @@ from kiln_ai.datamodel.code_file_storage import (
 )
 from kiln_ai.datamodel.json_schema import validate_schema_dict
 from kiln_ai.datamodel.tool_id import (
-    KILN_UNMANAGED_TOOL_ID_PREFIX,
-    SKILL_TOOL_ID_PREFIX,
     ToolId,
     build_code_tool_id,
+    validate_tool_allowlist,
 )
 
 _FUNCTION_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -182,27 +181,9 @@ class CodeTool(KilnParentedModel):
 
     @model_validator(mode="after")
     def validate_allowlist(self) -> Self:
-        seen: set[str] = set()
-        for tool_id in self.tool_allowlist:
-            if tool_id.startswith(SKILL_TOOL_ID_PREFIX):
-                raise ValueError(
-                    f"Skill tool IDs cannot be used in tool_allowlist: {tool_id}. "
-                    "Skills are adapter-resolved and not callable from code tools."
-                )
-            if tool_id.startswith(KILN_UNMANAGED_TOOL_ID_PREFIX):
-                raise ValueError(
-                    f"Unmanaged tool IDs cannot be used in tool_allowlist: {tool_id}. "
-                    "Unmanaged tools are SDK-injected and not resolvable by the registry."
-                )
-            if tool_id in seen:
-                raise ValueError(f"Duplicate tool ID in tool_allowlist: {tool_id}")
-            seen.add(tool_id)
-
-        if self.id is not None:
-            self_tool_id = build_code_tool_id(self.id)
-            if self_tool_id in seen:
-                raise ValueError(
-                    "A code tool cannot reference itself in tool_allowlist."
-                )
-
+        validate_tool_allowlist(
+            self.tool_allowlist,
+            caller="code tools",
+            self_tool_id=build_code_tool_id(self.id) if self.id is not None else None,
+        )
         return self

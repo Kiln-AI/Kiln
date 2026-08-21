@@ -237,7 +237,6 @@ def fixture(tmp_path) -> Fixture:
             scores={"accuracy": 0.0},
             input="the question",
             output="a different generated answer",
-            reference_data={"expected": "the golden answer"},
         ),
         pointer=save_eval_run(
             v2_config,
@@ -396,7 +395,6 @@ def test_rewriting_a_record_changes_only_the_trace_fields(fixture):
         task_run_usage=Usage(input_tokens=1, output_tokens=2, cost=0.5),
         eval_usage=Usage(input_tokens=7, output_tokens=8),
         intermediate_outputs={"chain_of_thought": "thinking"},
-        reference_data={"expected": "the golden answer"},
     )
     before = record.model_dump()
 
@@ -412,17 +410,17 @@ def test_rewriting_a_record_changes_only_the_trace_fields(fixture):
         "scored_run_id",
     }
     assert after["eval_usage"] == before["eval_usage"] is not None
-    assert after["reference_data"] == before["reference_data"] is not None
 
 
-def test_eval_input_record_keeps_its_reference_data(fixture):
+def test_eval_input_record_keeps_pointing_at_its_eval_input(fixture):
+    """Migration moves the trace off the record; which item the record scored is not
+    the runner's to change, so the EvalInput pointer survives untouched."""
     migrate(fixture)
 
     migrated = fixture.reload(fixture.inline_eval_input)
     assert migrated.scored_run_id is not None
     assert migrated.eval_input_id == fixture.eval_input.id
     assert migrated.dataset_id is None
-    assert migrated.reference_data == {"expected": "the golden answer"}
 
 
 @pytest.mark.parametrize(

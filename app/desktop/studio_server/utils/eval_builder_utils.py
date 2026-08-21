@@ -11,7 +11,25 @@ the stable UI-facing models so the endpoints and UI never see SDK types.
 """
 
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import Any, Literal
+
+from fastapi import HTTPException
+from kiln_ai.adapters.eval.base_eval import conditionally_raw_wrap
+from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
+from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
+from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalDataType,
+    EvalOutputScore,
+    EvalTaskInput,
+    LlmJudgeProperties,
+    TaskRunSplit,
+)
+from kiln_ai.datamodel.task import Task
+from kiln_server.task_api import task_from_id
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     build_claim_evidence_v1_copilot_build_claim_evidence_post,
@@ -39,23 +57,6 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
 )
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 from app.desktop.studio_server.utils.response_utils import unwrap_response
-from fastapi import HTTPException
-from kiln_ai.adapters.eval.base_eval import conditionally_raw_wrap
-from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
-from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
-from kiln_ai.datamodel.eval import (
-    Eval,
-    EvalConfig,
-    EvalConfigType,
-    EvalDataType,
-    EvalOutputScore,
-    EvalTaskInput,
-    LlmJudgeProperties,
-    TaskRunSplit,
-)
-from kiln_ai.datamodel.task import Task
-from kiln_server.task_api import task_from_id
 
 
 @dataclass
@@ -66,7 +67,7 @@ class JudgeVerdict:
     judge_reasoning: str
 
 
-def transcript_io_for_trace(trace: list[dict[str, Any]]) -> tuple[str, str]:
+def transcript_io_for_trace(trace: list[Any]) -> tuple[str, str]:
     """Canonical (raw_input, raw_output) for a multi-turn trace.
 
     raw_output is the role-labelled transcript — the SAME rendering the judge
@@ -84,11 +85,10 @@ def transcript_io_for_trace(trace: list[dict[str, Any]]) -> tuple[str, str]:
         ),
         "",
     )
-    # The trace is loose dicts by design; the formatter reads them like the
-    # typed message params it was written for.
-    return raw_input, EvalTraceFormatter.trace_to_formatted_conversation_history(
-        cast(Any, trace)
-    )
+    # The trace is loose dicts by design (list[Any] because typing.cast is
+    # banned repo-wide); the formatter reads them like the typed message
+    # params it was written for.
+    return raw_input, EvalTraceFormatter.trace_to_formatted_conversation_history(trace)
 
 
 def build_judge_prompt_template(judge_prompt: str, multi_turn: bool) -> str:

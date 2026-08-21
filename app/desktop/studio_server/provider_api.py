@@ -9,12 +9,6 @@ import httpx
 import litellm
 import openai
 import requests
-from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import (
-    create_api_key_v1_create_api_key_post,
-)
-from app.desktop.studio_server.api_client.kiln_server_client import (
-    get_oauth_authenticated_client,
-)
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 from kiln_ai.adapters.docker_model_runner_tools import (
@@ -54,6 +48,13 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_entity
 from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT
 from pydantic import BaseModel, Field
+
+from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import (
+    create_api_key_v1_create_api_key_post,
+)
+from app.desktop.studio_server.api_client.kiln_server_client import (
+    get_oauth_authenticated_client,
+)
 
 logger = logging.getLogger(__name__)
 

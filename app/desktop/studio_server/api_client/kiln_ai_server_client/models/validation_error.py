@@ -1,16 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
-
-from ..types import UNSET, Unset
-
-if TYPE_CHECKING:
-    from ..models.validation_error_context import ValidationErrorContext
-
 
 T = TypeVar("T", bound="ValidationError")
 
@@ -22,15 +16,11 @@ class ValidationError:
         loc (list[int | str]):
         msg (str):
         type_ (str):
-        input_ (Any | Unset):
-        ctx (ValidationErrorContext | Unset):
     """
 
     loc: list[int | str]
     msg: str
     type_: str
-    input_: Any | Unset = UNSET
-    ctx: ValidationErrorContext | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -44,12 +34,6 @@ class ValidationError:
 
         type_ = self.type_
 
-        input_ = self.input_
-
-        ctx: dict[str, Any] | Unset = UNSET
-        if not isinstance(self.ctx, Unset):
-            ctx = self.ctx.to_dict()
-
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -59,17 +43,11 @@ class ValidationError:
                 "type": type_,
             }
         )
-        if input_ is not UNSET:
-            field_dict["input"] = input_
-        if ctx is not UNSET:
-            field_dict["ctx"] = ctx
 
         return field_dict
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.validation_error_context import ValidationErrorContext
-
         d = dict(src_dict)
         loc = []
         _loc = d.pop("loc")
@@ -86,21 +64,10 @@ class ValidationError:
 
         type_ = d.pop("type")
 
-        input_ = d.pop("input", UNSET)
-
-        _ctx = d.pop("ctx", UNSET)
-        ctx: ValidationErrorContext | Unset
-        if isinstance(_ctx, Unset):
-            ctx = UNSET
-        else:
-            ctx = ValidationErrorContext.from_dict(_ctx)
-
         validation_error = cls(
             loc=loc,
             msg=msg,
             type_=type_,
-            input_=input_,
-            ctx=ctx,
         )
 
         validation_error.additional_properties = d

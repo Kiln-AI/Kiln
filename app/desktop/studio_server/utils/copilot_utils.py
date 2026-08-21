@@ -9,26 +9,6 @@ import logging
 import random
 from typing import TypeVar
 
-from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
-    generate_batch_v1_copilot_generate_batch_post,
-)
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    GenerateBatchInput,
-    GenerateBatchOutput,
-)
-from app.desktop.studio_server.api_client.kiln_server_client import (
-    get_authenticated_client,
-)
-from app.desktop.studio_server.api_models.copilot_models import (
-    ClaimReviewApi,
-    DrivenSyntheticCaseApi,
-    ReviewedChainApi,
-    ReviewedExample,
-    SampleApi,
-    SyntheticDataGenerationSessionConfigApi,
-    TaskInfoApi,
-)
-from app.desktop.studio_server.utils.response_utils import unwrap_response
 from fastapi import HTTPException
 from kiln_ai.datamodel import ClaimReview, Feedback, FeedbackSource, Task, TaskRun
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
@@ -51,6 +31,27 @@ from kiln_ai.synthetic_user.parser import (
     parse_synthetic_user_info,
 )
 from kiln_ai.utils.config import Config
+
+from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
+    generate_batch_v1_copilot_generate_batch_post,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    GenerateBatchInput,
+    GenerateBatchOutput,
+)
+from app.desktop.studio_server.api_client.kiln_server_client import (
+    get_authenticated_client,
+)
+from app.desktop.studio_server.api_models.copilot_models import (
+    ClaimReviewApi,
+    DrivenSyntheticCaseApi,
+    ReviewedChainApi,
+    ReviewedExample,
+    SampleApi,
+    SyntheticDataGenerationSessionConfigApi,
+    TaskInfoApi,
+)
+from app.desktop.studio_server.utils.response_utils import unwrap_response
 
 logger = logging.getLogger(__name__)
 

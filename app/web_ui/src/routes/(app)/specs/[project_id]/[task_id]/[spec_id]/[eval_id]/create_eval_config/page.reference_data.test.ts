@@ -504,7 +504,7 @@ describe("Reference data save gate", () => {
       expect(savedProps.reference_keys).toEqual(["expected", "context"])
     })
 
-    it("llm_judge: saves non-empty reference_keys from entered reference data", async () => {
+    it("llm_judge: entered reference data never becomes the saved reference_keys", async () => {
       setInitialLlmJudgeValues({
         selected_algo: "llm_as_judge",
         combined_model_name: "openai:gpt-4o",
@@ -561,7 +561,9 @@ describe("Reference data save gate", () => {
 
       expect(mockCreateLlmJudgeConfig).toHaveBeenCalledTimes(1)
       const savedPayload = mockCreateLlmJudgeConfig.mock.calls[0][3]
-      expect(savedPayload.reference_keys).toEqual(["expected_answer", "topic"])
+      // Whatever the tester typed describes one test case, not what the judge
+      // requires. The server derives reference_keys from the eval instead.
+      expect(savedPayload).not.toHaveProperty("reference_keys")
     })
   })
 })

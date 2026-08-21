@@ -3,8 +3,27 @@ from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from kiln_ai.datamodel import Project, Task, TaskRun
+from kiln_ai.datamodel.datamodel_enums import (
+    EvalStatus,
+    Priority,
+    TaskOutputRatingType,
+)
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfigType,
+    EvalDataType,
+    EvalInputSplit,
+    LlmJudgeProperties,
+    TaskRunSplit,
+)
+from kiln_ai.datamodel.spec_properties import SpecType
+from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
+from kiln_server.custom_errors import connect_custom_errors
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.clarify_spec_output import (
     ClarifySpecOutput,
 )
@@ -41,21 +60,6 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
 from app.desktop.studio_server.api_models.copilot_models import SampleApi
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.utils.copilot_utils import SingleTurnDataset
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from kiln_ai.datamodel import Project, Task, TaskRun
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
-from kiln_ai.datamodel.eval import (
-    Eval,
-    EvalConfigType,
-    EvalDataType,
-    EvalInputSplit,
-    LlmJudgeProperties,
-    TaskRunSplit,
-)
-from kiln_ai.datamodel.spec_properties import SpecType
-from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
-from kiln_server.custom_errors import connect_custom_errors
 
 
 @pytest.fixture
@@ -662,10 +666,26 @@ class TestCreateSpecWithCopilot:
         assert "{{ task_input }}" in config.properties.prompt_template
         assert config.model_name is None and config.model_provider is None
 
-        # Golden is not a split, so splits below doesn't cover it: if it pointed at
+        # The copilot arm mints two splits, not three: the test split is
+        # EvalInput-backed (re-run per run config at eval time) and train is
+        # TaskRun-backed. No val split is created, because this arm mints no
+        # val items and a split addressing a tag nothing carries reads as
+        # configured when it isn't.
+        assert evals[0].splits == {
+            "test": EvalInputSplit(filter_id="tag::test_test_spec"),
+            "train": TaskRunSplit(filter_id="tag::train_test_spec"),
+        }
+        # Golden is not a split, so splits above doesn't cover it: if it pointed at
         # the test tag, eval-config comparison would score against test items
         # instead of golden.
-        assert evals[0].eval_configs_filter_id == "tag::eval_golden_test_spec"
+        assert evals[0].eval_configs_filter_id == "tag::golden_test_spec"
+
+        # Priority and status live on the eval; the spec mirrors them at
+        # creation, but reads and later edits go to the eval.
+        assert evals[0].priority == Priority.p1
+        assert evals[0].status == EvalStatus.active
+        assert evals[0].resolved_priority() == Priority.p1
+        assert evals[0].resolved_status() == EvalStatus.active
 
         specs = task.specs()
         assert len(specs) == 1
@@ -676,7 +696,7 @@ class TestCreateSpecWithCopilot:
         # the deprecated flat fields are written null.
         on_disk = json.loads(evals[0].path.read_text())
         assert on_disk["splits"] == {
-            "test": {"source": "eval_input", "filter_id": "tag::eval_test_spec"},
+            "test": {"source": "eval_input", "filter_id": "tag::test_test_spec"},
             "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
         }
         assert on_disk["eval_set_filter_id"] is None
@@ -764,13 +784,13 @@ class TestCreateSpecWithCopilot:
         # Test split EvalInput-backed, train TaskRun-backed, both in `splits` —
         # the single home. The deprecated flat fields are written null.
         assert on_disk["splits"] == {
-            "test": {"source": "eval_input", "filter_id": "tag::eval_test_spec"},
+            "test": {"source": "eval_input", "filter_id": "tag::test_test_spec"},
             "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
         }
         # Golden stays in the eval-configs filter the judge is calibrated against.
         assert on_disk["eval_set_filter_id"] is None
         assert on_disk["train_set_filter_id"] is None
-        assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_test_spec"
+        assert on_disk["eval_configs_filter_id"] == "tag::golden_test_spec"
 
         # Reload → save again is byte-stable: the splits survive a round trip
         # rather than living only in the freshly-built instance.
@@ -786,7 +806,7 @@ class TestCreateSpecWithCopilot:
         assert slice_inputs <= {ex.input for ex in generated}
         for eval_input in eval_inputs:
             assert eval_input.data.type == "single_turn"
-            assert "eval_test_spec" in eval_input.tags
+            assert "test_test_spec" in eval_input.tags
             # The generated output is discarded at mint — the runner writes a
             # fresh one per run config, so a stored one would never be judged.
             assert "generated output" not in eval_input.path.read_text()
@@ -797,15 +817,15 @@ class TestCreateSpecWithCopilot:
         assert len(runs) == 8
         by_tag = {
             tag: [run for run in runs if tag in run.tags]
-            for tag in ("train_test_spec", "eval_golden_test_spec", "eval_test_spec")
+            for tag in ("train_test_spec", "golden_test_spec", "test_test_spec")
         }
         assert len(by_tag["train_test_spec"]) == 6
-        assert len(by_tag["eval_golden_test_spec"]) == 2
-        assert by_tag["eval_test_spec"] == []
+        assert len(by_tag["golden_test_spec"]) == 2
+        assert by_tag["test_test_spec"] == []
 
         # The golden answer key rides through untouched: human verdicts as
         # requirement ratings, plus the feedback and per-claim grades.
-        golden_by_input = {run.input: run for run in by_tag["eval_golden_test_spec"]}
+        golden_by_input = {run.input: run for run in by_tag["golden_test_spec"]}
         rating_key = "named::Test Spec"
         failed = golden_by_input["reviewed input 0"]
         assert failed.output.rating.requirement_ratings[rating_key].value == 0.0
@@ -1056,7 +1076,7 @@ class TestCreateSpecWithCopilotMultiTurn:
         # The save path writes the EvalInput-backed test split natively; the
         # on-disk shape is covered by the saved-bytes test below.
         assert eval_obj.splits["test"] == EvalInputSplit(
-            filter_id="tag::eval_multi_turn_spec"
+            filter_id="tag::test_multi_turn_spec"
         )
         assert eval_obj.splits["train"] == TaskRunSplit(
             filter_id="tag::train_multi_turn_spec"
@@ -1082,7 +1102,7 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert first.data.synthetic_user_info.goal == "goal 0"
         assert first.data.synthetic_user_info.behavior_guidance == "guidance 0"
         assert set(first.tags) == {
-            "eval_multi_turn_spec",
+            "test_multi_turn_spec",
             f"synthetic_user_batch:{self.BATCH_TAG}",
             "scenario:0",
         }
@@ -1100,19 +1120,19 @@ class TestCreateSpecWithCopilotMultiTurn:
         # golden (the answer key). The six unreviewed leaves are all train.
         split_tags = {
             "train_multi_turn_spec",
-            "eval_golden_multi_turn_spec",
+            "golden_multi_turn_spec",
         }
         runs_by_id = {run.id: run for run in task.runs()}
         for leaf in task.runs():
             assert len(split_tags & set(leaf.tags)) == 1
-            assert "eval_multi_turn_spec" not in leaf.tags
+            assert "test_multi_turn_spec" not in leaf.tags
             assert "synthetic_user_case" in leaf.tags
         # Golden == exactly the two reviewed leaves (rated count == the 25% cap).
         for reviewed_leaf in (synthetic_chain_leaves[0], synthetic_chain_leaves[1]):
-            assert "eval_golden_multi_turn_spec" in runs_by_id[reviewed_leaf.id].tags
+            assert "golden_multi_turn_spec" in runs_by_id[reviewed_leaf.id].tags
         # An unreviewed leaf is held out in train, never golden.
         unreviewed_tags = set(runs_by_id[synthetic_chain_leaves[2].id].tags)
-        assert "eval_golden_multi_turn_spec" not in unreviewed_tags
+        assert "golden_multi_turn_spec" not in unreviewed_tags
         assert "train_multi_turn_spec" in unreviewed_tags
 
         # Reviewed leaves carry golden ratings matching the review clicks,
@@ -1176,7 +1196,7 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert on_disk["splits"] == {
             "test": {
                 "source": "eval_input",
-                "filter_id": "tag::eval_multi_turn_spec",
+                "filter_id": "tag::test_multi_turn_spec",
             },
             "train": {
                 "source": "task_run",
@@ -1186,7 +1206,7 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert on_disk["train_set_filter_id"] is None
         assert on_disk["eval_set_filter_id"] is None
         # Golden slice rides along unchanged.
-        assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_multi_turn_spec"
+        assert on_disk["eval_configs_filter_id"] == "tag::golden_multi_turn_spec"
         # The retired pre-splits key never reaches disk, and drive settings
         # live on the eval items, not the eval.
         assert "eval_input_filter_id" not in first_bytes
@@ -1241,7 +1261,7 @@ class TestCreateSpecWithCopilotMultiTurn:
             assert leaf.feedback() == []
             assert leaf.claim_reviews() == []
             assert "train_multi_turn_spec" not in leaf.tags
-            assert "eval_golden_multi_turn_spec" not in leaf.tags
+            assert "golden_multi_turn_spec" not in leaf.tags
 
     def test_multi_turn_save_rejects_duplicate_reviewed_leaves(
         self,
@@ -1320,7 +1340,7 @@ class TestCreateSpecWithCopilotMultiTurn:
             assert leaf.feedback() == []
             assert leaf.claim_reviews() == []
             assert "train_multi_turn_spec" not in leaf.tags
-            assert "eval_golden_multi_turn_spec" not in leaf.tags
+            assert "golden_multi_turn_spec" not in leaf.tags
 
     def test_multi_turn_save_malformed_case_blob_is_422(
         self,
@@ -1734,7 +1754,7 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         assert eval_obj.evaluation_data_type == EvalDataType.final_answer
         assert eval_obj.model_dump()["eval_set_filter_id"] is None
         assert eval_obj.splits["test"] == EvalInputSplit(
-            filter_id="tag::eval_single_turn_spec"
+            filter_id="tag::test_single_turn_spec"
         )
         assert eval_obj.splits["train"] == TaskRunSplit(
             filter_id="tag::train_single_turn_spec"
@@ -1761,7 +1781,7 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         assert all(
             set(ei.tags)
             == {
-                "eval_single_turn_spec",
+                "test_single_turn_spec",
                 f"single_turn_drive_batch:{self.BATCH_TAG}",
             }
             for ei in eval_inputs
@@ -1769,16 +1789,16 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
 
         # Runs split into DISJOINT golden/train slices on top of their
         # pipeline tags. Golden caps at 25% of 8 = 2 = the reviewed runs.
-        split_tags = {"train_single_turn_spec", "eval_golden_single_turn_spec"}
+        split_tags = {"train_single_turn_spec", "golden_single_turn_spec"}
         runs_by_id = {run.id: run for run in task.runs()}
         for run in task.runs():
             assert len(split_tags & set(run.tags)) == 1
-            assert "eval_single_turn_spec" not in run.tags
+            assert "test_single_turn_spec" not in run.tags
             assert "single_turn_drive" in run.tags
         for reviewed_run in (batch_runs[0], batch_runs[1]):
-            assert "eval_golden_single_turn_spec" in runs_by_id[reviewed_run.id].tags
+            assert "golden_single_turn_spec" in runs_by_id[reviewed_run.id].tags
         unreviewed_tags = set(runs_by_id[batch_runs[2].id].tags)
-        assert "eval_golden_single_turn_spec" not in unreviewed_tags
+        assert "golden_single_turn_spec" not in unreviewed_tags
         assert "train_single_turn_spec" in unreviewed_tags
 
         # Reviewed runs carry golden ratings matching the review clicks, plus
@@ -1825,7 +1845,7 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         assert on_disk["splits"] == {
             "test": {
                 "source": "eval_input",
-                "filter_id": "tag::eval_single_turn_spec",
+                "filter_id": "tag::test_single_turn_spec",
             },
             "train": {
                 "source": "task_run",
@@ -1834,7 +1854,7 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         }
         assert on_disk["train_set_filter_id"] is None
         assert on_disk["eval_set_filter_id"] is None
-        assert on_disk["eval_configs_filter_id"] == "tag::eval_golden_single_turn_spec"
+        assert on_disk["eval_configs_filter_id"] == "tag::golden_single_turn_spec"
         assert "eval_input_filter_id" not in first_bytes
 
     def test_404_when_batch_tag_matches_nothing(

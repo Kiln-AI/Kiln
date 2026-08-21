@@ -21,6 +21,10 @@
   import Intro from "$lib/ui/intro.svelte"
   import EvalConfigInstruction from "./eval_config_instruction.svelte"
   import ClampedText from "$lib/ui/clamped_text.svelte"
+  import {
+    comparable_eval_configs,
+    compute_run_disallowed_missing_ref_data,
+  } from "$lib/utils/eval_types/judge_comparison_gate"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -78,15 +82,19 @@
     | "running"
     | "complete"
     | "complete_with_errors" = "not_started"
+  // The judges this page can actually compare. A judge that grades against reference
+  // data is excluded everywhere the page reasons about completion or about picking a
+  // winner: judge comparison never scores it, so counting it would either report a
+  // completion it can't reach or nudge the user to crown a judge with no scores.
+  $: comparable_configs = comparable_eval_configs(eval_configs, evaluator)
   $: should_select_eval_config = !!(
-    eval_configs?.length && !evaluator?.current_config_id
+    comparable_configs.length && !evaluator?.current_config_id
   )
   $: focus_select_eval_config = !!(
     should_select_eval_config &&
     (eval_state?.includes("complete") ||
-      (eval_configs &&
-        score_summary &&
-        eval_configs.every(
+      (score_summary &&
+        comparable_configs.every(
           (config) =>
             (score_summary!.eval_config_percent_complete?.["" + config.id] ||
               0.0) >= 1.0,
@@ -452,6 +460,7 @@
 
   function incomplete_warning(
     score_summary: EvalConfigCompareSummary | null,
+    comparable_configs: EvalConfig[],
   ): string[] {
     if (!score_summary) {
       return []
@@ -474,17 +483,29 @@
       )
     }
 
-    const completion_values = Object.values(
-      score_summary.eval_config_percent_complete,
-    )
-    const minComplete =
-      completion_values.length > 0
-        ? completion_values.reduce((min, val) => Math.min(min, val), 1.0)
-        : 1.0
-    if (minComplete < 1.0) {
-      warnings.push(
-        "You evals are incomplete. Click 'Run All Evals' to generate scores for the missing items.",
+    // Only the judges "Run All Evals" will actually run. A judge that grades against
+    // reference data never completes here, so counting it would leave this warning
+    // permanently on screen telling the user to click a button that skips it.
+    //
+    // Skipped entirely for an empty golden dataset: the server returns
+    // `eval_config_percent_complete: {}` in that case, and reading a missing entry as 0%
+    // would stack "click Run All Evals to generate the missing scores" on top of the
+    // "there are zero items in your golden dataset" warning above, where there is
+    // nothing to run.
+    if (score_summary.dataset_size > 0) {
+      const completion_values = comparable_configs.map(
+        (config) =>
+          score_summary.eval_config_percent_complete?.["" + config.id] || 0.0,
       )
+      const minComplete =
+        completion_values.length > 0
+          ? completion_values.reduce((min, val) => Math.min(min, val), 1.0)
+          : 1.0
+      if (minComplete < 1.0) {
+        warnings.push(
+          "You evals are incomplete. Click 'Run All Evals' to generate scores for the missing items.",
+        )
+      }
     }
 
     return warnings
@@ -682,14 +703,14 @@
 
         <!-- Warn the user if some evals are incomplete -->
 
-        {#if incomplete_warning(score_summary).length}
+        {#if incomplete_warning(score_summary, comparable_configs).length}
           <div class="mt-6 mb-4">
             <Warning
               warning_message={`There are issues you should resolve before analyzing this data.`}
               tight={true}
             />
             <ul class="list-disc list-inside text-sm text-gray-500 pl-2 pt-2">
-              {#each incomplete_warning(score_summary) as warning}
+              {#each incomplete_warning(score_summary, comparable_configs) as warning}
                 <li>{warning}</li>
               {/each}
             </ul>
@@ -738,6 +759,11 @@
                   score_summary?.eval_config_percent_complete?.[
                     "" + eval_config.id
                   ] || 0.0}
+                {@const run_disallowed_missing_ref_data =
+                  compute_run_disallowed_missing_ref_data(
+                    eval_config,
+                    evaluator,
+                  )}
                 <tr>
                   <td class="max-w-[250px]">
                     <div class="font-medium break-words">
@@ -746,9 +772,24 @@
                     <div class="text-sm text-gray-500">
                       Type: {eval_config_type_label(eval_config)}
                     </div>
+                    {#if run_disallowed_missing_ref_data}
+                      <div class="mt-2">
+                        <Warning
+                          warning_message="This judge requires reference data, which is not populated. It can't be run or compared here."
+                          warning_color="warning"
+                          tight={true}
+                          text_size="xs"
+                        />
+                      </div>
+                    {/if}
                   </td>
                   <td class="text-center text-sm">
-                    {#if percent_complete < 1.0}
+                    {#if run_disallowed_missing_ref_data}
+                      <!-- Neither complete nor behind: a percentage in error red would
+                           read as something to fix, and the row's warning already says
+                           this judge is one the comparison skips. -->
+                      <div class="text-gray-500">Not comparable</div>
+                    {:else if percent_complete < 1.0}
                       <div class="text-error">
                         {(percent_complete * 100.0).toFixed(0)}% Complete
                       </div>
@@ -766,7 +807,8 @@
                       </button>
                     {:else}
                       <button
-                        class="btn btn-xs rounded-full mt-1 min-w-[120px] {focus_select_eval_config
+                        class="btn btn-xs rounded-full mt-1 min-w-[120px] {focus_select_eval_config &&
+                        !run_disallowed_missing_ref_data
                           ? 'btn-primary'
                           : 'btn-secondary btn-outline'}"
                         on:click={() => {
@@ -837,10 +879,12 @@
                         {/if}
                       {:else}
                         None
-                        <InfoTooltip
-                          tooltip_text="No scores were found for this judge. Click 'Run All Evals' to generate scores and ensure your golden dataset has human ratings."
-                          no_pad={true}
-                        />
+                        {#if !run_disallowed_missing_ref_data}
+                          <InfoTooltip
+                            tooltip_text="No scores were found for this judge. Click 'Run All Evals' to generate scores and ensure your golden dataset has human ratings."
+                            no_pad={true}
+                          />
+                        {/if}
                       {/if}
                     </td>
                   {/each}

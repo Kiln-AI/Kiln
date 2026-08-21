@@ -38,7 +38,47 @@ import logging
 import re
 import uuid
 from collections.abc import AsyncIterator, Callable
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal
+
+from fastapi import FastAPI, HTTPException, Path, Request
+from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
+from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
+from kiln_ai.adapters.retry_classification import (
+    is_batch_fatal_error,
+    is_retryable_error,
+    unwrap_kiln_run_error,
+)
+from kiln_ai.datamodel.datamodel_enums import (
+    ModelProviderName,
+    StructuredOutputMode,
+    TurnMode,
+)
+from kiln_ai.datamodel.prompt_id import PromptGenerators
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.task import Task
+from kiln_ai.datamodel.task_output import DataSource, DataSourceType
+from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.synthetic_user.case import SyntheticUserCase as RunnerCase
+from kiln_ai.synthetic_user.runner import (
+    NUM_CASES_MAX,
+    BatchStartedEvent,
+    CaseCompletedEvent,
+    CaseFailedEvent,
+    TurnCompletedEvent,
+    run_cases_batch,
+)
+from kiln_ai.utils.async_job_runner import (
+    AsyncJobRunner,
+    AsyncJobRunnerObserver,
+    RetryableError,
+)
+from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.git_sync_decorators import build_save_context, no_write_lock
+from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from typing_extensions import Self
 
 from app.desktop.studio_server.api_models.eval_builder_models import (
     AuthorJudgeApiInput,
@@ -79,45 +119,6 @@ from app.desktop.studio_server.utils.eval_builder_utils import (
     run_judge_for_trace,
     transcript_io_for_trace,
 )
-from fastapi import FastAPI, HTTPException, Path, Request
-from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
-from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
-from kiln_ai.adapters.retry_classification import (
-    is_batch_fatal_error,
-    is_retryable_error,
-    unwrap_kiln_run_error,
-)
-from kiln_ai.datamodel.datamodel_enums import (
-    ModelProviderName,
-    StructuredOutputMode,
-    TurnMode,
-)
-from kiln_ai.datamodel.prompt_id import PromptGenerators
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.task import Task
-from kiln_ai.datamodel.task_output import DataSource, DataSourceType
-from kiln_ai.datamodel.task_run import TaskRun
-from kiln_ai.synthetic_user.case import SyntheticUserCase as RunnerCase
-from kiln_ai.synthetic_user.runner import (
-    NUM_CASES_MAX,
-    BatchStartedEvent,
-    CaseCompletedEvent,
-    CaseFailedEvent,
-    TurnCompletedEvent,
-    run_cases_batch,
-)
-from kiln_ai.utils.async_job_runner import (
-    AsyncJobRunner,
-    AsyncJobRunnerObserver,
-    RetryableError,
-)
-from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
-from kiln_server.git_sync_decorators import build_save_context, no_write_lock
-from kiln_server.task_api import task_from_id
-from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from typing_extensions import Self
 
 logger = logging.getLogger(__name__)
 
@@ -545,7 +546,7 @@ class JudgeStreamBase:
                         trace=trace,
                     )
                 )
-            except Exception as e:  # noqa: BLE001 — isolate to this case
+            except Exception as e:
                 # A config-scoped failure (bad key, deprecated model) will
                 # kill every judgment identically — abort the whole batch on
                 # the first one instead of failing every case one by one
@@ -658,7 +659,9 @@ class MultiTurnPipelineRun(JudgeStreamBase):
         # Latest cumulative trace per case, captured from the runner's
         # in-process turn events — the REAL trace (tool calls, system turns),
         # not a wire projection. Popped when the case's review starts.
-        self._latest_trace: dict[int, list[dict[str, Any]]] = {}
+        # Values are the runner's typed message params, read as loose dicts by
+        # the judge/claims layer (list[Any] because typing.cast is banned).
+        self._latest_trace: dict[int, list[Any]] = {}
         # The base's _total_cost accumulates the batch's actual drive
         # billing — failed cases and discarded retry attempts included, not
         # just surviving conversations.
@@ -691,9 +694,7 @@ class MultiTurnPipelineRun(JudgeStreamBase):
                 # The runner emits a fresh snapshot list per event; its typed
                 # message params are plain dicts at runtime, which the
                 # judge/claims layer treats loosely.
-                self._latest_trace[event.case_index] = cast(
-                    list[dict[str, Any]], event.trace
-                )
+                self._latest_trace[event.case_index] = event.trace
                 await self._emit(
                     PipelineTurnCompletedEvent(
                         case_index=event.case_index,

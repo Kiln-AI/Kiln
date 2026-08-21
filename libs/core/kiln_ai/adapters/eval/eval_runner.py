@@ -2,8 +2,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Callable, Dict, List, Literal, Set, Tuple
 
-from pydantic import JsonValue
-
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
 from kiln_ai.adapters.chat.chat_formatter import (
     chat_strategy_for_run,
@@ -779,12 +777,12 @@ class EvalRunner:
 
             eval_task_input = EvalTaskInput.from_task_run(leaf)
             result = await evaluator.evaluate(eval_task_input)
-            return await self._persist_judgment(job, leaf, eval_task_input, result)
+            return await self._persist_judgment(job, leaf, result)
 
         trace = await self._resolve_trace(job, evaluator)
         eval_task_input = EvalTaskInput.from_trace(trace, job.item)
         result = await evaluator.evaluate(eval_task_input)
-        return await self._persist_judgment(job, trace, eval_task_input, result)
+        return await self._persist_judgment(job, trace, result)
 
     async def _resolve_trace(
         self, job: EvalJob, evaluator: BaseV2EvalBridge
@@ -838,7 +836,6 @@ class EvalRunner:
         *,
         scored_run_id: ID_TYPE = None,
         scores: EvalScores | None = None,
-        reference_data: dict[str, JsonValue] | None = None,
         skipped_reason: str | None = None,
         skipped_detail: str | None = None,
         intermediate_outputs: Dict[str, str] | None = None,
@@ -862,7 +859,6 @@ class EvalRunner:
                 eval_config_eval=job.type == "eval_config_eval",
                 scored_run_id=scored_run_id,
                 scores=scores or {},
-                reference_data=reference_data,
                 skipped_reason=skipped_reason,
                 skipped_detail=skipped_detail,
                 intermediate_outputs=intermediate_outputs,
@@ -896,7 +892,6 @@ class EvalRunner:
         self,
         job: EvalJob,
         trace: TaskRun,
-        eval_task_input: EvalTaskInput,
         result: V2EvalResult,
     ) -> bool:
         """The score for one item, pointing at the trace it was computed over.
@@ -909,9 +904,6 @@ class EvalRunner:
             job,
             scored_run_id=trace.id,
             scores=result.scores,
-            # From what was handed to the judge, not re-derived from the item: the field
-            # records what the scorer actually saw.
-            reference_data=eval_task_input.reference_data,
             skipped_reason=result.skipped_reason.value
             if result.skipped_reason
             else None,
@@ -1007,7 +999,7 @@ class EvalRunner:
 
         eval_task_input = EvalTaskInput.from_trace(trace, eval_input)
         result = await evaluator.evaluate(eval_task_input)
-        return await self._persist_judgment(job, trace, eval_task_input, result)
+        return await self._persist_judgment(job, trace, result)
 
     async def _persist_driven_conversation(
         self, key: TraceKey, drive_result: DriveCaseResult, *, seed: str

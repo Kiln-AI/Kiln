@@ -1,0 +1,47 @@
+{
+  "v": 1,
+  "id": "240478987760",
+  "created_at": "2026-08-17T19:30:16.716618Z",
+  "created_by": "root",
+  "name": "Dapper Moss",
+  "description": null,
+  "splits": [
+    {
+      "name": "train",
+      "description": null,
+      "percentage": 0.8
+    },
+    {
+      "name": "test",
+      "description": null,
+      "percentage": 0.1
+    },
+    {
+      "name": "val",
+      "description": null,
+      "percentage": 0.1
+    }
+  ],
+  "split_contents": {
+    "train": [
+      "267255821357",
+      "324168665101",
+      "189009782155",
+      "282639728982",
+      "820034106688",
+      "122030456526",
+      "268548667746",
+      "297010025377",
+      "170843774961",
+      "303024072746"
+    ],
+    "test": [
+      "141021632869"
+    ],
+    "val": [
+      "237372582418"
+    ]
+  },
+  "filter": "tag::fine_tune_triage",
+  "model_type": "dataset_split"
+}

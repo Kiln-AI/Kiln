@@ -181,9 +181,9 @@ def test_create_spec_success(client, project_and_task):
     assert len(evals) == 1
     assert evals[0].name == "Test Spec"
     assert evals[0].id == res["eval_id"]
-    assert evals[0].eval_configs_filter_id == "tag::eval_golden_test_spec"
+    assert evals[0].eval_configs_filter_id == "tag::golden_test_spec"
     assert evals[0].splits == {
-        "test": TaskRunSplit(filter_id="tag::eval_test_spec"),
+        "test": TaskRunSplit(filter_id="tag::test_test_spec"),
         "train": TaskRunSplit(filter_id="tag::train_test_spec"),
         "val": TaskRunSplit(filter_id="tag::val_test_spec"),
     }
@@ -195,7 +195,7 @@ def test_create_spec_success(client, project_and_task):
     assert saved_eval["eval_set_filter_id"] is None
     assert saved_eval["train_set_filter_id"] is None
     assert saved_eval["splits"] == {
-        "test": {"source": "task_run", "filter_id": "tag::eval_test_spec"},
+        "test": {"source": "task_run", "filter_id": "tag::test_test_spec"},
         "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
         "val": {"source": "task_run", "filter_id": "tag::val_test_spec"},
     }
@@ -1529,7 +1529,7 @@ def test_update_spec_name_rollback_eval_fails_logs_error(
                             json=update_data,
                         )
 
-    assert "Failed to roll back eval name after spec save failure" in caplog.text
+    assert "Failed to roll back eval after spec save failure" in caplog.text
 
 
 class TestResolveAvailableSpecName:
@@ -1627,3 +1627,63 @@ def test_available_spec_name_route_task_not_found(client):
         params={"name": "policy_adherence"},
     )
     assert response.status_code == 404
+
+
+def test_create_spec_sets_priority_and_status_on_eval(client, project_and_task):
+    """Priority/status live on the eval going forward; spec creation writes them there."""
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Eval Fields Spec",
+        "definition": "The system should always respond politely",
+        "priority": Priority.p2,
+        "status": SpecStatus.future.value,
+        "properties": create_tone_properties_dict(),
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
+        )
+
+    assert response.status_code == 200
+
+    evals = task.evals()
+    assert len(evals) == 1
+    assert evals[0].priority == Priority.p2
+    assert evals[0].status == SpecStatus.future
+    assert evals[0].resolved_priority() == Priority.p2
+    assert evals[0].resolved_status() == SpecStatus.future
+
+
+def test_update_spec_priority_status_sync_to_eval(client, project_and_task):
+    """PATCHing priority/status on a spec forwards them to the linked eval,
+    which is the source of truth for reads."""
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Sync Spec",
+        "definition": "The system should always respond politely",
+        "properties": create_tone_properties_dict(),
+    }
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        create_response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
+        )
+        assert create_response.status_code == 200
+        spec_id = create_response.json()["id"]
+
+        update_response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec_id}",
+            json={"priority": Priority.p3, "status": SpecStatus.archived.value},
+        )
+
+    assert update_response.status_code == 200
+
+    evals = task.evals()
+    assert len(evals) == 1
+    assert evals[0].priority == Priority.p3
+    assert evals[0].status == SpecStatus.archived

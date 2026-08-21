@@ -33,7 +33,7 @@ from openai.types.chat.chat_completion_assistant_message_param import (
 from pydantic import TypeAdapter
 from typing_extensions import Required, TypedDict
 
-from kiln_ai.datamodel.usage import MessageUsage
+from kiln_ai.utils.usage import MessageUsage
 
 
 class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):

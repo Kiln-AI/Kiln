@@ -77,7 +77,7 @@ class EvalTaskInput(BaseModel):
 |---|---|---|
 | `final_message` | `TaskRun.output.output` | Always the raw string; use the `fromjson` filter to parse JSON outputs (e.g. `(final_message \| fromjson).field`) |
 | `trace` | `TaskRun.trace` | Kiln's modified OpenAI format. `None` for `EvalDataType.final_answer` runs that don't carry traces |
-| `reference_data` | `EvalInput.reference` | `None` if EvalInput has no reference |
+| `reference_data` | `EvalInput.reference`, or a TaskRun dataset item's `output.output` | For an EvalInput-backed item: its `reference`, or `None` if it has none. For a TaskRun-backed dataset item: `{"reference_answer": <the item's stored output>}`, since that output is the curated answer. `None` when a TaskRun is scored as itself (judge calibration), where the item and the scored run are one record |
 | `task_input` | `TaskRun.input` | The original input given to the task being evaluated |
 
 ### Reserved top-level names

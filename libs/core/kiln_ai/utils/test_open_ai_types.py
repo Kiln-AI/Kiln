@@ -16,7 +16,6 @@ from openai.types.chat import (
 
 from kiln_ai.datamodel.task_output import TaskOutput
 from kiln_ai.datamodel.task_run import TaskRun
-from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.utils.open_ai_types import (
     KILN_ONLY_MESSAGE_FIELDS,
     ChatCompletionAssistantMessageParamWrapper,
@@ -28,6 +27,7 @@ from kiln_ai.utils.open_ai_types import (
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionMessageParam as KilnChatCompletionMessageParam,
 )
+from kiln_ai.utils.usage import MessageUsage
 
 
 def test_assistant_message_param_properties_match():
