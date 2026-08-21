@@ -19,6 +19,11 @@ from kiln_ai.datamodel.eval import (
     EvalTaskInput,
     SkippedReason,
 )
+<<<<<<< HEAD
+=======
+from kiln_ai.datamodel.task_output import TaskOutput
+from kiln_ai.datamodel.task_run import TaskRun
+>>>>>>> 721c4941b
 from kiln_ai.tools.sandbox_bridge import BridgeResult
 
 _BRIDGE_PATH = "kiln_ai.adapters.eval.v2_eval_code_eval.run_bridged_child"
@@ -174,7 +179,10 @@ class TestCodeEvalAdapterEvaluate:
     async def test_timeout_raises_runtime_error(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
+<<<<<<< HEAD
 
+=======
+>>>>>>> 721c4941b
         with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
             mock_run.return_value = BridgeResult(timed_out=True)
             with pytest.raises(RuntimeError, match="timed out"):
@@ -184,17 +192,38 @@ class TestCodeEvalAdapterEvaluate:
     async def test_crash_raises_runtime_error(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
+<<<<<<< HEAD
 
+=======
+>>>>>>> 721c4941b
         with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
             mock_run.return_value = BridgeResult(crashed=True, exit_code=7)
             with pytest.raises(RuntimeError, match="exit code 7"):
                 await adapter.evaluate(_inp())
 
     @pytest.mark.asyncio
+<<<<<<< HEAD
     async def test_scorer_error_raises_runtime_error(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
 
+=======
+    @pytest.mark.parametrize("exit_code", [0, None])
+    async def test_clean_exit_without_result_is_not_reported_as_a_crash(
+        self, exit_code
+    ):
+        cfg = _make_config()
+        adapter = CodeEvalAdapter(cfg)
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(crashed=True, exit_code=exit_code)
+            with pytest.raises(RuntimeError, match="exited without returning results"):
+                await adapter.evaluate(_inp())
+
+    @pytest.mark.asyncio
+    async def test_scorer_error_raises_runtime_error(self):
+        cfg = _make_config()
+        adapter = CodeEvalAdapter(cfg)
+>>>>>>> 721c4941b
         with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
             mock_run.return_value = BridgeResult(
                 result_msg={
@@ -210,7 +239,10 @@ class TestCodeEvalAdapterEvaluate:
     async def test_non_dict_result_raises(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
+<<<<<<< HEAD
 
+=======
+>>>>>>> 721c4941b
         with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
             mock_run.return_value = BridgeResult(
                 result_msg={"type": "result", "ok": "not a dict"}
@@ -222,7 +254,10 @@ class TestCodeEvalAdapterEvaluate:
     async def test_inputs_passed_correctly(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
+<<<<<<< HEAD
 
+=======
+>>>>>>> 721c4941b
         with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
             mock_run.return_value = BridgeResult(
                 result_msg={"type": "result", "ok": {"accuracy": 1.0}}
@@ -236,8 +271,11 @@ class TestCodeEvalAdapterEvaluate:
                 )
             )
 
+<<<<<<< HEAD
         # run_bridged_child is called with keyword args; the scorer inputs are the
         # second element of the ``args`` tuple.
+=======
+>>>>>>> 721c4941b
         inputs = mock_run.call_args.kwargs["args"][1]
         assert inputs["output"] == "test output"
         assert inputs["trace"] == [{"role": "user", "content": "some trace"}]
@@ -245,12 +283,57 @@ class TestCodeEvalAdapterEvaluate:
         assert inputs["task_input"] == "input data"
 
 
+class TestScorerNamespace:
+    """What the sandboxed `score(...)` call actually receives."""
+
+    async def _namespace_for(self, eval_input: EvalTaskInput) -> dict:
+        adapter = CodeEvalAdapter(_make_config())
+        with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = BridgeResult(
+                result_msg={"type": "result", "ok": {"accuracy": 1.0}}
+            )
+            await adapter.evaluate(eval_input)
+        _code, inputs = mock_run.call_args.kwargs["args"]
+        return inputs
+
+    @pytest.mark.asyncio
+    async def test_a_dataset_item_supplies_reference_answer(self):
+        """A TaskRun-backed dataset item's stored output reaches user scorer code as
+        `reference_data["reference_answer"]`. Scorers written against the older
+        contract - where this was always None for a TaskRun dataset - now take the
+        other branch, so the documented contract has to match this."""
+        item = TaskRun(
+            input="Who wrote Dune?", output=TaskOutput(output="Frank Herbert.")
+        )
+        trace = TaskRun(input="Who wrote Dune?", output=TaskOutput(output="Herbert."))
+
+        inputs = await self._namespace_for(EvalTaskInput.from_trace(trace, item))
+
+        assert inputs["reference_data"] == {"reference_answer": "Frank Herbert."}
+        assert inputs["output"] == "Herbert."
+        assert inputs["task_input"] == "Who wrote Dune?"
+
+    @pytest.mark.asyncio
+    async def test_calibration_supplies_no_reference_data(self):
+        """A TaskRun scored as itself has no separate ground truth to hand the scorer."""
+        golden = TaskRun(
+            input="Who wrote Dune?", output=TaskOutput(output="Frank Herbert.")
+        )
+
+        inputs = await self._namespace_for(EvalTaskInput.from_task_run(golden))
+
+        assert inputs["reference_data"] is None
+
+
 class TestScoreValidation:
     @pytest.mark.asyncio
     async def test_bool_rejected(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
+<<<<<<< HEAD
 
+=======
+>>>>>>> 721c4941b
         with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
             mock_run.return_value = BridgeResult(
                 result_msg={"type": "result", "ok": {"accuracy": True}}
@@ -262,7 +345,10 @@ class TestScoreValidation:
     async def test_int_converted_to_float(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
+<<<<<<< HEAD
 
+=======
+>>>>>>> 721c4941b
         with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
             mock_run.return_value = BridgeResult(
                 result_msg={"type": "result", "ok": {"accuracy": 1}}
@@ -277,7 +363,10 @@ class TestScoreValidation:
     async def test_key_mismatch_raises(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
+<<<<<<< HEAD
 
+=======
+>>>>>>> 721c4941b
         with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
             mock_run.return_value = BridgeResult(
                 result_msg={"type": "result", "ok": {"wrong_key": 0.5}}
@@ -289,7 +378,10 @@ class TestScoreValidation:
     async def test_string_score_rejected(self):
         cfg = _make_config()
         adapter = CodeEvalAdapter(cfg)
+<<<<<<< HEAD
 
+=======
+>>>>>>> 721c4941b
         with patch(_BRIDGE_PATH, new_callable=AsyncMock) as mock_run:
             mock_run.return_value = BridgeResult(
                 result_msg={"type": "result", "ok": {"accuracy": "high"}}
@@ -318,6 +410,7 @@ class TestAsyncScorerEndToEnd:
         assert result.scores == {"accuracy": 0.75}
         assert result.skipped_reason is None
         assert result.skipped_detail is None
+<<<<<<< HEAD
 
 
 class TestFiniteScoreValidation:
@@ -383,3 +476,5 @@ class TestUsageObjectTransport:
         ]
         result = await adapter.evaluate(_inp(trace=trace))
         assert result.scores == {"accuracy": 5.0}
+=======
+>>>>>>> 721c4941b

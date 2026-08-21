@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import type { EvalOutputScore } from "$lib/types"
 import { generate_default_code, generate_examples } from "./code_eval_helpers"
+import { LLM_JUDGE_TOOL_ID, LLM_TOOL_ID } from "$lib/utils/built_in_tool_ids"
 
 function make_score(
   name: string,
@@ -90,9 +91,9 @@ describe("generate_default_code", () => {
       make_score("Safety Check", "pass_fail_critical"),
     ]
 
-    it("builds a bulleted Returns docstring for multiple scores", () => {
+    it("builds a bulleted Return dictionary docstring for multiple scores", () => {
       const code = generate_default_code(scores)
-      expect(code).toContain("A dictionary of score names to scores:")
+      expect(code).toContain("Return dictionary:")
       expect(code).toContain("- accuracy: return 0.0 for Fail or 1.0 for Pass")
       expect(code).toContain(
         "- overall_rating: return a 1-5 star rating (1.0, 2.0, 3.0, 4.0, or 5.0)",
@@ -127,12 +128,16 @@ describe("generate_default_code", () => {
   it("preserves the function signature and Args docstring", () => {
     const scores = [make_score("Test", "pass_fail")]
     const code = generate_default_code(scores)
-    expect(code).toContain(
-      "def score(output, trace, reference_data, task_input):",
-    )
+    expect(code).toContain("def score(output, trace, task_input):")
     expect(code).toContain("Args:")
     expect(code).toContain("output: The model's final output string.")
     expect(code).not.toContain("kiln:")
+  })
+
+  it("omits reference data from the signature and docstring", () => {
+    const code = generate_default_code([make_score("Test", "pass_fail")])
+    expect(code).not.toContain("reference_data")
+    expect(generate_default_code(undefined)).not.toContain("reference_data")
   })
 
   it("includes the optional-params docstring note in the default template", () => {
@@ -154,6 +159,7 @@ describe("generate_default_code", () => {
 })
 
 describe("generate_examples", () => {
+<<<<<<< HEAD
   // The first three examples are score-key-driven (built via the helper
   // functions); the last two are hand-written LLM tool examples validated
   // separately below.
@@ -168,11 +174,38 @@ describe("generate_examples", () => {
     expect(examples[2].label).toBe("Domain-specific grading")
     expect(examples[3].label).toBe("LLM judge")
     expect(examples[4].label).toBe("Triage then LLM judge")
+=======
+  // The first two examples are score-key-driven (built via the helper
+  // functions); the last two are hand-written LLM tool examples validated
+  // separately below.
+  const code_examples = (scores?: EvalOutputScore[]) =>
+    generate_examples(scores).slice(0, 2)
+
+  it("returns four examples with correct labels", () => {
+    const examples = generate_examples(undefined)
+    expect(examples).toHaveLength(4)
+    expect(examples[0].label).toBe("Parse JSON")
+    expect(examples[1].label).toBe("Check tool usage")
+    expect(examples[2].label).toBe("LLM judge")
+    expect(examples[3].label).toBe("Triage then LLM judge")
+>>>>>>> 721c4941b
   })
 
   it("falls back to quality key when no output_scores", () => {
     for (const ex of code_examples(undefined)) {
       expect(ex.code).toContain('"quality"')
+    }
+  })
+
+  it("omits reference data from every example", () => {
+    const scores = [
+      make_score("Accuracy", "pass_fail"),
+      make_score("Overall Rating", "five_star"),
+    ]
+    for (const output_scores of [undefined, [], scores]) {
+      for (const ex of generate_examples(output_scores)) {
+        expect(ex.code).not.toContain("reference_data")
+      }
     }
   })
 
@@ -195,7 +228,11 @@ describe("generate_examples", () => {
 
   describe("LLM tool examples", () => {
     it("LLM judge example judges the response itself", () => {
+<<<<<<< HEAD
       const example = generate_examples(undefined)[3]
+=======
+      const example = generate_examples(undefined)[2]
+>>>>>>> 721c4941b
       expect(example.label).toBe("LLM judge")
       expect(example.code).toContain("from kiln import tools")
       expect(example.code).toContain("tools.llm_judge(")
@@ -206,7 +243,11 @@ describe("generate_examples", () => {
     })
 
     it("Triage example composes tools.llm and tools.llm_judge", () => {
+<<<<<<< HEAD
       const example = generate_examples(undefined)[4]
+=======
+      const example = generate_examples(undefined)[3]
+>>>>>>> 721c4941b
       expect(example.label).toBe("Triage then LLM judge")
       expect(example.code).toContain("tools.llm(")
       expect(example.code).toContain("tools.llm_judge(")
@@ -222,7 +263,11 @@ describe("generate_examples", () => {
         make_score("Check", "pass_fail"),
         make_score("Rating", "five_star"),
       ]
+<<<<<<< HEAD
       const example = generate_examples(scores)[4]
+=======
+      const example = generate_examples(scores)[3]
+>>>>>>> 721c4941b
       expect(example.code).toContain('return {"check": 1.0, "rating": 5.0}')
     })
   })
@@ -292,26 +337,6 @@ describe("generate_examples", () => {
     })
   })
 
-  describe("Domain-specific grading example", () => {
-    it("guards assert_contains with if expected else True", () => {
-      const examples = generate_examples(undefined)
-      expect(examples[2].code).toContain("if expected else True")
-    })
-
-    it("uses contains as the bool expression", () => {
-      const examples = generate_examples(undefined)
-      expect(examples[2].code).toContain("KilnEvalHelpers.pass_fail(contains)")
-    })
-
-    it("uses word_count-based rating expression for five_star", () => {
-      const scores = [make_score("R", "five_star")]
-      const examples = generate_examples(scores)
-      expect(examples[2].code).toContain(
-        "KilnEvalHelpers.five_star(5 if word_count < 50 else 3 if word_count < 150 else 1)",
-      )
-    })
-  })
-
   describe("single score (no multi-line return dict)", () => {
     it("produces inline return for a single score", () => {
       const scores = [make_score("Quality", "pass_fail")]
@@ -340,5 +365,65 @@ describe("generate_examples", () => {
         expect(ex.code).toContain("# Adjust each score's logic for your eval")
       }
     })
+  })
+})
+
+describe("example tool requirements", () => {
+  // `from kiln import tools` then `tools.<name>(...)`. Anchored on the `tools.`
+  // receiver so KilnEvalHelpers.* calls are not mistaken for tool calls, and
+  // requiring the open paren so the bare import line does not match.
+  const TOOL_CALL_RE = /\btools\.([A-Za-z_][A-Za-z0-9_]*)\s*\(/g
+
+  const TOOL_ID_BY_FUNCTION_NAME: Record<string, string> = {
+    llm: LLM_TOOL_ID,
+    llm_judge: LLM_JUDGE_TOOL_ID,
+  }
+
+  function tool_ids_called_by(code: string): string[] {
+    const ids = new Set<string>()
+    for (const match of code.matchAll(TOOL_CALL_RE)) {
+      const tool_id = TOOL_ID_BY_FUNCTION_NAME[match[1]]
+      expect(
+        tool_id,
+        `example calls tools.${match[1]}, which this test cannot map to a tool ID`,
+      ).toBeTruthy()
+      ids.add(tool_id)
+    }
+    return [...ids]
+  }
+
+  it("declares every tool its code calls", () => {
+    // A code judge may only call tools in its allowlist, and use_example() grants
+    // exactly required_tool_ids — so an under-declared example ships code that is
+    // rejected the moment the user runs it.
+    for (const example of generate_examples()) {
+      for (const tool_id of tool_ids_called_by(example.code)) {
+        expect(
+          example.required_tool_ids,
+          `example "${example.label}" calls ${tool_id} without declaring it`,
+        ).toContain(tool_id)
+      }
+    }
+  })
+
+  it("finds the LLM examples' calls, so the scan above is not vacuous", () => {
+    const called_by_label = Object.fromEntries(
+      generate_examples().map((e) => [e.label, tool_ids_called_by(e.code)]),
+    )
+    expect(called_by_label["LLM judge"]).toEqual([LLM_JUDGE_TOOL_ID])
+    expect(called_by_label["Triage then LLM judge"].sort()).toEqual(
+      [LLM_TOOL_ID, LLM_JUDGE_TOOL_ID].sort(),
+    )
+  })
+
+  it("declares nothing for examples that call no tools", () => {
+    for (const example of generate_examples()) {
+      if (tool_ids_called_by(example.code).length === 0) {
+        expect(
+          example.required_tool_ids,
+          `example "${example.label}" declares tools its code never calls`,
+        ).toEqual([])
+      }
+    }
   })
 })

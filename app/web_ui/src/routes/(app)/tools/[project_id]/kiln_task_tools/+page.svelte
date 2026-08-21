@@ -116,7 +116,7 @@
         <table class="table table-fixed w-full">
           <thead>
             <tr>
-              <th class="w-32">Tool Name</th>
+              <th class="w-48">Tool Name</th>
               <th class="w-96">Description</th>
               <th class="w-28">Created At</th>
               <th class="w-20">Status</th>
@@ -136,18 +136,30 @@
                 role="button"
                 tabindex={0}
               >
-                <td class="font-medium truncate" title={tool.tool_name}
-                  >{tool.tool_name}</td
-                >
+                <td class="align-top">
+                  <div class="font-medium truncate" title={tool.tool_name}>
+                    {tool.tool_name}
+                  </div>
+                  <!-- Tool names are user-typed and not unique, so the ID is what
+                       tells two same-named tools apart. Shown on every row: an ID
+                       that appears only on the ambiguous ones would make the rows
+                       it is meant to clarify the odd ones out. -->
+                  <div
+                    class="text-xs text-gray-500 font-mono truncate"
+                    title={tool.tool_server_id}
+                  >
+                    {tool.tool_server_id}
+                  </div>
+                </td>
                 <td
-                  class="text-sm truncate"
+                  class="text-sm truncate align-top"
                   title={tool.tool_description || "N/A"}
                   >{tool.tool_description || "N/A"}</td
                 >
-                <td class="text-sm whitespace-nowrap"
+                <td class="text-sm whitespace-nowrap align-top"
                   >{formatDate(tool.created_at)}</td
                 >
-                <td class="text-sm">
+                <td class="text-sm align-top">
                   {#if tool.is_archived}
                     <Warning
                       warning_message="Archived"

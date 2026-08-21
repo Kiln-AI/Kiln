@@ -3,6 +3,8 @@ from http import HTTPStatus
 from unittest.mock import MagicMock
 
 import pytest
+from fastapi import HTTPException
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     HTTPValidationError,
 )
@@ -11,7 +13,6 @@ from app.desktop.studio_server.utils.response_utils import (
     unwrap_response,
     unwrap_response_allow_none,
 )
-from fastapi import HTTPException
 
 
 def _make_response(

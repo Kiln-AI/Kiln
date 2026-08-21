@@ -344,8 +344,6 @@ async def test_ensure_fresh_for_read_raises_when_unreachable(
 
 @pytest.mark.asyncio
 async def test_fetch(manager, git_repos, second_clone):
-    _, remote_path = git_repos
-
     commit_in_repo(second_clone, "fetched.txt", "data", "remote")
     push_from(second_clone)
 

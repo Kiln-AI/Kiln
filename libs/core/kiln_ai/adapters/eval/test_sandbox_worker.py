@@ -8,6 +8,7 @@ import asyncio
 
 import pytest
 
+<<<<<<< HEAD
 from kiln_ai.adapters.eval.sandbox_worker import execute_scorer_bridged
 from kiln_ai.datamodel.project import Project
 from kiln_ai.tools.sandbox_bridge import NestedToolServer, run_bridged_child
@@ -39,6 +40,9 @@ async def _run_scorer_async(code: str, inputs: dict, timeout: float) -> dict:
         raise RuntimeError(f"Scorer crashed (exit code {res.exit_code})")
     assert res.result_msg is not None
     return res.result_msg
+=======
+from kiln_ai.adapters.eval.conftest import run_scorer
+>>>>>>> 721c4941b
 
 
 def _inputs(output: str = "hello", **overrides: object) -> dict:
@@ -159,8 +163,9 @@ class TestAsyncScorer:
 class TestCapture:
     def test_stdout_captured(self):
         code = (
+            "import sys\n"
             "def score(output, trace, reference_data, task_input):\n"
-            "    print('debug info')\n"
+            "    sys.stdout.write('debug info')\n"
             "    return {'x': 1.0}\n"
         )
         result = run_scorer(code, _inputs(), timeout=10)
@@ -171,7 +176,7 @@ class TestCapture:
         code = (
             "import sys\n"
             "def score(output, trace, reference_data, task_input):\n"
-            "    print('err msg', file=sys.stderr)\n"
+            "    sys.stderr.write('err msg')\n"
             "    return {'x': 1.0}\n"
         )
         result = run_scorer(code, _inputs(), timeout=10)

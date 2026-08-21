@@ -1,8 +1,11 @@
 """V2 adapter for code_eval: runs user-authored Python scorer in a sandboxed subprocess."""
 
+<<<<<<< HEAD
 import math
+=======
+>>>>>>> 721c4941b
 from threading import Lock
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 
@@ -18,19 +21,31 @@ from kiln_ai.datamodel.eval import (
     SkippedReason,
     V2EvalResult,
 )
+<<<<<<< HEAD
 from kiln_ai.run_context import get_eval_input_id
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.sandbox_bridge import NestedToolServer, run_bridged_child
+=======
+from kiln_ai.tools.base_tool import ToolCallContext
+from kiln_ai.tools.sandbox_bridge import (
+    NestedToolServer,
+    ToolCallLogEntry,
+    run_bridged_child,
+)
+>>>>>>> 721c4941b
 
 _trust_lock = Lock()
 _trusted_projects: set[str] = set()
 
+<<<<<<< HEAD
 # A scorer may return exactly {SKIP_SENTINEL_KEY: "<reason>"} instead of scores
 # to record the run as skipped (not applicable). Skipped runs count as complete
 # but are excluded from score aggregates, so a self-gating eval's mean becomes
 # its rate over applicable runs rather than being diluted by clean-or-NA 1.0s.
 SKIP_SENTINEL_KEY = "__skipped__"
 
+=======
+>>>>>>> 721c4941b
 
 def add_code_trust(project_path: str) -> None:
     """Confer code trust on a project for the current session.
@@ -66,6 +81,12 @@ class CodeEvalAdapter(BaseV2EvalBridge):
         super().__init__(eval_config, run_config, skills)
         assert isinstance(self.properties, CodeEvalProperties)
 
+        # Set by the test-pane endpoint, which is the one place a code judge's
+        # nested tool calls (including LLM calls, which cost money) have somewhere
+        # to be shown: the author is iterating on the code right there. An eval run
+        # leaves it None -- per-item logs have no home in the run UI yet.
+        self.tool_call_recorder: Callable[[ToolCallLogEntry], None] | None = None
+
     async def evaluate(self, eval_input: EvalTaskInput) -> V2EvalResult:
         props = self.properties
         assert isinstance(props, CodeEvalProperties)
@@ -83,12 +104,19 @@ class CodeEvalAdapter(BaseV2EvalBridge):
             task=self.target_task,
             context=ToolCallContext(
                 allow_saving=False,
+<<<<<<< HEAD
                 eval_input_id=get_eval_input_id(),
+=======
+>>>>>>> 721c4941b
                 eval_output_schema=BaseEval.build_score_schema(
                     self.eval, allow_float_scores=False
                 ),
             ),
+<<<<<<< HEAD
             recorder=None,
+=======
+            recorder=self.tool_call_recorder,
+>>>>>>> 721c4941b
         )
 
         res = await run_bridged_child(
@@ -103,7 +131,11 @@ class CodeEvalAdapter(BaseV2EvalBridge):
                 f"Code eval scorer timed out after {props.timeout_seconds}s"
             )
         if res.crashed:
+<<<<<<< HEAD
             raise RuntimeError(f"Scorer crashed (exit code {res.exit_code})")
+=======
+            raise RuntimeError(res.crash_description("Scorer"))
+>>>>>>> 721c4941b
 
         result_msg = res.result_msg
         assert result_msg is not None

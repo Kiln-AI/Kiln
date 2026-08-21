@@ -3,12 +3,16 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from unittest.mock import patch
 
 from unittest.mock import patch
 
 import httpx
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI
+from pydantic import BaseModel
+
 from app.desktop.studio_server.jobs import api as jobs_api
 from app.desktop.studio_server.jobs import error_log
 from app.desktop.studio_server.jobs.api import connect_jobs_api
@@ -23,10 +27,18 @@ from app.desktop.studio_server.jobs.workers.eval import (
     EvalJobWorker,
 )
 from app.desktop.studio_server.jobs.workers.noop import NoopJobWorker
+<<<<<<< HEAD
 from fastapi import FastAPI
 from kiln_ai.datamodel import TaskOutputRatingType
 from kiln_ai.datamodel.eval import Eval, EvalOutputScore
 from pydantic import BaseModel
+=======
+from kiln_ai.adapters.ml_model_list import ModelProviderName
+from kiln_ai.datamodel import Project, Task, TaskOutputRatingType
+from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalOutputScore
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
+>>>>>>> 721c4941b
 
 
 async def _safe_cancel(registry: JobRegistry, job_id: str) -> None:
@@ -198,6 +210,83 @@ def stub_eval_worker(monkeypatch):
     monkeypatch.setattr(EvalJobWorker, "run", fake_run)
 
 
+@pytest.fixture
+def split_eval(tmp_path, monkeypatch):
+    """A real on-disk eval with a test and a train split, but no val split, plus the
+    eval config and run config `_split_eval_params` names.
+
+    The split pre-check reads entities off disk, so the tests that exercise it need
+    real ones. task_from_id binds project_from_id into kiln_server.task_api, so we
+    patch it there (the name as looked up), not at its definition site.
+    """
+    project = Project(
+        id="p_split", name="Split Project", path=tmp_path / "project.kiln"
+    )
+    project.save_to_file()
+    task = Task(
+        id="t_split",
+        name="Split Task",
+        description="test",
+        instruction="do the thing",
+        parent=project,
+    )
+    task.save_to_file()
+    eval = Eval(
+        id="e_split",
+        name="Split Eval",
+        description="test",
+        eval_set_filter_id="tag::eval_set",
+        train_set_filter_id="tag::train_set",
+        output_scores=[
+            EvalOutputScore(
+                name="Accuracy",
+                instruction="Check accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            ),
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+    # The eval config and run config the params name must exist too. Without them
+    # describe() raises inside registry.create, which swallows and logs it — the
+    # tests would still pass, but on a create path that is quietly half-failing, and
+    # with a traceback in the output for the next person to chase.
+    EvalConfig(
+        id="ec_split",
+        name="Split Eval Config",
+        model_name="gpt-4",
+        model_provider="openai",
+        properties={"eval_steps": ["step1"]},
+        parent=eval,
+    ).save_to_file()
+    TaskRunConfig(
+        id="rc_split",
+        name="Split Run Config",
+        description="test",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    ).save_to_file()
+    with patch("kiln_server.task_api.project_from_id", return_value=project):
+        yield eval
+
+
+def _split_eval_params(**overrides) -> dict:
+    return {
+        **_EVAL_PARAMS,
+        "project_id": "p_split",
+        "task_id": "t_split",
+        "eval_id": "e_split",
+        "eval_config_id": "ec_split",
+        "run_config_id": "rc_split",
+        **overrides,
+    }
+
+
 @pytest.mark.asyncio
 async def test_run_eval_job_creates_typed_eval_job(client, registry, stub_eval_worker):
     resp = await client.post(_EVAL_RUN_PATH, json=_EVAL_PARAMS)
@@ -213,6 +302,74 @@ async def test_run_eval_job_creates_typed_eval_job(client, registry, stub_eval_w
     assert job.type == "eval"
     assert job.project_id == "p_eval"
     assert job.params == _EVAL_PARAMS
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_without_a_split_resolves_nothing(
+    client, registry, stub_eval_worker
+):
+    # No split named, nothing to pre-resolve: every eval that loads has a test
+    # split, so there is no refusal to be had, and creation must not pay for a
+    # dataset enumeration. These params name a project that does not exist on
+    # disk, so a pre-check that ran anyway would 404 instead of creating the job.
+    resp = await client.post(_EVAL_RUN_PATH, json=_EVAL_PARAMS)
+
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_with_a_split_the_eval_has_creates_the_job(
+    client, registry, stub_eval_worker, split_eval
+):
+    resp = await client.post(_EVAL_RUN_PATH, json=_split_eval_params(split="train"))
+
+    assert resp.status_code == 201, resp.text
+    job = registry._jobs[resp.json()["job_id"]]
+    assert job.params["split"] == "train"
+    # describe() runs unstubbed against the fixture's entities, and registry.create
+    # swallows its exceptions. A populated properties block is what proves it
+    # succeeded rather than being silently absorbed.
+    assert job.properties is not None
+    assert job.properties["eval_name"] == "Split Eval"
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_with_a_split_the_eval_lacks_422(
+    client, registry, stub_eval_worker, split_eval
+):
+    # Functional spec 9: a bad split fails at request time, naming the split as the
+    # caller spelled it and the eval — not as a background job that starts and dies.
+    resp = await client.post(_EVAL_RUN_PATH, json=_split_eval_params(split="val"))
+
+    assert resp.status_code == 422, resp.text
+    # This test app is a bare FastAPI without the studio's error-shape handlers, so
+    # assert on the raw body rather than a field name the real app would rewrite.
+    assert "'val' split" in resp.text
+    assert "e_split" in resp.text
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_with_an_unknown_eval_404(
+    client, registry, stub_eval_worker, split_eval
+):
+    resp = await client.post(
+        _EVAL_RUN_PATH, json=_split_eval_params(split="test", eval_id="e_missing")
+    )
+
+    assert resp.status_code == 404, resp.text
+    assert registry._jobs == {}
+
+
+@pytest.mark.asyncio
+async def test_run_eval_job_with_an_invalid_split_value_422(
+    client, registry, stub_eval_worker, split_eval
+):
+    # Not one of train/val/test: refused by request validation before anything loads.
+    resp = await client.post(_EVAL_RUN_PATH, json=_split_eval_params(split="holdout"))
+
+    assert resp.status_code == 422, resp.text
+    assert registry._jobs == {}
 
 
 @pytest.mark.asyncio

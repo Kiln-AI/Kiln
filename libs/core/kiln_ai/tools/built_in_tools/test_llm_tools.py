@@ -11,7 +11,12 @@ from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import ToolCallContext, ToolCallResult
 from kiln_ai.tools.built_in_tools.llm_tools import (
+<<<<<<< HEAD
     _DEFAULT_SYSTEM_PROMPT,
+=======
+    _DEFAULT_JUDGE_SYSTEM_PROMPT,
+    _DEFAULT_LLM_SYSTEM_PROMPT,
+>>>>>>> 721c4941b
     LlmJudgeTool,
     LlmTool,
     run_llm_call,
@@ -117,6 +122,43 @@ class TestLlmTool:
         task_arg = factory.call_args[0][0]
         assert task_arg.instruction == "Be terse."
 
+<<<<<<< HEAD
+=======
+    async def test_omitted_system_prompt_is_neutral_not_a_judge(self):
+        """`llm` is a general model call, so an omitted system prompt must not
+        instruct the model to score anything."""
+        run_output = RunOutput(output="ok", intermediate_outputs=None)
+        factory, _ = _mock_adapter_for(run_output)
+
+        with patch(ADAPTER_PATH, factory):
+            await LlmTool().run(
+                prompt="Summarize these messages",
+                model="gpt_4o",
+                provider="openai",
+            )
+
+        task_arg = factory.call_args[0][0]
+        assert task_arg.instruction == _DEFAULT_LLM_SYSTEM_PROMPT
+        assert task_arg.instruction != _DEFAULT_JUDGE_SYSTEM_PROMPT
+
+    async def test_blank_system_prompt_falls_back_to_neutral_default(self):
+        """Task.instruction is min_length=1, so a blank prompt must resolve to the
+        default rather than reaching the model as an empty instruction."""
+        run_output = RunOutput(output="ok", intermediate_outputs=None)
+        factory, _ = _mock_adapter_for(run_output)
+
+        with patch(ADAPTER_PATH, factory):
+            await LlmTool().run(
+                prompt="hi",
+                model="gpt_4o",
+                provider="openai",
+                system_prompt="",
+            )
+
+        task_arg = factory.call_args[0][0]
+        assert task_arg.instruction == _DEFAULT_LLM_SYSTEM_PROMPT
+
+>>>>>>> 721c4941b
     async def test_invalid_schema_raises(self):
         with pytest.raises(ValueError):
             await LlmTool().run(
@@ -269,6 +311,44 @@ class TestLlmJudgeTool:
         )
         assert json.loads(result.output) == expected
 
+<<<<<<< HEAD
+=======
+    async def test_omitted_system_prompt_keeps_the_scoring_default(self):
+        """Scoring is this tool's whole purpose, so it must keep the judge default
+        that `llm` no longer inherits."""
+        run_output = RunOutput(output={"score": "pass"}, intermediate_outputs=None)
+        factory, _ = _mock_adapter_for(run_output)
+        ctx = ToolCallContext(eval_output_schema=VALID_SCORE_SCHEMA)
+
+        with patch(ADAPTER_PATH, factory):
+            await LlmJudgeTool().run(
+                ctx,
+                prompt="judge this",
+                model="gpt_4o",
+                provider="openai",
+            )
+
+        task_arg = factory.call_args[0][0]
+        assert task_arg.instruction == _DEFAULT_JUDGE_SYSTEM_PROMPT
+
+    async def test_system_prompt_passthrough(self):
+        run_output = RunOutput(output={"score": "pass"}, intermediate_outputs=None)
+        factory, _ = _mock_adapter_for(run_output)
+        ctx = ToolCallContext(eval_output_schema=VALID_SCORE_SCHEMA)
+
+        with patch(ADAPTER_PATH, factory):
+            await LlmJudgeTool().run(
+                ctx,
+                prompt="judge this",
+                model="gpt_4o",
+                provider="openai",
+                system_prompt="Be a harsh grader.",
+            )
+
+        task_arg = factory.call_args[0][0]
+        assert task_arg.instruction == "Be a harsh grader."
+
+>>>>>>> 721c4941b
     async def test_invalid_provider_raises(self):
         ctx = ToolCallContext(eval_output_schema=VALID_SCORE_SCHEMA)
         with pytest.raises(ValueError, match="Invalid model provider"):
@@ -299,7 +379,11 @@ class TestRunLlmCall:
             out = await run_llm_call(
                 model="gpt_4o",
                 provider="openai",
+<<<<<<< HEAD
                 system_prompt=None,
+=======
+                system_prompt="Answer plainly.",
+>>>>>>> 721c4941b
                 rendered_prompt="hi",
                 output_json_schema=None,
             )
@@ -309,8 +393,13 @@ class TestRunLlmCall:
         adapter.invoke_returning_run_output.assert_awaited_once_with("hi")
         task_arg = factory.call_args[0][0]
         assert task_arg.output_json_schema is None
+<<<<<<< HEAD
         # Default system prompt applied when none supplied.
         assert task_arg.instruction == _DEFAULT_SYSTEM_PROMPT
+=======
+        # The helper holds no default of its own: what a caller passes is what runs.
+        assert task_arg.instruction == "Answer plainly."
+>>>>>>> 721c4941b
 
     async def test_returns_structured_run_output(self):
         run_output = RunOutput(output={"k": "v"}, intermediate_outputs=None)
@@ -335,7 +424,38 @@ class TestRunLlmCall:
             await run_llm_call(
                 model="gpt_4o",
                 provider="bogus",
+<<<<<<< HEAD
                 system_prompt=None,
                 rendered_prompt="hi",
                 output_json_schema=None,
             )
+=======
+                system_prompt="Answer plainly.",
+                rendered_prompt="hi",
+                output_json_schema=None,
+            )
+
+    async def test_task_is_ephemeral_with_no_children(self):
+        """The throwaway task must declare no child relationships.
+
+        Same guarantee LlmJudgeEval gets from ``_LlmJudgeTask(Task, parent_of={})``:
+        the task is never saved, so leaving child accessors live would let anything
+        that walks children reach for a project directory that does not exist.
+        """
+        run_output = RunOutput(output="free text", intermediate_outputs=None)
+        factory, _ = _mock_adapter_for(run_output)
+
+        with patch(ADAPTER_PATH, factory):
+            await run_llm_call(
+                model="gpt_4o",
+                provider="openai",
+                system_prompt="Answer plainly.",
+                rendered_prompt="hi",
+                output_json_schema=None,
+            )
+
+        task_arg = factory.call_args[0][0]
+        assert type(task_arg)._parent_of == {}
+        assert task_arg.parent is not None
+        assert task_arg.path is None
+>>>>>>> 721c4941b

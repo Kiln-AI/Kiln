@@ -27,7 +27,11 @@ Phased build order. Details live in `functional_spec.md` and `architecture.md` (
 - [x] **Phase 4 — Code-eval bridge integration** (arch §3.2–3.4)
   - `adapters/eval/sandbox_worker.py`: `execute_scorer_bridged` (two-queue, `install_tools_modules`, scores-dict result); remove single-queue `run_scorer`.
   - `CodeEvalAdapter.evaluate`: host `run_bridged_child` with the eval-schema context; delete `_code_eval_execution_lock`.
+<<<<<<< HEAD
   - Tests (real spawns): `tools.llm`/`tools.llm_judge` from `score()`, sync + `async def score` w/ `gather`, allowlist enforcement, timeout mid-call, parallel code evals (regression vs deleted global lock), trust short-circuit, shared-lock/semaphore identity.
+=======
+  - Tests (real spawns): `tools.llm`/`tools.llm_judge` from `score()`, sync + `async def score` w/ `gather`, allowlist enforcement, timeout mid-call, parallel code evals (regression vs deleted global lock), shared-lock/semaphore identity. No trust short-circuit test: the gate is in the API, not the adapter.
+>>>>>>> 721c4941b
 
 - [x] **Phase 5 — UI, examples & schema** (arch §4, §6)
   - Allowlist picker in `code_eval_form.svelte` (reuse code-tool picker); inject `llm`/`llm_judge` into the catalog; scope `llm_judge` to the code-eval context.

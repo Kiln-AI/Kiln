@@ -30,19 +30,34 @@ queue lifecycle centralization inside `run_bridged_child`, and a generalized dep
    - Remove single-queue `run_scorer`; drop `multiprocessing`/`queue`/`start_process_with_light_main` imports.
 
 2. **`adapters/eval/v2_eval_code_eval.py`** — `CodeEvalAdapter.evaluate` hosts the pump:
+<<<<<<< HEAD
    - trust gate unchanged, short-circuits before any spawn.
+=======
+   - No trust check in the adapter: trust is conferred when code is saved or
+     test-run, in the API layer, not on execution (functional_spec.md §6).
+>>>>>>> 721c4941b
    - `inputs = {output, trace, reference_data, task_input}` (existing).
    - `server = NestedToolServer(allowlist=props.tool_allowlist, project=self.target_task.parent,
      task=self.target_task, context=ToolCallContext(allow_saving=False,
      eval_output_schema=BaseEval.build_score_schema(self.eval, allow_float_scores=False)),
+<<<<<<< HEAD
      recorder=None)`.
+=======
+     recorder=`self.tool_call_recorder`)` — set by the test-pane endpoint, None for eval runs.
+>>>>>>> 721c4941b
    - `res = await run_bridged_child(target=execute_scorer_bridged, args=(props.code, inputs),
      timeout_s=float(props.timeout_seconds), server=server)`.
    - `res.timed_out` → RuntimeError timed out; `res.crashed` → RuntimeError crashed;
      `result_msg` has `error` → RuntimeError failed + traceback; else `raw = result_msg["ok"]`,
      require dict, `return V2EvalResult(scores=self._validate_scores(raw))`.
+<<<<<<< HEAD
    - Delete `_code_eval_execution_lock` + the `async with`. Keep grant/revoke/is_code_eval_trusted
      and `_resolve_project_path`/`_validate_scores`.
+=======
+   - Delete `_code_eval_execution_lock` + the `async with`. Keep the module's
+     `add_code_trust`/`has_add_code_trust` helpers (used by the API layer, not here)
+     and `_validate_scores`.
+>>>>>>> 721c4941b
 
 3. **Carry-forward — centralize queue lifecycle in `run_bridged_child` (`tools/sandbox_bridge.py`)**:
    - Move `multiprocessing.get_context("spawn")` + two `Queue()` creations INTO `run_bridged_child`
@@ -72,7 +87,11 @@ queue lifecycle centralization inside `run_bridged_child`, and a generalized dep
   - allowlist enforcement: `tools.<not_allowlisted>` → `ToolNotAllowed`.
   - timeout kills a child mid-LLM-call (parent-side adapter hangs).
   - PARALLEL code evals run concurrently (wall-clock < sum of per-item sleeps) — regression vs deleted lock.
+<<<<<<< HEAD
   - trust short-circuit before spawn (`run_bridged_child` not called).
+=======
+  - (No trust short-circuit test — the adapter has no trust gate to short-circuit.)
+>>>>>>> 721c4941b
   - identity: code tools and code evals share one `run_bridged_child` / `_spawn_lock` / semaphore.
 - `test_code_eval_samples.py` — unchanged, still green (real scorer sample code through the bridge).
 </content>

@@ -3,8 +3,14 @@ from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.eval import TaskRunSplit
+from kiln_ai.datamodel.spec_properties import SpecType
+from kiln_server.custom_errors import connect_custom_errors
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.clarify_spec_output import (
     ClarifySpecOutput,
 )
@@ -37,6 +43,7 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
 )
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.utils.copilot_utils import DatasetTaskRuns
+<<<<<<< HEAD
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task, TaskRun
@@ -45,6 +52,8 @@ from kiln_ai.datamodel.eval import EvalConfigType, EvalDataType, LlmJudgePropert
 from kiln_ai.datamodel.spec_properties import SpecType
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_server.custom_errors import connect_custom_errors
+=======
+>>>>>>> 721c4941b
 
 
 @pytest.fixture
@@ -467,12 +476,23 @@ class TestCreateSpecWithCopilot:
         assert res["definition"] == "The system should respond politely"
         assert res["eval_id"] is not None
 
+<<<<<<< HEAD
         # Verify the dataset runs were dealt with the spec's split tags
         dataset_run_kwargs = mock_create_dataset_task_runs.call_args.kwargs
         assert dataset_run_kwargs["eval_tag"] == "eval_test_spec"
         assert dataset_run_kwargs["train_tag"] == "train_test_spec"
         assert dataset_run_kwargs["val_tag"] == "val_test_spec"
         assert dataset_run_kwargs["golden_tag"] == "eval_golden_test_spec"
+=======
+        # Verify the dataset runs were tagged with the spec's split tags. The factory
+        # returns these so the copilot can tag the runs it generates; a mix-up here puts
+        # generated items in the wrong split's dataset, which nothing downstream notices.
+        dataset_run_kwargs = mock_create_dataset_task_runs.call_args.kwargs
+        assert dataset_run_kwargs["test_tag"] == "test_test_spec"
+        assert dataset_run_kwargs["train_tag"] == "train_test_spec"
+        assert dataset_run_kwargs["val_tag"] == "val_test_spec"
+        assert dataset_run_kwargs["golden_tag"] == "golden_test_spec"
+>>>>>>> 721c4941b
 
         # Verify models were saved
         evals = task.evals()
@@ -480,6 +500,7 @@ class TestCreateSpecWithCopilot:
         assert evals[0].name == "Test Spec"
         assert evals[0].current_config_id is not None
 
+<<<<<<< HEAD
         # The saved judge is a V2 config: typed LlmJudgeProperties with the
         # judge prompt wrapped into a template (single-turn → I/O data blocks),
         # not the legacy llm_as_judge dict.
@@ -499,6 +520,29 @@ class TestCreateSpecWithCopilot:
         saved_eval = json.loads(evals[0].path.read_text())
         assert saved_eval["train_set_filter_id"] == "tag::train_test_spec"
         assert saved_eval["val_set_filter_id"] == "tag::val_test_spec"
+=======
+        assert evals[0].splits == {
+            "test": TaskRunSplit(filter_id="tag::test_test_spec"),
+            "train": TaskRunSplit(filter_id="tag::train_test_spec"),
+            "val": TaskRunSplit(filter_id="tag::val_test_spec"),
+        }
+        # Golden is not a split, so nothing above covers it: if it pointed at the test
+        # tag, eval-config comparison would score against test items instead of golden.
+        assert evals[0].eval_configs_filter_id == "tag::golden_test_spec"
+
+        # Check the raw saved eval file, not the loaded model: what reaches the bytes
+        # is invisible in eval.splits. All three splits go to `splits`, and the
+        # deprecated flat filter fields are written null rather than left for an older
+        # build to read.
+        saved_eval = json.loads(evals[0].path.read_text())
+        assert saved_eval["eval_set_filter_id"] is None
+        assert saved_eval["train_set_filter_id"] is None
+        assert saved_eval["splits"] == {
+            "test": {"source": "task_run", "filter_id": "tag::test_test_spec"},
+            "train": {"source": "task_run", "filter_id": "tag::train_test_spec"},
+            "val": {"source": "task_run", "filter_id": "tag::val_test_spec"},
+        }
+>>>>>>> 721c4941b
 
         specs = task.specs()
         assert len(specs) == 1

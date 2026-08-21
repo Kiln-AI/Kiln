@@ -2,18 +2,13 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import { page } from "$app/stores"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import type {
-    Eval,
-    Task,
-    EvalConfigType,
-    Spec,
-    TaskRunOutput,
-  } from "$lib/types"
+  import type { Eval, Task, EvalConfigType, TaskRunOutput } from "$lib/types"
   import type { components } from "$lib/api_schema"
   import { goto } from "$app/navigation"
   import posthog from "posthog-js"
   import { set_current_eval_config } from "$lib/stores/evals_store"
   import LlmJudgeForm from "$lib/components/eval_types/llm_judge_form.svelte"
+  import JudgeConfigFields from "$lib/components/eval_types/judge_config_fields.svelte"
   import {
     getV2EvalTypeMetadata,
     manualExampleSupport,
@@ -31,8 +26,14 @@
     type EvalTaskInput,
     type TestV2EvalResponse,
   } from "$lib/api/v2_eval_api"
-  import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
+  import { validate_result_shape } from "$lib/utils/eval_types/test_run_shape"
+  import { select_default_test_run } from "$lib/utils/eval_types/test_run_selection"
+  import {
+    parse_reference_data,
+    parse_reference_keys,
+  } from "$lib/utils/eval_types/reference_data_input"
   import Dialog from "$lib/ui/dialog.svelte"
+  import TrustCodeDialog from "$lib/components/eval_types/trust_code_dialog.svelte"
   import { onMount } from "svelte"
   import EvalTypeIntro from "$lib/components/eval_types/eval_type_intro.svelte"
   import EvalTestRunPane from "$lib/components/eval_types/test_run/eval_test_run_pane.svelte"
@@ -40,11 +41,11 @@
     uses_reference_data_llm_judge,
     uses_reference_data_code_eval,
   } from "$lib/utils/eval_types/reference_data_gate"
+  import { SHOW_REFERENCE_DATA_UI } from "$lib/utils/eval_types/reference_data_ui"
 
   export let eval_config_type: V2EvalType
   export let evaluator: Eval
   export let task: Task
-  export let spec: Spec | null
   export let project_id: string
   export let task_id: string
   export let eval_id: string
@@ -59,6 +60,29 @@
   let llm_selected_algo: EvalConfigType | undefined = undefined
   let llm_judge_prompt: string | undefined = undefined
   let llm_system_prompt: string | undefined = undefined
+  // The Evaluation Instructions steps for evals with no derivable prompt.
+  // Create-only today: this builder is only reached from create_eval_config,
+  // so there's no persisted value to load. If a judge-edit path is ever
+  // added, this must be initialized from the config's judge_instructions.
+  let llm_judge_instructions: string[] = [""]
+  // Filled by LlmJudgeForm from the default-prompt endpoint. The server decides what a
+  // judge for this eval requires; the Test Judge pane offers a place to supply it
+  // rather than re-deriving the rule from the prompt's text.
+  let llm_server_reference_keys: string[] = []
+  let llm_default_prompt_unavailable = false
+
+  $: judge_reference_signals = {
+    prompt_template: llm_judge_prompt ?? "",
+    server_reference_keys: llm_server_reference_keys,
+    prompt_unavailable: llm_default_prompt_unavailable,
+  }
+
+  function cleaned_judge_instructions(): string[] | null {
+    const cleaned = llm_judge_instructions
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+    return cleaned.length > 0 ? cleaned : null
+  }
 
   // Code eval form binding — tracks code edits reactively for the save gate.
   // Starts undefined so the child's initial value flows up via bind:.
@@ -91,7 +115,7 @@
   let test_abort_controller: AbortController | null = null
 
   // Trust, confirm, and test-required modal refs
-  let trust_dialog: Dialog
+  let trust_dialog: TrustCodeDialog
   let confirm_save_dialog: Dialog
   let test_required_dialog: Dialog
   let form_container: FormContainer
@@ -102,23 +126,6 @@
   // Reference data candidate keys for dropdown (parsed from test run panel)
   let reference_candidate_keys: string[] = []
   $: reference_candidate_keys = parse_reference_keys(advanced_reference_data)
-
-  function parse_reference_keys(data: string): string[] {
-    if (!data.trim()) return []
-    try {
-      const parsed = JSON.parse(data.trim())
-      if (
-        parsed === null ||
-        typeof parsed !== "object" ||
-        Array.isArray(parsed)
-      ) {
-        return []
-      }
-      return Object.keys(parsed)
-    } catch {
-      return []
-    }
-  }
 
   // Whether the current config uses reference_data (drives the test-before-save gate).
   // Both llm_judge_prompt and code_eval_code are direct reactive dependencies so
@@ -134,6 +141,13 @@
     judge_prompt: string | undefined,
     code: string | undefined,
   ): boolean {
+    // While reference data is hidden from the UI there's no way to supply it in
+    // the Test Judge pane, so the test-before-save gate can never be satisfied.
+    // Report "unused" to keep the normal save flow, even if the user hand-wrote
+    // a reference_data lookup into their prompt or code.
+    if (!SHOW_REFERENCE_DATA_UI) {
+      return false
+    }
     if (type === "llm_judge") {
       return uses_reference_data_llm_judge(judge_prompt ?? "")
     }
@@ -159,6 +173,7 @@
       eval_config_type,
       llm_judge_prompt,
       code_eval_code,
+      llm_judge_instructions,
     )
     return (
       test_passed_snapshot.prompt_or_code === current_prompt_or_code &&
@@ -170,8 +185,13 @@
     type: V2EvalType,
     judge_prompt: string | undefined,
     code: string | undefined,
+    judge_instructions: string[],
   ): string {
-    if (type === "llm_judge") return judge_prompt ?? ""
+    if (type === "llm_judge") {
+      // Instructions are part of the effective prompt (bound via Jinja), so
+      // edits to them invalidate a passing test just like prompt edits.
+      return (judge_prompt ?? "") + "\n" + JSON.stringify(judge_instructions)
+    }
     if (type === "code_eval") return code ?? ""
     return ""
   }
@@ -229,7 +249,7 @@
       runs_loading = true
       runs_error = null
       available_runs = await fetchTaskRuns(project_id, task_id)
-      selected_task_run = available_runs[0] ?? null
+      selected_task_run = select_default_test_run(available_runs)
     } catch (e) {
       runs_error = createKilnError(e)
     } finally {
@@ -254,54 +274,16 @@
       }[]
     }
 
-    if (advanced_reference_data.trim()) {
-      try {
-        const parsed = JSON.parse(advanced_reference_data.trim())
-        if (
-          parsed === null ||
-          typeof parsed !== "object" ||
-          Array.isArray(parsed)
-        ) {
-          test_error = createKilnError(
-            new Error(
-              "Reference data must be a JSON object (not null, array, string, or number).",
-            ),
-          )
-          return null
-        }
-        eval_input.reference_data = parsed
-      } catch {
-        test_error = createKilnError(
-          new Error("Reference data must be valid JSON (object)."),
-        )
-        return null
-      }
+    const reference = parse_reference_data(advanced_reference_data)
+    if (!reference.ok) {
+      test_error = createKilnError(new Error(reference.error))
+      return null
+    }
+    if (reference.data) {
+      eval_input.reference_data = reference.data
     }
 
     return eval_input
-  }
-
-  function validate_result_shape(scores: Record<string, number> | undefined): {
-    valid: boolean
-    message: string | null
-  } {
-    if (!scores || !evaluator?.output_scores?.length) {
-      return { valid: true, message: null }
-    }
-
-    const expected_keys = evaluator.output_scores.map((s) =>
-      string_to_json_key(s.name),
-    )
-    const returned_keys = Object.keys(scores)
-    const missing = expected_keys.filter((k) => !returned_keys.includes(k))
-
-    if (missing.length > 0) {
-      return {
-        valid: false,
-        message: `Missing expected scores: ${missing.join(", ")}. The eval returned: ${returned_keys.join(", ") || "(none)"}`,
-      }
-    }
-    return { valid: true, message: null }
   }
 
   async function run_test() {
@@ -356,6 +338,7 @@
             g_eval,
             judge_prompt: llm_judge_prompt ?? null,
             system_prompt: llm_system_prompt ?? null,
+            judge_instructions: cleaned_judge_instructions(),
           },
           eval_input,
           controller.signal,
@@ -387,7 +370,10 @@
       test_result = result
 
       if (result.scores && !result.skipped_reason) {
-        const shape = validate_result_shape(result.scores)
+        const shape = validate_result_shape(
+          result.scores,
+          evaluator?.output_scores,
+        )
         test_has_valid_run = shape.valid
         test_shape_warning = shape.message
 
@@ -402,6 +388,7 @@
               eval_config_type,
               llm_judge_prompt,
               code_eval_code,
+              llm_judge_instructions,
             ),
             reference_data: advanced_reference_data,
           }
@@ -502,11 +489,6 @@
 
       let data: components["schemas"]["EvalConfig"]
 
-      // Compute reference_keys from on-page reference data for types that use it.
-      const save_reference_keys = config_uses_reference_data
-        ? reference_candidate_keys
-        : []
-
       if (is_llm_judge) {
         if (!llm_model_name || !llm_provider_name || !llm_selected_algo) {
           throw new Error("No model or algorithm selected")
@@ -519,7 +501,7 @@
           g_eval,
           judge_prompt: llm_judge_prompt ?? null,
           system_prompt: llm_system_prompt ?? null,
-          reference_keys: save_reference_keys,
+          judge_instructions: cleaned_judge_instructions(),
         })
       } else if (eval_config_type && v2FormComponent) {
         if (v2FormComponent.validate) {
@@ -533,7 +515,13 @@
           unknown
         >
         if (eval_config_type === "code_eval") {
-          properties.reference_keys = save_reference_keys
+          // code_eval is the one type whose reference_keys the client owns: they name
+          // what the user's scoring code reads, which only this page knows. An
+          // llm_judge's are derived server-side from the eval, so its request above
+          // carries none.
+          properties.reference_keys = config_uses_reference_data
+            ? reference_candidate_keys
+            : []
         }
         data = await createEvalConfig(project_id, task_id, eval_id, {
           type: "v2",
@@ -648,7 +636,11 @@
             bind:selected_algo={llm_selected_algo}
             bind:judge_prompt={llm_judge_prompt}
             bind:system_prompt={llm_system_prompt}
+            bind:judge_instructions={llm_judge_instructions}
+            bind:default_reference_keys={llm_server_reference_keys}
+            bind:default_prompt_unavailable={llm_default_prompt_unavailable}
           />
+<<<<<<< HEAD
         {:else if eval_config_type === "code_eval" && metadata}
           <svelte:component
             this={metadata.createFormComponent}
@@ -660,28 +652,18 @@
         {:else if (eval_config_type === "exact_match" || eval_config_type === "contains" || eval_config_type === "set_check") && metadata}
           <svelte:component
             this={metadata.createFormComponent}
+=======
+        {:else}
+          <JudgeConfigFields
+>>>>>>> 721c4941b
             bind:this={v2FormComponentRef}
+            {eval_config_type}
+            {project_id}
             {reference_candidate_keys}
+            output_scores={evaluator?.output_scores}
+            bind:code_string={code_eval_code}
             bind:required_reference_fields
             bind:output_value_expression={active_value_expression}
-          />
-        {:else if eval_config_type === "pattern_match" && metadata}
-          <svelte:component
-            this={metadata.createFormComponent}
-            bind:this={v2FormComponentRef}
-            bind:output_value_expression={active_value_expression}
-          />
-        {:else if eval_config_type === "tool_call_check" && metadata}
-          <svelte:component
-            this={metadata.createFormComponent}
-            bind:this={v2FormComponentRef}
-            {project_id}
-            {task_id}
-          />
-        {:else if metadata}
-          <svelte:component
-            this={metadata.createFormComponent}
-            bind:this={v2FormComponentRef}
           />
         {/if}
 
@@ -724,6 +706,7 @@
       {test_has_valid_run}
       {is_llm_judge}
       {can_submit_llm}
+      {judge_reference_signals}
       manual_example_supported={manual_example_support.supported}
       on:select={(e) => select_task_run(e.detail)}
       on:run={run_test}
@@ -734,39 +717,7 @@
   </div>
 </div>
 
-<Dialog
-  bind:this={trust_dialog}
-  title="Trust Code and Project?"
-  action_buttons={[
-    {
-      label: "I Trust this Code",
-      isWarning: true,
-      asyncAction: grant_trust_and_retry,
-    },
-  ]}
->
-  <div class="flex flex-row items-start gap-4">
-    <!-- exclaim icon from warning.svelte (keep in sync) -->
-    <svg
-      class="w-10 h-10 text-warning flex-none"
-      fill="currentColor"
-      viewBox="0 0 256 256"
-      xmlns="http://www.w3.org/2000/svg"
-      data-testid="trust-warning-icon"
-    >
-      <path
-        d="M128,20.00012a108,108,0,1,0,108,108A108.12217,108.12217,0,0,0,128,20.00012Zm0,192a84,84,0,1,1,84-84A84.0953,84.0953,0,0,1,128,212.00012Zm-12-80v-52a12,12,0,1,1,24,0v52a12,12,0,1,1-24,0Zm28,40a16,16,0,1,1-16-16A16.018,16.018,0,0,1,144,172.00012Z"
-      />
-    </svg>
-    <div class="flex flex-col gap-2 text-sm text-left">
-      <p>
-        This project wants to run Python code on your machine. Only proceed if
-        you trust the eval code and this project.
-      </p>
-      <p class="font-bold">Never paste code from a stranger or the internet.</p>
-    </div>
-  </div>
-</Dialog>
+<TrustCodeDialog bind:this={trust_dialog} on_trust={grant_trust_and_retry} />
 
 <Dialog
   bind:this={confirm_save_dialog}

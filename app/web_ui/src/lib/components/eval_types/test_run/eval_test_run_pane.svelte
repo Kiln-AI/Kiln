@@ -8,10 +8,14 @@
   import ReferenceDataField from "./reference_data_field.svelte"
   import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import ToolCallLogTable from "$lib/components/tool_calls/tool_call_log_table.svelte"
   import {
     referenceDataUsageMode,
+    NO_JUDGE_PROMPT,
+    type JudgeReferenceSignals,
     type V2EvalType,
   } from "$lib/utils/eval_types/registry"
+  import { reference_keys_in_llm_judge_prompt } from "$lib/utils/eval_types/reference_data_gate"
 
   export let project_id: string
   export let task_id: string
@@ -31,8 +35,32 @@
   export let is_llm_judge: boolean = false
   export let can_submit_llm: boolean = false
   export let manual_example_supported: boolean = true
+  /**
+   * What is known about the llm_judge being drafted: its prompt, the reference keys
+   * the server will require of it, and whether either is known at all. Decides whether
+   * this pane offers a reference-data input — see `referenceDataUsageMode`.
+   * `NO_JUDGE_PROMPT` for judge types that have no prompt.
+   */
+  export let judge_reference_signals: JudgeReferenceSignals = NO_JUDGE_PROMPT
 
-  $: ref_data_mode = referenceDataUsageMode(eval_config_type)
+  $: ref_data_mode = referenceDataUsageMode(
+    eval_config_type,
+    judge_reference_signals,
+  )
+
+  // What the server will require, and what the prompt reads on top of that. Kept apart
+  // because only the first carries a guaranteed skip: a missing required key is refused
+  // before the model call, while a prompt-only lookup may render around it.
+  $: judge_required_keys =
+    ref_data_mode === "llm_judge"
+      ? judge_reference_signals.server_reference_keys
+      : []
+  $: judge_prompt_keys =
+    ref_data_mode === "llm_judge"
+      ? reference_keys_in_llm_judge_prompt(
+          judge_reference_signals.prompt_template,
+        ).filter((key) => !judge_required_keys.includes(key))
+      : []
 
   let browse_dialog: TestRunBrowseDialog
   let see_all_dialog: SeeAllDialog
@@ -136,6 +164,8 @@
       <ReferenceDataField
         {reference_data}
         {required_reference_fields}
+        {judge_required_keys}
+        {judge_prompt_keys}
         usage_mode={ref_data_mode}
         on:change={(e) => dispatch("updateReferenceData", e.detail)}
       />
@@ -180,6 +210,12 @@
         </div>
       </div>
     {/if}
+
+    <ToolCallLogTable
+      entries={test_result.tool_call_log ?? []}
+      title="Internal Tool Calls"
+      tooltip_text="Calls the scorer code made to other tools. These run in the parent process, not the sandbox, and are billed per eval item."
+    />
 
     {#if test_error}
       <div data-testid="test-error">
@@ -226,6 +262,8 @@
       <ReferenceDataField
         {reference_data}
         {required_reference_fields}
+        {judge_required_keys}
+        {judge_prompt_keys}
         usage_mode={ref_data_mode}
         on:change={(e) => dispatch("updateReferenceData", e.detail)}
       />

@@ -83,7 +83,6 @@
         eval_config_type={valid_type}
         {evaluator}
         {task}
-        {spec}
         {project_id}
         {task_id}
         {eval_id}

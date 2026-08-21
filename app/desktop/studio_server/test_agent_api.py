@@ -2,21 +2,6 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from app.desktop.studio_server.agent_api import (
-    _dataset_stats,
-    _docs_stats,
-    _fine_tunes_block,
-    _prompt_optimization_jobs_block,
-    _prompts_block,
-    _run_configs_block,
-    _search_tools_block,
-    _skills_block,
-    _specs_block,
-    _tool_servers_block,
-    _top_n_by_recency,
-    connect_agent_api,
-)
-from kiln_ai.utils.formatting import AGENT_TRUNCATION_SENTINEL
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import (
@@ -49,8 +34,23 @@ from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties
 from kiln_ai.datamodel.task import TaskRunConfig
+from kiln_ai.utils.formatting import AGENT_TRUNCATION_SENTINEL
 from kiln_server.custom_errors import connect_custom_errors
 
+from app.desktop.studio_server.agent_api import (
+    _dataset_stats,
+    _docs_stats,
+    _fine_tunes_block,
+    _prompt_optimization_jobs_block,
+    _prompts_block,
+    _run_configs_block,
+    _search_tools_block,
+    _skills_block,
+    _specs_block,
+    _tool_servers_block,
+    _top_n_by_recency,
+    connect_agent_api,
+)
 
 # --- Fixtures ---
 
