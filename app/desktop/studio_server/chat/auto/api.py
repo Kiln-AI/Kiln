@@ -3,6 +3,12 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, AsyncGenerator
 
+from fastapi import FastAPI, HTTPException, Path, Query, Response
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.git_sync_decorators import no_write_lock
+from kiln_server.utils.agent_checks.policy import DENY_AGENT
+from pydantic import BaseModel, Field
+
 from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
 from app.desktop.studio_server.chat.routes import (
     _build_upstream_headers,
@@ -13,11 +19,6 @@ from app.desktop.studio_server.chat.stream_session import (
     ToolCallInfo,
 )
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
-from fastapi import FastAPI, HTTPException, Path, Query, Response
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
-from kiln_server.git_sync_decorators import no_write_lock
-from kiln_server.utils.agent_checks.policy import DENY_AGENT
-from pydantic import BaseModel, Field
 
 from .events import KeepalivePing, iter_with_keepalive
 from .models import AutoChatSeed, AutoRunStatus, InboundMessage

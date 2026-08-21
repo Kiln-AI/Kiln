@@ -7,6 +7,16 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable, Literal
 
 import httpx
+from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
+from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import (
+    DISABLE_AUTO_MODE_TOOL_NAME,
+)
+from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
+    ENABLE_AUTO_MODE_TOOL_NAME,
+)
+from kiln_ai.tools.tool_registry import tool_from_id
+from pydantic import BaseModel, ConfigDict, Field
+
 from app.desktop.studio_server.chat.constants import (
     CHAT_TIMEOUT,
     DENIED_TOOL_OUTPUT,
@@ -24,15 +34,6 @@ from app.desktop.studio_server.chat.tool_metadata import (
     tool_input_executor_is_server,
     tool_requires_user_approval,
 )
-from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
-from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import (
-    DISABLE_AUTO_MODE_TOOL_NAME,
-)
-from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
-    ENABLE_AUTO_MODE_TOOL_NAME,
-)
-from kiln_ai.tools.tool_registry import tool_from_id
-from pydantic import BaseModel, ConfigDict, Field
 
 # The tool result the app server resolves an intercepted disable_auto_mode call
 # to, fed back to the backend so it continues interactively.
@@ -761,6 +762,6 @@ def _build_openai_tool_continuation(
         }
         if tool_calls:
             assistant_msg["tool_calls"] = tool_calls
-        new_messages = prior_messages + [assistant_msg] + tool_messages
+        new_messages = [*prior_messages, assistant_msg, *tool_messages]
 
     return {**original_body, "messages": new_messages}

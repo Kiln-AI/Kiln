@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "268706842206",
+  "created_at": "2026-08-17T21:32:57.392404Z",
+  "created_by": "root",
+  "dataset_id": "282639728982",
+  "task_run_config_id": "293284619675",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"Invoice needs our VAT number added\", \"body\": \"Our finance team cannot process invoice INV-20418 because it is missing our VAT registration number. Can you add it and reissue? I have added the number to our billing profile already.\", \"customer_plan\": \"pro\"}",
+  "output": "{\"team\": \"billing\", \"priority\": \"medium\", \"needs_human_review\": false, \"summary\": \"Reissue invoice INV-20418 with the customer's VAT number, which they have already added to their billing profile.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output is correct.\n\n- The ticket is a routine billing request: the customer wants their VAT number added to an invoice and the invoice reissued. No dispute, chargeback threat, security concern, privacy issue, or legal escalation is present.\n- `needs_human_review: false` is appropriate because this is an ordinary billing request.\n- `team: \"billing\"` is appropriate.\n- `priority: \"medium\"` is reasonable for a non-urgent billing adjustment.\n- The summary is one sentence and accurately tells the next agent what to do.\n\nThe model exhibits the desired behavior.",
+    "reasoning": "1.  The user asks to \"return a final result\" after the analysis. The analysis concluded the model's output is correct/exhibits desired behavior.\n2.  The expected final result should be a pass/fail determination based on the evaluation steps.\n3.  The output says \"The model exhibits the desired behavior.\" So the final result should be \"PASS\" or similar."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 598,
+    "output_tokens": 317,
+    "total_tokens": 915,
+    "cost": 0.00017248,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 8386
+  },
+  "model_type": "eval_run"
+}

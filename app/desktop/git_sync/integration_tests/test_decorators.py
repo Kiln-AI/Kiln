@@ -12,6 +12,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
+from kiln_server.git_sync_decorators import no_write_lock, write_lock
 
 from app.desktop.git_sync.integration_tests.conftest import (
     PROJECT_ID,
@@ -23,7 +24,6 @@ from app.desktop.git_sync.integration_tests.conftest import (
     mock_git_sync_config,
 )
 from app.desktop.git_sync.middleware import GitSyncMiddleware
-from kiln_server.git_sync_decorators import no_write_lock, write_lock
 
 
 class TestWriteLockDecoratorOnGet:
@@ -63,7 +63,7 @@ class TestWriteLockDecoratorOnGet:
     @pytest.mark.asyncio
     async def test_write_lock_get_file_committed(self, git_repos):
         """File written by @write_lock GET appears in commit."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         config = auto_config(str(local_path))
 
         app = FastAPI()
@@ -96,7 +96,7 @@ class TestNoWriteLockDecoratorOnPost:
     @pytest.mark.asyncio
     async def test_no_write_lock_post_no_commit(self, git_repos):
         """POST with @no_write_lock does not auto-commit."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         config = auto_config(str(local_path))
 
         app = FastAPI()
@@ -130,7 +130,7 @@ class TestStreamingResponseUnderLock:
     @pytest.mark.asyncio
     async def test_streaming_under_lock_returns_500(self, git_repos):
         """SSE response under write lock should return 500 with @no_write_lock hint."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         config = auto_config(str(local_path))
 
         app = FastAPI()
@@ -162,7 +162,7 @@ class TestLongLockHoldWarning:
     @pytest.mark.asyncio
     async def test_long_lock_hold_warning(self, git_repos, caplog):
         """Warning is logged for slow POST endpoints."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         config = auto_config(str(local_path))
 
         app = FastAPI()

@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "172045944215",
+  "created_at": "2026-08-17T21:32:58.987164Z",
+  "created_by": "root",
+  "dataset_id": "297010025377",
+  "task_run_config_id": "293284619675",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"Invoice charged twice this month\", \"body\": \"We were billed twice for our June subscription — two identical charges of $480 on the same card, three minutes apart. Please refund one of them and confirm which invoice is the duplicate.\", \"customer_plan\": \"enterprise\"}",
+  "output": "{\"team\": \"billing\", \"priority\": \"high\", \"needs_human_review\": true, \"summary\": \"Customer reports two identical $480 charges three minutes apart on their enterprise plan and requests a refund of the duplicate plus confirmation of which invoice is duplicate; verify charges and process refund with human oversight before replying.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output passes.\n\n- It correctly identifies the ticket as a billing issue and routes it to the billing team.\n- The ticket involves a duplicate charge and a refund request, which is a billing dispute, so setting `needs_human_review: true` is appropriate and conservative.\n- The summary clearly explains the issue and what needs verification before responding.\n- The human-review flag is based on the billing dispute, not just on urgency, so it aligns with the desired behaviour.\n\nFinal: pass.",
+    "reasoning": "We need to produce final answer. We already reasoned: pass. Need final result concise."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 653,
+    "output_tokens": 265,
+    "total_tokens": 918,
+    "cost": 0.00016562,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 7633
+  },
+  "model_type": "eval_run"
+}
