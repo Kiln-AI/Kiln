@@ -42,6 +42,26 @@ The sandbox keeps its data in `app/web_ui/.agent_dev_home` and is seeded from a
 committed fixture project, so the screens have content instead of an onboarding
 wizard. It never touches real Kiln projects.
 
+## A provider may be connected — spend it carefully
+
+If `OPENROUTER_QA_KEY` is set in the environment, seeding writes it into the
+sandbox's settings and the app comes up with OpenRouter connected, so live model
+calls work. `start` reports it when it is there — assume nothing is connected
+until it says so.
+
+When it is connected, it is a real key on a hard, low limit — a runaway loop hits
+it and the next person gets nothing. Use it when a live call is the only way to
+check what you are working on, and:
+
+- **Default to GPT-5.6 Luna** (`openai/gpt-5.6-luna`). Choose another model only
+  when the model itself is what you are testing.
+- Keep every run minimal — one sample, one eval row, one query.
+- Never aim a paid test suite at it (`pytest --runpaid` / `--runprerelease` read
+  `OPENROUTER_API_KEY`, which is deliberately a different variable).
+- Treat a 402 or 429 as budget exhausted: stop and report it, don't retry.
+
+[references/seeded_project.md](references/seeded_project.md) has the details.
+
 ## Three rules that will cost you an afternoon otherwise
 
 **Never trust the first frame.** A screenshot taken right after `open` or `goto` is
@@ -70,6 +90,6 @@ Load only what the task needs.
 |---|---|
 | [references/driving_the_ui.md](references/driving_the_ui.md) | The command surface, and the locator traps in Kiln's UI specifically — duplicate labels, dropdowns, collapsed sections |
 | [references/e2e_suite.md](references/e2e_suite.md) | Running, reading, or debugging `npm run tests:e2e` |
-| [references/seeded_project.md](references/seeded_project.md) | What the fixture contains, screen by screen. Check here before concluding a screen is broken because it came up empty |
-| [references/search_tool.md](references/search_tool.md) | The Docs & Search / RAG part of the fixture, and what a sandbox with no API key can do with it |
+| [references/seeded_project.md](references/seeded_project.md) | What the fixture contains, screen by screen, and whether a model provider is connected. Check here before concluding a screen is broken because it came up empty |
+| [references/search_tool.md](references/search_tool.md) | The Docs & Search / RAG part of the fixture, and what a sandbox with no API key can still do with it |
 | [references/extending_the_fixture.md](references/extending_the_fixture.md) | `reset` and `snapshot` — changing what future sessions start from |

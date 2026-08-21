@@ -51,14 +51,35 @@ fix), the sandbox was seeded from an older fixture (`reset`), or the committed
 fixture has gone stale against this branch's datamodel (re-author through the UI,
 then `snapshot`).
 
-## No provider is connected
+## A provider may or may not be connected
 
-A seeded sandbox has no API keys, so you cannot *execute* a new run in it. Seeded
-data is just files the screens read, so the pages render it with nothing connected
-— but if the feature you are working on needs a live model call, you have to
-connect a provider by hand through the UI first.
+Seeded data is just files the screens read, so every page renders it whether or
+not a provider is connected. *Executing* anything — a new run, a data gen, an
+eval, a search query — needs a live model call, and that depends on the sandbox.
 
-The search tool is the exception in one direction and not the other: its index
-rebuilds with no key, and searching it needs one. See
-[search_tool.md](search_tool.md).
+`playwright_server.sh start` tells you which sandbox you have. If it says
+OpenRouter is connected, it is: the seed wrote a key from `OPENROUTER_QA_KEY` into
+this sandbox's `settings.yaml`, which is the same setting the app's Settings
+screen writes, so calls work exactly as a user's would. If it says nothing about
+OpenRouter, nothing is connected and you either connect a provider by hand through
+the UI or stop at the gate.
+
+**When a key is there, it is a real key spending real money**, against a hard
+low limit that a runaway loop will hit. Use it when a live call is the only way to
+check the thing you are working on, and keep it cheap:
+
+- **Default to GPT-5.6 Luna** (`openai/gpt-5.6-luna` on OpenRouter). Pick another
+  model only when the thing under test is about that model.
+- Run the smallest thing that answers the question — one sample, not fifty; one
+  eval row, not a full sweep.
+- Never point a paid test suite at it: `pytest --runpaid` and `--runprerelease`
+  read `OPENROUTER_API_KEY`, which is deliberately not the variable this uses.
+- A 402 or a 429 means the budget is gone. Stop and say so — retrying is how a
+  small limit becomes a blocked afternoon for everyone.
+
+`reset` deletes the sandbox and reseeds it, which re-reads `OPENROUTER_QA_KEY`; a
+sandbox seeded before that variable existed keeps having no provider until then.
+
+The search tool has its own split: the index rebuilds with no key, and searching
+it needs one. See [search_tool.md](search_tool.md).
 

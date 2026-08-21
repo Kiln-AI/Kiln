@@ -56,6 +56,20 @@ SEED_STAMP="$RUN_DIR/.playwright_seed"
 SETTINGS_FILE="$RUN_DIR/.kiln_ai/settings.yaml"
 SEED_CONTACT="playwright@example.com"
 
+# An OpenRouter key seeded into the sandbox's settings, so the app comes up with a
+# provider connected and live model calls work. Optional: without it the sandbox
+# behaves exactly as it always has, with nothing connected.
+#
+# Deliberately not named OPENROUTER_API_KEY. That name is Config's env fallback for
+# open_router_api_key (libs/core/kiln_ai/utils/config.py) and litellm's too, so
+# under it every `pytest --runpaid` run and every stray script on the machine would
+# start spending against the key without anyone choosing to. Under this name the
+# only thing that spends it is a sandbox seeded on purpose.
+#
+# See .config/utils/claude_cloud_setup.md for where it comes from and the spending
+# limit it must have.
+OPENROUTER_KEY="${OPENROUTER_QA_KEY:-}"
+
 usage() {
   cat <<EOF
 Usage: playwright_server.sh [start|stop|status|reset|snapshot]
@@ -72,6 +86,11 @@ Usage: playwright_server.sh [start|stop|status|reset|snapshot]
 Frontend $FRONTEND_URL, backend $BACKEND_URL. Override the ports with
 KILN_DEV_FRONTEND_PORT / KILN_DEV_BACKEND_PORT, and the data directory with
 KILN_DEV_HOME (default $WEB_UI_DIR/.agent_dev_home).
+
+If OPENROUTER_QA_KEY is set when a sandbox is seeded, it is written into that
+sandbox's settings as a connected OpenRouter provider, and live model calls work.
+Without it nothing is connected. Every call spends real money against a key that
+must carry a hard limit — see .config/utils/claude_cloud_setup.md.
 EOF
 }
 
@@ -244,17 +263,35 @@ is_seeded() { [ -f "$SEED_STAMP" ]; }
 # `#` or `:`, either of which would change the meaning of a plain scalar.
 #
 # user_type + personal_use_contact is what clears the app's registration check.
+#
+# open_router_api_key is the same setting the Settings UI writes when you connect
+# OpenRouter by hand — connect_openrouter() sets that one value and nothing else —
+# so a sandbox seeded with it is indistinguishable from one where a provider was
+# connected through the app.
 write_seed_settings() {
   # $1 = path to project.kiln
-  local escaped
+  local escaped key_line=""
   escaped="$(printf '%s' "$1" | sed "s/'/''/g")"
+  if [ -n "$OPENROUTER_KEY" ]; then
+    key_line="open_router_api_key: '$(printf '%s' "$OPENROUTER_KEY" | sed "s/'/''/g")'"
+  fi
   mkdir -p "$(dirname "$SETTINGS_FILE")" || return 1
+  # Created empty and made private *before* the key goes in, so it is never briefly
+  # readable by anyone else on the machine. chmod rather than a umask, because the
+  # file may already exist from a seed that failed after this point, and truncating
+  # an existing file keeps whatever mode it already had.
+  : >"$SETTINGS_FILE" || return 1
+  chmod 600 "$SETTINGS_FILE" 2>/dev/null
   cat >"$SETTINGS_FILE" <<EOF
 projects:
 - '$escaped'
 user_type: personal
 personal_use_contact: $SEED_CONTACT
 EOF
+  # Appended rather than interpolated as an empty line, so a sandbox with no key
+  # gets the same file it has always had.
+  [ -n "$key_line" ] && echo "$key_line" >>"$SETTINGS_FILE"
+  return 0
 }
 
 # Seeding never fails the server: an agent that asked for a browser gets one, and a
@@ -430,11 +467,39 @@ print_seed_hint() {
   fi
 }
 
+# Whether this sandbox can make a live model call, said out loud on every start.
+# An agent that has to infer it ends up either reporting a missing provider as a
+# bug or assuming a key it does not have, and both cost a whole test lane.
+#
+# Reads settings.yaml rather than the environment, because the file is the answer:
+# the app writes a key there when someone connects a provider through Settings, and
+# the seed only writes one on the start that seeded. Which is also the one case
+# this cannot fix silently — a sandbox seeded before OPENROUTER_QA_KEY was set
+# keeps what it was seeded with, and rewriting the file behind the app's back would
+# throw away a key pasted in by hand.
+report_openrouter_key() {
+  if grep -q '^open_router_api_key:' "$SETTINGS_FILE" 2>/dev/null; then
+    echo "  OpenRouter is connected in this sandbox — live model calls will work,"
+    echo "  and will spend real money against a key with a hard limit on it. Prefer"
+    echo "  GPT-5.6 Luna and keep runs small. See .agents/skills/playwright/."
+    echo ""
+    return 0
+  fi
+
+  if [ -n "$OPENROUTER_KEY" ]; then
+    echo "  OPENROUTER_QA_KEY is set, but this sandbox was seeded without it, so no"
+    echo "  provider is connected. 'reset' reseeds with it (deleting this sandbox),"
+    echo "  or connect OpenRouter through the app's Settings."
+    echo ""
+  fi
+}
+
 # Printed once both servers answer, from the cold-start path and the
 # already-running path alike. They were drifting apart: an agent that ran `start`
 # twice got a different set of instructions the second time.
 print_ready_hints() {
   print_seed_hint
+  report_openrouter_key
   echo "    .agents/scripts/playwright_server.sh stop"
   echo ""
 }
