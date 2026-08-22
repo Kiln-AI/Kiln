@@ -7,6 +7,7 @@ as the source of truth, not merge dates -- a PR merged the same day a tag was cu
 may already be in that release.
 """
 
+import argparse
 import concurrent.futures
 import json
 import re
@@ -105,8 +106,54 @@ def fetch_pr(num: int) -> tuple[int, dict | None, str]:
         return num, None, str(e)
 
 
+def resolve_base_tag(args: argparse.Namespace) -> str:
+    """Pick the tag to compare against, honoring --since / --pre-release overrides.
+
+    Default: the newest tag reachable from HEAD (`git describe`). But when the newest
+    tag is a just-cut pre-release (main is already even with it), that baseline yields
+    an empty range -- so `--pre-release` steps back one tag to recap what went INTO the
+    pre-release, and `--since TAG` lets the caller name the baseline explicitly.
+    """
+    latest = run(["git", "describe", "--tags", "--abbrev=0"])
+    if args.since:
+        check = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", f"{args.since}^{{commit}}"],
+            capture_output=True,
+            text=True,
+        )
+        if check.returncode != 0:
+            sys.stderr.write(f"ERROR: --since tag {args.since!r} does not exist.\n")
+            sys.exit(1)
+        return args.since
+    if args.pre_release:
+        # The newest tag is a pre-release still being QA'd; baseline is the tag before
+        # it, so the range covers exactly what the pre-release contains.
+        prior = run(["git", "describe", "--tags", "--abbrev=0", f"{latest}^"])
+        sys.stderr.write(
+            f"Pre-release mode: newest tag {latest} treated as the release being "
+            f"QA'd; comparing against the prior tag {prior}.\n"
+        )
+        return prior
+    return latest
+
+
 def main() -> None:
     """Compute the unreleased change set and print it as JSON to stdout."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--pre-release",
+        action="store_true",
+        help="Treat the newest tag as a just-cut pre-release and compare against the "
+        "tag before it (recaps what the pre-release contains).",
+    )
+    group.add_argument(
+        "--since",
+        metavar="TAG",
+        help="Explicit base tag to compare against, overriding auto-detection.",
+    )
+    args = parser.parse_args()
+
     require_gh()
 
     # Refresh tags + origin/main. A fetch failure isn't fatal (offline runs with
@@ -121,7 +168,7 @@ def main() -> None:
             "WARNING: 'git fetch' failed -- digest may be based on stale refs/tags.\n"
         )
 
-    last_tag = run(["git", "describe", "--tags", "--abbrev=0"])
+    last_tag = resolve_base_tag(args)
 
     # Prefer origin/main; fall back to local main if there's no remote-tracking ref.
     head_ref = "origin/main"
