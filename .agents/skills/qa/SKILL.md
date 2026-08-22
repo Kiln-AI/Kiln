@@ -169,32 +169,63 @@ A lane subagent starts with none of your context — brief it like a self-contai
   did.
 - **Find and document only** — no source edits. State the one exception plainly when it
   applies: intentionally corrupting a file in its own scratch project to test error handling.
-- Whether a live model/provider is available in this sandbox (usually not, by default — see
-  below) so it knows which blocked paths are expected, not bugs.
+- Whether a live model/provider is available in this sandbox (check `start`'s output — see
+  below) so it knows which blocked paths are expected and which are bugs. When one *is*
+  connected, pass on the spending rules verbatim: GPT-5.6 Luna by default, smallest possible
+  runs, stop on a 402/429.
 - The report shape you want back: one entry per finding, with area, severity, concrete repro
   steps, expected vs. actual, a file:line reference where relevant, and whether the finding
   falls inside the stated focus window (`git log --oneline -- <file>` settles this when
   unsure).
 - An instruction to clean up its own server/session/scratch directory when done.
 
-## No LLM provider by default
+## Whether an LLM provider is connected — check, don't assume
 
-The seeded dev sandbox has no API key, so anything needing a live model call — LLM-judge
-scoring, synthetic data generation, Copilot-backed flows, provider-gated features — will fail
-or gate off. Tell every lane this up front, but keep the exemption narrow: only the failure
-that's *directly caused by the missing provider itself* (the call can't be made, so that
-specific path stops) is expected/partial, not a bug. Everything else at that same gate is
-still in scope and still gets reported as a real finding — a crash instead of a clean error, a
-gate that fires at the wrong time or not at all, a missing/garbled error message, a "degrade
-gracefully" path that doesn't. The lane should verify all of that reachable-before-the-call
-behavior, not wave the whole area through because a key was missing somewhere downstream of it.
+Some environments set `OPENROUTER_QA_KEY`, and where it's set, seeding a sandbox writes it
+into that sandbox's settings and the app comes up with OpenRouter connected — live model
+calls work, exactly as they would for a user who connected a provider in Settings.
+`playwright_server.sh start` says so in its output when that's the case. **Check the output
+of your own `start` before planning around it**, and tell every lane which world it's in.
+
+### When a key is connected
+
+It's a real key on a hard, low spending limit, shared by every lane in the run. A lane that
+burns it leaves the rest of the run with nothing, so the budget is a shared resource to
+protect, not an allowance to use up:
+
+- **Default to GPT-5.6 Luna** for anything where the model isn't the point — which is nearly
+  everything in a QA pass. The `ui_state` hint each lane's `start` prints already preselects
+  it, so the cheap model is what a lane gets by doing nothing. Use a different model only when
+  the thing under test is that model's behavior.
+- **Smallest run that answers the question.** One sample, one eval row, one search query. A
+  QA pass proves the flow works; it doesn't need a populated dataset.
+- **Never point a paid test suite at it.** `pytest --runpaid` and `--runprerelease` read
+  `OPENROUTER_API_KEY`, deliberately a different variable — don't bridge them.
+- **A 402 or 429 means the budget is gone.** Stop, report it as a run-level note, and don't
+  retry — a retry loop is how one lane ends the whole pass.
+
+Say all of this in each lane's brief. The limit is what actually stops a runaway; the
+guidance is what keeps the run from reaching it.
+
+### When no key is connected
+
+Anything needing a live model call — LLM-judge scoring, synthetic data generation,
+Copilot-backed flows, provider-gated features — will fail or gate off. Tell every lane this up
+front, but keep the exemption narrow: only the failure that's *directly caused by the missing
+provider itself* (the call can't be made, so that specific path stops) is expected/partial,
+not a bug. Everything else at that same gate is still in scope and still gets reported as a
+real finding — a crash instead of a clean error, a gate that fires at the wrong time or not at
+all, a missing/garbled error message, a "degrade gracefully" path that doesn't. The lane
+should verify all of that reachable-before-the-call behavior, not wave the whole area through
+because a key was missing somewhere downstream of it.
 
 If a live model call is actually essential to a lane's coverage — the feature can't be
 meaningfully verified any other way — don't just skip it. Ask the user for an OpenRouter API
 key with a small max-spend limit, scoped to this test run, and connect it through the app's
 own Settings UI (not a raw env var) so it behaves exactly like a real user's connected
 provider. OpenRouter covers most models through one key; only ask for a different provider's
-key if the thing under test is specific to that provider.
+key if the thing under test is specific to that provider. The same spending rules above apply
+to a key given this way, and more so — it's the user's, given for one run.
 
 ## Report shape
 
