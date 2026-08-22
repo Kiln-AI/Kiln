@@ -68,10 +68,13 @@ the UI or stop at the gate.
 low limit that a runaway loop will hit. Use it when a live call is the only way to
 check the thing you are working on, and keep it cheap:
 
-- **Default to GPT-5.6 Luna.** With a key seeded, the `ui_state` hint `start`
-  prints carries `"selected_model":"openrouter/gpt_5_6_luna"`, so the Run screen
-  comes up with it already chosen — no dropdown walk, and the cheap model by
-  default. Pick another only when the thing under test is about that model.
+- **Prefer GPT-5.6 Luna**, usually already selected for you. With a key seeded,
+  the `ui_state` hint `start` prints carries
+  `"selected_model":"openrouter/gpt_5_6_luna"`, so a screen using the standard
+  model dropdown comes up with it chosen — no dropdown walk, cheap model by
+  default. It is a starting value, not a lock: a screen that overrides the
+  dropdown, or one where you picked something else, will differ. Pick another
+  model only when the thing under test is about that model.
 - Run the smallest thing that answers the question — one sample, not fifty; one
   eval row, not a full sweep.
 - Never point a paid test suite at it: `pytest --runpaid` and `--runprerelease`

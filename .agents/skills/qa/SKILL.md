@@ -193,10 +193,11 @@ It's a real key on a hard, low spending limit, shared by every lane in the run. 
 burns it leaves the rest of the run with nothing, so the budget is a shared resource to
 protect, not an allowance to use up:
 
-- **Default to GPT-5.6 Luna** for anything where the model isn't the point — which is nearly
-  everything in a QA pass. The `ui_state` hint each lane's `start` prints already preselects
-  it, so the cheap model is what a lane gets by doing nothing. Use a different model only when
-  the thing under test is that model's behavior.
+- **Prefer GPT-5.6 Luna** for anything where the model isn't the point — which is nearly
+  everything in a QA pass, and in most cases it is already preselected: the `ui_state` hint
+  each lane's `start` prints names it, so the cheap model is what a lane gets by doing
+  nothing. Confirm rather than assume it on any screen that runs a model, and use a different
+  one only when the thing under test is that model's behavior.
 - **Smallest run that answers the question.** One sample, one eval row, one search query. A
   QA pass proves the flow works; it doesn't need a populated dataset.
 - **Never point a paid test suite at it.** `pytest --runpaid` and `--runprerelease` read
