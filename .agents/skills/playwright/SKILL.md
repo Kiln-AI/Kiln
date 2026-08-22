@@ -53,8 +53,10 @@ When it is connected, it is a real key on a hard, low limit — a runaway loop h
 it and the next person gets nothing. Use it when a live call is the only way to
 check what you are working on, and:
 
-- **Default to GPT-5.6 Luna** (`openai/gpt-5.6-luna`). Choose another model only
-  when the model itself is what you are testing.
+- **Default to GPT-5.6 Luna.** The `ui_state` hint `start` prints already
+  preselects it in the model dropdown, so running as-is costs you nothing and
+  picks the cheap model. Change it only when the model itself is what you are
+  testing.
 - Keep every run minimal — one sample, one eval row, one query.
 - Never aim a paid test suite at it (`pytest --runpaid` / `--runprerelease` read
   `OPENROUTER_API_KEY`, which is deliberately a different variable).

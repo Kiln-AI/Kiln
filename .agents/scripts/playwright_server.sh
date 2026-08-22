@@ -70,6 +70,18 @@ SEED_CONTACT="playwright@example.com"
 # limit it must have.
 OPENROUTER_KEY="${OPENROUTER_QA_KEY:-}"
 
+# What the ui_state hint preselects in the model dropdown when a key is seeded.
+# `<provider_id>/<model_id>`, the format available_models_dropdown.svelte parses
+# back apart — so this is exactly the string the app would have stored itself
+# after someone picked the model by hand.
+#
+# It is a default, not a constraint, and it is here rather than only in the skill
+# docs on purpose: cheap-by-default beats cheap-if-the-agent-read-the-guidance.
+# The dropdown drops a value it cannot find in the available models
+# (get_selected_model returns null), so if this id ever goes stale the app comes
+# up with nothing selected rather than something broken.
+SEED_MODEL="openrouter/gpt_5_6_luna"
+
 usage() {
   cat <<EOF
 Usage: playwright_server.sh [start|stop|status|reset|snapshot]
@@ -408,6 +420,13 @@ verify_seed_loaded() {
   echo "         the app does not have and land you on /setup anyway." >&2
 }
 
+# Whether this sandbox's settings carry an OpenRouter key. The file is the answer
+# rather than the environment: the app writes a key there when someone connects a
+# provider through Settings, and the seed only writes one on the start that seeded.
+sandbox_has_openrouter_key() {
+  grep -q '^open_router_api_key:' "$SETTINGS_FILE" 2>/dev/null
+}
+
 # The app's setup gate has two steps disk cannot satisfy: the selected project and
 # task live in localStorage, and the layout redirects to a task picker on mount
 # without them, whatever URL you asked for. This prints the write that gets past it.
@@ -430,6 +449,12 @@ verify_seed_loaded() {
 # particular start did the seeding.
 print_seed_hint() {
   local project_name="" primary_id="" primary_name="" lines="" others=""
+  # The dropdown reads ui_state.selected_model on mount, so preselecting it here
+  # is what saves every lane the find-open-find-click walk through the model
+  # picker. null with no key: preselecting a model the sandbox cannot call would
+  # trade four commands for a confusing dead end.
+  local model_json="null"
+  sandbox_has_openrouter_key && model_json="\"$SEED_MODEL\""
 
   if [ -n "$loaded_project_id" ]; then
     project_name="$(json_field "$SEEDED_PROJECT_DIR/project.kiln" name)"
@@ -455,7 +480,7 @@ print_seed_hint() {
   echo ""
   echo "  Land in the app (the layout redirects to a task picker without this):"
   echo "    playwright-cli open $FRONTEND_URL"
-  echo "    playwright-cli localstorage-set ui_state '{\"current_project_id\":\"$loaded_project_id\",\"current_task_id\":\"$primary_id\",\"selected_model\":null}'"
+  echo "    playwright-cli localstorage-set ui_state '{\"current_project_id\":\"$loaded_project_id\",\"current_task_id\":\"$primary_id\",\"selected_model\":$model_json}'"
   echo "    playwright-cli goto $FRONTEND_URL"
   echo ""
 
@@ -478,10 +503,11 @@ print_seed_hint() {
 # keeps what it was seeded with, and rewriting the file behind the app's back would
 # throw away a key pasted in by hand.
 report_openrouter_key() {
-  if grep -q '^open_router_api_key:' "$SETTINGS_FILE" 2>/dev/null; then
+  if sandbox_has_openrouter_key; then
     echo "  OpenRouter is connected in this sandbox — live model calls will work,"
-    echo "  and will spend real money against a key with a hard limit on it. Prefer"
-    echo "  GPT-5.6 Luna and keep runs small. See .agents/skills/playwright/."
+    echo "  and will spend real money against a key with a hard limit on it. The"
+    echo "  ui_state above preselects GPT-5.6 Luna; keep it, and keep runs small."
+    echo "  See .agents/skills/playwright/."
     echo ""
     return 0
   fi
