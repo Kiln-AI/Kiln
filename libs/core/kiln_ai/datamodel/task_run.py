@@ -10,7 +10,7 @@ from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_ai.datamodel.task_output import DataSource, TaskOutput
 from kiln_ai.utils.open_ai_types import (
-    ChatCompletionMessageParam,
+    Trace,
     trace_has_pending_client_tool_calls,
 )
 from kiln_ai.utils.usage import MessageUsage as MessageUsage
@@ -106,7 +106,7 @@ class TaskRun(
             "cost fields equal those of `usage`."
         ),
     )
-    trace: list[ChatCompletionMessageParam] | None = Field(
+    trace: Trace | None = Field(
         default=None,
         description="The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.",
     )

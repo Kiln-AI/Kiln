@@ -1,25 +1,40 @@
 """Tests for OpenAI types wrapper to ensure compatibility."""
 
+import copy
 import json
-from typing import get_args, get_origin
+from typing import ClassVar, get_args, get_origin
 
 import pytest
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam as OpenAIChatCompletionAssistantMessageParam,
 )
 from openai.types.chat import (
+    ChatCompletionDeveloperMessageParam as OpenAIChatCompletionDeveloperMessageParam,
+)
+from openai.types.chat import (
     ChatCompletionMessageParam as OpenAIChatCompletionMessageParam,
+)
+from openai.types.chat import (
+    ChatCompletionSystemMessageParam as OpenAIChatCompletionSystemMessageParam,
 )
 from openai.types.chat import (
     ChatCompletionToolMessageParam as OpenAIChatCompletionToolMessageParam,
 )
+from openai.types.chat import (
+    ChatCompletionUserMessageParam as OpenAIChatCompletionUserMessageParam,
+)
 
+from kiln_ai.adapters.errors import ErrorWithTrace
 from kiln_ai.datamodel.task_output import TaskOutput
 from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.utils.open_ai_types import (
     KILN_ONLY_MESSAGE_FIELDS,
     ChatCompletionAssistantMessageParamWrapper,
+    ChatCompletionDeveloperMessageParamWrapper,
+    ChatCompletionSystemMessageParamWrapper,
     ChatCompletionToolMessageParamWrapper,
+    ChatCompletionUserMessageParamWrapper,
+    materialize_lazy_content,
     sanitize_messages_for_provider,
     serialize_trace,
     trace_has_pending_client_tool_calls,
@@ -95,6 +110,49 @@ def test_tool_message_param_properties_match():
     )
 
 
+@pytest.mark.parametrize(
+    "kiln_type, openai_type",
+    [
+        (
+            ChatCompletionDeveloperMessageParamWrapper,
+            OpenAIChatCompletionDeveloperMessageParam,
+        ),
+        (
+            ChatCompletionSystemMessageParamWrapper,
+            OpenAIChatCompletionSystemMessageParam,
+        ),
+        (
+            ChatCompletionUserMessageParamWrapper,
+            OpenAIChatCompletionUserMessageParam,
+        ),
+    ],
+)
+def test_content_only_wrappers_properties_match(kiln_type, openai_type):
+    """These three wrappers add nothing - they exist only to swap Iterable[T] for
+    List[T] on content. Any property the OpenAI type grows must be copied over.
+    """
+    assert set(openai_type.__annotations__.keys()) == set(
+        kiln_type.__annotations__.keys()
+    ), (
+        f"Property names don't match between {kiln_type.__name__} and "
+        f"{openai_type.__name__}."
+    )
+
+
+def test_no_union_member_declares_an_iterable_content():
+    """The whole point of the wrappers. An Iterable[T] content validates into a
+    single-use ValidatorIterator, which serializes to `[]` once read - see
+    TestListValuedContentRoundTrip.
+    """
+    for member in get_args(KilnChatCompletionMessageParam):
+        content_type = member.__annotations__.get("content")
+        assert content_type is not None
+        assert "Iterable" not in str(content_type), (
+            f"{member.__name__}.content is declared as {content_type}. Use List[T], "
+            "not Iterable[T] - pydantic cannot round-trip an Iterable[T]."
+        )
+
+
 def test_chat_completion_message_param_union_compatibility():
     """
     Test that our ChatCompletionMessageParam union contains the same types as OpenAI's,
@@ -120,13 +178,21 @@ def test_chat_completion_message_param_union_compatibility():
     openai_type_names = {arg.__name__ for arg in openai_union_args}
     kiln_type_names = {arg.__name__ for arg in kiln_union_args}
 
-    # Expected differences: OpenAI has ChatCompletionAssistantMessageParam and ChatCompletionToolMessageParam,
-    # Kiln has ChatCompletionAssistantMessageParamWrapper and ChatCompletionToolMessageParamWrapper
+    # Expected differences: every role whose content can be a list of parts is a Kiln
+    # wrapper, because the OpenAI type declares that content as Iterable[T] and pydantic
+    # cannot round-trip an Iterable[T]. Only the function role, whose content is a plain
+    # string, is used directly.
     expected_openai_only = {
+        "ChatCompletionDeveloperMessageParam",
+        "ChatCompletionSystemMessageParam",
+        "ChatCompletionUserMessageParam",
         "ChatCompletionAssistantMessageParam",
         "ChatCompletionToolMessageParam",
     }
     expected_kiln_only = {
+        "ChatCompletionDeveloperMessageParamWrapper",
+        "ChatCompletionSystemMessageParamWrapper",
+        "ChatCompletionUserMessageParamWrapper",
         "ChatCompletionAssistantMessageParamWrapper",
         "ChatCompletionToolMessageParamWrapper",
     }
@@ -144,9 +210,6 @@ def test_chat_completion_message_param_union_compatibility():
     # All other types should be identical
     common_types = openai_type_names & kiln_type_names
     expected_common_types = {
-        "ChatCompletionDeveloperMessageParam",
-        "ChatCompletionSystemMessageParam",
-        "ChatCompletionUserMessageParam",
         "ChatCompletionFunctionMessageParam",
     }
 
@@ -541,12 +604,8 @@ class TestSerializeTrace:
         )
 
     def test_a_list_valued_content_survives_being_serialized(self):
-        """Serializing must not damage the trace it was handed.
-
-        Pydantic validates a list-valued `content` into a single-use
-        `ValidatorIterator`, and reading it empties it. Without the materializing
-        walk this serialized correctly once and as `content: []` forever after,
-        and a `save_to_file` on the same object persisted the empty version.
+        """Serializing must not damage the trace it was handed, and must be
+        repeatable - the second read has to say what the first one said.
         """
         task_run = TaskRun(
             input="in",
@@ -563,21 +622,14 @@ class TestSerializeTrace:
         assert second == first
         # And the trace is still intact for whoever else holds it - the failure mode
         # here was a persisted `content: []`, not just a bad second read.
-        #
-        # This dump prints a `PydanticSerializationUnexpectedValue` warning, which is
-        # expected, not a defect: a materialized list matches neither the `str` nor the
-        # `generator` branch of the union the way the lazy iterator did. The bytes it
-        # writes are what this asserts, and they are correct.
         assert json.loads(task_run.model_dump_json())["trace"][0]["content"] == [
             {"text": "KEEP", "type": "text"}
         ]
 
-    def test_materializing_content_leaves_a_usage_model_alone(self):
-        """The walk is scoped to `content` and must not be generalized.
-
-        A pydantic model is iterable - it yields `(name, value)` pairs - so a walk
-        over "any iterable value" would turn `usage` into a list of pairs. This is
-        the test that catches that.
+    def test_a_list_valued_content_and_a_usage_model_coexist(self):
+        """A list-valued `content` and a `MessageUsage` are both non-plain values on
+        the same message, and they serialize differently: content is a list of parts,
+        usage is a model dumped to an object. Neither may be mistaken for the other.
         """
         trace: list[KilnChatCompletionMessageParam] = [
             {
@@ -592,3 +644,250 @@ class TestSerializeTrace:
         assert serialized["content"] == [{"text": "hi", "type": "text"}]
         assert serialized["usage"]["input_tokens"] == 4
         assert serialized["usage"]["cost"] == 0.01
+
+
+class TestListValuedContentRoundTrip:
+    """A message's `content` can be a list of parts instead of a string - that is
+    how a multimodal message (text plus an image, audio or a file) is expressed.
+
+    Every role that allows it declared that content as `Iterable[T]`, which pydantic
+    validates into a single-use `ValidatorIterator`. Serializing reads it, a read
+    empties it, and `save_to_file` then wrote `content: []` to disk with no error and
+    no warning. These pin that a list-valued content survives the model layer whole:
+    to disk, back off disk, and through a copy.
+    """
+
+    LIST_CONTENT_MESSAGES: ClassVar[list[KilnChatCompletionMessageParam]] = [
+        {"role": "developer", "content": [{"type": "text", "text": "DEV"}]},
+        {"role": "system", "content": [{"type": "text", "text": "SYS"}]},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "USER"},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/png;base64,aGk="},
+                },
+            ],
+        },
+        {"role": "assistant", "content": [{"type": "text", "text": "ASST"}]},
+        {
+            "role": "tool",
+            "tool_call_id": "c1",
+            "content": [{"type": "text", "text": "TOOL"}],
+        },
+    ]
+
+    def _task_run(self, tmp_path, messages):
+        return TaskRun(
+            path=tmp_path / "task_run.kiln",
+            input="in",
+            output=TaskOutput(output="out"),
+            trace=list(messages),
+        )
+
+    def test_validation_produces_a_list_not_a_lazy_iterator(self, tmp_path):
+        """The root cause, pinned directly. Everything below follows from this."""
+        task_run = self._task_run(tmp_path, self.LIST_CONTENT_MESSAGES)
+
+        assert task_run.trace is not None
+        for message in task_run.trace:
+            assert isinstance(message["content"], list), (
+                f"{message['role']} content is a {type(message['content']).__name__}"
+            )
+
+    def test_every_role_survives_save_and_load(self, tmp_path):
+        task_run = self._task_run(tmp_path, self.LIST_CONTENT_MESSAGES)
+
+        task_run.save_to_file()
+        loaded = TaskRun.load_from_file(task_run.path)
+
+        assert loaded.trace is not None
+        assert len(loaded.trace) == len(self.LIST_CONTENT_MESSAGES)
+        for loaded_message, original in zip(loaded.trace, self.LIST_CONTENT_MESSAGES):
+            assert loaded_message["content"] == original["content"], (
+                f"{original['role']} content did not survive the round trip"
+            )
+
+    def test_the_image_part_of_a_multimodal_message_survives(self, tmp_path):
+        """The case this protects in practice: an image part is not recoverable from
+        anywhere else once it is dropped."""
+        task_run = self._task_run(
+            tmp_path, [m for m in self.LIST_CONTENT_MESSAGES if m["role"] == "user"]
+        )
+
+        task_run.save_to_file()
+        loaded = TaskRun.load_from_file(task_run.path)
+
+        assert loaded.trace is not None
+        assert loaded.trace[0]["content"][1] == {
+            "type": "image_url",
+            "image_url": {"url": "data:image/png;base64,aGk="},
+        }
+
+    def test_a_second_save_of_the_same_object_writes_the_same_content(self, tmp_path):
+        """The original bug lost the content on the *second* write for some roles, so
+        one save proving correct was never enough."""
+        task_run = self._task_run(tmp_path, self.LIST_CONTENT_MESSAGES)
+
+        task_run.save_to_file()
+        first = task_run.path.read_text(encoding="utf-8")
+        task_run.save_to_file()
+        second = task_run.path.read_text(encoding="utf-8")
+
+        assert json.loads(first)["trace"] == json.loads(second)["trace"]
+        assert json.loads(second)["trace"][0]["content"] == [
+            {"type": "text", "text": "DEV"}
+        ]
+
+    def test_a_loaded_run_can_be_saved_again_without_loss(self, tmp_path):
+        """Load and re-save is what a repair or a tag edit does to a stored run."""
+        task_run = self._task_run(tmp_path, self.LIST_CONTENT_MESSAGES)
+        task_run.save_to_file()
+
+        loaded = TaskRun.load_from_file(task_run.path).mutable_copy()
+        loaded.save_to_file()
+        reloaded = TaskRun.load_from_file(task_run.path)
+
+        assert reloaded.trace is not None
+        for message, original in zip(reloaded.trace, self.LIST_CONTENT_MESSAGES):
+            assert message["content"] == original["content"]
+
+    def test_mutable_copy_does_not_raise(self, tmp_path):
+        """`mutable_copy` deep-copies, and a `ValidatorIterator` cannot be pickled -
+        so a list-valued content used to raise `TypeError` here.
+        """
+        task_run = self._task_run(tmp_path, self.LIST_CONTENT_MESSAGES)
+
+        copied = task_run.mutable_copy()
+
+        assert copied.trace is not None
+        assert copied.trace[2]["content"] == self.LIST_CONTENT_MESSAGES[2]["content"]
+
+    def test_a_generator_content_is_materialized_at_validation(self, tmp_path):
+        """A library caller can pass any iterable, not only a list. Validation must
+        drain it there and then, while the values are still readable."""
+        task_run = self._task_run(
+            tmp_path,
+            [
+                {
+                    "role": "user",
+                    "content": (p for p in [{"type": "text", "text": "GEN"}]),
+                }
+            ],
+        )
+
+        task_run.save_to_file()
+        loaded = TaskRun.load_from_file(task_run.path)
+
+        assert loaded.trace is not None
+        assert loaded.trace[0]["content"] == [{"type": "text", "text": "GEN"}]
+
+    def test_a_string_content_is_left_a_string(self, tmp_path):
+        """The common case, and the one every stored trace holds today."""
+        task_run = self._task_run(
+            tmp_path,
+            [
+                {"role": "user", "content": "plain"},
+                {"role": "assistant", "content": "also plain"},
+            ],
+        )
+
+        task_run.save_to_file()
+        loaded = TaskRun.load_from_file(task_run.path)
+
+        assert loaded.trace is not None
+        assert loaded.trace[0]["content"] == "plain"
+        assert loaded.trace[1]["content"] == "also plain"
+
+    def test_the_trace_the_caller_handed_over_is_not_consumed(self, tmp_path):
+        """Validation must not empty the caller's own list as a side effect."""
+        caller_messages = copy.deepcopy(self.LIST_CONTENT_MESSAGES)
+
+        self._task_run(tmp_path, caller_messages).save_to_file()
+
+        assert caller_messages == self.LIST_CONTENT_MESSAGES
+
+
+class TestMaterializeLazyContent:
+    """The guardrail in front of union validation. A caller can pass any iterable as
+    `content`; pydantic's smart union drains it on the members that do not match the
+    role, so the matching member sees an empty iterator. This drains it first instead.
+    """
+
+    def test_a_generator_becomes_a_list(self):
+        trace = [
+            {"role": "user", "content": (p for p in [{"type": "text", "text": "GEN"}])}
+        ]
+
+        assert materialize_lazy_content(trace) == [
+            {"role": "user", "content": [{"type": "text", "text": "GEN"}]}
+        ]
+
+    def test_a_list_is_left_alone(self):
+        trace = [{"role": "user", "content": [{"type": "text", "text": "LIST"}]}]
+
+        assert materialize_lazy_content(trace) == trace
+
+    def test_a_string_is_not_split_into_characters(self):
+        """A string is iterable too. Treating it as one would be the worst outcome
+        here - `"hi"` would become `["h", "i"]`.
+        """
+        assert materialize_lazy_content([{"role": "user", "content": "hi"}]) == [
+            {"role": "user", "content": "hi"}
+        ]
+
+    def test_a_usage_model_is_left_alone(self):
+        """The walk is scoped to `content` and must not be generalized. A pydantic
+        model is iterable - it yields `(name, value)` pairs - so a walk over "any
+        iterable value" would turn `usage` into a list of pairs.
+        """
+        usage = MessageUsage(input_tokens=4, cost=0.01)
+        trace = [{"role": "assistant", "content": "hi", "usage": usage}]
+
+        assert materialize_lazy_content(trace)[0]["usage"] is usage
+
+    def test_the_callers_message_is_not_mutated(self):
+        message = {
+            "role": "user",
+            "content": (p for p in [{"type": "text", "text": "G"}]),
+        }
+        trace = [message]
+
+        result = materialize_lazy_content(trace)
+
+        assert result[0] is not message
+        assert trace[0] is message
+
+    def test_a_none_content_passes_through(self):
+        trace = [{"role": "assistant", "content": None, "tool_calls": []}]
+
+        assert materialize_lazy_content(trace) == trace
+
+    @pytest.mark.parametrize("value", [None, "not a list", 42, {"role": "user"}])
+    def test_a_non_list_passes_through_for_pydantic_to_reject(self, value):
+        """Bad input is pydantic's to complain about, with its own error message."""
+        assert materialize_lazy_content(value) is value
+
+    def test_a_non_dict_message_passes_through(self):
+        """Traces transiently hold LiteLLM Message objects, not only dicts."""
+        message = MessageUsage(input_tokens=1)
+
+        assert materialize_lazy_content([message]) == [message]
+
+
+def test_error_with_trace_materializes_lazy_content():
+    """`ErrorWithTrace` carries the partial trace of a failed run back to the client.
+    A failed run's trace is the only record of what happened, so it needs the same
+    guard `TaskRun.trace` has.
+    """
+    error = ErrorWithTrace(
+        message="boom",
+        error_type="RuntimeError",
+        trace=[
+            {"role": "user", "content": (p for p in [{"type": "text", "text": "GEN"}])}
+        ],
+    )
+
+    assert error.trace is not None
+    assert error.trace[0]["content"] == [{"type": "text", "text": "GEN"}]

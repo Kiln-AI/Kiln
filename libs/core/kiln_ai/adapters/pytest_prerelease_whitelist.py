@@ -49,6 +49,16 @@ PRERELEASE_EXTRACTION_MODELS: list[tuple[str, str]] = [
     ("gemini_3_flash", ModelProviderName.gemini_api.value),
 ]
 
+# (model_name, provider_name) — used by the multimodal trace round-trip prerelease
+# smoke test. Every entry must be multimodal_capable in ml_model_list.py with
+# image/png in its multimodal_mime_types: the test sends a real image in the trace
+# and asserts the image part is still on disk after the run is saved.
+PRERELEASE_MULTIMODAL_TRACE_MODELS: list[tuple[str, str]] = [
+    ("gpt_4o", ModelProviderName.openai.value),
+    ("claude_sonnet_4_6", ModelProviderName.anthropic.value),
+    ("gemini_3_flash", ModelProviderName.gemini_api.value),
+]
+
 # Subset of mime types to exercise in the prerelease extraction smoke test.
 # The full paid test sweeps all 13 mime types per model — too slow for prerelease.
 # This covers one example per major content category.

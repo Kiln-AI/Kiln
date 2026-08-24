@@ -34,16 +34,14 @@ from kiln_ai.utils.async_job_runner import AsyncJobRunner
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionMessageParam,
+    ChatCompletionSystemMessageParamWrapper,
+    ChatCompletionUserMessageParamWrapper,
 )
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     agent_policy_require_approval,
-)
-from openai.types.chat import (
-    ChatCompletionSystemMessageParam,
-    ChatCompletionUserMessageParam,
 )
 from pydantic import BaseModel, Field
 
@@ -1020,11 +1018,11 @@ The topic path for this sample is:
         task = task_from_id(project_id, task_id)
 
         # Build trace in OpenAI message format using the task instruction as system prompt
-        system_msg: ChatCompletionSystemMessageParam = {
+        system_msg: ChatCompletionSystemMessageParamWrapper = {
             "role": "system",
             "content": task.instruction,
         }
-        user_msg: ChatCompletionUserMessageParam = {
+        user_msg: ChatCompletionUserMessageParamWrapper = {
             "role": "user",
             "content": input.query,
         }

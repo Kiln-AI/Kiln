@@ -13,7 +13,7 @@ from __future__ import annotations
 import litellm
 from pydantic import BaseModel
 
-from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam, Trace
 
 _GENERIC_FALLBACK_MESSAGE = "An unexpected error occurred."
 
@@ -28,7 +28,7 @@ class ErrorWithTrace(BaseModel):
 
     message: str
     error_type: str
-    trace: list[ChatCompletionMessageParam] | None = None
+    trace: Trace | None = None
 
 
 class KilnRunError(Exception):

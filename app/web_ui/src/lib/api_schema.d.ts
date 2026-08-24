@@ -4442,7 +4442,7 @@ export interface components {
          * ChatCompletionAssistantMessageParamWrapper
          * @description Almost exact copy of ChatCompletionAssistantMessageParam, but two changes.
          *
-         *     First change: List[T] instead of Iterable[T] for tool_calls. Addresses pydantic issue.
+         *     First change: List[T] instead of Iterable[T] for tool_calls and content. Addresses pydantic issue.
          *     https://github.com/pydantic/pydantic/issues/9541
          *
          *     Second change: Add reasoning_content to the message. A LiteLLM property for reasoning data.
@@ -4517,12 +4517,12 @@ export interface components {
             type: "text";
         };
         /**
-         * ChatCompletionDeveloperMessageParam
-         * @description Developer-provided instructions that the model should follow, regardless of
-         *     messages sent by the user. With o1 models and newer, `developer` messages
-         *     replace the previous `system` messages.
+         * ChatCompletionDeveloperMessageParamWrapper
+         * @description Almost exact copy of ChatCompletionDeveloperMessageParam, with one change:
+         *     List[T] instead of Iterable[T] for content. Addresses pydantic issue.
+         *     https://github.com/pydantic/pydantic/issues/9541
          */
-        ChatCompletionDeveloperMessageParam: {
+        ChatCompletionDeveloperMessageParamWrapper: {
             /** Content */
             content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
             /**
@@ -4560,12 +4560,12 @@ export interface components {
             type: "function";
         };
         /**
-         * ChatCompletionSystemMessageParam
-         * @description Developer-provided instructions that the model should follow, regardless of
-         *     messages sent by the user. With o1 models and newer, use `developer` messages
-         *     for this purpose instead.
+         * ChatCompletionSystemMessageParamWrapper
+         * @description Almost exact copy of ChatCompletionSystemMessageParam, with one change:
+         *     List[T] instead of Iterable[T] for content. Addresses pydantic issue.
+         *     https://github.com/pydantic/pydantic/issues/9541
          */
-        ChatCompletionSystemMessageParam: {
+        ChatCompletionSystemMessageParamWrapper: {
             /** Content */
             content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
             /**
@@ -4595,11 +4595,15 @@ export interface components {
             error_message?: string | null;
         };
         /**
-         * ChatCompletionUserMessageParam
-         * @description Messages sent by an end user, containing prompts or additional context
-         *     information.
+         * ChatCompletionUserMessageParamWrapper
+         * @description Almost exact copy of ChatCompletionUserMessageParam, with one change:
+         *     List[T] instead of Iterable[T] for content. Addresses pydantic issue.
+         *     https://github.com/pydantic/pydantic/issues/9541
+         *
+         *     This is the multimodal message type: its content parts include images, audio
+         *     and files, not only text.
          */
-        ChatCompletionUserMessageParam: {
+        ChatCompletionUserMessageParamWrapper: {
             /** Content */
             content: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartImageParam"] | components["schemas"]["ChatCompletionContentPartInputAudioParam"] | components["schemas"]["File"])[];
             /**
@@ -6251,7 +6255,7 @@ export interface components {
             /** Error Type */
             error_type: string;
             /** Trace */
-            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParamWrapper"] | components["schemas"]["ChatCompletionSystemMessageParamWrapper"] | components["schemas"]["ChatCompletionUserMessageParamWrapper"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
         };
         /**
          * Eval
@@ -11476,7 +11480,7 @@ export interface components {
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
-            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParamWrapper"] | components["schemas"]["ChatCompletionSystemMessageParamWrapper"] | components["schemas"]["ChatCompletionUserMessageParamWrapper"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
             /**
              * Parent Task Run Id
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
@@ -11557,7 +11561,7 @@ export interface components {
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
-            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParamWrapper"] | components["schemas"]["ChatCompletionSystemMessageParamWrapper"] | components["schemas"]["ChatCompletionUserMessageParamWrapper"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
             /**
              * Parent Task Run Id
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.

@@ -44,6 +44,7 @@ Whitelisted lists:
 - `PRERELEASE_EMBEDDING_MODELS` — one embedding model per embedding-supporting provider.
 - `PRERELEASE_EXTRACTION_MODELS` — one multimodal model per major vendor (OpenAI, Anthropic, Gemini).
 - `PRERELEASE_EXTRACTION_MIME_PROBES` — three mime probes (PDF, PNG, MP3) for the extraction smoke; the full paid test sweeps all 13 mime types per model.
+- `PRERELEASE_MULTIMODAL_TRACE_MODELS` — one multimodal model per major vendor (OpenAI, Anthropic, Gemini) for the multimodal trace round-trip smoke. Every entry must be `multimodal_capable` with `image/png` in its `multimodal_mime_types`.
 - `PRERELEASE_THINKING_MODELS` — five (provider, model, thinking_level) triples covering reasoning content + a "none" negation case.
 
 This whitelist is the thing most likely to go stale, so it's the main target of the pin sweep in Phase 4. The fan-out tests (e.g. `test_extract_document_success` over every model × mime type, `test_paid_generate_embeddings_basic` over every embedding) are **only `@pytest.mark.paid`** — not `@pytest.mark.prerelease` — and are out of scope for this skill.
@@ -179,7 +180,8 @@ from kiln_ai.adapters.ml_model_list import built_in_models
 from kiln_ai.adapters.ml_embedding_model_list import built_in_embedding_models
 from kiln_ai.adapters.pytest_prerelease_whitelist import (
     PRERELEASE_CHAT_MODELS, PRERELEASE_EMBEDDING_MODELS,
-    PRERELEASE_EXTRACTION_MODELS, PRERELEASE_THINKING_MODELS,
+    PRERELEASE_EXTRACTION_MODELS, PRERELEASE_MULTIMODAL_TRACE_MODELS,
+    PRERELEASE_THINKING_MODELS,
 )
 
 def chat_status(name, provider):
@@ -196,8 +198,9 @@ def emb_status(name, provider):
             return 'NO_PROVIDER' if p is None else 'OK'
     return 'MODEL_REMOVED_OR_RENAMED'
 
-print('== chat / extraction ==')
-for n,p in PRERELEASE_CHAT_MODELS + PRERELEASE_EXTRACTION_MODELS:
+print('== chat / extraction / multimodal trace ==')
+for n,p in (PRERELEASE_CHAT_MODELS + PRERELEASE_EXTRACTION_MODELS
+            + PRERELEASE_MULTIMODAL_TRACE_MODELS):
     print(f'{chat_status(n,p):>22}  {n}  ({p})')
 print('== embedding ==')
 for n,p in PRERELEASE_EMBEDDING_MODELS:
@@ -257,6 +260,7 @@ The prerelease set should cover, at minimum:
 | Thinking-level reasoning (whitelist) | `test_thinking_level_reasoning_content_prerelease_smoke` |
 | Reranker | `test_reranker_integration_success` |
 | Document extraction (whitelist of models × probe mime types) | `test_extract_document_success_prerelease_smoke`, `test_provider_bad_request_prerelease_smoke` |
+| Multimodal trace round trip — image survives the model call, the save and the reload (whitelist) | `libs/core/kiln_ai/adapters/model_adapters/test_multimodal_trace_paid.py::test_multimodal_trace_survives_save_to_file` |
 | Semantic chunker (real embedding integration) | `test_semantic_chunker_real_integration` |
 | Fireworks fine-tune | `test_fetch_all_deployments` |
 | Prompt caching (Anthropic + OpenAI + Gemini + Fireworks + Together) | `test_prompt_caching_cache_hit` |
@@ -337,6 +341,7 @@ One scannable table covering **every prerelease test that ran**, grouped by cove
 | Prompt caching | `test_prompt_caching_cache_hit` (7) | ✅×7 | |
 | Document extraction | `…extract_document_*_prerelease_smoke` (N) | ✅×N | |
 | Semantic chunker | `test_semantic_chunker_real_integration` | ✅ | |
+| Multimodal trace round trip | `test_multimodal_trace_survives_save_to_file` (3) | ✅×3 | |
 | Vertex live connect | `test_connect_vertex_live` | ❌ | <one-line cause> |
 | Fireworks fine-tune | `test_fetch_all_deployments` | ✅ | |
 
