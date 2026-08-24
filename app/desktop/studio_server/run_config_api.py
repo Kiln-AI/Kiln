@@ -1,7 +1,6 @@
 import json
 from typing import Annotated, Any, Dict
 
-from app.desktop.studio_server.tool_api import tool_server_from_id
 from fastapi import FastAPI, HTTPException, Path, Query
 from kiln_ai.datamodel.basemodel import string_to_valid_name
 from kiln_ai.datamodel.json_schema import single_string_field_name
@@ -18,6 +17,8 @@ from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
 from pydantic import BaseModel, Field
+
+from app.desktop.studio_server.tool_api import tool_server_from_id
 
 
 class ValidateInputTransformTemplateRequest(BaseModel):

@@ -20,11 +20,8 @@ from kiln_ai.datamodel.spec_properties import (
     ToxicityProperties,
 )
 from kiln_ai.datamodel.task import Task, TaskRunConfig
-from kiln_ai.datamodel.task_output import (
-    TaskOutput,
-    normalize_rating,
-)
-from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.task_output import TaskOutput, normalize_rating
+from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun
 from kiln_ai.datamodel.test_json_schema import json_joke_schema
 
 
@@ -1048,3 +1045,66 @@ def test_task_runs_persist_under_runs_folder_not_underscore_runs(tmp_path):
     assert {r.id for r in via_underscore} == {run.id}
     assert {r.id for r in via_wrapped} == {run.id}
     assert TaskRun.relationship_name() == "runs"
+
+
+def test_task_runs_excludes_eval_generated_by_default(tmp_path):
+    task = _make_task_for_runs_tests(tmp_path)
+    output = TaskOutput(output="out")
+
+    dataset_run = TaskRun(input="dataset", output=output, parent=task)
+    dataset_run.save_to_file()
+    eval_trace = TaskRun(
+        input="trace",
+        output=output,
+        parent=task,
+        eval_source=EvalItemSource(source_type="eval_input", source_id="ei1"),
+    )
+    eval_trace.save_to_file()
+
+    loaded_task = Task.load_from_file(task.path)
+    assert {r.id for r in loaded_task.runs()} == {dataset_run.id}
+    assert {r.id for r in loaded_task.runs(include_eval_generated=True)} == {
+        dataset_run.id,
+        eval_trace.id,
+    }
+
+
+def test_task_runs_filters_compose(tmp_path):
+    """The leaf filter and the eval-generated filter are independent: a run must pass
+    both to be returned, so neither flag alone surfaces an eval-generated intermediate."""
+    task = _make_task_for_runs_tests(tmp_path)
+    output = TaskOutput(output="out")
+    eval_source = EvalItemSource(source_type="task_run", source_id="item1")
+
+    dataset_leaf = TaskRun(input="dataset", output=output, parent=task)
+    dataset_leaf.save_to_file()
+
+    eval_intermediate = TaskRun(
+        input="eval turn 1", output=output, parent=task, eval_source=eval_source
+    )
+    eval_intermediate.save_to_file()
+    eval_leaf = TaskRun(
+        input="eval turn 2",
+        output=output,
+        parent=task,
+        eval_source=eval_source,
+        parent_task_run_id=eval_intermediate.id,
+    )
+    eval_leaf.save_to_file()
+
+    loaded_task = Task.load_from_file(task.path)
+
+    assert {r.id for r in loaded_task.runs()} == {dataset_leaf.id}
+    assert {r.id for r in loaded_task.runs(include_intermediate_runs=True)} == {
+        dataset_leaf.id
+    }
+    assert {r.id for r in loaded_task.runs(include_eval_generated=True)} == {
+        dataset_leaf.id,
+        eval_leaf.id,
+    }
+    assert {
+        r.id
+        for r in loaded_task.runs(
+            include_intermediate_runs=True, include_eval_generated=True
+        )
+    } == {dataset_leaf.id, eval_intermediate.id, eval_leaf.id}

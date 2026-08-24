@@ -23,7 +23,26 @@ import asyncio
 import json
 import logging
 import re
-from typing import Annotated, Any, AsyncIterator, Literal, cast
+from typing import Annotated, Any, AsyncIterator, Literal
+
+from fastapi import FastAPI, HTTPException, Path, Request
+from kiln_ai.datamodel.basemodel import FilenameStringShort
+from kiln_ai.datamodel.task import Task
+from kiln_ai.synthetic_user.case import SyntheticUserCase as RunnerCase
+from kiln_ai.synthetic_user.runner import (
+    BatchStartedEvent,
+    CaseCompletedEvent,
+    CaseFailedEvent,
+    TurnCompletedEvent,
+    run_cases_batch,
+)
+from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.git_sync_decorators import build_save_context, no_write_lock
+from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from typing_extensions import Self
 
 from app.desktop.studio_server.api_models.eval_builder_models import (
     BuildClaimsApiInput,
@@ -59,24 +78,6 @@ from app.desktop.studio_server.utils.eval_builder_utils import (
     run_judge_for_trace,
     transcript_io_for_trace,
 )
-from fastapi import FastAPI, HTTPException, Path, Request
-from kiln_ai.datamodel.basemodel import FilenameStringShort
-from kiln_ai.datamodel.task import Task
-from kiln_ai.synthetic_user.case import SyntheticUserCase as RunnerCase
-from kiln_ai.synthetic_user.runner import (
-    BatchStartedEvent,
-    CaseCompletedEvent,
-    CaseFailedEvent,
-    TurnCompletedEvent,
-    run_cases_batch,
-)
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
-from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
-from kiln_server.git_sync_decorators import build_save_context, no_write_lock
-from kiln_server.task_api import task_from_id
-from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from typing_extensions import Self
 
 logger = logging.getLogger(__name__)
 
@@ -284,7 +285,7 @@ class ReviewPipelineRun:
                     total_cost=self._total_cost,
                 )
             )
-        except Exception as e:  # noqa: BLE001 — last-resort surface for developer bugs
+        except Exception as e:
             # Per-case failures never reach here (they become case_failed
             # frames); this catches orchestration bugs only.
             logger.exception("review_pipeline failed mid-stream")
@@ -334,9 +335,7 @@ class ReviewPipelineRun:
                 # The runner emits a fresh snapshot list per event; its typed
                 # message params are plain dicts at runtime, which the
                 # judge/claims layer treats loosely.
-                self._latest_trace[event.case_index] = cast(
-                    list[dict[str, Any]], event.trace
-                )
+                self._latest_trace[event.case_index] = event.trace  # type: ignore[invalid-assignment]
                 self._turns_completed[event.case_index] = (
                     self._turns_completed.get(event.case_index, 0) + 1
                 )
@@ -412,7 +411,7 @@ class ReviewPipelineRun:
                     spec_name=self._input.spec_name,
                     trace=trace,
                 )
-            except Exception as e:  # noqa: BLE001 — isolate to this case
+            except Exception as e:
                 await self._fail_case(
                     case_index, "judge", "judge_failed", f"{type(e).__name__}: {e}"
                 )
@@ -441,7 +440,7 @@ class ReviewPipelineRun:
                         total_cost=drive_cost,
                     )
                 )
-            except Exception as e:  # noqa: BLE001 — isolate to this case
+            except Exception as e:
                 await self._fail_case(
                     case_index, "claims", "claims_failed", f"{type(e).__name__}: {e}"
                 )
@@ -488,7 +487,7 @@ class ReviewPipelineRun:
                     deleted,
                     tag,
                 )
-            except Exception:  # noqa: BLE001 — cleanup must not fail the batch
+            except Exception:
                 logger.exception(
                     "review_pipeline: failed to delete superseded batch %s", tag
                 )
@@ -540,7 +539,7 @@ def connect_eval_builder_api(app: FastAPI):
         guard_multiturn(task)
         try:
             runner_cases = [RunnerCase.model_validate(c) for c in input.cases]
-        except Exception as exc:  # noqa: BLE001 — Pydantic ValidationError + any future shape drift
+        except Exception as exc:
             raise HTTPException(
                 status_code=400,
                 detail={
@@ -603,7 +602,7 @@ def connect_eval_builder_api(app: FastAPI):
                             request.spec_name,
                         )
                         return _sse(event)
-                    except Exception as e:  # noqa: BLE001 — surface per-trace, keep batch alive
+                    except Exception as e:
                         logger.exception(
                             "review_trace failed for trace_index=%s", index
                         )

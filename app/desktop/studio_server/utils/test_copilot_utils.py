@@ -4,6 +4,20 @@ import random
 from unittest.mock import patch
 
 import pytest
+from fastapi import HTTPException
+from kiln_ai.datamodel import GradedClaim, Project, Task, TaskRun
+from kiln_ai.datamodel.datamodel_enums import (
+    FeedbackSource,
+    TaskOutputRatingType,
+    TurnMode,
+)
+from kiln_ai.datamodel.task_output import (
+    DataSource,
+    DataSourceType,
+    TaskOutput,
+    TaskOutputRating,
+)
+
 from app.desktop.studio_server.api_models.copilot_models import (
     ClaimReviewApi,
     DrivenSyntheticCaseApi,
@@ -30,19 +44,6 @@ from app.desktop.studio_server.utils.copilot_utils import (
     unrate_multi_turn_chain_leaves,
     warn_if_golden_below_target,
     write_eval_slice_multi_turn,
-)
-from fastapi import HTTPException
-from kiln_ai.datamodel import GradedClaim, Project, Task, TaskRun
-from kiln_ai.datamodel.datamodel_enums import (
-    FeedbackSource,
-    TaskOutputRatingType,
-    TurnMode,
-)
-from kiln_ai.datamodel.task_output import (
-    DataSource,
-    DataSourceType,
-    TaskOutput,
-    TaskOutputRating,
 )
 
 
@@ -207,36 +208,36 @@ class TestWarnIfGoldenBelowTarget:
 class TestCreateTaskRunFromSample:
     def test_creates_task_run_with_correct_input(self):
         sample = SampleApi(input="test input", output="test output")
-        task_run = create_task_run_from_sample(sample, "eval_tag")
+        task_run = create_task_run_from_sample(sample, "some_tag")
         assert task_run.input == "test input"
 
     def test_creates_task_run_with_correct_output(self):
         sample = SampleApi(input="test input", output="test output")
-        task_run = create_task_run_from_sample(sample, "eval_tag")
+        task_run = create_task_run_from_sample(sample, "some_tag")
         assert task_run.output.output == "test output"
 
     def test_creates_task_run_with_tag(self):
         sample = SampleApi(input="test input", output="test output")
-        task_run = create_task_run_from_sample(sample, "eval_tag")
-        assert "eval_tag" in task_run.tags
+        task_run = create_task_run_from_sample(sample, "some_tag")
+        assert "some_tag" in task_run.tags
 
     def test_creates_task_run_with_extra_tags(self):
         sample = SampleApi(input="test input", output="test output")
         task_run = create_task_run_from_sample(
-            sample, "eval_tag", extra_tags=["session_123", "other_tag"]
+            sample, "some_tag", extra_tags=["session_123", "other_tag"]
         )
-        assert "eval_tag" in task_run.tags
+        assert "some_tag" in task_run.tags
         assert "session_123" in task_run.tags
         assert "other_tag" in task_run.tags
 
     def test_creates_task_run_without_extra_tags(self):
         sample = SampleApi(input="test input", output="test output")
-        task_run = create_task_run_from_sample(sample, "eval_tag", extra_tags=None)
-        assert task_run.tags == ["eval_tag"]
+        task_run = create_task_run_from_sample(sample, "some_tag", extra_tags=None)
+        assert task_run.tags == ["some_tag"]
 
     def test_creates_task_run_with_synthetic_data_source(self):
         sample = SampleApi(input="test input", output="test output")
-        task_run = create_task_run_from_sample(sample, "eval_tag")
+        task_run = create_task_run_from_sample(sample, "some_tag")
         assert task_run.input_source.type == DataSourceType.synthetic
         assert task_run.input_source.properties["model_name"] == KILN_COPILOT_MODEL_NAME
         assert (

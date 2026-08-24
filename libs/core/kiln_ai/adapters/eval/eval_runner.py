@@ -1,7 +1,6 @@
-import json
 import logging
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Dict, List, Literal, Set, Tuple
+from typing import AsyncGenerator, Dict, List, Literal, Set, Tuple
 
 import litellm
 
@@ -10,15 +9,16 @@ from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.base_eval import BaseEval, BaseV2EvalBridge
 from kiln_ai.adapters.eval.drive_fingerprint import compute_drive_fingerprint
 from kiln_ai.adapters.eval.registry import legacy_eval_adapter_from_type
+from kiln_ai.adapters.eval.trace_index import TraceIndex, TraceKey, trace_key
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
-from kiln_ai.datamodel.basemodel import ID_TYPE
+from kiln_ai.datamodel.basemodel import ID_TYPE, generate_model_id
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.dataset_filters import (
     DatasetFilterId,
     dataset_filter_from_id,
-    eval_input_filter_from_id,
 )
 from kiln_ai.datamodel.eval import (
+    Eval,
     EvalConfig,
     EvalConfigType,
     EvalDataType,
@@ -27,12 +27,21 @@ from kiln_ai.datamodel.eval import (
     EvalScores,
     EvalTaskInput,
     MultiTurnSyntheticEvalInputData,
-    SingleTurnEvalInputData,
     SkippedReason,
+    V2EvalResult,
 )
-from kiln_ai.datamodel.run_config import as_kiln_agent_run_config
+from kiln_ai.datamodel.eval_splits import (
+    ItemKey,
+    ResolvedSplit,
+    eval_run_item_key,
+    item_key,
+)
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    as_kiln_agent_run_config,
+)
 from kiln_ai.datamodel.task import TaskRunConfig
-from kiln_ai.datamodel.task_run import TaskRun, Usage
+from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun, Usage
 from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.run_context import clear_eval_input_id, set_eval_input_id
 from kiln_ai.synthetic_user import drive_case_for_eval
@@ -44,6 +53,7 @@ from kiln_ai.utils.async_job_runner import (
     RetryableError,
 )
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam, serialize_trace
 
 logger = logging.getLogger(__name__)
 
@@ -59,13 +69,61 @@ class EvalJob:
     task_run_config: TaskRunConfig | None = None
 
 
-@dataclass
-class _ReusableTrace:
-    """Reuse-index entry: a healthy stored conversation plus the sort key
-    (eval id, config id, run id) that made it the deterministic pick."""
+def _calibration_item(job: EvalJob) -> TaskRun | None:
+    """The golden TaskRun a calibration job scores, or None if this isn't calibration.
 
-    trace: list[dict[str, Any]]
-    sort_key: tuple[str, str, str]
+    Calibration generates nothing: the human-rated dataset item *is* what gets scored
+    (functional spec 4.5). So the trace is known before the job starts, and stays known
+    even for a job that is skipped before it reaches the judge — which is why both the
+    scoring path and the skip path ask here rather than each deciding for themselves.
+    """
+    if job.type != "eval_config_eval":
+        return None
+    if not isinstance(job.item, TaskRun):
+        raise ValueError("Calibration items are always TaskRuns")
+    return job.item
+
+
+def _multi_turn_synthetic_case(
+    job: EvalJob,
+) -> Tuple[EvalInput, MultiTurnSyntheticEvalInputData] | None:
+    """The synthetic multi-turn case this job re-drives, if it is one.
+
+    task_run_eval only: calibration scores golden TaskRuns, and an EvalInput carries no
+    stored output to judge, so a hand-built job of that shape falls through to the skip
+    rather than paying for a drive.
+    """
+    if job.type != "task_run_eval":
+        return None
+    if not isinstance(job.item, EvalInput):
+        return None
+    if not isinstance(job.item.data, MultiTurnSyntheticEvalInputData):
+        return None
+    return job.item, job.item.data
+
+
+def _is_multi_turn(item: TaskRun | EvalInput) -> bool:
+    """Whether this item is a conversation rather than a single exchange.
+
+    Multi-turn items are skipped by V2 evals, which also keeps eval traces childless —
+    a property `TraceIndex._seed` relies on to find them.
+    """
+    if isinstance(item, TaskRun):
+        return item.parent_task_run_id is not None
+    return isinstance(item.data, MultiTurnSyntheticEvalInputData)
+
+
+def no_golden_set_message(eval: Eval) -> str:
+    """Why judge comparison can't run without a golden set. One wording, two raisers.
+
+    Shared with the API layer so the 4xx a user sees and the ValueError a library caller
+    sees say the same thing (functional spec 9, architecture 4.3).
+    """
+    return (
+        f"Eval '{eval.id}' has no golden set configured. Comparing judges scores them "
+        "against a set of human-rated dataset items, so the eval needs one before a "
+        "comparison can run."
+    )
 
 
 class EvalRunner:
@@ -73,22 +131,11 @@ class EvalRunner:
     Runs an eval. Async execution is supported to make it faster when using remote/fast model providers.
 
     Can run an eval in 2 modes:
-    1) eval_config_eval: evaluate an eval config (judge quality) against the
-       golden set — human-rated TaskRuns selected by eval_configs_filter_id.
-    2) task_run_eval: evaluate a range of task run configs, generating fresh
-       output per run config. Inputs come from stored TaskRuns
-       (eval_set_filter_id) or EvalInput items (eval_input_filter_id).
-       Multi-turn synthetic EvalInputs are driven as a full conversation
-       per run config using the eval's multi_turn_drive_config — or, when
-       any v2 config on the task already drove the identical setup, judged
-       on that stored conversation (see _run_v2_multi_turn_synthetic_job);
-       stored multi-turn TaskRun chains are judged on their stored trace
-       instead.
-
-    `eval_set_filter_id_override` replaces the eval's eval_set_filter_id as the
-    dataset filter in task_run_eval mode (e.g. to run one of the eval's other
-    dataset splits). Passing it in eval_config_eval mode, or for an
-    EvalInput-backed (V2) eval, raises ValueError.
+    1) eval_config_eval: evaluate an eval config using existing dataset items. Scoped by the
+       eval's golden filter, so its items are always TaskRuns.
+    2) task_run_eval: evaluate a range of task run configs, generating new run output using
+       existing dataset item input. Scoped by the `split` it is given, whose items may come
+       from either store.
     """
 
     def __init__(
@@ -96,6 +143,7 @@ class EvalRunner:
         eval_configs: List[EvalConfig],
         run_configs: List[TaskRunConfig] | None,
         eval_run_type: Literal["eval_config_eval", "task_run_eval"],
+        split: ResolvedSplit | None = None,
         save_context: SaveContext | None = None,
         eval_set_filter_id_override: DatasetFilterId | None = None,
     ):
@@ -115,7 +163,14 @@ class EvalRunner:
         if target_task is None:
             raise ValueError("Eval config requires a (grand)parent task")
 
-        # Check that run_configs is compatible
+        # Both modes settle *what defines* their item scope here rather than at collect
+        # time, but to different depths, and the difference is deliberate. task_run_eval
+        # takes a ResolvedSplit: the items themselves, fixed now, so a split cannot be
+        # accepted and then quietly re-resolved to something else. eval_config_eval takes
+        # the golden filter id and still applies it to self.task.runs() at collect time,
+        # so items added after construction are picked up — golden is TaskRun-only by
+        # definition, so there is no source ambiguity for that to hide.
+        self.golden_filter_id: DatasetFilterId | None = None
         if eval_run_type == "task_run_eval":
             if run_configs is None or len(run_configs) == 0:
                 raise ValueError("Task run eval requires run configs")
@@ -127,61 +182,44 @@ class EvalRunner:
                     raise ValueError(
                         "Run config is not for the same task as the eval configs"
                     )
+            if split is None:
+                raise ValueError("Task run eval requires a resolved split")
+            if split.eval_id != target_eval.id:
+                raise ValueError(
+                    f"Split '{split.name}' was resolved from eval '{split.eval_id}', not from "
+                    f"eval '{target_eval.id}' whose configs are being run"
+                )
         else:
             if run_configs is not None:
                 raise ValueError("Mode 'eval_config_eval' does not support run configs")
-            if eval_set_filter_id_override is not None:
+            if split is not None:
                 raise ValueError(
-                    "Mode 'eval_config_eval' does not support an eval set filter override. "
-                    "It scopes items by the eval's eval_configs_filter_id."
+                    "Mode 'eval_config_eval' does not support a split: it is scoped by the eval's golden filter"
                 )
-
-        self._source_mode: Literal["task_run", "eval_input"] = "task_run"
-        if target_eval.eval_input_filter_id is not None:
-            self._source_mode = "eval_input"
-        if (
-            eval_set_filter_id_override is not None
-            and self._source_mode == "eval_input"
-        ):
-            # The override is a TaskRun dataset filter; the eval_input lane
-            # scopes by eval_input_filter_id. Fail loudly rather than silently
-            # running a different item universe than the caller asked for.
-            raise ValueError(
-                "eval_set_filter_id_override is not supported for EvalInput-backed "
-                "(V2) evals, which scope items by eval_input_filter_id."
-            )
+            if target_eval.eval_configs_filter_id is None:
+                raise ValueError(no_golden_set_message(target_eval))
+            self.golden_filter_id = target_eval.eval_configs_filter_id
 
         self.eval_run_type = eval_run_type
         self.eval_set_filter_id_override = eval_set_filter_id_override
         self.eval_configs = eval_configs
         self.run_configs = run_configs
+        self.split = split
         self.task = target_task
         self.eval = target_eval
         self._skills: SkillsDict = self._preload_skills()
         self._save_context: SaveContext = save_context or default_save_context
-        # Trace-reuse index for multi-turn synthetic jobs, built once per
-        # runner invocation (lazily) so each job does an O(1) lookup instead
-        # of rescanning every persisted run.
-        self._trace_reuse_index: Dict[Tuple[str, ID_TYPE], _ReusableTrace] | None = None
+        # Live, not precomputed like `already_run`: a trace persisted by one job has to be
+        # visible to the next, whether that next job is running concurrently under a
+        # different eval config or is this job's own retry (functional spec 4.2, 4.3).
+        self._trace_index = TraceIndex(self.task)
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
-            # Judge calibration runs against the golden set (human-rated
-            # TaskRuns) regardless of _source_mode: judge validation needs
-            # stored, human-rated outputs, and eval_configs_filter_id is a
-            # TaskRun dataset filter.
-            if self.eval.eval_configs_filter_id is not None:
-                return self.collect_tasks_for_eval_config_eval(
-                    self.eval.eval_configs_filter_id
-                )
-            else:
-                raise ValueError(
-                    "Eval configs filter ID is required for eval runs of type 'eval_config_eval'"
-                )
-        elif self._source_mode == "eval_input":
-            return self.collect_tasks_for_eval_input()
-        else:
-            return self.collect_tasks_for_task_run_eval()
+            if self.golden_filter_id is None:
+                raise ValueError(no_golden_set_message(self.eval))
+            return self.collect_tasks_for_eval_config_eval(self.golden_filter_id)
+        return self.collect_tasks_for_task_run_eval()
 
     def collect_tasks_for_eval_config_eval(
         self, eval_configs_filter_id: DatasetFilterId
@@ -216,58 +254,6 @@ class EvalRunner:
             if task_run.id not in already_run[eval_config.id]
         ]
 
-    def collect_tasks_for_eval_input(self) -> List[EvalJob]:
-        """Collect jobs from EvalInput items under the task.
-
-        task_run_eval only: eval_config_eval always collects golden TaskRuns
-        (see collect_tasks) since EvalInput items carry no stored output to
-        judge.
-        """
-        if self.eval_run_type != "task_run_eval":
-            raise ValueError(
-                "EvalInput collection only supports task_run_eval; "
-                "eval_config_eval uses eval_configs_filter_id over TaskRuns"
-            )
-        filter_id = self.eval.eval_input_filter_id
-        if filter_id is None:
-            raise ValueError(
-                "eval_input_filter_id is required for eval_input source mode"
-            )
-        input_filter = eval_input_filter_from_id(filter_id)
-
-        already_run: Dict[ID_TYPE, Dict[ID_TYPE, Set[ID_TYPE]]] = {}
-        for eval_config in self.eval_configs:
-            already_run[eval_config.id] = {}
-            for run_config in self.run_configs or []:
-                already_run[eval_config.id][run_config.id] = set()
-            for run in eval_config.runs(readonly=True):
-                if (
-                    run.eval_input_id is not None
-                    and run.task_run_config_id is not None
-                    and run.task_run_config_id in already_run[eval_config.id]
-                ):
-                    already_run[eval_config.id][run.task_run_config_id].add(
-                        run.eval_input_id
-                    )
-
-        jobs: List[EvalJob] = []
-        for eval_input in self.task.eval_inputs(readonly=True):
-            if not input_filter(eval_input):
-                continue
-            for eval_config in self.eval_configs:
-                for run_config in self.run_configs or []:
-                    if eval_input.id in already_run[eval_config.id][run_config.id]:
-                        continue
-                    jobs.append(
-                        EvalJob(
-                            item=eval_input,
-                            eval_config=eval_config,
-                            type="task_run_eval",
-                            task_run_config=run_config,
-                        )
-                    )
-        return jobs
-
     def collect_tasks_for_task_run_eval(self) -> List[EvalJob]:
         """
         Collect all jobs for this run, excluding any that have already been run.
@@ -275,44 +261,44 @@ class EvalRunner:
         This variant is used for mode "task_run_eval", generating new run output using existing dataset item input.
 
         The tasks:
-        - should be in the eval set filter (or the override filter, when one was
-          provided — e.g. to run one of the eval's other dataset splits)
+        - are the items of the split this runner was given, from whichever store backs it
         - should not have already been run for this eval config + run config + dataset item
         """
-        eval_set_filter_id = (
-            self.eval_set_filter_id_override or self.eval.eval_set_filter_id
-        )
-        if eval_set_filter_id is None:
-            raise ValueError("eval_set_filter_id is required for task_run_eval mode")
-        filter = dataset_filter_from_id(eval_set_filter_id)
+        if self.split is None:
+            raise ValueError("Task run eval requires a resolved split")
 
-        # already_run[eval_config_id][run_config_id][dataset_id]
-        already_run: Dict[ID_TYPE, Dict[ID_TYPE, Set[ID_TYPE]]] = {}
+        # already_run[eval_config_id][run_config_id][item_key]
+        already_run: Dict[ID_TYPE, Dict[ID_TYPE, Set[ItemKey]]] = {}
         for eval_config in self.eval_configs:
-            already_run[eval_config.id] = {}
-            for run_config in self.run_configs or []:
-                already_run[eval_config.id][run_config.id] = set()
+            already_run[eval_config.id] = {
+                run_config.id: set() for run_config in self.run_configs or []
+            }
             for run in eval_config.runs(readonly=True):
+                # Scopes the dedupe to the run configs actually being evaluated: an eval
+                # config accumulates runs for every run config ever compared against it.
+                # The `is not None` is not redundant with the membership test — ID_TYPE is
+                # `str | None`, so a run config whose file carries a null id would make
+                # None a real key and fold every calibration record into its set.
                 if (
                     run.task_run_config_id is not None
                     and run.task_run_config_id in already_run[eval_config.id]
                 ):
                     already_run[eval_config.id][run.task_run_config_id].add(
-                        run.dataset_id
+                        eval_run_item_key(run)
                     )
 
         return [
             EvalJob(
-                item=task_run,
+                item=item,
                 task_run_config=run_config,
                 type="task_run_eval",
                 eval_config=eval_config,
             )
-            for task_run in self.task.runs(readonly=True)
-            if filter(task_run)
+            for item in self.split.items
             for eval_config in self.eval_configs
             for run_config in self.run_configs or []
-            if task_run.id not in already_run[eval_config.id][run_config.id]
+            if (self.split.source, item.id)
+            not in already_run[eval_config.id][run_config.id]
         ]
 
     def _preload_skills(self) -> SkillsDict:
@@ -425,7 +411,7 @@ class EvalRunner:
                 and parent_eval.evaluation_data_type == EvalDataType.full_trace
                 and result_task_run.trace
             ):
-                trace = json.dumps(result_task_run.trace, indent=2)
+                trace = serialize_trace(result_task_run.trace)
 
             if (
                 parent_eval
@@ -457,21 +443,6 @@ class EvalRunner:
     async def _run_v2_job(self, job: EvalJob) -> bool:
         from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
 
-        if isinstance(job.item, TaskRun):
-            early_input_str = job.item.input
-        elif isinstance(job.item, EvalInput) and isinstance(
-            job.item.data, SingleTurnEvalInputData
-        ):
-            early_input_str = job.item.data.user_message.text
-        elif isinstance(job.item, EvalInput) and isinstance(
-            job.item.data, MultiTurnSyntheticEvalInputData
-        ):
-            early_input_str = (
-                job.item.data.first_message.text if job.item.data.first_message else ""
-            )
-        else:
-            early_input_str = ""
-
         try:
             rc_props = (
                 job.task_run_config.run_config_properties
@@ -482,224 +453,192 @@ class EvalRunner:
                 job.eval_config, rc_props, self._skills
             )
         except NotImplementedError:
-            async with self._save_context():
-                eval_run = EvalRun(
-                    parent=job.eval_config,
-                    task_run_config_id=job.task_run_config.id
-                    if job.task_run_config
-                    else None,
-                    dataset_id=job.item.id if isinstance(job.item, TaskRun) else None,
-                    eval_input_id=job.item.id
-                    if isinstance(job.item, EvalInput)
-                    else None,
-                    eval_config_eval=job.type == "eval_config_eval",
-                    scores={},
-                    input=early_input_str,
-                    output=None,
-                    skipped_reason=SkippedReason.type_not_available.value,
-                    skipped_detail="V2 eval type not yet implemented",
-                )
-                eval_run.save_to_file()
-            return True
+            return await self._persist_skip(
+                job,
+                SkippedReason.type_not_available,
+                "V2 eval type not yet implemented",
+            )
 
-        if (
-            isinstance(job.item, EvalInput)
-            and isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
-            and job.type == "task_run_eval"
-        ):
-            # Multi-turn synthetic input: re-drive the conversation fresh
-            # for this run config, then judge the new trace. The job.type
-            # guard is defensive — collect_tasks never pairs eval_config_eval
-            # with EvalInput items (judge calibration uses golden TaskRuns);
-            # a hand-built job of that shape hits the EvalInput skip below.
+        # The two multi-turn lanes come before `_resolve_trace`: neither is a single
+        # generation, so neither can go through it.
+        multi_turn_case = _multi_turn_synthetic_case(job)
+        if multi_turn_case is not None:
+            eval_input, data = multi_turn_case
             return await self._run_v2_multi_turn_synthetic_job(
-                job, evaluator, job.item, job.item.data, early_input_str
+                job,
+                evaluator,
+                eval_input,
+                data,
+                data.first_message.text if data.first_message else "",
             )
 
         if isinstance(job.item, TaskRun) and job.item.parent_task_run_id is not None:
-            # Multi-turn chain leaf: a conversation can't be regenerated in
-            # a single model call, so both run modes evaluate the stored
-            # trace. In task_run_eval mode the scores are therefore a property
-            # of the stored conversation, identical across run configs —
-            # re-driving per run config needs a synthetic-user seed + persona,
-            # which EvalInput-sourced cases carry (branch above) but stored
-            # TaskRun chains do not.
+            # A stored conversation, not a case to re-drive: a chain leaf carries no
+            # synthetic-user persona, so there is nothing to drive it with and both run
+            # modes judge the trace it already has. Its scores are therefore a property
+            # of the stored conversation and identical across run configs.
             leaf = job.item
             if not leaf.trace:
-                async with self._save_context():
-                    eval_run = EvalRun(
-                        parent=job.eval_config,
-                        task_run_config_id=job.task_run_config.id
-                        if job.task_run_config
-                        else None,
-                        dataset_id=leaf.id,
-                        eval_input_id=None,
-                        eval_config_eval=job.type == "eval_config_eval",
-                        scores={},
-                        input=leaf.input,
-                        output=None,
-                        skipped_reason=SkippedReason.missing_trace.value,
-                        skipped_detail="Multi-turn task run has no stored trace to evaluate",
-                    )
-                    eval_run.save_to_file()
-                return True
-
+                return await self._persist_skip(
+                    job,
+                    SkippedReason.missing_trace,
+                    "Multi-turn task run has no stored trace to evaluate",
+                )
             eval_task_input = EvalTaskInput.from_task_run(leaf)
             result = await evaluator.evaluate(eval_task_input)
+            return await self._persist_judgment(job, leaf, result)
 
-            # Task-run-eval records always carry the evaluated conversation
-            # (even on judge skips — the trace is what was scored, or would
-            # have been). eval_config_eval (golden calibration) records stay
-            # scores-only: their trace already lives on the golden TaskRun.
-            trace_json: str | None = None
-            if job.type == "task_run_eval":
-                trace_json = _serialize_trace(eval_task_input.trace)
+        # Any other multi-turn shape can never be scored, and the skip comes before
+        # `_resolve_trace` so it never pays for a generation.
+        if _is_multi_turn(job.item):
+            return await self._persist_skip(
+                job,
+                SkippedReason.incompatible_input_shape,
+                "V2 evals do not yet support multi-turn inputs",
+            )
 
-            async with self._save_context():
-                eval_run = EvalRun(
-                    parent=job.eval_config,
-                    task_run_config_id=job.task_run_config.id
-                    if job.task_run_config
-                    else None,
-                    dataset_id=leaf.id,
-                    eval_input_id=None,
-                    eval_config_eval=job.type == "eval_config_eval",
-                    scores=result.scores,
-                    input=leaf.input,
-                    output=leaf.output.output
-                    if result.skipped_reason is None
-                    else None,
-                    reference_data=eval_task_input.reference_data,
-                    skipped_reason=result.skipped_reason.value
-                    if result.skipped_reason
-                    else None,
-                    skipped_detail=result.skipped_detail,
-                    intermediate_outputs=result.intermediate_outputs,
-                    task_run_trace=trace_json,
-                    eval_usage=result.eval_usage,
-                )
-                eval_run.save_to_file()
-            return True
+        trace = await self._resolve_trace(job, evaluator)
+        eval_task_input = EvalTaskInput.from_trace(trace, job.item)
+        result = await evaluator.evaluate(eval_task_input)
+        return await self._persist_judgment(job, trace, result)
 
-        if isinstance(job.item, EvalInput):
-            if job.type == "eval_config_eval":
-                async with self._save_context():
-                    eval_run = EvalRun(
-                        parent=job.eval_config,
-                        task_run_config_id=job.task_run_config.id
-                        if job.task_run_config
-                        else None,
-                        dataset_id=None,
-                        eval_input_id=job.item.id,
-                        eval_config_eval=True,
-                        scores={},
-                        input=early_input_str,
-                        output=None,
-                        skipped_reason=SkippedReason.incompatible_input_shape.value,
-                        skipped_detail="EvalInput source has no stored output; eval_config_eval over EvalInput is deferred in V2.0 (golden subsets use TaskRun sources)",
-                    )
-                    eval_run.save_to_file()
-                return True
+    async def _resolve_trace(
+        self, job: EvalJob, evaluator: BaseV2EvalBridge
+    ) -> TaskRun:
+        """The TaskRun this job scores, generating it only if the task has none."""
+        golden = _calibration_item(job)
+        if golden is not None:
+            return golden
 
-            run_output = await evaluator.run_task(job.item)
-            eval_task_input = EvalTaskInput.from_eval_input(job.item, run_output)
-            result = await evaluator.evaluate(eval_task_input)
+        if job.task_run_config is None:
+            raise ValueError("A task_run_eval job requires a run config")
 
-            async with self._save_context():
-                eval_run = EvalRun(
-                    parent=job.eval_config,
-                    task_run_config_id=job.task_run_config.id
-                    if job.task_run_config
-                    else None,
-                    dataset_id=None,
-                    eval_input_id=job.item.id,
-                    eval_config_eval=False,
-                    scores=result.scores,
-                    input=early_input_str,
-                    output=run_output.output.output
-                    if result.skipped_reason is None
-                    else None,
-                    reference_data=job.item.reference,
-                    skipped_reason=result.skipped_reason.value
-                    if result.skipped_reason
-                    else None,
-                    skipped_detail=result.skipped_detail,
-                    intermediate_outputs=result.intermediate_outputs,
-                    # Fresh generations are transient — the record is the only
-                    # place the evaluated conversation survives.
-                    task_run_trace=_serialize_trace(eval_task_input.trace),
-                    task_run_usage=_usage_from_trace(eval_task_input.trace),
-                    eval_usage=result.eval_usage,
-                )
-                eval_run.save_to_file()
-            return True
+        key = trace_key(item_key(job.item), job.task_run_config.id)
+        # `TraceIndex` logs both outcomes itself — debug on reuse, info on generation
+        # (architecture 8) — so the was_generated bool has no reader here.
+        trace, _ = await self._trace_index.get_or_create(
+            key, lambda: self._generate_and_persist(job, evaluator, key)
+        )
+        return trace
 
-        if job.type == "task_run_eval":
-            run_output = await evaluator.run_task(job.item)
-            eval_task_input = EvalTaskInput.from_task_run(run_output)
-            result = await evaluator.evaluate(eval_task_input)
-            task_output = run_output.output.output
-            task_input_str = run_output.input
-            # The source dataset item, not the fresh generation: run_task never
-            # persists its run, and dedupe/progress accounting key on the source id.
-            dataset_id = job.item.id
+    async def _generate_and_persist(
+        self, job: EvalJob, evaluator: BaseV2EvalBridge, key: TraceKey
+    ) -> TaskRun:
+        """Run the task for this job's item, and make the result durable before scoring.
 
-            async with self._save_context():
-                eval_run = EvalRun(
-                    parent=job.eval_config,
-                    task_run_config_id=job.task_run_config.id
-                    if job.task_run_config
-                    else None,
-                    dataset_id=dataset_id,
-                    eval_input_id=None,
-                    eval_config_eval=False,
-                    scores=result.scores,
-                    input=task_input_str,
-                    output=task_output if result.skipped_reason is None else None,
-                    reference_data=eval_task_input.reference_data,
-                    skipped_reason=result.skipped_reason.value
-                    if result.skipped_reason
-                    else None,
-                    skipped_detail=result.skipped_detail,
-                    intermediate_outputs=result.intermediate_outputs,
-                    # The fresh run's conversation, when the adapter produced
-                    # one — kept regardless of scoring outcome.
-                    task_run_trace=_serialize_trace(eval_task_input.trace),
-                    task_run_usage=_usage_from_trace(eval_task_input.trace),
-                    eval_usage=result.eval_usage,
-                )
-                eval_run.save_to_file()
-            return True
-        else:
-            eval_task_input = EvalTaskInput.from_task_run(job.item)
-            dataset_id = job.item.id
-            task_input_str = job.item.input
-            task_output = job.item.output.output
+        Stamped from `key` rather than re-derived from the job, so the run files itself
+        under exactly the key the index filed it under. A run that disagrees is never
+        found again, and the eval regenerates it on every future run.
+        """
+        source_type, source_id, run_config_id, variant = key
+        trace = await evaluator.run_task(job.item, run_config_id=run_config_id)
+        if trace.id is None:
+            # `run_task` builds its adapter with allow_saving=False, and every adapter
+            # clears the id of a run it did not persist (base_adapter.py:346). The runner
+            # is the one persisting here, so it mints the id — the same thing
+            # data_gen_api.py:474 does with an unsaved adapter run.
+            #
+            # Deliberately not allow_saving=True instead: the adapter would persist the
+            # run before `eval_source` is stamped on it, so a crash in that window would
+            # leave an eval trace permanently indistinguishable from a curated dataset
+            # row — the contamination Task.runs()' default-exclude exists to prevent.
+            trace.id = generate_model_id()
+        trace.eval_source = EvalItemSource(
+            source_type=source_type, source_id=source_id, variant=variant or None
+        )
+        async with self._save_context():
+            trace.save_to_file()
+        return trace
 
-            result = await evaluator.evaluate(eval_task_input)
+    async def _persist_score(
+        self,
+        job: EvalJob,
+        *,
+        scored_run_id: ID_TYPE = None,
+        scores: EvalScores | None = None,
+        skipped_reason: str | None = None,
+        skipped_detail: str | None = None,
+        intermediate_outputs: Dict[str, str] | None = None,
+        eval_usage: Usage | None = None,
+        synthetic_user_usage: Usage | None = None,
+        drive_fingerprint: str | None = None,
+    ) -> bool:
+        """Write one V2 score record.
 
-            async with self._save_context():
-                eval_run = EvalRun(
-                    parent=job.eval_config,
-                    task_run_config_id=job.task_run_config.id
-                    if job.task_run_config
-                    else None,
-                    dataset_id=dataset_id,
-                    eval_input_id=None,
-                    eval_config_eval=True,
-                    scores=result.scores,
-                    input=task_input_str,
-                    output=task_output if result.skipped_reason is None else None,
-                    reference_data=eval_task_input.reference_data,
-                    skipped_reason=result.skipped_reason.value
-                    if result.skipped_reason
-                    else None,
-                    skipped_detail=result.skipped_detail,
-                    intermediate_outputs=result.intermediate_outputs,
-                    eval_usage=result.eval_usage,
-                )
-                eval_run.save_to_file()
-            return True
+        The single place the item-identity fields are filled in, because `collect_tasks`
+        dedupes on exactly those: a skip record and a score record that disagreed would
+        be two identities for one job. No inline trace field is ever set — they are
+        deprecated, and the trace lives on the TaskRun (functional spec 3.2).
+        """
+        async with self._save_context():
+            EvalRun(
+                parent=job.eval_config,
+                task_run_config_id=job.task_run_config.id
+                if job.task_run_config
+                else None,
+                dataset_id=job.item.id if isinstance(job.item, TaskRun) else None,
+                eval_input_id=job.item.id if isinstance(job.item, EvalInput) else None,
+                eval_config_eval=job.type == "eval_config_eval",
+                scored_run_id=scored_run_id,
+                scores=scores or {},
+                skipped_reason=skipped_reason,
+                skipped_detail=skipped_detail,
+                intermediate_outputs=intermediate_outputs,
+                eval_usage=eval_usage,
+                # Both are multi-turn only, and both describe the drive rather than the
+                # judgment: the synthetic user's spend (which surfaces nowhere else —
+                # its turns are not persisted as runs) and the inputs the conversation
+                # was driven from.
+                synthetic_user_usage=synthetic_user_usage,
+                drive_fingerprint=drive_fingerprint,
+            ).save_to_file()
+        return True
+
+    async def _persist_skip(
+        self, job: EvalJob, reason: SkippedReason, detail: str
+    ) -> bool:
+        """A job skipped before it reached the judge.
+
+        Calibration still names its trace: the golden item *is* what would have been
+        scored, it is already on disk, and a skip that happens one step later — inside
+        `evaluate()` — records it (functional spec 4.6, row 2). Where the failure
+        happened shouldn't change the record's shape, and Phase 5 migrates old
+        calibration skips to exactly this.
+
+        A scoring job genuinely has nothing to point at. Generating a trace for a job
+        that can never be scored is the spend these early skips exist to avoid.
+        """
+        golden = _calibration_item(job)
+        return await self._persist_score(
+            job,
+            scored_run_id=golden.id if golden is not None else None,
+            skipped_reason=reason.value,
+            skipped_detail=detail,
+        )
+
+    async def _persist_judgment(
+        self,
+        job: EvalJob,
+        trace: TaskRun,
+        result: V2EvalResult,
+    ) -> bool:
+        """The score for one item, pointing at the trace it was computed over.
+
+        Also the home of a scoring-time skip: the trace exists and this judge could not
+        score it, so the record carries both `scored_run_id` and `skipped_reason`
+        (functional spec 4.6, row 2).
+        """
+        return await self._persist_score(
+            job,
+            scored_run_id=trace.id,
+            scores=result.scores,
+            skipped_reason=result.skipped_reason.value
+            if result.skipped_reason
+            else None,
+            skipped_detail=result.skipped_detail,
+            intermediate_outputs=result.intermediate_outputs,
+            eval_usage=result.usage,
+        )
 
     async def _run_v2_multi_turn_synthetic_job(
         self,
@@ -712,57 +651,32 @@ class EvalRunner:
         """task_run_eval over a multi-turn synthetic input.
 
         The run config under evaluation drives the agent while the eval's
-        multi_turn_drive_config plays the synthetic user, so each run config
-        gets its own fresh conversation — the property that makes run-config
-        comparison meaningful for multi-turn. Before driving, the reuse index
-        is consulted: any v2 config on the task that already drove the
-        identical (drive config, run config, scenario) supplies its stored
-        trace, so every judge scores the same conversation and the drive cost
-        is paid once — including judges on separate Evals (Mike's two-judge
-        case). The drive itself is transient (no TaskRuns written); the EvalRun
-        record always carries the serialized conversation plus its
-        drive_fingerprint, success or skip.
+        multi_turn_drive_config plays the synthetic user, so each run config gets its own
+        conversation — the property that makes run-config comparison meaningful for
+        multi-turn. The conversation is persisted as a TaskRun and reached through
+        `TraceIndex` like any other eval trace, so a second judge scores what the first
+        one paid for, across evals as well as within one.
+
+        Reuse is keyed on the drive fingerprint as well as the item and run config: two
+        evals driving the same case with different drive settings produce genuinely
+        different conversations, and the fingerprint is what keeps them apart.
         """
         drive_config = self.eval.multi_turn_drive_config
         if drive_config is None:
-            async with self._save_context():
-                eval_run = EvalRun(
-                    parent=job.eval_config,
-                    task_run_config_id=job.task_run_config.id
-                    if job.task_run_config
-                    else None,
-                    dataset_id=None,
-                    eval_input_id=eval_input.id,
-                    eval_config_eval=False,
-                    scores={},
-                    input=seed,
-                    output=None,
-                    skipped_reason=SkippedReason.missing_drive_config.value,
-                    skipped_detail="Eval has no multi_turn_drive_config; "
-                    "re-driving a multi-turn synthetic input requires one",
-                )
-                eval_run.save_to_file()
-            return True
+            return await self._persist_skip(
+                job,
+                SkippedReason.missing_drive_config,
+                "Eval has no multi_turn_drive_config; re-driving a multi-turn "
+                "synthetic input requires one",
+            )
 
         if not seed:
-            async with self._save_context():
-                eval_run = EvalRun(
-                    parent=job.eval_config,
-                    task_run_config_id=job.task_run_config.id
-                    if job.task_run_config
-                    else None,
-                    dataset_id=None,
-                    eval_input_id=eval_input.id,
-                    eval_config_eval=False,
-                    scores={},
-                    input=seed,
-                    output=None,
-                    skipped_reason=SkippedReason.incompatible_input_shape.value,
-                    skipped_detail="Multi-turn synthetic input has no "
-                    "first_message to open the conversation",
-                )
-                eval_run.save_to_file()
-            return True
+            return await self._persist_skip(
+                job,
+                SkippedReason.incompatible_input_shape,
+                "Multi-turn synthetic input has no first_message to open the "
+                "conversation",
+            )
 
         if job.task_run_config is None:
             raise ValueError("Task run eval requires a run config")
@@ -786,176 +700,149 @@ class EvalRunner:
         fingerprint = compute_drive_fingerprint(
             drive_config, job.task_run_config.run_config_properties, data
         )
-        # Synthetic-user spend for THIS record. Stays None on reuse: no driver
-        # call was made, and the spend is already booked on the record that
-        # actually drove the conversation — counting it again would double-book
-        # it. Unlike task_run_usage it cannot be recovered from the trace,
-        # because the SU's calls leave nothing in it.
-        su_usage: Usage | None = None
-        reused_trace = self._find_reusable_trace(fingerprint, job.task_run_config.id)
-        if reused_trace is not None:
-            # Another v2 config (this eval's or a task sibling's) already
-            # drove this exact conversation setup: judge its stored trace
-            # instead of paying for a fresh drive.
-            eval_task_input = EvalTaskInput.from_eval_input_trace(
-                eval_input, reused_trace
-            )
-        else:
-            # Scope the eval-input id to the drive: every turn's tool calls see
-            # which EvalInput produced them (run_context contextvar).
-            if eval_input.id:
-                set_eval_input_id(eval_input.id)
-            try:
-                drive_result = await drive_case_for_eval(
-                    seed_prompt=seed,
-                    synthetic_user_info=data.synthetic_user_info,
-                    target_task=self.task,
-                    target_run_config=agent_run_config,
-                    su_driver_config=SyntheticUserDriverConfig(
-                        model_name=drive_config.model_name,
-                        model_provider_name=su_provider,
-                    ),
-                    turns=drive_config.turns,
-                    skills=self._skills,
-                )
-            finally:
-                clear_eval_input_id()
-            leaf = drive_result.chain[-1]
-            su_usage = drive_result.su_usage
-            eval_task_input = EvalTaskInput.from_eval_input(eval_input, leaf)
-            # Publish the fresh trace so same-invocation sibling jobs reuse
-            # it without waiting for this record to hit disk.
-            if eval_task_input.trace is not None:
-                self._record_driven_trace(
-                    fingerprint, job.task_run_config.id, eval_task_input.trace
-                )
+        # Synthetic-user spend for THIS record. Stays None when the conversation was
+        # reused: no driver call was made, and the spend is already booked on the record
+        # that drove it. Unlike the agent's usage it cannot be recovered from the trace,
+        # because the synthetic user's calls leave nothing in it.
+        driven_su_usage: List[Usage | None] = []
 
-        result = await evaluator.evaluate(eval_task_input)
-
-        async with self._save_context():
-            eval_run = EvalRun(
-                parent=job.eval_config,
-                task_run_config_id=job.task_run_config.id,
-                dataset_id=None,
-                eval_input_id=eval_input.id,
-                eval_config_eval=False,
-                scores=result.scores,
-                input=seed,
-                output=eval_task_input.final_message
-                if result.skipped_reason is None
-                else None,
-                reference_data=eval_input.reference,
-                skipped_reason=result.skipped_reason.value
-                if result.skipped_reason
-                else None,
-                skipped_detail=result.skipped_detail,
-                intermediate_outputs=result.intermediate_outputs,
-                # Trace + fingerprint persist on every driven/reused record —
-                # a judge skip after a full-cost drive must not discard the
-                # conversation, and self-contained records survive deletion
-                # of the sibling that originally drove them.
-                task_run_trace=_serialize_trace(eval_task_input.trace),
-                task_run_usage=_usage_from_trace(eval_task_input.trace),
-                eval_usage=result.eval_usage,
-                synthetic_user_usage=su_usage,
-                drive_fingerprint=fingerprint,
-            )
-            eval_run.save_to_file()
-        return True
-
-    def _find_reusable_trace(
-        self, fingerprint: str, run_config_id: ID_TYPE
-    ) -> list[dict[str, Any]] | None:
-        """O(1) lookup of a healthy stored conversation for (fingerprint,
-        run config). Reuse never crosses run configs: identical scenario
-        content under a different agent config is a different conversation."""
-        entry = self._reuse_index().get((fingerprint, run_config_id))
-        return entry.trace if entry is not None else None
-
-    def _record_driven_trace(
-        self,
-        fingerprint: str,
-        run_config_id: ID_TYPE,
-        trace: list[dict[str, Any]],
-    ) -> None:
-        """Append a just-driven conversation to the reuse index. Insert-only:
-        if a concurrent sibling already published one, the first write wins."""
-        drive_config = self.eval.multi_turn_drive_config
-        if drive_config is None or not _trace_has_full_turn_count(
-            trace, drive_config.turns
-        ):
-            return
-        self._reuse_index().setdefault(
-            (fingerprint, run_config_id),
-            # Copy the message dicts so the index entry doesn't alias the
-            # driving job's judge input (same copy discipline as
-            # EvalTaskInput.from_task_run). Empty sort key: in-memory entries
-            # only matter within this invocation, where insert order (first
-            # driver) is the pick.
-            _ReusableTrace(trace=[dict(msg) for msg in trace], sort_key=("", "", "")),
+        key = trace_key(item_key(job.item), job.task_run_config.id, fingerprint)
+        trace, was_generated = await self._trace_index.get_or_create(
+            key,
+            lambda: self._drive_and_persist(
+                job,
+                eval_input,
+                data,
+                seed,
+                agent_run_config,
+                su_provider,
+                key,
+                driven_su_usage,
+            ),
         )
 
-    def _reuse_index(self) -> Dict[Tuple[str, ID_TYPE], _ReusableTrace]:
-        """The trace-reuse index, built lazily and exactly once per runner
-        invocation: a per-job disk scan would be O(jobs x records)."""
-        if self._trace_reuse_index is None:
-            self._trace_reuse_index = self._build_trace_reuse_index()
-        return self._trace_reuse_index
+        if not was_generated and not _trace_is_complete_drive(
+            trace.trace, drive_config.turns
+        ):
+            # A partial conversation is a degraded sample, not a cheaper one: re-judging
+            # it would quietly score every later judge against a drive that fell over.
+            # Driving again under a variant nothing else can name keeps the fresh
+            # conversation out of the way of the indexed (broken) one, which stays where
+            # it is as the record of what the first judge actually scored.
+            logger.info(
+                "Indexed multi-turn trace %s for %s is incomplete; re-driving",
+                trace.id,
+                key,
+            )
+            retry_key = trace_key(
+                item_key(job.item),
+                job.task_run_config.id,
+                f"{fingerprint}:redrive:{job.eval_config.id}",
+            )
+            trace, _ = await self._trace_index.get_or_create(
+                retry_key,
+                lambda: self._drive_and_persist(
+                    job,
+                    eval_input,
+                    data,
+                    seed,
+                    agent_run_config,
+                    su_provider,
+                    retry_key,
+                    driven_su_usage,
+                ),
+            )
 
-    def _build_trace_reuse_index(self) -> Dict[Tuple[str, ID_TYPE], _ReusableTrace]:
-        """One pass over every v2 eval config's persisted runs task-wide,
-        keeping the healthiest deterministic pick per (fingerprint, run
-        config). The scan crosses evals because the fingerprint is content
-        keyed: two evals judging the identical (drive config, run config,
-        scenario) share one conversation instead of paying for two.
+        eval_task_input = EvalTaskInput.from_trace(trace, eval_input)
+        result = await evaluator.evaluate(eval_task_input)
+        return await self._persist_score(
+            job,
+            scored_run_id=trace.id,
+            scores=result.scores,
+            skipped_reason=result.skipped_reason.value
+            if result.skipped_reason
+            else None,
+            skipped_detail=result.skipped_detail,
+            intermediate_outputs=result.intermediate_outputs,
+            eval_usage=result.usage,
+            synthetic_user_usage=driven_su_usage[0] if driven_su_usage else None,
+            drive_fingerprint=fingerprint,
+        )
 
-        Only healthy traces enter the index: skip tombstones and partial
-        conversations must trigger a fresh drive, not get re-judged. The
-        deterministic pick (min sort key) makes racing writers converge on
-        one trace across separate invocations.
+    async def _drive_and_persist(
+        self,
+        job: EvalJob,
+        eval_input: EvalInput,
+        data: MultiTurnSyntheticEvalInputData,
+        seed: str,
+        agent_run_config: KilnAgentRunConfigProperties,
+        su_provider: ModelProviderName,
+        key: TraceKey,
+        su_usage_out: List[Usage | None] | None = None,
+    ) -> TaskRun:
+        """Drive one conversation and make it durable before it is scored.
+
+        The `TraceIndex` counterpart to `_generate_and_persist`, for the lane where a
+        generation is a whole conversation rather than a single call. Stamped from `key`
+        for the same reason: a run that files itself under a different key than the one
+        it was generated for is never found again.
         """
-        index: Dict[Tuple[str, ID_TYPE], _ReusableTrace] = {}
         drive_config = self.eval.multi_turn_drive_config
-        if drive_config is None:
-            return index
-        for task_eval in self.task.evals(readonly=True):
-            for eval_config in task_eval.configs(readonly=True):
-                if eval_config.config_type != EvalConfigType.v2:
-                    continue
-                for run in eval_config.runs(readonly=True):
-                    if run.drive_fingerprint is None or run.task_run_config_id is None:
-                        continue
-                    # Health is judged against THIS eval's turn setting: a
-                    # record driven with different turns fails it, but its
-                    # fingerprint embeds those turns so no job in this
-                    # invocation could look it up anyway.
-                    trace = _parse_healthy_trace(run.task_run_trace, drive_config.turns)
-                    if trace is None:
-                        continue
-                    key = (run.drive_fingerprint, run.task_run_config_id)
-                    sort_key = (str(task_eval.id), str(eval_config.id), str(run.id))
-                    existing = index.get(key)
-                    if existing is None or sort_key < existing.sort_key:
-                        index[key] = _ReusableTrace(trace=trace, sort_key=sort_key)
-        return index
+        assert drive_config is not None, "the caller checks this before driving"
+        source_type, source_id, run_config_id, variant = key
+
+        # Scope the eval-input id to the drive: every turn's tool calls see which
+        # EvalInput produced them (run_context contextvar).
+        if eval_input.id:
+            set_eval_input_id(eval_input.id)
+        try:
+            drive_result = await drive_case_for_eval(
+                seed_prompt=seed,
+                synthetic_user_info=data.synthetic_user_info,
+                target_task=self.task,
+                target_run_config=agent_run_config,
+                su_driver_config=SyntheticUserDriverConfig(
+                    model_name=drive_config.model_name,
+                    model_provider_name=su_provider,
+                ),
+                turns=drive_config.turns,
+                skills=self._skills,
+            )
+        finally:
+            clear_eval_input_id()
+
+        if su_usage_out is not None:
+            su_usage_out.append(drive_result.su_usage)
+
+        leaf = drive_result.chain[-1]
+        # The leaf carries the whole conversation on `.trace`, and its ancestors are
+        # never saved. Keeping a pointer to them would read as a broken chain in the
+        # dataset UI, and would hide this trace from the index, which does not look at
+        # runs that are somebody's parent.
+        leaf.parent_task_run_id = None
+        if leaf.usage is None:
+            leaf.usage = _usage_from_trace(leaf.trace)
+        if leaf.id is None:
+            # Driven with allow_saving=False, so nothing has minted an id; the runner is
+            # the one persisting, exactly as in `_generate_and_persist`.
+            leaf.id = generate_model_id()
+        if leaf.output.source is not None:
+            # Half the key a later index rebuilds from is read off here.
+            leaf.output.source.run_config_id = run_config_id
+        leaf.eval_source = EvalItemSource(
+            source_type=source_type, source_id=source_id, variant=variant or None
+        )
+        async with self._save_context():
+            leaf.save_to_file()
+        return leaf
 
 
-def _trace_json_default(obj: object) -> object:
-    """json.dumps `default` for stored traces: in-memory assistant turns carry
-    MessageUsage (Pydantic). The whitelist stays narrow so any new non-JSON
-    type fails loudly instead of leaking through a blanket str() fallback."""
-    if isinstance(obj, MessageUsage):
-        return obj.model_dump(mode="json")
-    raise TypeError(f"{type(obj).__name__} is not JSON serializable")
-
-
-def _usage_from_trace(trace: list[dict[str, Any]] | None) -> Usage | None:
+def _usage_from_trace(trace: list[ChatCompletionMessageParam] | None) -> Usage | None:
     """Aggregate per-message usage and latency into run-level Usage.
 
-    The v2 lanes score traces (fresh-driven, reused, or single-turn
-    generations) rather than persisted TaskRuns, so run-level usage must be
-    derived from the trace itself — this also covers the reused-trace branch,
-    where no leaf TaskRun exists. Latency is the sum of per-call latency_ms:
+    A driven conversation's leaf reaches the runner unsaved and without run-level
+    usage of its own, so it is derived from the trace before the leaf is persisted.
+    Latency is the sum of per-call latency_ms:
     calls within one conversation run sequentially, so the sum is the real
     time spent waiting on the model."""
     if not trace:
@@ -976,23 +863,16 @@ def _usage_from_trace(trace: list[dict[str, Any]] | None) -> Usage | None:
     return Usage(**message_usage.model_dump(), total_llm_latency_ms=latency or None)
 
 
-def _serialize_trace(trace: list[dict[str, Any]] | None) -> str | None:
-    """Serialize a conversation for EvalRun.task_run_trace; None only when
-    there is no conversation to keep. One shared shape so reused traces
-    re-serialize byte-identical to the record they came from."""
-    if not trace:
-        return None
-    return json.dumps(trace, indent=2, ensure_ascii=False, default=_trace_json_default)
-
-
-def _trace_has_full_turn_count(
-    trace: list[dict[str, Any]], expected_turns: int
+def _trace_is_complete_drive(
+    trace: list[ChatCompletionMessageParam] | None, expected_turns: int
 ) -> bool:
     """A complete drive has exactly one user message per turn (assistant
     messages can be several per turn when tools fire, so they can't be
     counted) and ends with assistant text — the judges' final_message.
     Requiring the LAST message to be assistant text keeps a degraded record
     from promoting a mid-conversation reply to the final answer."""
+    if not trace:
+        return False
     user_turns = sum(1 for msg in trace if msg.get("role") == "user")
     if user_turns != expected_turns:
         return False
@@ -1003,25 +883,6 @@ def _trace_has_full_turn_count(
     return (
         last.get("role") == "assistant" and isinstance(content, str) and bool(content)
     )
-
-
-def _parse_healthy_trace(
-    trace_json: str | None, expected_turns: int
-) -> list[dict[str, Any]] | None:
-    """Parse a stored trace and vet it for reuse. Partial conversations,
-    serialization fallbacks, and skip tombstones (no trace at all) fail here —
-    reusing them would silently judge a degraded sample."""
-    if not trace_json:
-        return None
-    try:
-        trace = json.loads(trace_json)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(trace, list) or not all(isinstance(msg, dict) for msg in trace):
-        return None
-    if not _trace_has_full_turn_count(trace, expected_turns):
-        return None
-    return trace
 
 
 def _unwrap_kiln_run_error(e: BaseException) -> BaseException:

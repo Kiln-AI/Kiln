@@ -113,6 +113,13 @@ import warnings
 
 import httpx
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.datamodel_enums import TurnMode
+from kiln_server.custom_errors import connect_custom_errors
+from kiln_server.utils.spec_utils import generate_spec_eval_tags
+
 from app.desktop.studio_server.batch_plan_api import connect_batch_plan_api
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.eval_api import connect_evals_api
@@ -122,12 +129,6 @@ from app.desktop.studio_server.utils.copilot_utils import (
     find_multi_turn_chain_leaves,
     get_copilot_api_key,
 )
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from kiln_ai.datamodel import Project, Task
-from kiln_ai.datamodel.datamodel_enums import TurnMode
-from kiln_server.custom_errors import connect_custom_errors
-from kiln_server.utils.spec_utils import generate_spec_eval_tags
 
 # The UI runs 10 cases x 5 turns; both are request parameters, so the
 # harness shrinks them without touching any code. Four cases keeps the run

@@ -58,6 +58,8 @@ from .delete_session_v1_chat_sessions_session_id_delete_response_500 import (
 )
 from .draft_input_data_guide_input import DraftInputDataGuideInput
 from .draft_input_data_guide_output import DraftInputDataGuideOutput
+from .eval_item_source import EvalItemSource
+from .eval_item_source_source_type import EvalItemSourceSourceType
 from .examples_for_feedback_item import ExamplesForFeedbackItem
 from .examples_with_feedback_item import ExamplesWithFeedbackItem
 from .expected_result import ExpectedResult
@@ -203,6 +205,8 @@ __all__ = (
     "DeleteSessionV1ChatSessionsSessionIdDeleteResponse500",
     "DraftInputDataGuideInput",
     "DraftInputDataGuideOutput",
+    "EvalItemSource",
+    "EvalItemSourceSourceType",
     "ExamplesForFeedbackItem",
     "ExamplesWithFeedbackItem",
     "ExpectedResult",

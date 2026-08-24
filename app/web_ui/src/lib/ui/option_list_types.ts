@@ -16,4 +16,6 @@ export type OptionListItem = {
   recommended?: boolean
   tags?: OptionListTag[]
   disabled?: boolean
+  // Shown under the description when the option is disabled.
+  disabled_reason?: string
 }

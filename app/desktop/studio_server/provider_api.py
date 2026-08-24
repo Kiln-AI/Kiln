@@ -9,12 +9,6 @@ import httpx
 import litellm
 import openai
 import requests
-from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import (
-    create_api_key_v1_create_api_key_post,
-)
-from app.desktop.studio_server.api_client.kiln_server_client import (
-    get_oauth_authenticated_client,
-)
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 from kiln_ai.adapters.docker_model_runner_tools import (
@@ -40,6 +34,7 @@ from kiln_ai.adapters.ollama_tools import (
     parse_ollama_tags,
 )
 from kiln_ai.adapters.provider_tools import (
+    PLACEHOLDER_API_KEY,
     get_all_user_models,
     get_legacy_custom_models,
     provider_name_from_id,
@@ -54,6 +49,13 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_entity
 from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT
 from pydantic import BaseModel, Field
+
+from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import (
+    create_api_key_v1_create_api_key_post,
+)
+from app.desktop.studio_server.api_client.kiln_server_client import (
+    get_oauth_authenticated_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2199,18 +2201,18 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
             logger.warning("No name for OpenAI compatible provider %s", provider)
             continue
 
-        # API key is optional, as some providers don't require it
-        api_key = provider.get("api_key") or ""
-        openai_client = openai.OpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            # Important: max_retries must be 0 for performance.
-            # It's common for these servers to be down sometimes (could be local app that isn't running)
-            # OpenAI client will retry a few times, with a sleep in between! Big loading perf hit.
-            max_retries=0,
-        )
+        # API key optional - some providers like Ollama don't use it, but the OpenAI client errors without one
+        api_key = provider.get("api_key") or PLACEHOLDER_API_KEY
 
         try:
+            openai_client = openai.OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                # Important: max_retries must be 0 for performance.
+                # It's common for these servers to be down sometimes (could be local app that isn't running)
+                # OpenAI client will retry a few times, with a sleep in between! Big loading perf hit.
+                max_retries=0,
+            )
             provider_models = openai_client.models.list()
             for model in provider_models:
                 models.append(
@@ -2246,7 +2248,9 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
             )
         except Exception:
             logger.error(
-                "Error connecting to OpenAI compatible provider %s", name, exc_info=True
+                "Error loading models from OpenAI compatible provider %s",
+                name,
+                exc_info=True,
             )
             has_error = True
             continue

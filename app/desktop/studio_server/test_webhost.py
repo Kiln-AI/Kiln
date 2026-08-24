@@ -1,12 +1,14 @@
+import errno
 import os
 import tempfile
 from unittest.mock import patch
 
 import pytest
-from app.desktop.studio_server.webhost import connect_webhost
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_server.custom_errors import connect_custom_errors
+
+from app.desktop.studio_server.webhost import connect_webhost
 
 WEB_APP_404_BODY = "<html><body>custom not found</body></html>"
 
@@ -150,3 +152,57 @@ def test_non_api_static_file_still_served(temp_studio, client):
     response = client.get("/page")
     assert response.status_code == 200
     assert "real page" in response.text
+
+
+# The prompt API builds saved prompt IDs as "id::<number>", so every link to a saved
+# prompt puts "::" in the URL path. Windows rejects those characters in a filename.
+SAVED_PROMPT_ROUTE = "/prompts/project-1/task-1/saved/id::246674517812"
+
+
+def stat_failing_on(errno_value):
+    # Patches os.stat globally (starlette calls the module function directly), narrowed
+    # to "::" paths so every other stat still hits the real file system.
+    real_stat = os.stat
+
+    def fake_stat(path, *args, **kwargs):
+        if "::" in str(path):
+            raise OSError(
+                errno_value,
+                "The filename, directory name, or volume label syntax is incorrect",
+            )
+        return real_stat(path, *args, **kwargs)
+
+    return patch("starlette.staticfiles.os.stat", fake_stat)
+
+
+def test_invalid_filename_error_serves_web_app_fallback(client):
+    with stat_failing_on(errno.EINVAL):
+        response = client.get(SAVED_PROMPT_ROUTE)
+
+    assert response.status_code == 404
+    assert WEB_APP_404_BODY in response.text
+    # Same response a plain missing route gets: the invalid name is a miss, not a
+    # special case the web app has to notice. Indexing raises if a header vanishes.
+    plain_miss = client.get("/route-that-does-not-exist")
+    assert response.headers["cache-control"] == plain_miss.headers["cache-control"]
+    assert response.headers["content-type"] == plain_miss.headers["content-type"]
+
+
+def test_other_os_errors_still_propagate(client):
+    # Only the invalid-filename errno is a miss. Real file system failures must not be
+    # hidden behind the web app's fallback page.
+    with stat_failing_on(errno.EIO):
+        with pytest.raises(OSError) as exc_info:
+            client.get(SAVED_PROMPT_ROUTE)
+
+    assert exc_info.value.errno == errno.EIO
+
+
+def test_invalid_filename_route_served_on_real_filesystem(client):
+    # No mocking. On macOS and Linux "::" is an ordinary missing file; on Windows it is
+    # an invalid name. Both must reach the same fallback page, which is what the
+    # Windows CI job checks against a real Windows file system.
+    response = client.get(SAVED_PROMPT_ROUTE)
+
+    assert response.status_code == 404
+    assert WEB_APP_404_BODY in response.text

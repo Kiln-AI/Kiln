@@ -4,14 +4,10 @@
   import FormList from "$lib/utils/form_list.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import CloseIcon from "$lib/ui/icons/close_icon.svelte"
-  import { onMount } from "svelte"
   import { available_tools, load_available_tools } from "$lib/stores"
-  import {
-    tool_id_to_function_name,
-    CODE_EVAL_ONLY_TOOL_IDS,
-  } from "$lib/stores/tools_store"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
   import type { ToolSetApiDescription } from "$lib/types"
+  import { build_tool_option_groups } from "$lib/ui/run_config_component/tool_options"
 
   type ToolCallSpec = components["schemas"]["ToolCallSpec"]
 
@@ -22,74 +18,53 @@
     on_unexpected_tools: "ignore",
   }
 
-  // Project/task context, used to resolve the OpenAI-compatible tool-call
-  // function names for the tool dropdown.
+  // Project context, used to load the available tools for the dropdown.
   export let project_id: string = ""
-  export let task_id: string = ""
 
-  // Options for the tool-name dropdown, grouped by tool set. Values are the
-  // OpenAI-compatible function names (what appears in the trace), not the Kiln
-  // display names.
-  let tool_options: OptionGroup[] = []
-  let known_function_names = new Set<string>()
-  let tools_loading = true
-  let options_built = false
+  $: load_available_tools(project_id)
 
-  onMount(() => {
-    load_available_tools(project_id)
-  })
+  // Options for the tool-name dropdown, built by the same shared builder every
+  // other tool picker uses, so a tool reads the same way here as it does on /run.
+  // The value is the OpenAI-compatible function name a trace records, which the
+  // builder surfaces beside the tool where it differs from its display name.
+  $: tools_loading = $available_tools[project_id] === undefined
+  $: tool_options = build_tool_options($available_tools[project_id])
+  $: known_function_names = new Set(
+    tool_options.flatMap((group) =>
+      group.options.map((option) => String(option.value)),
+    ),
+  )
 
-  // Build the dropdown once the project's tools have loaded.
-  $: maybe_build_tool_options($available_tools[project_id])
-
-  function maybe_build_tool_options(
+  function build_tool_options(
     tool_sets: ToolSetApiDescription[] | undefined,
-  ) {
-    if (!tool_sets || options_built || !project_id || !task_id) return
-    options_built = true
-    build_tool_options(tool_sets)
-  }
+  ): OptionGroup[] {
+    // This form matches tool calls in an agent's trace, so it offers agent tools:
+    // context "none". Whole sets the server marks as sandbox-only are dropped,
+    // because nothing in one can appear in an agent's trace.
+    const groups = build_tool_option_groups(tool_sets, {
+      value_field: "function_name",
+      sandbox_code_context: "none",
+    })
 
-  async function build_tool_options(tool_sets: ToolSetApiDescription[]) {
-    const groups: OptionGroup[] = []
-    const fn_names = new Set<string>()
-    for (const tool_set of tool_sets) {
-      // tool_call_check is never a code-eval context, so code-eval-only tools
-      // (e.g. llm_judge) can never appear in a real trace — exclude them.
-      const selectable_tools = tool_set.tools.filter(
-        (tool) => !CODE_EVAL_ONLY_TOOL_IDS.includes(tool.id),
-      )
-      const resolved = await Promise.all(
-        selectable_tools.map(async (tool): Promise<Option | null> => {
-          try {
-            const function_name = await tool_id_to_function_name(
-              tool.id,
-              project_id,
-              task_id,
-            )
-            return {
-              value: function_name,
-              label: tool.name,
-              description: function_name,
-            }
-          } catch {
-            // Skip tools we can't resolve a function name for (e.g. offline
-            // MCP server). They just won't appear in the dropdown.
-            return null
-          }
-        }),
-      )
-      const options = resolved.filter((o): o is Option => o !== null)
-      for (const option of options) {
-        fn_names.add(option.value as string)
-      }
-      if (options.length > 0) {
-        groups.push({ label: tool_set.set_name, options })
-      }
+    // Every skill is the same `skill` call in the trace, told apart by its name
+    // argument, so the whole set collapses to one option instead of one per skill.
+    const skill_set = (tool_sets ?? []).find(
+      (tool_set) => tool_set.type === "skill" && tool_set.tools.length > 0,
+    )
+    if (skill_set) {
+      groups.push({
+        label: skill_set.set_name,
+        options: [
+          {
+            value: "skill",
+            label: "Skill",
+            description:
+              "Covers all skills; the specific skill is matched via the name argument.",
+          },
+        ],
+      })
     }
-    tool_options = groups
-    known_function_names = fn_names
-    tools_loading = false
+    return groups
   }
 
   // Preserve tool names that aren't in the current tool list (legacy configs,
@@ -249,7 +224,7 @@
               id="tool_name_{item_index}"
               label="Tool"
               description="The tool that should be called."
-              info_description="The dropdown lists each tool's function name as it appears in the trace, which can differ from its display name in Kiln."
+              info_description="Tools are matched by the function name a trace records, shown beside the tool when it differs from its display name in Kiln."
               inputType="fancy_select"
               fancy_select_options={display_tool_options}
               empty_label="Select a tool"

@@ -9,6 +9,23 @@
   export let reference_data: string = ""
   export let required_reference_fields: string[] = []
   export let usage_mode: ReferenceDataUsageMode = "llm_judge"
+  /**
+   * Names the saved judge will require. A reference-answer judge requires
+   * `reference_answer` exactly and the run is refused without it, so the name is worth
+   * saying rather than leaving the tester to find it in a skipped result.
+   */
+  export let judge_required_keys: string[] = []
+  /**
+   * Names the prompt reads that are not required. Worth naming too, but separately:
+   * a `reference_data.get("x")` lookup renders around a missing value rather than
+   * skipping, so promising a skip here would be wrong.
+   */
+  export let judge_prompt_keys: string[] = []
+
+  $: prompt_keys_lead =
+    judge_required_keys.length > 0
+      ? "Its prompt also reads:"
+      : "This judge's prompt reads:"
 
   let dialog: Dialog
   let rows: Array<{ key: string; value: string }> = []
@@ -171,15 +188,59 @@
     {#if usage_mode === "llm_judge"}
       <CalloutCard testid="ref-data-callout">
         <svelte:fragment slot="icon"><BookIcon /></svelte:fragment>
-        <p class="text-sm text-gray-500">
-          Reference data is the expected values (ground truth) for this test
-          case. Use it in your judge prompt, like so:
-        </p>
-        <p class="mt-1">
-          <code class="font-mono text-xs bg-base-200 px-1.5 py-0.5 rounded"
-            >{'The output type should equal "{{ reference_data.expected_type }}"'}</code
-          >
-        </p>
+        {#if judge_required_keys.length > 0 || judge_prompt_keys.length > 0}
+          <p class="text-sm text-gray-500">
+            Reference data is the expected values (ground truth) for this test
+            case.
+          </p>
+          {#if judge_required_keys.length > 0}
+            <p class="text-sm text-gray-500 mt-1">
+              This judge requires {judge_required_keys.length === 1
+                ? "this name"
+                : "these names"}, spelled exactly &mdash; the test run is
+              skipped without {judge_required_keys.length === 1
+                ? "it"
+                : "them"}:
+            </p>
+            <p
+              class="mt-1 flex flex-wrap gap-1"
+              data-testid="ref-data-required-keys"
+            >
+              {#each judge_required_keys as key}
+                <code
+                  class="font-mono text-xs bg-base-200 px-1.5 py-0.5 rounded"
+                  >{key}</code
+                >
+              {/each}
+            </p>
+          {/if}
+          {#if judge_prompt_keys.length > 0}
+            <p class="text-sm text-gray-500 mt-1">
+              {prompt_keys_lead}
+            </p>
+            <p
+              class="mt-1 flex flex-wrap gap-1"
+              data-testid="ref-data-prompt-keys"
+            >
+              {#each judge_prompt_keys as key}
+                <code
+                  class="font-mono text-xs bg-base-200 px-1.5 py-0.5 rounded"
+                  >{key}</code
+                >
+              {/each}
+            </p>
+          {/if}
+        {:else}
+          <p class="text-sm text-gray-500">
+            Reference data is the expected values (ground truth) for this test
+            case. Use it in your judge prompt, like so:
+          </p>
+          <p class="mt-1">
+            <code class="font-mono text-xs bg-base-200 px-1.5 py-0.5 rounded"
+              >{'The output type should equal "{{ reference_data.expected_type }}"'}</code
+            >
+          </p>
+        {/if}
       </CalloutCard>
     {:else if usage_mode === "reference_field"}
       <CalloutCard testid="ref-data-callout">
