@@ -284,14 +284,14 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     // The trace itself, echoed from the raws the run recorded no trace for.
     expect(container.textContent).toContain("What's the return window?")
     expect(container.textContent).toContain("Our return window is 30 days.")
-    expect(getByText("Did the agent do the right thing?")).toBeTruthy()
+    expect(getByText("Does this response pass?")).toBeTruthy()
 
     // Nothing states the judge's call, or the claims that argue it, before
     // the reviewer answers.
     expect(container.textContent).not.toContain("The window was asserted")
     expect(container.textContent).not.toContain("Overall, this example")
     expect(container.textContent).not.toContain("Fails Eval")
-    expect(container.textContent).not.toContain("The judge marked")
+    expect(container.textContent).not.toContain("The judge disagrees")
 
     // The inverse escape hatch: claims are one click away, the trace is not
     // behind a button any more.
@@ -303,19 +303,26 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     const traces = [short_single_turn_trace("fail")]
     const { container, getByText, verdicts } = render_trace_first(traces)
 
-    // Judge said fail, reviewer says the agent was right: a mismatch.
-    await fireEvent.click(getByText("Correct"))
+    // Judge said fail, reviewer says the response passes: a mismatch.
+    await fireEvent.click(getByText("Pass"))
     expect(verdicts[0].final_judgement_verdict.agrees).toBe(false)
-    expect(getByText("The judge marked this FAIL.")).toBeTruthy()
+    // One sentence: the disagreement, the judge's own verdict word, and the
+    // explanation it introduces.
+    expect(
+      getByText("The judge disagrees. It thinks this fails because:"),
+    ).toBeTruthy()
     expect(container.textContent).toContain("Fails Eval: fabricated policy.")
-    // v1's Teach the Judge block, described by the REVIEWER's label.
+    // The Teach the Judge label, with no description line under it — the
+    // placeholder carries the whole ask, keyed to the REVIEWER's label.
     expect(getByText("Teach the Judge")).toBeTruthy()
-    expect(container.textContent).toContain("Describe why this result passes.")
+    expect(container.textContent).not.toContain("Detailed explanations")
 
     // The reason is required while the mismatch stands.
     const why = container.querySelector("textarea") as HTMLTextAreaElement
     expect(why.className).toContain("textarea-error")
-    expect(why.placeholder).toBe("Describe why this passes")
+    expect(why.placeholder).toBe(
+      "Describe why this passes. Detailed explanations will improve the judge.",
+    )
     expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(false)
 
     await fireEvent.input(why, {
@@ -332,9 +339,9 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     const traces = [short_single_turn_trace("fail")]
     const { container, getByText, verdicts } = render_trace_first(traces)
 
-    await fireEvent.click(getByText("Incorrect"))
+    await fireEvent.click(getByText("Fail"))
     expect(verdicts[0].final_judgement_verdict.agrees).toBe(true)
-    expect(container.textContent).not.toContain("The judge marked")
+    expect(container.textContent).not.toContain("The judge disagrees")
     expect(container.querySelector("textarea")).toBeNull()
     expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(true)
   })
@@ -343,29 +350,43 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     const traces = [short_single_turn_trace("pass")]
     const { container, getByText, verdicts } = render_trace_first(traces)
 
-    // Agreeing with a passing judge is the Correct label here.
-    await fireEvent.click(getByText("Correct"))
+    // Agreeing with a passing judge is the Pass label here.
+    await fireEvent.click(getByText("Pass"))
     expect(verdicts[0].final_judgement_verdict.agrees).toBe(true)
-    expect(container.textContent).not.toContain("The judge marked")
+    expect(container.textContent).not.toContain("The judge disagrees")
+    // The grade is readable off the row: the chosen side takes the verdict
+    // color rather than the neutral outline.
+    expect(getByText("Pass").className).toContain("btn-success")
 
-    await fireEvent.click(getByText("Incorrect"))
+    await fireEvent.click(getByText("Fail"))
     expect(verdicts[0].final_judgement_verdict.agrees).toBe(false)
-    expect(getByText("The judge marked this PASS.")).toBeTruthy()
-    expect(container.textContent).toContain("Describe why this result fails.")
+    // And the color moves with the label, so only one side reads as chosen.
+    expect(getByText("Fail").className).toContain("btn-error")
+    expect(getByText("Pass").className).not.toContain("btn-success")
+    // The verdict word follows the judge, the placeholder follows the
+    // reviewer, so the two point opposite ways here.
+    expect(
+      getByText("The judge disagrees. It thinks this passes because:"),
+    ).toBeTruthy()
+    expect(
+      (container.querySelector("textarea") as HTMLTextAreaElement).placeholder,
+    ).toBe(
+      "Describe why this fails. Detailed explanations will improve the judge.",
+    )
   })
 
   it("flipping back to agreement clears the reveal and the reason", async () => {
     const traces = [short_single_turn_trace("fail")]
     const { container, getByText, verdicts } = render_trace_first(traces)
 
-    await fireEvent.click(getByText("Correct"))
+    await fireEvent.click(getByText("Pass"))
     const why = container.querySelector("textarea") as HTMLTextAreaElement
     await fireEvent.input(why, {
       target: { value: "The window is documented." },
     })
 
-    await fireEvent.click(getByText("Incorrect"))
-    expect(container.textContent).not.toContain("The judge marked")
+    await fireEvent.click(getByText("Fail"))
+    expect(container.textContent).not.toContain("The judge disagrees")
     expect(container.querySelector("textarea")).toBeNull()
     // The reason went with the reveal: an agreeing grade never ships text the
     // reviewer can no longer see.
@@ -383,7 +404,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
 
     // Label first, so the shared verdict reads "disagree" while the claims are
     // open — the state that would put a second reason box in the dialog.
-    await fireEvent.click(getByText("Correct"))
+    await fireEvent.click(getByText("Pass"))
     await fireEvent.click(getByText("View Claims"))
     const dialog = claims_dialog(container)
     expect(dialog.open).toBe(true)
@@ -392,10 +413,11 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     )
     expect(dialog.textContent).toContain("Overall, this example")
 
-    // The blind row stays the one grading control: the dialog's cards carry
-    // no Correct/Incorrect and no reason box of their own.
-    expect(getAllByText("Correct")).toHaveLength(1)
-    expect(getAllByText("Incorrect")).toHaveLength(1)
+    // The blind row stays the one grading control: its Pass/Fail pair renders
+    // once, and the dialog's cards carry no Correct/Incorrect of their own and
+    // no reason box.
+    expect(getAllByText("Pass")).toHaveLength(1)
+    expect(getAllByText("Fail")).toHaveLength(1)
     expect(dialog.textContent).not.toContain("Correct")
     expect(dialog.querySelector("textarea")).toBeNull()
     // So no sub-claim grade can appear here and quietly demand a reason the
@@ -429,7 +451,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
 
     // The blind label still grades a trace whose claims failed: the reveal
     // reads the judge's own verdict and reasoning, not the claims.
-    await fireEvent.click(getByText("Incorrect"))
+    await fireEvent.click(getByText("Fail"))
     expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(true)
 
     await fireEvent.click(getByText("View Claims"))
@@ -447,7 +469,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     const traces = [short_single_turn_trace(), short_single_turn_trace()]
     traces[1].trace_id = "st_1"
     const { container, getByText, verdicts } = render_trace_first(traces)
-    await fireEvent.click(getByText("Correct"))
+    await fireEvent.click(getByText("Pass"))
     await fireEvent.input(container.querySelector("textarea")!, {
       target: { value: "The window is documented." },
     })
@@ -458,7 +480,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
 
     await fireEvent.click(getByText("Next"))
     // A fresh trace starts unlabelled: no reveal, no reason carried over.
-    expect(container.textContent).not.toContain("The judge marked")
+    expect(container.textContent).not.toContain("The judge disagrees")
     expect(container.querySelector("textarea")).toBeNull()
     expect(verdicts[1].final_judgement_verdict).toEqual({
       agrees: null,
@@ -471,7 +493,9 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     )
 
     await fireEvent.click(getByText("Previous"))
-    expect(getByText("The judge marked this FAIL.")).toBeTruthy()
+    expect(
+      getByText("The judge disagrees. It thinks this fails because:"),
+    ).toBeTruthy()
     expect(
       (container.querySelector("textarea") as HTMLTextAreaElement).value,
     ).toBe("The window is documented.")
@@ -494,7 +518,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
         is_multi_turn: true,
       },
     })
-    expect(multi.queryByText("Did the agent do the right thing?")).toBeNull()
+    expect(multi.queryByText("Does this response pass?")).toBeNull()
     expect(multi.queryAllByText("View Full Trace").length).toBeGreaterThan(0)
     expect(multi.queryByText("View Claims")).toBeNull()
     expect(multi.container.textContent).toContain("Overall, this conversation")
@@ -509,7 +533,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
         has_output_schema: true,
       },
     })
-    expect(schemad.queryByText("Did the agent do the right thing?")).toBeNull()
+    expect(schemad.queryByText("Does this response pass?")).toBeNull()
     expect(schemad.queryAllByText("View Full Trace").length).toBeGreaterThan(0)
     expect(schemad.queryByText("View Claims")).toBeNull()
   })
@@ -521,7 +545,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     const { container, queryByText } = render_trace_first(traces)
     expect(container.textContent).toContain("no transcript and no raw input")
     // Nothing to read means nothing to label.
-    expect(queryByText("Did the agent do the right thing?")).toBeNull()
+    expect(queryByText("Does this response pass?")).toBeNull()
   })
 })
 
@@ -561,7 +585,7 @@ describe("ClaimEvidenceReview — what the mismatch reveal explains", () => {
       trace_with_placeholder_reasoning(),
     ])
 
-    await fireEvent.click(getByText("Correct"))
+    await fireEvent.click(getByText("Pass"))
     expect(container.textContent).toContain(
       "The agent stated a 30 day window it has no source for.",
     )
@@ -581,7 +605,7 @@ describe("ClaimEvidenceReview — what the mismatch reveal explains", () => {
       },
     ])
 
-    await fireEvent.click(getByText("Correct"))
+    await fireEvent.click(getByText("Pass"))
     expect(container.textContent).toContain(PLACEHOLDER_REASONING)
   })
 
@@ -603,9 +627,27 @@ describe("ClaimEvidenceReview — what the mismatch reveal explains", () => {
       },
     ])
 
-    await fireEvent.click(getByText("Correct"))
+    await fireEvent.click(getByText("Pass"))
     expect(container.textContent).toContain(PLACEHOLDER_REASONING)
     expect(container.querySelector('[title="View in trace"]')).toBeNull()
+  })
+
+  it("closes the headline on a period when there is nothing to explain", async () => {
+    // Neither a final judgement nor a reasoning field, so the reveal carries
+    // no sentence: the headline has to end rather than trail into "because:".
+    const { getByText } = render_trace_first([
+      {
+        ...trace_with_placeholder_reasoning(),
+        judge_reasoning: "",
+        claims: null,
+        final_judgement: null,
+        claims_state: "error" as const,
+        claims_error: "Copilot request failed.",
+      },
+    ])
+
+    await fireEvent.click(getByText("Pass"))
+    expect(getByText("The judge disagrees. It thinks this fails.")).toBeTruthy()
   })
 
   it("chips the final judgement's citations into the same trace view the claim cards open", async () => {
@@ -613,7 +655,7 @@ describe("ClaimEvidenceReview — what the mismatch reveal explains", () => {
     // chat view and the mark proves the output span mapped onto the assistant
     // message — the single-turn path through map_output_span_to_trace.
     const revealed = render_trace_first([trace_with_placeholder_reasoning()])
-    await fireEvent.click(revealed.getByText("Correct"))
+    await fireEvent.click(revealed.getByText("Pass"))
     const chip = revealed.getByTitle("View in trace")
     expect(chip.textContent).toBe("[1]")
     await fireEvent.click(chip)

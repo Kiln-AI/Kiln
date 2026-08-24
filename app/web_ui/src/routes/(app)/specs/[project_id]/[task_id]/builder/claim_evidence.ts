@@ -507,8 +507,10 @@ export const CHAR_CUTOFF = 600
 // Which review shape a trace gets. Trace-first (read the trace, label the
 // output) only where the raw trace is the cheaper read: one exchange, short,
 // and plain text. Multi-turn transcripts, long outputs and schema'd outputs
-// keep the claim stack — a structured output collapses into prose in the chat
-// bubble, so its claims are the only readable form of it today.
+// keep the claim stack. A schema'd output does render structured in the chat
+// bubble, so it is legible on its own, but whether a blind pass/fail on raw
+// JSON produces reliable review signal has not been tested — until it is, the
+// claims stay the thing the reviewer grades.
 export function is_trace_first_review(args: {
   is_multi_turn: boolean
   has_output_schema: boolean

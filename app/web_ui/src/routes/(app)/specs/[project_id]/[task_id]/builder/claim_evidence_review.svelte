@@ -193,15 +193,13 @@
     }
     return { text: t.judge_reasoning.trim(), citations: [] }
   }
-  // Eval v1's "Teach the Judge" wording, both strings keyed off the REVIEWER's
-  // label: they describe the verdict just given, so a "Correct" label on a
-  // failed case asks why it passes.
-  $: teach_the_judge_description = `Describe why this result ${
+  // The "Teach the Judge" ask. The block carries no description line, so the
+  // placeholder states the whole ask. Keyed off the REVIEWER's label rather
+  // than the judge's, since it describes the verdict just given: a "Pass"
+  // label on a case the judge failed asks why it passes.
+  $: teach_the_judge_placeholder = `Describe why this ${
     blind_label ? "passes" : "fails"
   }. Detailed explanations will improve the judge.`
-  $: teach_the_judge_placeholder = blind_label
-    ? "Describe why this passes"
-    : "Describe why this fails"
 
   // Record the blind label as the shared final-judgement verdict: agreement is
   // computed against the judge, never asked.
@@ -280,7 +278,7 @@
         >
           <div class="flex items-center justify-between gap-3">
             <div class="font-medium text-sm min-w-0">
-              Did the agent do the right thing?
+              Does this response pass?
             </div>
             <div class="flex gap-2 flex-none">
               <button
@@ -289,7 +287,7 @@
                   : 'btn-outline'}"
                 on:click={() => set_blind_label(true)}
               >
-                Correct
+                Pass
               </button>
               <button
                 class="btn btn-sm {blind_label === false
@@ -297,7 +295,7 @@
                   : 'btn-outline'}"
                 on:click={() => set_blind_label(false)}
               >
-                Incorrect
+                Fail
               </button>
             </div>
           </div>
@@ -309,8 +307,17 @@
             <div
               class="mt-3 rounded-lg border border-warning/40 bg-warning/5 px-4 py-3"
             >
+              <!-- One statement rather than verdict-then-quote: the reveal
+                   exists because the reviewer just contradicted the judge, so
+                   it leads with the disagreement and the explanation below
+                   completes the sentence. The word is the JUDGE's verdict, and
+                   the sentence closes on a period when there is no explanation
+                   to introduce. -->
               <div class="text-sm font-medium">
-                The judge marked this {current.judge_score.toUpperCase()}.
+                The judge disagrees. It thinks this {current.judge_score ===
+                "pass"
+                  ? "passes"
+                  : "fails"}{reveal?.text ? " because:" : "."}
               </div>
               {#if reveal?.text}
                 <!-- The explanation, with the judgement's citations appended
@@ -329,16 +336,15 @@
                     >{/each}
                 </p>
               {/if}
-              <!-- FormElement's label/description typography, hand-rolled so
-                   the card's own error state stays the one in play. -->
+              <!-- FormElement's label typography, hand-rolled so the card's
+                   own error state stays the one in play. Label only: the
+                   placeholder states the ask, so a description line under the
+                   label would just say it twice. -->
               <label
                 class="text-sm font-medium text-left flex flex-col gap-1 w-full mt-3"
                 for={BLIND_WHY_ID}
               >
                 <span>Teach the Judge</span>
-                <span class="text-xs text-gray-500">
-                  {teach_the_judge_description}
-                </span>
               </label>
               <textarea
                 id={BLIND_WHY_ID}
