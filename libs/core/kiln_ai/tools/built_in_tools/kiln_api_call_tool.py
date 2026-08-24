@@ -65,7 +65,7 @@ For SSE endpoints (text/event-stream), the tool consumes the stream until it clo
                 },
                 "url_path": {
                     "type": "string",
-                    "description": "API path, starting with '/api/' (only '/ping' is allowed outside it). No query string — pass query args via query_params. Web app routes and doc routes such as '/openapi.json' or '/docs' are rejected. Correct paths are in the endpoint documentation.",
+                    "description": "API path, starting with '/api/'. No query string — pass query args via query_params. Correct paths are in the endpoint documentation.",
                 },
                 "query_params": {
                     "type": "object",
@@ -232,10 +232,17 @@ def _has_dot_segment(path_only: str) -> bool:
     front.
 
     Segments are decoded one at a time rather than decoding the whole path,
-    so an encoded '%2e%2e' is caught while an encoded slash inside a single
-    segment does not split into new ones (httpx leaves those encoded too).
+    then split again on any slash the decoding revealed. That catches an
+    encoded '%2e%2e', and an encoded slash used to hide one ('%2e%2e%2f'),
+    without treating an encoded slash as a separator in its own right — httpx
+    leaves those encoded, so '/api/x%2Fy' is one segment and stays under
+    '/api/'.
     """
-    return any(unquote(segment) in {".", ".."} for segment in path_only.split("/"))
+    return any(
+        part in {".", ".."}
+        for segment in path_only.split("/")
+        for part in unquote(segment).split("/")
+    )
 
 
 def _is_allowed_path(url_path: str) -> bool:
@@ -253,27 +260,24 @@ def _disallowed_path_message(url_path: str) -> str:
         # path that plainly does start with it.
         return (
             "url_path must not contain '.' or '..' path segments, encoded or "
-            f"not. Got: '{url_path}'. Such a path is resolved before it is "
-            "sent, so it can land outside the API — '/api/../docs' is sent as "
-            "'/docs'. Write the full path instead. Correct paths are in the "
+            f"not — they resolve elsewhere before the request is sent. Got: "
+            f"'{url_path}'. Write the full path. Correct paths are in the "
             "endpoint documentation."
         )
-    last_segment = path_only.rsplit("/", 1)[-1]
-    # Suggest the prefixed form only where it could plausibly be the fix.
-    # Offering "/api/openapi.json" would send the model somewhere just as wrong.
+
+    # Suggest the prefixed form only where it could plausibly be the fix. A
+    # dot in the final segment means a filename, not an endpoint, and
+    # "/api/openapi.json" is no more callable than "/openapi.json".
+    looks_like_a_file = "." in path_only.rsplit("/", 1)[-1]
     suggest = (
         not path_only.startswith("/api")
         and path_only not in _NON_API_PATHS
-        and "." not in last_segment
+        and not looks_like_a_file
     )
     hint = f" Did you mean '/api{path_only}'?" if suggest else ""
     return (
-        f"url_path must start with '{API_PATH_PREFIX}', or be exactly "
-        f"{', '.join(sorted(ALLOWED_EXACT_PATHS))}. Got: '{url_path}'.{hint} "
-        "This tool reaches the Kiln REST API only. Web app routes and the "
-        "server's own doc routes (/openapi.json, /docs) are not callable, and "
-        "return a web page rather than an API response. Correct paths are in "
-        "the endpoint documentation."
+        f"url_path must start with '{API_PATH_PREFIX}'. Got: '{url_path}'."
+        f"{hint} Correct paths are in the endpoint documentation."
     )
 
 

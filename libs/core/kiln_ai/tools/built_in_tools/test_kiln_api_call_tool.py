@@ -899,6 +899,9 @@ class TestDotSegments:
             "/api/%2e%2e/docs",
             "/api/%2E%2E/docs",
             "/api/%2e/docs",
+            # An encoded slash used to hide a dot segment inside one segment.
+            "/api/%2e%2e%2fdocs",
+            "/api/%2e%2e%2Fopenapi.json",
         ],
     )
     async def test_dot_segments_rejected(self, url_path, tool):
@@ -950,3 +953,23 @@ class TestDotSegments:
             )
             result = await tool.run(method="GET", url_path="/api/files/report..txt")
             assert json.loads(result.output)["status_code"] == 200
+
+
+class TestErrorMessageShape:
+    @pytest.mark.asyncio
+    async def test_prefix_error_names_only_the_rule_and_the_fix(self, tool):
+        """No lecture about routes the caller was never asking for."""
+        with pytest.raises(ValueError) as exc_info:
+            await tool.run(method="GET", url_path="/projects/123")
+        message = str(exc_info.value)
+        assert "must start with '/api/'" in message
+        assert "Did you mean '/api/projects/123'?" in message
+        assert "openapi.json" not in message
+        assert "/docs" not in message
+
+    @pytest.mark.asyncio
+    async def test_no_suggestion_for_something_that_looks_like_a_file(self, tool):
+        """A dot in the last segment means a filename, not an endpoint."""
+        with pytest.raises(ValueError) as exc_info:
+            await tool.run(method="GET", url_path="/_app/immutable/start.js")
+        assert "Did you mean" not in str(exc_info.value)
