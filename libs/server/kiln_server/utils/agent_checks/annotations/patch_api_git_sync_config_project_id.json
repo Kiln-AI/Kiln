@@ -4,5 +4,83 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "sync_mode": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "auto",
+                "manual"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Sync Mode",
+          "description": "New sync mode, if changing."
+        },
+        "pat_token": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pat Token",
+          "description": "New personal access token, if changing."
+        },
+        "oauth_token": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Oauth Token",
+          "description": "New OAuth token, if changing."
+        },
+        "auth_mode": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "system_keys",
+                "pat_token",
+                "github_oauth"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Auth Mode",
+          "description": "New auth mode, if changing."
+        }
+      },
+      "type": "object",
+      "title": "UpdateConfigRequest",
+      "description": "Request to partially update a git sync configuration."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      }
+    },
+    "query": {}
   }
 }

@@ -4,5 +4,16 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {},
+    "query": {
+      "feature_codes": {
+        "type": "string",
+        "description": "Comma-separated list of entitlement feature codes to check.",
+        "title": "Feature Codes"
+      }
+    }
   }
 }

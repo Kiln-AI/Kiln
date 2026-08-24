@@ -4,5 +4,16 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {},
+    "query": {
+      "provider_id": {
+        "type": "string",
+        "description": "The provider identifier to disconnect.",
+        "title": "Provider Id"
+      }
+    }
   }
 }

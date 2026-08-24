@@ -5,5 +5,10 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "This will open an external application to view logs. Allow?"
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

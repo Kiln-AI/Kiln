@@ -4,5 +4,68 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "trace_id": {
+          "type": "string",
+          "title": "Trace Id"
+        },
+        "tool_calls": {
+          "items": {
+            "properties": {
+              "toolCallId": {
+                "type": "string",
+                "title": "Toolcallid"
+              },
+              "toolName": {
+                "type": "string",
+                "title": "Toolname"
+              },
+              "input": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Input"
+              },
+              "requiresApproval": {
+                "type": "boolean",
+                "title": "Requiresapproval"
+              }
+            },
+            "type": "object",
+            "required": [
+              "toolCallId",
+              "toolName",
+              "input",
+              "requiresApproval"
+            ],
+            "title": "ToolCallInfo"
+          },
+          "type": "array",
+          "title": "Tool Calls"
+        },
+        "decisions": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "type": "object",
+          "title": "Decisions"
+        }
+      },
+      "type": "object",
+      "required": [
+        "trace_id",
+        "tool_calls",
+        "decisions"
+      ],
+      "title": "ExecuteToolsRequest"
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

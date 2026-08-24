@@ -4,5 +4,128 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "model_name": {
+          "type": "string",
+          "title": "Model Name",
+          "description": "The LLM model to use as judge."
+        },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "openai",
+            "groq",
+            "amazon_bedrock",
+            "ollama",
+            "openrouter",
+            "fireworks_ai",
+            "kiln_fine_tune",
+            "kiln_custom_registry",
+            "openai_compatible",
+            "anthropic",
+            "gemini_api",
+            "azure_openai",
+            "huggingface",
+            "vertex",
+            "together_ai",
+            "siliconflow_cn",
+            "cerebras",
+            "docker_model_runner",
+            "featherless_ai"
+          ],
+          "title": "ModelProviderName",
+          "description": "Enumeration of supported AI model providers."
+        },
+        "g_eval": {
+          "type": "boolean",
+          "title": "G Eval",
+          "description": "Whether to use G-Eval logprob scoring."
+        },
+        "judge_prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Judge Prompt",
+          "description": "Override the judge prompt template. If unset, the server assembles a rich default from the eval's task and spec."
+        },
+        "system_prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "System Prompt",
+          "description": "Override the judge system prompt. Defaults to 'You are an evaluator.'"
+        },
+        "judge_instructions": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Judge Instructions",
+          "description": "User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from."
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name",
+          "description": "The name of the eval config."
+        }
+      },
+      "type": "object",
+      "required": [
+        "model_name",
+        "provider",
+        "g_eval"
+      ],
+      "title": "CreateLlmJudgeConfigRequest",
+      "description": "Request to create a V2 llm_judge eval config with server-baked template."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      },
+      "eval_id": {
+        "type": "string",
+        "description": "The unique identifier of the eval.",
+        "title": "Eval Id"
+      }
+    },
+    "query": {}
   }
 }
