@@ -222,6 +222,7 @@ class ModelName(str, Enum):
     qwen_3p7_max = "qwen_3p7_max"
     qwen_3p6_flash = "qwen_3p6_flash"
     qwen_3p6_35b_a3b = "qwen_3p6_35b_a3b"
+    qwen_3p6_27b = "qwen_3p6_27b"
     qwen_3p6_plus = "qwen_3p6_plus"
     qwen_3p5_plus = "qwen_3p5_plus"
     qwen_3p5_397b_a17b = "qwen_3p5_397b_a17b"
@@ -650,6 +651,13 @@ GROK_4_5_OPENROUTER_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
     "High": "high",
+}
+
+# Groq restricts reasoning_effort on Qwen 3.6 to `none` or `default`; any other
+# value is rejected with "`reasoning_effort` must be one of `none` or `default`".
+QWEN_3P6_GROQ_THINKING_LEVELS = {
+    "Off": "none",
+    "On": "default",
 }
 
 
@@ -6266,6 +6274,66 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
                 ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Qwen 3.6 27B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p6_27b,
+        friendly_name="Qwen 3.6 27B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.6-27b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.groq,
+                model_id="qwen/qwen3.6-27b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                available_thinking_levels=QWEN_3P6_GROQ_THINKING_LEVELS,
+                default_thinking_level="default",
+                # Groq serves this model with image input, but no Groq provider in
+                # Kiln is wired for multimodal yet, so it stays text-only here.
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen3.6:27b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_capable=True,
                 multimodal_requires_pdf_as_image=True,
             ),
         ],
