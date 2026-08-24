@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 
-from app.desktop.git_sync.save_context import save_context_for_project
 from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.eval.eval_runner import (
     DEFAULT_EVAL_CONCURRENCY,
@@ -24,8 +23,12 @@ from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX
 from kiln_ai.utils.async_job_runner import AsyncJobRunnerObserver
 from pydantic import BaseModel, Field
 
-from ...eval_api import eval_config_from_id, task_run_config_from_id
-from ..models import (
+from app.desktop.git_sync.save_context import save_context_for_project
+from app.desktop.studio_server.eval_api import (
+    eval_config_from_id,
+    task_run_config_from_id,
+)
+from app.desktop.studio_server.jobs.models import (
     JOB_TRANSIENT_ERROR_MAX_RETRIES,
     JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS,
     JobContext,
@@ -242,8 +245,9 @@ class EvalJobWorker(JobWorker[EvalJobParams, EvalJobResult]):
             run_config_skills_count=skills_count,
             judge_name=eval_config.name,
             judge_algorithm=eval_config.config_type.value,
-            # V2 configs have no root-level judge model; leave blank like the
-            # MCP run-config fields above.
+            # V2 configs have no root-level judge model, so these are Optional on the
+            # model now; the display fields are plain strings, and blank reads the same
+            # way the MCP run-config fields above do.
             judge_model_name=eval_config.model_name or "",
             judge_model_provider=eval_config.model_provider or "",
         )

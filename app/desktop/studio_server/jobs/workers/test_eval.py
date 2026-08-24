@@ -5,19 +5,6 @@ from typing import AsyncIterator
 from unittest.mock import patch
 
 import pytest
-from app.desktop.studio_server.jobs.models import (
-    JOB_TRANSIENT_ERROR_MAX_RETRIES,
-    JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS,
-    BackgroundJobStatus,
-)
-from app.desktop.studio_server.jobs.registry import JobRegistry
-from app.desktop.studio_server.jobs.workers.eval import (
-    EvalJobParams,
-    EvalJobProperties,
-    EvalJobResult,
-    EvalJobWorker,
-    _error_detail,
-)
 from kiln_ai.adapters.errors import KilnRunError
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
@@ -44,6 +31,20 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
 from kiln_ai.utils.async_job_runner import Progress, RetryableError
 from pydantic import ValidationError
+
+from app.desktop.studio_server.jobs.models import (
+    JOB_TRANSIENT_ERROR_MAX_RETRIES,
+    JOB_TRANSIENT_ERROR_RETRY_DELAY_SECONDS,
+    BackgroundJobStatus,
+)
+from app.desktop.studio_server.jobs.registry import JobRegistry
+from app.desktop.studio_server.jobs.workers.eval import (
+    EvalJobParams,
+    EvalJobProperties,
+    EvalJobResult,
+    EvalJobWorker,
+    _error_detail,
+)
 
 
 @pytest.fixture
@@ -710,8 +711,8 @@ async def test_describe_mcp_run_config_blanks_agent_fields(
     # An MCP (agentless) run config has no model/prompt/tools. describe() must
     # still return valid properties — eval/judge info intact, agent fields blank.
     from kiln_ai.datamodel.run_config import (
-        MCPToolReference,
         McpRunConfigProperties,
+        MCPToolReference,
     )
 
     run_config = TaskRunConfig(
@@ -1153,7 +1154,7 @@ async def test_run_logs_the_item_source_for_an_eval_input_backed_split(
         result = await EvalJobWorker().run(_input_backed_params(), FakeCtx())
 
     assert result.error == 1
-    message, extra = logged[0]
+    _message, extra = logged[0]
     assert extra["dataset_id"] == eval_input.id
     assert extra["item_source"] == "eval_input"
 

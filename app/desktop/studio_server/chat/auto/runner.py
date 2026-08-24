@@ -5,6 +5,13 @@ import logging
 from typing import Any, Awaitable, Callable
 
 import httpx
+from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import (
+    DISABLE_AUTO_MODE_TOOL_NAME,
+)
+from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
+    ENABLE_AUTO_MODE_TOOL_NAME,
+)
+
 from app.desktop.studio_server.chat.constants import CHAT_TIMEOUT, MAX_TOOL_ROUNDS
 from app.desktop.studio_server.chat.stream_session import (
     RetryRoundResult,
@@ -17,12 +24,6 @@ from app.desktop.studio_server.chat.stream_session import (
     iter_upstream_round,
 )
 from app.desktop.studio_server.chat.tool_metadata import tool_input_executor_is_server
-from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import (
-    DISABLE_AUTO_MODE_TOOL_NAME,
-)
-from kiln_ai.tools.built_in_tools.enable_auto_mode_tool import (
-    ENABLE_AUTO_MODE_TOOL_NAME,
-)
 
 from .models import AutoChatSeed, AutoRunStatus, InboundMessage
 from .sse import (

@@ -21,6 +21,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI
+from kiln_server.custom_errors import connect_custom_errors
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.chat_session_list_item import (
     ChatSessionListItem as SdkChatSessionListItem,
 )
@@ -40,8 +43,6 @@ from app.desktop.studio_server.chat.auto.test_fakes import (
     trace,
 )
 from app.desktop.studio_server.chat.helpers import sse_text_delta
-from fastapi import FastAPI
-from kiln_server.custom_errors import connect_custom_errors
 
 # Pytest's rootdir import can give a file two module identities (e.g. both
 # ``chat.auto.api`` and ``app.desktop.studio_server.chat.auto.api``). The app is
