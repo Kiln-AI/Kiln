@@ -6,6 +6,8 @@
   import { onMount, onDestroy } from "svelte"
 
   export let aria_label: string | null = null
+  export let aria_invalid: boolean | undefined = undefined
+  export let aria_describedby: string | undefined = undefined
   export let options: OptionGroup[] = []
   export let selected: unknown
   export let empty_label: string = "Select an option"
@@ -525,6 +527,8 @@
 <div class="dropdown w-full relative">
   <div
     aria-label={aria_label}
+    aria-invalid={aria_invalid}
+    aria-describedby={aria_describedby}
     tabindex={disabled ? -1 : 0}
     role="listbox"
     class="select select-bordered w-full flex items-center {!listVisible

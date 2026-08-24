@@ -151,6 +151,11 @@
     if (target) value = target.checked
   }
 
+  $: error_id = `${id}-error`
+  $: accessible_error = error_message || inline_error
+  $: described_by = accessible_error ? error_id : undefined
+  $: aria_invalid = accessible_error ? true : undefined
+
   const height_class = {
     base: "h-18",
     medium: "h-36",
@@ -169,6 +174,8 @@
         checked={value ? true : false}
         on:change={handleCheckboxChange}
         aria-label={aria_label || label}
+        aria-invalid={aria_invalid}
+        aria-describedby={described_by}
         {disabled}
       />
     {/if}
@@ -227,6 +234,8 @@
     {#if inputType === "textarea"}
       <textarea
         aria-label={aria_label || label}
+        aria-invalid={aria_invalid}
+        aria-describedby={described_by}
         placeholder={error_message || placeholder || label}
         {id}
         class="textarea text-base textarea-bordered w-full {height_class[
@@ -241,6 +250,8 @@
     {:else if inputType === "input"}
       <input
         aria-label={aria_label || label}
+        aria-invalid={aria_invalid}
+        aria-describedby={described_by}
         type="text"
         placeholder={error_message || placeholder || label}
         {id}
@@ -256,6 +267,8 @@
     {:else if inputType === "input_number"}
       <input
         aria-label={aria_label || label}
+        aria-invalid={aria_invalid}
+        aria-describedby={described_by}
         type="number"
         placeholder={error_message || placeholder || label}
         {id}
@@ -273,6 +286,8 @@
     {:else if inputType === "select"}
       <select
         aria-label={aria_label || label}
+        aria-invalid={aria_invalid}
+        aria-describedby={described_by}
         {id}
         class="select select-bordered w-full {error_message || inline_error
           ? 'select-error'
@@ -306,6 +321,8 @@
     {:else if inputType === "fancy_select" || inputType === "multi_select"}
       <FancySelect
         aria_label={aria_label || label}
+        {aria_invalid}
+        aria_describedby={described_by}
         bind:options={fancy_select_options}
         bind:selected={value}
         multi_select={inputType === "multi_select"}
@@ -320,6 +337,8 @@
       <div
         role="radiogroup"
         aria-label={aria_label || label}
+        aria-invalid={aria_invalid}
+        aria-describedby={described_by}
         class="flex flex-col gap-2 {error_message ? 'input-error' : ''}"
         {id}
         tabindex="-1"
@@ -358,10 +377,14 @@
     {/if}
     {#if inline_error || (inputType === "select" && error_message)}
       <span
+        aria-hidden="true"
         class="absolute right-3 bottom-4 badge badge-error badge-sm badge-outline text-xs bg-base-100"
       >
         {inline_error || error_message}
       </span>
     {/if}
   </div>
+  {#if accessible_error}
+    <div id={error_id} class="sr-only">{accessible_error}</div>
+  {/if}
 </div>
