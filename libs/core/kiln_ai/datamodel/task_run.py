@@ -14,9 +14,9 @@ from kiln_ai.utils.open_ai_types import (
     ChatCompletionMessageParam,
     trace_has_pending_client_tool_calls,
 )
-from kiln_ai.utils.validation import validate_tags
 from kiln_ai.utils.usage import MessageUsage as MessageUsage
 from kiln_ai.utils.usage import Usage as Usage
+from kiln_ai.utils.validation import validate_tags
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.eval_splits import ItemKey

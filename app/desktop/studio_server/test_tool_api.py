@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project

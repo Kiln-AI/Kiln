@@ -770,4 +770,4 @@ class BaseV2EvalBridge(BaseEval):
             raise ValueError(
                 f"V2 eval was skipped ({result.skipped_reason}): {result.skipped_detail}"
             )
-        return result.scores, result.intermediate_outputs, result.eval_usage
+        return result.scores, result.intermediate_outputs, result.usage

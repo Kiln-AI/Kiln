@@ -100,7 +100,7 @@ async def test_generate_passes_request_body_correctly(
 ) -> None:
     captured: list = []
 
-    async def _capture(*, client, body):  # noqa: ARG001
+    async def _capture(*, client, body):
         captured.append(body)
         return _ok_response()
 
@@ -127,7 +127,7 @@ async def test_generate_passes_case_scenarios_through(
 ) -> None:
     captured: list = []
 
-    async def _capture(*, client, body):  # noqa: ARG001
+    async def _capture(*, client, body):
         captured.append(body)
         return _ok_response()
 

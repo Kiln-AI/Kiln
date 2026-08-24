@@ -34,6 +34,7 @@ from kiln_ai.datamodel.basemodel import (
 from kiln_ai.datamodel.datamodel_enums import (
     EvalStatus,
     Priority,
+    TaskOutputRatingType,
 )
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
 from kiln_ai.datamodel.eval import (
@@ -73,7 +74,6 @@ from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
-from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.datamodel.usage import Usage
 from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry

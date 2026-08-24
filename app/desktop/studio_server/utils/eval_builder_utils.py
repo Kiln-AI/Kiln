@@ -11,7 +11,23 @@ the stable UI-facing models so the endpoints and UI never see SDK types.
 """
 
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
+
+from fastapi import HTTPException
+from kiln_ai.adapters.eval.base_eval import conditionally_raw_wrap
+from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
+from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalDataType,
+    EvalTaskInput,
+    LlmJudgeProperties,
+)
+from kiln_ai.datamodel.task import Task
+from kiln_server.task_api import task_from_id
+from kiln_server.utils.spec_utils import spec_eval_output_score
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     build_claim_evidence_v1_copilot_build_claim_evidence_post,
@@ -35,21 +51,6 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
 )
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 from app.desktop.studio_server.utils.response_utils import unwrap_response
-from fastapi import HTTPException
-from kiln_ai.adapters.eval.base_eval import conditionally_raw_wrap
-from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
-from kiln_ai.adapters.eval.registry import v2_eval_adapter_from_config
-from kiln_ai.datamodel.eval import (
-    Eval,
-    EvalConfig,
-    EvalConfigType,
-    EvalDataType,
-    EvalTaskInput,
-    LlmJudgeProperties,
-)
-from kiln_ai.datamodel.task import Task
-from kiln_server.task_api import task_from_id
-from kiln_server.utils.spec_utils import spec_eval_output_score
 
 
 @dataclass
@@ -81,7 +82,7 @@ def transcript_io_for_trace(trace: list[dict[str, Any]]) -> tuple[str, str]:
     # The trace is loose dicts by design; the formatter reads them like the
     # typed message params it was written for.
     return raw_input, EvalTraceFormatter.trace_to_formatted_conversation_history(
-        cast(Any, trace)
+        trace  # type: ignore[invalid-argument-type]
     )
 
 

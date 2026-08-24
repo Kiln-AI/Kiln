@@ -454,7 +454,7 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
         # one.
         try:
             runner_cases = [RunnerCase.model_validate(c) for c in input.cases]
-        except Exception as exc:  # noqa: BLE001 — Pydantic ValidationError + any future shape drift
+        except Exception as exc:
             raise HTTPException(
                 status_code=400,
                 detail={
@@ -491,7 +491,7 @@ def connect_multiturn_sdg_api(app: FastAPI) -> None:
                         )
                         + "\n\n"
                     )
-            except Exception as e:  # noqa: BLE001 — last-resort surface
+            except Exception as e:
                 # The catch is narrow in practice: run_cases_batch
                 # swallows per-case failures into CaseFailedEvent, so the
                 # only paths that escape here are developer bugs

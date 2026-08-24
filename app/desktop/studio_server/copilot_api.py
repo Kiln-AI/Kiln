@@ -101,6 +101,7 @@ from app.desktop.studio_server.api_models.copilot_models import (
     SyntheticDataGenerationSessionConfigApi,
     TaskInfoApi,
 )
+from app.desktop.studio_server.api_models.eval_builder_models import JudgeConfig
 from app.desktop.studio_server.data_gen_api import (
     _resolve_task_runtime_prompt,
 )
@@ -117,7 +118,6 @@ from app.desktop.studio_server.utils.copilot_utils import (
     untag_multi_turn_chains_for_eval,
     write_eval_slice_multi_turn,
 )
-from app.desktop.studio_server.api_models.eval_builder_models import JudgeConfig
 from app.desktop.studio_server.utils.eval_builder_utils import (
     build_judge_prompt_template,
 )

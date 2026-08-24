@@ -154,7 +154,7 @@ class TestLlmJudgeEvalLlmAsJudge:
     @pytest.mark.asyncio
     @patch("kiln_ai.adapters.eval.v2_eval_llm_judge.adapter_for_task")
     async def test_eval_usage_captured(self, mock_adapter_for_task):
-        """The judge call's usage is returned on V2EvalResult.eval_usage."""
+        """The judge call's usage is returned on V2EvalResult.usage."""
         mock_adapter = AsyncMock()
         judge_usage = Usage(
             input_tokens=1200, output_tokens=45, total_tokens=1245, cost=0.0031

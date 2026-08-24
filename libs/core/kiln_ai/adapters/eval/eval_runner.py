@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Dict, List, Literal, Set, Tuple
+from typing import AsyncGenerator, Dict, List, Literal, Set, Tuple
 
 import litellm
 
@@ -53,7 +53,7 @@ from kiln_ai.utils.async_job_runner import (
     RetryableError,
 )
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
-from kiln_ai.utils.open_ai_types import serialize_trace
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam, serialize_trace
 
 logger = logging.getLogger(__name__)
 
@@ -837,7 +837,7 @@ class EvalRunner:
         return leaf
 
 
-def _usage_from_trace(trace: list[dict[str, Any]] | None) -> Usage | None:
+def _usage_from_trace(trace: list[ChatCompletionMessageParam] | None) -> Usage | None:
     """Aggregate per-message usage and latency into run-level Usage.
 
     A driven conversation's leaf reaches the runner unsaved and without run-level
@@ -864,7 +864,7 @@ def _usage_from_trace(trace: list[dict[str, Any]] | None) -> Usage | None:
 
 
 def _trace_is_complete_drive(
-    trace: list[dict[str, Any]] | None, expected_turns: int
+    trace: list[ChatCompletionMessageParam] | None, expected_turns: int
 ) -> bool:
     """A complete drive has exactly one user message per turn (assistant
     messages can be several per turn when tools fire, so they can't be

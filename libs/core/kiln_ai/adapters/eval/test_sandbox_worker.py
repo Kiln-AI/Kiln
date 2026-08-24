@@ -4,8 +4,6 @@ These tests SPAWN child processes via the shared bridge. Keep them fast. Scorer
 code is passed as a string so nothing local needs pickling.
 """
 
-import asyncio
-
 import pytest
 
 from kiln_ai.adapters.eval.conftest import run_scorer

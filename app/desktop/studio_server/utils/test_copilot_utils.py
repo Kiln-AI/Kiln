@@ -4,6 +4,19 @@ import random
 from unittest.mock import patch
 
 import pytest
+from fastapi import HTTPException
+from kiln_ai.datamodel import GradedClaim, Project, Task, TaskRun
+from kiln_ai.datamodel.datamodel_enums import (
+    FeedbackSource,
+    TaskOutputRatingType,
+    TurnMode,
+)
+from kiln_ai.datamodel.task_output import (
+    DataSource,
+    DataSourceType,
+    TaskOutput,
+    TaskOutputRating,
+)
 
 from app.desktop.studio_server.api_models.copilot_models import (
     ClaimReviewApi,
@@ -31,19 +44,6 @@ from app.desktop.studio_server.utils.copilot_utils import (
     unrate_multi_turn_chain_leaves,
     warn_if_golden_below_target,
     write_eval_slice_multi_turn,
-)
-from fastapi import HTTPException
-from kiln_ai.datamodel import GradedClaim, Project, Task, TaskRun
-from kiln_ai.datamodel.datamodel_enums import (
-    FeedbackSource,
-    TaskOutputRatingType,
-    TurnMode,
-)
-from kiln_ai.datamodel.task_output import (
-    DataSource,
-    DataSourceType,
-    TaskOutput,
-    TaskOutputRating,
 )
 
 

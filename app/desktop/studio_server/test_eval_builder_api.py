@@ -2,6 +2,28 @@ import json
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.datamodel_enums import (
+    ModelProviderName,
+    StructuredOutputMode,
+    TaskOutputRatingType,
+)
+from kiln_ai.datamodel.eval import (
+    EvalConfigType,
+    EvalDataType,
+    LlmJudgeProperties,
+    SkippedReason,
+    V2EvalResult,
+)
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    ToolsRunConfig,
+)
+from kiln_server.custom_errors import connect_custom_errors
+from kiln_server.utils.spec_utils import spec_eval_output_score
+
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.build_claim_evidence_output import (
     BuildClaimEvidenceOutput,
 )
@@ -22,27 +44,6 @@ from app.desktop.studio_server.utils.eval_builder_utils import (
     build_transient_judge_eval_config,
     run_judge_for_trace,
 )
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from kiln_ai.datamodel import Project, Task
-from kiln_ai.datamodel.datamodel_enums import (
-    ModelProviderName,
-    StructuredOutputMode,
-    TaskOutputRatingType,
-)
-from kiln_ai.datamodel.run_config import (
-    KilnAgentRunConfigProperties,
-    ToolsRunConfig,
-)
-from kiln_ai.datamodel.eval import (
-    EvalConfigType,
-    EvalDataType,
-    LlmJudgeProperties,
-    SkippedReason,
-    V2EvalResult,
-)
-from kiln_server.custom_errors import connect_custom_errors
-from kiln_server.utils.spec_utils import spec_eval_output_score
 
 REVIEW_URL = "/api/projects/p1/tasks/t1/eval_builder/review_traces"
 BUILD_CLAIMS_URL = "/api/projects/p1/tasks/t1/eval_builder/build_claims"
