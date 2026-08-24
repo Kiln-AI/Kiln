@@ -6308,8 +6308,8 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.groq,
                 model_id="qwen/qwen3.6-27b",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=False,
                 supports_function_calling=True,
                 available_thinking_levels=QWEN_3P6_GROQ_THINKING_LEVELS,
                 default_thinking_level="default",
