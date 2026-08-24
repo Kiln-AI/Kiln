@@ -65,7 +65,7 @@ For SSE endpoints (text/event-stream), the tool consumes the stream until it clo
                 },
                 "url_path": {
                     "type": "string",
-                    "description": "API path, starting with '/api/'. No query string — pass query args via query_params. Correct paths are in the endpoint documentation.",
+                    "description": "API path with no query string — pass query args via query_params. Correct paths are in the endpoint documentation.",
                 },
                 "query_params": {
                     "type": "object",
