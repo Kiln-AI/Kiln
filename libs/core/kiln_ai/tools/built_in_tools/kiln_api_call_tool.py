@@ -2,6 +2,7 @@
 
 import json
 from typing import Any
+from urllib.parse import unquote
 
 import httpx
 import jq
@@ -211,18 +212,52 @@ For SSE endpoints (text/event-stream), the tool consumes the stream until it clo
         return ToolCallResult(output=json.dumps(result, ensure_ascii=False))
 
 
-def _is_allowed_path(url_path: str) -> bool:
-    """True when url_path addresses the Kiln REST API rather than the web app.
+def _path_without_query(url_path: str) -> str:
+    """The path portion alone.
 
-    The query string is ignored here: a url_path carrying one is rejected by
-    its own check, and stripping it first keeps this error about the path.
+    The query string is ignored by the path checks: a url_path carrying one is
+    rejected by its own check, and stripping it first keeps those errors about
+    the path.
     """
-    path_only = url_path.split("?", 1)[0].split("#", 1)[0]
+    return url_path.split("?", 1)[0].split("#", 1)[0]
+
+
+def _has_dot_segment(path_only: str) -> bool:
+    """True when any segment is '.' or '..', encoded or not.
+
+    A prefix check alone is not enough, because the string we validate is not
+    the path that gets sent. httpx resolves dot segments, so '/api/../docs'
+    leaves as '/docs' and '/api/a/../../openapi.json' leaves as
+    '/openapi.json' — both past a guard that only looked at the '/api/' at the
+    front.
+
+    Segments are decoded one at a time rather than decoding the whole path,
+    so an encoded '%2e%2e' is caught while an encoded slash inside a single
+    segment does not split into new ones (httpx leaves those encoded too).
+    """
+    return any(unquote(segment) in {".", ".."} for segment in path_only.split("/"))
+
+
+def _is_allowed_path(url_path: str) -> bool:
+    """True when url_path addresses the Kiln REST API rather than the web app."""
+    path_only = _path_without_query(url_path)
+    if _has_dot_segment(path_only):
+        return False
     return path_only in ALLOWED_EXACT_PATHS or path_only.startswith(API_PATH_PREFIX)
 
 
 def _disallowed_path_message(url_path: str) -> str:
-    path_only = url_path.split("?", 1)[0].split("#", 1)[0]
+    path_only = _path_without_query(url_path)
+    if _has_dot_segment(path_only):
+        # A separate message: "must start with /api/" reads as nonsense for a
+        # path that plainly does start with it.
+        return (
+            "url_path must not contain '.' or '..' path segments, encoded or "
+            f"not. Got: '{url_path}'. Such a path is resolved before it is "
+            "sent, so it can land outside the API — '/api/../docs' is sent as "
+            "'/docs'. Write the full path instead. Correct paths are in the "
+            "endpoint documentation."
+        )
     last_segment = path_only.rsplit("/", 1)[-1]
     # Suggest the prefixed form only where it could plausibly be the fix.
     # Offering "/api/openapi.json" would send the model somewhere just as wrong.

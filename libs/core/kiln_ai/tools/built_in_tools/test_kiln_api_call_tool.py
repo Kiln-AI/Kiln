@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+import re
 
 import httpx
 import pytest
@@ -876,3 +877,76 @@ class TestPathAllowlist:
         """A bad prefix is reported as such, not as a query string problem."""
         with pytest.raises(ValueError, match="url_path must start with '/api/'"):
             await tool.run(method="GET", url_path="/projects?id=1")
+
+
+class TestDotSegments:
+    """A prefix check alone is not enough.
+
+    The string validated is not the path sent. httpx resolves dot segments, so
+    a path that starts with /api/ can leave as something else entirely.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "url_path",
+        [
+            "/api/../docs",
+            "/api/../openapi.json",
+            "/api/a/../../openapi.json",
+            "/api/./docs",
+            # Percent-encoded forms. httpx leaves these encoded in the request
+            # target, so whether they escape depends on who decodes them.
+            "/api/%2e%2e/docs",
+            "/api/%2E%2E/docs",
+            "/api/%2e/docs",
+        ],
+    )
+    async def test_dot_segments_rejected(self, url_path, tool):
+        with pytest.raises(ValueError, match=re.escape("must not contain '.' or '..'")):
+            await tool.run(method="GET", url_path=url_path)
+
+    @pytest.mark.asyncio
+    async def test_dot_segment_error_does_not_claim_a_missing_prefix(self, tool):
+        """These paths do start with /api/. Saying otherwise reads as nonsense."""
+        with pytest.raises(ValueError) as exc_info:
+            await tool.run(method="GET", url_path="/api/../docs")
+        assert "must start with '/api/'" not in str(exc_info.value)
+
+    @pytest.mark.parametrize(
+        "url_path, sent_path",
+        [
+            ("/api/../docs", "/docs"),
+            ("/api/a/../../openapi.json", "/openapi.json"),
+        ],
+    )
+    def test_httpx_really_would_have_sent_these_elsewhere(self, url_path, sent_path):
+        """Pins the reason the rule exists, not just the rule.
+
+        If httpx ever stopped resolving dot segments this would fail, and the
+        guard above could be reconsidered rather than cargo-culted.
+        """
+        assert httpx.URL(f"http://test-server:8757{url_path}").path == sent_path
+
+    @pytest.mark.asyncio
+    async def test_encoded_slash_inside_a_segment_is_still_allowed(self, tool):
+        """Decoding whole paths would split this into segments and over-reject.
+
+        httpx keeps %2F encoded, so it never becomes a separator, and the path
+        stays under /api/.
+        """
+        with respx.mock:
+            respx.get("http://test-server:8757/api/%2Foutside").mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+            result = await tool.run(method="GET", url_path="/api/%2Foutside")
+            assert json.loads(result.output)["status_code"] == 200
+
+    @pytest.mark.asyncio
+    async def test_dots_inside_a_segment_are_not_dot_segments(self, tool):
+        """Only a whole segment of '.' or '..' is traversal."""
+        with respx.mock:
+            respx.get("http://test-server:8757/api/files/report..txt").mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+            result = await tool.run(method="GET", url_path="/api/files/report..txt")
+            assert json.loads(result.output)["status_code"] == 200
