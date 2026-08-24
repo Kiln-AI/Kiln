@@ -20,10 +20,15 @@ import pytest
 from kiln_ai import datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.extractors.litellm_extractor import encode_file_litellm_format
+from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.adapters.pytest_prerelease_whitelist import (
     PRERELEASE_MULTIMODAL_TRACE_MODELS,
 )
-from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
+from kiln_ai.datamodel.datamodel_enums import (
+    KilnMimeType,
+    ModelProviderName,
+    StructuredOutputMode,
+)
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
@@ -166,7 +171,30 @@ async def test_multimodal_trace_survives_a_second_turn_and_a_second_save(
     resaved = reloaded.mutable_copy()
     resaved.save_to_file()
     assert resaved.path is not None
-    assert (
-        image_part_of(TaskRun.load_from_file(resaved.path).trace[0])
-        == (image_message["content"][1])
+    resaved_trace = TaskRun.load_from_file(resaved.path).trace
+    assert resaved_trace is not None
+    assert image_part_of(resaved_trace[0]) == image_message["content"][1]
+
+
+@pytest.mark.parametrize("model_name, provider", PRERELEASE_MULTIMODAL_TRACE_MODELS)
+def test_whitelist_entries_are_multimodal(model_name, provider):
+    """Guard the whitelist itself, in ordinary CI rather than a paid run.
+
+    Every entry above has to be a model that can actually receive a PNG. If one
+    stops being multimodal - or the slug is retired - the paid tests would fail
+    against the live provider and read as a regression in the trace round trip,
+    which is the thing they exist to check. This fails first, and says why.
+    """
+    model_provider = built_in_models_from_provider(
+        ModelProviderName(provider), model_name
+    )
+
+    assert model_provider is not None, (
+        f"{model_name} has no {provider} provider in ml_model_list.py"
+    )
+    assert model_provider.multimodal_capable, (
+        f"{model_name} on {provider} is no longer multimodal_capable"
+    )
+    assert KilnMimeType.PNG.value in (model_provider.multimodal_mime_types or []), (
+        f"{model_name} on {provider} no longer accepts {KilnMimeType.PNG.value}"
     )
