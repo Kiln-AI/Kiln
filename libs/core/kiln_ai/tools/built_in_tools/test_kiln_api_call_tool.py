@@ -30,10 +30,10 @@ class TestRunCallingConvention:
         # Mirrors LiteLlmAdapter.process_tool_calls: context passed positionally,
         # call args expanded as keywords.
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 return_value=httpx.Response(200, json={"ok": True})
             )
-            args = {"method": "GET", "url_path": "/test"}
+            args = {"method": "GET", "url_path": "/api/test"}
             result = await tool.run(ToolCallContext(allow_saving=False), **args)
             assert json.loads(result.output)["status_code"] == 200
 
@@ -41,10 +41,10 @@ class TestRunCallingConvention:
     async def test_run_without_context(self, tool):
         # Mirrors studio_server.chat.stream_session.execute_tool: tool.run(**args).
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 return_value=httpx.Response(200, json={"ok": True})
             )
-            result = await tool.run(method="GET", url_path="/test")
+            result = await tool.run(method="GET", url_path="/api/test")
             assert json.loads(result.output)["status_code"] == 200
 
     @pytest.mark.asyncio
@@ -52,10 +52,10 @@ class TestRunCallingConvention:
         # jq_filter must still bind as a keyword-only arg when context is passed
         # positionally — i.e. the adapter convention with the full set of args.
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 return_value=httpx.Response(200, json={"name": "v", "extra": 1})
             )
-            args = {"method": "GET", "url_path": "/test", "jq_filter": ".name"}
+            args = {"method": "GET", "url_path": "/api/test", "jq_filter": ".name"}
             result = await tool.run(ToolCallContext(allow_saving=False), **args)
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 200
@@ -78,15 +78,15 @@ class TestInputValidation:
     @pytest.mark.asyncio
     async def test_invalid_method(self, tool):
         with pytest.raises(ValueError, match="Invalid method 'INVALID'"):
-            await tool.run(method="INVALID", url_path="/test")
+            await tool.run(method="INVALID", url_path="/api/test")
 
     @pytest.mark.asyncio
     async def test_method_case_insensitive(self, tool):
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 return_value=httpx.Response(200, json={"ok": True})
             )
-            result = await tool.run(method="get", url_path="/test")
+            result = await tool.run(method="get", url_path="/api/test")
             assert "status_code" in json.loads(result.output)
 
     @pytest.mark.asyncio
@@ -97,22 +97,22 @@ class TestInputValidation:
     @pytest.mark.asyncio
     async def test_body_with_get(self, tool):
         with pytest.raises(ValueError, match="body parameter not allowed with GET"):
-            await tool.run(method="GET", url_path="/test", body="data")
+            await tool.run(method="GET", url_path="/api/test", body="data")
 
     @pytest.mark.asyncio
     async def test_body_with_delete(self, tool):
         with pytest.raises(ValueError, match="body parameter not allowed with DELETE"):
-            await tool.run(method="DELETE", url_path="/test", body="data")
+            await tool.run(method="DELETE", url_path="/api/test", body="data")
 
     @pytest.mark.asyncio
     async def test_url_path_with_query_string_rejected(self, tool):
         with pytest.raises(ValueError, match="must not contain a query string"):
-            await tool.run(method="GET", url_path="/test?foo=bar")
+            await tool.run(method="GET", url_path="/api/test?foo=bar")
 
     @pytest.mark.asyncio
     async def test_url_path_with_fragment_rejected(self, tool):
         with pytest.raises(ValueError, match="query string or fragment"):
-            await tool.run(method="GET", url_path="/test#section")
+            await tool.run(method="GET", url_path="/api/test#section")
 
 
 class TestQueryParams:
@@ -266,10 +266,12 @@ class TestJqFilter:
     @pytest.mark.asyncio
     async def test_jq_filter_on_success(self, tool):
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 return_value=httpx.Response(200, json={"name": "test-value"})
             )
-            result = await tool.run(method="GET", url_path="/test", jq_filter=".name")
+            result = await tool.run(
+                method="GET", url_path="/api/test", jq_filter=".name"
+            )
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 200
             assert parsed["body"] == "test-value"
@@ -293,11 +295,11 @@ class TestJqFilter:
     @pytest.mark.asyncio
     async def test_jq_filter_extracts_array(self, tool):
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 return_value=httpx.Response(200, json={"items": [{"id": 1}, {"id": 2}]})
             )
             result = await tool.run(
-                method="GET", url_path="/test", jq_filter=".items[] | .id"
+                method="GET", url_path="/api/test", jq_filter=".items[] | .id"
             )
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 200
@@ -306,10 +308,12 @@ class TestJqFilter:
     @pytest.mark.asyncio
     async def test_jq_filter_not_applied_on_error(self, tool):
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 return_value=httpx.Response(404, json={"error": "not found"})
             )
-            result = await tool.run(method="GET", url_path="/test", jq_filter=".name")
+            result = await tool.run(
+                method="GET", url_path="/api/test", jq_filter=".name"
+            )
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 404
             assert "error" in parsed["body"]
@@ -317,10 +321,12 @@ class TestJqFilter:
     @pytest.mark.asyncio
     async def test_jq_filter_on_500(self, tool):
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 return_value=httpx.Response(500, text="Internal Server Error")
             )
-            result = await tool.run(method="GET", url_path="/test", jq_filter=".name")
+            result = await tool.run(
+                method="GET", url_path="/api/test", jq_filter=".name"
+            )
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 500
             assert parsed["body"] == "Internal Server Error"
@@ -330,88 +336,92 @@ class TestJqErrors:
     @pytest.mark.asyncio
     async def test_invalid_jq_syntax(self, tool):
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 return_value=httpx.Response(200, json={"name": "test"})
             )
             with pytest.raises(ValueError, match="jq filter error"):
-                await tool.run(method="GET", url_path="/test", jq_filter=".[invalid")
+                await tool.run(
+                    method="GET", url_path="/api/test", jq_filter=".[invalid"
+                )
 
     @pytest.mark.asyncio
     async def test_jq_runtime_error(self, tool):
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 return_value=httpx.Response(200, json={"value": 10})
             )
             with pytest.raises(ValueError, match="jq filter error"):
-                await tool.run(method="GET", url_path="/test", jq_filter=".value / 0")
+                await tool.run(
+                    method="GET", url_path="/api/test", jq_filter=".value / 0"
+                )
 
     @pytest.mark.asyncio
     async def test_jq_on_non_json_response(self, tool):
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 return_value=httpx.Response(200, text="not json")
             )
             with pytest.raises(ValueError, match="Response is not valid JSON"):
-                await tool.run(method="GET", url_path="/test", jq_filter=".name")
+                await tool.run(method="GET", url_path="/api/test", jq_filter=".name")
 
 
 class TestHttpErrors:
     @pytest.mark.asyncio
     async def test_connection_refused(self, tool):
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 side_effect=httpx.ConnectError("connection refused")
             )
             with pytest.raises(
                 ConnectionError,
-                match=r"^Could not connect to server for /test$",
+                match=r"^Could not connect to server for /api/test$",
             ):
-                await tool.run(method="GET", url_path="/test")
+                await tool.run(method="GET", url_path="/api/test")
 
     @pytest.mark.asyncio
     async def test_read_timeout_reports_read_bound(self, tool):
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 side_effect=httpx.ReadTimeout("timeout")
             )
             with pytest.raises(
                 TimeoutError,
-                match=rf"Request to /test timed out after {READ_TIMEOUT_SECONDS}s",
+                match=rf"Request to /api/test timed out after {READ_TIMEOUT_SECONDS}s",
             ):
-                await tool.run(method="GET", url_path="/test")
+                await tool.run(method="GET", url_path="/api/test")
 
     @pytest.mark.asyncio
     async def test_read_timeout_on_post(self, tool):
         with respx.mock:
-            respx.post("http://test-server:8757/test").mock(
+            respx.post("http://test-server:8757/api/test").mock(
                 side_effect=httpx.ReadTimeout("timeout")
             )
             with pytest.raises(
                 TimeoutError, match=rf"timed out after {READ_TIMEOUT_SECONDS}s"
             ):
-                await tool.run(method="POST", url_path="/test", body="{}")
+                await tool.run(method="POST", url_path="/api/test", body="{}")
 
     @pytest.mark.asyncio
     async def test_connect_timeout_reports_connect_bound(self, tool):
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 side_effect=httpx.ConnectTimeout("timeout")
             )
             with pytest.raises(
                 TimeoutError,
-                match=rf"Request to /test timed out after {CONNECT_TIMEOUT_SECONDS}s",
+                match=rf"Request to /api/test timed out after {CONNECT_TIMEOUT_SECONDS}s",
             ):
-                await tool.run(method="GET", url_path="/test")
+                await tool.run(method="GET", url_path="/api/test")
 
 
 class TestResponseConstruction:
     @pytest.mark.asyncio
     async def test_output_is_valid_json(self, tool):
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 return_value=httpx.Response(200, json={"data": "value"})
             )
-            result = await tool.run(method="GET", url_path="/test")
+            result = await tool.run(method="GET", url_path="/api/test")
             parsed = json.loads(result.output)
             assert "status_code" in parsed
             assert "body" in parsed
@@ -419,10 +429,10 @@ class TestResponseConstruction:
     @pytest.mark.asyncio
     async def test_status_code_is_integer(self, tool):
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 return_value=httpx.Response(201, json={})
             )
-            result = await tool.run(method="GET", url_path="/test")
+            result = await tool.run(method="GET", url_path="/api/test")
             parsed = json.loads(result.output)
             assert isinstance(parsed["status_code"], int)
             assert parsed["status_code"] == 201
@@ -454,10 +464,10 @@ class TestResponseConstruction:
     @pytest.mark.asyncio
     async def test_non_json_response_body_stays_plain_string(self, tool):
         with respx.mock:
-            respx.get("http://test-server:8757/test").mock(
+            respx.get("http://test-server:8757/api/test").mock(
                 return_value=httpx.Response(500, text="Internal Server Error")
             )
-            result = await tool.run(method="GET", url_path="/test")
+            result = await tool.run(method="GET", url_path="/api/test")
             parsed = json.loads(result.output)
             assert parsed["body"] == "Internal Server Error"
 
@@ -465,10 +475,10 @@ class TestResponseConstruction:
     async def test_error_json_response_body_is_object(self, tool):
         err = {"error": "not found", "code": 404}
         with respx.mock:
-            respx.get("http://test-server:8757/missing").mock(
+            respx.get("http://test-server:8757/api/missing").mock(
                 return_value=httpx.Response(404, json=err)
             )
-            result = await tool.run(method="GET", url_path="/missing")
+            result = await tool.run(method="GET", url_path="/api/missing")
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 404
             assert parsed["body"] == err
@@ -777,7 +787,92 @@ class TestSSEReadTimeout:
 
         async with _sse_test_server(handler) as base_url:
             tool = KilnApiCallTool(api_base_url=base_url)
-            result = await tool.run(method="GET", url_path="/stream")
+            result = await tool.run(method="GET", url_path="/api/stream")
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 200
             assert parsed["body"]["event_count"] == 8
+
+
+class TestPathAllowlist:
+    """The tool reaches the API only.
+
+    The base URL is the server root, which also serves the web app and the
+    server's own doc routes. A mistyped path used to return a web page, and
+    thousands of tokens of HTML landed in the model's context.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "url_path",
+        [
+            "/openapi.json",
+            "/docs",
+            "/redoc",
+            "/scalar",
+            "/",
+            "/settings",
+            "/projects/123/tasks",
+            "/_app/immutable/entry/start.js",
+            "/apifoo",
+            "/api",
+        ],
+    )
+    async def test_non_api_paths_rejected(self, url_path, tool):
+        with pytest.raises(ValueError, match="url_path must start with '/api/'"):
+            await tool.run(method="GET", url_path=url_path)
+
+    @pytest.mark.asyncio
+    async def test_rejection_happens_before_any_request(self, tool):
+        """No HTTP call is made, so no page can reach the context."""
+        with respx.mock:
+            route = respx.get("http://test-server:8757/openapi.json").mock(
+                return_value=httpx.Response(200, json={"openapi": "3.1.0"})
+            )
+            with pytest.raises(ValueError):
+                await tool.run(method="GET", url_path="/openapi.json")
+            assert not route.called
+
+    @pytest.mark.asyncio
+    async def test_ping_allowed(self, tool):
+        """The one real route outside /api/. Agents use it as a readiness check."""
+        with respx.mock:
+            respx.get("http://test-server:8757/ping").mock(
+                return_value=httpx.Response(200, json="pong")
+            )
+            result = await tool.run(method="GET", url_path="/ping")
+            assert json.loads(result.output)["status_code"] == 200
+
+    @pytest.mark.asyncio
+    async def test_api_path_allowed(self, tool):
+        with respx.mock:
+            respx.get("http://test-server:8757/api/projects").mock(
+                return_value=httpx.Response(200, json=[])
+            )
+            result = await tool.run(method="GET", url_path="/api/projects")
+            assert json.loads(result.output)["status_code"] == 200
+
+    @pytest.mark.asyncio
+    async def test_dropped_prefix_gets_a_suggestion(self, tool):
+        """The most common model error, so name the fix rather than the rule."""
+        with pytest.raises(ValueError, match=r"Did you mean '/api/projects/123'\?"):
+            await tool.run(method="GET", url_path="/projects/123")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("url_path", ["/openapi.json", "/docs", "/"])
+    async def test_no_misleading_suggestion_for_non_api_routes(self, url_path, tool):
+        """'/api/openapi.json' is not a route either. Do not send it there."""
+        with pytest.raises(ValueError) as exc_info:
+            await tool.run(method="GET", url_path=url_path)
+        assert "Did you mean" not in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_missing_slash_error_still_wins(self, tool):
+        """The more basic error is reported first."""
+        with pytest.raises(ValueError, match="url_path must start with '/'"):
+            await tool.run(method="GET", url_path="api/projects")
+
+    @pytest.mark.asyncio
+    async def test_path_checked_ignoring_query_string(self, tool):
+        """A bad prefix is reported as such, not as a query string problem."""
+        with pytest.raises(ValueError, match="url_path must start with '/api/'"):
+            await tool.run(method="GET", url_path="/projects?id=1")

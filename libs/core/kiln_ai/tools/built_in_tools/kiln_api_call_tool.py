@@ -22,6 +22,15 @@ READ_TIMEOUT_SECONDS = 900.0
 # body will then stream for a long time.
 CONNECT_TIMEOUT_SECONDS = 30.0
 
+# The base URL is the server root, and that server also hosts the web app and
+# FastAPI's own doc routes. So a mistyped path does not 404 as JSON — it returns
+# a web page, and thousands of tokens of HTML land in the model's context. Every
+# Kiln API route lives under /api/ apart from /ping, so hold the tool to that.
+API_PATH_PREFIX = "/api/"
+ALLOWED_EXACT_PATHS = frozenset({"/ping"})
+# Paths that a "did you mean /api<path>?" hint would only mislead on.
+_NON_API_PATHS = frozenset({"/", "/docs", "/redoc", "/scalar"})
+
 
 class KilnApiCallTool(KilnTool):
     """Tool for making HTTP requests to the Kiln API server."""
@@ -55,7 +64,7 @@ For SSE endpoints (text/event-stream), the tool consumes the stream until it clo
                 },
                 "url_path": {
                     "type": "string",
-                    "description": "API path with no query string — pass query args via query_params. Correct paths are in the endpoint documentation.",
+                    "description": "API path, starting with '/api/' (only '/ping' is allowed outside it). No query string — pass query args via query_params. Web app routes and doc routes such as '/openapi.json' or '/docs' are rejected. Correct paths are in the endpoint documentation.",
                 },
                 "query_params": {
                     "type": "object",
@@ -104,6 +113,9 @@ For SSE endpoints (text/event-stream), the tool consumes the stream until it clo
 
         if not url_path.startswith("/"):
             raise ValueError(f"url_path must start with '/', got: {url_path}")
+
+        if not _is_allowed_path(url_path):
+            raise ValueError(_disallowed_path_message(url_path))
 
         if "?" in url_path or "#" in url_path:
             raise ValueError(
@@ -197,6 +209,37 @@ For SSE endpoints (text/event-stream), the tool consumes the stream until it clo
 
         result = {"status_code": status_code, "body": response_body}
         return ToolCallResult(output=json.dumps(result, ensure_ascii=False))
+
+
+def _is_allowed_path(url_path: str) -> bool:
+    """True when url_path addresses the Kiln REST API rather than the web app.
+
+    The query string is ignored here: a url_path carrying one is rejected by
+    its own check, and stripping it first keeps this error about the path.
+    """
+    path_only = url_path.split("?", 1)[0].split("#", 1)[0]
+    return path_only in ALLOWED_EXACT_PATHS or path_only.startswith(API_PATH_PREFIX)
+
+
+def _disallowed_path_message(url_path: str) -> str:
+    path_only = url_path.split("?", 1)[0].split("#", 1)[0]
+    last_segment = path_only.rsplit("/", 1)[-1]
+    # Suggest the prefixed form only where it could plausibly be the fix.
+    # Offering "/api/openapi.json" would send the model somewhere just as wrong.
+    suggest = (
+        not path_only.startswith("/api")
+        and path_only not in _NON_API_PATHS
+        and "." not in last_segment
+    )
+    hint = f" Did you mean '/api{path_only}'?" if suggest else ""
+    return (
+        f"url_path must start with '{API_PATH_PREFIX}', or be exactly "
+        f"{', '.join(sorted(ALLOWED_EXACT_PATHS))}. Got: '{url_path}'.{hint} "
+        "This tool reaches the Kiln REST API only. Web app routes and the "
+        "server's own doc routes (/openapi.json, /docs) are not callable, and "
+        "return a web page rather than an API response. Correct paths are in "
+        "the endpoint documentation."
+    )
 
 
 async def _consume_sse(response: httpx.Response) -> int:
