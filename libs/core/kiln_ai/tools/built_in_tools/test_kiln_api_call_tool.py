@@ -983,3 +983,25 @@ class TestErrorMessageShape:
         with pytest.raises(ValueError) as exc_info:
             await tool.run(method="GET", url_path="/_app/immutable/start.js")
         assert "Did you mean" not in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("url_path", ["/ping/", "/ping//"])
+    async def test_near_miss_on_an_exact_path_is_corrected_to_that_path(
+        self, url_path, tool
+    ):
+        """A trailing slash gets '/ping', not '/api/ping/'.
+
+        Prefixing a near miss names a second wrong call rather than the fix.
+        """
+        with pytest.raises(ValueError) as exc_info:
+            await tool.run(method="GET", url_path=url_path)
+        message = str(exc_info.value)
+        assert "Did you mean '/ping'?" in message
+        assert "/api/ping" not in message
+
+    @pytest.mark.asyncio
+    async def test_a_genuinely_unknown_path_still_gets_the_prefix_hint(self, tool):
+        """'/pings' is not a near miss, it is just wrong. Treat it normally."""
+        with pytest.raises(ValueError) as exc_info:
+            await tool.run(method="GET", url_path="/pings")
+        assert "Did you mean '/api/pings'?" in str(exc_info.value)

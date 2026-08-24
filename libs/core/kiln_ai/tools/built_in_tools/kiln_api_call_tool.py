@@ -265,16 +265,23 @@ def _disallowed_path_message(url_path: str) -> str:
             "endpoint documentation."
         )
 
-    # Suggest the prefixed form only where it could plausibly be the fix. A
-    # dot in the final segment means a filename, not an endpoint, and
-    # "/api/openapi.json" is no more callable than "/openapi.json".
-    looks_like_a_file = "." in path_only.rsplit("/", 1)[-1]
-    suggest = (
-        not path_only.startswith("/api")
-        and path_only not in _NON_API_PATHS
-        and not looks_like_a_file
-    )
-    hint = f" Did you mean '/api{path_only}'?" if suggest else ""
+    # A near miss on an exact allowed path — a trailing slash, say — is
+    # corrected to that path. Prefixing it instead would name a second wrong
+    # call: '/api/ping/' is no more a route than '/ping/' is.
+    near_miss = path_only.rstrip("/")
+    if near_miss in ALLOWED_EXACT_PATHS:
+        hint = f" Did you mean '{near_miss}'?"
+    else:
+        # Suggest the prefixed form only where it could plausibly be the fix.
+        # A dot in the final segment means a filename, not an endpoint, and
+        # "/api/openapi.json" is no more callable than "/openapi.json".
+        looks_like_a_file = "." in path_only.rsplit("/", 1)[-1]
+        suggest = (
+            not path_only.startswith("/api")
+            and path_only not in _NON_API_PATHS
+            and not looks_like_a_file
+        )
+        hint = f" Did you mean '/api{path_only}'?" if suggest else ""
     # Name the exceptions. The rule alone reads as "/ping is impossible",
     # which would stop a caller retrying the one path that does work.
     exceptions = ", ".join(f"'{path}'" for path in sorted(ALLOWED_EXACT_PATHS))
