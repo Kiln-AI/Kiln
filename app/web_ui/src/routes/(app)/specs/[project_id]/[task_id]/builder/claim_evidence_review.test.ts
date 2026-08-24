@@ -4,6 +4,7 @@ import { render, fireEvent, cleanup } from "@testing-library/svelte"
 import ClaimEvidenceReview from "./claim_evidence_review.svelte"
 import {
   build_trace_reviews,
+  CHAR_CUTOFF,
   is_trace_reviewed,
   type TraceClaims,
 } from "./claim_evidence"
@@ -210,8 +211,8 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
   })
 })
 
-// A short, plain-text single-turn trace: the shape the gate sends
-// trace-first. Its claims are built and sit behind View Claims.
+// A short single-turn trace: the shape the gate sends trace-first. Its
+// claims are built and sit behind View Claims.
 function short_single_turn_trace(
   judge_score: "pass" | "fail" = "fail",
 ): TraceClaims {
@@ -505,8 +506,8 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     )
   })
 
-  it("keeps the claims-first review for multi-turn and for schema'd outputs", () => {
-    // Same short trace, both other gate arms: the claim stack, not the
+  it("keeps the claims-first review for multi-turn", () => {
+    // Same short trace, the other gate arm: the claim stack, not the
     // question, and the trace back behind its button.
     const traces = [short_single_turn_trace()]
     const multi = render(ClaimEvidenceReview, {
@@ -522,20 +523,31 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     expect(multi.queryAllByText("View Full Trace").length).toBeGreaterThan(0)
     expect(multi.queryByText("View Claims")).toBeNull()
     expect(multi.container.textContent).toContain("Overall, this conversation")
-    cleanup()
+  })
 
-    const schemad = render(ClaimEvidenceReview, {
-      props: {
-        traces,
-        verdicts: build_trace_reviews(traces),
-        selected_indices: [0],
-        judged_noun: "example",
-        has_output_schema: true,
-      },
+  it("reviews a short structured output trace-first", () => {
+    // The shape a schema'd single-turn task produces. It reviews on the
+    // trace like any other short output, and the chat renders the JSON.
+    const raw_output = JSON.stringify({
+      window_days: 30,
+      answer: "Our return window is 30 days.",
     })
-    expect(schemad.queryByText("Does this response pass?")).toBeNull()
-    expect(schemad.queryAllByText("View Full Trace").length).toBeGreaterThan(0)
-    expect(schemad.queryByText("View Claims")).toBeNull()
+    const traces = [{ ...short_single_turn_trace(), raw_output }]
+    const { container, getByText } = render_trace_first(traces)
+
+    expect(getByText("Does this response pass?")).toBeTruthy()
+    expect(container.textContent).toContain("window_days")
+    expect(container.textContent).toContain("Our return window is 30 days.")
+  })
+
+  it("keeps the claims-first review for a structured output over the cutoff", () => {
+    // Length is what decides, for JSON as for prose.
+    const raw_output = JSON.stringify({ answer: "x".repeat(CHAR_CUTOFF) })
+    const traces = [{ ...short_single_turn_trace(), raw_output }]
+    const { container, queryByText } = render_trace_first(traces)
+
+    expect(queryByText("Does this response pass?")).toBeNull()
+    expect(container.textContent).toContain("Overall, this example")
   })
 
   it("fails loud when a trace has neither a transcript nor raws", () => {

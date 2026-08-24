@@ -1174,11 +1174,10 @@ describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () =>
 describe("is_trace_first_review — which review shape a trace gets", () => {
   const short = "x".repeat(CHAR_CUTOFF - 1)
 
-  it("a short plain-text single-turn output reviews trace-first", () => {
+  it("a short single-turn output reviews trace-first", () => {
     expect(
       is_trace_first_review({
         is_multi_turn: false,
-        has_output_schema: false,
         raw_output: short,
       }),
     ).toBe(true)
@@ -1188,25 +1187,39 @@ describe("is_trace_first_review — which review shape a trace gets", () => {
     expect(
       is_trace_first_review({
         is_multi_turn: true,
-        has_output_schema: false,
         raw_output: "Sure, I can help.",
       }),
     ).toBe(false)
   })
 
-  it("an output schema keeps the claim stack even under the cutoff", () => {
+  it("a short structured output reviews trace-first, schema flag or not", () => {
+    // Structured output is not a gate arm: the chat bubble renders JSON
+    // formatted, so a short one costs no more to read than short prose. The
+    // extra property is a task flag the gate no longer takes — a gate that
+    // reads it again fails here.
+    const schemad = {
+      is_multi_turn: false,
+      raw_output: JSON.stringify({
+        setup: "Why did the developer quit?",
+        punchline: "They did not get arrays.",
+      }),
+      has_output_schema: true,
+    }
+    expect(is_trace_first_review(schemad)).toBe(true)
+  })
+
+  it("a structured output over the cutoff keeps the claim stack", () => {
     expect(
       is_trace_first_review({
         is_multi_turn: false,
-        has_output_schema: true,
-        raw_output: short,
+        raw_output: JSON.stringify({ summary: "x".repeat(CHAR_CUTOFF) }),
       }),
     ).toBe(false)
   })
 
   it("cuts over at CHAR_CUTOFF: below is trace-first, at it is claims", () => {
     const at_cutoff = "x".repeat(CHAR_CUTOFF)
-    const args = { is_multi_turn: false, has_output_schema: false }
+    const args = { is_multi_turn: false }
     expect(is_trace_first_review({ ...args, raw_output: at_cutoff })).toBe(
       false,
     )

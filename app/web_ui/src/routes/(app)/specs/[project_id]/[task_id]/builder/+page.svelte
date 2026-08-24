@@ -3538,14 +3538,21 @@
           ? "Kiln simulates a user talking to your agent to build your eval's test data."
           : "Kiln plans test inputs, runs your task on each, and judges the results."
       case "review":
-        // The mistake framing lives at the STEP level, where it's true of
-        // the batch (some conversations failed); each conversation's own
-        // verdict card says which way that one went. ~Half of every batch
-        // passes by design (balanced plan + stratified sample), so the
-        // per-conversation surface stays verdict-neutral.
+        // Multi-turn always reviews on the claims, so its copy can name the
+        // flagged mistakes and the citations that locate them. The mistake
+        // framing lives at the STEP level, where it's true of the batch (some
+        // conversations failed); each conversation's own verdict card says
+        // which way that one went. ~Half of every batch passes by design
+        // (balanced plan + stratified sample), so the per-conversation
+        // surface stays verdict-neutral.
         return is_multi_turn
           ? `A judge reviewed each test conversation in your eval data and flagged possible mistakes. Keep the real ones, dismiss the false alarms. You're reviewing ${review_target_count} of ${trace_claims.length}. Click a citation number to see the moment it happened.`
-          : `A judge reviewed each test run in your eval data and flagged possible mistakes. Keep the real ones, dismiss the false alarms. You're reviewing ${review_target_count} of ${trace_claims.length}. Click a citation number to see the moment it happened.`
+          : // A single-turn run reviews on the trace itself when it's short
+            // enough, and that shape shows no flagged mistakes, no claim
+            // cards and no citation numbers until the reviewer has graded.
+            // So this copy names none of them: it states what the judge did
+            // and what the reviewer does, which holds on either shape.
+            `A judge scored every test run in your eval data. You're reviewing ${review_target_count} of ${trace_claims.length}. Check the evidence for each one, then grade it.`
       case "save":
         return "Saving your eval and its test data."
       case "done":
@@ -4270,17 +4277,15 @@
                  every grade, so the review component restarts on the new
                  selection instead of pointing at a stale index. -->
             {#key calibration_rounds_completed}
-              <!-- is_multi_turn / has_output_schema are the task-level half of
-                   the review-shape gate: a single-turn task with plain-text
-                   output reviews its short traces on the trace itself rather
-                   than on the claims distilled from it. -->
+              <!-- is_multi_turn is the task-level half of the review-shape
+                   gate: a single-turn task reviews its short traces on the
+                   trace itself rather than on the claims distilled from it. -->
               <ClaimEvidenceReview
                 traces={trace_claims}
                 bind:verdicts={trace_reviews}
                 selected_indices={selected_trace_indices}
                 {judged_noun}
                 {is_multi_turn}
-                has_output_schema={!!task?.output_json_schema}
                 {on_open_trace}
                 on_save={on_advance_to_save}
                 save_disabled={!save_gate_met}

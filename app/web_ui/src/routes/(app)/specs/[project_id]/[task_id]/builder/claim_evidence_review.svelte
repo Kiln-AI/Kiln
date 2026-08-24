@@ -14,11 +14,11 @@
   // shows a building/error state until they arrive.
   //
   // Two content shapes, one screen (is_trace_first_review picks): a short
-  // plain-text single-turn output is cheaper to read whole than as claims, so
-  // that trace renders inline and the reviewer labels the output blind, with
-  // the claims one click behind [View Claims]. Everything else keeps the claim
-  // stack with the trace behind [View Full Trace]. Both write the same
-  // verdicts, so save, gate and refine see one shape.
+  // single-turn output is cheaper to read whole than as claims, so that trace
+  // renders inline and the reviewer labels the output blind, with the claims
+  // one click behind [View Claims]. Everything else keeps the claim stack with
+  // the trace behind [View Full Trace]. Both write the same verdicts, so save,
+  // gate and refine see one shape.
   import ClaimCard from "./claim_card.svelte"
   import ClaimTraceModal from "./claim_trace_modal.svelte"
   import Warning from "$lib/ui/warning.svelte"
@@ -64,11 +64,10 @@
   // What the judge judged, for the verdict card's headline: "conversation"
   // for multi-turn, "example" for single-turn.
   export let judged_noun = "example"
-  // The two task-level halves of the review-shape gate (the third is the
-  // trace's own output length). Defaults describe a plain single-turn task,
+  // The task-level half of the review-shape gate (the other half is the
+  // trace's own output length). The default describes a single-turn task,
   // matching judged_noun's default.
   export let is_multi_turn = false
-  export let has_output_schema = false
   // True while the reviewer is on the last selected trace — the only position
   // where the primary action renders. Bound out (read-only for the parent) so
   // anything the parent stacks under that action appears only alongside it.
@@ -128,7 +127,6 @@
     !!current &&
     is_trace_first_review({
       is_multi_turn,
-      has_output_schema,
       raw_output: current.raw_output,
     })
 

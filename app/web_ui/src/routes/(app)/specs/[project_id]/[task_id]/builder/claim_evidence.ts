@@ -505,18 +505,21 @@ export function reviewed_trace_count(
 export const CHAR_CUTOFF = 600
 
 // Which review shape a trace gets. Trace-first (read the trace, label the
-// output) only where the raw trace is the cheaper read: one exchange, short,
-// and plain text. Multi-turn transcripts, long outputs and schema'd outputs
-// keep the claim stack. A schema'd output does render structured in the chat
-// bubble, so it is legible on its own, but whether a blind pass/fail on raw
-// JSON produces reliable review signal has not been tested — until it is, the
-// claims stay the thing the reviewer grades.
+// output) only where the raw trace is the cheaper read: one exchange, and
+// short. Multi-turn transcripts and long outputs keep the claim stack.
+// Length is the whole test because length is what predicts read cost. A
+// structured output is not excluded: the chat bubble renders it formatted,
+// the same way Kiln shows output everywhere else, so it is legible on its
+// own. It does occupy more lines per character than prose, since the cutoff
+// counts the raw string while the bubble pretty-prints it, which is a
+// consideration for whoever calibrates the cutoff. Excluding it outright
+// would also put trace-first out of reach for most real single-turn tasks,
+// which carry an output schema.
 export function is_trace_first_review(args: {
   is_multi_turn: boolean
-  has_output_schema: boolean
   raw_output: string
 }): boolean {
-  if (args.is_multi_turn || args.has_output_schema) return false
+  if (args.is_multi_turn) return false
   return args.raw_output.length < CHAR_CUTOFF
 }
 
