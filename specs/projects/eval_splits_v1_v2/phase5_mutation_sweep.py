@@ -227,9 +227,10 @@ if __name__ == "__main__":
         if only and not any(o in m[0] for o in only):
             continue
         res = run(*m)
-        print(f"{res[1]:>12}  {res[0]} {res[2]}", flush=True)
+        sys.stdout.write(f"{res[1]:>12}  {res[0]} {res[2]}\n")
+        sys.stdout.flush()
         results.append(res)
     bad = [r for r in results if r[1] != "killed"]
-    print(f"\n{len(results) - len(bad)}/{len(results)} killed")
+    sys.stdout.write(f"\n{len(results) - len(bad)}/{len(results)} killed\n")
     for r in bad:
-        print("  NOT KILLED:", r[0], r[2])
+        sys.stdout.write(f"  NOT KILLED: {r[0]} {r[2]}\n")
