@@ -275,9 +275,13 @@ def _disallowed_path_message(url_path: str) -> str:
         and not looks_like_a_file
     )
     hint = f" Did you mean '/api{path_only}'?" if suggest else ""
+    # Name the exceptions. The rule alone reads as "/ping is impossible",
+    # which would stop a caller retrying the one path that does work.
+    exceptions = ", ".join(f"'{path}'" for path in sorted(ALLOWED_EXACT_PATHS))
     return (
-        f"url_path must start with '{API_PATH_PREFIX}'. Got: '{url_path}'."
-        f"{hint} Correct paths are in the endpoint documentation."
+        f"url_path must start with '{API_PATH_PREFIX}', or be exactly "
+        f"{exceptions}. Got: '{url_path}'.{hint} "
+        "Correct paths are in the endpoint documentation."
     )
 
 

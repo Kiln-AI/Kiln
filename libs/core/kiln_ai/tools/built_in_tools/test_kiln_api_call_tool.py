@@ -10,6 +10,7 @@ import respx
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.built_in_tools.kiln_api_call_tool import (
+    ALLOWED_EXACT_PATHS,
     CONNECT_TIMEOUT_SECONDS,
     READ_TIMEOUT_SECONDS,
     KilnApiCallTool,
@@ -966,6 +967,15 @@ class TestErrorMessageShape:
         assert "Did you mean '/api/projects/123'?" in message
         assert "openapi.json" not in message
         assert "/docs" not in message
+
+    @pytest.mark.asyncio
+    async def test_prefix_error_names_the_allowed_exceptions(self, tool):
+        """The rule alone reads as '/ping is impossible'. Name what works."""
+        with pytest.raises(ValueError) as exc_info:
+            await tool.run(method="GET", url_path="/projects/123")
+        message = str(exc_info.value)
+        for allowed in ALLOWED_EXACT_PATHS:
+            assert allowed in message
 
     @pytest.mark.asyncio
     async def test_no_suggestion_for_something_that_looks_like_a_file(self, tool):
