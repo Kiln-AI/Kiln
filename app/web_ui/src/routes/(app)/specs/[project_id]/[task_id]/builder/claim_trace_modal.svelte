@@ -4,36 +4,73 @@
   // to and highlights the cited span. Most reviewers never need the full
   // trace; this is the escape hatch for hard calls.
   //
-  // Multi-turn traces carry the structured conversation, so the OUTPUT side
-  // renders in the house chat UI (ChatTrace) with the citation mapped onto the
-  // exact message/node. Single-turn and legacy traces (no structure) keep the
-  // raw flattened-text view. The INPUT is always the raw opening message, and
-  // it's still citable, so its raw panel + <mark> behavior stays either way.
+  // Two arms, and the review component tells this one which it is on:
+  //
+  //   SINGLE-TURN renders the same two sections as the inline review surface
+  //   (Input field, Output section) — one shape for one trace, whether it is
+  //   read on the page or behind the button. A citation marks inside the
+  //   section it cites.
+  //
+  //   MULTI-TURN renders the conversation in the house chat UI, with the input
+  //   in its own panel above and the citation mapped onto the exact chat node.
+  //   A trace with no stored structure keeps the raw flattened panels.
   import { tick } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import ChatTrace from "$lib/ui/trace/chat_trace.svelte"
+  import SingleTurnSectionsView from "./single_turn_sections.svelte"
   import {
     map_output_span_to_trace,
     resolve_citation_span,
+    single_turn_sections_resolver,
     type Citation,
     type CitationSource,
     type TraceClaims,
     type TraceHighlight,
   } from "./claim_evidence"
 
+  // Which arm the review that mounts this modal is on. The mounting component
+  // knows it (it is the same flag that picks the review shape), and a trace
+  // cannot be trusted to say: a single-turn tool loop has many messages, and a
+  // multi-turn conversation can be two.
+  export let single_turn = false
+
   let dialog: Dialog | null = null
   let trace: TraceClaims | null = null
+  let content_el: HTMLElement | null = null
   // The active citation, if opened via one. active_span is its resolved span in
-  // the raw source text (drives the raw-panel <mark>); active_source tells us
-  // which panel it lands in; null when just browsing.
+  // the raw source text (drives the <mark>); active_source says which side of
+  // the trace it cites; null when just browsing.
   let active_source: CitationSource | null = null
   let active_span: { start: number; end: number } | null = null
   let active_citation: Citation | null = null
-  let mark_el: HTMLElement | null = null
 
-  // Render the structured chat UI when the trace carries the conversation
-  // (multi-turn); otherwise fall back to the raw flattened output panel.
-  $: use_chat = !!(trace && trace.trace && trace.trace.length > 0)
+  // ── Single-turn ──────────────────────────────────────────────────────
+  // The two sections, memoized on the trace content so reopening the dialog on
+  // the same trace hands the rows the same array and keeps their expansion.
+  // `error` is the trace having nothing to render at all; a missing output
+  // alone is reported inside the Output section instead.
+  const read_sections = single_turn_sections_resolver()
+  $: sections = single_turn && trace ? read_sections(trace) : null
+
+  // The active citation as the sections take it: the raw source its offsets
+  // index, plus the span. Null while browsing, which is what puts the sections
+  // back on their content-typed renderers.
+  $: cited =
+    trace && active_source && active_span
+      ? {
+          source: active_source,
+          text: text_for(active_source),
+          span: active_span,
+        }
+      : null
+
+  // ── Multi-turn ───────────────────────────────────────────────────────
+  // Render the chat UI when the trace carries the conversation; otherwise fall
+  // back to the raw flattened output panel. Both are gated on the arm: the
+  // single-turn path renders none of it, and mapping a citation onto chat
+  // nodes nothing will draw is work for a highlight that cannot appear.
+  $: use_chat =
+    !single_turn && !!(trace && trace.trace && trace.trace.length > 0)
 
   function text_for(source: CitationSource): string {
     if (!trace) return ""
@@ -41,7 +78,7 @@
   }
 
   // Split a raw source's text into [before, highlight, after] when it's the
-  // active span, so the highlight can carry a ref for scroll-into-view.
+  // active span, so the highlight can be marked and scrolled to.
   function segments(source: CitationSource) {
     const text = text_for(source)
     if (source !== active_source || !active_span) {
@@ -57,11 +94,9 @@
   // Map an OUTPUT citation onto the structured trace so ChatTrace can mark the
   // exact node. Null for input citations, legacy traces, or unmappable spans —
   // ChatTrace then renders without a highlight rather than a wrong one.
-  $: chat_highlight = compute_chat_highlight(
-    trace,
-    active_source,
-    active_citation,
-  )
+  $: chat_highlight = single_turn
+    ? null
+    : compute_chat_highlight(trace, active_source, active_citation)
   function compute_chat_highlight(
     t: TraceClaims | null,
     source: CitationSource | null,
@@ -87,57 +122,71 @@
     active_citation = citation
     active_span = resolve_citation_span(text_for(citation.source), citation)
     dialog?.show()
-    // Wait for the raw-panel <mark> to render, then bring it into view. The
-    // chat panel scrolls itself (ChatTrace reacts to its highlight prop), so
-    // this only matters for the input panel and the legacy raw-output panel.
+    // Wait for the <mark> to render, then bring it into view. Only the raw
+    // marks need this: on multi-turn the chat panel scrolls itself (ChatTrace
+    // reacts to its highlight prop).
     await tick()
-    mark_el?.scrollIntoView({ block: "center", behavior: "smooth" })
+    content_el
+      ?.querySelector("[data-citation-mark]")
+      ?.scrollIntoView({ block: "center", behavior: "smooth" })
   }
 
-  $: input_seg = trace ? segments("input") : null
-  $: output_seg = trace && !use_chat ? segments("output") : null
+  $: input_seg = trace && !single_turn ? segments("input") : null
+  $: output_seg = trace && !single_turn && !use_chat ? segments("output") : null
 </script>
 
 <Dialog bind:this={dialog} title="Trace" width="wide">
   {#if trace}
-    <div class="space-y-4 text-sm max-h-[70vh] overflow-y-auto">
-      <!-- Input -->
-      <div>
-        <div class="text-xs uppercase tracking-wide text-gray-500 mb-1">
-          Input
+    <div
+      class="space-y-4 text-sm max-h-[70vh] overflow-y-auto"
+      bind:this={content_el}
+    >
+      {#if single_turn}
+        <!-- SINGLE-TURN: the same two sections the inline review shows. -->
+        {#if sections?.error}
+          <div class="text-error">{sections.error}</div>
+        {:else if sections?.sections}
+          <SingleTurnSectionsView sections={sections.sections} {cited} />
+        {/if}
+      {:else}
+        <!-- MULTI-TURN: the input as judged, then the conversation. -->
+        <div>
+          <div class="text-xs uppercase tracking-wide text-gray-500 mb-1">
+            Input
+          </div>
+          <div class="rounded bg-base-100 px-4 py-3 whitespace-pre-wrap">
+            {#if input_seg}
+              {input_seg.before}{#if input_seg.highlight}<mark
+                  data-citation-mark
+                  class="bg-warning/40 rounded px-0.5"
+                  >{input_seg.highlight}</mark
+                >{/if}{input_seg.after}
+            {/if}
+          </div>
         </div>
-        <div class="rounded bg-base-100 px-4 py-3 whitespace-pre-wrap">
-          {#if input_seg}
-            {input_seg.before}{#if input_seg.highlight}<mark
-                bind:this={mark_el}
-                class="bg-warning/40 rounded px-0.5">{input_seg.highlight}</mark
-              >{/if}{input_seg.after}
+
+        <div>
+          <div class="text-xs uppercase tracking-wide text-gray-500 mb-1">
+            Output
+          </div>
+          {#if use_chat && trace.trace}
+            <!-- The real chat UI, with the citation mapped onto its exact node
+                 (or unhighlighted when just browsing / unmappable). -->
+            <div class="rounded bg-primary/5 px-4 py-3">
+              <ChatTrace trace={trace.trace} highlight={chat_highlight} />
+            </div>
+          {:else if output_seg}
+            <!-- No structured trace recorded: the raw flattened output. -->
+            <div class="rounded bg-primary/5 px-4 py-3 whitespace-pre-wrap">
+              {output_seg.before}{#if output_seg.highlight}<mark
+                  data-citation-mark
+                  class="bg-warning/40 rounded px-0.5"
+                  >{output_seg.highlight}</mark
+                >{/if}{output_seg.after}
+            </div>
           {/if}
         </div>
-      </div>
-
-      <!-- Output -->
-      <div>
-        <div class="text-xs uppercase tracking-wide text-gray-500 mb-1">
-          Output
-        </div>
-        {#if use_chat && trace.trace}
-          <!-- Multi-turn: the real chat UI, with the citation mapped onto its
-               exact node (or unhighlighted when just browsing / unmappable). -->
-          <div class="rounded bg-primary/5 px-4 py-3">
-            <ChatTrace trace={trace.trace} highlight={chat_highlight} />
-          </div>
-        {:else if output_seg}
-          <!-- Single-turn / legacy: the raw flattened output, unchanged. -->
-          <div class="rounded bg-primary/5 px-4 py-3 whitespace-pre-wrap">
-            {output_seg.before}{#if output_seg.highlight}<mark
-                bind:this={mark_el}
-                class="bg-warning/40 rounded px-0.5"
-                >{output_seg.highlight}</mark
-              >{/if}{output_seg.after}
-          </div>
-        {/if}
-      </div>
+      {/if}
     </div>
   {/if}
 </Dialog>

@@ -23,9 +23,9 @@
   import ClaimTraceModal from "./claim_trace_modal.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
-  // The house chat UI, the same component the trace modal mounts — the
-  // trace-first arm puts it on the page instead of behind a button.
-  import ChatTrace from "$lib/ui/trace/chat_trace.svelte"
+  // The single-turn review anatomy (Input field + Output section), shared with
+  // the trace modal so the trace reads the same inline and behind the button.
+  import SingleTurnSectionsView from "./single_turn_sections.svelte"
   // The nav row hand-rolls FormContainer's submit button, so it renders the
   // same keyboard hint using the same platform check.
   import { isMacOS } from "$lib/utils/platform"
@@ -36,12 +36,11 @@
     final_judgement_reason,
     is_trace_first_review,
     is_trace_reviewed,
-    review_trace_messages,
+    single_turn_sections_resolver,
     type Citation,
     type TraceClaims,
     type TraceReview,
   } from "./claim_evidence"
-  import type { TraceMessage } from "$lib/types"
 
   export let traces: TraceClaims[]
   // Two-way bound so the parent reads verdicts at save time.
@@ -141,23 +140,14 @@
     claims_dialog?.show()
   }
 
-  // The messages the inline renderer shows. review_trace_messages throws when
-  // a trace carries neither a transcript nor raws; catching it here turns that
-  // into a visible error instead of a blank page the reviewer would label.
-  $: inline_trace = trace_first && current ? read_trace(current) : null
-  function read_trace(t: TraceClaims): {
-    messages: TraceMessage[] | null
-    error: string | null
-  } {
-    try {
-      return { messages: review_trace_messages(t), error: null }
-    } catch (e) {
-      return {
-        messages: null,
-        error: e instanceof Error ? e.message : "This trace can't be shown.",
-      }
-    }
-  }
+  // The Input/Output sections the inline surface shows. Memoized on the trace
+  // content: the parent reassigns its whole trace list whenever a background
+  // claims build lands, and recomputing on that churn would remount the rows
+  // and close whatever the reviewer had open. `error` is the trace having
+  // nothing to render at all — a missing output alone is reported inside the
+  // Output section, which keeps the input on screen.
+  const read_sections = single_turn_sections_resolver()
+  $: inline_sections = trace_first && current ? read_sections(current) : null
 
   // The reviewer's label, derived from the stored verdict rather than held
   // separately: the verdict is what survives navigation, so a label read back
@@ -261,12 +251,13 @@
     {#if trace_first}
       <!-- TRACE-FIRST: the trace IS the review. Nothing on this screen states
            the judge's call before the reviewer makes their own. -->
-      {#if inline_trace?.error}
-        <Warning warning_color="error" warning_message={inline_trace.error} />
-      {:else if inline_trace?.messages}
-        <div class="rounded bg-base-100 border border-base-300 px-4 py-3">
-          <ChatTrace trace={inline_trace.messages} />
-        </div>
+      {#if inline_sections?.error}
+        <Warning
+          warning_color="error"
+          warning_message={inline_sections.error}
+        />
+      {:else if inline_sections?.sections}
+        <SingleTurnSectionsView sections={inline_sections.sections} />
 
         <!-- The blind label, in claim-card chrome. items-center rather than the
              cards' items-start: one short question reads aligned beside the
@@ -498,7 +489,11 @@
   </div>
 </div>
 
-<ClaimTraceModal bind:this={trace_modal} />
+<!-- The modal renders the arm this review is on: single-turn gets the same two
+     sections as the inline surface, multi-turn the chat transcript. The arm is
+     passed rather than inferred, because this component is the one that knows
+     it — a single-turn trace can look like a conversation and vice versa. -->
+<ClaimTraceModal bind:this={trace_modal} single_turn={!is_multi_turn} />
 
 <!-- The claims the trace-first arm demoted, in the same house Dialog the trace
      escape hatch opens. DISPLAY ONLY: the blind row is this arm's single

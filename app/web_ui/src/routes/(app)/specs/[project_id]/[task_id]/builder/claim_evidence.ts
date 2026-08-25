@@ -165,13 +165,18 @@ function fold_typography(text: string): string {
   return text.replace(TYPOGRAPHIC_FOLD_PATTERN, (c) => TYPOGRAPHIC_FOLD[c] ?? c)
 }
 
-// ── Structured-trace span mapping ────────────────────────────────────────
+// ── Structured-trace span mapping (MULTI-TURN ONLY) ──────────────────────
 //
-// The trace modal renders the structured conversation (TraceMessage[]) in the
+// The trace modal renders a MULTI-TURN conversation (TraceMessage[]) in the
 // house chat UI, but citations resolve against raw_output — the server's
 // FLATTENED rendering of that trace. This maps a resolved [start, end) span in
 // raw_output back onto the trace: which message, which block kind, and the
 // offset within that block's text, so the chat UI can highlight the exact node.
+//
+// Single-turn no longer reaches any of this: that arm renders two fields
+// (single_turn_sections below) and marks a citation in the field's raw text
+// directly, where the offsets already line up. The chat is the multi-turn
+// renderer, so the mapping onto it is a multi-turn concern.
 //
 // It works by re-computing the server flattener's block layout in TS. The port
 // mirrors libs/core .../eval_trace_formatter.py EXACTLY — the same per-message
@@ -378,9 +383,9 @@ function flatten_output_blocks(trace: TraceMessage[]): FlattenedBlock[] {
 // means our port drifted from the server, so we surface NO highlight rather
 // than a wrong one.
 //
-// Two raw_output shapes reach this: the flattened multi-turn transcript above,
-// and the single-turn case where raw_output is just the model's answer. The
-// flattened walk runs first and the single-turn match is the fallback, so a
+// Two raw_output shapes reach this: the flattened transcript above, and the
+// unflattened case where raw_output is one message's content verbatim. The
+// flattened walk runs first and the verbatim match is the fallback, so a
 // trace that fits neither still yields no highlight.
 export function map_output_span_to_trace(
   trace: TraceMessage[],
@@ -417,9 +422,9 @@ function map_span_in_flattened_layout(
   return null
 }
 
-// Single-turn: raw_output IS one message's content, with none of the
-// flattener's role headers or tags, so the span's offsets carry onto that
-// message unchanged. Requires exactly one byte-identical message — with two the
+// raw_output IS one message's content, with none of the flattener's role
+// headers or tags, so the span's offsets carry onto that message
+// unchanged. Requires exactly one byte-identical message — with two the
 // cited one is ambiguous, and we'd rather show no highlight than the wrong one.
 function map_span_in_whole_message(
   trace: TraceMessage[],
@@ -508,13 +513,13 @@ export const CHAR_CUTOFF = 600
 // output) only where the raw trace is the cheaper read: one exchange, and
 // short. Multi-turn transcripts and long outputs keep the claim stack.
 // Length is the whole test because length is what predicts read cost. A
-// structured output is not excluded: the chat bubble renders it formatted,
-// the same way Kiln shows output everywhere else, so it is legible on its
-// own. It does occupy more lines per character than prose, since the cutoff
-// counts the raw string while the bubble pretty-prints it, which is a
-// consideration for whoever calibrates the cutoff. Excluding it outright
-// would also put trace-first out of reach for most real single-turn tasks,
-// which carry an output schema.
+// structured output is not excluded: the Output section renders it through
+// the house Output idiom, the same way Kiln shows output everywhere else, so
+// it is legible on its own. It does occupy more lines per character than
+// prose, since the cutoff counts the raw string while the section
+// pretty-prints it, which is a consideration for whoever calibrates the
+// cutoff. Excluding it outright would also put trace-first out of reach for
+// most real single-turn tasks, which carry an output schema.
 export function is_trace_first_review(args: {
   is_multi_turn: boolean
   raw_output: string
@@ -537,6 +542,192 @@ export function review_trace_messages(trace: TraceClaims): TraceMessage[] {
     ]
   }
   throw new Error("This trace has no transcript and no raw input or output.")
+}
+
+// ── Single-turn review sections ──────────────────────────────────────────
+//
+// A single-turn review is two sections, never chat bubbles: the Input the
+// judge got, and the Output, which is everything in the trace after the first
+// user turn. One exchange is not a conversation, and rendering it as one puts
+// the input in a speech bubble and buries the answer the reviewer is grading.
+//
+// This resolves one trace into exactly what those sections render. Both
+// single-turn surfaces (the inline trace-first review and the trace modal)
+// read it, so the two cannot drift into different anatomies.
+
+export type SingleTurnSections = {
+  // The trace this was resolved from. The surfaces key their row mount on it,
+  // so the rows remount (and re-apply their expansion) exactly when the
+  // reviewer moves to a different trace.
+  trace_id: string
+  // The input as the judge got it, rendered as one field.
+  input: string
+  // The output's rows, when the messages carry more than an answer text — a
+  // sequence to order (a tool loop), a message that recorded reasoning, or a
+  // tool call standing in for an answer that never resolved. Null when one
+  // message's content IS the whole output: an echoed pair, a stored record
+  // pair and a traceless run all land here, and accordion chrome around a
+  // single row is noise around the only thing being graded.
+  rows: TraceMessage[] | null
+  // Which of `rows` start expanded: the FINAL assistant message only. The rows
+  // before it are the work, and their collapsed sequence is what shows its
+  // shape at a glance; the final answer is what is being graded, so it costs
+  // no click.
+  expand_indices: number[]
+  // The answer as text. Only resolved on the field path — with rows on screen
+  // the messages speak for themselves, and "" there means unused, not empty.
+  output: string
+  // Why the Output section has nothing to show, when it has nothing. Scoped to
+  // that section on purpose: an input the run really recorded must not be
+  // hidden because its output is missing.
+  output_error: string | null
+}
+
+// The messages the Output section covers: everything after the FIRST user
+// turn, with system and developer turns dropped. The input has its own field,
+// so repeating that turn as a row would show it twice, and the system prompt
+// is task configuration rather than something the reviewer grades. A LATER
+// user turn stays: on a surface that claims to show what happened after the
+// input, dropping one would hide a turn the run really took.
+function output_messages(messages: TraceMessage[]): TraceMessage[] {
+  const first_user = messages.findIndex(
+    (message) => trace_role(message) === "user",
+  )
+  const after = first_user < 0 ? messages : messages.slice(first_user + 1)
+  return after.filter((message) => {
+    const role = trace_role(message)
+    return role !== "system" && role !== "developer"
+  })
+}
+
+// A message's string content, or "" when it carries none.
+function string_content(message: TraceMessage): string {
+  return "content" in message && typeof message.content === "string"
+    ? message.content
+    : ""
+}
+
+// Whether a message recorded the model's thinking. A field renders answer text
+// only, so a lone message carrying reasoning keeps the row that can hold both
+// rather than having it dropped silently.
+function records_reasoning(message: TraceMessage): boolean {
+  return (
+    "reasoning_content" in message &&
+    typeof message.reasoning_content === "string" &&
+    message.reasoning_content.trim().length > 0
+  )
+}
+
+// Whether a message asked for tool calls — content a row renders and a field
+// cannot, which is what makes it worth a row when no answer text resolved.
+function requests_tool_calls(message: TraceMessage): boolean {
+  return (
+    "tool_calls" in message &&
+    Array.isArray(message.tool_calls) &&
+    message.tool_calls.length > 0
+  )
+}
+
+// The answer the reviewer grades, for the single-message output a plain field
+// renders: that message's content when it has any, else raw_output. The
+// fallback is load-bearing rather than defensive — a function-calling run puts
+// its answer in the tool call's arguments and stores content: null, so reading
+// the message alone leaves the Output section EMPTY for a run that answered.
+// Null when the trace holds neither; the caller decides what that means.
+export function single_turn_output_text(
+  trace: TraceClaims,
+  row: TraceMessage | undefined,
+): string | null {
+  const content =
+    row && trace_role(row) === "assistant" ? string_content(row) : ""
+  if (content.trim()) return content
+  return trace.raw_output.trim() ? trace.raw_output : null
+}
+
+// One trace resolved into the two sections. Throws only when the trace has no
+// transcript and no raws (via review_trace_messages) — there is then no Input
+// to show either. A missing OUTPUT is reported on the section instead, so the
+// input still renders beside it.
+export function single_turn_sections(trace: TraceClaims): SingleTurnSections {
+  const rows = output_messages(review_trace_messages(trace))
+  const sequence = rows.length > 1
+  // Only the single-row case can reach a field, so that is the only case the
+  // answer text is resolved for.
+  const output = sequence ? null : single_turn_output_text(trace, rows[0])
+  // Rows win on a sequence, on recorded reasoning, and as the last thing to
+  // try before reporting nothing: a lone tool call is real content, so a run
+  // whose answer never resolved still shows the call it made.
+  const use_rows =
+    sequence ||
+    rows.some(records_reasoning) ||
+    (output === null && rows.some(requests_tool_calls))
+  let final_assistant = -1
+  if (use_rows) {
+    for (let i = rows.length - 1; i >= 0 && final_assistant < 0; i--) {
+      if (trace_role(rows[i]) === "assistant") final_assistant = i
+    }
+  }
+  return {
+    trace_id: trace.trace_id,
+    input: trace.raw_input,
+    rows: use_rows ? rows : null,
+    expand_indices: final_assistant >= 0 ? [final_assistant] : [],
+    output: output ?? "",
+    output_error:
+      use_rows || output !== null ? null : "This trace recorded no output.",
+  }
+}
+
+// The sections for one trace, or the reason there are none at all. Both
+// single-turn surfaces read this rather than calling single_turn_sections
+// directly, so a trace with nothing to render fails the same way on both.
+export type SingleTurnSectionsResult = {
+  sections: SingleTurnSections | null
+  error: string | null
+}
+
+// A resolver that returns the SAME result object for the same trace content.
+// The review page reassigns its whole trace array whenever a background claims
+// build lands, which re-runs every reactive statement downstream; recomputing
+// there would hand the row list a new array each time and remount it, closing
+// whatever the reviewer had opened. Holds state, so each component instance
+// makes its own.
+export function single_turn_sections_resolver(): (
+  trace: TraceClaims,
+) => SingleTurnSectionsResult {
+  // The inputs single_turn_sections actually reads. A claims build patches
+  // other fields, and those must not count as a change.
+  let key: Pick<
+    TraceClaims,
+    "trace_id" | "raw_input" | "raw_output" | "trace"
+  > | null = null
+  let result: SingleTurnSectionsResult = { sections: null, error: null }
+  return (trace: TraceClaims) => {
+    if (
+      key &&
+      key.trace_id === trace.trace_id &&
+      key.raw_input === trace.raw_input &&
+      key.raw_output === trace.raw_output &&
+      key.trace === trace.trace
+    ) {
+      return result
+    }
+    key = {
+      trace_id: trace.trace_id,
+      raw_input: trace.raw_input,
+      raw_output: trace.raw_output,
+      trace: trace.trace,
+    }
+    try {
+      result = { sections: single_turn_sections(trace), error: null }
+    } catch (e) {
+      result = {
+        sections: null,
+        error: e instanceof Error ? e.message : "This trace can't be shown.",
+      }
+    }
+    return result
+  }
 }
 
 // The blind label written as the verdict BOTH arms store: the reviewer says
