@@ -353,12 +353,15 @@ def materialize_lazy_content(trace: Any) -> Any:
 
 def _materialize_lazy_content_before_serializing(
     trace: Any, handler: SerializerFunctionWrapHandler
-) -> list["ChatCompletionMessageParam"]:
+) -> list[ChatCompletionMessageParam]:
     """Materialize, then hand over to pydantic's own serializer for this field.
 
-    The return annotation is load-bearing: without it pydantic types the field's
-    serialization schema as ``Any``, and every OpenAPI response carrying a trace
-    degrades to ``unknown``.
+    The return annotation is load-bearing twice over. Without it pydantic types the
+    field's serialization schema as ``Any``, and every OpenAPI response carrying a
+    trace degrades to ``unknown``. And it has to be the type itself, not a string:
+    python 3.10 resolves a forward reference here against the namespace of the model
+    that uses `Trace`, not this module's, so a quoted name leaves `TaskRun` undefined
+    unless that model also imports it.
     """
     return handler(materialize_lazy_content(trace))
 
