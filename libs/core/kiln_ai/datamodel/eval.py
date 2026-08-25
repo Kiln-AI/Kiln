@@ -1,4 +1,5 @@
 import json
+import math
 from enum import Enum
 from threading import Lock
 from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Union
@@ -474,7 +475,15 @@ def validate_scores_against_output_scores(
     """
 
     def _is_numeric(v: object) -> bool:
-        return isinstance(v, (int, float)) and not isinstance(v, bool)
+        # NaN compares False against every range bound, so it passes every check
+        # below, then serializes to null and makes the saved file fail on reload.
+        if not isinstance(v, (int, float)) or isinstance(v, bool):
+            return False
+        try:
+            return math.isfinite(v)
+        except OverflowError:
+            # isfinite coerces int args to float, which an int like 10**400 can't be.
+            return False
 
     problems: list[str] = []
     for output_score in output_scores:

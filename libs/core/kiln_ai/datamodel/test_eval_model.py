@@ -3829,6 +3829,38 @@ class TestValidateScoresAgainstOutputScores:
         )
         assert len(problems) == 1
 
+    @pytest.mark.parametrize(
+        "score_type",
+        [
+            TaskOutputRatingType.five_star,
+            TaskOutputRatingType.pass_fail,
+            TaskOutputRatingType.pass_fail_critical,
+        ],
+    )
+    @pytest.mark.parametrize(
+        "value", [float("nan"), float("inf"), float("-inf")], ids=["nan", "inf", "-inf"]
+    )
+    def test_non_finite_flagged(self, score_type, value):
+        """NaN compares False against every range bound, so it passed all range
+        checks; pydantic then serialized it as null, making the saved EvalRun file
+        fail Dict[str, float] validation on the next load."""
+        output_scores = [EvalOutputScore(name="metric", type=score_type)]
+        problems = validate_scores_against_output_scores(
+            {"metric": value}, output_scores
+        )
+        assert len(problems) == 1
+
+    def test_overlarge_int_flagged_not_raised(self):
+        """math.isfinite raises OverflowError on ints too large for float (10**400).
+        This validator is documented as never raising, so it must report a problem."""
+        output_scores = [
+            EvalOutputScore(name="quality", type=TaskOutputRatingType.five_star)
+        ]
+        problems = validate_scores_against_output_scores(
+            {"quality": 10**400}, output_scores
+        )
+        assert len(problems) == 1
+
     def test_integer_scores_accepted(self):
         output_scores = [
             EvalOutputScore(name="quality", type=TaskOutputRatingType.five_star),
