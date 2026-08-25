@@ -507,7 +507,7 @@ export function reviewed_trace_count(
 // the trace costs more to read than the claims that distill it.
 // PLACEHOLDER pending calibration — captured single-turn outputs now span
 // both sides of it, but the boundary has not been fit to reviewer data yet.
-export const CHAR_CUTOFF = 600
+export const CHAR_CUTOFF = 900
 
 // Which review shape a trace gets. Trace-first (read the trace, label the
 // output) only where the raw trace is the cheaper read: one exchange, and
