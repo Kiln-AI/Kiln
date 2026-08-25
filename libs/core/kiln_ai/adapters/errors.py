@@ -11,7 +11,7 @@ Provides:
 from __future__ import annotations
 
 import litellm
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam, Trace
 
@@ -25,6 +25,11 @@ class ErrorWithTrace(BaseModel):
     Returned by endpoints that run a task adapter when the adapter throws
     after starting a run (LLM calls made, tools invoked, etc.).
     """
+
+    # validate_assignment so that assigning `trace` after construction gets the same
+    # guard as passing it in - without it the `Trace` annotation below would advertise
+    # a protection this model does not apply, unlike TaskRun which sets it.
+    model_config = ConfigDict(validate_assignment=True)
 
     message: str
     error_type: str

@@ -53,6 +53,12 @@ PRERELEASE_EXTRACTION_MODELS: list[tuple[str, str]] = [
 # smoke test. Every entry must be multimodal_capable in ml_model_list.py with
 # image/png in its multimodal_mime_types: the test sends a real image in the trace
 # and asserts the image part is still on disk after the run is saved.
+#
+# The entries match PRERELEASE_EXTRACTION_MODELS today, and the list is still separate
+# on purpose: extraction goes through the extractor and needs a model that reads
+# documents, while this goes through the chat adapter and needs one that takes an image
+# in a chat message. Re-pin them independently — a model can stop being right for one
+# and stay right for the other.
 PRERELEASE_MULTIMODAL_TRACE_MODELS: list[tuple[str, str]] = [
     ("gpt_4o", ModelProviderName.openai.value),
     ("claude_sonnet_4_6", ModelProviderName.anthropic.value),

@@ -4440,12 +4440,12 @@ export interface components {
         };
         /**
          * ChatCompletionAssistantMessageParamWrapper
-         * @description Almost exact copy of ChatCompletionAssistantMessageParam, but two changes.
+         * @description An assistant message in a trace.
          *
-         *     First change: List[T] instead of Iterable[T] for tool_calls and content. Addresses pydantic issue.
-         *     https://github.com/pydantic/pydantic/issues/9541
-         *
-         *     Second change: Add reasoning_content to the message. A LiteLLM property for reasoning data.
+         *     Almost a copy of the OpenAI SDK's ChatCompletionAssistantMessageParam, with the
+         *     `content` and `tool_calls` type changes described in this module's docstring, and
+         *     three added fields: `reasoning_content` (sent on to the provider), plus
+         *     `latency_ms` and `usage` (Kiln-only, stripped before the message is sent).
          */
         ChatCompletionAssistantMessageParamWrapper: {
             /**
@@ -4455,7 +4455,9 @@ export interface components {
             role: "assistant";
             audio?: components["schemas"]["Audio"] | null;
             /** Content */
-            content?: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartRefusalParam"])[] | null;
+            content?: string | {
+                [key: string]: unknown;
+            }[] | null;
             /** Reasoning Content */
             reasoning_content?: string | null;
             function_call?: components["schemas"]["FunctionCall"] | null;
@@ -4470,61 +4472,17 @@ export interface components {
             usage?: components["schemas"]["MessageUsage"] | null;
         };
         /**
-         * ChatCompletionContentPartImageParam
-         * @description Learn about [image inputs](https://platform.openai.com/docs/guides/vision).
-         */
-        ChatCompletionContentPartImageParam: {
-            image_url: components["schemas"]["ImageURL"];
-            /**
-             * Type
-             * @constant
-             */
-            type: "image_url";
-        };
-        /**
-         * ChatCompletionContentPartInputAudioParam
-         * @description Learn about [audio inputs](https://platform.openai.com/docs/guides/audio).
-         */
-        ChatCompletionContentPartInputAudioParam: {
-            input_audio: components["schemas"]["InputAudio"];
-            /**
-             * Type
-             * @constant
-             */
-            type: "input_audio";
-        };
-        /** ChatCompletionContentPartRefusalParam */
-        ChatCompletionContentPartRefusalParam: {
-            /** Refusal */
-            refusal: string;
-            /**
-             * Type
-             * @constant
-             */
-            type: "refusal";
-        };
-        /**
-         * ChatCompletionContentPartTextParam
-         * @description Learn about [text inputs](https://platform.openai.com/docs/guides/text-generation).
-         */
-        ChatCompletionContentPartTextParam: {
-            /** Text */
-            text: string;
-            /**
-             * Type
-             * @constant
-             */
-            type: "text";
-        };
-        /**
          * ChatCompletionDeveloperMessageParamWrapper
-         * @description Almost exact copy of ChatCompletionDeveloperMessageParam, with one change:
-         *     List[T] instead of Iterable[T] for content. Addresses pydantic issue.
-         *     https://github.com/pydantic/pydantic/issues/9541
+         * @description A developer message in a trace.
+         *
+         *     Almost an exact copy of the OpenAI SDK's ChatCompletionDeveloperMessageParam;
+         *     only the type of `content` differs. See this module's docstring for why.
          */
         ChatCompletionDeveloperMessageParamWrapper: {
             /** Content */
-            content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
+            content: string | {
+                [key: string]: unknown;
+            }[];
             /**
              * Role
              * @constant
@@ -4561,13 +4519,16 @@ export interface components {
         };
         /**
          * ChatCompletionSystemMessageParamWrapper
-         * @description Almost exact copy of ChatCompletionSystemMessageParam, with one change:
-         *     List[T] instead of Iterable[T] for content. Addresses pydantic issue.
-         *     https://github.com/pydantic/pydantic/issues/9541
+         * @description A system message in a trace.
+         *
+         *     Almost an exact copy of the OpenAI SDK's ChatCompletionSystemMessageParam;
+         *     only the type of `content` differs. See this module's docstring for why.
          */
         ChatCompletionSystemMessageParamWrapper: {
             /** Content */
-            content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
+            content: string | {
+                [key: string]: unknown;
+            }[];
             /**
              * Role
              * @constant
@@ -4576,10 +4537,19 @@ export interface components {
             /** Name */
             name?: string;
         };
-        /** ChatCompletionToolMessageParamWrapper */
+        /**
+         * ChatCompletionToolMessageParamWrapper
+         * @description A tool-result message in a trace.
+         *
+         *     Almost a copy of the OpenAI SDK's ChatCompletionToolMessageParam, with the
+         *     `content` type change described in this module's docstring, and the Kiln-only
+         *     fields below - all of them stripped before the message is sent to a provider.
+         */
         ChatCompletionToolMessageParamWrapper: {
             /** Content */
-            content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
+            content: string | {
+                [key: string]: unknown;
+            }[];
             /**
              * Role
              * @constant
@@ -4596,16 +4566,19 @@ export interface components {
         };
         /**
          * ChatCompletionUserMessageParamWrapper
-         * @description Almost exact copy of ChatCompletionUserMessageParam, with one change:
-         *     List[T] instead of Iterable[T] for content. Addresses pydantic issue.
-         *     https://github.com/pydantic/pydantic/issues/9541
+         * @description A user message in a trace.
+         *
+         *     Almost an exact copy of the OpenAI SDK's ChatCompletionUserMessageParam; only
+         *     the type of `content` differs. See this module's docstring for why.
          *
          *     This is the multimodal message type: its content parts include images, audio
          *     and files, not only text.
          */
         ChatCompletionUserMessageParamWrapper: {
             /** Content */
-            content: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartImageParam"] | components["schemas"]["ChatCompletionContentPartInputAudioParam"] | components["schemas"]["File"])[];
+            content: string | {
+                [key: string]: unknown;
+            }[];
             /**
              * Role
              * @constant
@@ -7399,27 +7372,6 @@ export interface components {
             output: string;
         };
         /**
-         * File
-         * @description Learn about [file inputs](https://platform.openai.com/docs/guides/text) for text generation.
-         */
-        File: {
-            file: components["schemas"]["FileFile"];
-            /**
-             * Type
-             * @constant
-             */
-            type: "file";
-        };
-        /** FileFile */
-        FileFile: {
-            /** File Data */
-            file_data?: string;
-            /** File Id */
-            file_id?: string;
-            /** Filename */
-            filename?: string;
-        };
-        /**
          * FileInfo
          * @description Metadata about an uploaded file.
          */
@@ -8023,26 +7975,6 @@ export interface components {
             core_requirement: string;
             /** Hallucinations Examples */
             hallucinations_examples: string;
-        };
-        /** ImageURL */
-        ImageURL: {
-            /** Url */
-            url: string;
-            /**
-             * Detail
-             * @enum {string}
-             */
-            detail?: "auto" | "low" | "high";
-        };
-        /** InputAudio */
-        InputAudio: {
-            /** Data */
-            data: string;
-            /**
-             * Format
-             * @enum {string}
-             */
-            format: "wav" | "mp3";
         };
         /** InputsBatchResultItem */
         InputsBatchResultItem: {

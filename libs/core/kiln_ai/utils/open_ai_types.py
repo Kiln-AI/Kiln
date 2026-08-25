@@ -1,25 +1,38 @@
 """
 Wrapper for OpenAI types to make them compatible with Pydantic.
 
-Pydantic doesn't support Iterable[T] well, so we use List[T] instead for every
-Iterable[T] field the OpenAI SDK declares: tool_calls, and the list-of-parts form
-of content on every role that allows it.
-https://github.com/pydantic/pydantic/issues/9541
+A trace is a record of what happened, and a store of a record must never reject or
+quietly rewrite what it is handed. Two substitutions serve that, both on `content`:
 
-Pydantic validates an Iterable[T] field into a single-use ValidatorIterator rather
-than a list. Serializing reads it, and a read empties it, so a list-valued content
-would be written to disk as `content: []` - silently, and permanently. List[T]
-materializes at validation time instead, which also makes the message deep-copyable
-(a ValidatorIterator cannot be pickled).
+1. `List[T]`, not `Iterable[T]` - https://github.com/pydantic/pydantic/issues/9541
+   Pydantic validates an `Iterable[T]` field into a single-use ValidatorIterator
+   rather than a list. Serializing reads it, and a read empties it, so a list-valued
+   content would be written to disk as `content: []` - silently, and permanently.
+   `List[T]` materializes at validation time instead, which also makes the message
+   deep-copyable (a ValidatorIterator cannot be pickled).
 
-The wrappers below exist only to make that substitution; every other field matches
-the OpenAI SDK type of the same name, plus the Kiln-only fields in
-KILN_ONLY_MESSAGE_FIELDS.
+2. `ContentPart` (a plain dict), not the OpenAI SDK's content-part unions. The SDK
+   unions are a closed set, and closing the set at a save boundary turns data we
+   cannot parse into data we destroy - see `ContentPart` for what that cost.
+
+Every other field matches the OpenAI SDK type of the same name, with three
+exceptions:
+
+- The Kiln-only fields in `KILN_ONLY_MESSAGE_FIELDS`, which are stripped before
+  messages go to a provider.
+- `reasoning_content` on the assistant message, which is deliberately *not* in that
+  frozenset: it is a LiteLLM field that is sent back to the provider on the next
+  call, so stripping it would drop reasoning state mid-conversation.
+- `tool_calls` on the assistant message, still `List[ChatCompletionMessageToolCallParam]`
+  (function calls only) while the SDK has widened to function-or-custom. Pre-existing
+  and narrower than `ContentPart`; a custom tool call fails validation here.
 """
 
+from collections.abc import Mapping, MutableMapping
 from typing import (
     Annotated,
     Any,
+    Dict,
     Iterable,
     List,
     Literal,
@@ -29,30 +42,42 @@ from typing import (
 )
 
 from openai.types.chat import (
-    ChatCompletionContentPartParam,
-    ChatCompletionContentPartTextParam,
     ChatCompletionFunctionMessageParam,
     ChatCompletionMessageToolCallParam,
 )
 from openai.types.chat.chat_completion_assistant_message_param import (
     Audio,
-    ContentArrayOfContentPart,
     FunctionCall,
 )
-from pydantic import BeforeValidator, TypeAdapter
+from pydantic import BaseModel, BeforeValidator, TypeAdapter, WrapSerializer
+from pydantic.functional_serializers import SerializerFunctionWrapHandler
 from typing_extensions import Required, TypedDict
 
 from kiln_ai.utils.usage import MessageUsage
 
+ContentPart: TypeAlias = Dict[str, Any]
+"""One part of a list-valued message `content`: a text part, an image, an audio clip,
+a file, a provider-specific block.
+
+Deliberately a plain dict rather than the OpenAI SDK's part unions. Those unions are a
+closed set, and every provider extends it: Kiln's own `encode_file_litellm_format`
+emits `video_url` blocks and `input_audio` blocks whose `format` is `ogg`, neither of
+which the SDK union admits, and LiteLLM's `format` hint on an image and Anthropic's
+`cache_control` are extra keys inside parts the SDK does admit. Validating against the
+closed set rejects the first pair outright - failing the save of a run the model has
+already been paid for, and making any stored run holding one permanently unloadable -
+and silently strips the second pair. A part is stored exactly as it was handed over.
+"""
+
 
 class ChatCompletionDeveloperMessageParamWrapper(TypedDict, total=False):
-    """
-    Almost exact copy of ChatCompletionDeveloperMessageParam, with one change:
-    List[T] instead of Iterable[T] for content. Addresses pydantic issue.
-    https://github.com/pydantic/pydantic/issues/9541
+    """A developer message in a trace.
+
+    Almost an exact copy of the OpenAI SDK's ChatCompletionDeveloperMessageParam;
+    only the type of `content` differs. See this module's docstring for why.
     """
 
-    content: Required[Union[str, List[ChatCompletionContentPartTextParam]]]
+    content: Required[Union[str, List[ContentPart]]]
     """The contents of the developer message."""
 
     role: Required[Literal["developer"]]
@@ -67,13 +92,13 @@ class ChatCompletionDeveloperMessageParamWrapper(TypedDict, total=False):
 
 
 class ChatCompletionSystemMessageParamWrapper(TypedDict, total=False):
-    """
-    Almost exact copy of ChatCompletionSystemMessageParam, with one change:
-    List[T] instead of Iterable[T] for content. Addresses pydantic issue.
-    https://github.com/pydantic/pydantic/issues/9541
+    """A system message in a trace.
+
+    Almost an exact copy of the OpenAI SDK's ChatCompletionSystemMessageParam;
+    only the type of `content` differs. See this module's docstring for why.
     """
 
-    content: Required[Union[str, List[ChatCompletionContentPartTextParam]]]
+    content: Required[Union[str, List[ContentPart]]]
     """The contents of the system message."""
 
     role: Required[Literal["system"]]
@@ -88,16 +113,16 @@ class ChatCompletionSystemMessageParamWrapper(TypedDict, total=False):
 
 
 class ChatCompletionUserMessageParamWrapper(TypedDict, total=False):
-    """
-    Almost exact copy of ChatCompletionUserMessageParam, with one change:
-    List[T] instead of Iterable[T] for content. Addresses pydantic issue.
-    https://github.com/pydantic/pydantic/issues/9541
+    """A user message in a trace.
+
+    Almost an exact copy of the OpenAI SDK's ChatCompletionUserMessageParam; only
+    the type of `content` differs. See this module's docstring for why.
 
     This is the multimodal message type: its content parts include images, audio
     and files, not only text.
     """
 
-    content: Required[Union[str, List[ChatCompletionContentPartParam]]]
+    content: Required[Union[str, List[ContentPart]]]
     """The contents of the user message."""
 
     role: Required[Literal["user"]]
@@ -112,13 +137,12 @@ class ChatCompletionUserMessageParamWrapper(TypedDict, total=False):
 
 
 class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
-    """
-    Almost exact copy of ChatCompletionAssistantMessageParam, but two changes.
+    """An assistant message in a trace.
 
-    First change: List[T] instead of Iterable[T] for tool_calls and content. Addresses pydantic issue.
-    https://github.com/pydantic/pydantic/issues/9541
-
-    Second change: Add reasoning_content to the message. A LiteLLM property for reasoning data.
+    Almost a copy of the OpenAI SDK's ChatCompletionAssistantMessageParam, with the
+    `content` and `tool_calls` type changes described in this module's docstring, and
+    three added fields: `reasoning_content` (sent on to the provider), plus
+    `latency_ms` and `usage` (Kiln-only, stripped before the message is sent).
     """
 
     role: Required[Literal["assistant"]]
@@ -130,7 +154,7 @@ class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
     [Learn more](https://platform.openai.com/docs/guides/audio).
     """
 
-    content: Union[str, List[ContentArrayOfContentPart], None]
+    content: Union[str, List[ContentPart], None]
     """The contents of the assistant message.
 
     Required unless `tool_calls` or `function_call` is specified.
@@ -176,7 +200,14 @@ class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
 
 
 class ChatCompletionToolMessageParamWrapper(TypedDict, total=False):
-    content: Required[Union[str, List[ChatCompletionContentPartTextParam]]]
+    """A tool-result message in a trace.
+
+    Almost a copy of the OpenAI SDK's ChatCompletionToolMessageParam, with the
+    `content` type change described in this module's docstring, and the Kiln-only
+    fields below - all of them stripped before the message is sent to a provider.
+    """
+
+    content: Required[Union[str, List[ContentPart]]]
     """The contents of the tool message."""
 
     role: Required[Literal["tool"]]
@@ -240,6 +271,35 @@ def sanitize_messages_for_provider(messages: Iterable[Any]) -> list[Any]:
     return sanitized
 
 
+_RE_READABLE_TYPES: tuple[type, ...] = (
+    str,
+    bytes,
+    bytearray,
+    memoryview,
+    list,
+    tuple,
+    set,
+    frozenset,
+    Mapping,
+    BaseModel,
+)
+"""Types that must not be treated as a lazy iterable.
+
+Two groups. The first (list, tuple, set, ...) can be read as many times as you like,
+so there is nothing to rescue. The second is the dangerous one: a str, a bytes-like
+object, a Mapping and a pydantic BaseModel are all iterable, and iterating them
+yields something that is *not* their content - characters, ints, keys, and
+``(name, value)`` pairs respectively. Draining one would not preserve the value, it
+would replace it with a mangled one.
+"""
+
+
+def _is_lazy_iterable(value: Any) -> bool:
+    """True if reading ``value`` consumes it, so it must be materialized before
+    anything else gets a chance to read it. See `_RE_READABLE_TYPES`."""
+    return isinstance(value, Iterable) and not isinstance(value, _RE_READABLE_TYPES)
+
+
 def materialize_lazy_content(trace: Any) -> Any:
     """Normalize a lazily-iterable ``content`` to a list, in front of union validation.
 
@@ -249,39 +309,76 @@ def materialize_lazy_content(trace: Any) -> Any:
     members whose role does not match still drain the iterator before they fail. By the
     time the matching member runs there is nothing left to read, and the message
     validates to ``content: []`` - silently, with the parts gone. Draining it here,
-    once, is what makes that safe.
+    once, is what makes that safe. The trace container itself gets the same treatment:
+    pydantic accepts a tuple or a generator for a ``list[T]`` field, so a lazy container
+    would otherwise carry its lazy messages straight past this guard.
 
     Scoped to ``content`` deliberately, and it needs to stay that way. Iterating a
     pydantic model yields its ``(name, value)`` pairs, so a walk over "any iterable
     value" would turn a message's ``usage`` into a list of pairs.
 
-    Returns copies: the caller's own messages are never mutated. Anything that is not
-    a list of dicts passes through untouched, for pydantic to reject with its own error.
+    Writes the materialized list back into the caller's message when it can, rather
+    than into a copy. Draining a generator is destructive either way, so a copy would
+    leave the caller holding a spent one: validate or serialize the same trace twice
+    and the second pass sees ``content: []``. Normalizing in place is what makes those
+    repeatable. Anything with no lazy content is passed through untouched, including
+    values pydantic should reject with its own error message.
     """
     if not isinstance(trace, list):
-        return trace
+        # Pydantic lax mode accepts any of these for a `list[T]` field, so the walk
+        # below has to reach the messages inside them. Everything else is passed
+        # through for pydantic to reject with its own error message.
+        if isinstance(trace, Iterable) and not isinstance(
+            trace, (str, bytes, bytearray, memoryview, Mapping, BaseModel)
+        ):
+            trace = list(trace)
+        else:
+            return trace
 
     materialized: list[Any] = []
     for message in trace:
-        content = message.get("content") if isinstance(message, dict) else None
-        if (
-            content is not None
-            and not isinstance(content, (str, bytes, list, dict))
-            and isinstance(content, Iterable)
-        ):
-            message = {**message, "content": list(content)}
+        if isinstance(message, Mapping):
+            content = message.get("content")
+            if _is_lazy_iterable(content):
+                if isinstance(message, MutableMapping):
+                    message["content"] = list(content)
+                else:
+                    # A read-only Mapping (MappingProxyType, ...) cannot be normalized
+                    # in place. Copying it is still better than letting the union drain
+                    # it, even though the caller keeps the spent iterator.
+                    message = {**message, "content": list(content)}
         materialized.append(message)
     return materialized
 
 
+def _materialize_lazy_content_before_serializing(
+    trace: Any, handler: SerializerFunctionWrapHandler
+) -> list["ChatCompletionMessageParam"]:
+    """Materialize, then hand over to pydantic's own serializer for this field.
+
+    The return annotation is load-bearing: without it pydantic types the field's
+    serialization schema as ``Any``, and every OpenAPI response carrying a trace
+    degrades to ``unknown``.
+    """
+    return handler(materialize_lazy_content(trace))
+
+
 Trace: TypeAlias = Annotated[
-    list[ChatCompletionMessageParam], BeforeValidator(materialize_lazy_content)
+    list[ChatCompletionMessageParam],
+    BeforeValidator(materialize_lazy_content),
+    WrapSerializer(_materialize_lazy_content_before_serializing),
 ]
 """A trace as a pydantic model should declare it.
 
-Use this, not a bare ``list[ChatCompletionMessageParam]``: the validator is what
-stops a lazily-iterable ``content`` from being drained to nothing by the union - see
+Use this, not a bare ``list[ChatCompletionMessageParam]``: the two guards are what
+stop a lazily-iterable ``content`` from being drained to nothing - see
 :func:`materialize_lazy_content`.
+
+Validation covers a trace passed to the constructor or assigned to the field (given
+``validate_assignment``). Serialization covers what validation cannot see: appending
+a message to an already-validated trace list in place runs no validator at all, so
+without the second guard the first save would write the message and every save after
+it would write ``content: []``.
 """
 
 
@@ -308,7 +405,14 @@ def serialize_trace(trace: list[ChatCompletionMessageParam]) -> str:
     # a test wouldn't catch first - TestSerializeTrace pins that parity, including
     # the unknown-key and unknown-role cases that rely on the fallback, so a pydantic
     # upgrade that tightened union serialization fails there rather than in a log.
-    return _trace_adapter.dump_json(trace, indent=2, warnings=False).decode()
+    #
+    # materialize_lazy_content first: `dump_json` runs serializers, not validators, so
+    # the `Trace` alias does not protect a trace that has not been through a model.
+    # Without it a lazy `content` is drained by the serializer and this function is
+    # destructive - correct on the first call, `content: []` on the second.
+    return _trace_adapter.dump_json(
+        materialize_lazy_content(trace), indent=2, warnings=False
+    ).decode()
 
 
 def trace_has_pending_client_tool_calls(

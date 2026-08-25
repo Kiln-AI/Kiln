@@ -198,10 +198,16 @@ def emb_status(name, provider):
             return 'NO_PROVIDER' if p is None else 'OK'
     return 'MODEL_REMOVED_OR_RENAMED'
 
-print('== chat / extraction / multimodal trace ==')
-for n,p in (PRERELEASE_CHAT_MODELS + PRERELEASE_EXTRACTION_MODELS
-            + PRERELEASE_MULTIMODAL_TRACE_MODELS):
-    print(f'{chat_status(n,p):>22}  {n}  ({p})')
+# One block per list: several lists hold the same pin, and Phase 4 re-pins each list
+# on its own, so a row is only actionable if you can see which list it came from.
+for label, entries in (
+    ('chat', PRERELEASE_CHAT_MODELS),
+    ('extraction', PRERELEASE_EXTRACTION_MODELS),
+    ('multimodal trace', PRERELEASE_MULTIMODAL_TRACE_MODELS),
+):
+    print(f'== {label} ==')
+    for n,p in entries:
+        print(f'{chat_status(n,p):>22}  {n}  ({p})')
 print('== embedding ==')
 for n,p in PRERELEASE_EMBEDDING_MODELS:
     print(f'{emb_status(n,p):>22}  {n}  ({p})')

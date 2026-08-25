@@ -270,3 +270,62 @@ class TestErrorWithTrace:
     def test_trace_defaults_to_none(self):
         err = ErrorWithTrace(message="m", error_type="E")
         assert err.trace is None
+
+    def test_materializes_a_lazy_content(self):
+        """A failed run's partial trace is the only record of what happened, so it
+        needs the same guard `TaskRun.trace` has - see `materialize_lazy_content`.
+        """
+        err = ErrorWithTrace(
+            message="boom",
+            error_type="RuntimeError",
+            trace=[
+                {
+                    "role": "user",
+                    "content": (p for p in [{"type": "text", "text": "GEN"}]),
+                }
+            ],  # type: ignore[arg-type]
+        )
+
+        assert err.trace is not None
+        assert err.trace[0]["content"] == [{"type": "text", "text": "GEN"}]
+
+    def test_materializes_a_lazy_content_assigned_after_construction(self):
+        """`validate_assignment` is what makes the `Trace` annotation mean something
+        on a field that is also written to directly."""
+        err = ErrorWithTrace(message="boom", error_type="RuntimeError")
+
+        err.trace = [
+            {"role": "user", "content": (p for p in [{"type": "text", "text": "GEN"}])}
+        ]  # type: ignore[assignment]
+
+        assert err.trace is not None
+        assert err.trace[0]["content"] == [{"type": "text", "text": "GEN"}]
+        assert err.model_dump(mode="json")["trace"][0]["content"] == [
+            {"type": "text", "text": "GEN"}
+        ]
+
+    def test_accepts_a_partial_trace_holding_a_content_part_the_sdk_union_rejects(self):
+        """This model is constructed *inside* the KilnRunError handler, so a
+        ValidationError here replaces the real error message with pydantic noise and
+        loses the partial trace as well. It has to accept whatever the run built -
+        including the `video_url` part Kiln's own file encoder emits for OpenRouter.
+        """
+        trace = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "video_url",
+                        "video_url": {"url": "data:video/mp4;base64,AAAA"},
+                    }
+                ],
+            }
+        ]
+
+        err = ErrorWithTrace(
+            message="downstream failure",
+            error_type="RuntimeError",
+            trace=trace,  # type: ignore[arg-type]
+        )
+
+        assert err.model_dump(mode="json")["trace"] == trace

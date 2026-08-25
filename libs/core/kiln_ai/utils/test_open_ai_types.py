@@ -2,7 +2,9 @@
 
 import copy
 import json
-from typing import ClassVar, get_args, get_origin
+from collections import UserDict
+from types import MappingProxyType
+from typing import ClassVar, get_args, get_origin, get_type_hints
 
 import pytest
 from openai.types.chat import (
@@ -24,7 +26,6 @@ from openai.types.chat import (
     ChatCompletionUserMessageParam as OpenAIChatCompletionUserMessageParam,
 )
 
-from kiln_ai.adapters.errors import ErrorWithTrace
 from kiln_ai.datamodel.task_output import TaskOutput
 from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.utils.open_ai_types import (
@@ -44,99 +45,76 @@ from kiln_ai.utils.open_ai_types import (
 )
 from kiln_ai.utils.usage import MessageUsage
 
-
-def test_assistant_message_param_properties_match():
-    """
-    Test that ChatCompletionAssistantMessageParamWrapper has all the same properties
-    as OpenAI's ChatCompletionAssistantMessageParam, except for the known tool_calls type difference.
-
-    This will catch any changes to the OpenAI types that we haven't updated our wrapper for.
-    """
-    # Get annotations for both types
-    openai_annotations = OpenAIChatCompletionAssistantMessageParam.__annotations__
-    kiln_annotations = ChatCompletionAssistantMessageParamWrapper.__annotations__
-
-    # Check that both have the same property names
-    openai_properties = set(openai_annotations.keys())
-    kiln_properties = set(kiln_annotations.keys())
-
-    # Reasoning content is an added property. Confirm it's there and remove it from the comparison.
-    assert "reasoning_content" in kiln_properties, "Kiln should have reasoning_content"
-    kiln_properties.remove("reasoning_content")
-
-    # latency_ms is a Kiln-added property for LLM call timing. Confirm it's there and remove it.
-    assert "latency_ms" in kiln_properties, "Kiln should have latency_ms"
-    kiln_properties.remove("latency_ms")
-
-    # usage is a Kiln-added property for per-LLM-call token usage and cost.
-    assert "usage" in kiln_properties, "Kiln should have usage"
-    kiln_properties.remove("usage")
-
-    assert openai_properties == kiln_properties, (
-        f"Property names don't match. "
-        f"OpenAI has: {openai_properties}, "
-        f"Kiln has: {kiln_properties}, "
-        f"Missing from Kiln: {openai_properties - kiln_properties}, "
-        f"Extra in Kiln: {kiln_properties - openai_properties}"
-    )
-
-
-def test_tool_message_param_properties_match():
-    """
-    Test that ChatCompletionToolMessageParamWrapper has all the same properties
-    as OpenAI's ChatCompletionToolMessageParam, plus the kiln_task_tool_data property.
-
-    This will catch any changes to the OpenAI types that we haven't updated our wrapper for.
-    """
-    # Get annotations for both types
-    openai_annotations = OpenAIChatCompletionToolMessageParam.__annotations__
-    kiln_annotations = ChatCompletionToolMessageParamWrapper.__annotations__
-
-    # Check that both have the same property names
-    openai_properties = set(openai_annotations.keys())
-    kiln_properties = set(kiln_annotations.keys())
-
-    kiln_extra_properties = {"kiln_task_tool_data", "is_error", "error_message"}
-    for prop in kiln_extra_properties:
-        assert prop in kiln_properties, f"Kiln should have {prop}"
-        kiln_properties.remove(prop)
-
-    assert openai_properties == kiln_properties, (
-        f"Property names don't match. "
-        f"OpenAI has: {openai_properties}, "
-        f"Kiln has: {kiln_properties}, "
-        f"Missing from Kiln: {openai_properties - kiln_properties}, "
-        f"Extra in Kiln: {kiln_properties - openai_properties}"
-    )
+# Fields whose type deliberately differs from the OpenAI SDK type of the same name.
+# `content` on every role, and `tool_calls` on the assistant - see the module docstring
+# of kiln_ai.utils.open_ai_types for what each substitution buys.
+WRAPPER_TYPE_EXEMPTIONS = {"content", "tool_calls"}
 
 
 @pytest.mark.parametrize(
-    "kiln_type, openai_type",
+    "kiln_type, openai_type, kiln_only_fields",
     [
         (
             ChatCompletionDeveloperMessageParamWrapper,
             OpenAIChatCompletionDeveloperMessageParam,
+            set(),
         ),
         (
             ChatCompletionSystemMessageParamWrapper,
             OpenAIChatCompletionSystemMessageParam,
+            set(),
         ),
         (
             ChatCompletionUserMessageParamWrapper,
             OpenAIChatCompletionUserMessageParam,
+            set(),
+        ),
+        (
+            ChatCompletionAssistantMessageParamWrapper,
+            OpenAIChatCompletionAssistantMessageParam,
+            {"reasoning_content", "latency_ms", "usage"},
+        ),
+        (
+            ChatCompletionToolMessageParamWrapper,
+            OpenAIChatCompletionToolMessageParam,
+            {"kiln_task_tool_data", "is_error", "error_message"},
         ),
     ],
 )
-def test_content_only_wrappers_properties_match(kiln_type, openai_type):
-    """These three wrappers add nothing - they exist only to swap Iterable[T] for
-    List[T] on content. Any property the OpenAI type grows must be copied over.
+def test_wrappers_match_the_openai_sdk_type_they_copy(
+    kiln_type, openai_type, kiln_only_fields
+):
+    """The wrappers are hand-copied from the OpenAI SDK types, so they can drift from
+    them: `openai` is pinned with no upper bound, and a stored trace is validated
+    against whatever version is installed.
+
+    Resolved types, not just property names. A comparison of names alone would pass
+    while the SDK flipped a field from Required to optional or changed a Literal, and
+    with `content` now materialized at validation such a drift shows up as a stored
+    run that will not load, rather than as a degradation.
     """
-    assert set(openai_type.__annotations__.keys()) == set(
-        kiln_type.__annotations__.keys()
-    ), (
+    openai_hints = get_type_hints(openai_type, include_extras=True)
+    kiln_hints = get_type_hints(kiln_type, include_extras=True)
+
+    for field in kiln_only_fields:
+        assert field in kiln_hints, f"{kiln_type.__name__} should have {field}"
+        del kiln_hints[field]
+
+    assert set(openai_hints) == set(kiln_hints), (
         f"Property names don't match between {kiln_type.__name__} and "
-        f"{openai_type.__name__}."
+        f"{openai_type.__name__}. "
+        f"Missing from Kiln: {set(openai_hints) - set(kiln_hints)}, "
+        f"Extra in Kiln: {set(kiln_hints) - set(openai_hints)}"
     )
+
+    for name, openai_annotation in openai_hints.items():
+        if name in WRAPPER_TYPE_EXEMPTIONS:
+            continue
+        assert kiln_hints[name] == openai_annotation, (
+            f"{kiln_type.__name__}.{name} is {kiln_hints[name]}, but "
+            f"{openai_type.__name__}.{name} is now {openai_annotation}. Copy the "
+            "change over, or add the field to WRAPPER_TYPE_EXEMPTIONS with a reason."
+        )
 
 
 def test_no_union_member_declares_an_iterable_content():
@@ -645,6 +623,22 @@ class TestSerializeTrace:
         assert serialized["usage"]["input_tokens"] == 4
         assert serialized["usage"]["cost"] == 0.01
 
+    def test_serializing_a_trace_twice_returns_the_same_json(self):
+        """This is a public function taking a plain list, so it also gets traces that
+        never went through a model. `dump_json` runs serializers, not validators, so
+        the `Trace` alias does not reach here: without materializing first, the
+        serializer drains a lazy content and the second call returns `content: []`.
+        """
+        trace = [
+            {"role": "user", "content": (p for p in [{"type": "text", "text": "KEEP"}])}
+        ]
+
+        first = serialize_trace(trace)  # type: ignore[arg-type]
+        second = serialize_trace(trace)  # type: ignore[arg-type]
+
+        assert json.loads(first)[0]["content"] == [{"type": "text", "text": "KEEP"}]
+        assert first == second
+
 
 class TestListValuedContentRoundTrip:
     """A message's `content` can be a list of parts instead of a string - that is
@@ -808,6 +802,145 @@ class TestListValuedContentRoundTrip:
 
         assert caller_messages == self.LIST_CONTENT_MESSAGES
 
+    def test_a_message_appended_to_the_trace_in_place_survives_both_saves(
+        self, tmp_path
+    ):
+        """`validate_assignment` fires when the field is rebound, not when the list it
+        holds is mutated, so an appended message reaches the serializer unvalidated.
+        The first save used to write it and every save after it wrote `content: []`.
+        """
+        task_run = self._task_run(tmp_path, [{"role": "user", "content": "hello"}])
+
+        assert task_run.trace is not None
+        task_run.trace.append(
+            {"role": "user", "content": (p for p in [{"type": "text", "text": "GEN"}])}
+        )
+        task_run.save_to_file()
+        first = json.loads(task_run.path.read_text(encoding="utf-8"))["trace"]
+        task_run.save_to_file()
+        second = json.loads(task_run.path.read_text(encoding="utf-8"))["trace"]
+
+        assert first == second
+        assert second[1]["content"] == [{"type": "text", "text": "GEN"}]
+
+    @pytest.mark.parametrize(
+        "container",
+        [tuple, lambda messages: (m for m in messages)],
+        ids=["tuple", "generator"],
+    )
+    def test_a_lazy_trace_container_does_not_smuggle_a_lazy_content_past(
+        self, tmp_path, container
+    ):
+        """Pydantic accepts a tuple or a generator for the `list[T]` trace field, so
+        the container is a way in for exactly the content this guards against."""
+        task_run = self._task_run(
+            tmp_path,
+            container(
+                [
+                    {
+                        "role": "user",
+                        "content": (p for p in [{"type": "text", "text": "GEN"}]),
+                    }
+                ]
+            ),
+        )
+
+        assert task_run.trace is not None
+        assert task_run.trace[0]["content"] == [{"type": "text", "text": "GEN"}]
+
+
+class TestContentPartsAreStoredAsHandedOver:
+    """A trace is a record of what happened. Every provider extends the OpenAI content
+    part set, so validating a part against the SDK's closed union means a part we
+    cannot parse is a part we destroy - either by refusing the save outright, after
+    the model has been paid for, or by dropping a key we did not expect.
+
+    `ContentPart` is a plain dict for that reason. These pin the shapes that made it
+    necessary - all of them produced by Kiln itself, in `encode_file_litellm_format`
+    or by the providers it talks to.
+    """
+
+    @pytest.mark.parametrize(
+        "role, part",
+        [
+            # encode_file_litellm_format emits this for video on OpenRouter.
+            (
+                "user",
+                {"type": "video_url", "video_url": {"url": "data:video/mp4;base64,AA"}},
+            ),
+            # ...and this for audio/ogg. The SDK's InputAudio.format is wav or mp3.
+            (
+                "user",
+                {"type": "input_audio", "input_audio": {"data": "AA", "format": "ogg"}},
+            ),
+            # LiteLLM's explicit image type hint: an extra key inside a part the SDK
+            # does declare, so this one used to be dropped rather than rejected.
+            (
+                "user",
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "data:image/png;base64,aGk=",
+                        "format": "image/png",
+                    },
+                },
+            ),
+            # Anthropic prompt caching, same shape of loss.
+            ("user", {"type": "text", "text": "hi", "cache_control": {"type": "e"}}),
+            # The assistant's list content is narrower still in the SDK - text or a
+            # refusal - so a reasoning block from a thinking model does not fit.
+            ("assistant", {"type": "thinking", "thinking": "step one"}),
+            ("tool", {"type": "text", "text": "ok", "annotations": []}),
+        ],
+        ids=[
+            "video_url",
+            "input_audio_ogg",
+            "image_url_format_hint",
+            "text_cache_control",
+            "assistant_thinking_block",
+            "tool_extra_key",
+        ],
+    )
+    def test_a_part_the_openai_union_does_not_admit_round_trips_whole(
+        self, tmp_path, role, part
+    ):
+        message = {"role": role, "content": [part]}
+        if role == "tool":
+            message["tool_call_id"] = "c1"
+
+        task_run = TaskRun(
+            path=tmp_path / "task_run.kiln",
+            input="in",
+            output=TaskOutput(output="out"),
+            trace=[message],
+        )
+        task_run.save_to_file()
+        reloaded = TaskRun.load_from_file(task_run.path)
+
+        assert reloaded.trace is not None
+        assert reloaded.trace[0]["content"] == [part]
+
+    def test_a_stored_run_holding_an_unknown_part_still_loads(self, tmp_path):
+        """The worst outcome of a closed part set is not the failed save, it is the
+        file already on disk: `load_from_file` raising makes one run poison the whole
+        task's run list, which is read with `error_on_first=True`.
+        """
+        path = tmp_path / "task_run.kiln"
+        task_run = TaskRun(
+            path=path,
+            input="in",
+            output=TaskOutput(output="out"),
+            trace=[
+                {
+                    "role": "user",
+                    "content": [{"type": "something_new", "payload": {"a": 1}}],
+                }
+            ],
+        )
+        task_run.save_to_file()
+
+        assert TaskRun.load_from_file(path).trace == task_run.trace
+
 
 class TestMaterializeLazyContent:
     """The guardrail in front of union validation. A caller can pass any iterable as
@@ -847,47 +980,97 @@ class TestMaterializeLazyContent:
 
         assert materialize_lazy_content(trace)[0]["usage"] is usage
 
-    def test_the_callers_message_is_not_mutated(self):
+    def test_the_callers_message_is_normalized_in_place(self):
+        """Draining a generator is destructive whether or not the message is copied,
+        so copying would leave the caller holding a spent one. Writing the list back
+        is what makes a second pass over the same trace return the same thing.
+        """
         message = {
             "role": "user",
             "content": (p for p in [{"type": "text", "text": "G"}]),
         }
         trace = [message]
 
-        result = materialize_lazy_content(trace)
+        first = materialize_lazy_content(trace)
+        second = materialize_lazy_content(trace)
 
-        assert result[0] is not message
-        assert trace[0] is message
+        assert (
+            first
+            == second
+            == [{"role": "user", "content": [{"type": "text", "text": "G"}]}]
+        )
+        assert message["content"] == [{"type": "text", "text": "G"}]
+
+    def test_a_read_only_mapping_message_is_copied_instead(self):
+        """A MappingProxyType cannot be written to. Copying it still beats letting the
+        union drain the generator."""
+        message = MappingProxyType(
+            {"role": "user", "content": (p for p in [{"type": "text", "text": "G"}])}
+        )
+
+        assert materialize_lazy_content([message]) == [
+            {"role": "user", "content": [{"type": "text", "text": "G"}]}
+        ]
 
     def test_a_none_content_passes_through(self):
         trace = [{"role": "assistant", "content": None, "tool_calls": []}]
 
         assert materialize_lazy_content(trace) == trace
 
-    @pytest.mark.parametrize("value", [None, "not a list", 42, {"role": "user"}])
-    def test_a_non_list_passes_through_for_pydantic_to_reject(self, value):
+    @pytest.mark.parametrize("value", [None, "not a list", 42, b"bytes"])
+    def test_a_value_that_is_not_a_trace_passes_through_for_pydantic_to_reject(
+        self, value
+    ):
         """Bad input is pydantic's to complain about, with its own error message."""
         assert materialize_lazy_content(value) is value
+
+    @pytest.mark.parametrize(
+        "container",
+        [
+            lambda messages: tuple(messages),
+            lambda messages: (m for m in messages),
+            lambda messages: map(lambda m: m, messages),
+        ],
+        ids=["tuple", "generator", "map"],
+    )
+    def test_a_lazy_container_is_walked_too(self, container):
+        """Pydantic lax mode accepts a tuple or a generator for a `list[T]` field, so
+        a guard that only looked inside a real `list` would let those carry their lazy
+        content straight past it.
+        """
+        messages = [
+            {"role": "user", "content": (p for p in [{"type": "text", "text": "GEN"}])}
+        ]
+
+        assert materialize_lazy_content(container(messages)) == [
+            {"role": "user", "content": [{"type": "text", "text": "GEN"}]}
+        ]
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            MappingProxyType({"type": "text", "text": "hi"}),
+            UserDict({"type": "text", "text": "hi"}),
+            MessageUsage(input_tokens=4),
+            bytearray(b"hi"),
+            memoryview(b"hi"),
+        ],
+        ids=["mappingproxy", "userdict", "pydantic_model", "bytearray", "memoryview"],
+    )
+    def test_an_iterable_that_does_not_iterate_to_its_own_content_is_left_alone(
+        self, content
+    ):
+        """Every one of these is `Iterable`, and iterating it yields something that is
+        not its value: keys, `(name, value)` pairs, ints. Draining one would replace
+        the caller's value with a mangled one, and the union error that followed would
+        report the mangled value rather than what was passed in.
+        """
+        result = materialize_lazy_content([{"role": "user", "content": content}])
+
+        assert result[0]["content"] is content
 
     def test_a_non_dict_message_passes_through(self):
         """Traces transiently hold LiteLLM Message objects, not only dicts."""
         message = MessageUsage(input_tokens=1)
 
         assert materialize_lazy_content([message]) == [message]
-
-
-def test_error_with_trace_materializes_lazy_content():
-    """`ErrorWithTrace` carries the partial trace of a failed run back to the client.
-    A failed run's trace is the only record of what happened, so it needs the same
-    guard `TaskRun.trace` has.
-    """
-    error = ErrorWithTrace(
-        message="boom",
-        error_type="RuntimeError",
-        trace=[
-            {"role": "user", "content": (p for p in [{"type": "text", "text": "GEN"}])}
-        ],
-    )
-
-    assert error.trace is not None
-    assert error.trace[0]["content"] == [{"type": "text", "text": "GEN"}]

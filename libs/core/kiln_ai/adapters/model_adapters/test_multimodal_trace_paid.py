@@ -42,6 +42,21 @@ from kiln_ai.utils.open_ai_types import (
 # content list cannot.
 IMAGE_ANSWER_TERMS = ["parrot", "bird", "macaw"]
 
+# The pair the second-turn test runs against, named rather than indexed into the
+# whitelist: reordering that list must not silently move this coverage - the only
+# two-write coverage there is - to a different provider.
+SECOND_TURN_MODEL = ("gpt_4o", ModelProviderName.openai.value)
+
+
+# The instruction the model actually gets. It is seeded as a system message in the
+# prior trace rather than set on the task: `build_chat_formatter` short-circuits to
+# `MultiturnFormatter` whenever `prior_trace` is set, and that formatter sends the
+# prior trace and nothing else - no task instruction, no prompt builder.
+SYSTEM_INSTRUCTION = (
+    "You describe images. Answer the user's question about the image they sent, in "
+    "one short sentence."
+)
+
 
 def build_multimodal_task(tmp_path: Path) -> datamodel.Task:
     project = datamodel.Project(name="test", path=tmp_path / "test.kiln")
@@ -50,10 +65,7 @@ def build_multimodal_task(tmp_path: Path) -> datamodel.Task:
     task = datamodel.Task(
         parent=project,
         name="describe the image",
-        instruction=(
-            "You describe images. Answer the user's question about the image they "
-            "sent, in one short sentence."
-        ),
+        instruction=SYSTEM_INSTRUCTION,
     )
     task.save_to_file()
     return task
@@ -74,6 +86,17 @@ def build_image_message(
     }
 
 
+def build_prior_trace(
+    image_message: ChatCompletionUserMessageParamWrapper,
+) -> list[ChatCompletionMessageParam]:
+    """What the model is sent: the instruction, then the multimodal message. The
+    image message is second, so `trace[1]` is the one to read back."""
+    return [
+        {"role": "system", "content": SYSTEM_INSTRUCTION},
+        image_message,
+    ]
+
+
 def image_part_of(message: ChatCompletionMessageParam) -> dict:
     content = message["content"]
     assert isinstance(content, list), (
@@ -85,6 +108,8 @@ def image_part_of(message: ChatCompletionMessageParam) -> dict:
 
 
 def run_config(model_name: str, provider: str) -> KilnAgentRunConfigProperties:
+    # prompt_id is required by KilnAgentRunConfigProperties but unused on this path:
+    # a run with a prior_trace never reaches the prompt builder. See SYSTEM_INSTRUCTION.
     return KilnAgentRunConfigProperties(
         model_name=model_name,
         model_provider_name=ModelProviderName(provider),
@@ -108,7 +133,7 @@ async def test_multimodal_trace_survives_save_to_file(
     adapter = adapter_for_task(task, run_config(model_name, provider))
     run = await adapter.invoke(
         input="What animal is in the image?",
-        prior_trace=[image_message],
+        prior_trace=build_prior_trace(image_message),
     )
 
     # The model answered from the image, so the image really was sent.
@@ -121,8 +146,8 @@ async def test_multimodal_trace_survives_save_to_file(
     reloaded = TaskRun.load_from_file(run.path)
 
     assert reloaded.trace is not None
-    assert image_part_of(reloaded.trace[0]) == image_message["content"][1]
-    assert image_part_of(reloaded.trace[0])["image_url"]["url"].startswith(
+    assert image_part_of(reloaded.trace[1]) == image_message["content"][1]
+    assert image_part_of(reloaded.trace[1])["image_url"]["url"].startswith(
         "data:image/png;base64,"
     )
 
@@ -138,7 +163,7 @@ async def test_multimodal_trace_survives_a_second_turn_and_a_second_save(
     back in as `prior_trace`, extended by a new exchange, and saved again. The image
     part has to survive both writes, and the model has to still see it on turn two.
     """
-    model_name, provider = PRERELEASE_MULTIMODAL_TRACE_MODELS[0]
+    model_name, provider = SECOND_TURN_MODEL
     task = build_multimodal_task(tmp_path)
     image_path = mock_file_factory(MockFileFactoryMimeType.PNG)
     image_message = build_image_message(image_path, ModelProviderName(provider))
@@ -146,7 +171,7 @@ async def test_multimodal_trace_survives_a_second_turn_and_a_second_save(
     adapter = adapter_for_task(task, run_config(model_name, provider))
     first_run = await adapter.invoke(
         input="What animal is in the image?",
-        prior_trace=[image_message],
+        prior_trace=build_prior_trace(image_message),
     )
     assert first_run.path is not None
     first_trace = TaskRun.load_from_file(first_run.path).trace
@@ -165,7 +190,7 @@ async def test_multimodal_trace_survives_a_second_turn_and_a_second_save(
     assert second_run.path is not None
     reloaded = TaskRun.load_from_file(second_run.path)
     assert reloaded.trace is not None
-    assert image_part_of(reloaded.trace[0]) == image_message["content"][1]
+    assert image_part_of(reloaded.trace[1]) == image_message["content"][1]
 
     # And saving the loaded run again does not empty it either.
     resaved = reloaded.mutable_copy()
@@ -173,7 +198,7 @@ async def test_multimodal_trace_survives_a_second_turn_and_a_second_save(
     assert resaved.path is not None
     resaved_trace = TaskRun.load_from_file(resaved.path).trace
     assert resaved_trace is not None
-    assert image_part_of(resaved_trace[0]) == image_message["content"][1]
+    assert image_part_of(resaved_trace[1]) == image_message["content"][1]
 
 
 @pytest.mark.parametrize("model_name, provider", PRERELEASE_MULTIMODAL_TRACE_MODELS)
@@ -198,3 +223,9 @@ def test_whitelist_entries_are_multimodal(model_name, provider):
     assert KilnMimeType.PNG.value in (model_provider.multimodal_mime_types or []), (
         f"{model_name} on {provider} no longer accepts {KilnMimeType.PNG.value}"
     )
+
+
+def test_second_turn_model_is_on_the_whitelist():
+    """`SECOND_TURN_MODEL` is named directly, so nothing else would keep it in step
+    with the whitelist - or give it the multimodal guard above."""
+    assert SECOND_TURN_MODEL in PRERELEASE_MULTIMODAL_TRACE_MODELS
