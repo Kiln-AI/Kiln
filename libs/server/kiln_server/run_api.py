@@ -1028,10 +1028,10 @@ async def update_run_util(
     #
     # Testing for the key rather than a set value also refuses `{"eval_source": null}`,
     # which deep_update treats as a clear. That is deliberate: an escape hatch out of the
-    # delete guard would be the guard's own bypass. The accepted cost (D16) is that a
-    # trace orphaned by deleting its eval - `delete_eval` removes the EvalRuns but not
-    # the TaskRuns they scored - stays on disk, invisible to the dataset and removable
-    # only from the filesystem.
+    # delete guard would be the guard's own bypass. The accepted cost is that a trace
+    # orphaned by deleting its eval - deleting an Eval removes its EvalRuns but not the
+    # TaskRuns they scored - stays on disk, invisible to the dataset and removable only
+    # from the filesystem.
     if "eval_source" in run_data:
         raise HTTPException(
             status_code=400,

@@ -7287,15 +7287,13 @@ export interface components {
          * @description The scores an eval produced for a single dataset item.
          *
          *     A run serves one of two purposes:
-         *     - eval_config_eval=False: evaluating a task run — the task was run with
-         *       task_run_config_id (which must be set) and the evaluator scored its output.
-         *     - eval_config_eval=True: evaluating the eval config itself — an existing
-         *       item's output was scored so the evaluator can be compared against human
-         *       ratings. task_run_config_id must be None.
-         *
-         *     Eval runs can be one of 2 types:
-         *     1) eval_config_eval=False (scoring): we were evaluating a task run config (a method of running the task). We take the item's input, run the task with the task_run_config, then run the evaluator on that output. task_run_config_id must be set.
-         *     2) eval_config_eval=True (calibration): we were evaluating an eval config (a method of evaluating the task). We used an existing human-rated dataset item's input/output, and ran the evaluator on it. task_run_config_id must be None.
+         *     - eval_config_eval=False (scoring): evaluating a task run config — the item's
+         *       input was run through the task with task_run_config_id (which must be set)
+         *       and the evaluator scored that output.
+         *     - eval_config_eval=True (calibration): evaluating the eval config itself — an
+         *       existing human-rated dataset item's input and output were scored so the
+         *       evaluator can be compared against those human ratings. task_run_config_id
+         *       must be None.
          *
          *     A record is described by two independent facts — whether it points at a TaskRun, and
          *     whether it was skipped — which `validate_record_mode` constrains to three legal

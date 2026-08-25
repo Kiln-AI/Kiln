@@ -2345,7 +2345,6 @@ def test_eval_v2_with_eval_input_split():
     )
     assert eval.splits["test"] == EvalInputSplit(filter_id="all")
     assert eval.model_dump()["eval_set_filter_id"] is None
-    assert not hasattr(eval, "eval_input_filter_id")
 
 
 def test_eval_requires_a_test_split():
@@ -4374,23 +4373,6 @@ class TestEvalSplits:
         assert getattr(reloaded.splits["test"], "weight") == 0.5
         assert getattr(reloaded.splits["train"], "weight") == 0.25
 
-    def test_both_legacy_test_filters_is_rejected(self, scores):
-        """The one conflict `splits` winning can't resolve: two legacy inputs, one split.
-
-        `splits` decides legacy-vs-`splits` disagreements, but both sides here are legacy
-        and name different backings, so nothing picks between them. Accepting one would
-        silently discard the other.
-        """
-        with pytest.raises(
-            ValidationError,
-            match="cannot set both eval_set_filter_id and eval_input_filter_id",
-        ):
-            self.build_eval(
-                scores,
-                eval_set_filter_id="tag::runs",
-                eval_input_filter_id="tag::inputs",
-            )
-
     def test_excluding_a_legacy_field_cannot_drop_a_split(self, scores):
         """With one home, no dump option can write a split nowhere at all.
 
@@ -4791,32 +4773,20 @@ class TestEvalSplits:
             "filter_id": "tag::train_x",
         }
 
-    def test_eval_input_backed_test_split_from_the_shim(self, saved_task, scores):
-        """The eval_input_filter_id shim: migrated into splits, and never written back."""
+    def test_eval_input_backed_test_split_stays_in_splits(self, saved_task, scores):
+        """An EvalInput-backed test split serializes into `splits`, never a legacy field."""
         eval = self.build_eval(
-            scores, parent=saved_task, eval_input_filter_id="tag::inputs"
+            scores,
+            parent=saved_task,
+            splits={"test": EvalInputSplit(filter_id="tag::inputs")},
         )
         assert eval.splits["test"] == EvalInputSplit(filter_id="tag::inputs")
 
         data = self.saved_json(eval)
-        assert "eval_input_filter_id" not in data
+        assert data["eval_set_filter_id"] is None
         assert data["splits"] == {
             "test": {"source": "eval_input", "filter_id": "tag::inputs"}
         }
-
-    def test_splits_wins_over_the_shim(self, scores):
-        """The shim follows the same precedence as the declared legacy fields.
-
-        It is a third legacy input for the test split, so input carrying both it and a
-        `splits["test"]` keeps the `splits` entry — otherwise the one input that skipped
-        the rule would be the one that could still clobber a split's extra fields.
-        """
-        eval = self.build_eval(
-            scores,
-            eval_input_filter_id="tag::from_shim",
-            splits={"test": EvalInputSplit(filter_id="tag::from_splits")},
-        )
-        assert eval.splits["test"] == EvalInputSplit(filter_id="tag::from_splits")
 
     @pytest.mark.parametrize("source", ["task_run", "eval_input"])
     def test_unknown_field_inside_a_split_survives_a_round_trip(
@@ -5556,3 +5526,21 @@ def test_live_eval_run_fields_are_not_marked_deprecated():
     schema_properties = EvalRun.model_json_schema()["properties"]
     for field_name in ("scored_run_id", "eval_usage", "scores", "intermediate_outputs"):
         assert "deprecated" not in schema_properties[field_name], field_name
+
+
+def test_eval_config_eval_requires_a_dataset_item():
+    """Judge calibration compares against human ratings, which only dataset
+    items carry — a calibration record claiming an EvalInput is domain-invalid
+    and must be rejected, not silently persisted."""
+    with pytest.raises(
+        ValidationError, match="eval_config_eval records must score a dataset item"
+    ):
+        EvalRun(
+            eval_config_eval=True,
+            task_run_config_id=None,
+            dataset_id=None,
+            eval_input_id="ei_1",
+            input="in",
+            output="out",
+            scores={"accuracy": 1.0},
+        )

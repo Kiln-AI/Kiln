@@ -851,15 +851,13 @@ class EvalRun(KilnParentedModel):
     The scores an eval produced for a single dataset item.
 
     A run serves one of two purposes:
-    - eval_config_eval=False: evaluating a task run — the task was run with
-      task_run_config_id (which must be set) and the evaluator scored its output.
-    - eval_config_eval=True: evaluating the eval config itself — an existing
-      item's output was scored so the evaluator can be compared against human
-      ratings. task_run_config_id must be None.
-
-    Eval runs can be one of 2 types:
-    1) eval_config_eval=False (scoring): we were evaluating a task run config (a method of running the task). We take the item's input, run the task with the task_run_config, then run the evaluator on that output. task_run_config_id must be set.
-    2) eval_config_eval=True (calibration): we were evaluating an eval config (a method of evaluating the task). We used an existing human-rated dataset item's input/output, and ran the evaluator on it. task_run_config_id must be None.
+    - eval_config_eval=False (scoring): evaluating a task run config — the item's
+      input was run through the task with task_run_config_id (which must be set)
+      and the evaluator scored that output.
+    - eval_config_eval=True (calibration): evaluating the eval config itself — an
+      existing human-rated dataset item's input and output were scored so the
+      evaluator can be compared against those human ratings. task_run_config_id
+      must be None.
 
     A record is described by two independent facts — whether it points at a TaskRun, and
     whether it was skipped — which `validate_record_mode` constrains to three legal
@@ -1352,41 +1350,6 @@ class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}
         default=EvalDataType.final_answer,
         description="The output of the task run to evaluate. Can be final answer, full trace, or None for V2 evals.",
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def migrate_eval_input_filter_id(cls, data: Any) -> Any:
-        """Migrate the pre-`splits` `eval_input_filter_id` key into an EvalInput-backed test split.
-
-        A third legacy input for the test split, so it follows the same rule as the two
-        declared legacy fields: it fills the test split only when `splits` does not
-        already describe one, and is dropped either way (it is not a declared field, so
-        it is never written back).
-
-        FUTURE: Safe to delete whenever someone wants to. Only internal projects contained
-        this key and none of them still exist; no public project file has ever had it, so
-        this never becomes a compatibility commitment.
-        """
-        if not isinstance(data, dict):
-            return data
-        filter_id = data.get("eval_input_filter_id")
-        if filter_id is None:
-            return data
-        if data.get("eval_set_filter_id") is not None:
-            # Two legacy inputs naming one split with two different backings. `splits`
-            # winning resolves legacy-vs-`splits` disagreements, but not this one: both
-            # sides here are legacy, so there is no rule that picks between them, and
-            # silently dropping either is worse than refusing the file.
-            raise ValueError(
-                "An eval cannot set both eval_set_filter_id and eval_input_filter_id: they are two backings for the same test split."
-            )
-        data = dict(data)
-        data.pop("eval_input_filter_id")
-        splits = dict(data.get("splits") or {})
-        if "test" not in splits:
-            splits["test"] = {"source": "eval_input", "filter_id": filter_id}
-        data["splits"] = splits
-        return data
 
     @model_validator(mode="after")
     def migrate_legacy_split_fields(self) -> Self:
