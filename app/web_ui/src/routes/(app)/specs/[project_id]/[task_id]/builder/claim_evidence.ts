@@ -165,6 +165,189 @@ function fold_typography(text: string): string {
   return text.replace(TYPOGRAPHIC_FOLD_PATTERN, (c) => TYPOGRAPHIC_FOLD[c] ?? c)
 }
 
+// ── Fold with an offset map (anchoring a citation in a RE-RENDERED string) ──
+//
+// The fold above is strictly 1:1, which is what lets a span resolved against it
+// index the raw text. A field that PRETTY-PRINTS its content has no such
+// luxury: `{"a":1}` reaches the reviewer as `{\n  "a": 1\n}`, so anchors the
+// model retyped from the raw string miss the rendered one on whitespace alone,
+// and the field is stuck showing the raw blob to keep its mark.
+//
+// This generalizes the 1:1 fold: it still normalizes for matching, but it also
+// records where each folded character came from, so a span found in folded
+// space translates back into offsets that slice the ORIGINAL — here the
+// pretty-printed string the reviewer is actually looking at.
+//
+// The rules are a transform table over RUNS of the original: each run is
+// copied, swapped for a replacement, or dropped. Whitespace and typography are
+// the two we need today; a markdown-strip fold (drop the `**`, keep the word)
+// is the same shape and would be another rule rather than a second mechanism.
+
+export type FoldRule = {
+  // Matches ONE run to transform. Two things are required of it. It must not be
+  // able to match the EMPTY string: a zero-width match consumes nothing, so its
+  // replacement would be spurious characters in the folded string with no run
+  // behind them. And it must match its own matches ANCHORED — `^(?:pattern)$`
+  // against a run the pattern produced — because that is how the folder tells
+  // which rule fired. A pattern anchored internally (`^…` or `…$` of its own,
+  // or a lookaround reaching outside the run) breaks that and its runs are
+  // copied through untouched instead.
+  pattern: string
+  // What the run becomes in the folded string. "" drops it entirely.
+  replace: (run: string) => string
+}
+
+// A folded string plus where every character of it came from. map and map_end
+// are separate because a folded character can stand for a WIDER run than
+// itself: a span ending on a collapsed space has to stop past the whole run
+// that space swallowed, and one starting on it has to start at that run's first
+// character. Both arrays are folded.length long.
+export type FoldedText = {
+  folded: string
+  // map[i] = index in the ORIGINAL string where folded[i]'s run begins.
+  map: number[]
+  // map_end[i] = index in the ORIGINAL just past that run. map[i] + 1 for a
+  // character copied or swapped 1:1.
+  map_end: number[]
+}
+
+export function fold_with_offsets(text: string, rules: FoldRule[]): FoldedText {
+  const pattern = new RegExp(
+    rules.map((r) => `(?:${r.pattern})`).join("|"),
+    "g",
+  )
+  // Which rule produced a run is decided by re-testing the run against each
+  // rule, not by counting capture groups in the alternation: a rule that
+  // brought its own groups would shift that count and silently dispatch the
+  // wrong rule. Same left-to-right precedence the alternation itself uses.
+  const whole_run = rules.map((r) => new RegExp(`^(?:${r.pattern})$`))
+  let folded = ""
+  const map: number[] = []
+  const map_end: number[] = []
+  let cursor = 0
+  // Everything between two matched runs is carried over one character per
+  // character, so its offsets are its own.
+  const copy_verbatim = (until: number) => {
+    for (let i = cursor; i < until; i++) {
+      folded += text[i]
+      map.push(i)
+      map_end.push(i + 1)
+    }
+    cursor = until
+  }
+  for (const match of text.matchAll(pattern)) {
+    const at = match.index ?? 0
+    copy_verbatim(at)
+    const run = match[0]
+    // A zero-width match transformed nothing, so it produces nothing (see the
+    // FoldRule contract). Emitting a replacement here would inject characters
+    // the original never had and desync every offset after them.
+    if (!run) continue
+    const rule_index = whole_run.findIndex((re) => re.test(run))
+    // No rule owns up to its own run: the pattern breaks the anchored-match
+    // half of the contract. Copy the run through as ordinary text rather than
+    // indexing past the end of the table — a fold that skips one run still
+    // yields exact offsets, where a crash yields no citation at all.
+    if (rule_index < 0) {
+      copy_verbatim(at + run.length)
+      continue
+    }
+    const rule = rules[rule_index]
+    // By code UNIT, not code point: the maps are indexed the way the folded
+    // string is, and a replacement carrying a surrogate pair would otherwise
+    // add two characters against one entry and shift everything after it.
+    const into = rule.replace(run)
+    for (let k = 0; k < into.length; k++) {
+      folded += into[k]
+      map.push(at)
+      map_end.push(at + run.length)
+    }
+    cursor = at + run.length
+  }
+  copy_verbatim(text.length)
+  return { folded, map, map_end }
+}
+
+// Whitespace RUNS to a single space: `"a": 1,\n  "b"` and `"a": 1, "b"` fold
+// the same, which covers the difference pretty-printing makes between two
+// tokens that were already separated.
+export const WHITESPACE_TOLERANT_FOLD: FoldRule[] = [
+  { pattern: TYPOGRAPHIC_FOLD_PATTERN.source, replace: fold_typography },
+  { pattern: "\\s+", replace: () => " " },
+]
+
+// Whitespace runs dropped outright. Pretty-printing also SEPARATES tokens that
+// were flush — `{"a":1` becomes `{\n  "a": 1` — and no collapse can match a
+// space against nothing, so this is the wider second pass. It is not the first
+// because dropping whitespace lets a needle match across a word boundary; the
+// collapsing fold gets to answer while it can.
+export const WHITESPACE_FREE_FOLD: FoldRule[] = [
+  { pattern: TYPOGRAPHIC_FOLD_PATTERN.source, replace: fold_typography },
+  { pattern: "\\s+", replace: () => "" },
+]
+
+// resolve_citation_span's whitespace-tolerant twin, for anchoring a citation in
+// a re-rendered copy of the text it was written against. Same anchor semantics
+// (first `from`, then the first `to` at/after it), but the returned span slices
+// the string PASSED IN rather than the raw one. Null when either anchor is
+// absent, and when either carries no non-whitespace text to locate. Callers use
+// it to place the mark in a pretty-printed body; a miss is a real miss and they
+// fall back to the raw text.
+export function resolve_citation_span_whitespace_tolerant(
+  text: string,
+  citation: Pick<Citation, "from" | "to">,
+): { start: number; end: number } | null {
+  return (
+    resolve_span_in_fold(text, citation, WHITESPACE_TOLERANT_FOLD) ??
+    resolve_span_in_fold(text, citation, WHITESPACE_FREE_FOLD)
+  )
+}
+
+function resolve_span_in_fold(
+  text: string,
+  citation: Pick<Citation, "from" | "to">,
+  rules: FoldRule[],
+): { start: number; end: number } | null {
+  const haystack = fold_with_offsets(text, rules)
+  // The needle folds through the SAME rules, or the two would be normalized
+  // into different alphabets and never meet.
+  const from = fold_with_offsets(citation.from, rules).folded
+  const to = fold_with_offsets(citation.to, rules).folded
+  // An anchor with nothing but whitespace left in it — empty to begin with, or
+  // emptied by the fold that drops whitespace — matches at every position and
+  // covers none of them. That is not a resolution: reporting one hands the
+  // caller a span it reads as success, and it loses the raw mark it would
+  // otherwise have fallen back to.
+  if (!/\S/.test(from) || !/\S/.test(to)) return null
+  const start = haystack.folded.indexOf(from)
+  if (start < 0) return null
+  const to_at = haystack.folded.indexOf(to, start)
+  if (to_at < 0) return null
+  const end = to_at + to.length
+  return {
+    start: span_start(haystack, start),
+    end: span_end(haystack, end - 1),
+  }
+}
+
+// Where a resolved span starts and ends in the original. A folded whitespace
+// character stands for a whole collapsed run, so a span that begins or ends on
+// one steps over it: carrying it along would put the line break and indent
+// pretty-printing inserted inside the <mark>, which on screen reads as a
+// rendering bug rather than a citation. The two are symmetric — an anchor with
+// a leading space is as ordinary as one with a trailing space.
+function span_start(haystack: FoldedText, first: number): number {
+  return /\s/.test(haystack.folded[first])
+    ? haystack.map_end[first]
+    : haystack.map[first]
+}
+
+function span_end(haystack: FoldedText, last: number): number {
+  return /\s/.test(haystack.folded[last])
+    ? haystack.map[last]
+    : haystack.map_end[last]
+}
+
 // ── Structured-trace span mapping (MULTI-TURN ONLY) ──────────────────────
 //
 // The trace modal renders a MULTI-TURN conversation (TraceMessage[]) in the

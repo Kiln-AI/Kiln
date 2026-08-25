@@ -53,14 +53,17 @@
   $: sections = single_turn && trace ? read_sections(trace) : null
 
   // The active citation as the sections take it: the raw source its offsets
-  // index, plus the span. Null while browsing, which is what puts the sections
-  // back on their content-typed renderers.
+  // index, the span, and the anchors it resolved from — a field that formats
+  // its content re-finds the citation in the formatted body from those. Null
+  // while browsing, which is what puts the sections back on their content-typed
+  // renderers.
   $: cited =
-    trace && active_source && active_span
+    trace && active_source && active_span && active_citation
       ? {
           source: active_source,
           text: text_for(active_source),
           span: active_span,
+          anchors: active_citation,
         }
       : null
 

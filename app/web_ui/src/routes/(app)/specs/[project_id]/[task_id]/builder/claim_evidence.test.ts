@@ -14,6 +14,7 @@ import {
   disagreement_feedback,
   final_judgement_reason,
   flipped_indices,
+  fold_with_offsets,
   grade_disagreement_count,
   has_grade_disagreement,
   is_trace_first_review,
@@ -25,6 +26,7 @@ import {
   rejudge_shortfall_notice,
   review_cta,
   resolve_citation_span,
+  resolve_citation_span_whitespace_tolerant,
   review_target,
   review_trace_messages,
   reviewed_trace_count,
@@ -35,6 +37,8 @@ import {
   single_turn_sections_resolver,
   user_says_meets_spec,
   validate_refined_judge_prompt,
+  WHITESPACE_FREE_FOLD,
+  WHITESPACE_TOLERANT_FOLD,
   type Claim,
   type RejudgeCaseResult,
   type TraceClaims,
@@ -610,6 +614,244 @@ describe("resolve_citation_span — curly vs straight punctuation", () => {
         to: "a restocking fee",
       }),
     ).toBeNull()
+  })
+})
+
+// The tool-trace case's shape at its size: one JSON object whose
+// `updated_mention_sources` array carries the sources a discovery run seeded.
+// Built here rather than imported from the dev-only preview corpus, so the test
+// owns its fixture, but sized past 5000 characters like the run the bug was
+// reported on — the mark being lost in an unformatted blob is a length problem.
+function jumbo_json_output(): string {
+  const kinds = ["web_search", "news_outlet", "rss_feed", "twitter_query"]
+  return JSON.stringify({
+    summary:
+      "Initial mention-source curation for Acme Construction Tech: seeded 15 probationary agent sources across web, news, RSS, X, and Reddit tuned to Construction PM SaaS.",
+    updated_mention_sources: Array.from({ length: 15 }, (_, i) => ({
+      kind: kinds[i % kinds.length],
+      value: `"Acme Construction Tech" source ${i} -site:acmeconstructiontech.example`,
+      notes: `Seeded source ${i}: exact-name brand mentions scoped to the construction context and excluding the owned domain, so unrelated collisions stay out of the feed.`,
+      addedBy: "agent",
+      priority: "probationary",
+    })),
+    brand_memory_record: {
+      type: "discovery_run",
+      ran_at: "2026-07-07T22:15:00Z",
+      candidates_evaluated: 22,
+      rationale:
+        "First discovery run - the Brand Memory feed is empty and no sources existed. For B2B Construction PM SaaS, I biased toward X and Reddit plus web and news, adding US construction trade outlets, matching RSS feeds, and exact/alias web queries scoped away from the known exclusions. All new sources start probationary pending signal validation.",
+    },
+  })
+}
+
+// The anchors the rig's claim synthesizer writes for a case: the first three
+// whitespace-separated words of the raw output, then the next three. Retyped
+// from the RAW string, which is exactly why they miss the pretty-printed one.
+function leading_anchors(raw_output: string): { from: string; to: string } {
+  const words = raw_output.split(/\s+/).filter(Boolean)
+  return { from: words.slice(0, 3).join(" "), to: words.slice(3, 6).join(" ") }
+}
+
+describe("fold_with_offsets", () => {
+  it("collapses whitespace runs and maps each fold back over the whole run", () => {
+    const pretty = '{\n  "window": "30 days"\n}'
+    const { folded, map, map_end } = fold_with_offsets(
+      pretty,
+      WHITESPACE_TOLERANT_FOLD,
+    )
+    expect(folded).toBe('{ "window": "30 days" }')
+    // The offsets index the ORIGINAL, so slicing with them brings the newline
+    // and indent the fold hid back with the text.
+    const space = folded.indexOf(" ")
+    expect(pretty.slice(map[space], map_end[space])).toBe("\n  ")
+    // Every folded character round-trips: a fold that lost a character, or
+    // attributed one to the wrong run, shows up as a gap here.
+    expect(
+      [...folded].map((_, i) => pretty.slice(map[i], map_end[i])).join(""),
+    ).toBe(pretty)
+  })
+
+  it("folds typography 1:1 while collapsing whitespace around it", () => {
+    const text = "Policy:\n  the “30 day”\n  window."
+    const { folded, map, map_end } = fold_with_offsets(
+      text,
+      WHITESPACE_TOLERANT_FOLD,
+    )
+    expect(folded).toBe('Policy: the "30 day" window.')
+    const start = folded.indexOf('"30 day"')
+    const end = folded.indexOf("window.") + "window.".length
+    // A length-changing typographic fold would shift these offsets and slice
+    // the wrong characters out of the original.
+    expect(text.slice(map[start], map_end[end - 1])).toBe("“30 day”\n  window.")
+  })
+
+  it("copies a run through when no rule owns it", () => {
+    // The dispatch asks each rule to match its own run ANCHORED. A pattern
+    // whose match depends on what follows it cannot answer that, and the run
+    // is copied through as ordinary text — which keeps the offsets exact,
+    // where indexing past the end of the rule table would throw and cost the
+    // reviewer the citation entirely.
+    const { folded, map, map_end } = fold_with_offsets("axyb", [
+      { pattern: "x(?=y)", replace: () => "!" },
+    ])
+    expect(folded).toBe("axyb")
+    expect(map).toEqual([0, 1, 2, 3])
+    expect(map_end).toEqual([1, 2, 3, 4])
+  })
+
+  it("drops whitespace runs entirely under the free fold", () => {
+    // The pass that rescues tokens pretty-printing pushed APART: no collapse
+    // can match a space against the nothing the raw string had there.
+    const { folded, map, map_end } = fold_with_offsets(
+      '{\n  "a": 1\n}',
+      WHITESPACE_FREE_FOLD,
+    )
+    expect(folded).toBe('{"a":1}')
+    // A dropped run belongs to no folded character, so a span ending before
+    // one stops at the last character it really covered.
+    expect(map_end[folded.indexOf("1")]).toBe('{\n  "a": 1'.length)
+    // …and the character after a dropped run still points past it, or every
+    // offset from there on would be short by the run's length.
+    expect(map[folded.indexOf('"a"')]).toBe("{\n  ".length)
+  })
+})
+
+describe("resolve_citation_span_whitespace_tolerant", () => {
+  it("resolves anchors across a pretty-printed key/value boundary", () => {
+    // The exact bug shape: the model retyped its anchors off the raw string,
+    // where the colon is flush; the reviewer is looking at the pretty one,
+    // where it is followed by a space and the entries by newline + indent.
+    const raw = '{"window":"30 days","refund":"14 days"}'
+    const pretty = JSON.stringify(JSON.parse(raw), null, 2)
+    const span = resolve_citation_span_whitespace_tolerant(pretty, {
+      from: '"window":"30 days"',
+      to: '"refund":"14 days"',
+    })
+    expect(span).not.toBeNull()
+    expect(pretty.slice(span!.start, span!.end)).toBe(
+      '"window": "30 days",\n  "refund": "14 days"',
+    )
+  })
+
+  it("resolves anchors whose only difference is newline for space", () => {
+    // The collapsing pass on its own: both sides separate the tokens, the
+    // rendering just separates them differently.
+    const text = "Our return window\nis 30 days\nfrom purchase."
+    const span = resolve_citation_span_whitespace_tolerant(text, {
+      from: "window is 30 days",
+      to: "purchase",
+    })
+    expect(span).not.toBeNull()
+    expect(text.slice(span!.start, span!.end)).toBe(
+      "window\nis 30 days\nfrom purchase",
+    )
+  })
+
+  it("prefers the match that respects word boundaries", () => {
+    // Why the collapsing pass answers first: dropping whitespace outright lets
+    // `a b` match the earlier `ab`, and the reviewer would be sent to a span
+    // the citation never pointed at while the real one sat further down.
+    const pretty = JSON.stringify({ tag: "ab", name: "a b" }, null, 2)
+    const span = resolve_citation_span_whitespace_tolerant(pretty, {
+      from: "a b",
+      to: "a b",
+    })
+    expect(span).not.toBeNull()
+    expect(pretty.slice(0, span!.start)).toContain('"tag": "ab"')
+  })
+
+  it("keeps a JSON whitespace collision on the right value", () => {
+    // The JSON shape the fix exists for only ever reaches the whitespace-FREE
+    // pass (a flush `"key":"value"` cannot survive the collapsing one), so the
+    // wider pass has to stay honest on a haystack where dropping whitespace
+    // makes two different values look alike.
+    const pretty = JSON.stringify({ a: "30days", b: "30 days" }, null, 2)
+    const span = resolve_citation_span_whitespace_tolerant(pretty, {
+      from: '"b":"30 days"',
+      to: '"b":"30 days"',
+    })
+    expect(span).not.toBeNull()
+    expect(pretty.slice(span!.start, span!.end)).toBe('"b": "30 days"')
+  })
+
+  it("starts a span after the whitespace its first anchor begins on", () => {
+    // Symmetric with the trailing clamp below: an anchor retyped with a leading
+    // space must not drag the newline and indent pretty-printing inserted into
+    // the front of the highlight.
+    const pretty = JSON.stringify({ note: "see below", next: 1 }, null, 2)
+    const span = resolve_citation_span_whitespace_tolerant(pretty, {
+      from: ' "next"',
+      to: "1",
+    })
+    expect(span).not.toBeNull()
+    expect(pretty.slice(span!.start, span!.end)).toBe('"next": 1')
+  })
+
+  it("stops a span before the whitespace its last anchor ends on", () => {
+    // A `to` ending in whitespace must not drag the newline and indent
+    // pretty-printing inserted into the mark: on screen that is a highlighted
+    // line break, which reads as a rendering bug.
+    const pretty = JSON.stringify({ note: "see below", next: 1 }, null, 2)
+    const span = resolve_citation_span_whitespace_tolerant(pretty, {
+      from: '"note"',
+      to: '"see below", ',
+    })
+    expect(span).not.toBeNull()
+    expect(pretty.slice(span!.start, span!.end)).toBe('"note": "see below",')
+  })
+
+  it("returns null when the cited text genuinely isn't in the rendering", () => {
+    // Whitespace tolerance must not turn a real miss into a match, or the
+    // caller would mark a span the citation never pointed at.
+    expect(
+      resolve_citation_span_whitespace_tolerant('{\n  "a": 1\n}', {
+        from: '"restocking fee"',
+        to: '"a"',
+      }),
+    ).toBeNull()
+    // A present `from` with an absent `to` is the same miss from the other
+    // side: half an anchor pair locates nothing.
+    expect(
+      resolve_citation_span_whitespace_tolerant('{\n  "a": 1\n}', {
+        from: '"a"',
+        to: '"restocking fee"',
+      }),
+    ).toBeNull()
+  })
+
+  it("returns null for an anchor that is nothing but whitespace", () => {
+    // The fold that drops whitespace empties such an anchor out, and an empty
+    // needle matches at every position while covering none of them. Reporting
+    // that as a resolution would cost the caller the raw mark it falls back to.
+    expect(
+      resolve_citation_span_whitespace_tolerant('{\n  "a": 1\n}', {
+        from: '"a"',
+        to: " ",
+      }),
+    ).toBeNull()
+    expect(
+      resolve_citation_span_whitespace_tolerant('{\n  "a": 1\n}', {
+        from: "\n  ",
+        to: '"a"',
+      }),
+    ).toBeNull()
+  })
+
+  it("anchors the jumbo tool-trace citation in its pretty-printed output", () => {
+    const raw = jumbo_json_output()
+    expect(raw.length).toBeGreaterThan(5000)
+    const anchors = leading_anchors(raw)
+    const pretty = JSON.stringify(JSON.parse(raw), null, 2)
+    // The anchors resolve against the raw string — that is the mark the
+    // reviewer clicked, and today's fallback still shows it there.
+    expect(resolve_citation_span(raw, anchors)).not.toBeNull()
+    // The 1:1 fold cannot find them in the pretty rendering, which is the bug.
+    expect(resolve_citation_span(pretty, anchors)).toBeNull()
+    const span = resolve_citation_span_whitespace_tolerant(pretty, anchors)
+    expect(span).not.toBeNull()
+    expect(pretty.slice(span!.start, span!.end)).toBe(
+      '{\n  "summary": "Initial mention-source curation for Acme Construction',
+    )
   })
 })
 

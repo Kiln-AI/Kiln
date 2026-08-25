@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterAll, afterEach, beforeAll } from "vitest"
 import { render, fireEvent, cleanup } from "@testing-library/svelte"
+import { tick } from "svelte"
 import ClaimEvidenceReview from "./claim_evidence_review.svelte"
 import {
   build_trace_reviews,
@@ -1271,9 +1272,10 @@ describe("the trace modal — single-turn", () => {
     expect(mark?.closest("[data-testid='review-input']")).not.toBeNull()
   })
 
-  it("marks an output citation in the output, rendered raw while cited", async () => {
-    // Citation wins: the span's offsets index raw_output, so the section drops
-    // its rows and shows the raw text the mark can actually be placed in.
+  it("marks an output citation inside the row that holds it", async () => {
+    // The citation points INTO the rows rather than replacing them: the row
+    // holding the cited text opens and the mark goes in where it sits, so the
+    // reviewer keeps the tool loop they were reading.
     const citation: Citation = {
       marker: 1,
       source: "output",
@@ -1283,13 +1285,22 @@ describe("the trace modal — single-turn", () => {
     const traces = [long_single_turn(tool_loop_trace({}, [citation]))]
     const { container, getByTitle } = render_single_turn_claims_first(traces)
     await fireEvent.click(getByTitle("View in trace"))
+    await tick()
     const dialog = trace_dialog(container)
     const mark = dialog.querySelector("mark")
 
     expect(mark?.textContent).toBe("30 days")
     expect(mark?.closest("[data-testid='review-output']")).not.toBeNull()
-    // Raw while cited: no accordion rows competing with the highlight.
-    expect(linear_role_labels(section(dialog, "output"))).toEqual([])
+    // The rows are still on screen, and the mark is inside one of them.
+    expect(
+      linear_role_labels(section(dialog, "output")).length,
+    ).toBeGreaterThan(0)
+    expect(mark?.closest(".collapse-content")).not.toBeNull()
+    // The final answer's row, not the tool result that says the same thing.
+    const output_rows = [
+      ...section(dialog, "output").querySelectorAll(".collapse"),
+    ]
+    expect(mark?.closest(".collapse")).toBe(output_rows[output_rows.length - 1])
     // The Input field is untouched by an output citation.
     expect(section(dialog, "input").querySelector("mark")).toBeNull()
   })
