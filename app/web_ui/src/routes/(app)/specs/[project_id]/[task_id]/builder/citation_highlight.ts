@@ -178,7 +178,9 @@ function is_markable(node: Text): boolean {
 }
 
 // Bring the mark into view. Called once per citation, not per render, so a
-// reviewer scrolling away from a mark is not dragged back to it. Guarded
+// reviewer scrolling away from a mark is not dragged back to it. That dedupe
+// holds within ONE action instance: a remount starts a fresh one, so a surface
+// that re-opens the cited row scrolls to the mark it just put back. Guarded
 // because scrollIntoView is layout, which not every DOM implementation has —
 // failing to scroll is not a reason to lose the mark.
 function scroll_to_citation_mark(container: HTMLElement): void {

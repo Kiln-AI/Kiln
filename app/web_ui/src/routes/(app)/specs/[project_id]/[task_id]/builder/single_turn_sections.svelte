@@ -132,8 +132,14 @@
   // the reviewer left them, and only the mark goes away.
   let opened_row = -1
   $: if (cited_row >= 0 && cited_row !== opened_row) opened_row = cited_row
-  // A trace id and an integer, so a colon joins them unambiguously.
-  $: rows_key = `${sections.trace_id}:${opened_row}`
+  // Which body the rows are showing. A trace id and an integer, so a colon
+  // joins them unambiguously.
+  $: rows_body = `${sections.trace_id}:${opened_row}`
+  // Bumped to re-mount the same body, which is the only way to re-apply the
+  // auto-open: the reviewer can collapse the cited row, and a collapsed row
+  // renders no text for the mark to land in (see on_rows_result).
+  let reopen_count = 0
+  $: rows_key = `${rows_body}:${reopen_count}`
 
   // Whether the mark went into the rows. False sends the section to the raw
   // field, which is what a cited rows case has always shown.
@@ -151,17 +157,26 @@
       rows_attempted.key === key
     )
   }
+  // Whether this attempt's mark has ever gone in, which is what separates a
+  // citation the rows cannot hold from one whose row was collapsed after the
+  // fact, and whether it has already spent its one re-open. Both reset with the
+  // attempt, since one citation's history says nothing about the next.
+  let rows_placed_once = false
+  let rows_reopened = false
   // Every distinct citation gets its own attempt: that the last one was not in
-  // the rows says nothing about this one.
-  $: if (!same_rows_attempt(output_cited, rows_key)) {
+  // the rows says nothing about this one. Keyed on the BODY rather than the
+  // mount key, so re-opening a row does not count as a new attempt.
+  $: if (!same_rows_attempt(output_cited, rows_body)) {
     rows_attempted = output_cited
       ? {
           from: output_cited.anchors.from,
           to: output_cited.anchors.to,
-          key: rows_key,
+          key: rows_body,
         }
       : null
     rows_in_place = true
+    rows_placed_once = false
+    rows_reopened = false
   }
 
   // A citation no row holds cannot be marked in the rows at all — the field
@@ -179,7 +194,24 @@
   }
 
   function on_rows_result(placed: boolean) {
-    if (rows_in_place !== placed) rows_in_place = placed
+    if (placed) {
+      rows_placed_once = true
+      rows_reopened = false
+      rows_in_place = true
+      return
+    }
+    // A mark that went in once and cannot now usually means the reviewer
+    // collapsed the cited row, so the next thing to try is opening it rather than
+    // dropping the whole section to the raw text. One re-open per successful
+    // placement, re-armed each time a mark lands: repeated collapse-then-refire
+    // cycles keep working, while a row that comes back still unmarkable spends
+    // the budget once and settles on the fallback.
+    if (rows_placed_once && !rows_reopened) {
+      rows_reopened = true
+      reopen_count += 1
+      return
+    }
+    rows_in_place = false
   }
 </script>
 
@@ -210,12 +242,13 @@
         cited={output_field_cited(output_cited)}
       />
     {:else if sections.rows}
-      <!-- Keyed on the trace and on the last row a citation opened: Trace
-           builds its expanded-row state once at mount, so both of those need a
-           remount to take effect, and a remount closes whatever the reviewer
-           opened by hand. Nothing else is in the key — a background claims
-           build reassigning the review's trace list, or a citation being
-           cleared, leaves their open rows alone. -->
+      <!-- Keyed on the trace, on the last row a citation opened, and on the
+           re-opens of that row: Trace builds its expanded-row state once at
+           mount, so each of those needs a remount to take effect, and a remount
+           closes whatever the reviewer opened by hand. Nothing else is in the
+           key — while the mark stays placed, a background claims build
+           reassigning the review's trace list, or a citation being cleared,
+           leaves their open rows alone. -->
       {#key rows_key}
         <div
           class="rounded bg-primary/5 px-4 py-3"
