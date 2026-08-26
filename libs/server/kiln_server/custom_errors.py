@@ -11,6 +11,13 @@ from pydantic import ValidationError
 logger = logging.getLogger(__name__)
 
 
+def safe_str(value) -> str:
+    """Stringify for a JSON response: user input can contain lone surrogates,
+    which JSONResponse cannot encode as UTF-8 — echoing them back verbatim
+    would turn a 4xx into a 500 at response encoding."""
+    return str(value).encode("utf-8", errors="replace").decode("utf-8")
+
+
 def format_error_loc(loc: tuple):
     if not loc:
         return ""
@@ -45,12 +52,6 @@ def connect_custom_errors(app: FastAPI):
                 f"Validation error on {request.method} {request.url.path} ({len(errors)} error(s)):\n{errors_json}",
                 exc_info=exc,
             )
-
-        def safe_str(value) -> str:
-            # Invalid request input can contain lone surrogates, which
-            # JSONResponse cannot encode as UTF-8 — echoing them back verbatim
-            # would turn this 422 into a 500.
-            return str(value).encode("utf-8", errors="replace").decode("utf-8")
 
         # Write user friendly error messages
         error_messages = []
@@ -90,10 +91,13 @@ def connect_custom_errors(app: FastAPI):
     # Wrap in a format that the client can understand (message, and error_messages)
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
+        detail = exc.detail
+        if isinstance(detail, str):
+            detail = safe_str(detail)
         return JSONResponse(
             status_code=exc.status_code,
             headers={"Access-Control-Allow-Origin": "*"},
-            content={"message": exc.detail},
+            content={"message": detail},
         )
 
     @app.exception_handler(KilnRunError)

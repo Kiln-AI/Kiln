@@ -194,6 +194,13 @@ class Skill(KilnParentedModel):
                         # folder directly) — skip it.
                         continue
                     relative = file_path.relative_to(base_dir).as_posix()
+                    try:
+                        relative.encode("utf-8")
+                    except UnicodeEncodeError:
+                        # A non-UTF-8 filename (surrogateescape-decoded) can't
+                        # be JSON-encoded or round-tripped through the API —
+                        # skip it rather than failing the whole listing.
+                        continue
                     resources.append((f"{base_dir.name}/{relative}", size))
         return sorted(resources)
 

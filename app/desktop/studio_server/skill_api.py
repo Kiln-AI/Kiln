@@ -1,5 +1,4 @@
 import base64
-import binascii
 import logging
 import threading
 from datetime import datetime
@@ -180,12 +179,6 @@ def _get_skill(project_id: str, skill_id: str) -> Skill:
     return skill
 
 
-def _safe_detail(errors: list[str]) -> str:
-    """Join error messages, replacing anything JSONResponse can't UTF-8-encode
-    (e.g. lone surrogates echoed from request input)."""
-    return "; ".join(errors).encode("utf-8", errors="replace").decode("utf-8")
-
-
 def _decode_files(
     files: List[SkillFileParam],
 ) -> tuple[dict[str, bytes], list[str]]:
@@ -217,7 +210,8 @@ def _decode_files(
                 decoded[file.path] = base64.b64decode(
                     "".join(file.content.split()), validate=True
                 )
-            except (binascii.Error, ValueError):
+            except ValueError:
+                # binascii.Error is a ValueError subclass
                 errors.append(f"file content is not valid base64: {file.path!r}")
     return decoded, errors
 
@@ -297,7 +291,7 @@ def connect_skill_api(app: FastAPI):
                     extra_errors=decode_errors,
                 )
         except SkillBundleValidationError as e:
-            raise HTTPException(status_code=422, detail=_safe_detail(e.errors)) from e
+            raise HTTPException(status_code=422, detail="; ".join(e.errors)) from e
         return skill_to_response(skill)
 
     @app.post(
@@ -334,7 +328,7 @@ def connect_skill_api(app: FastAPI):
                     body=body,
                 )
         except SkillBundleValidationError as e:
-            raise HTTPException(status_code=422, detail=_safe_detail(e.errors)) from e
+            raise HTTPException(status_code=422, detail="; ".join(e.errors)) from e
         return skill_to_response(skill)
 
     @app.get(
