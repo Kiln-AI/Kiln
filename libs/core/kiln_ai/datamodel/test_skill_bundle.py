@@ -1,9 +1,7 @@
-import json
-
 import pytest
 
 from kiln_ai.datamodel.project import Project
-from kiln_ai.datamodel.skill import Skill, SkillProvenance
+from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.skill_bundle import (
     MAX_BUNDLE_BYTES,
     MAX_RESOURCE_FILE_BYTES,
@@ -96,16 +94,6 @@ class TestCreateSkillWithFiles:
         assert skill.read_resource_bytes("assets/logo.png") == b"\x89PNG\x00binary"
         assert skill.read_reference("api/endpoints.md") == "# Endpoints"
 
-    def test_provenance_persisted(self, project):
-        provenance = SkillProvenance(
-            notes="why this exists", derived_from_ids=["111"], origin="agent"
-        )
-        skill = create(project, provenance=provenance)
-        loaded = Skill.load_from_file(skill.path)
-        assert loaded.provenance == provenance
-        raw = json.loads(skill.path.read_text(encoding="utf-8"))
-        assert raw["provenance"]["origin"] == "agent"
-
     def test_duplicate_name_rejected(self, project):
         create(project)
         with pytest.raises(SkillBundleValidationError, match="install-once"):
@@ -192,18 +180,6 @@ class TestCloneSkill:
         assert clone.read_resource_bytes("assets/logo.png") == b"\x89PNG\x00"
         assert clone.body() == "New body."
         assert clone.id != source.id
-
-    def test_clone_records_lineage(self, project, source):
-        clone = clone_skill(
-            project,
-            source,
-            name="cloned-skill",
-            description="A clone.",
-            body="New body.",
-        )
-        assert clone.provenance is not None
-        assert clone.provenance.derived_from_ids == [source.id]
-        assert clone.provenance.origin == "user"
 
     def test_clone_does_not_mutate_source(self, project, source):
         clone_skill(

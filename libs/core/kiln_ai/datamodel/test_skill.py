@@ -469,49 +469,6 @@ class TestAssets:
             skill.assets_dir()
 
 
-# -- Provenance tests --
-
-
-def test_provenance_round_trips_through_save_and_load(mock_project):
-    from kiln_ai.datamodel.skill import SkillProvenance
-
-    skill = save_skill_with_body(
-        mock_project,
-        provenance=SkillProvenance(
-            notes="Built to test provenance.",
-            derived_from_ids=["123456789012"],
-            origin="agent",
-        ),
-    )
-    loaded = Skill.load_from_file(skill.path)
-    assert loaded.provenance is not None
-    assert loaded.provenance.notes == "Built to test provenance."
-    assert loaded.provenance.derived_from_ids == ["123456789012"]
-    assert loaded.provenance.origin == "agent"
-
-
-def test_provenance_defaults_to_none(mock_project):
-    skill = save_skill_with_body(mock_project)
-    loaded = Skill.load_from_file(skill.path)
-    assert loaded.provenance is None
-
-
-def test_provenance_survives_resave(mock_project):
-    from kiln_ai.datamodel.skill import SkillProvenance
-
-    skill = save_skill_with_body(
-        mock_project,
-        provenance=SkillProvenance(notes="keep me", origin="agent"),
-    )
-    loaded = Skill.load_from_file(skill.path)
-    loaded.is_archived = True
-    loaded.save_to_file()
-    reloaded = Skill.load_from_file(skill.path)
-    assert reloaded.provenance is not None
-    assert reloaded.provenance.notes == "keep me"
-    assert reloaded.is_archived is True
-
-
 # -- Resource listing and binary read tests --
 
 

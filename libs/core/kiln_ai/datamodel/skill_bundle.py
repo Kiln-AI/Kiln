@@ -22,7 +22,6 @@ from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.skill import (
     RESOURCE_DIR_NAMES,
     Skill,
-    SkillProvenance,
 )
 
 MAX_RESOURCE_FILE_BYTES = 512 * 1024
@@ -92,7 +91,6 @@ def create_skill_with_files(
     description: str,
     body: str,
     files: Optional[Dict[str, bytes]] = None,
-    provenance: Optional[SkillProvenance] = None,
 ) -> Skill:
     """Create a skill atomically, with optional resource files.
 
@@ -119,7 +117,6 @@ def create_skill_with_files(
     skill = Skill(
         name=name,
         description=description,
-        provenance=provenance,
         parent=project,
     )
     final_path = skill.build_path()
@@ -163,26 +160,19 @@ def clone_skill(
     name: str,
     description: str,
     body: str,
-    provenance: Optional[SkillProvenance] = None,
 ) -> Skill:
     """Create a new skill from an existing one, copying all resource files.
 
     name/description/body may differ from the source (a clone is a new skill,
-    not a mutation). Provenance defaults to recording the source's id.
+    not a mutation).
     """
     files = {
         path: source.read_resource_bytes(path) for path in source.list_resource_files()
     }
-    if provenance is None:
-        provenance = SkillProvenance(
-            derived_from_ids=[source.id] if source.id else [],
-            origin="user",
-        )
     return create_skill_with_files(
         project,
         name=name,
         description=description,
         body=body,
         files=files,
-        provenance=provenance,
     )

@@ -335,18 +335,12 @@ class TestCreateSkillWithFiles:
                 "encoding": "base64",
             },
         ]
-        sample_skill_data["provenance"] = {
-            "notes": "authored by test",
-            "derived_from_ids": [],
-            "origin": "agent",
-        }
         response = client.post(
             f"/api/projects/{test_project.id}/skills",
             json=sample_skill_data,
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["provenance"]["origin"] == "agent"
         from kiln_ai.datamodel.skill import Skill
 
         skill = Skill.from_id_and_parent_path(data["id"], test_project.path)
@@ -404,7 +398,6 @@ class TestCloneSkillEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "cloned-skill"
-        assert data["provenance"]["derived_from_ids"] == [saved_skill_with_resources.id]
         from kiln_ai.datamodel.skill import Skill
 
         clone = Skill.from_id_and_parent_path(data["id"], test_project.path)

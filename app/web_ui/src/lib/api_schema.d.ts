@@ -10657,8 +10657,6 @@ export interface components {
              * @description Optional resource files (references/… and assets/…) installed atomically with the skill.
              */
             files?: components["schemas"]["SkillFileParam"][];
-            /** @description Optional provenance metadata: authoring notes, lineage, and origin. */
-            provenance?: components["schemas"]["SkillProvenance"] | null;
         };
         /**
          * SkillFileParam
@@ -10682,30 +10680,6 @@ export interface components {
              * @enum {string}
              */
             encoding: "utf-8" | "base64";
-        };
-        /**
-         * SkillProvenance
-         * @description Where a skill came from: authoring notes, lineage, and who authored it.
-         */
-        SkillProvenance: {
-            /**
-             * Notes
-             * @description Free-form notes on why this skill exists and how it was authored.
-             * @default
-             */
-            notes: string;
-            /**
-             * Derived From Ids
-             * @description IDs of skills this skill was derived from (e.g. the source of a clone).
-             */
-            derived_from_ids?: string[];
-            /**
-             * Origin
-             * @description Whether the skill was authored by a user or an agent.
-             * @default user
-             * @enum {string}
-             */
-            origin: "user" | "agent";
         };
         /**
          * SkillResourceContentResponse
@@ -10781,8 +10755,6 @@ export interface components {
              * @description When the skill was created.
              */
             created_at?: string | null;
-            /** @description Provenance metadata, if recorded. */
-            provenance?: components["schemas"]["SkillProvenance"] | null;
         };
         /**
          * SkillUpdateRequest

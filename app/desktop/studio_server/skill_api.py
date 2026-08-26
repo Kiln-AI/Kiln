@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Annotated, List, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Query
-from kiln_ai.datamodel.skill import Skill, SkillProvenance
+from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.skill_bundle import (
     SkillBundleValidationError,
     clone_skill,
@@ -53,10 +53,6 @@ class SkillCreationRequest(BaseModel):
     files: List[SkillFileParam] = Field(
         default_factory=list,
         description="Optional resource files (references/… and assets/…) installed atomically with the skill.",
-    )
-    provenance: SkillProvenance | None = Field(
-        default=None,
-        description="Optional provenance metadata: authoring notes, lineage, and origin.",
     )
 
 
@@ -118,9 +114,6 @@ class SkillResponse(BaseModel):
     )
     created_at: datetime | None = Field(
         default=None, description="When the skill was created."
-    )
-    provenance: SkillProvenance | None = Field(
-        default=None, description="Provenance metadata, if recorded."
     )
 
 
@@ -238,7 +231,6 @@ def connect_skill_api(app: FastAPI):
                 description=skill_data.description,
                 body=skill_data.body,
                 files=_decode_files(skill_data.files),
-                provenance=skill_data.provenance,
             )
         except SkillBundleValidationError as e:
             raise HTTPException(status_code=422, detail="; ".join(e.errors)) from e

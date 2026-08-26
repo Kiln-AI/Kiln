@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Literal, Union
+from typing import TYPE_CHECKING, List, Union
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from kiln_ai.datamodel.basemodel import KilnParentedModel
 from kiln_ai.utils.validation import SkillNameString
@@ -17,23 +17,6 @@ if TYPE_CHECKING:
 SKILL_MD_FILENAME = "SKILL.md"
 
 RESOURCE_DIR_NAMES = ("references", "assets")
-
-
-class SkillProvenance(BaseModel):
-    """Where a skill came from: authoring notes, lineage, and who authored it."""
-
-    notes: str = Field(
-        default="",
-        description="Free-form notes on why this skill exists and how it was authored.",
-    )
-    derived_from_ids: List[str] = Field(
-        default_factory=list,
-        description="IDs of skills this skill was derived from (e.g. the source of a clone).",
-    )
-    origin: Literal["user", "agent"] = Field(
-        default="user",
-        description="Whether the skill was authored by a user or an agent.",
-    )
 
 
 class Skill(KilnParentedModel):
@@ -58,10 +41,6 @@ class Skill(KilnParentedModel):
     is_archived: bool = Field(
         default=False,
         description="Whether the skill is archived. Archived skills are hidden from the UI and not available for use.",
-    )
-    provenance: SkillProvenance | None = Field(
-        default=None,
-        description="Provenance metadata: authoring notes, lineage, and origin.",
     )
 
     def parent_project(self) -> Union["Project", None]:
