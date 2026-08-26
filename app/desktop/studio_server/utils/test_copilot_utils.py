@@ -1,6 +1,8 @@
 """Tests for app/desktop/studio_server/utils/copilot_utils.py."""
 
+import logging
 import random
+from typing import ClassVar
 from unittest.mock import patch
 
 import pytest
@@ -12,6 +14,11 @@ from kiln_ai.datamodel.datamodel_enums import (
     TurnMode,
 )
 from kiln_ai.datamodel.eval import MultiTurnDriveConfig
+from kiln_ai.datamodel.run_config import (
+    McpRunConfigProperties,
+    MCPToolReference,
+    ToolsRunConfig,
+)
 from kiln_ai.datamodel.task_output import (
     DataSource,
     DataSourceType,
@@ -25,6 +32,9 @@ from app.desktop.studio_server.api_models.copilot_models import (
     ReviewedChainApi,
     ReviewedExample,
     SampleApi,
+    TaskInfoApi,
+    TaskSkillInfoApi,
+    TaskToolInfoApi,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
     GOLDEN_TARGET_FRACTION,
@@ -48,6 +58,8 @@ from app.desktop.studio_server.utils.copilot_utils import (
     split_and_tag_batch_runs,
     split_pool_train_eval,
     tag_single_turn_drive_run,
+    task_capabilities_for_task,
+    task_info_payload,
     unrate_reviewed_batch_runs,
     warn_if_golden_below_target,
 )
@@ -1280,3 +1292,229 @@ class TestPersistEvalSlice:
         assert len(on_disk) == 2
         # Every persisted item is in the rollback ledger.
         assert saved_out == eval_inputs
+
+
+class TestTaskCapabilitiesForTask:
+    @pytest.fixture
+    def project_and_task(self, tmp_path):
+        project = Project(name="Capability Project", path=tmp_path / "project.kiln")
+        project.save_to_file()
+        task = Task(name="Capability Task", instruction="Do the thing.", parent=project)
+        task.save_to_file()
+        return project, task
+
+    async def test_reads_tools_and_skills_from_default_run_config(
+        self, project_and_task, give_task_one_tool_and_skill
+    ):
+        project, task = project_and_task
+        give_task_one_tool_and_skill(project, task)
+
+        tools, skills = await task_capabilities_for_task(task)
+
+        assert tools == [
+            TaskToolInfoApi(
+                name="add", description="Add two numbers together and return the result"
+            )
+        ]
+        assert skills == [
+            TaskSkillInfoApi(
+                name="refund-policy", description="How and when refunds are issued."
+            )
+        ]
+
+    async def test_collection_is_logged_with_counts(
+        self, project_and_task, give_task_one_tool_and_skill, caplog
+    ):
+        """Resolving tools can dial MCP servers, so the cost of collection is
+        logged rather than capped — it has to be visible in the logs."""
+        project, task = project_and_task
+        give_task_one_tool_and_skill(project, task)
+
+        with caplog.at_level(logging.INFO):
+            await task_capabilities_for_task(task)
+
+        assert "1 tools, 1 skills" in caplog.text
+
+    async def test_tool_order_follows_the_run_config(
+        self, project_and_task, agent_run_config_properties, set_default_run_config
+    ):
+        """Tools are reported in the order the run config lists them, so the
+        payload matches the surface the model is actually given."""
+        _, task = project_and_task
+        set_default_run_config(
+            task,
+            agent_run_config_properties(
+                tools_config=ToolsRunConfig(
+                    tools=["kiln_tool::multiply_numbers", "kiln_tool::add_numbers"]
+                )
+            ),
+        )
+
+        tools, _ = await task_capabilities_for_task(task)
+
+        assert [tool.name for tool in tools or []] == ["multiply", "add"]
+
+    async def test_no_default_run_config_is_not_collected(self, project_and_task):
+        """No default config means the capabilities are unknown, not empty."""
+        _, task = project_and_task
+        assert await task_capabilities_for_task(task) == (None, None)
+
+    async def test_dangling_default_run_config_id_is_not_collected(
+        self, project_and_task
+    ):
+        _, task = project_and_task
+        task.default_run_config_id = "does-not-exist"
+        task.save_to_file()
+        assert await task_capabilities_for_task(task) == (None, None)
+
+    async def test_unreadable_storage_degrades_to_not_collected(
+        self, project_and_task, caplog
+    ):
+        """Collection reads run configs and skills off disk. A corrupt or
+        forward-versioned file must degrade to the un-enriched prompt rather
+        than failing the whole spec-building request."""
+        _, task = project_and_task
+        task.default_run_config_id = "rc-1"
+        with patch.object(
+            type(task), "run_configs", side_effect=ValueError("corrupt run_config.kiln")
+        ):
+            with caplog.at_level(logging.WARNING):
+                result = await task_capabilities_for_task(task)
+
+        assert result == (None, None)
+        assert "corrupt run_config.kiln" in caplog.text
+
+    async def test_non_agent_run_config_has_no_capabilities(
+        self, project_and_task, set_default_run_config
+    ):
+        """An MCP run config carries no tools_config and loads no skills, so
+        its surface is genuinely empty rather than uncollected."""
+        _, task = project_and_task
+        set_default_run_config(
+            task,
+            McpRunConfigProperties(
+                tool_reference=MCPToolReference(tool_id="mcp::local::server::do_thing")
+            ),
+        )
+        assert await task_capabilities_for_task(task) == ([], [])
+
+    async def test_agent_config_without_tools_config_has_no_capabilities(
+        self, project_and_task, agent_run_config_properties, set_default_run_config
+    ):
+        _, task = project_and_task
+        set_default_run_config(task, agent_run_config_properties())
+        assert await task_capabilities_for_task(task) == ([], [])
+
+    async def test_skill_only_config_reports_skills_and_no_tools(
+        self,
+        project_and_task,
+        save_skill,
+        agent_run_config_properties,
+        set_default_run_config,
+    ):
+        """Skill ids live in the same tools list but must never be resolved as
+        tools — tool_from_id rejects them."""
+        project, task = project_and_task
+        skill = save_skill(project, "escalation", "When to escalate.")
+        set_default_run_config(
+            task,
+            agent_run_config_properties(
+                tools_config=ToolsRunConfig(tools=[f"kiln_tool::skill::{skill.id}"])
+            ),
+        )
+
+        tools, skills = await task_capabilities_for_task(task)
+
+        assert tools == []
+        assert skills == [
+            TaskSkillInfoApi(name="escalation", description="When to escalate.")
+        ]
+
+    async def test_unresolvable_tool_is_skipped(
+        self,
+        project_and_task,
+        agent_run_config_properties,
+        set_default_run_config,
+        caplog,
+    ):
+        """A broken tool reference must not take down spec building; the rest
+        of the surface is still reported."""
+        _, task = project_and_task
+        set_default_run_config(
+            task,
+            agent_run_config_properties(
+                tools_config=ToolsRunConfig(
+                    tools=["mcp::local::gone::vanished", "kiln_tool::add_numbers"]
+                )
+            ),
+        )
+
+        with caplog.at_level(logging.WARNING):
+            tools, _ = await task_capabilities_for_task(task)
+
+        assert [tool.name for tool in tools or []] == ["add"]
+        assert "mcp::local::gone::vanished" in caplog.text
+
+    async def test_skills_are_sorted_by_name(
+        self,
+        project_and_task,
+        save_skill,
+        agent_run_config_properties,
+        set_default_run_config,
+    ):
+        """The skill loader returns an unordered map; sorting keeps the same
+        task producing the same payload every call."""
+        project, task = project_and_task
+        zebra = save_skill(project, "zebra", "Last alphabetically.")
+        alpha = save_skill(project, "alpha", "First alphabetically.")
+        set_default_run_config(
+            task,
+            agent_run_config_properties(
+                tools_config=ToolsRunConfig(
+                    tools=[
+                        f"kiln_tool::skill::{zebra.id}",
+                        f"kiln_tool::skill::{alpha.id}",
+                    ]
+                )
+            ),
+        )
+
+        _, skills = await task_capabilities_for_task(task)
+
+        assert [skill.name for skill in skills or []] == ["alpha", "zebra"]
+
+
+class TestTaskInfoPayload:
+    """The single owner of capability-key omission on the wire."""
+
+    BASE: ClassVar[dict] = {
+        "task_prompt": "p",
+        "task_input_schema": "in",
+        "task_output_schema": "out",
+    }
+
+    def test_uncollected_capabilities_are_omitted_not_nulled(self):
+        """None means not collected, which the contract reads as an absent
+        key — sending an explicit null would change a payload that must stay
+        exactly as it was before capabilities existed."""
+        assert task_info_payload(TaskInfoApi(**self.BASE)) == self.BASE
+
+    def test_empty_capabilities_are_sent(self):
+        """[] says the task genuinely has none, which is worth telling the
+        model, so it must survive onto the wire."""
+        payload = task_info_payload(
+            TaskInfoApi(**self.BASE, task_tools=[], task_skills=[])
+        )
+        assert payload == {**self.BASE, "task_tools": [], "task_skills": []}
+
+    def test_each_side_is_omitted_independently(self):
+        payload = task_info_payload(
+            TaskInfoApi(
+                **self.BASE,
+                task_tools=[TaskToolInfoApi(name="add", description="Adds.")],
+            )
+        )
+        assert payload == {
+            **self.BASE,
+            "task_tools": [{"name": "add", "description": "Adds."}],
+        }

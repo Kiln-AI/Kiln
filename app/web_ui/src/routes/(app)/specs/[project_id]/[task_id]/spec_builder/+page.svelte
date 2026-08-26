@@ -349,6 +349,8 @@
       "/api/copilot/clarify_spec",
       {
         body: {
+          project_id,
+          task_id,
           target_task_info: {
             task_prompt: task_prompt_with_example,
             task_input_schema,
@@ -755,6 +757,8 @@
         "/api/copilot/refine_spec",
         {
           body: {
+            project_id,
+            task_id,
             target_task_info: {
               task_prompt: task_prompt_with_example,
               task_input_schema: task_input_schema,
@@ -844,6 +848,8 @@
       "/api/copilot/question_spec",
       {
         body: {
+          project_id,
+          task_id,
           target_task_info: {
             task_prompt: task_prompt_with_example,
             task_input_schema,

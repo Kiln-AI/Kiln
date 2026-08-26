@@ -112,6 +112,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     get_copilot_api_key,
     single_turn_drive_tags,
     tag_single_turn_drive_run,
+    task_capabilities_for_task,
 )
 from app.desktop.studio_server.utils.eval_builder_utils import (
     author_judge_prompt,
@@ -1528,12 +1529,17 @@ def connect_eval_builder_api(app: FastAPI):
         # a keyless caller gets a clean 401, not a deep upstream error.
         get_copilot_api_key()
         task = task_from_id(project_id, task_id)
+        # The task's tools and skills come from the task too, so the rubric can
+        # grade tool and skill use instead of guessing at it.
+        task_tools, task_skills = await task_capabilities_for_task(task)
         return await author_judge_prompt(
             target_specification=input.target_specification,
             target_task_prompt=input.target_task_prompt,
             trace_type=(
                 "multi_turn" if task.turn_mode == TurnMode.multiturn else "single_turn"
             ),
+            task_tools=task_tools,
+            task_skills=task_skills,
         )
 
     @app.post(

@@ -7,9 +7,11 @@ spec creation workflow.
 
 import logging
 import random
-from typing import TypeVar
+import time
+from typing import Any, TypeVar
 
 from fastapi import HTTPException
+from kiln_ai.adapters.adapter_registry import load_skills_for_task
 from kiln_ai.datamodel import ClaimReview, Feedback, FeedbackSource, Task, TaskRun
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.eval import (
@@ -19,6 +21,7 @@ from kiln_ai.datamodel.eval import (
     SingleTurnEvalInputData,
     UserMessage,
 )
+from kiln_ai.datamodel.run_config import as_kiln_agent_run_config
 from kiln_ai.datamodel.task_output import (
     DataSource,
     DataSourceType,
@@ -26,10 +29,12 @@ from kiln_ai.datamodel.task_output import (
     TaskOutput,
     TaskOutputRating,
 )
+from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX
 from kiln_ai.synthetic_user.parser import (
     SyntheticUserInfoParseError,
     parse_synthetic_user_info,
 )
+from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
@@ -50,6 +55,8 @@ from app.desktop.studio_server.api_models.copilot_models import (
     SampleApi,
     SyntheticDataGenerationSessionConfigApi,
     TaskInfoApi,
+    TaskSkillInfoApi,
+    TaskToolInfoApi,
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
 
@@ -146,6 +153,143 @@ def get_copilot_api_key() -> str:
     return api_key
 
 
+async def task_capabilities_for_task(
+    task: Task,
+) -> tuple[list[TaskToolInfoApi] | None, list[TaskSkillInfoApi] | None]:
+    """The tools and skills the task's DEFAULT run config gives the model.
+
+    Names and descriptions only: enough for the copilot prompts to reason about
+    what the task can do, without shipping tool parameter schemas or skill
+    bodies. Only the default run config is read — unioning across configs would
+    describe a capability surface no single run of the task actually has.
+
+    Returns (None, None) when the capabilities could not be collected (no
+    resolvable default run config, or the collection itself failed). Callers
+    must keep that distinct from ([], []), which means the task genuinely has
+    none.
+    """
+    started = time.monotonic()
+    try:
+        tools, skills = await _collect_task_capabilities(task)
+    except Exception:
+        # Collection reads run configs and skills off disk, so one corrupt or
+        # forward-versioned file would otherwise fail a whole spec-building
+        # request. Falling back to uncollected keeps the caller working with
+        # the prompt it got before capabilities existed.
+        logger.warning(
+            "Could not collect capabilities for task %s; continuing without them",
+            task.id,
+            exc_info=True,
+        )
+        return None, None
+
+    # Resolving a tool can dial its MCP server, so these callers now make
+    # network calls they never used to. Logged rather than capped: the cost
+    # should be visible before anyone decides what to do about it.
+    logger.info(
+        "Collected capabilities for task %s in %.0f ms: %s tools, %s skills",
+        task.id,
+        (time.monotonic() - started) * 1000,
+        "uncollected" if tools is None else len(tools),
+        "uncollected" if skills is None else len(skills),
+    )
+    return tools, skills
+
+
+async def _collect_task_capabilities(
+    task: Task,
+) -> tuple[list[TaskToolInfoApi] | None, list[TaskSkillInfoApi] | None]:
+    """Read the default run config's capability surface. See the caller for the
+    None vs [] contract; failures propagate to it."""
+    if not task.default_run_config_id:
+        return None, None
+    default_run_config = next(
+        (
+            run_config
+            for run_config in task.run_configs(readonly=True)
+            if run_config.id == task.default_run_config_id
+        ),
+        None,
+    )
+    if default_run_config is None:
+        return None, None
+
+    properties = default_run_config.run_config_properties
+    if properties.type != "kiln_agent":
+        # Other config types (e.g. MCP) carry no tools_config and load no
+        # skills, so their capability surface is genuinely empty, not unknown.
+        return [], []
+
+    tools_config = as_kiln_agent_run_config(properties).tools_config
+    tool_ids = tools_config.tools if tools_config is not None else None
+
+    tools: list[TaskToolInfoApi] = []
+    for tool_id in tool_ids or []:
+        # Skills ride in the same tools list but are resolved by the adapter,
+        # and tool_from_id raises on them. They are collected below instead.
+        if tool_id.startswith(SKILL_TOOL_ID_PREFIX):
+            continue
+        try:
+            tool = tool_from_id(tool_id, task)
+            tools.append(
+                TaskToolInfoApi(
+                    name=await tool.name(),
+                    description=await tool.description(),
+                )
+            )
+        except Exception:
+            # A tool reference that no longer resolves (a removed MCP server, a
+            # deleted code tool) must not take down spec building; the rest of
+            # the surface is still worth describing.
+            logger.warning(
+                "Skipping tool %s for task %s: could not resolve it",
+                tool_id,
+                task.id,
+                exc_info=True,
+            )
+
+    # Sorted by name so the same task always produces the same payload — the
+    # skill loader returns an unordered map.
+    skills = [
+        TaskSkillInfoApi(name=skill.name, description=skill.description)
+        for skill in sorted(
+            load_skills_for_task(task, properties).values(), key=lambda s: s.name
+        )
+    ]
+    return tools, skills
+
+
+def capability_payload_fields(
+    task_tools: list[TaskToolInfoApi] | None,
+    task_skills: list[TaskSkillInfoApi] | None,
+) -> dict[str, Any]:
+    """The capability keys to merge into an outgoing copilot payload.
+
+    A None side is omitted entirely rather than sent as null: an absent key is
+    how the wire contract says "not collected", and omitting keeps the payload
+    identical to what a caller without capabilities has always sent.
+    """
+    fields: dict[str, Any] = {}
+    if task_tools is not None:
+        fields["task_tools"] = [tool.model_dump() for tool in task_tools]
+    if task_skills is not None:
+        fields["task_skills"] = [skill.model_dump() for skill in task_skills]
+    return fields
+
+
+def task_info_payload(task_info: TaskInfoApi) -> dict[str, Any]:
+    """target_task_info as the wire wants it, for every copilot call.
+
+    One owner for the capability-key omission so no call site sends an explicit
+    null where the contract expects the key to be absent.
+    """
+    payload = task_info.model_dump(exclude={"task_tools", "task_skills"})
+    payload.update(
+        capability_payload_fields(task_info.task_tools, task_info.task_skills)
+    )
+    return payload
+
+
 async def generate_copilot_examples(
     api_key: str,
     target_task_info: TaskInfoApi,
@@ -167,7 +311,7 @@ async def generate_copilot_examples(
 
     generate_input = GenerateBatchInput.from_dict(
         {
-            "target_task_info": target_task_info.model_dump(),
+            "target_task_info": task_info_payload(target_task_info),
             "sdg_session_config": sdg_session_config.model_dump(),
             "target_specification": spec_definition,
             "num_samples_per_topic": NUM_SAMPLES_PER_TOPIC,
