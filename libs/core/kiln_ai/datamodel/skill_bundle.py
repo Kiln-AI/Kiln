@@ -223,7 +223,9 @@ def sweep_stale_skill_staging(project_file_paths: Iterable[Path | str]) -> None:
     for project_file_path in project_file_paths:
         try:
             staging_root = Path(project_file_path).parent / STAGING_DIR_NAME
-            if staging_root.is_dir():
+            # is_dir() follows symlinks: a symlinked staging root (e.g. synced
+            # in) must never redirect the sweep's deletions elsewhere.
+            if staging_root.is_dir() and not staging_root.is_symlink():
                 _sweep_stale_staging(staging_root)
                 _remove_staging_root_if_empty(staging_root)
         except OSError:
@@ -355,6 +357,15 @@ def create_skill_with_files(
                 "it and retry"
             ]
         ) from None
+    if staging_root.is_symlink():
+        # Never stage through a symlink: the atomic-rename guarantee (and the
+        # cleanup paths) assume the real directory lives in the project folder.
+        raise SkillBundleValidationError(
+            [
+                f"{STAGING_DIR_NAME!r} in the project folder is a symlink — "
+                "remove it and retry"
+            ]
+        )
     _sweep_stale_staging(staging_root)
     staging_dir = staging_root / f"skill-{uuid.uuid4().hex}"
     # parents=True: a concurrent install finishing at this moment may have

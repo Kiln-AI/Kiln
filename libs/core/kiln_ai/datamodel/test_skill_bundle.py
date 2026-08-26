@@ -177,6 +177,13 @@ class TestCreateSkillWithFiles:
         with pytest.raises(SkillBundleValidationError, match="remove it and retry"):
             create(project)
 
+    def test_symlinked_staging_root_rejected(self, project, tmp_path):
+        target = tmp_path / "elsewhere"
+        target.mkdir()
+        (project.path.parent / STAGING_DIR_NAME).symlink_to(target)
+        with pytest.raises(SkillBundleValidationError, match="symlink"):
+            create(project)
+
     def test_invalid_filename_oserror_becomes_validation_error(self, project):
         import errno as errno_mod
         from unittest.mock import patch
@@ -498,3 +505,24 @@ class TestSweepStaleSkillStaging:
         assert not stale.exists()
         # Empty root removed too
         assert not staging_root.exists()
+
+    def test_sweep_never_follows_symlinked_staging_root(self, project, tmp_path):
+        import os as os_mod
+        import time as time_mod
+
+        from kiln_ai.datamodel.skill_bundle import (
+            STALE_STAGING_AGE_SECS,
+            sweep_stale_skill_staging,
+        )
+
+        target = tmp_path / "victim"
+        target.mkdir()
+        aged = target / "skill-old"
+        aged.mkdir()
+        old_time = time_mod.time() - STALE_STAGING_AGE_SECS - 60
+        os_mod.utime(aged, (old_time, old_time))
+        (project.path.parent / STAGING_DIR_NAME).symlink_to(target)
+
+        sweep_stale_skill_staging([project.path])
+        # The symlink target is untouched
+        assert aged.exists()
