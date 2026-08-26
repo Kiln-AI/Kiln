@@ -1,6 +1,5 @@
 import base64
 import logging
-import threading
 from datetime import datetime
 from typing import Annotated, List, Literal
 
@@ -41,11 +40,6 @@ MAX_RESOURCE_CONTENT_BYTES = 10 * 1024 * 1024
 # core.
 MAX_FILE_CONTENT_CHARS = 800_000
 MAX_TOTAL_CONTENT_CHARS = 3_000_000
-
-# Skill installs run in FastAPI's threadpool (plain `def` handlers) so their
-# file I/O and fsyncs don't block the event loop; this lock restores the
-# serialization that makes the install-once name check race-free in-process.
-_skill_write_lock = threading.Lock()
 
 
 class SkillFileParam(BaseModel):
@@ -272,7 +266,7 @@ def connect_skill_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/skills", tags=["Skills"], openapi_extra=ALLOW_AGENT
     )
-    def create_skill(
+    async def create_skill(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -281,15 +275,14 @@ def connect_skill_api(app: FastAPI):
         project = project_from_id(project_id)
         decoded_files, decode_errors = _decode_files(skill_data.files)
         try:
-            with _skill_write_lock:
-                skill = create_skill_with_files(
-                    project,
-                    name=skill_data.name,
-                    description=skill_data.description,
-                    body=skill_data.body,
-                    files=decoded_files,
-                    extra_errors=decode_errors,
-                )
+            skill = create_skill_with_files(
+                project,
+                name=skill_data.name,
+                description=skill_data.description,
+                body=skill_data.body,
+                files=decoded_files,
+                extra_errors=decode_errors,
+            )
         except SkillBundleValidationError as e:
             raise HTTPException(status_code=422, detail="; ".join(e.errors)) from e
         return skill_to_response(skill)
@@ -299,7 +292,7 @@ def connect_skill_api(app: FastAPI):
         tags=["Skills"],
         openapi_extra=ALLOW_AGENT,
     )
-    def clone_skill_endpoint(
+    async def clone_skill_endpoint(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -319,14 +312,13 @@ def connect_skill_api(app: FastAPI):
                     detail=f"Source skill has no readable body; provide one: {e}",
                 ) from e
         try:
-            with _skill_write_lock:
-                skill = clone_skill(
-                    project,
-                    source,
-                    name=clone_data.name,
-                    description=clone_data.description,
-                    body=body,
-                )
+            skill = clone_skill(
+                project,
+                source,
+                name=clone_data.name,
+                description=clone_data.description,
+                body=body,
+            )
         except SkillBundleValidationError as e:
             raise HTTPException(status_code=422, detail="; ".join(e.errors)) from e
         return skill_to_response(skill)
@@ -336,7 +328,7 @@ def connect_skill_api(app: FastAPI):
         tags=["Skills"],
         openapi_extra=ALLOW_AGENT,
     )
-    def get_skill_resources(
+    async def get_skill_resources(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -355,7 +347,7 @@ def connect_skill_api(app: FastAPI):
         tags=["Skills"],
         openapi_extra=ALLOW_AGENT,
     )
-    def get_skill_resource_content(
+    async def get_skill_resource_content(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],

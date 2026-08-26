@@ -377,16 +377,17 @@ class TestCreateSkillWithFiles:
         assert response.status_code == 422
         assert "base64" in response.text
 
-    def test_create_duplicate_name_rejected(
+    def test_create_duplicate_name_allowed(
         self, client, test_project, mock_project_from_id, sample_skill_data, saved_skill
     ):
+        # Coexisting versions of a skill share a name and differ by id.
         sample_skill_data["name"] = saved_skill.name
         response = client.post(
             f"/api/projects/{test_project.id}/skills",
             json=sample_skill_data,
         )
-        assert response.status_code == 422
-        assert "install-once" in response.text
+        assert response.status_code == 200
+        assert response.json()["id"] != saved_skill.id
 
 
 class TestCloneSkillEndpoint:
@@ -432,7 +433,7 @@ class TestCloneSkillEndpoint:
         )
         assert response.status_code == 404
 
-    def test_clone_duplicate_name_rejected(
+    def test_clone_may_reuse_source_name(
         self, client, test_project, mock_project_from_id, saved_skill_with_resources
     ):
         response = client.post(
@@ -442,8 +443,8 @@ class TestCloneSkillEndpoint:
                 "description": "A clone.",
             },
         )
-        assert response.status_code == 422
-        assert "install-once" in response.text
+        assert response.status_code == 200
+        assert response.json()["id"] != saved_skill_with_resources.id
 
 
 class TestSkillResources:
@@ -536,11 +537,9 @@ class TestResourceEdgeCases:
         assert "UTF-8" in response.text or "unicode" in response.text.lower()
 
     def test_decode_and_validation_errors_reported_together(
-        self, client, test_project, mock_project_from_id, sample_skill_data, saved_skill
+        self, client, test_project, mock_project_from_id, sample_skill_data
     ):
-        # One request, one 422 carrying every failure: bad base64, bad path,
-        # and a duplicate name.
-        sample_skill_data["name"] = saved_skill.name
+        # One request, one 422 carrying every failure: bad base64 and bad path.
         sample_skill_data["files"] = [
             {"path": "assets/a.png", "content": "not base64!!!", "encoding": "base64"},
             {"path": "scripts/run.py", "content": "# a script"},
@@ -552,7 +551,6 @@ class TestResourceEdgeCases:
         assert response.status_code == 422
         assert "base64" in response.text
         assert "must start with" in response.text
-        assert "install-once" in response.text
 
     def test_wrapped_base64_accepted(
         self, client, test_project, mock_project_from_id, sample_skill_data

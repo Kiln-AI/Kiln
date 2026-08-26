@@ -131,9 +131,15 @@ class Skill(KilnParentedModel):
             raise ValueError(
                 f"Resource path must start with 'references/' or 'assets/' followed by a filename: {prefixed_path!r}"
             )
-        base_dir = (
-            self.references_dir() if prefix == "references" else self.assets_dir()
-        )
+        # Explicit per-directory mapping — never fall back to a default dir, so
+        # a future addition to RESOURCE_DIR_NAMES fails loudly here instead of
+        # silently reading the wrong directory.
+        if prefix == "references":
+            base_dir = self.references_dir()
+        elif prefix == "assets":
+            base_dir = self.assets_dir()
+        else:
+            raise ValueError(f"Resource directory {prefix!r} has no reader configured")
         return base_dir, relative_path
 
     def read_resource_text(self, prefixed_path: str) -> str:

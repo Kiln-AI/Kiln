@@ -32,6 +32,9 @@ ehthumbs.db
 # Linux
 *~
 .directory
+
+# Kiln transient dirs
+.skill_staging/
 """
 
 DEFAULT_REMOTE_NAME = "origin"

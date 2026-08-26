@@ -6,9 +6,10 @@ then committed with a single os.rename. No observer — the studio server reads
 disk live — can ever see a partial skill.
 
 Skills are install-once: iteration happens by creating a new skill (e.g. a
-clone with a new name), never by mutating an installed one. Stored eval
-results that reference a skill therefore stay valid, since drive fingerprints
-don't cover skill files.
+clone), never by mutating an installed one. Stored eval results that
+reference a skill therefore stay valid, since drive fingerprints don't cover
+skill files. Names may repeat across skills — coexisting versions of a skill
+share a name and differ by id — so identity is always the id.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ import time
 import unicodedata
 import uuid
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional
 
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.skill import (
@@ -196,28 +197,6 @@ def path_collision_errors(paths: list[str]) -> list[str]:
     return errors
 
 
-def _existing_skill_name_conflict(project: Project, name: str) -> str | None:
-    """Return an error message if the name is already taken, else None.
-
-    Lenient to unreadable sibling skill files (e.g. written by a newer Kiln
-    version and synced in) — those can't be name-checked but must not make
-    every create fail.
-    """
-    existing, _load_errors = Skill.all_children_of_parent_path_with_errors(
-        project.path, readonly=True
-    )
-    for skill in existing:
-        if skill.name == name:
-            archived_note = (
-                " (an archived skill has this name)" if skill.is_archived else ""
-            )
-            return (
-                f"skill name {name!r} already exists{archived_note} — skills are "
-                "install-once; pick a new name (a new version is a new skill)"
-            )
-    return None
-
-
 def _sweep_stale_staging(staging_root: Path) -> None:
     """Best-effort cleanup of staging dirs orphaned by a hard crash.
 
@@ -231,6 +210,24 @@ def _sweep_stale_staging(staging_root: Path) -> None:
                 shutil.rmtree(entry, ignore_errors=True)
     except OSError:
         pass
+
+
+def sweep_stale_skill_staging(project_file_paths: Iterable[Path | str]) -> None:
+    """Sweep crash-orphaned skill staging debris for the given projects.
+
+    Intended for app startup, so abandoned drafts never accumulate in synced
+    project folders. Best-effort: never raises, never touches a staging dir
+    younger than STALE_STAGING_AGE_SECS (it could be another process's live
+    install).
+    """
+    for project_file_path in project_file_paths:
+        try:
+            staging_root = Path(project_file_path).parent / STAGING_DIR_NAME
+            if staging_root.is_dir():
+                _sweep_stale_staging(staging_root)
+                _remove_staging_root_if_empty(staging_root)
+        except OSError:
+            continue
 
 
 def _fsync_best_effort(path: Path | str) -> None:
@@ -330,9 +327,6 @@ def create_skill_with_files(
             )
     if not body or not body.strip():
         errors.append("body must be non-empty")
-    name_conflict = _existing_skill_name_conflict(project, name)
-    if name_conflict is not None:
-        errors.append(name_conflict)
     if errors:
         raise SkillBundleValidationError(errors)
 

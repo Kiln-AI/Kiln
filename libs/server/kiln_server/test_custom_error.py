@@ -280,3 +280,4 @@ class TestNestedDetailSanitization:
         body = response.json()
         assert body["message"]["count"] == 1
         assert "name.txt" in body["message"]["failed_files"][0]
+        assert "\ud800" not in body["message"]["failed_files"][0]

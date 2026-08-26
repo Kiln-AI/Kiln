@@ -102,17 +102,20 @@ class TestCreateSkillWithFiles:
         assert skill.read_resource_bytes("assets/logo.png") == b"\x89PNG\x00binary"
         assert skill.read_reference("api/endpoints.md") == "# Endpoints"
 
-    def test_duplicate_name_rejected(self, project):
-        create(project)
-        with pytest.raises(SkillBundleValidationError, match="install-once"):
-            create(project)
+    def test_same_name_versions_coexist(self, project):
+        # Names may repeat: coexisting versions of a skill share a name and
+        # differ by id (run configs reference skills by id).
+        first = create(project)
+        second = create(project)
+        assert first.id != second.id
+        names = [s.name for s in project.skills(readonly=True)]
+        assert names == ["my-skill", "my-skill"]
 
     def test_errors_accumulate(self, project):
-        create(project, name="taken")
         with pytest.raises(SkillBundleValidationError) as exc_info:
             create_skill_with_files(
                 project,
-                name="taken",
+                name="my-skill",
                 description="A test skill.",
                 body="  ",
                 files={
@@ -121,11 +124,10 @@ class TestCreateSkillWithFiles:
                 },
             )
         errors = exc_info.value.errors
-        assert len(errors) == 4
+        assert len(errors) == 3
         assert any("must start with" in e for e in errors)
         assert any("not UTF-8" in e for e in errors)
         assert any("body must be non-empty" in e for e in errors)
-        assert any("install-once" in e for e in errors)
 
     def test_file_too_large_rejected(self, project):
         files = {"assets/big.bin": b"x" * (MAX_RESOURCE_FILE_BYTES + 1)}
@@ -279,14 +281,6 @@ class TestCreateSkillWithFiles:
         (broken_dir / "skill.kiln").write_text("not json{", encoding="utf-8")
         skill = create(project)
         assert skill.name == "my-skill"
-
-    def test_archived_name_conflict_mentions_archived(self, project):
-        skill = create(project)
-        loaded = Skill.load_from_file(skill.path)
-        loaded.is_archived = True
-        loaded.save_to_file()
-        with pytest.raises(SkillBundleValidationError, match="archived skill"):
-            create(project)
 
     def test_stale_staging_swept_fresh_staging_kept(self, project):
         import os as os_mod
@@ -471,12 +465,36 @@ class TestCloneSkill:
         assert clone.body() == "New body."
         assert Skill.load_from_file(clone.path).id != source.id
 
-    def test_clone_rejects_duplicate_name(self, project, source):
-        with pytest.raises(SkillBundleValidationError, match="install-once"):
-            clone_skill(
-                project,
-                source,
-                name="source-skill",
-                description="A clone.",
-                body="New body.",
-            )
+    def test_clone_may_reuse_source_name(self, project, source):
+        clone = clone_skill(
+            project,
+            source,
+            name="source-skill",
+            description="A clone.",
+            body="New body.",
+        )
+        assert clone.id != source.id
+        assert clone.name == source.name
+
+
+class TestSweepStaleSkillStaging:
+    def test_sweeps_stale_keeps_fresh_across_projects(self, project):
+        import os as os_mod
+        import time as time_mod
+
+        from kiln_ai.datamodel.skill_bundle import (
+            STALE_STAGING_AGE_SECS,
+            sweep_stale_skill_staging,
+        )
+
+        staging_root = project.path.parent / STAGING_DIR_NAME
+        staging_root.mkdir()
+        stale = staging_root / "skill-stale"
+        stale.mkdir()
+        old_time = time_mod.time() - STALE_STAGING_AGE_SECS - 60
+        os_mod.utime(stale, (old_time, old_time))
+
+        sweep_stale_skill_staging([project.path, "/nonexistent/project.kiln"])
+        assert not stale.exists()
+        # Empty root removed too
+        assert not staging_root.exists()
