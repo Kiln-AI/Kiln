@@ -64,6 +64,10 @@ def _unsafe_path_error(path: str) -> str | None:
         return f"resource path must use forward slashes: {path!r}"
     if "\x00" in path:
         return f"resource path contains a null byte: {path!r}"
+    try:
+        path.encode("utf-8")
+    except UnicodeEncodeError:
+        return f"resource path contains characters that cannot be encoded: {path!r}"
     if path.startswith("/"):
         return f"resource path must be relative: {path!r}"
     if path.endswith("/"):
@@ -86,6 +90,10 @@ def _unsafe_copy_path_error(path: str) -> str | None:
         return "resource path cannot be empty"
     if "\x00" in path:
         return f"resource path contains a null byte: {path!r}"
+    try:
+        os.fsencode(path)
+    except UnicodeEncodeError:
+        return f"resource path contains characters that cannot be encoded: {path!r}"
     if path.startswith("/"):
         return f"resource path must be relative: {path!r}"
     for segment in path.split("/"):
@@ -138,7 +146,7 @@ def validate_bundle_files(files: Dict[str, bytes]) -> list[str]:
         total_bytes += len(content)
         if len(content) > MAX_RESOURCE_FILE_BYTES:
             errors.append(
-                f"file too large: {path} is {len(content)} bytes (cap {MAX_RESOURCE_FILE_BYTES})"
+                f"file too large: {path!r} is {len(content)} bytes (cap {MAX_RESOURCE_FILE_BYTES})"
             )
         # The skill tool decodes references as UTF-8 at runtime — reject at
         # install time, not at runtime. Assets may be binary.
@@ -146,7 +154,7 @@ def validate_bundle_files(files: Dict[str, bytes]) -> list[str]:
             try:
                 content.decode("utf-8")
             except UnicodeDecodeError:
-                errors.append(f"references file is not UTF-8 text: {path}")
+                errors.append(f"references file is not UTF-8 text: {path!r}")
     if total_bytes > MAX_BUNDLE_BYTES:
         errors.append(
             f"bundle too large: {total_bytes} bytes total (cap {MAX_BUNDLE_BYTES})"
@@ -225,25 +233,28 @@ def _sweep_stale_staging(staging_root: Path) -> None:
         pass
 
 
+def _fsync_best_effort(path: Path | str) -> None:
+    """fsync a file or directory without ever failing the install: on Windows,
+    fsync of a read-only fd and of directories is unsupported, and durability
+    must never break creation itself."""
+    try:
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError:
+        pass
+
+
 def _fsync_tree(root: Path) -> None:
     """Flush staged writes to stable storage before the commit rename, so a
     power loss after install can never leave truncated files behind the
-    'fully formed' promise. Best-effort throughout: on Windows, fsync of a
-    read-only fd and of directories is unsupported, and durability must never
-    break creation itself."""
+    'fully formed' promise. Best-effort throughout."""
     for dirpath, _dirs, files in os.walk(root):
-        for name in [*files, None]:
-            try:
-                fd = os.open(
-                    dirpath if name is None else os.path.join(dirpath, name),
-                    os.O_RDONLY,
-                )
-                try:
-                    os.fsync(fd)
-                finally:
-                    os.close(fd)
-            except OSError:
-                pass
+        for name in files:
+            _fsync_best_effort(os.path.join(dirpath, name))
+        _fsync_best_effort(dirpath)
 
 
 def _remove_staging_root_if_empty(staging_root: Path) -> None:
@@ -393,8 +404,17 @@ def create_skill_with_files(
                 [f"skill directory already exists: {final_dir.name}"]
             )
         # The commit point: before this rename the skill doesn't exist
-        # anywhere visible; after it, it exists fully formed.
+        # anywhere visible; after it, it exists fully formed. Flushing the
+        # parent directory entry makes the reported success durable — without
+        # it a power loss could roll the rename back after the 200.
         os.rename(staging_dir, final_dir)
+        _fsync_best_effort(final_dir.parent)
+    except UnicodeEncodeError as e:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        _remove_staging_root_if_empty(staging_root)
+        # A path the filesystem encoding rejects that slipped past validation
+        # is caller-fixable, not a crash.
+        raise SkillBundleValidationError([f"could not write skill files: {e}"]) from e
     except OSError as e:
         shutil.rmtree(staging_dir, ignore_errors=True)
         _remove_staging_root_if_empty(staging_root)

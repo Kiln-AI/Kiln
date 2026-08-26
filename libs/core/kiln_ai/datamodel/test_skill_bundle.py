@@ -63,6 +63,7 @@ class TestValidateResourcePath:
             ("references/./guide.md", "invalid segment"),
             ("references//guide.md", "invalid segment"),
             ("assets/foo\x00bar", "null byte"),
+            ("references/a\ud800.md", "cannot be encoded"),
             ("references/bad:name.md", "not allowed on Windows"),
             ("references/bad?.md", "not allowed on Windows"),
             ("references/a\tb.md", "not allowed on Windows"),
