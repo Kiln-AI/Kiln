@@ -308,11 +308,15 @@ def create_skill_with_files(
     if copy_files:
         for overlap in sorted(files.keys() & copy_files.keys()):
             errors.append(f"path appears in both files and copy_files: {overlap!r}")
-        errors.extend(
-            error
-            for error in path_collision_errors([*files, *copy_files])
-            if error not in errors
-        )
+        if validate_files:
+            # Skipped for on-disk copies (clone): files that coexist on the
+            # source filesystem can coexist on the destination, even when
+            # they would collide on a case-insensitive filesystem.
+            errors.extend(
+                error
+                for error in path_collision_errors([*files, *copy_files])
+                if error not in errors
+            )
     if not body or not body.strip():
         errors.append("body must be non-empty")
     name_conflict = _existing_skill_name_conflict(project, name)
@@ -348,7 +352,9 @@ def create_skill_with_files(
         ) from None
     _sweep_stale_staging(staging_root)
     staging_dir = staging_root / f"skill-{uuid.uuid4().hex}"
-    staging_dir.mkdir()
+    # parents=True: a concurrent install finishing at this moment may have
+    # removed the just-created (empty) staging root.
+    staging_dir.mkdir(parents=True)
     try:
         skill.path = staging_dir / Skill.base_filename()
         skill.save_to_file()

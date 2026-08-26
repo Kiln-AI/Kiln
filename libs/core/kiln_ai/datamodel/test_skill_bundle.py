@@ -432,6 +432,23 @@ class TestCloneSkill:
         assert (clone.path.parent / "assets" / "output").is_dir()
         assert (clone.path.parent / "scripts").is_dir()
 
+    def test_clone_allows_case_variant_files_on_case_sensitive_fs(
+        self, project, source
+    ):
+        # Hand-added files differing only by case coexist on a case-sensitive
+        # filesystem; cloning onto the same filesystem must not reject them.
+        (source.references_dir() / "Notes.md").write_text("A", encoding="utf-8")
+        (source.references_dir() / "notes.md").write_text("b", encoding="utf-8")
+        clone = clone_skill(
+            project,
+            source,
+            name="cloned-skill",
+            description="A clone.",
+            body="New body.",
+        )
+        assert clone.read_reference("Notes.md") == "A"
+        assert clone.read_reference("notes.md") == "b"
+
     def test_clone_rejects_duplicate_name(self, project, source):
         with pytest.raises(SkillBundleValidationError, match="install-once"):
             clone_skill(

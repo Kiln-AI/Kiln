@@ -46,6 +46,12 @@ def connect_custom_errors(app: FastAPI):
                 exc_info=exc,
             )
 
+        def safe_str(value) -> str:
+            # Invalid request input can contain lone surrogates, which
+            # JSONResponse cannot encode as UTF-8 — echoing them back verbatim
+            # would turn this 422 into a 500.
+            return str(value).encode("utf-8", errors="replace").decode("utf-8")
+
         # Write user friendly error messages
         error_messages = []
         for error in exc.errors():
@@ -56,13 +62,7 @@ def connect_custom_errors(app: FastAPI):
             if "String should match pattern '^[A-Za-z0-9 _-]+$'" == message:
                 message = "must consist of only letters, numbers, spaces, hyphens, and underscores"
 
-            error_messages.append(f"{format_error_loc(loc)}: {message}")
-
-        def safe_str(value) -> str:
-            # Invalid request input can contain lone surrogates, which
-            # JSONResponse cannot encode as UTF-8 — echoing them back verbatim
-            # would turn this 422 into a 500.
-            return str(value).encode("utf-8", errors="replace").decode("utf-8")
+            error_messages.append(safe_str(f"{format_error_loc(loc)}: {message}"))
 
         def serialize_error(error):
             return {

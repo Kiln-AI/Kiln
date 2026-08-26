@@ -32,9 +32,10 @@ logger = logging.getLogger(__name__)
 MAX_RESOURCE_CONTENT_BYTES = 10 * 1024 * 1024
 
 # Per-file request content cap, checked at parse time so oversized payloads
-# are rejected before being buffered and decoded. Slightly above the base64
-# encoding of MAX_RESOURCE_FILE_BYTES; the byte cap is enforced in core.
-MAX_FILE_CONTENT_CHARS = 700_000
+# are rejected before being buffered and decoded. Sized above the base64
+# encoding of MAX_RESOURCE_FILE_BYTES including 76-column MIME line wrapping;
+# the real byte cap is enforced in core.
+MAX_FILE_CONTENT_CHARS = 800_000
 
 
 class SkillFileParam(BaseModel):
