@@ -136,6 +136,16 @@ class Skill(KilnParentedModel):
         )
         return base_dir, relative_path
 
+    def read_resource_text(self, prefixed_path: str) -> str:
+        """Read a resource file as UTF-8 text.
+
+        prefixed_path must start with 'references/' or 'assets/'. Raises ValueError
+        for invalid paths, path traversal, or non-text content; FileNotFoundError
+        if missing.
+        """
+        base_dir, relative_path = self._resource_base_dir(prefixed_path)
+        return self._read_resource(base_dir, relative_path)
+
     def read_resource_bytes(
         self, prefixed_path: str, max_bytes: int | None = None
     ) -> bytes:

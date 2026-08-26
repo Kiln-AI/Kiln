@@ -72,6 +72,26 @@ def _unsafe_path_error(path: str) -> str | None:
     return None
 
 
+def _unsafe_copy_path_error(path: str) -> str | None:
+    """Containment-only checks for paths of files copied from disk.
+
+    Unlike _unsafe_path_error this allows backslashes: on POSIX a backslash is
+    a legal character inside a filename, and hand-added files must stay
+    cloneable. Walk-derived paths never use backslash as a separator
+    (as_posix normalizes), so containment is all that matters here.
+    """
+    if not path or not path.strip():
+        return "resource path cannot be empty"
+    if "\x00" in path:
+        return f"resource path contains a null byte: {path!r}"
+    if path.startswith("/"):
+        return f"resource path must be relative: {path!r}"
+    for segment in path.split("/"):
+        if segment in ("", ".", ".."):
+            return f"resource path contains an invalid segment: {path!r}"
+    return None
+
+
 def _segment_portability_error(segment: str, path: str) -> str | None:
     """Reject path segments that Windows cannot represent."""
     if any(c in _WINDOWS_FORBIDDEN_CHARS or ord(c) < 0x20 for c in segment):
@@ -189,6 +209,28 @@ def _sweep_stale_staging(staging_root: Path) -> None:
         pass
 
 
+def _fsync_tree(root: Path) -> None:
+    """Flush staged writes to stable storage before the commit rename, so a
+    power loss after install can never leave truncated files behind the
+    'fully formed' promise. Directory fsync is best-effort (unsupported on
+    Windows)."""
+    for dirpath, _dirs, files in os.walk(root):
+        for filename in files:
+            fd = os.open(os.path.join(dirpath, filename), os.O_RDONLY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        try:
+            dir_fd = os.open(dirpath, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:
+            pass
+
+
 def _remove_staging_root_if_empty(staging_root: Path) -> None:
     """Remove the hidden staging root so it doesn't linger in a synced project
     folder. A non-empty root (a concurrent install's live staging) is left."""
@@ -206,6 +248,7 @@ def create_skill_with_files(
     files: Optional[Dict[str, bytes]] = None,
     copy_files: Optional[Dict[str, Path]] = None,
     validate_files: bool = True,
+    extra_errors: Optional[list[str]] = None,
 ) -> Skill:
     """Create a skill atomically, with optional resource files.
 
@@ -214,28 +257,31 @@ def create_skill_with_files(
     into the bundle without loading them into memory — clone uses it.
     Raises SkillBundleValidationError with every failure accumulated, so a
     caller fixes the bundle once rather than one round trip per defect.
+    extra_errors lets a caller merge failures it found upstream (e.g. request
+    decoding) into that single accumulated report.
 
     validate_files=False skips the content rules (allowed roots, size caps,
     UTF-8 references) for files that already exist on disk — clone uses it so
     a skill with hand-added oversized or unusual files can still be cloned.
-    Structural write-safety checks always run, on both files and copy_files.
+    Containment checks always run, on both files and copy_files.
     """
     if project.path is None:
         raise ValueError("Project must be saved before creating skills")
     files = files or {}
     copy_files = copy_files or {}
 
+    errors = list(extra_errors or [])
     if validate_files:
-        errors = validate_bundle_files(files)
+        errors.extend(validate_bundle_files(files))
     else:
-        errors = [
+        errors.extend(
             error
             for error in (_unsafe_path_error(path) for path in files)
             if error is not None
-        ]
+        )
     errors.extend(
         error
-        for error in (_unsafe_path_error(path) for path in copy_files)
+        for error in (_unsafe_copy_path_error(path) for path in copy_files)
         if error is not None
     )
     if not body or not body.strip():
@@ -259,7 +305,18 @@ def create_skill_with_files(
     # Stage outside skills/ so a half-written bundle is never enumerable as a
     # child, but on the same filesystem so the commit rename is atomic.
     staging_root = project.path.parent / STAGING_DIR_NAME
-    staging_root.mkdir(exist_ok=True)
+    try:
+        staging_root.mkdir(exist_ok=True)
+    except FileExistsError:
+        # A regular file squatting on the staging dir name (e.g. a sync
+        # conflict artifact) would otherwise break every install with a 500.
+        raise SkillBundleValidationError(
+            [
+                f"a file named {STAGING_DIR_NAME!r} exists in the project "
+                "folder where the skill staging directory belongs — remove "
+                "it and retry"
+            ]
+        ) from None
     _sweep_stale_staging(staging_root)
     staging_dir = staging_root / f"skill-{uuid.uuid4().hex}"
     staging_dir.mkdir()
@@ -274,7 +331,13 @@ def create_skill_with_files(
         for relative_path, source_path in copy_files.items():
             destination = staging_dir / relative_path
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source_path, destination)
+            try:
+                shutil.copyfile(source_path, destination)
+            except FileNotFoundError:
+                # Source vanished since it was listed (e.g. the user is
+                # editing the folder directly) — copy what still exists.
+                continue
+        _fsync_tree(staging_dir)
         final_dir.parent.mkdir(parents=True, exist_ok=True)
         if final_dir.exists():
             raise SkillBundleValidationError(

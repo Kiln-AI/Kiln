@@ -531,6 +531,25 @@ class TestResourceEdgeCases:
         assert response.status_code == 422
         assert "UTF-8" in response.text
 
+    def test_decode_and_validation_errors_reported_together(
+        self, client, test_project, mock_project_from_id, sample_skill_data, saved_skill
+    ):
+        # One request, one 422 carrying every failure: bad base64, bad path,
+        # and a duplicate name.
+        sample_skill_data["name"] = saved_skill.name
+        sample_skill_data["files"] = [
+            {"path": "assets/a.png", "content": "not base64!!!", "encoding": "base64"},
+            {"path": "scripts/run.py", "content": "print()"},
+        ]
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 422
+        assert "base64" in response.text
+        assert "must start with" in response.text
+        assert "install-once" in response.text
+
     def test_resource_content_over_size_limit_413(
         self, client, test_project, mock_project_from_id, saved_skill
     ):

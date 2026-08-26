@@ -143,8 +143,14 @@ def _get_skill(project_id: str, skill_id: str) -> Skill:
     return skill
 
 
-def _decode_files(files: List[SkillFileParam]) -> dict[str, bytes]:
-    """Decode request files to bytes, keyed by bundle-relative path."""
+def _decode_files(
+    files: List[SkillFileParam],
+) -> tuple[dict[str, bytes], list[str]]:
+    """Decode request files to bytes, keyed by bundle-relative path.
+
+    Returns (decoded, errors). Errors are accumulated, not raised, so they can
+    join the bundle validation errors in one report to the caller.
+    """
     errors: list[str] = []
     decoded: dict[str, bytes] = {}
     for file in files:
@@ -164,9 +170,7 @@ def _decode_files(files: List[SkillFileParam]) -> dict[str, bytes]:
                 decoded[file.path] = base64.b64decode(file.content, validate=True)
             except (binascii.Error, ValueError):
                 errors.append(f"file content is not valid base64: {file.path!r}")
-    if errors:
-        raise HTTPException(status_code=422, detail="; ".join(errors))
-    return decoded
+    return decoded, errors
 
 
 def connect_skill_api(app: FastAPI):
@@ -235,13 +239,15 @@ def connect_skill_api(app: FastAPI):
         skill_data: SkillCreationRequest,
     ) -> SkillResponse:
         project = project_from_id(project_id)
+        decoded_files, decode_errors = _decode_files(skill_data.files)
         try:
             skill = create_skill_with_files(
                 project,
                 name=skill_data.name,
                 description=skill_data.description,
                 body=skill_data.body,
-                files=_decode_files(skill_data.files),
+                files=decoded_files,
+                extra_errors=decode_errors,
             )
         except SkillBundleValidationError as e:
             raise HTTPException(status_code=422, detail="; ".join(e.errors)) from e

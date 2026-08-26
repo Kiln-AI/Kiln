@@ -167,6 +167,13 @@ class TestCreateSkillWithFiles:
         staging_root = project.path.parent / STAGING_DIR_NAME
         assert not staging_root.exists()
 
+    def test_staging_root_squatted_by_file_is_clear_error(self, project):
+        (project.path.parent / STAGING_DIR_NAME).write_text(
+            "sync conflict artifact", encoding="utf-8"
+        )
+        with pytest.raises(SkillBundleValidationError, match="remove it and retry"):
+            create(project)
+
     def test_invalid_filename_oserror_becomes_validation_error(self, project):
         import errno as errno_mod
         from unittest.mock import patch
@@ -318,6 +325,44 @@ class TestCloneSkill:
         assert (clone_dir / "docs.md").read_text(encoding="utf-8") == "# Docs"
         # skill.kiln and SKILL.md are regenerated, never copied
         assert Skill.load_from_file(clone.path).id != source.id
+
+    def test_clone_allows_backslash_in_filename(self, project, source):
+        # A backslash is a legal filename character on POSIX; hand-added
+        # files must not make a skill uncloneable.
+        weird = source.references_dir() / "notes\\draft.md"
+        weird.write_text("draft", encoding="utf-8")
+        clone = clone_skill(
+            project,
+            source,
+            name="cloned-skill",
+            description="A clone.",
+            body="New body.",
+        )
+        assert clone.path is not None
+        assert (clone.path.parent / "references" / "notes\\draft.md").read_text(
+            encoding="utf-8"
+        ) == "draft"
+
+    def test_clone_skips_file_vanished_mid_copy(self, project, source):
+        import shutil as shutil_mod
+        from unittest.mock import patch
+
+        real_copyfile = shutil_mod.copyfile
+
+        def flaky_copyfile(src, dst, **kwargs):
+            if str(src).endswith("guide.md"):
+                raise FileNotFoundError(src)
+            return real_copyfile(src, dst, **kwargs)
+
+        with patch("kiln_ai.datamodel.skill_bundle.shutil.copyfile", flaky_copyfile):
+            clone = clone_skill(
+                project,
+                source,
+                name="cloned-skill",
+                description="A clone.",
+                body="New body.",
+            )
+        assert clone.list_resource_files() == ["assets/logo.png"]
 
     def test_clone_rejects_duplicate_name(self, project, source):
         with pytest.raises(SkillBundleValidationError, match="install-once"):

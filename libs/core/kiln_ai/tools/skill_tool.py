@@ -102,24 +102,8 @@ class SkillTool(KilnToolInterface):
                 output=f"Error: Resource path must start with one of: {', '.join(ALLOWED_RESOURCE_PREFIXES)}"
             )
 
-        parts = resource.split("/", 1)
-        if len(parts) != 2 or not parts[1]:
-            return ToolCallResult(
-                output="Error: Resource path must include a filename after the directory prefix."
-            )
-
-        prefix, relative_path = parts
-
         try:
-            if prefix == "references":
-                content = skill.read_reference(relative_path)
-            elif prefix == "assets":
-                content = skill.read_asset(relative_path)
-            else:
-                return ToolCallResult(
-                    output=f"Error: Unknown resource directory: {prefix}"
-                )
-            return ToolCallResult(output=content)
+            return ToolCallResult(output=skill.read_resource_text(resource))
         except FileNotFoundError:
             return ToolCallResult(output=f"Error: Resource not found: {resource}")
         except ValueError as e:
