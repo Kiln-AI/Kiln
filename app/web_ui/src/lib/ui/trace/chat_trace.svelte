@@ -29,9 +29,10 @@
   // component scrolls to it, and any collapsed thinking/tool bubble it lives in
   // auto-expands. When null (the default — e.g. the dataset run page), the
   // render is unchanged. `start`/`end` index the block's RAW text, matching the
-  // flattener the citation resolved against; content and reasoning nodes render
-  // that raw text (markdown is dropped for the marked node only) so the offsets
-  // line up, while tool blocks just expand + scroll to the cited bubble.
+  // flattener the citation resolved against; content, reasoning, and
+  // tool-result nodes render that raw text (markdown/pretty-print is dropped
+  // for the marked node only) so the offsets line up, while tool-call blocks
+  // just expand + scroll to the cited bubble.
   export let highlight: {
     trace_index: number
     kind: "content" | "reasoning" | "tool_calls" | "tool_result"
@@ -53,6 +54,48 @@
       mark: text.slice(start, end),
       after: text.slice(end),
     }
+  }
+
+  // The raw text a tool-result citation's offsets index — the same unwrap
+  // the citation mapper verified byte-for-byte against the flattened
+  // transcript: a string `output` field of the Kiln tool JSON envelope, or
+  // the message content as-is. Null when the displayed rendering diverges
+  // from that raw text — the mark cannot be placed there and the bubble
+  // stays the scroll target instead. Must track content_from_message's
+  // unwrapping: any shape it displays differently from the flattener's raw
+  // text has to return null here.
+  function tool_result_citation_text(message: TraceMessage): string | null {
+    if (
+      !("content" in message) ||
+      typeof message.content !== "string" ||
+      !message.content
+    ) {
+      return null
+    }
+    try {
+      const parsed = JSON.parse(message.content)
+      if (parsed && typeof parsed === "object" && "output" in parsed) {
+        // Non-string output can't be cited (the flattener emits no block
+        // for it), so the null is defensive symmetry with the display's
+        // JSON.stringify branch, not a reachable divergence.
+        return typeof parsed.output === "string" ? parsed.output : null
+      }
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        parsed.isError === true &&
+        "error" in parsed
+      ) {
+        // The chat displays the unwrapped error while citation offsets
+        // index the raw JSON — a mark in either would be misplaced. An
+        // isError envelope WITHOUT an error field displays as the raw
+        // JSON, which the offsets index, so it falls through and marks.
+        return null
+      }
+    } catch (_) {
+      // Not JSON — offsets index the content itself.
+    }
+    return message.content
   }
 
   // A tool-RESULT citation's trace_index is the tool message; find the
@@ -284,7 +327,17 @@
         <div class="group flex flex-col items-end" data-testid="chat-msg-user">
           <div class="rounded-xl bg-primary/10 px-4 py-3 max-w-[70%] text-sm">
             {#if content}
-              {#if is_non_string_json(content)}
+              {#if highlight && highlight.kind === "content" && highlight.trace_index === index}
+                {@const seg = highlight_segments(content, highlight)}
+                <!-- Marked node renders as plain text: the offsets index the
+                     raw content, not rendered markdown. -->
+                <div class="whitespace-pre-wrap">
+                  {seg.before}<mark
+                    data-highlight-target
+                    class="bg-warning/40 rounded px-0.5">{seg.mark}</mark
+                  >{seg.after}
+                </div>
+              {:else if is_non_string_json(content)}
                 <!-- Transparent so the user turn keeps its tint. Markdown code
                      blocks already render on the tint here, so a JSON panel on
                      it matches the bubble's existing visual language. -->
@@ -424,20 +477,39 @@
                 {@const tool_error = result
                   ? is_tool_error(result.message)
                   : false}
-                <!-- A tool citation lands on the whole bubble (its call and
-                     result render via dedicated components, not plain text):
-                     mark the bubble as the scroll target and let the reactive
-                     expansion open it. -->
-                {@const is_tc_target = !!(
+                <!-- A tool-CALL citation lands on the whole bubble (the call
+                     renders via a dedicated component, not plain text): mark
+                     the bubble as the scroll target and let the reactive
+                     expansion open it. A tool-RESULT citation marks the exact
+                     span inside the result text below; the bubble is only its
+                     fallback target when that text cannot carry the mark. -->
+                {@const is_result_cited = !!(
                   highlight &&
-                  ((highlight.kind === "tool_calls" &&
-                    highlight.trace_index === index &&
-                    tcIdx === 0) ||
-                    (highlight.kind === "tool_result" &&
-                      tool_result_owner &&
-                      tool_result_owner.index === index &&
-                      tool_result_owner.tcIdx === tcIdx))
+                  highlight.kind === "tool_result" &&
+                  tool_result_owner &&
+                  tool_result_owner.index === index &&
+                  tool_result_owner.tcIdx === tcIdx
                 )}
+                <!-- The rendered result is the LAST tool message for this
+                     call id, while the citation names an exact trace index —
+                     with duplicate ids (a retried call) they can disagree,
+                     and slicing the other message would mark the wrong
+                     bytes. The bubble fallback is the honest target then. -->
+                {@const result_mark_text =
+                  is_result_cited &&
+                  result &&
+                  highlight &&
+                  result.trace_index === highlight.trace_index
+                    ? tool_result_citation_text(result.message)
+                    : null}
+                {@const is_tc_target =
+                  !!(
+                    highlight &&
+                    highlight.kind === "tool_calls" &&
+                    highlight.trace_index === index &&
+                    tcIdx === 0
+                  ) ||
+                  (is_result_cited && result_mark_text === null)}
                 <div
                   class="flex flex-col items-start"
                   data-testid="chat-msg-assistant"
@@ -499,10 +571,28 @@
                                   ? "border border-error/20 rounded-lg p-2"
                                   : ""}
                               >
-                                <Output
-                                  raw_output={result_content}
-                                  no_padding={true}
-                                />
+                                {#if highlight && is_result_cited && result_mark_text !== null}
+                                  {@const seg = highlight_segments(
+                                    result_mark_text,
+                                    highlight,
+                                  )}
+                                  <!-- Marked node renders as raw text: the
+                                       offsets index the flattened result
+                                       string, which pretty-printing would
+                                       re-wrap. -->
+                                  <div class="whitespace-pre-wrap">
+                                    {seg.before}<mark
+                                      data-highlight-target
+                                      class="bg-warning/40 rounded px-0.5"
+                                      >{seg.mark}</mark
+                                    >{seg.after}
+                                  </div>
+                                {:else}
+                                  <Output
+                                    raw_output={result_content}
+                                    no_padding={true}
+                                  />
+                                {/if}
                               </div>
                             </div>
                           {:else if result === null}

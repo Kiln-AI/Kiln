@@ -19,6 +19,7 @@
   import ChatTrace from "$lib/ui/trace/chat_trace.svelte"
   import SingleTurnSectionsView from "./single_turn_sections.svelte"
   import {
+    map_input_span_to_trace,
     map_output_span_to_trace,
     resolve_citation_span,
     single_turn_sections_resolver,
@@ -94,9 +95,12 @@
     }
   }
 
-  // Map an OUTPUT citation onto the structured trace so ChatTrace can mark the
-  // exact node. Null for input citations, legacy traces, or unmappable spans —
-  // ChatTrace then renders without a highlight rather than a wrong one.
+  // Map a citation onto the structured trace so ChatTrace can mark the exact
+  // node: output citations through the flattener layout, input citations onto
+  // the conversation's opening user message (on multi-turn the input IS that
+  // message). Null for legacy traces or unmappable spans — ChatTrace then
+  // renders without a highlight rather than a wrong one, and the miss is
+  // logged so the silence is observable.
   $: chat_highlight = single_turn
     ? null
     : compute_chat_highlight(trace, active_source, active_citation)
@@ -105,10 +109,47 @@
     source: CitationSource | null,
     citation: Citation | null,
   ): TraceHighlight | null {
-    if (!t || !t.trace || source !== "output" || !citation) return null
-    const span = resolve_citation_span(t.raw_output, citation)
-    if (!span) return null
-    return map_output_span_to_trace(t.trace, t.raw_output, span)
+    // An empty trace renders the raw panels (which carry their own mark),
+    // so it is not a mapping miss and must not warn.
+    if (!t || !t.trace || t.trace.length === 0 || !source || !citation) {
+      return null
+    }
+    const raw = source === "input" ? t.raw_input : t.raw_output
+    const span = resolve_citation_span(raw, citation)
+    let mapped = span
+      ? source === "input"
+        ? map_input_span_to_trace(t.trace, t.raw_input, span)
+        : map_output_span_to_trace(t.trace, t.raw_output, span)
+      : null
+    if (mapped && !chat_renders_highlight(t.trace, mapped)) {
+      // The flattener emits blocks for rows the chat drops (system /
+      // developer), so a span can map onto a node ChatTrace will never
+      // draw — passing it through would be a highlight with no target.
+      mapped = null
+    }
+    if (!mapped) {
+      console.warn(
+        "Citation could not be mapped onto the trace; showing it without a highlight.",
+        { marker: citation.marker, source, from: citation.from },
+      )
+    }
+    return mapped
+  }
+
+  // Whether ChatTrace draws a row that can carry this highlight: tool
+  // results render through their owning call's bubble, everything else
+  // needs its own row, which system/developer/tool messages never get.
+  function chat_renders_highlight(
+    trace_messages: NonNullable<TraceClaims["trace"]>,
+    h: TraceHighlight,
+  ): boolean {
+    if (h.kind === "tool_result") return true
+    const message = trace_messages[h.trace_index]
+    const role =
+      message && "role" in message && typeof message.role === "string"
+        ? message.role
+        : ""
+    return role !== "system" && role !== "developer" && role !== "tool"
   }
 
   export function open_trace(t: TraceClaims) {
@@ -134,7 +175,16 @@
       ?.scrollIntoView({ block: "center", behavior: "smooth" })
   }
 
-  $: input_seg = trace && !single_turn ? segments("input") : null
+  // When the chat carries the citation's highlight, the Input panel shows
+  // plain text: marking its copy too would put the same sentence on screen
+  // twice with two competing scroll targets. The panel's mark survives as
+  // the fallback for an input citation the chat could not map.
+  $: input_seg =
+    trace && !single_turn
+      ? use_chat && chat_highlight && active_source === "input"
+        ? { before: text_for("input"), highlight: "", after: "" }
+        : segments("input")
+      : null
   $: output_seg = trace && !single_turn && !use_chat ? segments("output") : null
 </script>
 

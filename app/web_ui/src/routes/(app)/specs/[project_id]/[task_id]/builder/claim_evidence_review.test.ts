@@ -1390,7 +1390,7 @@ describe("the trace modal — multi-turn", () => {
     expect(dialog.querySelector("[data-testid='review-input']")).toBeNull()
   })
 
-  it("marks an input citation in the Input panel", async () => {
+  it("marks an input citation on the opening user bubble, not the Input panel", async () => {
     const citation: Citation = {
       marker: 1,
       source: "input",
@@ -1404,9 +1404,13 @@ describe("the trace modal — multi-turn", () => {
     const mark = dialog.querySelector("mark")
 
     // The span resolved against raw_input, not raw_output — both texts carry
-    // "return window", only the input carries the rest of the anchor.
+    // "return window", only the input carries the rest of the anchor. On
+    // multi-turn the input IS the conversation's opening message, so the
+    // citation lands on that bubble; the Input panel keeps plain text (the
+    // same sentence must not be marked twice).
     expect(mark?.textContent).toBe("return window on a mattress?")
-    expect(mark?.closest("[data-testid='chat-msg-user']")).toBeNull()
+    expect(mark?.closest("[data-testid='chat-msg-user']")).not.toBeNull()
+    expect(dialog.querySelectorAll("mark").length).toBe(1)
   })
 
   it("marks an output citation on the chat node it came from", async () => {

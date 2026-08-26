@@ -19,6 +19,7 @@ import {
   has_grade_disagreement,
   is_trace_first_review,
   is_trace_reviewed,
+  map_input_span_to_trace,
   map_output_span_to_trace,
   MAX_JUDGE_PROMPT_CHARS,
   plan_save_action,
@@ -1010,6 +1011,82 @@ describe("map_output_span_to_trace — single-turn output", () => {
     // Which one the citation meant is unknowable, so nothing is highlighted.
     expect(
       map_output_span_to_trace(echoed, raw_output, { start: 4, end: 10 }),
+    ).toBeNull()
+  })
+})
+
+describe("map_input_span_to_trace — input citations land on the opening user bubble", () => {
+  // On multi-turn, raw_input is the first user message's content verbatim
+  // (the server's transcript_io_for_trace pick), so the offsets carry over.
+  const raw_input = "I want to return my order from last week."
+  const trace = [
+    { role: "system", content: "You are a support agent." },
+    { role: "user", content: raw_input },
+    { role: "assistant", content: "Happy to help with that." },
+    { role: "user", content: "It arrived damaged." },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ] as any[]
+
+  it("maps a span onto the first user message, not a later one", () => {
+    const span = resolve_citation_span(raw_input, {
+      from: "return my order",
+      to: "last week",
+    })
+    expect(span).not.toBeNull()
+    const h = map_input_span_to_trace(trace, raw_input, span!)
+    expect(h).not.toBeNull()
+    expect(h!.trace_index).toBe(1)
+    expect(h!.kind).toBe("content")
+    expect(raw_input.slice(h!.start, h!.end)).toBe(
+      "return my order from last week",
+    )
+  })
+
+  it("skips an empty first user message, mirroring the server's pick", () => {
+    const with_empty = [
+      { role: "user", content: "" },
+      { role: "user", content: raw_input },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ] as any[]
+    const h = map_input_span_to_trace(with_empty, raw_input, {
+      start: 0,
+      end: 6,
+    })
+    expect(h).not.toBeNull()
+    expect(h!.trace_index).toBe(1)
+  })
+
+  it("returns null when the opening message differs from raw_input", () => {
+    // raw_input that did not come from this trace's opening message must not
+    // put a mark on it — the offsets would slice a different string.
+    const other = [
+      { role: "user", content: "A different opening entirely." },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ] as any[]
+    expect(
+      map_input_span_to_trace(other, raw_input, { start: 0, end: 6 }),
+    ).toBeNull()
+  })
+
+  it("returns null when the trace has no user message", () => {
+    const no_user = [
+      { role: "assistant", content: "Hello." },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ] as any[]
+    expect(
+      map_input_span_to_trace(no_user, raw_input, { start: 0, end: 6 }),
+    ).toBeNull()
+  })
+
+  it("returns null when the span overruns the input", () => {
+    expect(
+      map_input_span_to_trace(trace, raw_input, {
+        start: 0,
+        end: raw_input.length + 1,
+      }),
+    ).toBeNull()
+    expect(
+      map_input_span_to_trace(trace, raw_input, { start: -1, end: 6 }),
     ).toBeNull()
   })
 })

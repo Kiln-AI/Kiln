@@ -605,6 +605,41 @@ function map_span_in_flattened_layout(
   return null
 }
 
+// Map a resolved [start, end) span in raw_input onto the conversation's
+// opening user message. On multi-turn the input IS that message — the server
+// derives raw_input from the first user message with non-empty string
+// content, verbatim — so an input citation has an exact home in the chat:
+// same string, same offsets. The pick mirrors the server's rule and the
+// byte-identity guard rejects a raw_input that did not come from this
+// trace's opening message (no highlight beats a wrong one).
+export function map_input_span_to_trace(
+  trace: TraceMessage[],
+  raw_input: string,
+  span: { start: number; end: number },
+): TraceHighlight | null {
+  const index = trace.findIndex(
+    (message) =>
+      trace_role(message) === "user" &&
+      "content" in message &&
+      typeof message.content === "string" &&
+      message.content.length > 0,
+  )
+  if (index < 0) return null
+  const message = trace[index]
+  const content =
+    "content" in message && typeof message.content === "string"
+      ? message.content
+      : ""
+  if (content !== raw_input) return null
+  if (span.start < 0 || span.end > raw_input.length) return null
+  return {
+    trace_index: index,
+    kind: "content",
+    start: span.start,
+    end: span.end,
+  }
+}
+
 // raw_output IS one message's content, with none of the flattener's role
 // headers or tags, so the span's offsets carry onto that message
 // unchanged. Requires exactly one byte-identical message — with two the

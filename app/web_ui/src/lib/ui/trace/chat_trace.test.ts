@@ -922,6 +922,178 @@ describe("ChatTrace component — citation highlight", () => {
     )
     expect(mark?.textContent).toBe("think about policy")
   })
+
+  it("marks the cited span in a user bubble", () => {
+    // Input citations map onto the opening user message on multi-turn, so
+    // the user bubble must be able to carry a mark like assistant content.
+    const content = "I want to return my order from last week."
+    const trace: TraceType = [userMsg(content), assistantMsg("Happy to help.")]
+    const start = content.indexOf("return my order")
+    const end = start + "return my order".length
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 0, kind: "content", start, end },
+      },
+    })
+    const userNode = container.querySelector(
+      "[data-testid='chat-msg-user']",
+    ) as HTMLElement
+    const mark = userNode.querySelector("mark")
+    expect(mark).not.toBeNull()
+    expect(mark?.textContent).toBe("return my order")
+    expect(mark?.hasAttribute("data-highlight-target")).toBe(true)
+  })
+
+  it("marks the cited span inside a tool result and targets the mark, not the bubble", () => {
+    const output =
+      "line one\nThe skill file loaded fine_tuning.md successfully.\nline three"
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("call_1", "load_skill")],
+      }),
+      toolMsg(JSON.stringify({ output }), "call_1"),
+      assistantMsg("Done."),
+    ]
+    const start = output.indexOf("loaded fine_tuning.md")
+    const end = start + "loaded fine_tuning.md".length
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 1, kind: "tool_result", start, end },
+      },
+    })
+    // The owning tool-call bubble auto-expands and the exact span is marked
+    // in the raw result text (pretty-print is dropped for the marked node).
+    const toolCall = container.querySelector(
+      "[data-testid='chat-tool-call']",
+    ) as HTMLElement
+    expect(toolCall).not.toBeNull()
+    const mark = toolCall.querySelector("mark")
+    expect(mark).not.toBeNull()
+    expect(mark?.textContent).toBe("loaded fine_tuning.md")
+    // The mark is the one scroll target; the bubble no longer is.
+    const targets = container.querySelectorAll("[data-highlight-target]")
+    expect(targets.length).toBe(1)
+    expect(targets[0].tagName).toBe("MARK")
+  })
+
+  it("falls back to the bubble target when the displayed result diverges from the cited text", () => {
+    // isError envelope without an output field: the chat displays the
+    // unwrapped error while citation offsets index the raw JSON — a mark in
+    // either string would be misplaced, so the bubble stays the target.
+    const content = JSON.stringify({ isError: true, error: "boom" })
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("call_1", "load_skill")],
+      }),
+      toolMsg(content, "call_1"),
+    ]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 1, kind: "tool_result", start: 0, end: 4 },
+      },
+    })
+    expect(container.querySelector("mark")).toBeNull()
+    const target = container.querySelector("[data-highlight-target]")
+    expect(target).not.toBeNull()
+    expect(target?.tagName).not.toBe("MARK")
+  })
+
+  it("marks an isError envelope that still carries a string output", () => {
+    // `output` wins over `isError` in both the flattener and the display,
+    // so the mark must be sliced from the output string, not suppressed.
+    const output = "partial data before the failure"
+    const content = JSON.stringify({ isError: true, output })
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("call_1", "load_skill")],
+      }),
+      toolMsg(content, "call_1"),
+    ]
+    const start = output.indexOf("before the failure")
+    const end = start + "before the failure".length
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 1, kind: "tool_result", start, end },
+      },
+    })
+    const mark = container.querySelector("mark")
+    expect(mark?.textContent).toBe("before the failure")
+  })
+
+  it("marks a plain non-JSON tool result", () => {
+    // The commonest shape after the Kiln envelope: the content IS the raw
+    // text the citation offsets index.
+    const content = "HTTP 200\nbody: return window is 30 days"
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("call_1", "fetch_policy")],
+      }),
+      toolMsg(content, "call_1"),
+    ]
+    const start = content.indexOf("30 days")
+    const end = start + "30 days".length
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 1, kind: "tool_result", start, end },
+      },
+    })
+    const mark = container.querySelector("mark")
+    expect(mark?.textContent).toBe("30 days")
+  })
+
+  it("suppresses the mark when the envelope's output is not a string", () => {
+    // The display pretty-prints the object while the offsets could only
+    // index a raw string — no mark can be honest, so the bubble stays the
+    // target.
+    const content = JSON.stringify({ output: { rows: [1, 2, 3] } })
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("call_1", "query_db")],
+      }),
+      toolMsg(content, "call_1"),
+    ]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 1, kind: "tool_result", start: 0, end: 4 },
+      },
+    })
+    expect(container.querySelector("mark")).toBeNull()
+    expect(
+      container.querySelector("[data-highlight-target]")?.tagName,
+    ).not.toBe("MARK")
+  })
+
+  it("falls back to the bubble when duplicate call ids point the display at a different message", () => {
+    // Two tool messages share one call id (a retried call): the bubble
+    // renders the LAST result, but the citation names the FIRST message's
+    // trace index — slicing the displayed text would mark the wrong bytes.
+    const first = "attempt one: timed out"
+    const second = "attempt two: return window is 30 days"
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("call_1", "fetch_policy")],
+      }),
+      toolMsg(JSON.stringify({ output: first }), "call_1"),
+      toolMsg(JSON.stringify({ output: second }), "call_1"),
+    ]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        // trace_index 1 = the FIRST tool message.
+        highlight: { trace_index: 1, kind: "tool_result", start: 0, end: 7 },
+      },
+    })
+    expect(container.querySelector("mark")).toBeNull()
+    const target = container.querySelector("[data-highlight-target]")
+    expect(target).not.toBeNull()
+    expect(target?.tagName).not.toBe("MARK")
+  })
 })
 
 describe("ChatTrace component — usage info row", () => {
