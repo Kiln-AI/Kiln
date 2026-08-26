@@ -649,6 +649,7 @@ def persist_spec_save(
     reviewed_leaf_ids: set[str],
     train_tag: str,
     golden_tag: str,
+    val_tag: str,
     spec_name: str,
     rng: random.Random,
 ) -> None:
@@ -657,9 +658,11 @@ def persist_spec_save(
 
     Both wizard arms ride the batch-runs path: `batch_leaves` are the runs
     already on disk (multi-turn chain leaves or single-turn pipeline runs)
-    to split and rate, and `batch_eval_inputs` is the arm's built eval
-    slice. The legacy v1 manual flow instead passes `single_turn_dataset`
-    (freshly generated runs plus its own eval slice) and empty batch args.
+    to split into golden / train / val and rate, and `batch_eval_inputs` is
+    the arm's built eval slice. The legacy v1 manual flow instead passes
+    `single_turn_dataset` (freshly generated runs plus its own eval slice)
+    and empty batch args, so it never reaches the split and mints no val
+    items.
 
     Owns three rollback ledgers: created models (Eval / EvalConfig / TaskRun /
     EvalInput / Spec), tagged batch runs, and rated batch runs. On any
@@ -697,7 +700,7 @@ def persist_spec_save(
 
         # Wizard arms: persist the eval slice (EvalInput items minted from
         # the driven cases or the generated inputs) and split the batch runs
-        # into disjoint golden/train slices, AFTER spec has saved so a
+        # into disjoint golden/train/val slices, AFTER spec has saved so a
         # failure here triggers the rollback below. tagged_leaves captures
         # only the tags this call added, so untagging on rollback preserves
         # any tags the run already had.
@@ -708,6 +711,7 @@ def persist_spec_save(
                 reviewed_leaf_ids,
                 train_tag,
                 golden_tag,
+                val_tag,
                 rng=rng,
                 tagged_out=tagged_leaves,
             )
@@ -1162,17 +1166,19 @@ def connect_copilot_api(app: FastAPI):
                 "by case or spacing) already exists for this task.",
             )
 
-        # Generate tags and filter IDs. The shipped tag helper also mints a val
-        # tag, which neither arm uses: the wizard splits its data three ways
-        # (train / eval / golden) and mints no val items, so a val split would
-        # address a tag nothing carries. Deliberate on both arms.
+        # Generate tags and filter IDs. The wizard arms deal their non-golden
+        # batch runs train:val, so both tags address real items. The legacy v1
+        # arm mints no val items and leaves its val split empty (0 items, not
+        # an error) rather than giving the eval a different splits shape.
         tags = generate_spec_eval_tags(request.name)
-        eval_tag, train_tag, golden_tag = (
+        eval_tag, train_tag, val_tag, golden_tag = (
             tags.test_tag,
             tags.train_tag,
+            tags.val_tag,
             tags.golden_tag,
         )
         train_set_filter_id = tag_filter_id(train_tag)
+        val_set_filter_id = tag_filter_id(val_tag)
         eval_configs_filter_id = tag_filter_id(golden_tag)
 
         # Extract spec_type from properties (discriminated union)
@@ -1200,7 +1206,8 @@ def connect_copilot_api(app: FastAPI):
         # Batch arms: find the existing runs up front so we 404 before
         # creating any models if the batch_tag matches nothing. The reviewed
         # run ids drive the split — only rated runs are eligible for golden
-        # (capped at the target fraction); the rest go to train, ratings kept.
+        # (capped at the target fraction); the rest are dealt train:val with
+        # their ratings kept.
         batch_leaves: list[TaskRun] = []
         reviewed_refs: list[ReviewedChainApi] = []
         reviewed_leaf_ids: set[str] = set()
@@ -1267,7 +1274,7 @@ def connect_copilot_api(app: FastAPI):
                 eval_tag,
             )
 
-        # 1. Create the Eval. Golden and train are TaskRun slices on both
+        # 1. Create the Eval. Golden, train and val are TaskRun slices on both
         # paths; the eval slice is EvalInput-tagged on both, re-run per run
         # config at eval time (multi-turn re-drives it, using the drive
         # config stamped on each item).
@@ -1281,12 +1288,13 @@ def connect_copilot_api(app: FastAPI):
             # them at creation so the spec file stays truthful.
             priority=Priority.p1,
             status=EvalStatus.active,
-            # `splits` is the single home for both splits: the EvalInput-backed
-            # test split and the TaskRun-backed train split. The deprecated flat
-            # filter fields are never written.
+            # `splits` is the single home for all three splits: the
+            # EvalInput-backed test split and the TaskRun-backed train and val
+            # splits. The deprecated flat filter fields are never written.
             splits={
                 "test": EvalInputSplit(filter_id=f"tag::{eval_tag}"),
                 "train": TaskRunSplit(filter_id=train_set_filter_id),
+                "val": TaskRunSplit(filter_id=val_set_filter_id),
             },
             eval_configs_filter_id=eval_configs_filter_id,
             template_properties=None,
@@ -1410,6 +1418,7 @@ def connect_copilot_api(app: FastAPI):
             reviewed_leaf_ids=reviewed_leaf_ids,
             train_tag=train_tag,
             golden_tag=golden_tag,
+            val_tag=val_tag,
             spec_name=request.name,
             rng=rng,
         )

@@ -83,19 +83,39 @@ NUM_TOPICS = 15
 # Dataset split — the 50/25/25 spec (train / eval / golden). Golden is the
 # human-rated answer key, filled from RATED items only (never padded with
 # unrated ones). On both arms the eval slice is EvalInput items — inputs the
-# runner executes fresh per run config — so only golden and train are stored
-# as TaskRuns. Both wizard arms split their batch runs the same way: golden
-# is capped at GOLDEN_TARGET_FRACTION of the batch (select_golden_runs) and
-# the remainder is all train. The legacy v1 manual flow's single-turn save
-# instead takes its reviewed examples as golden (structurally small, no cap
-# needed) and splits the generated pool train:eval at 2:1 (the 50:25). If
-# fewer than the target fraction are rated the answer key is simply smaller
-# (warned). One owner so the golden fraction can't drift between the
-# splitters.
+# runner executes fresh per run config — so golden, train and val are the
+# slices stored as TaskRuns. Both wizard arms split their batch runs the same
+# way: golden is capped at GOLDEN_TARGET_FRACTION of the batch
+# (select_golden_runs) and the remainder is dealt train:val
+# (deal_pool_train_val). The legacy v1 manual flow's single-turn save instead
+# takes its reviewed examples as golden (structurally small, no cap needed)
+# and splits the generated pool train:eval at 2:1 (the 50:25), minting no val
+# items at all. If fewer than the target fraction are rated the answer key is
+# simply smaller (warned). One owner so the golden fraction can't drift
+# between the splitters.
 TRAIN_SPLIT_WEIGHT = 2
 EVAL_SPLIT_WEIGHT = 1
 GOLDEN_SPLIT_WEIGHT = 1
 GOLDEN_TARGET_FRACTION = 0.25
+
+# The non-golden pool's train:val deal, from the agreed
+# train/val/test/golden = 40/25/25/10 scheme. Only the train:val ratio of that
+# scheme lives here: the test slice is EvalInput items minted separately and
+# golden is carved by select_golden_runs, so neither is in this pool to deal.
+# Kept apart from the *_SPLIT_WEIGHT constants above, which do the golden/eval
+# math and must not move when this ratio does. The same two weights drive the
+# dataset-generation allocator in
+# app/web_ui/src/lib/utils/eval_generation_splits.ts (TRAIN_SPLIT_WEIGHT /
+# VAL_SPLIT_WEIGHT there); the two must move together or generated data and
+# wizard-saved data land in the splits at different ratios.
+#
+# Known limitation of this dealing: val runs share their inputs with the test
+# slice (the same driven cases feed both), which is honest for judge
+# iteration but leaks eval inputs into any optimizer loop that trains against
+# val. Fixing that requires partitioning the input pool before the drive, a
+# design change rather than a ratio change.
+TRAIN_DEAL_WEIGHT = 40
+VAL_DEAL_WEIGHT = 25
 
 
 def spec_rating_key(spec_name: str) -> str:
@@ -629,18 +649,19 @@ def split_and_tag_batch_runs(
     reviewed_leaf_ids: set[str],
     train_tag: str,
     golden_tag: str,
+    val_tag: str,
     rng: random.Random | None = None,
     tagged_out: list[tuple[TaskRun, set[str]]] | None = None,
 ) -> None:
-    """Assign each batch run to exactly ONE split (golden XOR train).
+    """Assign each batch run to exactly ONE split (golden XOR train XOR val).
 
     Both arms' save writer: `leaves` are the multi-turn chain leaves or the
     single-turn pipeline's batch-tagged runs. Golden = the human-rated runs
-    (the answer key), capped at the target fraction; every remaining run is
-    train. The runs carry no eval slice — the eval set is EvalInput items
-    minted separately (from the driven cases or the generated inputs) and
-    re-run fresh at eval time, so reusing a golden run's input there is not
-    circular: golden validates the judge on the STORED result while the
+    (the answer key), capped at the target fraction; everything left over is
+    dealt train:val. The runs carry no eval slice — the eval set is EvalInput
+    items minted separately (from the driven cases or the generated inputs)
+    and re-run fresh at eval time, so reusing a golden run's input there is
+    not circular: golden validates the judge on the STORED result while the
     eval set scores NEW ones.
 
     `rng` is injected for deterministic tests. If `tagged_out` is provided,
@@ -651,11 +672,47 @@ def split_and_tag_batch_runs(
     """
     rng = rng or random.Random()
     golden, pool = select_golden_runs(leaves, reviewed_leaf_ids, rng)
+    train, val = deal_pool_train_val(pool, rng)
 
     tag_batch_runs(golden, golden_tag, tagged_out)
-    tag_batch_runs(pool, train_tag, tagged_out)
+    tag_batch_runs(train, train_tag, tagged_out)
+    tag_batch_runs(val, val_tag, tagged_out)
 
     warn_if_golden_below_target(len(golden), len(leaves))
+
+
+def deal_pool_train_val(pool: list[T], rng: random.Random) -> tuple[list[T], list[T]]:
+    """Deal the non-golden pool into (train, val) at TRAIN:VAL weights.
+
+    The pool must be re-shuffled here even though select_golden_runs shuffles:
+    it shuffles only the RATED runs and returns rated-leftovers ahead of the
+    unrated ones in disk order, so dealing that order by prefix would send
+    every over-cap rated run to the same bucket every time. Shuffling through
+    the injected rng keeps the deal random in production and reproducible
+    under a seeded rng. The input list is not mutated.
+
+    Sizes are apportioned by largest remainder so no run is dropped: both
+    shares are floored, and the at-most-one leftover seat goes to the larger
+    fractional remainder. The two remainders always sum to 0 or to
+    TRAIN + VAL, because the exact shares sum to the pool size; a leftover
+    seat exists exactly in the second case, where both are nonzero and sum to
+    an odd 65. So whenever there is a seat to award the remainders cannot be
+    equal, and the deal has no arbitrary tie-break to get wrong.
+    """
+    shuffled = list(pool)
+    rng.shuffle(shuffled)
+    size = len(shuffled)
+    total_weight = TRAIN_DEAL_WEIGHT + VAL_DEAL_WEIGHT
+    train_count = size * TRAIN_DEAL_WEIGHT // total_weight
+    val_count = size * VAL_DEAL_WEIGHT // total_weight
+    # The two floors leave at most one seat unassigned; largest remainder
+    # gives it to whichever bucket was rounded down harder. Val takes the
+    # rest of the pool, so only train's count has to move.
+    if train_count + val_count < size and (
+        size * TRAIN_DEAL_WEIGHT % total_weight > size * VAL_DEAL_WEIGHT % total_weight
+    ):
+        train_count += 1
+    return shuffled[:train_count], shuffled[train_count:]
 
 
 def select_golden_runs(
@@ -669,10 +726,11 @@ def select_golden_runs(
     runs only (the answer key is human-rated by definition). Under the
     pooled stratified review both arms rate ~25% of the batch, so golden is
     normally every reviewed run; a reviewer who grades extra runs beyond the
-    cap sends the extras to train with their ratings kept. Returns
-    (golden, remaining): remaining holds the rated runs beyond the cap plus
-    the unrated runs — the train slice. Only the golden slice is the answer
-    key the judge is calibrated against.
+    cap sends the extras back into the pool with their ratings kept, where
+    they can land in either dealt slice. Returns (golden, remaining):
+    remaining holds the rated runs beyond the cap plus the unrated runs — the
+    pool that deal_pool_train_val splits train:val. Only the golden slice is
+    the answer key the judge is calibrated against.
     """
     golden_target = (
         len(leaves)
