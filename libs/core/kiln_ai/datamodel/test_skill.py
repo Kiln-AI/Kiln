@@ -522,3 +522,13 @@ def test_read_resource_bytes_traversal(skill_with_resources):
 def test_read_resource_bytes_missing(skill_with_resources):
     with pytest.raises(FileNotFoundError):
         skill_with_resources.read_resource_bytes("references/nope.md")
+
+
+def test_resource_size_bytes(skill_with_resources):
+    assert skill_with_resources.resource_size_bytes("assets/logo.png") == len(
+        b"\x89PNG\r\n\x1a\n\x00binary"
+    )
+    with pytest.raises(FileNotFoundError):
+        skill_with_resources.resource_size_bytes("references/nope.md")
+    with pytest.raises(ValueError, match="traversal"):
+        skill_with_resources.resource_size_bytes("references/../skill.kiln")

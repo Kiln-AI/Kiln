@@ -24,6 +24,11 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+# Cap on how much file content the resource_content endpoint will read into
+# memory and base64-encode into a JSON response. Installed bundles cap files at
+# 512KB, but hand-added files (via the enclosing folder) can be any size.
+MAX_RESOURCE_CONTENT_BYTES = 10 * 1024 * 1024
+
 
 class SkillFileParam(BaseModel):
     """A resource file to include in a skill bundle."""
@@ -147,7 +152,13 @@ def _decode_files(files: List[SkillFileParam]) -> dict[str, bytes]:
             errors.append(f"duplicate file path: {file.path!r}")
             continue
         if file.encoding == "utf-8":
-            decoded[file.path] = file.content.encode("utf-8")
+            try:
+                decoded[file.path] = file.content.encode("utf-8")
+            except UnicodeEncodeError:
+                errors.append(
+                    f"file content is not encodable as UTF-8 (contains lone "
+                    f"surrogates): {file.path!r}"
+                )
         else:
             try:
                 decoded[file.path] = base64.b64decode(file.content, validate=True)
@@ -292,13 +303,18 @@ def connect_skill_api(app: FastAPI):
         if skill.path is None:
             raise HTTPException(status_code=500, detail="Skill path not found")
         skill_dir = skill.path.parent
-        return [
-            SkillResourceInfo(
-                path=resource_path,
-                size_bytes=(skill_dir / resource_path).stat().st_size,
+        resources: List[SkillResourceInfo] = []
+        for resource_path in skill.list_resource_files():
+            try:
+                size_bytes = (skill_dir / resource_path).stat().st_size
+            except OSError:
+                # File vanished between listing and stat (e.g. the user is
+                # editing the folder directly) — skip it, don't fail the list.
+                continue
+            resources.append(
+                SkillResourceInfo(path=resource_path, size_bytes=size_bytes)
             )
-            for resource_path in skill.list_resource_files()
-        ]
+        return resources
 
     @app.get(
         "/api/projects/{project_id}/skills/{skill_id}/resource_content",
@@ -321,6 +337,15 @@ def connect_skill_api(app: FastAPI):
     ) -> SkillResourceContentResponse:
         skill = _get_skill(project_id, skill_id)
         try:
+            size_bytes = skill.resource_size_bytes(path)
+            if size_bytes > MAX_RESOURCE_CONTENT_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=(
+                        f"Resource is {size_bytes} bytes, over the "
+                        f"{MAX_RESOURCE_CONTENT_BYTES} byte limit for this endpoint: {path}"
+                    ),
+                )
             data = skill.read_resource_bytes(path)
         except FileNotFoundError:
             raise HTTPException(

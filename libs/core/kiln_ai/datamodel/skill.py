@@ -147,6 +147,20 @@ class Skill(KilnParentedModel):
                 f"Resource file not found: {prefixed_path}"
             ) from None
 
+    def resource_size_bytes(self, prefixed_path: str) -> int:
+        """Size in bytes of a resource file, without reading it.
+
+        Same path validation and errors as read_resource_bytes.
+        """
+        base_dir, relative_path = self._resource_base_dir(prefixed_path)
+        resolved = self._resolve_resource(base_dir, relative_path)
+        try:
+            return resolved.stat().st_size
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"Resource file not found: {prefixed_path}"
+            ) from None
+
     def list_resource_files(self) -> List[str]:
         """List every regular file under references/ and assets/, as sorted
         'references/…' / 'assets/…' relative paths. Symlinks are skipped."""

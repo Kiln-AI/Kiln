@@ -63,6 +63,13 @@ class TestValidateResourcePath:
             ("references/./guide.md", "invalid segment"),
             ("references//guide.md", "invalid segment"),
             ("assets/foo\x00bar", "null byte"),
+            ("references/bad:name.md", "not allowed on Windows"),
+            ("references/bad?.md", "not allowed on Windows"),
+            ("references/a\tb.md", "not allowed on Windows"),
+            ("references/name.", "must not end with a dot or space"),
+            ("references/name ", "must not end with a dot or space"),
+            ("references/CON.md", "reserved on Windows"),
+            ("assets/com1", "reserved on Windows"),
         ],
     )
     def test_invalid_paths(self, path, expected):
@@ -155,6 +162,57 @@ class TestCreateSkillWithFiles:
         names = [s.name for s in project.skills(readonly=True)]
         assert names == [skill.name]
 
+    def test_file_and_directory_conflict_rejected(self, project):
+        files = {
+            "references/foo": b"a file",
+            "references/foo/bar.md": b"needs foo as a directory",
+        }
+        with pytest.raises(
+            SkillBundleValidationError, match="both a file and a directory"
+        ):
+            create(project, files=files)
+
+    def test_case_insensitive_duplicate_rejected(self, project):
+        files = {
+            "references/Guide.md": b"a",
+            "references/guide.md": b"b",
+        }
+        with pytest.raises(SkillBundleValidationError, match="differ only by case"):
+            create(project, files=files)
+
+    def test_unreadable_sibling_skill_does_not_block_create(self, project):
+        broken_dir = project.path.parent / "skills" / "123456789012 - broken"
+        broken_dir.mkdir(parents=True)
+        (broken_dir / "skill.kiln").write_text("not json{", encoding="utf-8")
+        skill = create(project)
+        assert skill.name == "my-skill"
+
+    def test_archived_name_conflict_mentions_archived(self, project):
+        skill = create(project)
+        loaded = Skill.load_from_file(skill.path)
+        loaded.is_archived = True
+        loaded.save_to_file()
+        with pytest.raises(SkillBundleValidationError, match="archived skill"):
+            create(project)
+
+    def test_stale_staging_swept_fresh_staging_kept(self, project):
+        import os as os_mod
+        import time as time_mod
+
+        from kiln_ai.datamodel.skill_bundle import STALE_STAGING_AGE_SECS
+
+        staging_root = project.path.parent / STAGING_DIR_NAME
+        staging_root.mkdir()
+        stale = staging_root / "skill-stale"
+        stale.mkdir()
+        old_time = time_mod.time() - STALE_STAGING_AGE_SECS - 60
+        os_mod.utime(stale, (old_time, old_time))
+        fresh = staging_root / "skill-fresh"
+        fresh.mkdir()
+        create(project)
+        assert not stale.exists()
+        assert fresh.exists()
+
 
 class TestCloneSkill:
     @pytest.fixture
@@ -191,6 +249,43 @@ class TestCloneSkill:
         )
         assert source.read_reference("guide.md") == "# Guide"
         assert source.body() == BODY
+
+    def test_clone_allows_oversized_on_disk_files(self, project, source):
+        big = source.assets_dir() / "big.bin"
+        big.write_bytes(b"x" * (MAX_RESOURCE_FILE_BYTES + 1))
+        clone = clone_skill(
+            project,
+            source,
+            name="cloned-skill",
+            description="A clone.",
+            body="New body.",
+        )
+        assert clone.read_resource_bytes("assets/big.bin") == b"x" * (
+            MAX_RESOURCE_FILE_BYTES + 1
+        )
+
+    def test_clone_copies_files_outside_resource_dirs(self, project, source):
+        assert source.path is not None
+        source_dir = source.path.parent
+        scripts_dir = source_dir / "scripts"
+        scripts_dir.mkdir()
+        (scripts_dir / "run.py").write_text("print('hi')", encoding="utf-8")
+        (source_dir / "docs.md").write_text("# Docs", encoding="utf-8")
+        clone = clone_skill(
+            project,
+            source,
+            name="cloned-skill",
+            description="A clone.",
+            body="New body.",
+        )
+        assert clone.path is not None
+        clone_dir = clone.path.parent
+        assert (clone_dir / "scripts" / "run.py").read_text(
+            encoding="utf-8"
+        ) == "print('hi')"
+        assert (clone_dir / "docs.md").read_text(encoding="utf-8") == "# Docs"
+        # skill.kiln and SKILL.md are regenerated, never copied
+        assert Skill.load_from_file(clone.path).id != source.id
 
     def test_clone_rejects_duplicate_name(self, project, source):
         with pytest.raises(SkillBundleValidationError, match="install-once"):

@@ -511,3 +511,55 @@ class TestSkillResources:
             params={"path": "references/../skill.kiln"},
         )
         assert response.status_code == 422
+
+
+class TestResourceEdgeCases:
+    def test_create_with_lone_surrogate_content_422(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        import json
+
+        # httpx refuses to encode lone surrogates, so send pre-encoded JSON
+        # (ensure_ascii escapes the surrogate; the server's json.loads
+        # reproduces it as a python str containing \ud800).
+        sample_skill_data["files"] = [{"path": "references/a.md", "content": "\ud800"}]
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            content=json.dumps(sample_skill_data),
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 422
+        assert "UTF-8" in response.text
+
+    def test_resource_content_over_size_limit_413(
+        self, client, test_project, mock_project_from_id, saved_skill
+    ):
+        from app.desktop.studio_server.skill_api import MAX_RESOURCE_CONTENT_BYTES
+
+        big = saved_skill.assets_dir() / "big.bin"
+        big.write_bytes(b"x" * (MAX_RESOURCE_CONTENT_BYTES + 1))
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/{saved_skill.id}/resource_content",
+            params={"path": "assets/big.bin"},
+        )
+        assert response.status_code == 413
+
+    def test_resources_listing_skips_vanished_file(
+        self, client, test_project, mock_project_from_id, saved_skill_with_resources
+    ):
+        from unittest.mock import patch as mock_patch
+
+        from kiln_ai.datamodel.skill import Skill
+
+        # A file listed by the walk but deleted before stat must be skipped,
+        # not fail the listing.
+        listed = ["assets/logo.png", "assets/vanished.png", "references/guide.md"]
+        with mock_patch.object(Skill, "list_resource_files", return_value=listed):
+            response = client.get(
+                f"/api/projects/{test_project.id}/skills/{saved_skill_with_resources.id}/resources"
+            )
+        assert response.status_code == 200
+        assert [r["path"] for r in response.json()] == [
+            "assets/logo.png",
+            "references/guide.md",
+        ]
