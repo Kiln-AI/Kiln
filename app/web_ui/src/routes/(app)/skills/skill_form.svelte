@@ -67,13 +67,21 @@
     try {
       error = null
       submitting = true
-      const { data, error: api_error } = await client.POST(
-        "/api/projects/{project_id}/skills",
-        {
-          params: { path: { project_id } },
-          body: { name, description, body },
-        },
-      )
+      // Clone uses a dedicated endpoint so the skill's reference and asset
+      // files are copied along with the SKILL.md content.
+      const { data, error: api_error } =
+        clone_mode && skill_id
+          ? await client.POST(
+              "/api/projects/{project_id}/skills/{skill_id}/clone",
+              {
+                params: { path: { project_id, skill_id } },
+                body: { name, description, body },
+              },
+            )
+          : await client.POST("/api/projects/{project_id}/skills", {
+              params: { path: { project_id } },
+              body: { name, description, body },
+            })
       if (api_error) {
         throw api_error
       }

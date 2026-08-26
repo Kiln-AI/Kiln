@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, List, Literal, Union
 
 import yaml
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from kiln_ai.datamodel.basemodel import KilnParentedModel
 from kiln_ai.utils.validation import SkillNameString
@@ -14,6 +15,25 @@ if TYPE_CHECKING:
 
 
 SKILL_MD_FILENAME = "SKILL.md"
+
+RESOURCE_DIR_NAMES = ("references", "assets")
+
+
+class SkillProvenance(BaseModel):
+    """Where a skill came from: authoring notes, lineage, and who authored it."""
+
+    notes: str = Field(
+        default="",
+        description="Free-form notes on why this skill exists and how it was authored.",
+    )
+    derived_from_ids: List[str] = Field(
+        default_factory=list,
+        description="IDs of skills this skill was derived from (e.g. the source of a clone).",
+    )
+    origin: Literal["user", "agent"] = Field(
+        default="user",
+        description="Whether the skill was authored by a user or an agent.",
+    )
 
 
 class Skill(KilnParentedModel):
@@ -38,6 +58,10 @@ class Skill(KilnParentedModel):
     is_archived: bool = Field(
         default=False,
         description="Whether the skill is archived. Archived skills are hidden from the UI and not available for use.",
+    )
+    provenance: SkillProvenance | None = Field(
+        default=None,
+        description="Provenance metadata: authoring notes, lineage, and origin.",
     )
 
     def parent_project(self) -> Union["Project", None]:
@@ -86,8 +110,8 @@ class Skill(KilnParentedModel):
         """Read an asset file. Raises ValueError for path traversal, non-text, or if the path is a folder, FileNotFoundError if missing."""
         return self._read_resource(self.assets_dir(), relative_path)
 
-    def _read_resource(self, base_dir: Path, relative_path: str) -> str:
-        """Read a resource file, validating it resolves within base_dir and is readable text."""
+    def _resolve_resource(self, base_dir: Path, relative_path: str) -> Path:
+        """Resolve a resource path, validating it stays within base_dir and is not a folder."""
         if not relative_path or not relative_path.strip():
             raise ValueError("Path cannot be empty")
 
@@ -101,6 +125,11 @@ class Skill(KilnParentedModel):
         if resolved.is_dir():
             raise ValueError(f"Path is a folder, not a file: {relative_path}")
 
+        return resolved
+
+    def _read_resource(self, base_dir: Path, relative_path: str) -> str:
+        """Read a resource file, validating it resolves within base_dir and is readable text."""
+        resolved = self._resolve_resource(base_dir, relative_path)
         try:
             return resolved.read_text(encoding="utf-8")
         except FileNotFoundError:
@@ -111,6 +140,50 @@ class Skill(KilnParentedModel):
             raise ValueError(
                 f"File is not a readable text file: {relative_path}"
             ) from None
+
+    def _resource_base_dir(self, prefixed_path: str) -> tuple[Path, str]:
+        """Split a 'references/…' or 'assets/…' path into (base_dir, relative_path)."""
+        prefix, sep, relative_path = prefixed_path.partition("/")
+        if prefix not in RESOURCE_DIR_NAMES or not sep or not relative_path:
+            raise ValueError(
+                f"Resource path must start with 'references/' or 'assets/' followed by a filename: {prefixed_path!r}"
+            )
+        base_dir = (
+            self.references_dir() if prefix == "references" else self.assets_dir()
+        )
+        return base_dir, relative_path
+
+    def read_resource_bytes(self, prefixed_path: str) -> bytes:
+        """Read any resource file as bytes (binary-safe).
+
+        prefixed_path must start with 'references/' or 'assets/'. Raises ValueError
+        for invalid paths or path traversal, FileNotFoundError if missing.
+        """
+        base_dir, relative_path = self._resource_base_dir(prefixed_path)
+        resolved = self._resolve_resource(base_dir, relative_path)
+        try:
+            return resolved.read_bytes()
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"Resource file not found: {prefixed_path}"
+            ) from None
+
+    def list_resource_files(self) -> List[str]:
+        """List every regular file under references/ and assets/, as sorted
+        'references/…' / 'assets/…' relative paths. Symlinks are skipped."""
+        paths: List[str] = []
+        for base_dir in (self.references_dir(), self.assets_dir()):
+            if not base_dir.is_dir():
+                continue
+            for root, _dirs, files in os.walk(base_dir, followlinks=False):
+                root_path = Path(root)
+                for filename in files:
+                    file_path = root_path / filename
+                    if file_path.is_symlink() or not file_path.is_file():
+                        continue
+                    relative = file_path.relative_to(base_dir).as_posix()
+                    paths.append(f"{base_dir.name}/{relative}")
+        return sorted(paths)
 
     def save_skill_md(self, body: str) -> None:
         """Write SKILL.md with YAML frontmatter (name, description) + markdown body.

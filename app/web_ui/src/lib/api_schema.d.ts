@@ -2803,6 +2803,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/skills/{skill_id}/clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clone Skill Endpoint */
+        post: operations["clone_skill_endpoint_api_projects__project_id__skills__skill_id__clone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/skills/{skill_id}/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Skill Resources */
+        get: operations["get_skill_resources_api_projects__project_id__skills__skill_id__resources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/skills/{skill_id}/resource_content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Skill Resource Content */
+        get: operations["get_skill_resource_content_api_projects__project_id__skills__skill_id__resource_content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/skills/{skill_id}/open_enclosing_folder": {
         parameters: {
             query?: never;
@@ -10545,6 +10596,27 @@ export interface components {
             mode: "subset" | "superset" | "equal";
         };
         /**
+         * SkillCloneRequest
+         * @description Request to clone a skill, copying all its reference and asset files.
+         */
+        SkillCloneRequest: {
+            /**
+             * Name
+             * @description The name of the new skill.
+             */
+            name: string;
+            /**
+             * Description
+             * @description What the skill does and when to use it.
+             */
+            description: string;
+            /**
+             * Body
+             * @description The markdown body of the new skill. Defaults to the source skill's body.
+             */
+            body?: string | null;
+        };
+        /**
          * SkillContentResponse
          * @description The full content of a skill including its markdown body.
          */
@@ -10580,6 +10652,98 @@ export interface components {
              * @description The markdown body of the skill.
              */
             body: string;
+            /**
+             * Files
+             * @description Optional resource files (references/… and assets/…) installed atomically with the skill.
+             */
+            files?: components["schemas"]["SkillFileParam"][];
+            /** @description Optional provenance metadata: authoring notes, lineage, and origin. */
+            provenance?: components["schemas"]["SkillProvenance"] | null;
+        };
+        /**
+         * SkillFileParam
+         * @description A resource file to include in a skill bundle.
+         */
+        SkillFileParam: {
+            /**
+             * Path
+             * @description Path within the skill bundle, starting with 'references/' or 'assets/'. Forward slashes only.
+             */
+            path: string;
+            /**
+             * Content
+             * @description File content: plain text for utf-8 encoding, base64 string for base64 encoding.
+             */
+            content: string;
+            /**
+             * Encoding
+             * @description How the content field is encoded. Use base64 for binary files.
+             * @default utf-8
+             * @enum {string}
+             */
+            encoding: "utf-8" | "base64";
+        };
+        /**
+         * SkillProvenance
+         * @description Where a skill came from: authoring notes, lineage, and who authored it.
+         */
+        SkillProvenance: {
+            /**
+             * Notes
+             * @description Free-form notes on why this skill exists and how it was authored.
+             * @default
+             */
+            notes: string;
+            /**
+             * Derived From Ids
+             * @description IDs of skills this skill was derived from (e.g. the source of a clone).
+             */
+            derived_from_ids?: string[];
+            /**
+             * Origin
+             * @description Whether the skill was authored by a user or an agent.
+             * @default user
+             * @enum {string}
+             */
+            origin: "user" | "agent";
+        };
+        /**
+         * SkillResourceContentResponse
+         * @description The content of a single skill resource file.
+         */
+        SkillResourceContentResponse: {
+            /**
+             * Path
+             * @description Bundle-relative path of the file.
+             */
+            path: string;
+            /**
+             * Encoding
+             * @description How content is encoded: utf-8 for text files, base64 for binary.
+             * @enum {string}
+             */
+            encoding: "utf-8" | "base64";
+            /**
+             * Content
+             * @description The file content in the stated encoding.
+             */
+            content: string;
+        };
+        /**
+         * SkillResourceInfo
+         * @description A resource file within a skill bundle.
+         */
+        SkillResourceInfo: {
+            /**
+             * Path
+             * @description Bundle-relative path, starting with 'references/' or 'assets/'.
+             */
+            path: string;
+            /**
+             * Size Bytes
+             * @description File size in bytes.
+             */
+            size_bytes: number;
         };
         /**
          * SkillResponse
@@ -10617,6 +10781,8 @@ export interface components {
              * @description When the skill was created.
              */
             created_at?: string | null;
+            /** @description Provenance metadata, if recorded. */
+            provenance?: components["schemas"]["SkillProvenance"] | null;
         };
         /**
          * SkillUpdateRequest
@@ -19103,6 +19269,115 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillContentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clone_skill_endpoint_api_projects__project_id__skills__skill_id__clone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the skill to clone. */
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillCloneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_skill_resources_api_projects__project_id__skills__skill_id__resources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the skill. */
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillResourceInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_skill_resource_content_api_projects__project_id__skills__skill_id__resource_content_get: {
+        parameters: {
+            query: {
+                /** @description Bundle-relative resource path, starting with 'references/' or 'assets/'. */
+                path: string;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the skill. */
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillResourceContentResponse"];
                 };
             };
             /** @description Validation Error */

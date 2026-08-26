@@ -1,9 +1,16 @@
+import base64
+import binascii
 import logging
 from datetime import datetime
-from typing import Annotated, List
+from typing import Annotated, List, Literal
 
-from fastapi import FastAPI, HTTPException, Path
-from kiln_ai.datamodel.skill import Skill
+from fastapi import FastAPI, HTTPException, Path, Query
+from kiln_ai.datamodel.skill import Skill, SkillProvenance
+from kiln_ai.datamodel.skill_bundle import (
+    SkillBundleValidationError,
+    clone_skill,
+    create_skill_with_files,
+)
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.validation import SkillNameString
 from kiln_server.document_api import OpenFileResponse
@@ -18,6 +25,21 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 
+class SkillFileParam(BaseModel):
+    """A resource file to include in a skill bundle."""
+
+    path: str = Field(
+        description="Path within the skill bundle, starting with 'references/' or 'assets/'. Forward slashes only."
+    )
+    content: str = Field(
+        description="File content: plain text for utf-8 encoding, base64 string for base64 encoding."
+    )
+    encoding: Literal["utf-8", "base64"] = Field(
+        default="utf-8",
+        description="How the content field is encoded. Use base64 for binary files.",
+    )
+
+
 class SkillCreationRequest(BaseModel):
     """Request to create a new skill."""
 
@@ -28,6 +50,48 @@ class SkillCreationRequest(BaseModel):
         description="What the skill does and when to use it.",
     )
     body: str = Field(min_length=1, description="The markdown body of the skill.")
+    files: List[SkillFileParam] = Field(
+        default_factory=list,
+        description="Optional resource files (references/… and assets/…) installed atomically with the skill.",
+    )
+    provenance: SkillProvenance | None = Field(
+        default=None,
+        description="Optional provenance metadata: authoring notes, lineage, and origin.",
+    )
+
+
+class SkillCloneRequest(BaseModel):
+    """Request to clone a skill, copying all its reference and asset files."""
+
+    name: SkillNameString = Field(description="The name of the new skill.")
+    description: str = Field(
+        min_length=1,
+        max_length=1024,
+        description="What the skill does and when to use it.",
+    )
+    body: str | None = Field(
+        default=None,
+        description="The markdown body of the new skill. Defaults to the source skill's body.",
+    )
+
+
+class SkillResourceInfo(BaseModel):
+    """A resource file within a skill bundle."""
+
+    path: str = Field(
+        description="Bundle-relative path, starting with 'references/' or 'assets/'."
+    )
+    size_bytes: int = Field(description="File size in bytes.")
+
+
+class SkillResourceContentResponse(BaseModel):
+    """The content of a single skill resource file."""
+
+    path: str = Field(description="Bundle-relative path of the file.")
+    encoding: Literal["utf-8", "base64"] = Field(
+        description="How content is encoded: utf-8 for text files, base64 for binary."
+    )
+    content: str = Field(description="The file content in the stated encoding.")
 
 
 class SkillUpdateRequest(BaseModel):
@@ -55,6 +119,9 @@ class SkillResponse(BaseModel):
     created_at: datetime | None = Field(
         default=None, description="When the skill was created."
     )
+    provenance: SkillProvenance | None = Field(
+        default=None, description="Provenance metadata, if recorded."
+    )
 
 
 class SkillContentResponse(BaseModel):
@@ -76,6 +143,26 @@ def _get_skill(project_id: str, skill_id: str) -> Skill:
     if skill is None:
         raise HTTPException(status_code=404, detail="Skill not found")
     return skill
+
+
+def _decode_files(files: List[SkillFileParam]) -> dict[str, bytes]:
+    """Decode request files to bytes, keyed by bundle-relative path."""
+    errors: list[str] = []
+    decoded: dict[str, bytes] = {}
+    for file in files:
+        if file.path in decoded:
+            errors.append(f"duplicate file path: {file.path!r}")
+            continue
+        if file.encoding == "utf-8":
+            decoded[file.path] = file.content.encode("utf-8")
+        else:
+            try:
+                decoded[file.path] = base64.b64decode(file.content, validate=True)
+            except (binascii.Error, ValueError):
+                errors.append(f"file content is not valid base64: {file.path!r}")
+    if errors:
+        raise HTTPException(status_code=422, detail="; ".join(errors))
+    return decoded
 
 
 def connect_skill_api(app: FastAPI):
@@ -144,14 +231,121 @@ def connect_skill_api(app: FastAPI):
         skill_data: SkillCreationRequest,
     ) -> SkillResponse:
         project = project_from_id(project_id)
-        skill = Skill(
-            name=skill_data.name,
-            description=skill_data.description,
-            parent=project,
-        )
-        skill.save_to_file()
-        skill.save_skill_md(skill_data.body)
+        try:
+            skill = create_skill_with_files(
+                project,
+                name=skill_data.name,
+                description=skill_data.description,
+                body=skill_data.body,
+                files=_decode_files(skill_data.files),
+                provenance=skill_data.provenance,
+            )
+        except SkillBundleValidationError as e:
+            raise HTTPException(status_code=422, detail="; ".join(e.errors)) from e
         return skill_to_response(skill)
+
+    @app.post(
+        "/api/projects/{project_id}/skills/{skill_id}/clone",
+        tags=["Skills"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def clone_skill_endpoint(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_id: Annotated[
+            str, Path(description="The unique identifier of the skill to clone.")
+        ],
+        clone_data: SkillCloneRequest,
+    ) -> SkillResponse:
+        project = project_from_id(project_id)
+        source = Skill.from_id_and_parent_path(skill_id, project.path)
+        if source is None:
+            raise HTTPException(status_code=404, detail="Skill not found")
+        body = clone_data.body
+        if body is None:
+            try:
+                body = source.body()
+            except (FileNotFoundError, ValueError) as e:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Source skill has no readable body; provide one: {e}",
+                ) from e
+        try:
+            skill = clone_skill(
+                project,
+                source,
+                name=clone_data.name,
+                description=clone_data.description,
+                body=body,
+            )
+        except SkillBundleValidationError as e:
+            raise HTTPException(status_code=422, detail="; ".join(e.errors)) from e
+        return skill_to_response(skill)
+
+    @app.get(
+        "/api/projects/{project_id}/skills/{skill_id}/resources",
+        tags=["Skills"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_skill_resources(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_id: Annotated[
+            str, Path(description="The unique identifier of the skill.")
+        ],
+    ) -> List[SkillResourceInfo]:
+        skill = _get_skill(project_id, skill_id)
+        if skill.path is None:
+            raise HTTPException(status_code=500, detail="Skill path not found")
+        skill_dir = skill.path.parent
+        return [
+            SkillResourceInfo(
+                path=resource_path,
+                size_bytes=(skill_dir / resource_path).stat().st_size,
+            )
+            for resource_path in skill.list_resource_files()
+        ]
+
+    @app.get(
+        "/api/projects/{project_id}/skills/{skill_id}/resource_content",
+        tags=["Skills"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_skill_resource_content(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_id: Annotated[
+            str, Path(description="The unique identifier of the skill.")
+        ],
+        path: Annotated[
+            str,
+            Query(
+                description="Bundle-relative resource path, starting with 'references/' or 'assets/'."
+            ),
+        ],
+    ) -> SkillResourceContentResponse:
+        skill = _get_skill(project_id, skill_id)
+        try:
+            data = skill.read_resource_bytes(path)
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=404, detail=f"Resource not found: {path}"
+            ) from None
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        try:
+            return SkillResourceContentResponse(
+                path=path, encoding="utf-8", content=data.decode("utf-8")
+            )
+        except UnicodeDecodeError:
+            return SkillResourceContentResponse(
+                path=path,
+                encoding="base64",
+                content=base64.b64encode(data).decode("ascii"),
+            )
 
     @app.patch(
         "/api/projects/{project_id}/skills/{skill_id}",

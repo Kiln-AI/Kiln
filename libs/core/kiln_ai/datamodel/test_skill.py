@@ -467,3 +467,101 @@ class TestAssets:
         skill = make_skill()
         with pytest.raises(ValueError, match="Skill must be saved"):
             skill.assets_dir()
+
+
+# -- Provenance tests --
+
+
+def test_provenance_round_trips_through_save_and_load(mock_project):
+    from kiln_ai.datamodel.skill import SkillProvenance
+
+    skill = save_skill_with_body(
+        mock_project,
+        provenance=SkillProvenance(
+            notes="Built to test provenance.",
+            derived_from_ids=["123456789012"],
+            origin="agent",
+        ),
+    )
+    loaded = Skill.load_from_file(skill.path)
+    assert loaded.provenance is not None
+    assert loaded.provenance.notes == "Built to test provenance."
+    assert loaded.provenance.derived_from_ids == ["123456789012"]
+    assert loaded.provenance.origin == "agent"
+
+
+def test_provenance_defaults_to_none(mock_project):
+    skill = save_skill_with_body(mock_project)
+    loaded = Skill.load_from_file(skill.path)
+    assert loaded.provenance is None
+
+
+def test_provenance_survives_resave(mock_project):
+    from kiln_ai.datamodel.skill import SkillProvenance
+
+    skill = save_skill_with_body(
+        mock_project,
+        provenance=SkillProvenance(notes="keep me", origin="agent"),
+    )
+    loaded = Skill.load_from_file(skill.path)
+    loaded.is_archived = True
+    loaded.save_to_file()
+    reloaded = Skill.load_from_file(skill.path)
+    assert reloaded.provenance is not None
+    assert reloaded.provenance.notes == "keep me"
+    assert reloaded.is_archived is True
+
+
+# -- Resource listing and binary read tests --
+
+
+@pytest.fixture
+def skill_with_resources(mock_project):
+    skill = save_skill_with_body(mock_project)
+    (skill.references_dir() / "guide.md").write_text("guide", encoding="utf-8")
+    nested = skill.references_dir() / "api"
+    nested.mkdir()
+    (nested / "endpoints.md").write_text("endpoints", encoding="utf-8")
+    (skill.assets_dir() / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00binary")
+    return skill
+
+
+def test_list_resource_files(skill_with_resources):
+    assert skill_with_resources.list_resource_files() == [
+        "assets/logo.png",
+        "references/api/endpoints.md",
+        "references/guide.md",
+    ]
+
+
+def test_list_resource_files_empty(mock_project):
+    skill = save_skill_with_body(mock_project)
+    assert skill.list_resource_files() == []
+
+
+def test_read_resource_bytes_binary(skill_with_resources):
+    data = skill_with_resources.read_resource_bytes("assets/logo.png")
+    assert data == b"\x89PNG\r\n\x1a\n\x00binary"
+
+
+def test_read_resource_bytes_text(skill_with_resources):
+    assert skill_with_resources.read_resource_bytes("references/guide.md") == b"guide"
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["", "guide.md", "scripts/run.py", "references/", "references"],
+)
+def test_read_resource_bytes_invalid_prefix(skill_with_resources, path):
+    with pytest.raises(ValueError, match="must start with"):
+        skill_with_resources.read_resource_bytes(path)
+
+
+def test_read_resource_bytes_traversal(skill_with_resources):
+    with pytest.raises(ValueError, match="traversal"):
+        skill_with_resources.read_resource_bytes("references/../skill.kiln")
+
+
+def test_read_resource_bytes_missing(skill_with_resources):
+    with pytest.raises(FileNotFoundError):
+        skill_with_resources.read_resource_bytes("references/nope.md")
