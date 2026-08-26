@@ -73,6 +73,7 @@ from kiln_ai.utils.async_job_runner import (
     RetryableError,
 )
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
+from kiln_ai.utils.slow_operation import log_if_slow
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.task_api import task_from_id
@@ -132,12 +133,13 @@ DRIVE_CONCURRENCY = 10
 REVIEW_CONCURRENCY = 8
 
 # The single-turn run stage's knobs — the same posture as the multi-turn
-# drive runner (shared retry classifier, retry count, delay), with the
-# drive's per-turn budget as the whole-case timeout: one single-turn case is
-# one agent invocation, the same unit of work as one multi-turn turn.
+# drive runner (shared retry classifier, retry count, delay). Like the
+# multi-turn drive, a run has no app-level timeout: termination is
+# guaranteed by structural bounds (the adapter's tool-call cap and the
+# model client's per-request timeout), and a pathologically slow run is
+# logged rather than killed.
 RUN_MAX_RETRIES = 2
 RUN_RETRY_DELAY_SECONDS = 1.0
-RUN_TIMEOUT_SECONDS = 120.0
 
 # Identifies the single-turn pipeline in input_source.properties.adapter_name
 # so a reader looking at a TaskRun can tell who created it.
@@ -890,9 +892,8 @@ class JudgeTracesRun(JudgeStreamBase):
 
 class _RunFailure(Exception):
     """A terminal per-case failure of the single-turn run stage — never
-    retried. Deterministic input problems, per-case timeouts (a retry would
-    pin a worker for another full run budget), and provider errors the
-    shared classifier calls permanent. `code` is surfaced on case_failed.
+    retried. Deterministic input problems and provider errors the shared
+    classifier calls permanent. `code` is surfaced on case_failed.
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -1096,13 +1097,15 @@ class SingleTurnPipelineRun(JudgeStreamBase):
                     default_tags=single_turn_drive_tags(self._batch_tag),
                 ),
             )
-            # The timeout bounds the whole invocation (tool loops included):
-            # one hung provider call would otherwise pin this case's
-            # concurrency slot until the consumer disconnects.
-            run = await asyncio.wait_for(
-                adapter.invoke(input=parsed_input, input_source=self._input_source()),
-                timeout=RUN_TIMEOUT_SECONDS,
-            )
+            # No app-level timeout: a hung provider call is bounded by the
+            # model client's per-request timeout and the tool loop by the
+            # adapter's cap, so the invocation terminates structurally. The
+            # watchdog makes a pathologically slow run visible in logs
+            # without killing a healthy one.
+            async with log_if_slow(f"single_turn_pipeline: case {case_index}"):
+                run = await adapter.invoke(
+                    input=parsed_input, input_source=self._input_source()
+                )
             output = run.output.output if run.output is not None else None
             if not output:
                 raise _RunFailure(
@@ -1150,21 +1153,6 @@ class SingleTurnPipelineRun(JudgeStreamBase):
             # always propagate.
             await asyncio.shield(self._delete_partial_run(run))
             raise
-        except asyncio.TimeoutError as e:
-            # The run exceeded its budget; wait_for already cancelled it (an
-            # invoke cancelled mid-flight returns nothing, so there is
-            # usually no run to clean up).
-            logger.warning(
-                "single_turn_pipeline: case %d timed out after %.0fs",
-                case_index,
-                RUN_TIMEOUT_SECONDS,
-            )
-            await self._delete_partial_run(run)
-            raise _RunFailure(
-                "case_timeout",
-                f"The run did not finish within {RUN_TIMEOUT_SECONDS:.0f}s "
-                "and was cancelled.",
-            ) from e
         except Exception as e:
             # Adapter network errors, model misconfig, save blow-ups,
             # anything unexpected. Log with full traceback; clean this
@@ -1178,10 +1166,16 @@ class SingleTurnPipelineRun(JudgeStreamBase):
             # text — unwrap so failure events name the real provider failure
             # instead of the generic wrapper text.
             cause = unwrap_kiln_run_error(e)
+            detail = str(cause).strip()
+            if not detail and isinstance(cause, TimeoutError):
+                # A raw provider timeout lands here (no app-level budget
+                # remains) and carries no message; name it so the
+                # case_failed frame isn't an empty string.
+                detail = "The model provider request timed out."
             if is_retryable_error(e):
-                raise RetryableError(f"{type(cause).__name__}: {cause}") from e
+                raise RetryableError(f"{type(cause).__name__}: {detail}") from e
             raise _RunFailure(
-                "unexpected_error", f"{type(cause).__name__}: {cause}"
+                "unexpected_error", f"{type(cause).__name__}: {detail}"
             ) from e
 
     async def _delete_partial_run(self, run: TaskRun | None) -> None:

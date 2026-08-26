@@ -602,9 +602,9 @@ async def test_su_failure_deletes_chain_including_just_persisted_run(
 async def test_case_timeout_fails_case_and_deletes_partial_chain(
     fake_task: Mock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A drive that exceeds the per-case timeout fails with `case_timeout`,
-    its already-persisted turns are removed, and the batch still completes —
-    a hung provider call must not pin a concurrency slot forever."""
+    """A drive that exceeds a caller-set case_timeout_seconds fails with
+    `case_timeout`, its already-persisted turns are removed, and the batch
+    still completes — a caller's budget must free the slot it bounds."""
     turn_one = _fake_run("turn-1")
     calls = {"n": 0}
 
@@ -638,6 +638,81 @@ async def test_case_timeout_fails_case_and_deletes_partial_chain(
     assert completed.successful == 0
     # Timeouts are never retried — a retry would pin a worker for another
     # full drive budget. Two invokes = one attempt (turn 1 + the hang).
+    assert calls["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_no_case_timeout_by_default(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no caller-set case_timeout_seconds the drive is unbounded —
+    wait_for gets timeout=None. No budget may be derived from turn count:
+    a slow-but-healthy case must never be killed by the runner."""
+    captured_timeouts: list[float | None] = []
+    real_wait_for = asyncio.wait_for
+
+    async def spy_wait_for(awaitable: Any, timeout: float | None = None) -> Any:
+        captured_timeouts.append(timeout)
+        return await real_wait_for(awaitable, timeout)
+
+    monkeypatch.setattr(asyncio, "wait_for", spy_wait_for)
+    _patch_adapter_for_task(monkeypatch, [_fake_run("turn-1")])
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=1,
+        )
+    )
+
+    completed = next(e for e in events if isinstance(e, BatchCompletedEvent))
+    assert completed.successful == 1
+    # The drive's wait_for call is the only one made with timeout=None
+    # (the job runner's internal polling uses a small float).
+    assert captured_timeouts.count(None) == 1
+
+
+@pytest.mark.asyncio
+async def test_raw_provider_timeout_is_not_a_case_timeout(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no case budget set, an asyncio.TimeoutError surfacing raw from a
+    provider call is classified as unexpected_error with a named message —
+    never case_timeout (no budget exists to have fired), and never a crash
+    from formatting a None budget."""
+    turn_one = _fake_run("turn-1")
+    calls = {"n": 0}
+
+    async def invoke(**_kwargs: Any) -> Mock:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return turn_one
+        raise asyncio.TimeoutError()
+
+    _patch_adapter_for_task(monkeypatch, invoke)
+    _patch_su_driver(monkeypatch, replies_per_case=["x", "y"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=2,
+        )
+    )
+
+    failed = next(e for e in events if isinstance(e, CaseFailedEvent))
+    assert failed.error_code == "unexpected_error"
+    # A bare TimeoutError has no str(); the message must still say what
+    # happened instead of trailing off after the type name.
+    assert failed.message == "TimeoutError: The model provider request timed out."
+    turn_one.delete.assert_called_once()
+    # Raw timeouts are not classified transient: one attempt only.
     assert calls["n"] == 2
 
 

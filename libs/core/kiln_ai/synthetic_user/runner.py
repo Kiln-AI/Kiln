@@ -39,6 +39,7 @@ from kiln_ai.utils.async_job_runner import (
 )
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+from kiln_ai.utils.slow_operation import log_if_slow
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +47,6 @@ logger = logging.getLogger(__name__)
 NUM_CASES_MAX = 40
 MAX_TURNS_DEFAULT = 5
 CONCURRENCY = 4
-# Default per-case drive timeout, scaled by turn count (each turn is two LLM
-# round trips: target model + SU driver). A hung provider call would otherwise
-# pin a concurrency slot for the batch's whole lifetime.
-DRIVE_TIMEOUT_PER_TURN_SECONDS = 120.0
 # Transient drive failures (see kiln_ai.adapters.retry_classification) retry
 # up to this many times before the case is declared failed — the same retry
 # posture as the eval runner. Timeouts and deterministic input problems are
@@ -159,13 +156,17 @@ async def run_cases_batch(
     fan-out. Events from different cases interleave; ordering WITHIN a case
     is `turn_completed`* → `case_completed | case_failed`.
 
-    `case_timeout_seconds` bounds each case's drive (default: turns *
-    DRIVE_TIMEOUT_PER_TURN_SECONDS). A case that exceeds it fails with
-    `case_timeout` and frees its concurrency slot; the batch continues.
+    `case_timeout_seconds` optionally bounds each case's drive; a case that
+    exceeds it fails with `case_timeout` and frees its concurrency slot while
+    the batch continues. The default (None) is unbounded: termination is
+    guaranteed by structural bounds instead — the exact turn count, the
+    adapter's per-turn tool-call cap, and the model client's per-request
+    timeout — and a case running past a soft threshold logs a warning
+    rather than being killed.
 
     Transient provider failures retry the whole case (up to
     DRIVE_MAX_RETRIES) — its turn events restart at 1; deterministic
-    failures and timeouts fail immediately.
+    failures and caller-set timeout firings fail immediately.
 
     Yields:
       BatchStartedEvent — once, before any case runs.
@@ -182,11 +183,6 @@ async def run_cases_batch(
         raise ValueError("concurrency must be >= 1")
     if case_timeout_seconds is not None and case_timeout_seconds <= 0:
         raise ValueError("case_timeout_seconds must be > 0")
-    resolved_case_timeout = (
-        case_timeout_seconds
-        if case_timeout_seconds is not None
-        else turns * DRIVE_TIMEOUT_PER_TURN_SECONDS
-    )
 
     resolved_batch_tag = batch_tag or _new_batch_tag()
     # Skills referenced by the run config must be pre-loaded at the
@@ -216,7 +212,7 @@ async def run_cases_batch(
             save_ctx=save_ctx,
             skills=skills,
             task_run_config_id=task_run_config_id,
-            case_timeout_seconds=resolved_case_timeout,
+            case_timeout_seconds=case_timeout_seconds,
             failed_attempt_spend=failed_attempt_spend,
         )
         return True
@@ -311,9 +307,10 @@ async def run_cases_batch(
 class _CaseFailure(Exception):
     """A terminal per-case failure — never retried.
 
-    Deterministic input problems, per-case timeouts (a retry would pin a
-    worker for another full drive budget), and provider errors the shared
-    classifier calls permanent. `code` is surfaced on CaseFailedEvent.
+    Deterministic input problems, caller-set per-case timeouts (a retry
+    would pin a worker for another full drive budget), and provider errors
+    the shared classifier calls permanent. `code` is surfaced on
+    CaseFailedEvent.
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -343,7 +340,7 @@ async def _drive_one_case_and_emit(
     save_ctx: SaveContext,
     skills: SkillsDict,
     task_run_config_id: str | None,
-    case_timeout_seconds: float,
+    case_timeout_seconds: float | None,
     failed_attempt_spend: dict[int, float],
 ) -> None:
     """Run drive_case for one case (one ATTEMPT), emitting turn/completion
@@ -426,19 +423,23 @@ async def _drive_one_case_and_emit(
                 )
             )
 
-        # The timeout bounds the whole drive (every target + SU round trip):
-        # one hung provider call would otherwise hold this case's concurrency
-        # slot until the consumer disconnects.
-        result = await asyncio.wait_for(
-            drive_case(
-                seed_prompt=case.seed_prompt,
-                target_invoker=_target_invoker,
-                su_driver=su_driver,
-                turns=turns,
-                on_turn=_on_turn,
-            ),
-            timeout=case_timeout_seconds,
-        )
+        # Unbounded by default (timeout=None): a hung provider call is
+        # bounded by the model client's per-request timeout, and the drive
+        # terminates structurally (exact turn count, per-turn tool-call cap).
+        # An explicit case_timeout_seconds still bounds the whole drive when
+        # a caller sets one; either way the watchdog makes a pathologically
+        # slow case visible in logs without killing a healthy run.
+        async with log_if_slow(f"synthetic_user runner: case {case_index}"):
+            result = await asyncio.wait_for(
+                drive_case(
+                    seed_prompt=case.seed_prompt,
+                    target_invoker=_target_invoker,
+                    su_driver=su_driver,
+                    turns=turns,
+                    on_turn=_on_turn,
+                ),
+                timeout=case_timeout_seconds,
+            )
 
         # Tag the leaf so eval-time loaders can find it. Inside the try
         # so a tag-save failure (full disk, validator rejection on a
@@ -474,17 +475,33 @@ async def _drive_one_case_and_emit(
         await asyncio.shield(_delete_partial_chain(persisted_runs, save_ctx))
         raise
     except asyncio.TimeoutError as e:
-        # The drive exceeded its per-case budget; wait_for already cancelled
-        # it. The partial chain is removed like any other failed attempt.
+        _bank_attempt_spend(
+            failed_attempt_spend, case_index, persisted_runs, attempt_su_cost
+        )
+        await _delete_partial_chain(persisted_runs, save_ctx)
+        if case_timeout_seconds is None:
+            # No case budget is set, so wait_for cannot have raised this:
+            # it is a provider/network timeout surfacing raw. Classify it
+            # like any other unexpected drive error (transient errors retry).
+            logger.exception(
+                "synthetic_user runner: unexpected error in case %d", case_index
+            )
+            cause = unwrap_kiln_run_error(e)
+            # A bare TimeoutError carries no message; name the failure so
+            # the case_failed frame isn't an empty string.
+            detail = str(cause).strip() or "The model provider request timed out."
+            if is_retryable_error(e):
+                raise RetryableError(f"{type(cause).__name__}: {detail}") from e
+            raise _CaseFailure(
+                "unexpected_error", f"{type(cause).__name__}: {detail}"
+            ) from e
+        # The drive exceeded its caller-set per-case budget; wait_for already
+        # cancelled it. The partial chain was removed like any failed attempt.
         logger.warning(
             "synthetic_user runner: case %d timed out after %.0fs",
             case_index,
             case_timeout_seconds,
         )
-        _bank_attempt_spend(
-            failed_attempt_spend, case_index, persisted_runs, attempt_su_cost
-        )
-        await _delete_partial_chain(persisted_runs, save_ctx)
         raise _CaseFailure(
             "case_timeout",
             f"The conversation did not finish within "

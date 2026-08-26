@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import re
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -2283,9 +2284,14 @@ class TestSingleTurnPipeline:
         # batch total alongside the surviving case's 0.05.
         assert _events_of(events, "batch_completed")[0]["total_cost"] == 0.1
 
-    def test_timeout_fails_case(self, client, single_turn_request, single_turn_seams):
-        """A run over budget fails with case_timeout and frees its slot;
-        the batch continues."""
+    def test_slow_run_completes_and_logs(
+        self, client, single_turn_request, single_turn_seams, monkeypatch, caplog
+    ):
+        """A run slower than the soft log threshold completes and is
+        judged, with the watchdog warning making the slowness visible in
+        logs. The single-turn path has no seam that could prove the absence
+        of a run budget; that property is pinned on the multi-turn runner's
+        wait_for (test_no_case_timeout_by_default)."""
         slow_input = single_turn_request["inputs"][0]
 
         def fake_adapter(task, run_config, base_adapter_config=None):
@@ -2299,10 +2305,11 @@ class TestSingleTurnPipeline:
             adapter.invoke = invoke
             return adapter
 
+        monkeypatch.setattr(
+            "kiln_ai.utils.slow_operation.DEFAULT_SLOW_LOG_THRESHOLD_SECONDS", 0.05
+        )
         with (
-            patch(
-                "app.desktop.studio_server.eval_builder_api.RUN_TIMEOUT_SECONDS", 0.05
-            ),
+            caplog.at_level(logging.WARNING, logger="kiln_ai.utils.slow_operation"),
             patch(
                 "app.desktop.studio_server.eval_builder_api.adapter_for_task",
                 side_effect=fake_adapter,
@@ -2310,10 +2317,14 @@ class TestSingleTurnPipeline:
         ):
             resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
         events = _parse_sse(resp.text)
-        failed = _events_of(events, "case_failed")
-        assert len(failed) == 1
-        assert failed[0]["code"] == "case_timeout"
-        assert [e["case_index"] for e in _events_of(events, "case_judged")] == [1]
+        assert _events_of(events, "case_failed") == []
+        assert sorted(e["case_index"] for e in _events_of(events, "case_judged")) == [
+            0,
+            1,
+        ]
+        slow_warnings = [r for r in caplog.records if "still running" in r.getMessage()]
+        assert len(slow_warnings) == 1
+        assert "case 0" in slow_warnings[0].getMessage()
 
     def test_multiturn_task_rejected(
         self, client, single_turn_request, single_turn_seams

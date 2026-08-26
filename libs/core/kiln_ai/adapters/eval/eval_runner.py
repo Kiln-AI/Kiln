@@ -58,6 +58,7 @@ from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam, serialize_trace
+from kiln_ai.utils.slow_operation import log_if_slow
 
 logger = logging.getLogger(__name__)
 
@@ -968,18 +969,24 @@ class EvalRunner:
         key = trace_key(item_key(eval_input), job.task_run_config.id)
 
         async def drive_and_persist() -> TaskRun:
-            drive_result = await drive_case_for_eval(
-                seed_prompt=seed,
-                synthetic_user_info=data.synthetic_user_info,
-                target_task=self.task,
-                target_run_config=agent_run_config,
-                su_driver_config=SyntheticUserDriverConfig(
-                    model_name=drive_config.model_name,
-                    model_provider_name=su_provider,
-                ),
-                turns=drive_config.turns,
-                skills=self._skills,
-            )
+            # No app-level timeout on the re-drive: it terminates
+            # structurally (exact turn count, the adapter's tool-call cap,
+            # the model client's per-request timeout). This path runs as a
+            # background job, so the watchdog log is how a pathologically
+            # slow drive gets noticed.
+            async with log_if_slow(f"eval re-drive for eval item {eval_input.id}"):
+                drive_result = await drive_case_for_eval(
+                    seed_prompt=seed,
+                    synthetic_user_info=data.synthetic_user_info,
+                    target_task=self.task,
+                    target_run_config=agent_run_config,
+                    su_driver_config=SyntheticUserDriverConfig(
+                        model_name=drive_config.model_name,
+                        model_provider_name=su_provider,
+                    ),
+                    turns=drive_config.turns,
+                    skills=self._skills,
+                )
             leaf_trace = drive_result.chain[-1].trace if drive_result.chain else None
             problem = conversation_health_problem(leaf_trace, drive_config.turns)
             if problem is not None:
