@@ -13,6 +13,9 @@
   export let blur_background: boolean = false
   // Dialog width. "extra_wide" is for content that reads as a full page in
   // miniature (a whole conversation), where 3xl forces constant wrapping.
+  // Dialogs rendered INSIDE another dialog's content are display:none while
+  // closed (app.css .modal-box rule) — closed nested overlays otherwise
+  // inflate the outer box's scroll area via its permanent transform.
   export let width: "normal" | "wide" | "extra_wide" = "normal"
   const id: string = "dialog-" + Math.random().toString(36)
   type ActionButton = {
