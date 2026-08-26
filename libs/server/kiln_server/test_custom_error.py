@@ -260,3 +260,23 @@ class TestSurrogateInValidationError:
         assert response.status_code == 422
         body = response.json()
         assert "error_messages" in body
+
+
+class TestNestedDetailSanitization:
+    def test_dict_detail_with_surrogate_still_returns_status(
+        self, app, client_no_raise
+    ):
+        from fastapi import HTTPException
+
+        @app.get("/dict-detail-surrogate")
+        async def dict_detail_surrogate():
+            raise HTTPException(
+                status_code=422,
+                detail={"failed_files": ["bad\ud800name.txt"], "count": 1},
+            )
+
+        response = client_no_raise.get("/dict-detail-surrogate")
+        assert response.status_code == 422
+        body = response.json()
+        assert body["message"]["count"] == 1
+        assert "name.txt" in body["message"]["failed_files"][0]

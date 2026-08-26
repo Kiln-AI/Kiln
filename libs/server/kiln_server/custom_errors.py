@@ -89,15 +89,26 @@ def connect_custom_errors(app: FastAPI):
         )
 
     # Wrap in a format that the client can understand (message, and error_messages)
+    def sanitize_detail(value):
+        # Details can be nested structures carrying request-derived strings
+        # (e.g. filenames); sanitize every string, preserve the shape.
+        if isinstance(value, str):
+            return safe_str(value)
+        if isinstance(value, dict):
+            return {
+                safe_str(k) if isinstance(k, str) else k: sanitize_detail(v)
+                for k, v in value.items()
+            }
+        if isinstance(value, (list, tuple)):
+            return [sanitize_detail(v) for v in value]
+        return value
+
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
-        detail = exc.detail
-        if isinstance(detail, str):
-            detail = safe_str(detail)
         return JSONResponse(
             status_code=exc.status_code,
             headers={"Access-Control-Allow-Origin": "*"},
-            content={"message": detail},
+            content={"message": sanitize_detail(exc.detail)},
         )
 
     @app.exception_handler(KilnRunError)

@@ -350,7 +350,9 @@ class TestCreateSkillWithFiles:
     def test_create_with_invalid_file_path_rejected(
         self, client, test_project, mock_project_from_id, sample_skill_data
     ):
-        sample_skill_data["files"] = [{"path": "scripts/run.py", "content": "print()"}]
+        sample_skill_data["files"] = [
+            {"path": "scripts/run.py", "content": "# a script"}
+        ]
         response = client.post(
             f"/api/projects/{test_project.id}/skills",
             json=sample_skill_data,
@@ -541,7 +543,7 @@ class TestResourceEdgeCases:
         sample_skill_data["name"] = saved_skill.name
         sample_skill_data["files"] = [
             {"path": "assets/a.png", "content": "not base64!!!", "encoding": "base64"},
-            {"path": "scripts/run.py", "content": "print()"},
+            {"path": "scripts/run.py", "content": "# a script"},
         ]
         response = client.post(
             f"/api/projects/{test_project.id}/skills",

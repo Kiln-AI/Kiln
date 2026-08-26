@@ -116,7 +116,7 @@ class TestCreateSkillWithFiles:
                 description="A test skill.",
                 body="  ",
                 files={
-                    "scripts/run.py": b"print()",
+                    "scripts/run.py": b"# a script",
                     "references/bad.md": b"\xff\xfe not utf8",
                 },
             )
@@ -362,7 +362,7 @@ class TestCloneSkill:
         source_dir = source.path.parent
         scripts_dir = source_dir / "scripts"
         scripts_dir.mkdir()
-        (scripts_dir / "run.py").write_text("print('hi')", encoding="utf-8")
+        (scripts_dir / "run.py").write_text("# a script", encoding="utf-8")
         (source_dir / "docs.md").write_text("# Docs", encoding="utf-8")
         clone = clone_skill(
             project,
@@ -375,7 +375,7 @@ class TestCloneSkill:
         clone_dir = clone.path.parent
         assert (clone_dir / "scripts" / "run.py").read_text(
             encoding="utf-8"
-        ) == "print('hi')"
+        ) == "# a script"
         assert (clone_dir / "docs.md").read_text(encoding="utf-8") == "# Docs"
         # skill.kiln and SKILL.md are regenerated, never copied
         assert Skill.load_from_file(clone.path).id != source.id
