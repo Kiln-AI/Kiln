@@ -17,6 +17,7 @@ import errno
 import os
 import shutil
 import time
+import unicodedata
 import uuid
 from pathlib import Path
 from typing import Dict, Optional
@@ -30,6 +31,7 @@ from kiln_ai.datamodel.skill import (
 
 MAX_RESOURCE_FILE_BYTES = 512 * 1024
 MAX_BUNDLE_BYTES = 2 * 1024 * 1024
+MAX_BUNDLE_FILE_COUNT = 500
 
 STAGING_DIR_NAME = ".skill_staging"
 # Staging dirs orphaned by a hard crash (power loss between mkdir and rename)
@@ -123,6 +125,8 @@ def validate_resource_path(path: str) -> str | None:
 def validate_bundle_files(files: Dict[str, bytes]) -> list[str]:
     """Validate resource files for a bundle, accumulating every failure."""
     errors: list[str] = []
+    if len(files) > MAX_BUNDLE_FILE_COUNT:
+        errors.append(f"too many files: {len(files)} (cap {MAX_BUNDLE_FILE_COUNT})")
     total_bytes = 0
     valid_paths: list[str] = []
     for path, content in files.items():
@@ -149,25 +153,30 @@ def validate_bundle_files(files: Dict[str, bytes]) -> list[str]:
         )
 
     # Paths must not collide once written to a real filesystem: no two paths
-    # differing only by case (case-insensitive filesystems on macOS/Windows
-    # would silently overwrite), and no path that is both a file and a parent
-    # directory of another file.
-    seen_casefold: dict[str, str] = {}
+    # differing only by case or Unicode normalization (case-insensitive,
+    # normalization-insensitive filesystems on macOS/Windows would silently
+    # overwrite), and no path that is both a file and a parent directory of
+    # another file.
+    def fold(path: str) -> str:
+        return unicodedata.normalize("NFC", path).casefold()
+
+    seen_folded: dict[str, str] = {}
     for path in valid_paths:
-        folded = path.casefold()
-        if folded in seen_casefold:
+        folded = fold(path)
+        if folded in seen_folded:
             errors.append(
-                f"file paths differ only by case: {seen_casefold[folded]!r} and {path!r}"
+                f"file paths collide on a case- or normalization-insensitive "
+                f"filesystem: {seen_folded[folded]!r} and {path!r}"
             )
         else:
-            seen_casefold[folded] = path
+            seen_folded[folded] = path
     dir_prefixes = {
-        "/".join(path.split("/")[:i]).casefold()
+        fold("/".join(path.split("/")[:i]))
         for path in valid_paths
         for i in range(1, len(path.split("/")))
     }
     for path in valid_paths:
-        if path.casefold() in dir_prefixes:
+        if fold(path) in dir_prefixes:
             errors.append(f"path is used as both a file and a directory: {path!r}")
     return errors
 
@@ -212,23 +221,22 @@ def _sweep_stale_staging(staging_root: Path) -> None:
 def _fsync_tree(root: Path) -> None:
     """Flush staged writes to stable storage before the commit rename, so a
     power loss after install can never leave truncated files behind the
-    'fully formed' promise. Directory fsync is best-effort (unsupported on
-    Windows)."""
+    'fully formed' promise. Best-effort throughout: on Windows, fsync of a
+    read-only fd and of directories is unsupported, and durability must never
+    break creation itself."""
     for dirpath, _dirs, files in os.walk(root):
-        for filename in files:
-            fd = os.open(os.path.join(dirpath, filename), os.O_RDONLY)
+        for name in [*files, None]:
             try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-        try:
-            dir_fd = os.open(dirpath, os.O_RDONLY)
-            try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
-        except OSError:
-            pass
+                fd = os.open(
+                    dirpath if name is None else os.path.join(dirpath, name),
+                    os.O_RDONLY,
+                )
+                try:
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+            except OSError:
+                pass
 
 
 def _remove_staging_root_if_empty(staging_root: Path) -> None:

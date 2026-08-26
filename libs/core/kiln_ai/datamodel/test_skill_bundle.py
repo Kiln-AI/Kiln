@@ -97,7 +97,7 @@ class TestCreateSkillWithFiles:
             "assets/logo.png": b"\x89PNG\x00binary",
         }
         skill = create(project, files=files)
-        assert skill.list_resource_files() == sorted(files.keys())
+        assert [p for p, _ in skill.list_resources_with_sizes()] == sorted(files.keys())
         assert skill.read_resource_bytes("assets/logo.png") == b"\x89PNG\x00binary"
         assert skill.read_reference("api/endpoints.md") == "# Endpoints"
 
@@ -216,7 +216,23 @@ class TestCreateSkillWithFiles:
             "references/Guide.md": b"a",
             "references/guide.md": b"b",
         }
-        with pytest.raises(SkillBundleValidationError, match="differ only by case"):
+        with pytest.raises(SkillBundleValidationError, match="collide on a case"):
+            create(project, files=files)
+
+    def test_unicode_normalization_collision_rejected(self, project):
+        # NFC and NFD spellings of the same name are one file on APFS/HFS+.
+        files = {
+            "references/caf\u00e9.md": b"a",
+            "references/cafe\u0301.md": b"b",
+        }
+        with pytest.raises(SkillBundleValidationError, match="collide on a case"):
+            create(project, files=files)
+
+    def test_too_many_files_rejected(self, project):
+        from kiln_ai.datamodel.skill_bundle import MAX_BUNDLE_FILE_COUNT
+
+        files = {f"assets/f{i}.bin": b"" for i in range(MAX_BUNDLE_FILE_COUNT + 1)}
+        with pytest.raises(SkillBundleValidationError, match="too many files"):
             create(project, files=files)
 
     def test_unreadable_sibling_skill_does_not_block_create(self, project):
@@ -273,7 +289,7 @@ class TestCloneSkill:
             description="A clone.",
             body="New body.",
         )
-        assert clone.list_resource_files() == source.list_resource_files()
+        assert clone.list_resources_with_sizes() == source.list_resources_with_sizes()
         assert clone.read_resource_bytes("assets/logo.png") == b"\x89PNG\x00"
         assert clone.body() == "New body."
         assert clone.id != source.id
@@ -362,7 +378,7 @@ class TestCloneSkill:
                 description="A clone.",
                 body="New body.",
             )
-        assert clone.list_resource_files() == ["assets/logo.png"]
+        assert [p for p, _ in clone.list_resources_with_sizes()] == ["assets/logo.png"]
 
     def test_clone_rejects_duplicate_name(self, project, source):
         with pytest.raises(SkillBundleValidationError, match="install-once"):

@@ -483,17 +483,9 @@ def skill_with_resources(mock_project):
     return skill
 
 
-def test_list_resource_files(skill_with_resources):
-    assert skill_with_resources.list_resource_files() == [
-        "assets/logo.png",
-        "references/api/endpoints.md",
-        "references/guide.md",
-    ]
-
-
-def test_list_resource_files_empty(mock_project):
+def test_list_resources_with_sizes_empty(mock_project):
     skill = save_skill_with_body(mock_project)
-    assert skill.list_resource_files() == []
+    assert skill.list_resources_with_sizes() == []
 
 
 def test_read_resource_bytes_binary(skill_with_resources):

@@ -5,8 +5,10 @@ from datetime import datetime
 from typing import Annotated, List, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Query
+from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.skill import ResourceTooLargeError, Skill
 from kiln_ai.datamodel.skill_bundle import (
+    MAX_BUNDLE_FILE_COUNT,
     SkillBundleValidationError,
     clone_skill,
     create_skill_with_files,
@@ -57,6 +59,7 @@ class SkillCreationRequest(BaseModel):
     body: str = Field(min_length=1, description="The markdown body of the skill.")
     files: List[SkillFileParam] = Field(
         default_factory=list,
+        max_length=MAX_BUNDLE_FILE_COUNT,
         description="Optional resource files (references/… and assets/…) installed atomically with the skill.",
     )
 
@@ -135,11 +138,16 @@ def skill_to_response(skill: Skill) -> SkillResponse:
     return SkillResponse.model_validate(skill.model_dump())
 
 
-def _get_skill(project_id: str, skill_id: str) -> Skill:
+def _get_project_and_skill(project_id: str, skill_id: str) -> tuple[Project, Skill]:
     project = project_from_id(project_id)
     skill = Skill.from_id_and_parent_path(skill_id, project.path)
     if skill is None:
         raise HTTPException(status_code=404, detail="Skill not found")
+    return project, skill
+
+
+def _get_skill(project_id: str, skill_id: str) -> Skill:
+    _project, skill = _get_project_and_skill(project_id, skill_id)
     return skill
 
 
@@ -214,10 +222,7 @@ def connect_skill_api(app: FastAPI):
             str, Path(description="The unique identifier of the skill.")
         ],
     ) -> SkillContentResponse:
-        project = project_from_id(project_id)
-        skill = Skill.from_id_and_parent_path(skill_id, project.path)
-        if skill is None:
-            raise HTTPException(status_code=404, detail="Skill not found")
+        skill = _get_skill(project_id, skill_id)
         try:
             skill_md = skill.skill_md_raw()
         except FileNotFoundError:
@@ -267,10 +272,7 @@ def connect_skill_api(app: FastAPI):
         ],
         clone_data: SkillCloneRequest,
     ) -> SkillResponse:
-        project = project_from_id(project_id)
-        source = Skill.from_id_and_parent_path(skill_id, project.path)
-        if source is None:
-            raise HTTPException(status_code=404, detail="Skill not found")
+        project, source = _get_project_and_skill(project_id, skill_id)
         body = clone_data.body
         if body is None:
             try:

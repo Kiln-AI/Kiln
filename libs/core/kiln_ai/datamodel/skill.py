@@ -197,11 +197,6 @@ class Skill(KilnParentedModel):
                     resources.append((f"{base_dir.name}/{relative}", size))
         return sorted(resources)
 
-    def list_resource_files(self) -> List[str]:
-        """List every regular file under references/ and assets/, as sorted
-        'references/…' / 'assets/…' relative paths. Symlinks are skipped."""
-        return [path for path, _size in self.list_resources_with_sizes()]
-
     def save_skill_md(self, body: str) -> None:
         """Write SKILL.md with YAML frontmatter (name, description) + markdown body.
 
