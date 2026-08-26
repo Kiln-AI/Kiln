@@ -51,6 +51,120 @@ export type DriveStop = {
   preflight?: PreflightFailure | null
 }
 
+// ── Top-off drive planning ────────────────────────────────────────────────
+//
+// A retry after a partial drive must fill the batch, not replace it: the
+// completed cases are paid results, and re-driving them re-bills every one
+// while the previous batch's chains are deleted as superseded. The drive
+// plan below decides, before anything is spent, whether the next drive can
+// TOP OFF the current batch — drive only the missing slots, into the SAME
+// batch tag, so the new results land beside the kept ones and review/save
+// read one whole batch — or must start fresh (replace semantics).
+
+export type DrivePlan<T> = {
+  // What this drive sends the pipeline: every item on a fresh drive, only
+  // the missing slots' items on a top-off.
+  items: T[]
+  // Maps the stream's case_index (a position in `items`) back to its slot
+  // in the batch. Identity on a fresh drive.
+  slot_of_stream_index: number[]
+  // The batch tag to drive into: the current batch's tag on a top-off
+  // (retried cases join the same box); null lets the server mint one.
+  batch_tag: string | null
+  // Tags superseded by this drive. A top-off never lists its own batch —
+  // deleting the batch being topped off would destroy the paid successes
+  // being kept.
+  replace_batch_tags: string[]
+  top_off: boolean
+}
+
+export function missing_slot_indices<R>(
+  slots: readonly (R | null)[],
+): number[] {
+  return slots.flatMap((s, i) => (s === null ? [i] : []))
+}
+
+export function plan_drive<T, R>(args: {
+  // The item list resolved for this attempt (cases or inputs).
+  items: T[]
+  // The current batch's item list, or null when no batch exists.
+  batch_items: T[] | null
+  // The current batch's per-slot results (null = missing).
+  built_slots: readonly (R | null)[]
+  batch_tag: string | null
+  undeleted_batch_tags: string[]
+}): DrivePlan<T> {
+  const missing = missing_slot_indices(args.built_slots)
+  // Top-off requires an existing batch with something to keep AND something
+  // to fill, driven from byte-identical items — a changed plan or spec
+  // resolves different items, and mixing them into the old batch would put
+  // results the user never planned together under one tag. The slot/item
+  // length agreement is a hard requirement: a divergence would map missing
+  // slots onto the wrong (or no) items.
+  const can_top_off =
+    args.batch_tag !== null &&
+    args.batch_items !== null &&
+    args.built_slots.length === args.batch_items.length &&
+    missing.length > 0 &&
+    missing.length < args.built_slots.length &&
+    JSON.stringify(args.items) === JSON.stringify(args.batch_items)
+  if (!can_top_off) {
+    return {
+      items: args.items,
+      slot_of_stream_index: args.items.map((_, i) => i),
+      batch_tag: null,
+      replace_batch_tags: [...args.undeleted_batch_tags],
+      top_off: false,
+    }
+  }
+  return {
+    items: missing.map((i) => args.items[i]),
+    slot_of_stream_index: missing,
+    batch_tag: args.batch_tag,
+    replace_batch_tags: args.undeleted_batch_tags.filter(
+      (t) => t !== args.batch_tag,
+    ),
+    top_off: true,
+  }
+}
+
+// Whether the current batch was produced under the same model lanes this
+// attempt would drive with. A changed judge (or, on multi-turn, a changed
+// synthetic-user model) forces a fresh batch instead of a top-off: one
+// review may not mix two judges' verdicts, and the saved drive stamp must
+// describe every conversation in the batch. `su` is omitted entirely on
+// the single-turn arm, which has no synthetic-user lane.
+export function drive_lanes_unchanged(args: {
+  judge: unknown
+  batch_judge: unknown | null
+  su?: unknown
+  batch_su?: unknown | null
+}): boolean {
+  if (args.batch_judge === null) return false
+  if (JSON.stringify(args.judge) !== JSON.stringify(args.batch_judge)) {
+    return false
+  }
+  if (args.su !== undefined) {
+    if (args.batch_su === null || args.batch_su === undefined) return false
+    if (JSON.stringify(args.su) !== JSON.stringify(args.batch_su)) return false
+  }
+  return true
+}
+
+// Compact a batch's slots into the review list, preferring the live review
+// entry where one exists for the same trace: claims built (or any later
+// enrichment of) a kept case must survive a top-off's compaction — the
+// slots hold each case as its drive produced it, not as review evolved it.
+export function compact_batch_slots<T extends { trace_id: string }>(
+  slots: readonly (T | null)[],
+  current: readonly T[],
+): T[] {
+  const live = new Map(current.map((t) => [t.trace_id, t]))
+  return slots
+    .filter((t): t is T => t !== null)
+    .map((t) => live.get(t.trace_id) ?? t)
+}
+
 // The one failure the banner reports, chosen in the given (blame) order —
 // deterministic regardless of which lane's ping lost the race. All lanes
 // are checked concurrently, so with several dead lanes the user fixes them

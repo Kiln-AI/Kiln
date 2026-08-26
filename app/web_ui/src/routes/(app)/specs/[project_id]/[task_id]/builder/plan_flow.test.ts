@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest"
 import {
+  compact_batch_slots,
   dominant_failure_message,
+  drive_lanes_unchanged,
   drive_stop_banner,
   driven_data_confirm,
   first_preflight_failure,
   is_claims_resolved,
+  missing_slot_indices,
   new_plan_confirm,
+  plan_drive,
   resolved_selected_count,
   type DriveStop,
 } from "./plan_flow"
@@ -414,5 +418,216 @@ describe("new_plan_confirm — single-turn plan noun", () => {
         plan_noun: "planned inputs",
       }),
     ).toContain("New planned inputs will discard them.")
+  })
+})
+
+describe("plan_drive — top-off vs fresh batch", () => {
+  const cases = ["c0", "c1", "c2", "c3"]
+  // Slots 1 and 3 failed; 0 and 2 are paid successes.
+  const partial = ["r0", null, "r2", null]
+
+  it("tops off: drives only the missing slots into the same batch tag", () => {
+    // The bug this pins: a retry after a partial drive used to re-drive
+    // EVERY case under a fresh tag, deleting the previous batch — the paid
+    // successes were re-billed and any run outside the one tag was
+    // invisible to review, counts, and save.
+    const plan = plan_drive({
+      items: cases,
+      batch_items: cases,
+      built_slots: partial,
+      batch_tag: "batchA",
+      undeleted_batch_tags: ["batchA", "stale1"],
+    })
+    expect(plan.top_off).toBe(true)
+    expect(plan.items).toEqual(["c1", "c3"])
+    expect(plan.slot_of_stream_index).toEqual([1, 3])
+    expect(plan.batch_tag).toBe("batchA")
+  })
+
+  it("never lists its own batch in replace_batch_tags", () => {
+    // Deleting the batch being topped off would destroy the paid
+    // successes being kept; stale tags from earlier aborted drives still
+    // get cleaned.
+    const plan = plan_drive({
+      items: cases,
+      batch_items: cases,
+      built_slots: partial,
+      batch_tag: "batchA",
+      undeleted_batch_tags: ["batchA", "stale1"],
+    })
+    expect(plan.replace_batch_tags).toEqual(["stale1"])
+  })
+
+  it("recurses: a partially-failed top-off plans the still-missing slots", () => {
+    const after_first_top_off = ["r0", "r1", "r2", null]
+    const plan = plan_drive({
+      items: cases,
+      batch_items: cases,
+      built_slots: after_first_top_off,
+      batch_tag: "batchA",
+      undeleted_batch_tags: ["batchA"],
+    })
+    expect(plan.top_off).toBe(true)
+    expect(plan.items).toEqual(["c3"])
+    expect(plan.slot_of_stream_index).toEqual([3])
+  })
+
+  it("goes fresh when the items changed", () => {
+    // Changed plan or spec resolves different cases; mixing them into the
+    // old batch would put results the user never planned together under
+    // one tag.
+    const plan = plan_drive({
+      items: ["c0", "c1", "c2", "different"],
+      batch_items: cases,
+      built_slots: partial,
+      batch_tag: "batchA",
+      undeleted_batch_tags: ["batchA"],
+    })
+    expect(plan.top_off).toBe(false)
+    expect(plan.items).toEqual(["c0", "c1", "c2", "different"])
+    expect(plan.slot_of_stream_index).toEqual([0, 1, 2, 3])
+    expect(plan.batch_tag).toBeNull()
+    expect(plan.replace_batch_tags).toEqual(["batchA"])
+  })
+
+  it("goes fresh when there is no batch to top off", () => {
+    const plan = plan_drive({
+      items: cases,
+      batch_items: null,
+      built_slots: [],
+      batch_tag: null,
+      undeleted_batch_tags: [],
+    })
+    expect(plan.top_off).toBe(false)
+    expect(plan.items).toEqual(cases)
+  })
+
+  it("goes fresh when nothing succeeded", () => {
+    // With zero paid successes there is nothing to keep; replace semantics
+    // clean up the failed batch's tag.
+    const plan = plan_drive({
+      items: cases,
+      batch_items: cases,
+      built_slots: [null, null, null, null],
+      batch_tag: "batchA",
+      undeleted_batch_tags: ["batchA"],
+    })
+    expect(plan.top_off).toBe(false)
+    expect(plan.replace_batch_tags).toEqual(["batchA"])
+  })
+
+  it("goes fresh when nothing is missing", () => {
+    const plan = plan_drive({
+      items: cases,
+      batch_items: cases,
+      built_slots: ["r0", "r1", "r2", "r3"],
+      batch_tag: "batchA",
+      undeleted_batch_tags: ["batchA"],
+    })
+    expect(plan.top_off).toBe(false)
+  })
+})
+
+describe("missing_slot_indices", () => {
+  it("returns the null slots in order", () => {
+    expect(missing_slot_indices(["a", null, "b", null])).toEqual([1, 3])
+    expect(missing_slot_indices([])).toEqual([])
+    expect(missing_slot_indices([null])).toEqual([0])
+  })
+})
+
+describe("plan_drive — slot/item length agreement", () => {
+  it("goes fresh when the slots and batch items diverge in length", () => {
+    // A divergence would map missing slots onto the wrong (or no) items;
+    // fresh replace semantics are the only safe plan.
+    const plan = plan_drive({
+      items: ["c0", "c1", "c2"],
+      batch_items: ["c0", "c1", "c2"],
+      built_slots: ["r0", null],
+      batch_tag: "batchA",
+      undeleted_batch_tags: ["batchA"],
+    })
+    expect(plan.top_off).toBe(false)
+    expect(plan.items).toEqual(["c0", "c1", "c2"])
+  })
+})
+
+describe("drive_lanes_unchanged", () => {
+  const judge = { prompt: "p", model_name: "m", model_provider: "openai" }
+
+  it("is unchanged when the judge matches (single-turn shape, no su)", () => {
+    expect(drive_lanes_unchanged({ judge, batch_judge: { ...judge } })).toBe(
+      true,
+    )
+  })
+
+  it("a changed judge forces a fresh batch", () => {
+    // One review may not mix two judges' verdicts.
+    expect(
+      drive_lanes_unchanged({
+        judge,
+        batch_judge: { ...judge, model_name: "other" },
+      }),
+    ).toBe(false)
+    expect(
+      drive_lanes_unchanged({
+        judge,
+        batch_judge: { ...judge, prompt: "refined" },
+      }),
+    ).toBe(false)
+  })
+
+  it("no batch judge means no batch to reuse", () => {
+    expect(drive_lanes_unchanged({ judge, batch_judge: null })).toBe(false)
+  })
+
+  it("a changed synthetic-user model forces a fresh batch", () => {
+    // The saved drive stamp must describe every conversation in the batch.
+    const su = { model_name: "su", model_provider: "openai" }
+    expect(
+      drive_lanes_unchanged({
+        judge,
+        batch_judge: { ...judge },
+        su,
+        batch_su: { ...su },
+      }),
+    ).toBe(true)
+    expect(
+      drive_lanes_unchanged({
+        judge,
+        batch_judge: { ...judge },
+        su,
+        batch_su: { ...su, model_name: "different" },
+      }),
+    ).toBe(false)
+    expect(
+      drive_lanes_unchanged({
+        judge,
+        batch_judge: { ...judge },
+        su,
+        batch_su: null,
+      }),
+    ).toBe(false)
+  })
+})
+
+describe("compact_batch_slots", () => {
+  const t = (trace_id: string, extra = "") => ({ trace_id, extra })
+
+  it("compacts non-null slots in order", () => {
+    expect(compact_batch_slots([t("a"), null, t("b")], [])).toEqual([
+      t("a"),
+      t("b"),
+    ])
+  })
+
+  it("prefers the live review entry for the same trace", () => {
+    // Claims built (or any later enrichment of) a kept case must survive a
+    // top-off's compaction; the slots hold the drive-time copies.
+    const enriched = t("a", "claims built")
+    expect(compact_batch_slots([t("a"), null, t("b")], [enriched])).toEqual([
+      enriched,
+      t("b"),
+    ])
   })
 })

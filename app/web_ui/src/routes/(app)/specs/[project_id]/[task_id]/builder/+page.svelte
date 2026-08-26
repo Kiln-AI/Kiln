@@ -103,11 +103,14 @@
   // Step 4 plan-flow logic (stop banner, destructive-action confirms, the
   // preparing-review gate's resolved counting) — pure and unit-tested.
   import {
+    compact_batch_slots,
     dominant_failure_message,
+    drive_lanes_unchanged,
     drive_stop_banner,
     driven_data_confirm,
     first_preflight_failure,
     new_plan_confirm,
+    plan_drive,
     resolved_selected_count,
     type DriveStop,
     type PreflightFailure,
@@ -951,6 +954,19 @@
   // disk). Save mints one EvalInput per driven case — the eval slice the
   // runner re-drives per run config.
   let driven_cases: SyntheticUserCaseWire[] = []
+  // The current batch's item list (cases on multi-turn, minted inputs on
+  // single-turn) and its per-slot results, kept across drives so a retry
+  // can TOP OFF the missing slots — drive only them, into the same batch
+  // tag — instead of replacing the batch and re-billing its paid
+  // successes. Not drafted: results don't survive a reload, so neither
+  // does the batch's slot state.
+  let batch_cases: SyntheticUserCaseWire[] | null = null
+  let batch_inputs: string[] | null = null
+  let built_by_case: (TraceClaims | null)[] = []
+  // Slots whose conversation was successfully driven. Guards driven_cases
+  // against a duplicate append when a top-off re-drives a case that drove
+  // but failed a later stage — its case must reach save exactly once.
+  let driven_slots = new Set<number>()
   // The synthetic-user model driven_cases actually ran with, captured at
   // batch commit. Save stamps THIS onto the minted items — the live
   // su_driver picker can change after the drive (Advanced dialog), and the
@@ -1442,6 +1458,12 @@
     trace_reviews = []
     selected_trace_indices = []
     driven_prompts_json = null
+    // The batch's slot bookkeeping goes with the results: a later drive
+    // must start a fresh batch, never top off a discarded one.
+    batch_cases = null
+    batch_inputs = null
+    built_by_case = []
+    driven_slots = new Set()
     // Calibration rounds calibrated the discarded results' judge.
     reset_calibration_state()
     generation_phase = "planning"
@@ -1537,6 +1559,12 @@
     selected_trace_indices = []
     driven_prompts_json = null
     drive_stop = null
+    // The batch's slot bookkeeping goes with the results: a later drive
+    // must start a fresh batch, never top off a discarded one.
+    batch_cases = null
+    batch_inputs = null
+    built_by_case = []
+    driven_slots = new Set()
     reset_pipeline_counters()
     // The loop's rounds belong to the discarded results.
     reset_calibration_state()
@@ -1662,6 +1690,9 @@
     // alongside a stale stop screen.
     drive_stop = null
     generation_phase = "preflight"
+    // Set once the drive's batch bookkeeping is committed; the abort
+    // handler must leave the previous results untouched before that point.
+    let drive_committed = false
 
     try {
       // 1. Resolve target_run_config (task default → first config). The
@@ -1726,32 +1757,28 @@
         return
       }
 
-      // 4. Preflight passed — commit to the drive. Every undeleted previous
-      // batch is superseded from here: the pipeline deletes their chains
-      // once this drive has produced replacements.
-      const previous_batch_tag = multi_turn_batch_tag
-      const previous_driven_cases = driven_cases
-      // Commit the synthetic-user choice alongside the batch identity: from
-      // here the drive runs with chosen_su, so the stamp source flips with
-      // the cases (and rolls back with them below if nothing is driven).
-      const previous_driven_su_driver = driven_su_driver
-      driven_su_driver = chosen_su
-      const tags_to_replace = [...undeleted_batch_tags]
-      trace_claims = []
-      trace_reviews = []
-      selected_trace_indices = []
-      driven_cases = []
-      driven_prompts_json = JSON.stringify(approved_prompts)
-      pipeline_total_cases = approved_prompts.length
-      reset_pipeline_counters()
-      // A fresh drive means fresh conversations: the loop starts over.
-      reset_calibration_state()
-
-      // 5. The synthetic-user cases. Their generation depends only on the
-      // plan and the spec — never the run config — so a re-drive with both
-      // byte-unchanged (the fix-config-then-drive-again recovery loop)
-      // reuses the cached cases instead of re-paying the multi-minute
-      // copilot call. Any plan edit or New Batch Plan misses the cache.
+      // 4. Preflight passed. Resolve the synthetic-user cases BEFORE
+      // committing to a drive shape: the drive plan below compares them to
+      // the current batch to pick top-off vs fresh, and a generation
+      // failure here leaves the previous drive's results intact. Their
+      // generation depends only on the plan and the spec — never the run
+      // config — so a re-drive with both byte-unchanged (the
+      // fix-config-then-drive-again recovery loop) reuses the cached cases
+      // instead of re-paying the multi-minute copilot call. Any plan edit
+      // or New Batch Plan misses the cache.
+      //
+      // A batch whose every slot is filled but which is short of the plan
+      // lost cases to upstream salvage. Retrying with the cached list would
+      // replace the batch with the same shortfall forever; only a fresh
+      // generation can supply the missing scenarios.
+      if (
+        batch_cases !== null &&
+        built_by_case.length > 0 &&
+        built_by_case.every((s) => s !== null) &&
+        batch_cases.length < approved_prompts.length
+      ) {
+        cached_su_cases = null
+      }
       let cases = reusable_cached_cases(
         cached_su_cases,
         approved_prompts,
@@ -1790,17 +1817,76 @@
           cases,
         }
       }
-      // Salvage can drop cases upstream: the driven count (the progress
-      // denominator) is what actually came back, not the plan size.
-      pipeline_total_cases = cases.length
 
-      // 6. Remember the judge (the ONE JudgeConfig shape used by review and
+      // 5. The drive plan: TOP OFF the current batch — drive only the
+      // missing slots, into the same batch tag, keeping the paid
+      // successes — when the batch was driven from these exact cases under
+      // the same judge and synthetic user; otherwise a fresh batch under
+      // replace semantics.
+      const lanes_unchanged = drive_lanes_unchanged({
+        judge,
+        batch_judge: review_judge,
+        su: chosen_su,
+        batch_su: driven_su_driver,
+      })
+      const drive_plan = plan_drive({
+        items: cases,
+        batch_items: lanes_unchanged ? batch_cases : null,
+        built_slots: built_by_case,
+        batch_tag: multi_turn_batch_tag,
+        undeleted_batch_tags,
+      })
+      if (drive_plan.top_off) {
+        posthog.capture("eval_v2_drive_top_off", {
+          num_missing: drive_plan.items.length,
+        })
+      }
+
+      // 6. Commit. On a fresh drive every undeleted previous batch is
+      // superseded from here (the pipeline deletes their chains once this
+      // drive has produced replacements) and the slate resets; a top-off
+      // keeps the batch's results and bookkeeping — it only fills holes.
+      // The synthetic-user stamp flips with the cases (and rolls back with
+      // them below if nothing is driven).
+      const previous_batch_tag = multi_turn_batch_tag
+      const previous_driven_cases = driven_cases
+      const previous_driven_su_driver = driven_su_driver
+      const previous_batch_cases = batch_cases
+      const previous_built_by_case = built_by_case
+      const previous_driven_slots = driven_slots
+      // The judge/identity stamps roll back with the results: a
+      // nothing-driven drive restores the previous batch, and the stamps
+      // must keep describing the verdicts on screen, not the failed
+      // attempt's lanes.
+      const previous_review_judge = review_judge
+      const previous_reviewed_identity = reviewed_identity
+      driven_su_driver = chosen_su
+      if (!drive_plan.top_off) {
+        trace_claims = []
+        trace_reviews = []
+        selected_trace_indices = []
+        driven_cases = []
+        driven_slots = new Set()
+        batch_cases = cases
+        // Salvage can drop cases upstream: the batch's slot count is what
+        // actually came back, not the plan size.
+        built_by_case = new Array(cases.length).fill(null)
+        driven_prompts_json = JSON.stringify(approved_prompts)
+      }
+      pipeline_total_cases = drive_plan.items.length
+      reset_pipeline_counters()
+      // A fresh drive means fresh conversations — and a top-off adds
+      // some — so the calibration loop starts over either way.
+      reset_calibration_state()
+      drive_committed = true
+
+      // 7. Remember the judge (the ONE JudgeConfig shape used by review and
       // save alike, resolved at step 2) and identity BEFORE the pipeline
       // runs so save can verify nothing changed under the results.
       review_judge = judge
       reviewed_identity = spec_text()
 
-      // 7. One SSE stream runs the whole pipeline: [drive → judge → claims]
+      // 8. One SSE stream runs the whole pipeline: [drive → judge → claims]
       // per case. POST endpoint, so fetch + shared SSE reader (EventSource
       // is GET-only).
       generation_phase = "running_pipeline"
@@ -1812,11 +1898,14 @@
           Accept: "text/event-stream",
         },
         body: JSON.stringify({
-          cases,
+          cases: drive_plan.items,
           turns: TURNS_PER_CASE,
           target_run_config_id,
           su_driver: chosen_su,
-          replace_batch_tags: tags_to_replace,
+          // A top-off drives into the existing batch's tag; null lets the
+          // server mint a fresh one.
+          batch_tag: drive_plan.batch_tag,
+          replace_batch_tags: drive_plan.replace_batch_tags,
           judge,
         }),
         signal: new_copilot_abort_signal(),
@@ -1833,9 +1922,9 @@
         return
       }
 
-      // Fill by case_index as case_reviewed events arrive (cases complete
-      // out of order); compacted into trace_claims at batch end.
-      const built: (TraceClaims | null)[] = new Array(cases.length).fill(null)
+      // Results fill the batch's slots as case_judged events arrive (cases
+      // complete out of order); a top-off's stream indices map back to
+      // their batch slots, so its results land beside the kept ones.
       let any_case_driven = false
       // Set by a batch_aborted frame: a config-scoped judge failure aborted
       // the batch server-side. Cases judged before it remain valid.
@@ -1867,7 +1956,14 @@
           any_case_driven = true
           // This case's conversation exists on disk — it belongs in the
           // saved eval slice even if a later stage (judge/claims) fails.
-          driven_cases = [...driven_cases, cases[event.case_index]]
+          // The slot guard keeps a case in the slice exactly once: a
+          // top-off can re-drive a case whose earlier attempt drove but
+          // never judged.
+          const slot = drive_plan.slot_of_stream_index[event.case_index]
+          if (slot !== undefined && !driven_slots.has(slot)) {
+            driven_slots.add(slot)
+            driven_cases = [...driven_cases, drive_plan.items[event.case_index]]
+          }
           // Chains exist on disk under this batch's tag from here on —
           // record it immediately so an abort can't orphan the batch.
           if (
@@ -1882,26 +1978,34 @@
         } else if (event.type === "case_judged") {
           // Claims stay unbuilt here — they're built lazily (build_claims)
           // for the traces the review selection surfaces or the user opens.
-          // The per-drive batch_tag makes the trace id unique across drives:
-          // the case index alone repeats every drive, so a stale claims
-          // build from a prior drive would pass patch_trace_claims' identity
-          // guard and corrupt the new drive's trace at the same index.
-          built[event.case_index] = {
-            trace_id: `${multi_turn_batch_tag}_case_${event.case_index}`,
-            leaf_run_id: event.leaf_run_id || null,
-            raw_input: event.raw_input,
-            raw_output: event.raw_output,
-            judge_score: event.judge_score,
-            judge_reasoning: event.judge_reasoning,
-            claims: null,
-            final_judgement: null,
-            claims_state: "unbuilt",
-            claims_error: null,
-            // The structured trace powers the modal's chat rendering; null
-            // when the stream didn't carry it (legacy / single-turn).
-            trace: event.trace ?? null,
+          // The per-batch tag + slot make the trace id unique across
+          // batches, so a stale claims build from a prior batch can't pass
+          // patch_trace_claims' identity guard and corrupt the trace at
+          // the same index; within a batch a top-off reuses its slot's id.
+          const slot = drive_plan.slot_of_stream_index[event.case_index]
+          if (slot === undefined) {
+            console.error(
+              `multi_turn_pipeline: case_judged for unknown case_index ${event.case_index}`,
+            )
+          } else {
+            built_by_case[slot] = {
+              trace_id: `${multi_turn_batch_tag}_case_${slot}`,
+              leaf_run_id: event.leaf_run_id || null,
+              raw_input: event.raw_input,
+              raw_output: event.raw_output,
+              judge_score: event.judge_score,
+              judge_reasoning: event.judge_reasoning,
+              claims: null,
+              final_judgement: null,
+              claims_state: "unbuilt",
+              claims_error: null,
+              // The structured trace powers the modal's chat rendering;
+              // null when the stream didn't carry it (legacy /
+              // single-turn).
+              trace: event.trace ?? null,
+            }
+            judged_case_count += 1
           }
-          judged_case_count += 1
         } else if (event.type === "case_failed") {
           pipeline_failed_count += 1
           // Keep the message: the stop banner aggregates these into the
@@ -1943,21 +2047,31 @@
           // ride to the next drive's replace_batch_tags (idempotent, so
           // re-passing an already-deleted tag is harmless).
           undeleted_batch_tags = undeleted_batch_tags.filter(
-            (t) => !tags_to_replace.includes(t),
+            (t) => !drive_plan.replace_batch_tags.includes(t),
           )
         }
       } else {
         // Nothing was driven: no replacement chains, no deletions — keep
-        // pointing at the previous batch (its cases and the synthetic user
-        // that drove them) so save/cleanup still work.
+        // pointing at the previous batch (its cases, slots, and the
+        // synthetic user that drove them) so save/cleanup/top-off still
+        // work.
         multi_turn_batch_tag = previous_batch_tag
         driven_cases = previous_driven_cases
         driven_su_driver = previous_driven_su_driver
+        batch_cases = previous_batch_cases
+        built_by_case = previous_built_by_case
+        driven_slots = previous_driven_slots
+        // The stamps roll back with the results: they must keep describing
+        // the verdicts on screen, not the failed attempt's lanes.
+        review_judge = previous_review_judge
+        reviewed_identity = previous_reviewed_identity
       }
 
       // Compact survivors BEFORE any error/warning path: completed verdicts
       // are paid results and must never be discarded by a late failure.
-      const complete = built.filter((t): t is TraceClaims => t !== null)
+      // Live review entries win over the slots' drive-time copies, so a
+      // kept case's built claims survive the compaction.
+      const complete = compact_batch_slots(built_by_case, trace_claims)
       if (complete.length > 0) {
         trace_claims = complete
         trace_reviews = build_trace_reviews(complete)
@@ -1996,7 +2110,30 @@
       // claims build, then advance to a fully-loaded review.
       start_claims_gate()
     } catch (e) {
-      if (is_abort_error(e)) return
+      if (is_abort_error(e)) {
+        // A user abort mid-stream leaves whatever cases completed as paid
+        // results on disk. Once the drive was committed, compact them so
+        // they stay visible, and restore the stop banner when the batch is
+        // short — without it the retry (top-off) affordance is unreachable
+        // from the accepted-data screen. Pre-commit aborts touched nothing.
+        if (drive_committed) {
+          const complete = compact_batch_slots(built_by_case, trace_claims)
+          if (complete.length > 0) {
+            trace_claims = complete
+            trace_reviews = build_trace_reviews(complete)
+            selected_trace_indices = select_review_subset(complete)
+            const failed = approved_prompts.length - complete.length
+            if (failed > 0) {
+              drive_stop = {
+                survivors: complete.length,
+                failed,
+                dominant_error: dominant_failure_message(case_failure_messages),
+              }
+            }
+          }
+        }
+        return
+      }
       generation_error =
         e instanceof Error ? e.message : "Multi-turn generation failed."
     } finally {
@@ -2131,6 +2268,9 @@
     // alongside a stale stop screen.
     drive_stop = null
     generation_phase = "preflight"
+    // Set once the run's batch bookkeeping is committed; the abort
+    // handler must leave the previous results untouched before that point.
+    let drive_committed = false
 
     try {
       // 1. Resolve target_run_config (task default → first config). The
@@ -2189,26 +2329,15 @@
         return
       }
 
-      // 4. Preflight passed — commit to the run. Every undeleted previous
-      // batch is superseded from here: the pipeline deletes their runs once
-      // this one has produced replacements.
-      const previous_batch_tag = single_turn_batch_tag
-      const tags_to_replace = [...undeleted_batch_tags]
-      trace_claims = []
-      trace_reviews = []
-      selected_trace_indices = []
-      driven_prompts_json = JSON.stringify(approved_prompts)
-      pipeline_total_cases = approved_prompts.length
-      reset_pipeline_counters()
-      // A fresh run means fresh results: the loop starts over.
-      reset_calibration_state()
-
-      // 5. The test inputs. Their generation depends only on the plan, the
-      // input-generator model, and the grounding guide — never the run
-      // config — so a re-run with all byte-unchanged (the fix-config-then-
-      // run-again recovery loop) reuses the cached inputs instead of
-      // re-paying one generation call per prompt. Any plan edit or new plan
-      // misses the cache.
+      // 4. Preflight passed. Mint the test inputs BEFORE committing to a
+      // run shape: the drive plan below compares them to the current batch
+      // to pick top-off vs fresh, and a minting failure here leaves the
+      // previous run's results intact. Their generation depends only on
+      // the plan, the input-generator model, and the grounding guide —
+      // never the run config — so a re-run with all byte-unchanged (the
+      // fix-config-then-run-again recovery loop) reuses the cached inputs
+      // instead of re-paying one generation call per prompt. Any plan edit
+      // or new plan misses the cache.
       const mint_data_guide = grounding_data_guide(grounding_sample)
       let inputs = reusable_minted_inputs(
         cached_minted_inputs,
@@ -2243,17 +2372,64 @@
           }
         }
       }
-      // Failed generations drop their input (the salvage posture): the
-      // driven count — the progress denominator — is what actually minted.
-      pipeline_total_cases = inputs.length
 
-      // 6. Remember the judge (the ONE JudgeConfig shape used by review and
+      // 5. The drive plan: TOP OFF the current batch — run only the
+      // missing slots, into the same batch tag, keeping the paid
+      // successes — when the batch ran these exact inputs under the same
+      // judge; otherwise a fresh batch under replace semantics.
+      const judge_unchanged = drive_lanes_unchanged({
+        judge,
+        batch_judge: review_judge,
+      })
+      const drive_plan = plan_drive({
+        items: inputs,
+        batch_items: judge_unchanged ? batch_inputs : null,
+        built_slots: built_by_case,
+        batch_tag: single_turn_batch_tag,
+        undeleted_batch_tags,
+      })
+      if (drive_plan.top_off) {
+        posthog.capture("eval_v2_drive_top_off", {
+          num_missing: drive_plan.items.length,
+        })
+      }
+
+      // 6. Commit. On a fresh run every undeleted previous batch is
+      // superseded from here (the pipeline deletes their runs once this
+      // one has produced replacements) and the slate resets; a top-off
+      // keeps the batch's results and bookkeeping — it only fills holes.
+      const previous_batch_tag = single_turn_batch_tag
+      const previous_batch_inputs = batch_inputs
+      const previous_built_by_case = built_by_case
+      // The judge/identity stamps roll back with the results: a
+      // nothing-driven run restores the previous batch, and the stamps
+      // must keep describing the verdicts on screen.
+      const previous_review_judge = review_judge
+      const previous_reviewed_identity = reviewed_identity
+      if (!drive_plan.top_off) {
+        trace_claims = []
+        trace_reviews = []
+        selected_trace_indices = []
+        batch_inputs = inputs
+        // Failed generations drop their input (the salvage posture): the
+        // batch's slot count is what actually minted, not the plan size.
+        built_by_case = new Array(inputs.length).fill(null)
+        driven_prompts_json = JSON.stringify(approved_prompts)
+      }
+      pipeline_total_cases = drive_plan.items.length
+      reset_pipeline_counters()
+      // A fresh run means fresh results — and a top-off adds some — so the
+      // loop starts over either way.
+      reset_calibration_state()
+      drive_committed = true
+
+      // 7. Remember the judge (the ONE JudgeConfig shape used by review and
       // save alike) and identity BEFORE the pipeline runs so save can
       // verify nothing changed under the results.
       review_judge = judge
       reviewed_identity = spec_text()
 
-      // 7. One SSE stream runs the whole pipeline: [run → judge] per input.
+      // 8. One SSE stream runs the whole pipeline: [run → judge] per input.
       // POST endpoint, so fetch + shared SSE reader (EventSource is
       // GET-only).
       generation_phase = "running_pipeline"
@@ -2265,11 +2441,14 @@
           Accept: "text/event-stream",
         },
         body: JSON.stringify({
-          inputs,
+          inputs: drive_plan.items,
           input_model_name: chosen_input_gen.model_name,
           input_provider: chosen_input_gen.model_provider,
           target_run_config_id,
-          replace_batch_tags: tags_to_replace,
+          // A top-off runs into the existing batch's tag; null lets the
+          // server mint a fresh one.
+          batch_tag: drive_plan.batch_tag,
+          replace_batch_tags: drive_plan.replace_batch_tags,
           judge,
         }),
         signal: new_copilot_abort_signal(),
@@ -2286,9 +2465,9 @@
         return
       }
 
-      // Fill by case_index as case_judged events arrive (cases complete
-      // out of order); compacted into trace_claims at batch end.
-      const built: (TraceClaims | null)[] = new Array(inputs.length).fill(null)
+      // Results fill the batch's slots as case_judged events arrive (cases
+      // complete out of order); a top-off's stream indices map back to
+      // their batch slots, so its results land beside the kept ones.
       let any_case_driven = false
       // Set by a batch_aborted frame: a config-scoped judge failure aborted
       // the batch server-side. Cases judged before it remain valid.
@@ -2325,25 +2504,34 @@
         } else if (event.type === "case_judged") {
           // Claims stay unbuilt here — they're built lazily (build_claims)
           // for the traces the review surfaces or the user opens. The
-          // per-run batch_tag makes the trace id unique across runs, so a
-          // stale claims build from a prior run can't pass the identity
-          // guard and corrupt the new run's trace at the same index.
-          built[event.case_index] = {
-            trace_id: `${single_turn_batch_tag}_case_${event.case_index}`,
-            leaf_run_id: event.leaf_run_id || null,
-            raw_input: event.raw_input,
-            raw_output: event.raw_output,
-            judge_score: event.judge_score,
-            judge_reasoning: event.judge_reasoning,
-            claims: null,
-            final_judgement: null,
-            claims_state: "unbuilt",
-            claims_error: null,
-            // The run's structured trace (tool calls included) powers the
-            // modal's chat rendering; null when the run recorded none.
-            trace: event.trace ?? null,
+          // per-batch tag + slot make the trace id unique across batches,
+          // so a stale claims build from a prior batch can't pass the
+          // identity guard and corrupt the trace at the same index; within
+          // a batch a top-off reuses its slot's id.
+          const slot = drive_plan.slot_of_stream_index[event.case_index]
+          if (slot === undefined) {
+            console.error(
+              `single_turn_pipeline: case_judged for unknown case_index ${event.case_index}`,
+            )
+          } else {
+            built_by_case[slot] = {
+              trace_id: `${single_turn_batch_tag}_case_${slot}`,
+              leaf_run_id: event.leaf_run_id || null,
+              raw_input: event.raw_input,
+              raw_output: event.raw_output,
+              judge_score: event.judge_score,
+              judge_reasoning: event.judge_reasoning,
+              claims: null,
+              final_judgement: null,
+              claims_state: "unbuilt",
+              claims_error: null,
+              // The run's structured trace (tool calls included) powers
+              // the modal's chat rendering; null when the run recorded
+              // none.
+              trace: event.trace ?? null,
+            }
+            judged_case_count += 1
           }
-          judged_case_count += 1
         } else if (event.type === "case_failed") {
           pipeline_failed_count += 1
           // Keep the message: the stop banner aggregates these into the
@@ -2382,18 +2570,26 @@
           // to the next run's replace_batch_tags (idempotent, so
           // re-passing an already-deleted tag is harmless).
           undeleted_batch_tags = undeleted_batch_tags.filter(
-            (t) => !tags_to_replace.includes(t),
+            (t) => !drive_plan.replace_batch_tags.includes(t),
           )
         }
       } else {
         // Nothing ran: no replacement runs, no deletions — keep pointing
-        // at the previous batch so save/cleanup still work.
+        // at the previous batch (its inputs, slots, and the judge/identity
+        // stamps describing its verdicts) so save/cleanup/top-off still
+        // work.
         single_turn_batch_tag = previous_batch_tag
+        batch_inputs = previous_batch_inputs
+        built_by_case = previous_built_by_case
+        review_judge = previous_review_judge
+        reviewed_identity = previous_reviewed_identity
       }
 
       // Compact survivors BEFORE any error/warning path: completed verdicts
       // are paid results and must never be discarded by a late failure.
-      const complete = built.filter((t): t is TraceClaims => t !== null)
+      // Live review entries win over the slots' drive-time copies, so a
+      // kept case's built claims survive the compaction.
+      const complete = compact_batch_slots(built_by_case, trace_claims)
       if (complete.length > 0) {
         trace_claims = complete
         trace_reviews = build_trace_reviews(complete)
@@ -2429,7 +2625,30 @@
       // advance to a fully-loaded review.
       start_claims_gate()
     } catch (e) {
-      if (is_abort_error(e)) return
+      if (is_abort_error(e)) {
+        // A user abort mid-stream leaves whatever cases completed as paid
+        // results on disk. Once the run was committed, compact them so
+        // they stay visible, and restore the stop banner when the batch is
+        // short — without it the retry (top-off) affordance is unreachable
+        // from the accepted-data screen. Pre-commit aborts touched nothing.
+        if (drive_committed) {
+          const complete = compact_batch_slots(built_by_case, trace_claims)
+          if (complete.length > 0) {
+            trace_claims = complete
+            trace_reviews = build_trace_reviews(complete)
+            selected_trace_indices = select_review_subset(complete)
+            const failed = approved_prompts.length - complete.length
+            if (failed > 0) {
+              drive_stop = {
+                survivors: complete.length,
+                failed,
+                dominant_error: dominant_failure_message(case_failure_messages),
+              }
+            }
+          }
+        }
+        return
+      }
       generation_error =
         e instanceof Error ? e.message : "Single-turn generation failed."
     } finally {
