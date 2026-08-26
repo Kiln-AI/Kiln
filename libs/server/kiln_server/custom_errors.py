@@ -58,13 +58,21 @@ def connect_custom_errors(app: FastAPI):
 
             error_messages.append(f"{format_error_loc(loc)}: {message}")
 
+        def safe_str(value) -> str:
+            # Invalid request input can contain lone surrogates, which
+            # JSONResponse cannot encode as UTF-8 — echoing them back verbatim
+            # would turn this 422 into a 500.
+            return str(value).encode("utf-8", errors="replace").decode("utf-8")
+
         def serialize_error(error):
             return {
                 "type": error.get("type"),
-                "loc": [str(loc) for loc in error.get("loc", [])],
-                "msg": error.get("msg"),
-                "input": str(error.get("input")),
-                "ctx": {str(k): str(v) for k, v in error.get("ctx", {}).items()},
+                "loc": [safe_str(loc) for loc in error.get("loc", [])],
+                "msg": safe_str(error.get("msg")),
+                "input": safe_str(error.get("input")),
+                "ctx": {
+                    safe_str(k): safe_str(v) for k, v in error.get("ctx", {}).items()
+                },
             }
 
         serialized_errors = [serialize_error(error) for error in exc.errors()]

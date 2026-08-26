@@ -31,6 +31,11 @@ logger = logging.getLogger(__name__)
 # 512KB, but hand-added files (via the enclosing folder) can be any size.
 MAX_RESOURCE_CONTENT_BYTES = 10 * 1024 * 1024
 
+# Per-file request content cap, checked at parse time so oversized payloads
+# are rejected before being buffered and decoded. Slightly above the base64
+# encoding of MAX_RESOURCE_FILE_BYTES; the byte cap is enforced in core.
+MAX_FILE_CONTENT_CHARS = 700_000
+
 
 class SkillFileParam(BaseModel):
     """A resource file to include in a skill bundle."""
@@ -39,7 +44,8 @@ class SkillFileParam(BaseModel):
         description="Path within the skill bundle, starting with 'references/' or 'assets/'. Forward slashes only."
     )
     content: str = Field(
-        description="File content: plain text for utf-8 encoding, base64 string for base64 encoding."
+        max_length=MAX_FILE_CONTENT_CHARS,
+        description="File content: plain text for utf-8 encoding, base64 string for base64 encoding.",
     )
     encoding: Literal["utf-8", "base64"] = Field(
         default="utf-8",
@@ -161,10 +167,12 @@ def _decode_files(
     """
     errors: list[str] = []
     decoded: dict[str, bytes] = {}
+    seen_paths: set[str] = set()
     for file in files:
-        if file.path in decoded:
+        if file.path in seen_paths:
             errors.append(f"duplicate file path: {file.path!r}")
             continue
+        seen_paths.add(file.path)
         if file.encoding == "utf-8":
             try:
                 decoded[file.path] = file.content.encode("utf-8")
@@ -175,7 +183,11 @@ def _decode_files(
                 )
         else:
             try:
-                decoded[file.path] = base64.b64decode(file.content, validate=True)
+                # Tolerate line-wrapped base64 (MIME encoders and the base64
+                # CLI wrap at 76 columns) by stripping whitespace first.
+                decoded[file.path] = base64.b64decode(
+                    "".join(file.content.split()), validate=True
+                )
             except (binascii.Error, ValueError):
                 errors.append(f"file content is not valid base64: {file.path!r}")
     return decoded, errors

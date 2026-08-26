@@ -235,6 +235,43 @@ class TestCreateSkillWithFiles:
         with pytest.raises(SkillBundleValidationError, match="too many files"):
             create(project, files=files)
 
+    def test_files_and_copy_files_overlap_rejected(self, project, tmp_path):
+        on_disk = tmp_path / "on_disk.md"
+        on_disk.write_text("disk", encoding="utf-8")
+        with pytest.raises(
+            SkillBundleValidationError, match="both files and copy_files"
+        ):
+            create_skill_with_files(
+                project,
+                name="overlap-skill",
+                description="A test skill.",
+                body=BODY,
+                files={"references/a.md": b"inline"},
+                copy_files={"references/a.md": on_disk},
+            )
+
+    def test_files_and_copy_files_cross_conflict_rejected(self, project, tmp_path):
+        on_disk = tmp_path / "on_disk.md"
+        on_disk.write_text("disk", encoding="utf-8")
+        with pytest.raises(
+            SkillBundleValidationError, match="both a file and a directory"
+        ):
+            create_skill_with_files(
+                project,
+                name="conflict-skill",
+                description="A test skill.",
+                body=BODY,
+                files={"references/a": b"inline"},
+                copy_files={"references/a/b.md": on_disk},
+            )
+
+    def test_skills_dirname_squatted_by_file_is_clear_error(self, project):
+        (project.path.parent / "skills").write_text(
+            "sync conflict artifact", encoding="utf-8"
+        )
+        with pytest.raises(SkillBundleValidationError, match="remove it and retry"):
+            create(project)
+
     def test_unreadable_sibling_skill_does_not_block_create(self, project):
         broken_dir = project.path.parent / "skills" / "123456789012 - broken"
         broken_dir.mkdir(parents=True)
@@ -379,6 +416,21 @@ class TestCloneSkill:
                 body="New body.",
             )
         assert [p for p, _ in clone.list_resources_with_sizes()] == ["assets/logo.png"]
+
+    def test_clone_preserves_empty_directories(self, project, source):
+        assert source.path is not None
+        (source.path.parent / "assets" / "output").mkdir()
+        (source.path.parent / "scripts").mkdir()
+        clone = clone_skill(
+            project,
+            source,
+            name="cloned-skill",
+            description="A clone.",
+            body="New body.",
+        )
+        assert clone.path is not None
+        assert (clone.path.parent / "assets" / "output").is_dir()
+        assert (clone.path.parent / "scripts").is_dir()
 
     def test_clone_rejects_duplicate_name(self, project, source):
         with pytest.raises(SkillBundleValidationError, match="install-once"):

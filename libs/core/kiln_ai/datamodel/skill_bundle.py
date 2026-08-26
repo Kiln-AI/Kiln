@@ -152,16 +152,23 @@ def validate_bundle_files(files: Dict[str, bytes]) -> list[str]:
             f"bundle too large: {total_bytes} bytes total (cap {MAX_BUNDLE_BYTES})"
         )
 
-    # Paths must not collide once written to a real filesystem: no two paths
-    # differing only by case or Unicode normalization (case-insensitive,
-    # normalization-insensitive filesystems on macOS/Windows would silently
-    # overwrite), and no path that is both a file and a parent directory of
-    # another file.
+    errors.extend(path_collision_errors(valid_paths))
+    return errors
+
+
+def path_collision_errors(paths: list[str]) -> list[str]:
+    """Errors for paths that collide once written to a real filesystem: no two
+    paths differing only by case or Unicode normalization (case-insensitive,
+    normalization-insensitive filesystems on macOS/Windows would silently
+    overwrite), and no path that is both a file and a parent directory of
+    another file."""
+
     def fold(path: str) -> str:
         return unicodedata.normalize("NFC", path).casefold()
 
+    errors: list[str] = []
     seen_folded: dict[str, str] = {}
-    for path in valid_paths:
+    for path in paths:
         folded = fold(path)
         if folded in seen_folded:
             errors.append(
@@ -172,10 +179,10 @@ def validate_bundle_files(files: Dict[str, bytes]) -> list[str]:
             seen_folded[folded] = path
     dir_prefixes = {
         fold("/".join(path.split("/")[:i]))
-        for path in valid_paths
+        for path in paths
         for i in range(1, len(path.split("/")))
     }
-    for path in valid_paths:
+    for path in paths:
         if fold(path) in dir_prefixes:
             errors.append(f"path is used as both a file and a directory: {path!r}")
     return errors
@@ -255,6 +262,7 @@ def create_skill_with_files(
     body: str,
     files: Optional[Dict[str, bytes]] = None,
     copy_files: Optional[Dict[str, Path]] = None,
+    extra_dirs: Optional[list[str]] = None,
     validate_files: bool = True,
     extra_errors: Optional[list[str]] = None,
 ) -> Skill:
@@ -263,6 +271,8 @@ def create_skill_with_files(
     files maps bundle-relative paths ('references/…', 'assets/…') to content.
     copy_files maps bundle-relative paths to existing on-disk files, streamed
     into the bundle without loading them into memory — clone uses it.
+    extra_dirs lists bundle-relative directories to create even when empty,
+    so a cloned skill keeps scaffold directories its SKILL.md refers to.
     Raises SkillBundleValidationError with every failure accumulated, so a
     caller fixes the bundle once rather than one round trip per defect.
     extra_errors lets a caller merge failures it found upstream (e.g. request
@@ -277,6 +287,7 @@ def create_skill_with_files(
         raise ValueError("Project must be saved before creating skills")
     files = files or {}
     copy_files = copy_files or {}
+    extra_dirs = extra_dirs or []
 
     errors = list(extra_errors or [])
     if validate_files:
@@ -289,9 +300,19 @@ def create_skill_with_files(
         )
     errors.extend(
         error
-        for error in (_unsafe_copy_path_error(path) for path in copy_files)
+        for error in (
+            _unsafe_copy_path_error(path) for path in [*copy_files, *extra_dirs]
+        )
         if error is not None
     )
+    if copy_files:
+        for overlap in sorted(files.keys() & copy_files.keys()):
+            errors.append(f"path appears in both files and copy_files: {overlap!r}")
+        errors.extend(
+            error
+            for error in path_collision_errors([*files, *copy_files])
+            if error not in errors
+        )
     if not body or not body.strip():
         errors.append("body must be non-empty")
     name_conflict = _existing_skill_name_conflict(project, name)
@@ -345,8 +366,22 @@ def create_skill_with_files(
                 # Source vanished since it was listed (e.g. the user is
                 # editing the folder directly) — copy what still exists.
                 continue
+        for relative_dir in extra_dirs:
+            (staging_dir / relative_dir).mkdir(parents=True, exist_ok=True)
         _fsync_tree(staging_dir)
-        final_dir.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            final_dir.parent.mkdir(parents=True, exist_ok=True)
+        except FileExistsError:
+            # A regular file squatting on the skills/ directory name (e.g. a
+            # sync conflict artifact) — same friendly handling as the
+            # staging-root squat above.
+            raise SkillBundleValidationError(
+                [
+                    f"a file named {final_dir.parent.name!r} exists in the "
+                    "project folder where the skills directory belongs — "
+                    "remove it and retry"
+                ]
+            ) from None
         if final_dir.exists():
             raise SkillBundleValidationError(
                 [f"skill directory already exists: {final_dir.name}"]
@@ -387,9 +422,9 @@ def clone_skill(
     Copies every regular file in the source skill's directory except skill.kiln
     (a clone gets a fresh identity) and SKILL.md (regenerated from the new
     name/description/body) — so hand-added files outside references/ and
-    assets/ survive the clone too. Files are streamed, never loaded into
-    memory, and content validation is skipped since they already exist on
-    disk; symlinks are not followed.
+    assets/ survive the clone too, as do empty scaffold directories. Files
+    are streamed, never loaded into memory, and content validation is
+    skipped since they already exist on disk; symlinks are not followed.
 
     name/description/body may differ from the source (a clone is a new skill,
     not a mutation).
@@ -398,8 +433,14 @@ def clone_skill(
         raise ValueError("Source skill must be saved before cloning")
     source_dir = source.path.parent
     copy_files: Dict[str, Path] = {}
-    for root, _dirs, filenames in os.walk(source_dir, followlinks=False):
+    extra_dirs: list[str] = []
+    for root, dirs, filenames in os.walk(source_dir, followlinks=False):
         root_path = Path(root)
+        for dirname in dirs:
+            dir_path = root_path / dirname
+            if dir_path.is_symlink():
+                continue
+            extra_dirs.append(dir_path.relative_to(source_dir).as_posix())
         for filename in filenames:
             file_path = root_path / filename
             if file_path.is_symlink() or not file_path.is_file():
@@ -414,5 +455,6 @@ def clone_skill(
         description=description,
         body=body,
         copy_files=copy_files,
+        extra_dirs=extra_dirs,
         validate_files=False,
     )

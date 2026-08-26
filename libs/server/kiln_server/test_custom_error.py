@@ -243,3 +243,20 @@ class TestKilnRunErrorHandler:
         assert isinstance(passed_exc, RuntimeError)
         assert not isinstance(passed_exc, KilnRunError)
         assert str(passed_exc) == "original failure"
+
+
+class TestSurrogateInValidationError:
+    def test_lone_surrogate_input_still_returns_422(self, client_no_raise):
+        # A lone UTF-16 surrogate in the request body fails pydantic string
+        # validation; the handler must not crash encoding the error response
+        # (JSONResponse cannot UTF-8-encode a surrogate echoed back verbatim).
+        import json
+
+        response = client_no_raise.post(
+            "/items",
+            content=json.dumps({"name": "\ud800", "price": 1.0}),
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 422
+        body = response.json()
+        assert "error_messages" in body

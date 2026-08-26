@@ -529,7 +529,9 @@ class TestResourceEdgeCases:
             headers={"Content-Type": "application/json"},
         )
         assert response.status_code == 422
-        assert "UTF-8" in response.text
+        # Rejected either at request parse (pydantic's string_unicode check)
+        # or by _decode_files — both are a 422 naming the encoding problem.
+        assert "UTF-8" in response.text or "unicode" in response.text.lower()
 
     def test_decode_and_validation_errors_reported_together(
         self, client, test_project, mock_project_from_id, sample_skill_data, saved_skill
@@ -549,6 +551,51 @@ class TestResourceEdgeCases:
         assert "base64" in response.text
         assert "must start with" in response.text
         assert "install-once" in response.text
+
+    def test_wrapped_base64_accepted(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        import base64 as b64
+
+        wrapped = b64.encodebytes(b"\x89PNG\x00" * 100).decode("ascii")
+        assert "\n" in wrapped
+        sample_skill_data["files"] = [
+            {"path": "assets/logo.png", "content": wrapped, "encoding": "base64"}
+        ]
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 200
+
+    def test_duplicate_path_reported_even_when_first_decode_fails(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        sample_skill_data["files"] = [
+            {"path": "assets/a.png", "content": "bad!!", "encoding": "base64"},
+            {"path": "assets/a.png", "content": "aGVsbG8=", "encoding": "base64"},
+        ]
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 422
+        assert "base64" in response.text
+        assert "duplicate file path" in response.text
+
+    def test_file_content_over_char_cap_rejected_at_parse(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        from app.desktop.studio_server.skill_api import MAX_FILE_CONTENT_CHARS
+
+        sample_skill_data["files"] = [
+            {"path": "references/big.md", "content": "x" * (MAX_FILE_CONTENT_CHARS + 1)}
+        ]
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 422
 
     def test_resource_content_over_size_limit_413(
         self, client, test_project, mock_project_from_id, saved_skill
