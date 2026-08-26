@@ -188,3 +188,27 @@ describe("claim_trace_modal — citation mapping fallbacks", () => {
     expect(warn).not.toHaveBeenCalled()
   })
 })
+
+describe("claim_trace_modal — scroll position", () => {
+  it("every open starts at the top, not the last view's offset", async () => {
+    const { container, component } = render(ClaimTraceModal, {
+      props: { single_turn: false },
+    })
+    component.open_trace(multi_turn_trace())
+    await tick()
+    const content = container.querySelector(".overflow-y-auto") as HTMLElement
+    expect(content).not.toBeNull()
+
+    // The container survives the close, offset and all; neither entry point
+    // may inherit it.
+    content.scrollTop = 400
+    component.open_citation(multi_turn_trace(), input_citation())
+    await tick()
+    expect(content.scrollTop).toBe(0)
+
+    content.scrollTop = 400
+    component.open_trace(multi_turn_trace())
+    await tick()
+    expect(content.scrollTop).toBe(0)
+  })
+})

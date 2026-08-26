@@ -154,12 +154,23 @@
     return role !== "system" && role !== "developer" && role !== "tool"
   }
 
+  // The scroll container survives across opens (trace stays set after close),
+  // so it keeps whatever offset the last view left. Call position is
+  // load-bearing: after show() (before it the dialog has no layout box, and
+  // the write is a no-op) and before the awaited tick (the citation scrolls
+  // all run after that tick, so the reset can never clobber them). On the
+  // very first open it is not rendered yet and starts at the top anyway.
+  function reset_scroll() {
+    if (content_el) content_el.scrollTop = 0
+  }
+
   export function open_trace(t: TraceClaims) {
     trace = t
     active_source = null
     active_span = null
     active_citation = null
     dialog?.show()
+    reset_scroll()
   }
 
   export async function open_citation(t: TraceClaims, citation: Citation) {
@@ -168,6 +179,7 @@
     active_citation = citation
     active_span = resolve_citation_span(text_for(citation.source), citation)
     dialog?.show()
+    reset_scroll()
     // Wait for the <mark> to render, then bring it into view. Only the raw
     // marks need this: on multi-turn the chat panel scrolls itself (ChatTrace
     // reacts to its highlight prop).
@@ -190,8 +202,15 @@
 
 <Dialog bind:this={dialog} title="Trace" width="extra_wide">
   {#if trace}
+    <!-- Sized to content, capped at 80% of the window. The second term is a
+         fit guard for short windows: daisyUI caps modal-box at 100vh minus
+         5rem and the box spends 6rem around this div (3rem padding, 2rem
+         title row, 1rem top margin), so a pane over calc(100vh-11rem) would
+         grow the box a second scrollbar; 12rem leaves 1rem of slack. The
+         guard term wins below ~960px of window height, and is what keeps
+         the box from double-scrolling below ~880px. -->
     <div
-      class="space-y-4 text-sm max-h-[70vh] overflow-y-auto"
+      class="space-y-4 text-sm max-h-[min(80vh,calc(100vh-12rem))] overflow-y-auto"
       bind:this={content_el}
     >
       {#if single_turn}
