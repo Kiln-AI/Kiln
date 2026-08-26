@@ -651,6 +651,8 @@
     try {
       const { data, error } = await client.POST("/api/copilot/question_spec", {
         body: {
+          project_id,
+          task_id,
           target_task_info: {
             task_prompt: task?.instruction ?? "",
             task_input_schema: "",

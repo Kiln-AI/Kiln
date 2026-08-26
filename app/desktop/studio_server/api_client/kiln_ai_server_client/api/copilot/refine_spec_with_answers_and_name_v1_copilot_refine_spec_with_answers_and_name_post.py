@@ -69,9 +69,9 @@ def sync_detailed(
 
      Refine a specification with answers, also returning a suggested eval name.
 
-    Returns the task output directly (rather than a kiln-ai API model) so the
-    suggested_name field ships without waiting on the pinned kiln-ai
-    dependency. The refine_spec_with_answers route stays frozen for shipped
+    Returns the codegen'd refine-and-name task output directly (rather than a
+    kiln-ai API model) so the suggested_name field ships without waiting on the
+    pinned kiln-ai dependency. The plain refine route stays frozen for shipped
     clients.
 
     Args:
@@ -105,9 +105,9 @@ def sync(
 
      Refine a specification with answers, also returning a suggested eval name.
 
-    Returns the task output directly (rather than a kiln-ai API model) so the
-    suggested_name field ships without waiting on the pinned kiln-ai
-    dependency. The refine_spec_with_answers route stays frozen for shipped
+    Returns the codegen'd refine-and-name task output directly (rather than a
+    kiln-ai API model) so the suggested_name field ships without waiting on the
+    pinned kiln-ai dependency. The plain refine route stays frozen for shipped
     clients.
 
     Args:
@@ -136,9 +136,9 @@ async def asyncio_detailed(
 
      Refine a specification with answers, also returning a suggested eval name.
 
-    Returns the task output directly (rather than a kiln-ai API model) so the
-    suggested_name field ships without waiting on the pinned kiln-ai
-    dependency. The refine_spec_with_answers route stays frozen for shipped
+    Returns the codegen'd refine-and-name task output directly (rather than a
+    kiln-ai API model) so the suggested_name field ships without waiting on the
+    pinned kiln-ai dependency. The plain refine route stays frozen for shipped
     clients.
 
     Args:
@@ -170,9 +170,9 @@ async def asyncio(
 
      Refine a specification with answers, also returning a suggested eval name.
 
-    Returns the task output directly (rather than a kiln-ai API model) so the
-    suggested_name field ships without waiting on the pinned kiln-ai
-    dependency. The refine_spec_with_answers route stays frozen for shipped
+    Returns the codegen'd refine-and-name task output directly (rather than a
+    kiln-ai API model) so the suggested_name field ships without waiting on the
+    pinned kiln-ai dependency. The plain refine route stays frozen for shipped
     clients.
 
     Args:

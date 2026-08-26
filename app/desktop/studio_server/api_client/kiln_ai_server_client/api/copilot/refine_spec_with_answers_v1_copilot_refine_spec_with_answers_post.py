@@ -69,6 +69,11 @@ def sync_detailed(
 
      Refine a specification with answers.
 
+    Deprecated: use /refine_spec_with_answers_and_name, which also returns a
+    suggested spec name. This route is kept byte-frozen for already-shipped
+    clients and can be retired once they age out; current app releases
+    already call the new route.
+
     Args:
         body (SubmitAnswersRequest): Request to submit answers to a question set.
 
@@ -100,6 +105,11 @@ def sync(
 
      Refine a specification with answers.
 
+    Deprecated: use /refine_spec_with_answers_and_name, which also returns a
+    suggested spec name. This route is kept byte-frozen for already-shipped
+    clients and can be retired once they age out; current app releases
+    already call the new route.
+
     Args:
         body (SubmitAnswersRequest): Request to submit answers to a question set.
 
@@ -125,6 +135,11 @@ async def asyncio_detailed(
     """Refine Spec With Answers
 
      Refine a specification with answers.
+
+    Deprecated: use /refine_spec_with_answers_and_name, which also returns a
+    suggested spec name. This route is kept byte-frozen for already-shipped
+    clients and can be retired once they age out; current app releases
+    already call the new route.
 
     Args:
         body (SubmitAnswersRequest): Request to submit answers to a question set.
@@ -154,6 +169,11 @@ async def asyncio(
     """Refine Spec With Answers
 
      Refine a specification with answers.
+
+    Deprecated: use /refine_spec_with_answers_and_name, which also returns a
+    suggested spec name. This route is kept byte-frozen for already-shipped
+    clients and can be retired once they age out; current app releases
+    already call the new route.
 
     Args:
         body (SubmitAnswersRequest): Request to submit answers to a question set.

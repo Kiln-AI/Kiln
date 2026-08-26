@@ -38,6 +38,10 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.generate_
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_judge_prompt_output import (
     RefineJudgePromptOutput,
 )
+from app.desktop.studio_server.api_models.copilot_models import (
+    TaskSkillInfoApi,
+    TaskToolInfoApi,
+)
 from app.desktop.studio_server.api_models.eval_builder_models import (
     BuildClaimsApiOutput,
     CitationApi,
@@ -463,10 +467,15 @@ def _task_mock(turn_mode=None, input_json_schema=None):
     from kiln_ai.datamodel.task import Task as KilnTask
 
     task = Mock(spec=KilnTask)
+    # spec= is built from the class, so pydantic fields aren't auto-mocked.
+    task.id = "task-1"
     task.name = "support_agent"
     task.instruction = "You are a customer support agent."
     task.turn_mode = turn_mode if turn_mode is not None else TurnMode.multiturn
     task.input_json_schema = input_json_schema
+    # No default run config, so capability collection yields nothing and routes
+    # that read it behave as they did before capabilities existed.
+    task.default_run_config_id = None
     return task
 
 
@@ -569,6 +578,98 @@ class TestAuthorJudge:
 
         body = mock_post.call_args.kwargs["body"]
         assert body.trace_type.value == "single_turn"
+
+    def test_author_judge_omits_uncollected_capabilities(
+        self, client, author_judge_input, mock_api_key, author_judge_task
+    ):
+        """A task with no capability surface to report leaves the keys out
+        entirely — the authored prompt stays exactly what it was before the
+        fields existed, rather than being told the task has no tools."""
+        mock_output = MagicMock(spec=GenerateJudgePromptOutput)
+        mock_output.judge_evaluation_prompt = "1. Check the transcript."
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ) as mock_post:
+            client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
+
+        body_dict = mock_post.call_args.kwargs["body"].to_dict()
+        assert "task_tools" not in body_dict
+        assert "task_skills" not in body_dict
+
+    def test_author_judge_sends_the_tasks_capabilities(
+        self, client, author_judge_input, mock_api_key, author_judge_task
+    ):
+        """The rubric can only grade tool and skill use if the payload names
+        them, flat on this input (it has no task info block)."""
+        mock_output = MagicMock(spec=GenerateJudgePromptOutput)
+        mock_output.judge_evaluation_prompt = "1. Check the transcript."
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.task_capabilities_for_task",
+                new_callable=AsyncMock,
+                return_value=(
+                    [
+                        TaskToolInfoApi(
+                            name="lookup_order", description="Find an order."
+                        )
+                    ],
+                    [TaskSkillInfoApi(name="refund-policy", description="Refunds.")],
+                ),
+            ),
+            patch(
+                "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ) as mock_post,
+        ):
+            client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
+
+        body_dict = mock_post.call_args.kwargs["body"].to_dict()
+        assert body_dict["task_tools"] == [
+            {"name": "lookup_order", "description": "Find an order."}
+        ]
+        assert body_dict["task_skills"] == [
+            {"name": "refund-policy", "description": "Refunds."}
+        ]
+
+    def test_author_judge_reports_a_task_with_no_capabilities(
+        self, client, author_judge_input, mock_api_key, author_judge_task
+    ):
+        """[] is a real answer worth sending: the task genuinely has none, so
+        the rubric should not invent tool-use criteria."""
+        mock_output = MagicMock(spec=GenerateJudgePromptOutput)
+        mock_output.judge_evaluation_prompt = "1. Check the transcript."
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.task_capabilities_for_task",
+                new_callable=AsyncMock,
+                return_value=([], []),
+            ),
+            patch(
+                "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
+                new_callable=AsyncMock,
+                return_value=mock_response,
+            ) as mock_post,
+        ):
+            client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
+
+        body_dict = mock_post.call_args.kwargs["body"].to_dict()
+        assert body_dict["task_tools"] == []
+        assert body_dict["task_skills"] == []
 
     def test_author_judge_remote_error_surfaces_upstream_message(
         self, client, author_judge_input, mock_api_key, author_judge_task

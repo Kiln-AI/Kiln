@@ -5224,6 +5224,16 @@ export interface components {
          * @description Input for clarifying a spec with copilot.
          */
         ClarifySpecApiInput: {
+            /**
+             * Project Id
+             * @description The project holding the target task. Pair with task_id to have the server attach the task's tools and skills.
+             */
+            project_id?: string | null;
+            /**
+             * Task Id
+             * @description The target task. Pair with project_id to have the server attach the task's tools and skills.
+             */
+            task_id?: string | null;
             target_task_info: components["schemas"]["TaskInfoApi"];
             /** Target Specification */
             target_specification: string;
@@ -10818,6 +10828,16 @@ export interface components {
          * @description Input for refining a spec based on feedback.
          */
         RefineSpecApiInput: {
+            /**
+             * Project Id
+             * @description The project holding the target task. Pair with task_id to have the server attach the task's tools and skills.
+             */
+            project_id?: string | null;
+            /**
+             * Task Id
+             * @description The target task. Pair with project_id to have the server attach the task's tools and skills.
+             */
+            task_id?: string | null;
             target_task_info: components["schemas"]["TaskInfoApi"];
             target_specification: components["schemas"]["SpecApi"];
             /** Examples With Feedback */
@@ -11858,6 +11878,16 @@ export interface components {
         /** SpecQuestionerApiInput */
         SpecQuestionerApiInput: {
             /**
+             * Project Id
+             * @description The project holding the target task. Pair with task_id to have the server attach the task's tools and skills.
+             */
+            project_id?: string | null;
+            /**
+             * Task Id
+             * @description The target task. Pair with project_id to have the server attach the task's tools and skills.
+             */
+            task_id?: string | null;
+            /**
              * target_task_info
              * @description The task info including prompt, input schema, and output schema
              */
@@ -12246,6 +12276,16 @@ export interface components {
              * @description The task's output JSON schema.
              */
             task_output_schema: string;
+            /**
+             * Task Tools
+             * @description Tools available to the task. Omit if not collected; send [] if the task has none.
+             */
+            task_tools?: components["schemas"]["TaskToolInfoApi"][] | null;
+            /**
+             * Task Skills
+             * @description Skills available to the task. Omit if not collected; send [] if the task has none.
+             */
+            task_skills?: components["schemas"]["TaskSkillInfoApi"][] | null;
         };
         /**
          * TaskMetadataApi
@@ -12786,6 +12826,22 @@ export interface components {
              */
             output: string;
         };
+        /**
+         * TaskSkillInfoApi
+         * @description A skill the target task can load. Name and description only.
+         */
+        TaskSkillInfoApi: {
+            /**
+             * Name
+             * @description The skill's name, as the model sees it.
+             */
+            name: string;
+            /**
+             * Description
+             * @description What the skill does. Never the skill's body.
+             */
+            description: string;
+        };
         /** TaskSummariesProject */
         TaskSummariesProject: {
             /** Id */
@@ -12838,6 +12894,22 @@ export interface components {
              * @description Why the task is incompatible, if applicable.
              */
             incompatibility_reason?: string | null;
+        };
+        /**
+         * TaskToolInfoApi
+         * @description A tool the target task can call. Name and description only.
+         */
+        TaskToolInfoApi: {
+            /**
+             * Name
+             * @description The tool's name, as the model sees it.
+             */
+            name: string;
+            /**
+             * Description
+             * @description What the tool does. Never its parameter schema.
+             */
+            description: string;
         };
         /**
          * TestAccessRequest

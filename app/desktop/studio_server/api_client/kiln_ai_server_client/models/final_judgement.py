@@ -28,7 +28,8 @@ class FinalJudgement:
             single 'though …' clause. Do NOT quote long spans.
         expected_result (ExpectedResult):
         citations (list[Citation]): Resolves the inline [n] markers. Each is a start+end anchor; the parser highlights
-            the span from `from` to `to`. Empty when the trace offers nothing to anchor.
+            the span from `from` to `to`. At least one is required: when the output offers nothing to anchor, cite the
+            relevant moment in the input.
     """
 
     claim: str

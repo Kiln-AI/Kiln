@@ -1,5 +1,6 @@
 import json
 from http import HTTPStatus
+from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -48,6 +49,9 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.job_statu
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.job_type import (
     JobType,
 )
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.question_set import (
+    QuestionSet as QuestionSetServerApi,
+)
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_spec_api_output import (
     RefineSpecApiOutput,
 )
@@ -57,7 +61,11 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_sp
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
     Response as SdkResponse,
 )
-from app.desktop.studio_server.api_models.copilot_models import SampleApi
+from app.desktop.studio_server.api_models.copilot_models import (
+    SampleApi,
+    TaskSkillInfoApi,
+    TaskToolInfoApi,
+)
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.utils.copilot_utils import SingleTurnDataset
 
@@ -702,6 +710,51 @@ class TestCreateSpecWithCopilot:
         }
         assert on_disk["eval_set_filter_id"] is None
         assert on_disk["train_set_filter_id"] is None
+
+    def test_generation_sees_the_tasks_capability_surface(
+        self,
+        client,
+        project_and_task,
+        copilot_request_data,
+        give_task_one_tool_and_skill,
+    ):
+        """The generator is told what the target task can do, so the synthetic
+        inputs it writes can exercise the tools and skills the task has."""
+        project, task = project_and_task
+        give_task_one_tool_and_skill(project, task)
+
+        generate_mock = AsyncMock(return_value=[])
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.get_copilot_api_key",
+                return_value="test_key",
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_copilot_examples",
+                generate_mock,
+            ),
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=copilot_request_data,
+            )
+
+        assert response.status_code == 200
+        target_task_info = generate_mock.await_args.kwargs["target_task_info"]
+        assert target_task_info.task_tools == [
+            TaskToolInfoApi(
+                name="add", description="Add two numbers together and return the result"
+            )
+        ]
+        assert target_task_info.task_skills == [
+            TaskSkillInfoApi(
+                name="refund-policy", description="How and when refunds are issued."
+            )
+        ]
 
     def test_single_turn_save_writes_eval_inputs_and_splits_to_disk(
         self, client, project_and_task, copilot_request_data
@@ -2665,3 +2718,320 @@ def test_claim_review_api_rejects_unpinned_final_judgement():
                 "human_feedback": None,
             },
         )
+
+
+_QUESTION_SPEC_FN = (
+    "app.desktop.studio_server.copilot_api."
+    "question_spec_v1_copilot_question_spec_post.asyncio_detailed"
+)
+_CLARIFY_SPEC_FN = (
+    "app.desktop.studio_server.copilot_api."
+    "clarify_spec_v1_copilot_clarify_spec_post.asyncio_detailed"
+)
+_REFINE_SPEC_FN = (
+    "app.desktop.studio_server.copilot_api."
+    "refine_spec_v1_copilot_refine_spec_post.asyncio_detailed"
+)
+
+
+class TestPassthroughTaskCapabilities:
+    """The passthrough routes attach the target task's capability surface when
+    the caller names the task, and never leak the ids upstream."""
+
+    QUESTION_SPEC_BODY: ClassVar[dict] = {
+        "target_task_info": {
+            "task_prompt": "Handle the support request.",
+            "task_input_schema": "",
+            "task_output_schema": "",
+        },
+        "target_specification": "The agent must never fabricate a refund.",
+    }
+
+    @pytest.fixture
+    def capable_task(self, tmp_path, give_task_one_tool_and_skill):
+        """A task whose default run config gives it one tool and one skill."""
+        project = Project(name="Support", path=tmp_path / "project.kiln")
+        project.save_to_file()
+        task = Task(
+            name="Support Agent",
+            instruction="Handle the support request.",
+            parent=project,
+        )
+        task.save_to_file()
+        give_task_one_tool_and_skill(project, task)
+        return project, task
+
+    @staticmethod
+    def _question_set_response():
+        parsed = MagicMock(spec=QuestionSetServerApi)
+        parsed.to_dict.return_value = {"questions": []}
+        response = MagicMock()
+        response.status_code = 200
+        response.parsed = parsed
+        return response
+
+    def test_question_spec_wire_payload_snapshot(
+        self, client, capable_task, mock_api_key
+    ):
+        """The exact bytes question_spec forwards for a task with a tool and a
+        skill — capability names and descriptions only, ids stripped."""
+        project, task = capable_task
+        sdk_mock = AsyncMock(return_value=self._question_set_response())
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(_QUESTION_SPEC_FN, sdk_mock),
+        ):
+            response = client.post(
+                "/api/copilot/question_spec",
+                json={
+                    **self.QUESTION_SPEC_BODY,
+                    "project_id": str(project.id),
+                    "task_id": str(task.id),
+                },
+            )
+
+        assert response.status_code == 200
+        assert sdk_mock.await_args.kwargs["body"].to_dict() == {
+            "target_task_info": {
+                "task_prompt": "Handle the support request.",
+                "task_input_schema": "",
+                "task_output_schema": "",
+                "task_tools": [
+                    {
+                        "name": "add",
+                        "description": "Add two numbers together and return the result",
+                    }
+                ],
+                "task_skills": [
+                    {
+                        "name": "refund-policy",
+                        "description": "How and when refunds are issued.",
+                    }
+                ],
+            },
+            "target_specification": "The agent must never fabricate a refund.",
+        }
+
+    def test_question_spec_without_ids_forwards_unchanged(self, client, mock_api_key):
+        """A caller that names no task gets exactly the payload it always got:
+        no capability keys at all, not explicit nulls."""
+        sdk_mock = AsyncMock(return_value=self._question_set_response())
+
+        with patch(_QUESTION_SPEC_FN, sdk_mock):
+            response = client.post(
+                "/api/copilot/question_spec", json=self.QUESTION_SPEC_BODY
+            )
+
+        assert response.status_code == 200
+        assert sdk_mock.await_args.kwargs["body"].to_dict() == self.QUESTION_SPEC_BODY
+
+    def test_question_spec_survives_unreadable_task_storage(
+        self, client, capable_task, mock_api_key
+    ):
+        """Capability collection is best effort: a task whose storage cannot be
+        read still gets its spec built, on the un-enriched payload."""
+        project, task = capable_task
+        sdk_mock = AsyncMock(return_value=self._question_set_response())
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch.object(
+                type(task),
+                "run_configs",
+                side_effect=ValueError("corrupt run_config.kiln"),
+            ),
+            patch(_QUESTION_SPEC_FN, sdk_mock),
+        ):
+            response = client.post(
+                "/api/copilot/question_spec",
+                json={
+                    **self.QUESTION_SPEC_BODY,
+                    "project_id": str(project.id),
+                    "task_id": str(task.id),
+                },
+            )
+
+        assert response.status_code == 200
+        assert sdk_mock.await_args.kwargs["body"].to_dict() == self.QUESTION_SPEC_BODY
+
+    def test_question_spec_rejects_half_a_task_reference(self, client, mock_api_key):
+        """One id without the other is a caller bug. Rejecting beats silently
+        skipping enrichment, which would ship a prompt quietly missing the
+        task's capabilities."""
+        response = client.post(
+            "/api/copilot/question_spec",
+            json={**self.QUESTION_SPEC_BODY, "project_id": "project-1"},
+        )
+
+        assert response.status_code == 422
+        assert "must be provided together" in response.json()["message"]
+
+    @pytest.mark.parametrize(
+        ("project_id", "task_id"),
+        [("no-such-project", "no-such-task"), ("", "")],
+        ids=["unknown_ids", "empty_ids"],
+    )
+    def test_question_spec_unresolvable_task_404s(
+        self, client, mock_api_key, project_id, task_id
+    ):
+        """A bad id is fail-loud: the caller asked for this task's
+        capabilities and the server cannot produce them. Empty strings are
+        supplied ids too, so they 404 rather than quietly skipping
+        enrichment."""
+        sdk_mock = AsyncMock(return_value=self._question_set_response())
+
+        with patch(_QUESTION_SPEC_FN, sdk_mock):
+            response = client.post(
+                "/api/copilot/question_spec",
+                json={
+                    **self.QUESTION_SPEC_BODY,
+                    "project_id": project_id,
+                    "task_id": task_id,
+                },
+            )
+
+        assert response.status_code == 404
+        sdk_mock.assert_not_awaited()
+
+    def test_clarify_spec_attaches_capabilities_and_strips_ids(
+        self, client, capable_task, mock_api_key, clarify_spec_input
+    ):
+        project, task = capable_task
+        parsed = MagicMock(spec=ClarifySpecOutput)
+        parsed.to_dict.return_value = {
+            "examples_for_feedback": [],
+            "judge_result": {
+                "task_metadata": {
+                    "model_name": "gpt-4",
+                    "model_provider_name": "openai",
+                },
+                "prompt": "judge",
+            },
+            "sdg_session_config": {
+                key: {
+                    "task_metadata": {
+                        "model_name": "gpt-4",
+                        "model_provider_name": "openai",
+                    },
+                    "prompt": "Test prompt",
+                }
+                for key in (
+                    "topic_generation_config",
+                    "input_generation_config",
+                    "output_generation_config",
+                )
+            },
+        }
+        sdk_response = MagicMock()
+        sdk_response.status_code = 200
+        sdk_response.parsed = parsed
+        sdk_mock = AsyncMock(return_value=sdk_response)
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(_CLARIFY_SPEC_FN, sdk_mock),
+        ):
+            response = client.post(
+                "/api/copilot/clarify_spec",
+                json={
+                    **clarify_spec_input,
+                    "project_id": str(project.id),
+                    "task_id": str(task.id),
+                },
+            )
+
+        assert response.status_code == 200
+        body = sdk_mock.await_args.kwargs["body"].to_dict()
+        assert body["target_task_info"]["task_tools"] == [
+            {
+                "name": "add",
+                "description": "Add two numbers together and return the result",
+            }
+        ]
+        assert body["target_task_info"]["task_skills"] == [
+            {"name": "refund-policy", "description": "How and when refunds are issued."}
+        ]
+        assert "project_id" not in body and "task_id" not in body
+
+    def test_refine_spec_attaches_capabilities_and_strips_ids(
+        self, client, capable_task, mock_api_key, refine_spec_input
+    ):
+        project, task = capable_task
+        parsed = MagicMock(spec=RefineSpecApiOutput)
+        parsed.to_dict.return_value = {
+            "new_proposed_spec_edits": [],
+            "not_incorporated_feedback": "",
+        }
+        sdk_response = MagicMock()
+        sdk_response.status_code = 200
+        sdk_response.parsed = parsed
+        sdk_mock = AsyncMock(return_value=sdk_response)
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(_REFINE_SPEC_FN, sdk_mock),
+        ):
+            response = client.post(
+                "/api/copilot/refine_spec",
+                json={
+                    **refine_spec_input,
+                    "project_id": str(project.id),
+                    "task_id": str(task.id),
+                },
+            )
+
+        assert response.status_code == 200
+        body = sdk_mock.await_args.kwargs["body"].to_dict()
+        assert [t["name"] for t in body["target_task_info"]["task_tools"]] == ["add"]
+        assert [s["name"] for s in body["target_task_info"]["task_skills"]] == [
+            "refund-policy"
+        ]
+        assert "project_id" not in body and "task_id" not in body
+
+    def test_client_sent_capabilities_are_not_overwritten(
+        self, client, capable_task, mock_api_key
+    ):
+        """A caller that already collected the surface keeps its own answer."""
+        project, task = capable_task
+        sdk_mock = AsyncMock(return_value=self._question_set_response())
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(_QUESTION_SPEC_FN, sdk_mock),
+        ):
+            response = client.post(
+                "/api/copilot/question_spec",
+                json={
+                    "target_task_info": {
+                        **self.QUESTION_SPEC_BODY["target_task_info"],
+                        "task_tools": [],
+                        "task_skills": [],
+                    },
+                    "target_specification": self.QUESTION_SPEC_BODY[
+                        "target_specification"
+                    ],
+                    "project_id": str(project.id),
+                    "task_id": str(task.id),
+                },
+            )
+
+        assert response.status_code == 200
+        task_info = sdk_mock.await_args.kwargs["body"].to_dict()["target_task_info"]
+        assert task_info["task_tools"] == []
+        assert task_info["task_skills"] == []

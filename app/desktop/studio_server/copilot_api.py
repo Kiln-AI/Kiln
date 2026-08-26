@@ -132,6 +132,8 @@ from app.desktop.studio_server.utils.copilot_utils import (
     persist_eval_slice,
     rate_reviewed_batch_runs,
     split_and_tag_batch_runs,
+    task_capabilities_for_task,
+    task_info_payload,
     unrate_reviewed_batch_runs,
     untag_batch_runs_for_eval,
 )
@@ -150,6 +152,44 @@ from libs.core.kiln_ai.datamodel.copilot_models.questions import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def copilot_passthrough_payload(
+    input: ClarifySpecApiInput | RefineSpecApiInput | SpecQuestionerApiInput,
+) -> dict:
+    """The kiln_server payload for a copilot route that forwards a client body.
+
+    When the client names a project and task, the task's tools and skills are
+    read from local storage and attached to target_task_info so the copilot
+    prompts can see what the target task can actually do. A client that already
+    sent capabilities keeps them. The ids are always stripped: they identify
+    local storage and mean nothing to kiln_server.
+    """
+    task_info = input.target_task_info
+    # Presence, not truthiness: the model already rejects a half-supplied pair,
+    # so an empty id is a real (bad) id and belongs in the lookup below.
+    if input.project_id is not None and input.task_id is not None:
+        # A bad id 404s here, which is the honest answer: the caller asked for
+        # this task's capabilities and we cannot produce them.
+        task = task_from_id(input.project_id, input.task_id)
+        task_tools, task_skills = await task_capabilities_for_task(task)
+        task_info = task_info.model_copy(
+            update={
+                "task_tools": (
+                    task_info.task_tools
+                    if task_info.task_tools is not None
+                    else task_tools
+                ),
+                "task_skills": (
+                    task_info.task_skills
+                    if task_info.task_skills is not None
+                    else task_skills
+                ),
+            }
+        )
+    payload = input.model_dump(exclude={"project_id", "task_id"})
+    payload["target_task_info"] = task_info_payload(task_info)
+    return payload
 
 
 class ClassifySpecDescriptionInput(BaseModel):
@@ -770,7 +810,9 @@ def connect_copilot_api(app: FastAPI):
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
-        clarify_input = ClarifySpecInput.from_dict(input.model_dump())
+        clarify_input = ClarifySpecInput.from_dict(
+            await copilot_passthrough_payload(input)
+        )
 
         detailed_result = (
             await clarify_spec_v1_copilot_clarify_spec_post.asyncio_detailed(
@@ -800,7 +842,9 @@ def connect_copilot_api(app: FastAPI):
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
-        refine_input = RefineSpecInput.from_dict(input.model_dump())
+        refine_input = RefineSpecInput.from_dict(
+            await copilot_passthrough_payload(input)
+        )
 
         detailed_result = (
             await refine_spec_v1_copilot_refine_spec_post.asyncio_detailed(
@@ -862,7 +906,9 @@ def connect_copilot_api(app: FastAPI):
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
-        questioner_input = SpecQuestionerApiInputServerApi.from_dict(input.model_dump())
+        questioner_input = SpecQuestionerApiInputServerApi.from_dict(
+            await copilot_passthrough_payload(input)
+        )
 
         detailed_result = (
             await question_spec_v1_copilot_question_spec_post.asyncio_detailed(
@@ -1340,12 +1386,15 @@ def connect_copilot_api(app: FastAPI):
             task_output_schema = (
                 str(task.output_json_schema) if task.output_json_schema else ""
             )
+            task_tools, task_skills = await task_capabilities_for_task(task)
             all_examples = await generate_copilot_examples(
                 api_key=api_key,
                 target_task_info=TaskInfoApi(
                     task_prompt=request.task_prompt_with_example or "",
                     task_input_schema=task_input_schema,
                     task_output_schema=task_output_schema,
+                    task_tools=task_tools,
+                    task_skills=task_skills,
                 ),
                 sdg_session_config=request.sdg_session_config,
                 spec_definition=request.definition,

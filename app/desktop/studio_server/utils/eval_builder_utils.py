@@ -47,6 +47,10 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
+from app.desktop.studio_server.api_models.copilot_models import (
+    TaskSkillInfoApi,
+    TaskToolInfoApi,
+)
 from app.desktop.studio_server.api_models.eval_builder_models import (
     AuthorJudgeApiOutput,
     BuildClaimsApiOutput,
@@ -55,7 +59,10 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     JudgeScoreLiteral,
     RefineJudgeApiOutput,
 )
-from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
+from app.desktop.studio_server.utils.copilot_utils import (
+    capability_payload_fields,
+    get_copilot_api_key,
+)
 from app.desktop.studio_server.utils.response_utils import unwrap_response
 
 
@@ -306,6 +313,8 @@ async def author_judge_prompt(
     target_specification: str,
     target_task_prompt: str,
     trace_type: Literal["multi_turn", "single_turn"],
+    task_tools: list[TaskToolInfoApi] | None = None,
+    task_skills: list[TaskSkillInfoApi] | None = None,
 ) -> AuthorJudgeApiOutput:
     """Author a spec-tailored judge prompt via kiln_server.
 
@@ -313,9 +322,12 @@ async def author_judge_prompt(
     (LLM) runs on kiln_server and returns the PROMPT only — the judge model
     stays the caller's choice. `trace_type` selects the rubric's framing:
     full conversations (multi-turn) or one I/O pair (single-turn) — one
-    authoring path for both arms. Authoring is REQUIRED for a drive: an
-    error here surfaces to the client, which stops the drive on a retryable
-    error (no server, no eval — there is no fallback judge).
+    authoring path for both arms. `task_tools` / `task_skills` describe the
+    target task's capability surface so the rubric can reason about tool and
+    skill use; None (the default) omits them and authors exactly as before.
+    Authoring is REQUIRED for a drive: an error here surfaces to the client,
+    which stops the drive on a retryable error (no server, no eval — there is
+    no fallback judge).
     """
     api_key = get_copilot_api_key()
     client = get_authenticated_client(api_key)
@@ -325,6 +337,8 @@ async def author_judge_prompt(
             "target_specification": target_specification,
             "target_task_prompt": target_task_prompt,
             "trace_type": trace_type,
+            # Flat rather than nested: this payload has no task info block.
+            **capability_payload_fields(task_tools, task_skills),
         }
     )
 
