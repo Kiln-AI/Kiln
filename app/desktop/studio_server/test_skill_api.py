@@ -543,23 +543,3 @@ class TestResourceEdgeCases:
             params={"path": "assets/big.bin"},
         )
         assert response.status_code == 413
-
-    def test_resources_listing_skips_vanished_file(
-        self, client, test_project, mock_project_from_id, saved_skill_with_resources
-    ):
-        from unittest.mock import patch as mock_patch
-
-        from kiln_ai.datamodel.skill import Skill
-
-        # A file listed by the walk but deleted before stat must be skipped,
-        # not fail the listing.
-        listed = ["assets/logo.png", "assets/vanished.png", "references/guide.md"]
-        with mock_patch.object(Skill, "list_resource_files", return_value=listed):
-            response = client.get(
-                f"/api/projects/{test_project.id}/skills/{saved_skill_with_resources.id}/resources"
-            )
-        assert response.status_code == 200
-        assert [r["path"] for r in response.json()] == [
-            "assets/logo.png",
-            "references/guide.md",
-        ]

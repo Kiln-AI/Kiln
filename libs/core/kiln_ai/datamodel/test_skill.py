@@ -524,11 +524,42 @@ def test_read_resource_bytes_missing(skill_with_resources):
         skill_with_resources.read_resource_bytes("references/nope.md")
 
 
-def test_resource_size_bytes(skill_with_resources):
-    assert skill_with_resources.resource_size_bytes("assets/logo.png") == len(
-        b"\x89PNG\r\n\x1a\n\x00binary"
-    )
-    with pytest.raises(FileNotFoundError):
-        skill_with_resources.resource_size_bytes("references/nope.md")
-    with pytest.raises(ValueError, match="traversal"):
-        skill_with_resources.resource_size_bytes("references/../skill.kiln")
+def test_read_resource_bytes_max_bytes_under_cap(skill_with_resources):
+    data = skill_with_resources.read_resource_bytes("assets/logo.png", max_bytes=1024)
+    assert data == b"\x89PNG\r\n\x1a\n\x00binary"
+
+
+def test_read_resource_bytes_max_bytes_over_cap(skill_with_resources):
+    from kiln_ai.datamodel.skill import ResourceTooLargeError
+
+    with pytest.raises(ResourceTooLargeError, match="byte limit"):
+        skill_with_resources.read_resource_bytes("assets/logo.png", max_bytes=3)
+
+
+def test_list_resources_with_sizes(skill_with_resources):
+    listing = skill_with_resources.list_resources_with_sizes()
+    assert listing == [
+        ("assets/logo.png", len(b"\x89PNG\r\n\x1a\n\x00binary")),
+        ("references/api/endpoints.md", len(b"endpoints")),
+        ("references/guide.md", len(b"guide")),
+    ]
+
+
+def test_list_resources_skips_vanished_file(skill_with_resources, monkeypatch):
+    import os as os_mod
+    from pathlib import Path as PathCls
+
+    # A file yielded by the walk but deleted before it is examined must be
+    # skipped, not raise.
+    real_walk = os_mod.walk
+
+    def fake_walk(top, **kwargs):
+        for root, dirs, files in real_walk(top, **kwargs):
+            if PathCls(root) == skill_with_resources.assets_dir():
+                files = [*files, "ghost.png"]
+            yield root, dirs, files
+
+    monkeypatch.setattr("kiln_ai.datamodel.skill.os.walk", fake_walk)
+    paths = [p for p, _ in skill_with_resources.list_resources_with_sizes()]
+    assert "assets/ghost.png" not in paths
+    assert "assets/logo.png" in paths

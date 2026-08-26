@@ -13,6 +13,7 @@ don't cover skill files.
 
 from __future__ import annotations
 
+import errno
 import os
 import shutil
 import time
@@ -188,28 +189,41 @@ def _sweep_stale_staging(staging_root: Path) -> None:
         pass
 
 
+def _remove_staging_root_if_empty(staging_root: Path) -> None:
+    """Remove the hidden staging root so it doesn't linger in a synced project
+    folder. A non-empty root (a concurrent install's live staging) is left."""
+    try:
+        os.rmdir(staging_root)
+    except OSError:
+        pass
+
+
 def create_skill_with_files(
     project: Project,
     name: str,
     description: str,
     body: str,
     files: Optional[Dict[str, bytes]] = None,
+    copy_files: Optional[Dict[str, Path]] = None,
     validate_files: bool = True,
 ) -> Skill:
     """Create a skill atomically, with optional resource files.
 
     files maps bundle-relative paths ('references/…', 'assets/…') to content.
+    copy_files maps bundle-relative paths to existing on-disk files, streamed
+    into the bundle without loading them into memory — clone uses it.
     Raises SkillBundleValidationError with every failure accumulated, so a
     caller fixes the bundle once rather than one round trip per defect.
 
     validate_files=False skips the content rules (allowed roots, size caps,
     UTF-8 references) for files that already exist on disk — clone uses it so
     a skill with hand-added oversized or unusual files can still be cloned.
-    Structural write-safety checks always run.
+    Structural write-safety checks always run, on both files and copy_files.
     """
     if project.path is None:
         raise ValueError("Project must be saved before creating skills")
     files = files or {}
+    copy_files = copy_files or {}
 
     if validate_files:
         errors = validate_bundle_files(files)
@@ -219,6 +233,11 @@ def create_skill_with_files(
             for error in (_unsafe_path_error(path) for path in files)
             if error is not None
         ]
+    errors.extend(
+        error
+        for error in (_unsafe_path_error(path) for path in copy_files)
+        if error is not None
+    )
     if not body or not body.strip():
         errors.append("body must be non-empty")
     name_conflict = _existing_skill_name_conflict(project, name)
@@ -252,6 +271,10 @@ def create_skill_with_files(
             destination = staging_dir / relative_path
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(content)
+        for relative_path, source_path in copy_files.items():
+            destination = staging_dir / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source_path, destination)
         final_dir.parent.mkdir(parents=True, exist_ok=True)
         if final_dir.exists():
             raise SkillBundleValidationError(
@@ -262,13 +285,21 @@ def create_skill_with_files(
         os.rename(staging_dir, final_dir)
     except OSError as e:
         shutil.rmtree(staging_dir, ignore_errors=True)
-        # A filesystem rejection of a validated bundle (e.g. an OS-specific
-        # filename restriction) is a caller-fixable problem, not a crash.
-        raise SkillBundleValidationError([f"could not write skill files: {e}"]) from e
+        _remove_staging_root_if_empty(staging_root)
+        # An OS rejection of a filename (e.g. a Windows-specific restriction
+        # the portability checks missed) is caller-fixable; environment
+        # failures like a full disk or permissions are not — those propagate.
+        if e.errno in (errno.EINVAL, errno.ENAMETOOLONG):
+            raise SkillBundleValidationError(
+                [f"could not write skill files: {e}"]
+            ) from e
+        raise
     except Exception:
         shutil.rmtree(staging_dir, ignore_errors=True)
+        _remove_staging_root_if_empty(staging_root)
         raise
 
+    _remove_staging_root_if_empty(staging_root)
     skill.path = final_path
     return skill
 
@@ -285,8 +316,9 @@ def clone_skill(
     Copies every regular file in the source skill's directory except skill.kiln
     (a clone gets a fresh identity) and SKILL.md (regenerated from the new
     name/description/body) — so hand-added files outside references/ and
-    assets/ survive the clone too. Content validation is skipped for the copied
-    files since they already exist on disk; symlinks are not followed.
+    assets/ survive the clone too. Files are streamed, never loaded into
+    memory, and content validation is skipped since they already exist on
+    disk; symlinks are not followed.
 
     name/description/body may differ from the source (a clone is a new skill,
     not a mutation).
@@ -294,7 +326,7 @@ def clone_skill(
     if source.path is None:
         raise ValueError("Source skill must be saved before cloning")
     source_dir = source.path.parent
-    files: Dict[str, bytes] = {}
+    copy_files: Dict[str, Path] = {}
     for root, _dirs, filenames in os.walk(source_dir, followlinks=False):
         root_path = Path(root)
         for filename in filenames:
@@ -304,12 +336,12 @@ def clone_skill(
             relative = file_path.relative_to(source_dir).as_posix()
             if relative in (Skill.base_filename(), SKILL_MD_FILENAME):
                 continue
-            files[relative] = file_path.read_bytes()
+            copy_files[relative] = file_path
     return create_skill_with_files(
         project,
         name=name,
         description=description,
         body=body,
-        files=files,
+        copy_files=copy_files,
         validate_files=False,
     )

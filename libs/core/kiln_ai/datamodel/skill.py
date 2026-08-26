@@ -19,6 +19,10 @@ SKILL_MD_FILENAME = "SKILL.md"
 RESOURCE_DIR_NAMES = ("references", "assets")
 
 
+class ResourceTooLargeError(ValueError):
+    """A resource file exceeds the caller's size limit."""
+
+
 class Skill(KilnParentedModel):
     """A Skill represents reusable agent instructions following the agentskills.io specification.
 
@@ -132,39 +136,38 @@ class Skill(KilnParentedModel):
         )
         return base_dir, relative_path
 
-    def read_resource_bytes(self, prefixed_path: str) -> bytes:
+    def read_resource_bytes(
+        self, prefixed_path: str, max_bytes: int | None = None
+    ) -> bytes:
         """Read any resource file as bytes (binary-safe).
 
         prefixed_path must start with 'references/' or 'assets/'. Raises ValueError
-        for invalid paths or path traversal, FileNotFoundError if missing.
+        for invalid paths or path traversal, FileNotFoundError if missing, and
+        ResourceTooLargeError if max_bytes is set and the file exceeds it (checked
+        while reading, so a file growing mid-read cannot slip past the cap).
         """
         base_dir, relative_path = self._resource_base_dir(prefixed_path)
         resolved = self._resolve_resource(base_dir, relative_path)
         try:
-            return resolved.read_bytes()
+            if max_bytes is None:
+                return resolved.read_bytes()
+            with open(resolved, "rb") as file:
+                data = file.read(max_bytes + 1)
         except FileNotFoundError:
             raise FileNotFoundError(
                 f"Resource file not found: {prefixed_path}"
             ) from None
+        if len(data) > max_bytes:
+            raise ResourceTooLargeError(
+                f"Resource is over the {max_bytes} byte limit: {prefixed_path}"
+            )
+        return data
 
-    def resource_size_bytes(self, prefixed_path: str) -> int:
-        """Size in bytes of a resource file, without reading it.
-
-        Same path validation and errors as read_resource_bytes.
-        """
-        base_dir, relative_path = self._resource_base_dir(prefixed_path)
-        resolved = self._resolve_resource(base_dir, relative_path)
-        try:
-            return resolved.stat().st_size
-        except FileNotFoundError:
-            raise FileNotFoundError(
-                f"Resource file not found: {prefixed_path}"
-            ) from None
-
-    def list_resource_files(self) -> List[str]:
-        """List every regular file under references/ and assets/, as sorted
-        'references/…' / 'assets/…' relative paths. Symlinks are skipped."""
-        paths: List[str] = []
+    def list_resources_with_sizes(self) -> List[tuple[str, int]]:
+        """List every regular file under references/ and assets/ with its size
+        in bytes, as sorted ('references/…' / 'assets/…', size) pairs.
+        Symlinks are skipped."""
+        resources: List[tuple[str, int]] = []
         for base_dir in (self.references_dir(), self.assets_dir()):
             if not base_dir.is_dir():
                 continue
@@ -172,11 +175,22 @@ class Skill(KilnParentedModel):
                 root_path = Path(root)
                 for filename in files:
                     file_path = root_path / filename
-                    if file_path.is_symlink() or not file_path.is_file():
+                    try:
+                        if file_path.is_symlink() or not file_path.is_file():
+                            continue
+                        size = file_path.stat().st_size
+                    except OSError:
+                        # File vanished mid-walk (e.g. the user is editing the
+                        # folder directly) — skip it.
                         continue
                     relative = file_path.relative_to(base_dir).as_posix()
-                    paths.append(f"{base_dir.name}/{relative}")
-        return sorted(paths)
+                    resources.append((f"{base_dir.name}/{relative}", size))
+        return sorted(resources)
+
+    def list_resource_files(self) -> List[str]:
+        """List every regular file under references/ and assets/, as sorted
+        'references/…' / 'assets/…' relative paths. Symlinks are skipped."""
+        return [path for path, _size in self.list_resources_with_sizes()]
 
     def save_skill_md(self, body: str) -> None:
         """Write SKILL.md with YAML frontmatter (name, description) + markdown body.

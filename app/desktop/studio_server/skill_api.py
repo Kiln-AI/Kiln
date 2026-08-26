@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Annotated, List, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Query
-from kiln_ai.datamodel.skill import Skill
+from kiln_ai.datamodel.skill import ResourceTooLargeError, Skill
 from kiln_ai.datamodel.skill_bundle import (
     SkillBundleValidationError,
     clone_skill,
@@ -300,21 +300,10 @@ def connect_skill_api(app: FastAPI):
         ],
     ) -> List[SkillResourceInfo]:
         skill = _get_skill(project_id, skill_id)
-        if skill.path is None:
-            raise HTTPException(status_code=500, detail="Skill path not found")
-        skill_dir = skill.path.parent
-        resources: List[SkillResourceInfo] = []
-        for resource_path in skill.list_resource_files():
-            try:
-                size_bytes = (skill_dir / resource_path).stat().st_size
-            except OSError:
-                # File vanished between listing and stat (e.g. the user is
-                # editing the folder directly) — skip it, don't fail the list.
-                continue
-            resources.append(
-                SkillResourceInfo(path=resource_path, size_bytes=size_bytes)
-            )
-        return resources
+        return [
+            SkillResourceInfo(path=resource_path, size_bytes=size_bytes)
+            for resource_path, size_bytes in skill.list_resources_with_sizes()
+        ]
 
     @app.get(
         "/api/projects/{project_id}/skills/{skill_id}/resource_content",
@@ -337,20 +326,13 @@ def connect_skill_api(app: FastAPI):
     ) -> SkillResourceContentResponse:
         skill = _get_skill(project_id, skill_id)
         try:
-            size_bytes = skill.resource_size_bytes(path)
-            if size_bytes > MAX_RESOURCE_CONTENT_BYTES:
-                raise HTTPException(
-                    status_code=413,
-                    detail=(
-                        f"Resource is {size_bytes} bytes, over the "
-                        f"{MAX_RESOURCE_CONTENT_BYTES} byte limit for this endpoint: {path}"
-                    ),
-                )
-            data = skill.read_resource_bytes(path)
+            data = skill.read_resource_bytes(path, max_bytes=MAX_RESOURCE_CONTENT_BYTES)
         except FileNotFoundError:
             raise HTTPException(
                 status_code=404, detail=f"Resource not found: {path}"
             ) from None
+        except ResourceTooLargeError as e:
+            raise HTTPException(status_code=413, detail=str(e)) from e
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e)) from e
         try:

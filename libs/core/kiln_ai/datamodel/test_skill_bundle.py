@@ -146,8 +146,40 @@ class TestCreateSkillWithFiles:
 
     def test_no_staging_debris_left_behind(self, project):
         create(project, files={"references/a.md": b"a"})
+        # The staging root itself is removed so it never lingers in a synced
+        # project folder.
         staging_root = project.path.parent / STAGING_DIR_NAME
-        assert not staging_root.exists() or not any(staging_root.iterdir())
+        assert not staging_root.exists()
+
+    def test_disk_full_propagates_as_oserror(self, project):
+        import errno as errno_mod
+        from unittest.mock import patch
+
+        with patch.object(
+            Skill,
+            "save_skill_md",
+            side_effect=OSError(errno_mod.ENOSPC, "No space left on device"),
+        ):
+            with pytest.raises(OSError) as exc_info:
+                create(project)
+        # Environment failures are not the caller's fault: no 422-style error.
+        assert not isinstance(exc_info.value, SkillBundleValidationError)
+        staging_root = project.path.parent / STAGING_DIR_NAME
+        assert not staging_root.exists()
+
+    def test_invalid_filename_oserror_becomes_validation_error(self, project):
+        import errno as errno_mod
+        from unittest.mock import patch
+
+        with patch.object(
+            Skill,
+            "save_skill_md",
+            side_effect=OSError(errno_mod.EINVAL, "Invalid argument"),
+        ):
+            with pytest.raises(
+                SkillBundleValidationError, match="could not write skill files"
+            ):
+                create(project)
 
     def test_binary_reference_rejected(self, project):
         with pytest.raises(SkillBundleValidationError, match="not UTF-8"):
