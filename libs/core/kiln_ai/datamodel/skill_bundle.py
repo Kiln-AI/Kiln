@@ -452,7 +452,15 @@ def clone_skill(
             if file_path.is_symlink() or not file_path.is_file():
                 continue
             relative = file_path.relative_to(source_dir).as_posix()
-            if relative in (Skill.base_filename(), SKILL_MD_FILENAME):
+            # Case/normalization-folded: on a case-insensitive filesystem a
+            # variant like 'Skill.MD' is the same file as the SKILL.md the
+            # clone regenerates, and copying it would silently overwrite the
+            # new identity/content in staging.
+            folded = unicodedata.normalize("NFC", relative).casefold()
+            if folded in (
+                Skill.base_filename().casefold(),
+                SKILL_MD_FILENAME.casefold(),
+            ):
                 continue
             copy_files[relative] = file_path
     return create_skill_with_files(

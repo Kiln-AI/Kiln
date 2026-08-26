@@ -449,6 +449,27 @@ class TestCloneSkill:
         assert clone.read_reference("Notes.md") == "A"
         assert clone.read_reference("notes.md") == "b"
 
+    def test_clone_skips_case_variant_generated_filenames(self, project, source):
+        # 'Skill.MD' is the same file as the regenerated SKILL.md on a
+        # case-insensitive filesystem — copying it would overwrite the clone's
+        # new content, so it is excluded case-insensitively.
+        assert source.path is not None
+        (source.path.parent / "Skill.MD").write_text("old", encoding="utf-8")
+        (source.path.parent / "SKILL.KILN").write_text("{}", encoding="utf-8")
+        clone = clone_skill(
+            project,
+            source,
+            name="cloned-skill",
+            description="A clone.",
+            body="New body.",
+        )
+        assert clone.path is not None
+        clone_dir = clone.path.parent
+        assert not (clone_dir / "Skill.MD").exists()
+        assert not (clone_dir / "SKILL.KILN").exists()
+        assert clone.body() == "New body."
+        assert Skill.load_from_file(clone.path).id != source.id
+
     def test_clone_rejects_duplicate_name(self, project, source):
         with pytest.raises(SkillBundleValidationError, match="install-once"):
             clone_skill(

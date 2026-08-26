@@ -1,6 +1,7 @@
 import base64
 import binascii
 import logging
+import threading
 from datetime import datetime
 from typing import Annotated, List, Literal
 
@@ -8,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Path, Query
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.skill import ResourceTooLargeError, Skill
 from kiln_ai.datamodel.skill_bundle import (
+    MAX_BUNDLE_BYTES,
     MAX_BUNDLE_FILE_COUNT,
     SkillBundleValidationError,
     clone_skill,
@@ -22,7 +24,7 @@ from kiln_server.utils.agent_checks.policy import (
     DENY_AGENT,
     agent_policy_require_approval,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +33,20 @@ logger = logging.getLogger(__name__)
 # 512KB, but hand-added files (via the enclosing folder) can be any size.
 MAX_RESOURCE_CONTENT_BYTES = 10 * 1024 * 1024
 
-# Per-file request content cap, checked at parse time so oversized payloads
-# are rejected before being buffered and decoded. Sized above the base64
-# encoding of MAX_RESOURCE_FILE_BYTES including 76-column MIME line wrapping;
-# the real byte cap is enforced in core.
+# Request content caps, checked at parse time so oversized payloads are
+# rejected before being base64-decoded and staged (the raw body is still
+# buffered by the server; these bound the expensive work after parsing).
+# Per-file: sized above the base64 encoding of MAX_RESOURCE_FILE_BYTES
+# including 76-column MIME line wrapping. Aggregate: sized above the wrapped
+# base64 encoding of MAX_BUNDLE_BYTES. The real byte caps are enforced in
+# core.
 MAX_FILE_CONTENT_CHARS = 800_000
+MAX_TOTAL_CONTENT_CHARS = 3_000_000
+
+# Skill installs run in FastAPI's threadpool (plain `def` handlers) so their
+# file I/O and fsyncs don't block the event loop; this lock restores the
+# serialization that makes the install-once name check race-free in-process.
+_skill_write_lock = threading.Lock()
 
 
 class SkillFileParam(BaseModel):
@@ -69,6 +80,17 @@ class SkillCreationRequest(BaseModel):
         max_length=MAX_BUNDLE_FILE_COUNT,
         description="Optional resource files (references/… and assets/…) installed atomically with the skill.",
     )
+
+    @model_validator(mode="after")
+    def check_total_content_size(self) -> "SkillCreationRequest":
+        total_chars = sum(len(file.content) for file in self.files)
+        if total_chars > MAX_TOTAL_CONTENT_CHARS:
+            raise ValueError(
+                f"total file content is {total_chars} characters, over the "
+                f"{MAX_TOTAL_CONTENT_CHARS} character cap (bundles are capped "
+                f"at {MAX_BUNDLE_BYTES} bytes)"
+            )
+        return self
 
 
 class SkillCloneRequest(BaseModel):
@@ -250,7 +272,7 @@ def connect_skill_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/skills", tags=["Skills"], openapi_extra=ALLOW_AGENT
     )
-    async def create_skill(
+    def create_skill(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -259,14 +281,15 @@ def connect_skill_api(app: FastAPI):
         project = project_from_id(project_id)
         decoded_files, decode_errors = _decode_files(skill_data.files)
         try:
-            skill = create_skill_with_files(
-                project,
-                name=skill_data.name,
-                description=skill_data.description,
-                body=skill_data.body,
-                files=decoded_files,
-                extra_errors=decode_errors,
-            )
+            with _skill_write_lock:
+                skill = create_skill_with_files(
+                    project,
+                    name=skill_data.name,
+                    description=skill_data.description,
+                    body=skill_data.body,
+                    files=decoded_files,
+                    extra_errors=decode_errors,
+                )
         except SkillBundleValidationError as e:
             raise HTTPException(status_code=422, detail="; ".join(e.errors)) from e
         return skill_to_response(skill)
@@ -276,7 +299,7 @@ def connect_skill_api(app: FastAPI):
         tags=["Skills"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def clone_skill_endpoint(
+    def clone_skill_endpoint(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -296,13 +319,14 @@ def connect_skill_api(app: FastAPI):
                     detail=f"Source skill has no readable body; provide one: {e}",
                 ) from e
         try:
-            skill = clone_skill(
-                project,
-                source,
-                name=clone_data.name,
-                description=clone_data.description,
-                body=body,
-            )
+            with _skill_write_lock:
+                skill = clone_skill(
+                    project,
+                    source,
+                    name=clone_data.name,
+                    description=clone_data.description,
+                    body=body,
+                )
         except SkillBundleValidationError as e:
             raise HTTPException(status_code=422, detail="; ".join(e.errors)) from e
         return skill_to_response(skill)
@@ -312,7 +336,7 @@ def connect_skill_api(app: FastAPI):
         tags=["Skills"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_skill_resources(
+    def get_skill_resources(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -331,7 +355,7 @@ def connect_skill_api(app: FastAPI):
         tags=["Skills"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_skill_resource_content(
+    def get_skill_resource_content(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],

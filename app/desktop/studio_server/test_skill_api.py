@@ -597,6 +597,27 @@ class TestResourceEdgeCases:
         )
         assert response.status_code == 422
 
+    def test_total_content_over_aggregate_cap_rejected_at_parse(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        from app.desktop.studio_server.skill_api import (
+            MAX_FILE_CONTENT_CHARS,
+            MAX_TOTAL_CONTENT_CHARS,
+        )
+
+        per_file = MAX_FILE_CONTENT_CHARS - 1
+        count = MAX_TOTAL_CONTENT_CHARS // per_file + 1
+        sample_skill_data["files"] = [
+            {"path": f"references/f{i}.md", "content": "x" * per_file}
+            for i in range(count)
+        ]
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 422
+        assert "character cap" in response.text
+
     def test_resource_content_over_size_limit_413(
         self, client, test_project, mock_project_from_id, saved_skill
     ):
