@@ -699,8 +699,8 @@ describe("ClaimEvidenceReview — what the mismatch reveal explains", () => {
 
 // A single-turn trace whose structured trace ECHOES the raws: its user turn IS
 // raw_input and its assistant turn IS raw_output. This is what a single-turn
-// run records, and it is the shape that made the modal print the input twice —
-// once in its own panel and again as the chat's user turn.
+// run records, and it is the shape the duplicate-input pin leans on: any panel
+// rendered above the conversation would print the opening message twice.
 function echoing_trace(citations: Citation[] = []): TraceClaims {
   const raw_input = "What is the return window on a mattress?"
   const raw_output = "Our return window is 30 days."
@@ -1329,7 +1329,7 @@ describe("the trace modal — single-turn", () => {
 })
 
 describe("the trace modal — multi-turn", () => {
-  it("keeps the chat transcript and the Input panel", async () => {
+  it("shows the conversation alone, with no panels around it", async () => {
     const traces = [echoing_trace()]
     const { container, getAllByText } = render_multi_turn(traces)
     // Two buttons open it (the header and the final-judgement card); either
@@ -1339,11 +1339,37 @@ describe("the trace modal — multi-turn", () => {
     const text = dialog.textContent ?? ""
 
     expect(dialog.querySelector("[data-testid='chat-msg-user']")).not.toBeNull()
-    expect(text).toContain("Input")
-    expect(text).toContain("Output")
+    // No labelled panels, and the opening user message appears once: it IS
+    // the input, so a panel above the conversation would print it twice.
+    expect(text).not.toContain("Input")
+    expect(text).not.toContain("Output")
+    expect(occurrences(text, traces[0].raw_input)).toBe(1)
+    // The assistant turn renders too (the fixture echoes it as raw_output),
+    // so "alone" means without chrome, not without the conversation.
     expect(text).toContain(traces[0].raw_output)
     // The single-turn sections are nowhere near this arm.
     expect(dialog.querySelector("[data-testid='review-input']")).toBeNull()
+    // The conversation gets the widest dialog the house chrome offers.
+    expect(dialog.querySelector(".modal-box")?.className).toContain("max-w-7xl")
+  })
+
+  it("goes back to the plain conversation once the citation clears", async () => {
+    const citation: Citation = {
+      marker: 1,
+      source: "input",
+      from: "return window on",
+      to: "mattress?",
+    }
+    const traces = [echoing_trace([citation])]
+    const { container, getByTitle, getAllByText } = render_multi_turn(traces)
+    await fireEvent.click(getByTitle("View in trace"))
+    expect(trace_dialog(container).querySelector("mark")).not.toBeNull()
+
+    // Browsing the same trace: the conversation renders unhighlighted.
+    await fireEvent.click(getAllByText("View Full Trace")[0])
+    const dialog = trace_dialog(container)
+    expect(dialog.querySelector("mark")).toBeNull()
+    expect(dialog.querySelector("[data-testid='chat-msg-user']")).not.toBeNull()
   })
 
   it("renders a tool loop as chat, not as the single-turn rows", async () => {
@@ -1370,9 +1396,9 @@ describe("the trace modal — multi-turn", () => {
   })
 
   it("keeps the panels raw, in the tints the shipped modal uses", async () => {
-    // Multi-turn is deliberately untouched by the single-turn work: its Input
-    // panel is neutral base-100 raw text, not the review field's tinted,
-    // content-typed rendering. A JSON input reads here exactly as it shipped.
+    // The no-conversation fallback is untouched by the single-turn work: its
+    // Input panel is neutral base-100 raw text, not the review field's
+    // tinted, content-typed rendering. A JSON input reads here as it shipped.
     const raw_input = '{"question": "return window?"}'
     const traces = [{ ...echoing_trace(), raw_input, trace: null }]
     const { container, getAllByText } = render_multi_turn(traces)
@@ -1390,7 +1416,7 @@ describe("the trace modal — multi-turn", () => {
     expect(dialog.querySelector("[data-testid='review-input']")).toBeNull()
   })
 
-  it("marks an input citation on the opening user bubble, not the Input panel", async () => {
+  it("marks an input citation on the opening user bubble", async () => {
     const citation: Citation = {
       marker: 1,
       source: "input",
@@ -1406,8 +1432,7 @@ describe("the trace modal — multi-turn", () => {
     // The span resolved against raw_input, not raw_output — both texts carry
     // "return window", only the input carries the rest of the anchor. On
     // multi-turn the input IS the conversation's opening message, so the
-    // citation lands on that bubble; the Input panel keeps plain text (the
-    // same sentence must not be marked twice).
+    // citation lands on that bubble.
     expect(mark?.textContent).toBe("return window on a mattress?")
     expect(mark?.closest("[data-testid='chat-msg-user']")).not.toBeNull()
     expect(dialog.querySelectorAll("mark").length).toBe(1)

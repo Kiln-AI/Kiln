@@ -14,8 +14,8 @@ import ClaimTraceModal from "./claim_trace_modal.svelte"
 import type { Citation, TraceClaims } from "./claim_evidence"
 import type { TraceMessage } from "$lib/types"
 
-// The happy path — an input citation landing on the opening user bubble with
-// the Input panel unmarked — is pinned end-to-end through the review
+// The happy path — an input citation landing on the opening user bubble of a
+// conversation shown on its own — is pinned end-to-end through the review
 // component (claim_evidence_review.test.ts); this file covers the modal's
 // fallback and observability behavior.
 
@@ -97,10 +97,11 @@ function input_citation(): Citation {
 }
 
 describe("claim_trace_modal — citation mapping fallbacks", () => {
-  it("falls back to the Input panel mark when the opening bubble cannot take it", async () => {
+  it("shows an unmappable input citation without a highlight", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
     // An opening message that differs from raw_input: the chat mapping
-    // refuses (no wrong highlight), and the raw panel keeps the citation.
+    // refuses. The conversation is the whole modal on this arm, so there is
+    // no second copy of the input to mark instead.
     const diverged = multi_turn_trace({
       trace: [
         { role: "user", content: "A different opening entirely." },
@@ -113,12 +114,10 @@ describe("claim_trace_modal — citation mapping fallbacks", () => {
     component.open_citation(diverged, input_citation())
     await tick()
 
-    const panel_mark = container.querySelector("[data-citation-mark]")
-    expect(panel_mark).not.toBeNull()
-    expect(panel_mark?.textContent).toBe("return my order")
     expect(
-      container.querySelector("[data-testid='chat-msg-user'] mark"),
-    ).toBeNull()
+      container.querySelector("[data-testid='chat-msg-user']"),
+    ).not.toBeNull()
+    expect(container.querySelector("mark")).toBeNull()
     // The silent miss is observable.
     expect(warn).toHaveBeenCalled()
   })

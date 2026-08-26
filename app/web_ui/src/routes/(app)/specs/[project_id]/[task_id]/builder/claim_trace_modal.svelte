@@ -11,8 +11,10 @@
   //   read on the page or behind the button. A citation marks inside the
   //   section it cites.
   //
-  //   MULTI-TURN renders the conversation in the house chat UI, with the input
-  //   in its own panel above and the citation mapped onto the exact chat node.
+  //   MULTI-TURN renders the conversation alone in the house chat UI, with the
+  //   citation mapped onto the exact chat node. No input panel: the opening
+  //   user message IS the input, so a panel above would print it twice. The
+  //   dialog title is the only framing, as on the run pages.
   //   A trace with no stored structure keeps the raw flattened panels.
   import { tick } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
@@ -70,9 +72,9 @@
 
   // ── Multi-turn ───────────────────────────────────────────────────────
   // Render the chat UI when the trace carries the conversation; otherwise fall
-  // back to the raw flattened output panel. Both are gated on the arm: the
-  // single-turn path renders none of it, and mapping a citation onto chat
-  // nodes nothing will draw is work for a highlight that cannot appear.
+  // back to the raw flattened input and output panels. Both are gated on the
+  // arm: the single-turn path renders none of it, and mapping a citation onto
+  // chat nodes nothing will draw is work for a highlight that cannot appear.
   $: use_chat =
     !single_turn && !!(trace && trace.trace && trace.trace.length > 0)
 
@@ -175,20 +177,18 @@
       ?.scrollIntoView({ block: "center", behavior: "smooth" })
   }
 
-  // When the chat carries the citation's highlight, the Input panel shows
-  // plain text: marking its copy too would put the same sentence on screen
-  // twice with two competing scroll targets. The panel's mark survives as
-  // the fallback for an input citation the chat could not map.
-  $: input_seg =
-    trace && !single_turn
-      ? use_chat && chat_highlight && active_source === "input"
-        ? { before: text_for("input"), highlight: "", after: "" }
-        : segments("input")
-      : null
+  // The raw panels only render when there is no conversation to show, so they
+  // are also the only place a citation mark can land on that path. When the
+  // chat renders, an unmappable citation shows no mark at all rather than one
+  // on a duplicate copy of the text. These statements don't name the citation
+  // state (Svelte can't see into segments()), so they recompute only because
+  // every entry point reassigns `trace` — a setter that changed the citation
+  // without doing that would leave a stale mark.
+  $: input_seg = trace && !single_turn && !use_chat ? segments("input") : null
   $: output_seg = trace && !single_turn && !use_chat ? segments("output") : null
 </script>
 
-<Dialog bind:this={dialog} title="Trace" width="wide">
+<Dialog bind:this={dialog} title="Trace" width="extra_wide">
   {#if trace}
     <div
       class="space-y-4 text-sm max-h-[70vh] overflow-y-auto"
@@ -201,8 +201,14 @@
         {:else if sections?.sections}
           <SingleTurnSectionsView sections={sections.sections} {cited} />
         {/if}
+      {:else if use_chat && trace.trace}
+        <!-- MULTI-TURN: the conversation on its own, as the run pages show it,
+             with the citation mapped onto its exact node (or unhighlighted
+             when just browsing / unmappable). -->
+        <ChatTrace trace={trace.trace} highlight={chat_highlight} />
       {:else}
-        <!-- MULTI-TURN: the input as judged, then the conversation. -->
+        <!-- MULTI-TURN, no conversation recorded: the raw flattened input and
+             output are the only rendering this trace has. -->
         <div>
           <div class="text-xs uppercase tracking-wide text-gray-500 mb-1">
             Input
@@ -222,14 +228,7 @@
           <div class="text-xs uppercase tracking-wide text-gray-500 mb-1">
             Output
           </div>
-          {#if use_chat && trace.trace}
-            <!-- The real chat UI, with the citation mapped onto its exact node
-                 (or unhighlighted when just browsing / unmappable). -->
-            <div class="rounded bg-primary/5 px-4 py-3">
-              <ChatTrace trace={trace.trace} highlight={chat_highlight} />
-            </div>
-          {:else if output_seg}
-            <!-- No structured trace recorded: the raw flattened output. -->
+          {#if output_seg}
             <div class="rounded bg-primary/5 px-4 py-3 whitespace-pre-wrap">
               {output_seg.before}{#if output_seg.highlight}<mark
                   data-citation-mark
