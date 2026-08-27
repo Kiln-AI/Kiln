@@ -1384,8 +1384,9 @@ async def validate_run_config_tools(
 
     Tool and skill names may repeat across a project, but within one run
     config every tool must expose a unique function name and every skill a
-    unique skill name. Run configs are immutable, so validating here catches
-    every collision that would otherwise fail at inference time.
+    unique skill name. Validating here catches collisions at selection time,
+    instead of at inference time; the runtime check remains the backstop for
+    tools renamed after the run config was created.
     """
     try:
         await validate_run_config_tool_names(task, run_config_properties)

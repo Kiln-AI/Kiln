@@ -845,9 +845,10 @@ async def assemble_unique_agent_tools(
     Names may repeat across a project, but within one run config every tool the
     model sees must have a unique function name (and every attached skill a
     unique skill name — skills are loaded by name through the single "skill"
-    tool). Shared by the runtime adapter and creation-time validation of run
-    configs; run configs are immutable, so a config that passes at creation
-    cannot collide later.
+    tool). Shared by creation-time validation of run configs, which catches
+    collisions at selection time, and by the runtime adapter, which stays the
+    backstop for configs whose tools were renamed after creation (e.g. via
+    edit_kiln_task_tool) or that were created outside the API.
     """
     non_skill_tool_ids = [
         tid for tid in tool_ids if not tid.startswith(SKILL_TOOL_ID_PREFIX)

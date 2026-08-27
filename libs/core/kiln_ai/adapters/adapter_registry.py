@@ -86,9 +86,9 @@ async def validate_run_config_tool_names(
 
     Resolves every attached tool and skill, raising ValueError when a
     referenced skill does not exist or two tools share a name (see
-    assemble_unique_agent_tools). Run configs and skills are immutable, so
-    validating at creation time catches every collision that would otherwise
-    surface as a runtime failure.
+    assemble_unique_agent_tools). Catches collisions at selection time; the
+    runtime check remains the backstop for tools renamed after the run config
+    was created.
     """
     if run_config_properties.type != "kiln_agent":
         return

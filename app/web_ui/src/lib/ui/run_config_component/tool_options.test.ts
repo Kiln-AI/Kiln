@@ -51,6 +51,21 @@ const kiln_task_set: ToolSetApiDescription = {
   ],
 }
 
+// Real divergence case: the server sends the display name in `name` and the
+// callable name in `function_name` for code (and search) tools.
+const code_set: ToolSetApiDescription = {
+  type: "code",
+  set_name: "Code Tools",
+  tools: [
+    {
+      id: "kiln_tool::code::333",
+      name: "Summarizer",
+      description: "Summarize the input",
+      function_name: "summarize",
+    },
+  ],
+}
+
 const colliding_kiln_task_set: ToolSetApiDescription = {
   type: "kiln_task",
   set_name: "Kiln Tasks as Tools",
@@ -106,8 +121,8 @@ describe("build_tool_option_groups labelling", () => {
   })
 
   it("badges the function name in id pickers when it differs from the label", () => {
-    const [option] = all_options(build_tool_option_groups([kiln_task_set]))
-    expect(option.label).toBe("Summarize")
+    const [option] = all_options(build_tool_option_groups([code_set]))
+    expect(option.label).toBe("Summarizer")
     expect(option.badge).toBe("summarize")
     // Function names are long: rendered under the label, not beside it.
     expect(option.badge_placement).toBe("below")

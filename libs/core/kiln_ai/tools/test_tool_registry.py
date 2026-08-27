@@ -956,3 +956,42 @@ class TestValidateUniqueAllowlistToolNames:
                 [f"kiln_tool::code::{dup_a.id}", f"kiln_tool::code::{dup_b.id}"],
                 project,
             )
+
+    async def test_tolerates_mcp_only_collisions(self, project):
+        # MCP tool names come from the servers and can't be renamed in Kiln,
+        # so a collision only among MCP tools is left to the sandbox bridge's
+        # call-time error rather than blocking creation.
+        server_a = ExternalToolServer(
+            name="server_a",
+            type=ToolServerType.remote_mcp,
+            properties={"server_url": "https://a.example.com", "is_archived": False},
+            parent=project,
+        )
+        server_a.save_to_file()
+        server_b = ExternalToolServer(
+            name="server_b",
+            type=ToolServerType.remote_mcp,
+            properties={"server_url": "https://b.example.com", "is_archived": False},
+            parent=project,
+        )
+        server_b.save_to_file()
+
+        await validate_unique_allowlist_tool_names(
+            [
+                f"mcp::remote::{server_a.id}::search",
+                f"mcp::remote::{server_b.id}::search",
+            ],
+            project,
+        )
+
+        # A Kiln-owned tool joining the collision is fixable by renaming it,
+        # so that still rejects.
+        code_tool = self._make_code_tool(project, "search")
+        with pytest.raises(ValueError, match="share the same function name: search"):
+            await validate_unique_allowlist_tool_names(
+                [
+                    f"mcp::remote::{server_a.id}::search",
+                    f"kiln_tool::code::{code_tool.id}",
+                ],
+                project,
+            )

@@ -134,12 +134,12 @@ export function duplicate_tool_names(
 
 // What to call a tool wherever it is listed for a user.
 //
-// Nothing stops two Kiln task tools, code tools, or search tools from carrying
-// the same name and description -- duplicates are allowed within a project, and
-// the Kiln task create form even defaults the name to the task's -- which leaves
-// them indistinguishable in a list or a picker. An ambiguous one is qualified by
-// the id inside its tool id, the same id shown on its detail page and in that
-// page's URL, so the user has something to match against.
+// Nothing stops two Kiln task tools, code tools, search tools, or skills from
+// carrying the same name and description -- duplicates are allowed within a
+// project, and the Kiln task create form even defaults the name to the task's --
+// which leaves them indistinguishable in a list or a picker. An ambiguous one is
+// qualified by the id inside its tool id, the same id shown on its detail page
+// and in that page's URL, so the user has something to match against.
 //
 // MCP tools never earn the qualifier: they are already grouped under their
 // server, and their id's tail is the tool name itself, not an id.
@@ -154,13 +154,15 @@ export function tool_display_name(
   return qualifier_id ? `${tool.name} (${qualifier_id})` : tool.name
 }
 
-// The persistent-object id inside a Kiln task, code, or search tool id -- the id
-// that disambiguates same-named tools of these types. Null for every other type.
+// The persistent-object id inside a Kiln task, code, search, or skill tool id --
+// the id that disambiguates same-named tools of these types. Null for every
+// other type.
 export function tool_qualifier_id(tool_id: string): string | null {
   for (const prefix of [
     KILN_TASK_TOOL_ID_PREFIX,
     CODE_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
+    SKILL_TOOL_ID_PREFIX,
   ]) {
     if (tool_id.startsWith(prefix)) {
       return tool_id.slice(prefix.length) || null

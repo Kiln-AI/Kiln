@@ -190,15 +190,25 @@ async def validate_unique_allowlist_tool_names(
     Tool names may repeat across a project, but sandboxed code calls
     allowlisted tools by name (see sandbox_bridge.name_map), so an allowlist
     carrying two tools with the same function name would make those calls
-    ambiguous. Raises ValueError naming the colliding function names. The
-    sandbox bridge's call-time ambiguity error remains the backstop, since
+    ambiguous. Raises ValueError naming the colliding function names.
+
+    A collision only among MCP tools is tolerated: their names come from the
+    servers and cannot be renamed in Kiln, so rejecting would leave the user
+    no fix short of dropping a server's tools entirely. The sandbox bridge's
+    call-time ambiguity error remains the backstop — for those, and because
     tools can be renamed after the allowlist is saved.
     """
-    names = [
-        await tool_from_id_and_project(tool_id, project=project, task=task).name()
-        for tool_id in tool_allowlist
-    ]
-    duplicates = sorted({n for n in names if names.count(n) > 1})
+    carriers: dict[str, list[str]] = {}
+    for tool_id in tool_allowlist:
+        name = await tool_from_id_and_project(
+            tool_id, project=project, task=task
+        ).name()
+        carriers.setdefault(name, []).append(tool_id)
+    duplicates = sorted(
+        name
+        for name, tool_ids in carriers.items()
+        if len(tool_ids) > 1 and not all(is_mcp_tool_id(tid) for tid in tool_ids)
+    )
     if duplicates:
         raise ValueError(
             f"Multiple allowlisted tools share the same function name: "

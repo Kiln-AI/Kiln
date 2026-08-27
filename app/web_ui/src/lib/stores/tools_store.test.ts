@@ -178,16 +178,16 @@ describe("tools_store", () => {
     })
 
     describe("tool_qualifier_id", () => {
-      it("returns the embedded id for kiln task, code, and search tools", () => {
+      it("returns the embedded id for kiln task, code, search, and skill tools", () => {
         expect(tool_qualifier_id("kiln_task::111")).toBe("111")
         expect(tool_qualifier_id("kiln_tool::code::333")).toBe("333")
         expect(tool_qualifier_id("kiln_tool::rag::444")).toBe("444")
+        expect(tool_qualifier_id("kiln_tool::skill::555")).toBe("555")
       })
 
       it("returns null for other tool types and empty ids", () => {
         expect(tool_qualifier_id("mcp::local::456::read")).toBe(null)
         expect(tool_qualifier_id("kiln_tool::add_numbers")).toBe(null)
-        expect(tool_qualifier_id("kiln_tool::skill::555")).toBe(null)
         expect(tool_qualifier_id("kiln_tool::code::")).toBe(null)
       })
     })

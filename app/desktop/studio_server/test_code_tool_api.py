@@ -552,6 +552,31 @@ class TestAvailableToolsCodeGroup:
         assert len(tools) == 1
         assert tools[0]["name"] == "my_tool"
 
+    def test_serves_display_name_and_function_name(
+        self, client, test_project, mock_project_from_id
+    ):
+        # name carries the user-facing display name, function_name the
+        # callable name — distinct values so a regression can't hide behind
+        # a fixture where they coincide.
+        ct = CodeTool(
+            name="My Fancy Tool",
+            tool_function_name="my_fancy_tool",
+            tool_description="Does something",
+            parameters_schema=SIMPLE_SCHEMA,
+            code=SIMPLE_CODE,
+            parent=test_project,
+        )
+        ct.save_to_file()
+
+        response = client.get(f"/api/projects/{test_project.id}/available_tools")
+        assert response.status_code == 200
+        tool_sets = response.json()
+        code_sets = [ts for ts in tool_sets if ts["type"] == "code"]
+        assert len(code_sets) == 1
+        [tool] = code_sets[0]["tools"]
+        assert tool["name"] == "My Fancy Tool"
+        assert tool["function_name"] == "my_fancy_tool"
+
     def test_excludes_archived_code_tools(
         self, client, test_project, mock_project_from_id, saved_code_tool
     ):
