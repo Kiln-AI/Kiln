@@ -627,6 +627,9 @@
           issue_description: source,
         }
         continued_description = source
+        // A new Continue is a fresh attempt: a stale question failure from the
+        // previous source must not block regeneration on this one.
+        questions_error = null
         goto_step("clarify")
         return
       }
@@ -639,6 +642,9 @@
       // Questions and the refine form.
       property_values = data.property_values as Record<string, string | null>
       continued_description = source
+      // A new Continue is a fresh attempt: a stale question failure from the
+      // previous source must not block regeneration on this one.
+      questions_error = null
       // Prefill the Eval Name only while the field is untouched — the steps
       // stay mounted under browser Back, so a second Continue must not clobber
       // a name the user typed on step 3. The suggester is deterministic over
@@ -675,6 +681,9 @@
   let other_texts: string[] = []
 
   async function load_questions() {
+    // Only one load may be in flight: a second caller would abort the first and
+    // cascade into repeated paid calls.
+    if (questions_loading) return
     questions_loading = true
     questions_error = null
     // A validation message about the set being replaced must not outlive it:
@@ -702,10 +711,16 @@
         questions_error = "Failed to load clarifying questions."
         return
       }
-      question_set = data as QuestionSet
+      // Record nothing for a response that cannot render: derive the per-question
+      // state first so a malformed shape throws before the set is marked current,
+      // landing in the catch below as a normal failure.
+      const set = data as QuestionSet
+      const next_selections = set.questions.map(() => null)
+      const next_other_texts = set.questions.map(() => "")
+      question_set = set
       question_set_source = source
-      selections = question_set.questions.map(() => null)
-      other_texts = question_set.questions.map(() => "")
+      selections = next_selections
+      other_texts = next_other_texts
     } catch (e) {
       if (is_abort_error(e)) return
       questions_error =
@@ -3801,10 +3816,13 @@
   // Continue processed text the current set wasn't authored against: those
   // questions no longer fit the new spec. Gating on questions_source rather
   // than the live description keeps navigation alone from regenerating.
+  // A failed load must halt here rather than auto-retry a paid call: the Retry
+  // button and the next Continue are the re-attempts.
   $: if (
     current_step === "clarify" &&
     !questions_are_current(question_set_source, questions_source) &&
-    !questions_loading
+    !questions_loading &&
+    !questions_error
   ) {
     load_questions()
   }
@@ -4058,6 +4076,11 @@
             />
           {:else if questions_error}
             <Warning warning_color="error" warning_message={questions_error} />
+            <div class="text-center py-4 flex justify-center gap-2">
+              <button class="btn btn-primary" on:click={() => load_questions()}>
+                Retry
+              </button>
+            </div>
           {:else if question_set}
             <!-- name deliberately empty: hides the component's details link
                  (the wizard manages the eval's details itself, and the name
