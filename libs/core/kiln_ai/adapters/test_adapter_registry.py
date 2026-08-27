@@ -1221,3 +1221,11 @@ class TestValidateRunConfigToolNames:
         )
         with pytest.raises(ValueError, match="Code tool not found"):
             await validate_run_config_tool_names(task, rc)
+
+    async def test_rejects_missing_skill_id(self, project_task, _agent_config):
+        _, task = project_task
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(tools=["kiln_tool::skill::missing_id"])
+        )
+        with pytest.raises(ValueError, match="not found in the project: missing_id"):
+            await validate_run_config_tool_names(task, rc)

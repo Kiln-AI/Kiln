@@ -70,12 +70,13 @@ async def validate_run_config_tool_names(
     task: datamodel.Task,
     run_config_properties: RunConfigProperties,
 ) -> None:
-    """Reject a run config whose tools would collide at runtime.
+    """Reject a run config whose tools would fail at runtime.
 
-    Resolves every attached tool and skill and raises ValueError when two share
-    a name (see assemble_unique_agent_tools). Run configs and skills are
-    immutable, so validating at creation time catches every collision that
-    would otherwise surface as a runtime failure.
+    Resolves every attached tool and skill, raising ValueError when a
+    referenced skill does not exist or two tools share a name (see
+    assemble_unique_agent_tools). Run configs and skills are immutable, so
+    validating at creation time catches every collision that would otherwise
+    surface as a runtime failure.
     """
     if run_config_properties.type != "kiln_agent":
         return
@@ -83,6 +84,17 @@ async def validate_run_config_tool_names(
     if tools_config is None or not tools_config.tools:
         return
     skills = load_skills_from_tool_ids(task, tools_config.tools)
+    requested_skill_ids = {
+        skill_id_from_tool_id(tid)
+        for tid in tools_config.tools
+        if tid.startswith(SKILL_TOOL_ID_PREFIX)
+    }
+    missing_skill_ids = sorted(requested_skill_ids - set(skills.keys()))
+    if missing_skill_ids:
+        raise ValueError(
+            "Skill(s) referenced in run config not found in the project: "
+            f"{', '.join(missing_skill_ids)}"
+        )
     await assemble_unique_agent_tools(task, tools_config.tools, list(skills.values()))
 
 

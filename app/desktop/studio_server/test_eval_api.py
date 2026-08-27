@@ -7155,3 +7155,29 @@ async def test_create_task_run_config_rejects_tool_colliding_with_skill_loader(
     assert response.status_code == 422
     assert "share the same function name: skill" in response.text
     assert "reserved" in response.text
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_rejects_missing_skill(
+    client, mock_task_from_id, mock_task
+):
+    mock_task_from_id.return_value = mock_task
+
+    # A run config referencing a skill that doesn't exist in the project (e.g.
+    # deleted) is rejected at creation instead of failing at runtime.
+    response = client.post(
+        "/api/projects/project1/tasks/task1/run_configs",
+        json={
+            "name": "RC",
+            "run_config_properties": {
+                "model_name": "gpt-4o",
+                "model_provider_name": "openai",
+                "prompt_id": "simple_chain_of_thought_prompt_builder",
+                "structured_output_mode": "json_schema",
+                "tools_config": {"tools": ["kiln_tool::skill::missing_id"]},
+            },
+        },
+    )
+    assert response.status_code == 422
+    assert "not found in the project: missing_id" in response.text
+    assert len(mock_task.run_configs()) == 0
