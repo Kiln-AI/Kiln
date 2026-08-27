@@ -1433,6 +1433,19 @@ export function validate_refined_judge_prompt(prompt: string): string | null {
   return null
 }
 
+// Strip a single code fence that WRAPS the whole prompt (opening fence with
+// an optional language tag on its own first line, closing fence alone on the
+// last), returning the inner text. A model that fence-wraps an otherwise-good
+// prompt is a recoverable presentation slip, not bad content, so unwrapping it
+// saves re-paying for the same answer. It recovers the wrapping ONLY: anything
+// else — interior or one-sided fences, a second wrapping pair, Jinja braces,
+// length — is left in place to fail validation as before.
+export function strip_wrapping_code_fence(prompt: string): string {
+  const text = (prompt ?? "").trim()
+  const wrapped = /^```[^\n`]*\n([\s\S]*)\n```$/.exec(text)
+  return wrapped ? wrapped[1] : prompt
+}
+
 // ── The verdict card's reason line ────────────────────────────────────────
 
 // The reason under the verdict card's deterministic headline. The claim

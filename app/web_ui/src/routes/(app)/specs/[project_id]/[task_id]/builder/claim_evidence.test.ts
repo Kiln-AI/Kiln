@@ -36,6 +36,7 @@ import {
   single_turn_output_text,
   single_turn_sections,
   single_turn_sections_resolver,
+  strip_wrapping_code_fence,
   user_says_meets_spec,
   validate_refined_judge_prompt,
   WHITESPACE_FREE_FOLD,
@@ -530,6 +531,65 @@ describe("validate_refined_judge_prompt", () => {
   it("rejects an oversized prompt", () => {
     expect(
       validate_refined_judge_prompt("a".repeat(MAX_JUDGE_PROMPT_CHARS + 1)),
+    ).toMatch(/too long/)
+  })
+})
+
+describe("strip_wrapping_code_fence", () => {
+  it("unwraps a fenced prompt, with or without a language tag", () => {
+    expect(strip_wrapping_code_fence("```\nPASS if polite.\n```")).toBe(
+      "PASS if polite.",
+    )
+    expect(strip_wrapping_code_fence("```markdown\nPASS if polite.\n```")).toBe(
+      "PASS if polite.",
+    )
+    expect(
+      validate_refined_judge_prompt(
+        strip_wrapping_code_fence("```markdown\nPASS if polite.\n```"),
+      ),
+    ).toBeNull()
+  })
+
+  it("leaves a prompt without a wrapping fence unchanged", () => {
+    const plain = "PASS if the reply is polite, FAIL otherwise."
+    expect(strip_wrapping_code_fence(plain)).toBe(plain)
+  })
+
+  it("leaves interior and one-sided fences unchanged", () => {
+    const interior = "Judge this:\n```\nexample\n```\nThen decide."
+    expect(strip_wrapping_code_fence(interior)).toBe(interior)
+    const open_only = "```markdown\nPASS if polite."
+    expect(strip_wrapping_code_fence(open_only)).toBe(open_only)
+    const close_only = "PASS if polite.\n```"
+    expect(strip_wrapping_code_fence(close_only)).toBe(close_only)
+  })
+
+  it("strips only one wrapping pair, so a doubly wrapped prompt still fails", () => {
+    const doubled = "```\n```\nPASS if polite.\n```\n```"
+    expect(strip_wrapping_code_fence(doubled)).toBe("```\nPASS if polite.\n```")
+    expect(
+      validate_refined_judge_prompt(strip_wrapping_code_fence(doubled)),
+    ).toMatch(/fences/)
+  })
+
+  it("recovers the wrapping only, never the content", () => {
+    // Jinja braces inside the fence survive the unwrap and still fail.
+    expect(
+      validate_refined_judge_prompt(
+        strip_wrapping_code_fence("```\nScore {{ trace }}\n```"),
+      ),
+    ).toMatch(/Jinja/)
+    // An empty fence unwraps to nothing, which is still not a judge prompt.
+    expect(
+      validate_refined_judge_prompt(strip_wrapping_code_fence("```\n\n```")),
+    ).toMatch(/empty/)
+    // Runaway output stays runaway once the fence is off.
+    expect(
+      validate_refined_judge_prompt(
+        strip_wrapping_code_fence(
+          `\`\`\`\n${"a".repeat(MAX_JUDGE_PROMPT_CHARS + 1)}\n\`\`\``,
+        ),
+      ),
     ).toMatch(/too long/)
   })
 })
