@@ -78,11 +78,69 @@ export function reusable_minted_inputs(
   return cache.inputs
 }
 
+// Whether the clarify questions still fit the text the caller pairs them
+// against: source is a snapshot of the exact text they were generated from,
+// byte-compared because the copilot saw that raw string. Null means no set
+// has landed, so regenerate.
+export function questions_are_current(
+  source: string | null,
+  paired_against: string,
+): boolean {
+  return source !== null && source === paired_against
+}
+
+// Whether a suggested eval name may be written into the name field. A name
+// the user typed is never overwritten; an untouched field is always safe to
+// fill. Untouched means either empty/whitespace-only (nothing to lose, and a
+// stray space is not a typed name) or still byte-equal to prefilled_name, the
+// name the MACHINE last wrote — that one tracks the model's latest suggestion,
+// so rewriting the description and continuing again renames the eval after the
+// new one. Raw byte compare: a trailing space is a real edit.
+export function should_prefill_suggested_name(
+  current_name: string,
+  prefilled_name: string | null,
+): boolean {
+  return current_name.trim() === "" || current_name === prefilled_name
+}
+
+// Whether a failed refine may discard the refine form's current values.
+// Content the user may have edited is never discarded (current must still be
+// byte-equal to what the code last wrote); programmatic content is discarded
+// only when the classified values it was derived from have changed underneath
+// it. A transient failure with an unchanged source therefore keeps the good
+// refinement, and a null snapshot (values restored from a saved draft, where
+// authorship is unknowable) always means keep.
+// The byte-compares rely on callers snapshotting the object they just built
+// with the same construction on both sides, not on JSON canonicalization.
+export function should_invalidate_refined_values(
+  current: Record<string, string | null>,
+  programmatic_json: string | null,
+  derived_from_json: string | null,
+  current_source_json: string,
+): boolean {
+  return (
+    programmatic_json !== null &&
+    JSON.stringify(current) === programmatic_json &&
+    derived_from_json !== current_source_json
+  )
+}
+
 export type BuilderDraft = {
   // Step 1-3 — spec authoring.
   description: string
+  // Which text the last Continue processed. The clarify gate pairs questions
+  // to this, so a reload must not swap the pairing target to an un-Continued
+  // edit; drafts written before this key restore it as null.
+  continued_description: string | null
   spec_type: SpecType
   name: string
+  // Which name the machine last wrote, so a reload keeps a still-untouched
+  // suggestion replaceable; drafts from before this key restore null, which
+  // safely treats the restored name as the user's own. Deliberately unlike
+  // refined_values_programmatic_json, whose snapshot is NOT persisted so refine
+  // text always restores as user-owned: discarding that text destroys content,
+  // while a name suggestion is cheap to replace.
+  prefilled_name: string | null
   property_values: Record<string, string | null>
   refined_property_values: Record<string, string | null>
   suggested_edits: Record<string, SuggestedEdit>
@@ -116,8 +174,10 @@ export type BuilderDraft = {
 
 export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   description: "",
+  continued_description: null,
   spec_type: "issue",
   name: "",
+  prefilled_name: null,
   property_values: {},
   refined_property_values: {},
   suggested_edits: {},

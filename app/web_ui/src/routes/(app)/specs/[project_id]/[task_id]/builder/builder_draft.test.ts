@@ -5,10 +5,13 @@ import {
   create_eval_button_label,
   draft_after_save_keeping_stranded_tags,
   draft_has_content,
+  questions_are_current,
   reset_draft_keeping_tags,
   restore_step,
   reusable_cached_cases,
   reusable_minted_inputs,
+  should_invalidate_refined_values,
+  should_prefill_suggested_name,
   EMPTY_BUILDER_DRAFT,
   type BuilderDraft,
   type CachedSuCases,
@@ -18,8 +21,18 @@ import {
 // fixtures below carve it down.
 const full_draft: BuilderDraft = {
   description: "The agent must not fabricate policies.",
+  // Deliberately NOT equal to description: the live text drifts past the last
+  // Continue whenever the user edits without continuing. The round trip below
+  // only serializes, so it can't catch the two being crossed — distinctness
+  // keeps the fixture discriminating for any future test that drives the real
+  // save and restore paths.
+  continued_description: "The agent must not fabricate refund policies.",
   spec_type: "issue",
   name: "no-fabrication",
+  // Deliberately NOT equal to name: this fixture is a user who renamed. Same
+  // reason as continued_description above — distinctness is what would let a
+  // test of the real save/restore paths catch the two fields being crossed.
+  prefilled_name: "no-fabricated-policies",
   property_values: {
     issue_description: "The agent must not fabricate policies.",
     issue_examples: "Invented a 90-day return window.",
@@ -307,6 +320,40 @@ describe("reusable_cached_cases — SU-case reuse", () => {
   })
 })
 
+describe("questions_are_current — clarify staleness gate", () => {
+  const description = "The agent must not fabricate policies."
+
+  // An aborted or failed request must leave the source unset: recording one
+  // for a set that never landed would let stale questions read as current.
+  it("is false with no source — nothing has landed yet", () => {
+    expect(questions_are_current(null, description)).toBe(false)
+  })
+
+  it("is true for an empty description once an empty set landed", () => {
+    // The null guard means "no set has landed yet", not "the text is empty".
+    expect(questions_are_current("", "")).toBe(true)
+  })
+
+  it("is true when the description is unchanged", () => {
+    // A no-op Back-then-forward must not burn another paid copilot call.
+    expect(questions_are_current(description, description)).toBe(true)
+  })
+
+  it("is false after a one-byte edit", () => {
+    expect(
+      questions_are_current(
+        description,
+        "The agent must not fabricate policy.",
+      ),
+    ).toBe(false)
+  })
+
+  it("is false for a whitespace-only difference — raw byte compare", () => {
+    expect(questions_are_current(description, description + "\n")).toBe(false)
+    expect(questions_are_current(description + " ", description)).toBe(false)
+  })
+})
+
 describe("reset_draft_keeping_tags", () => {
   it("wipes all authoring state but carries the batch tags", () => {
     const fresh = reset_draft_keeping_tags(full_draft)
@@ -467,6 +514,134 @@ describe("draft_after_save_keeping_stranded_tags", () => {
     expect(
       draft_after_save_keeping_stranded_tags("only_batch", ["only_batch"]),
     ).toEqual(EMPTY_BUILDER_DRAFT)
+  })
+})
+
+describe("should_prefill_suggested_name", () => {
+  it("prefills an empty field", () => {
+    expect(should_prefill_suggested_name("", null)).toBe(true)
+  })
+
+  it("prefills a whitespace-only field — a stray space is not a typed name", () => {
+    expect(should_prefill_suggested_name("   ", null)).toBe(true)
+  })
+
+  it("leaves a typed name alone when no machine name is on record — a restored draft keeps the user's name", () => {
+    expect(should_prefill_suggested_name("no-fabrication", null)).toBe(false)
+  })
+
+  it("replaces an untouched machine name — it tracks the newest suggestion", () => {
+    expect(
+      should_prefill_suggested_name("no-fabrication", "no-fabrication"),
+    ).toBe(true)
+  })
+
+  // The compare is raw bytes, not trimmed: a trailing space is a real edit.
+  it("treats a trailing space on the machine's name as a user edit", () => {
+    expect(
+      should_prefill_suggested_name("no-fabrication ", "no-fabrication"),
+    ).toBe(false)
+  })
+
+  // Clearing a typed name hands ownership back, so the next Continue refills.
+  it("prefills a cleared field even with a machine name on record", () => {
+    expect(should_prefill_suggested_name("   ", "no-fabrication")).toBe(true)
+  })
+
+  it("keeps a name the user edited away from the machine's — it survives every later Continue", () => {
+    expect(
+      should_prefill_suggested_name("refund-accuracy", "no-fabrication"),
+    ).toBe(false)
+  })
+})
+
+describe("should_invalidate_refined_values", () => {
+  // The refined text a successful refine wrote, and the classified values it
+  // was derived from — plus what those classified values became after the user
+  // went back and rewrote the description.
+  const refined = {
+    issue_description: "The agent must not fabricate or guess at policies.",
+  }
+  const refined_json = JSON.stringify(refined)
+  const old_source = JSON.stringify({
+    issue_description: "The agent must not fabricate policies.",
+  })
+  const new_source = JSON.stringify({
+    issue_description: "The agent must not invent warranty terms.",
+  })
+
+  it("discards programmatic values whose source moved underneath them", () => {
+    // The whole point: stale refined text must not outrank the description
+    // the user just rewrote.
+    expect(
+      should_invalidate_refined_values(
+        refined,
+        refined_json,
+        old_source,
+        new_source,
+      ),
+    ).toBe(true)
+  })
+
+  it("keeps programmatic values when the source is unchanged", () => {
+    // A transient refine failure must not destroy an accepted refinement.
+    expect(
+      should_invalidate_refined_values(
+        refined,
+        refined_json,
+        old_source,
+        old_source,
+      ),
+    ).toBe(false)
+  })
+
+  it("keeps user-edited values even when the source moved", () => {
+    expect(
+      should_invalidate_refined_values(
+        { issue_description: "My own wording." },
+        refined_json,
+        old_source,
+        new_source,
+      ),
+    ).toBe(false)
+  })
+
+  it("keeps values with no snapshot", () => {
+    // Draft-restored values have unknowable authorship, so they are kept.
+    expect(
+      should_invalidate_refined_values(refined, null, null, new_source),
+    ).toBe(false)
+  })
+
+  it("reads reordered keys as user-edited — compares are byte-exact", () => {
+    // No canonicalization: both sides must be stringified from the same
+    // construction. A future second rendered field inherits this constraint.
+    const current = { issue_description: "a", issue_examples: "b" }
+    const reordered = JSON.stringify({
+      issue_examples: "b",
+      issue_description: "a",
+    })
+    expect(
+      should_invalidate_refined_values(
+        current,
+        reordered,
+        old_source,
+        new_source,
+      ),
+    ).toBe(false)
+  })
+
+  it("round-trips a null-valued field", () => {
+    // Unanswered fields ride as null, not "" — the compare must survive them.
+    const with_null = { issue_description: "Kept.", non_issue_examples: null }
+    expect(
+      should_invalidate_refined_values(
+        with_null,
+        JSON.stringify(with_null),
+        old_source,
+        new_source,
+      ),
+    ).toBe(true)
   })
 })
 

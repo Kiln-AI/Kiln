@@ -36,10 +36,13 @@
     builder_mock_active,
     draft_after_save_keeping_stranded_tags,
     draft_has_content,
+    questions_are_current,
     reset_draft_keeping_tags,
     restore_step,
     reusable_cached_cases,
     reusable_minted_inputs,
+    should_invalidate_refined_values,
+    should_prefill_suggested_name,
     EMPTY_BUILDER_DRAFT,
     type BuilderDraft,
     type CachedMintedInputs,
@@ -351,8 +354,10 @@
   $: current_draft = draft_ready
     ? {
         description,
+        continued_description,
         spec_type,
         name,
+        prefilled_name,
         property_values,
         refined_property_values,
         suggested_edits,
@@ -420,8 +425,15 @@
     const saved = get(store)
     if (draft_has_content(saved)) {
       description = saved.description
+      // Pre-pairing drafts have no such key: null restores the "no Continue on
+      // record" state, which the gate's fallback already covers.
+      continued_description = saved.continued_description ?? null
       spec_type = saved.spec_type
       name = saved.name
+      // Pre-prefill-tracking drafts have no such key: null restores the "no
+      // machine claim on record" state, so the saved name is left as the
+      // user's and never clobbered by a later suggestion.
+      prefilled_name = saved.prefilled_name ?? null
       // An empty stored record keeps the var's seeded default (e.g.
       // property_values starts with the issue keys) instead of erasing it.
       if (Object.keys(saved.property_values).length > 0) {
@@ -544,6 +556,11 @@
   // classification fails or is unavailable.
   let spec_type: SpecType = "issue"
   let name = ""
+  // The name the machine last wrote. While `name` still matches it — or the
+  // field is empty — the field is machine-owned and a newer suggestion may
+  // replace it. Typing a different name takes ownership; clearing the field
+  // hands ownership back.
+  let prefilled_name: string | null = null
   let property_values: Record<string, string | null> = {
     issue_description: "",
     issue_examples: "",
@@ -551,6 +568,14 @@
   }
   let classifying = false
   let classify_error: string | null = null
+  // The description the last Continue processed (the text classify ran on).
+  // Questions pair against this, not the live textarea, so a browser Forward
+  // past an edit the user never continued from keeps the question set that
+  // still matches the classified property_values.
+  let continued_description: string | null = null
+  // The text questions are paired against; the live description only when no
+  // Continue is on record (a first entry, or a draft saved before this key).
+  $: questions_source = continued_description ?? description
   $: field_configs = spec_field_configs[spec_type]
 
   // Resolve a candidate eval name against the task's existing specs — the
@@ -585,23 +610,16 @@
   async function classify_then_continue() {
     classifying = true
     classify_error = null
+    // Pin the description this Continue is processing before any await, so the
+    // request and everything derived from it describe the same text even if the
+    // user edits the textarea mid-flight.
+    const source = description
     try {
-      // Seed property_values.issue_description from the free-text description
-      // up front. This is the fallback shape for the "issue" default — when
-      // the classifier ships, it'll overwrite below. Done here so Step 3's
-      // Refine reflects what the user typed in Step 1 (and Step 2's
-      // refine_spec_with_question_answers has something to refine from),
-      // even if classification fails.
-      property_values = {
-        ...property_values,
-        issue_description: description,
-      }
-
       const { data, error } = await client.POST(
         "/api/copilot/classify_spec_description",
         {
           body: {
-            description,
+            description: source,
             task_prompt: task?.instruction ?? null,
           },
           signal: new_copilot_abort_signal(),
@@ -610,20 +628,53 @@
       if (error || !data) {
         classify_error =
           "Couldn't classify your description. Continuing with the default 'issue' type."
+        // Seed the "issue" fallback shape here rather than before the await:
+        // the success path replaces property_values wholesale, and seeding
+        // early would leak an edit into the effective spec text on a Continue
+        // that never lands (abort or network error).
+        property_values = {
+          ...property_values,
+          issue_description: source,
+        }
+        continued_description = source
+        // A new Continue is a fresh attempt: a stale question failure from the
+        // previous source must not block regeneration on this one.
+        questions_error = null
         goto_step("clarify")
         return
       }
+      // Land the classified state and the pairing record together, before the
+      // name prefill's un-abortable await: a Forward during that window must
+      // not pair the old question set against this Continue.
       spec_type = data.spec_type as SpecType
-      // The suggester is deterministic over similar descriptions, so a
-      // second eval on this task would regenerate a taken name — prefill
-      // the nearest available variant instead (best-effort).
-      name =
-        (await resolve_available_name(data.suggested_name))?.name ??
-        data.suggested_name
       // The classifier returns the property_values dict already keyed for
       // this spec_type. Cast to the looser Record shape consumed by
       // Questions and the refine form.
       property_values = data.property_values as Record<string, string | null>
+      continued_description = source
+      // A new Continue is a fresh attempt: a stale question failure from the
+      // previous source must not block regeneration on this one.
+      questions_error = null
+      // Prefill the Eval Name while the field is still machine-owned: a name
+      // this code wrote tracks the model's latest run, so rewriting the
+      // description and continuing again renames the eval after the new one.
+      // Typing in the field takes ownership and ends the tracking. The
+      // suggester is deterministic over similar descriptions, so a second eval
+      // on this task would regenerate a taken name — take the nearest available
+      // variant instead (best-effort).
+      // The server does not constrain the suggestion: an invalid one would land
+      // in the field and block the Step 3 gate, so it is dropped here the same
+      // way the refine prefill drops one.
+      if (
+        should_prefill_suggested_name(name, prefilled_name) &&
+        data.suggested_name &&
+        filename_string_short_validator(data.suggested_name) === null
+      ) {
+        name =
+          (await resolve_available_name(data.suggested_name))?.name ??
+          data.suggested_name
+        prefilled_name = name
+      }
       goto_step("clarify")
     } catch (e) {
       if (is_abort_error(e)) return
@@ -636,6 +687,10 @@
 
   // ── Step 2 state — questions
   let question_set: QuestionSet | null = null
+  // Identity snapshot of the description the current question_set was
+  // generated from; null until a set successfully lands. Drives the
+  // regeneration gate below.
+  let question_set_source: string | null = null
   let questions_loading = false
   let questions_error: string | null = null
   let questions_form_error: KilnError | null = null
@@ -646,8 +701,18 @@
   let other_texts: string[] = []
 
   async function load_questions() {
+    // Only one load may be in flight: a second caller would abort the first and
+    // cascade into repeated paid calls.
+    if (questions_loading) return
     questions_loading = true
     questions_error = null
+    // A validation message about the set being replaced must not outlive it:
+    // the answers it complained about are cleared with the questions below.
+    questions_form_error = null
+    // Pin the text this set is being generated from before the await, so a
+    // later edit can't be mistaken for what the copilot actually saw. An edit
+    // the user hasn't continued from takes effect on the next Continue.
+    const source = questions_source
     try {
       const { data, error } = await client.POST("/api/copilot/question_spec", {
         body: {
@@ -658,7 +723,7 @@
             task_input_schema: "",
             task_output_schema: "",
           },
-          target_specification: description,
+          target_specification: source,
         },
         signal: new_copilot_abort_signal(),
       })
@@ -666,9 +731,16 @@
         questions_error = "Failed to load clarifying questions."
         return
       }
-      question_set = data as QuestionSet
-      selections = question_set.questions.map(() => null)
-      other_texts = question_set.questions.map(() => "")
+      // Record nothing for a response that cannot render: derive the per-question
+      // state first so a malformed shape throws before the set is marked current,
+      // landing in the catch below as a normal failure.
+      const set = data as QuestionSet
+      const next_selections = set.questions.map(() => null)
+      const next_other_texts = set.questions.map(() => "")
+      question_set = set
+      question_set_source = source
+      selections = next_selections
+      other_texts = next_other_texts
     } catch (e) {
       if (is_abort_error(e)) return
       questions_error =
@@ -687,12 +759,32 @@
   // issue spec_type); this list must move with spec_type if that changes.
   const RENDERED_REFINE_FIELDS: readonly string[] = ["issue_description"]
   let refined_property_values: Record<string, string | null> = {}
+  // Snapshot of refined_property_values as the CODE last wrote it (refine
+  // success or a seed). The form's bind:value mutates the values without
+  // touching this, so "still byte-equal" means untouched model output — the
+  // only content a failed refine may discard. Null (draft-restored values)
+  // reads as user-owned.
+  let refined_values_programmatic_json: string | null = null
+  // Snapshot of the classified values that same write was derived from. A
+  // failure only discards programmatic content once this no longer matches the
+  // current property_values — otherwise the refined text still fits the
+  // description on screen and is worth keeping.
+  let refined_values_derived_from_json: string | null = null
   let suggested_edits: Record<string, SuggestedEdit> = {}
   let refine_form_error: KilnError | null = null
   let refined_preview_loading = false
   // Non-blocking: refinement failing still lands the user on an editable
   // refine step, but they should know their answers weren't incorporated.
   let refine_warning: string | null = null
+
+  // The classified values as the refine form sees them. Every snapshot and
+  // compare of the form's source goes through here, so both sides of a byte
+  // compare are built the same way and key order can never differ.
+  function rendered_source_json(): string {
+    return JSON.stringify(
+      keep_rendered_fields(property_values, RENDERED_REFINE_FIELDS),
+    )
+  }
 
   // A failed refine still lands on an editable form: seed it from the
   // current values, unless a prior visit already populated it (a re-entered
@@ -706,7 +798,31 @@
         property_values,
         RENDERED_REFINE_FIELDS,
       )
+      refined_values_programmatic_json = JSON.stringify(refined_property_values)
+      refined_values_derived_from_json = rendered_source_json()
     }
+  }
+
+  // A failed refine must not leave a previous round's refined text in place
+  // once the description behind it changed: it would silently outrank the
+  // user's newer description everywhere the spec text is read, while the
+  // warning above the form says their answers were not incorporated. Discard it
+  // — and the suggestions that annotate it — only when it is still exactly what
+  // the code wrote AND its source has moved, so both step 3 edits and a good
+  // refinement that merely hit a transient failure survive.
+  function reseed_refine_form_after_failure() {
+    if (
+      should_invalidate_refined_values(
+        refined_property_values,
+        refined_values_programmatic_json,
+        refined_values_derived_from_json,
+        rendered_source_json(),
+      )
+    ) {
+      refined_property_values = {}
+      suggested_edits = {}
+    }
+    seed_refine_form_if_empty()
   }
 
   // Called by Questions component on Next. Fires the refinement call and
@@ -748,7 +864,7 @@
         refine_warning = `Couldn't refine the spec from your answers (${createKilnError(
           error,
         ).getMessage()}). Edit it directly below.`
-        seed_refine_form_if_empty()
+        reseed_refine_form_after_failure()
         return
       }
 
@@ -757,12 +873,12 @@
         suggested_name?: string
       }
 
-      // Prefill the Eval Name from the model's suggestion, but only when the
-      // user hasn't typed one and the suggestion passes the same filename-safe
-      // validator the name field enforces. User input always wins; an invalid
-      // or absent suggestion leaves the field untouched.
+      // Prefill the Eval Name from the model's suggestion while the field is
+      // still machine-owned, and only when the suggestion passes the same
+      // filename-safe validator the name field enforces. Typing in the field
+      // takes ownership; an invalid or absent suggestion leaves it untouched.
       if (
-        !name.trim() &&
+        should_prefill_suggested_name(name, prefilled_name) &&
         refine_response.suggested_name &&
         filename_string_short_validator(refine_response.suggested_name) === null
       ) {
@@ -771,6 +887,7 @@
         name =
           (await resolve_available_name(refine_response.suggested_name))
             ?.name ?? refine_response.suggested_name
+        prefilled_name = name
       }
 
       // Start from current values, then apply the edits the form can show.
@@ -795,6 +912,11 @@
         ...keep_rendered_fields(property_values, RENDERED_REFINE_FIELDS),
         ...split.refined_edits,
       }
+      refined_values_programmatic_json = JSON.stringify(refined_property_values)
+      // The classified values this refine ran against (property_values is not
+      // touched during the call), so a later failure can tell whether the
+      // description behind these values has since moved.
+      refined_values_derived_from_json = rendered_source_json()
       suggested_edits = split.suggested_edits
     } catch (e) {
       if (is_abort_error(e)) return
@@ -802,7 +924,7 @@
       // either way — but the failure must not be silent.
       refine_warning =
         "Couldn't refine your eval from your answers. Edit it directly below."
-      seed_refine_form_if_empty()
+      reseed_refine_form_after_failure()
     } finally {
       refined_preview_loading = false
     }
@@ -3728,8 +3850,18 @@
     }
   }
 
-  // Auto-load questions when entering Step 2
-  $: if (current_step === "clarify" && !question_set && !questions_loading) {
+  // Auto-load questions when entering Step 2, and regenerate them when a
+  // Continue processed text the current set wasn't authored against: those
+  // questions no longer fit the new spec. Gating on questions_source rather
+  // than the live description keeps navigation alone from regenerating.
+  // A failed load must halt here rather than auto-retry a paid call: the Retry
+  // button and the next Continue are the re-attempts.
+  $: if (
+    current_step === "clarify" &&
+    !questions_are_current(question_set_source, questions_source) &&
+    !questions_loading &&
+    !questions_error
+  ) {
     load_questions()
   }
 
@@ -3982,6 +4114,11 @@
             />
           {:else if questions_error}
             <Warning warning_color="error" warning_message={questions_error} />
+            <div class="text-center py-4 flex justify-center gap-2">
+              <button class="btn btn-primary" on:click={() => load_questions()}>
+                Retry
+              </button>
+            </div>
           {:else if question_set}
             <!-- name deliberately empty: hides the component's details link
                  (the wizard manages the eval's details itself, and the name
@@ -4041,8 +4178,12 @@
               />
               {#if suggested_edits.issue_description?.reason_for_edit}
                 <div class="text-xs text-gray-500 italic mt-2">
-                  Refinement: {suggested_edits.issue_description
-                    .reason_for_edit}
+                  <span
+                    class="tooltip tooltip-top before:z-50 before:whitespace-normal"
+                    data-tip={suggested_edits.issue_description.reason_for_edit}
+                  >
+                    We updated this based on your answers.
+                  </span>
                 </div>
               {/if}
             </div>
