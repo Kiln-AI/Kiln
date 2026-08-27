@@ -729,7 +729,7 @@
                       <div class="flex-grow">
                         {item.label}
                       </div>
-                      {#if item.badge}
+                      {#if item.badge && item.badge_placement !== "below"}
                         <div
                           class="badge badge-sm text-xs {item.badge.length <= 2
                             ? 'rounded-full w-5 h-5'
@@ -741,6 +741,18 @@
                         </div>
                       {/if}
                     </div>
+                    {#if item.badge && item.badge_placement === "below"}
+                      <div class="w-full">
+                        <div
+                          class="badge badge-sm text-xs px-2 {item.badge_color ===
+                          'primary'
+                            ? 'badge-primary'
+                            : 'badge-ghost'}"
+                        >
+                          {item.badge}
+                        </div>
+                      </div>
+                    {/if}
                     {#if item.description}
                       <div
                         class="text-xs font-medium text-base-content/40 w-full line-clamp-3 whitespace-pre-line"

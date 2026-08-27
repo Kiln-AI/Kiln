@@ -109,6 +109,8 @@ describe("build_tool_option_groups labelling", () => {
     const [option] = all_options(build_tool_option_groups([kiln_task_set]))
     expect(option.label).toBe("Summarize")
     expect(option.badge).toBe("summarize")
+    // Function names are long: rendered under the label, not beside it.
+    expect(option.badge_placement).toBe("below")
   })
 })
 
