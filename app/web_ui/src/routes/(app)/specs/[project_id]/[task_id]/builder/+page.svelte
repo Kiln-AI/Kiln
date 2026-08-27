@@ -2804,6 +2804,20 @@
       claims_state: "building",
       claims_error: null,
     })
+    // TODO(eval-v2): remove — ClaimDebug capture context, deleted before GA.
+    // Derived from whichever wizard state is populated, never from an arm
+    // switch: a single-turn build never set a synthetic-user driver, so both
+    // the model and the turn count come out null on their own.
+    const su_lane = driven_su_driver ?? su_driver
+    const debug_context = {
+      task_model: drive_run_config_model,
+      synthetic_user_model: su_lane
+        ? `${su_lane.model_provider}/${su_lane.model_name}`
+        : null,
+      judge,
+      turns: su_lane ? TURNS_PER_CASE : null,
+      batch_tag: multi_turn_batch_tag ?? single_turn_batch_tag,
+    }
     try {
       const { data, error, response } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/eval_builder/build_claims",
@@ -2819,6 +2833,9 @@
             eval_rubric: judge.prompt,
             judge_score: tc.judge_score,
             judge_reasoning: tc.judge_reasoning,
+            // TODO(eval-v2): remove — ClaimDebug capture fields.
+            source_run_id: tc.leaf_run_id,
+            debug_context,
           },
         },
       )

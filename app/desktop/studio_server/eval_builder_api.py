@@ -106,6 +106,9 @@ from app.desktop.studio_server.multiturn_sdg_api import (
     resolve_target_run_config,
     to_su_driver_config,
 )
+
+# TODO(eval-v2): remove — ClaimDebug capture scaffolding, deleted before GA.
+from app.desktop.studio_server.utils.claim_debug_capture import capture_claim_debug
 from app.desktop.studio_server.utils.copilot_utils import (
     delete_multi_turn_batch_chains,
     delete_single_turn_batch_runs,
@@ -1432,13 +1435,18 @@ def connect_eval_builder_api(app: FastAPI):
         subset review most traces are never opened). Also used by the refine
         loop to regenerate claims without re-running the judge.
         """
-        return await build_claims_for_trace(
+        output = await build_claims_for_trace(
             raw_input=input.raw_input,
             raw_output=input.raw_output,
             eval_rubric=input.eval_rubric,
             judge_score=input.judge_score,
             judge_reasoning=input.judge_reasoning,
         )
+        # TODO(eval-v2): remove — ClaimDebug capture writes a sidecar record of
+        # this build so claim data survives the browser tab. It is fail-open
+        # (swallows everything), so it can never fail the user's request.
+        await asyncio.to_thread(capture_claim_debug, project_id, task_id, input, output)
+        return output
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/eval_builder/preflight_model",
