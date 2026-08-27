@@ -52,6 +52,7 @@ CONCURRENCY = 4
 # posture as the eval runner. Timeouts and deterministic input problems are
 # never retried.
 DRIVE_MAX_RETRIES = 2
+# Base of the job runner's exponential-backoff-with-jitter window, not a flat wait.
 DRIVE_RETRY_DELAY_SECONDS = 1.0
 
 # Tag scheme. `_TAG_SU_CASE` lets consumers filter to all SU-generated

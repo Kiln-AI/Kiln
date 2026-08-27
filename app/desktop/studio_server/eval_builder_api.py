@@ -71,6 +71,7 @@ from kiln_ai.utils.async_job_runner import (
     AsyncJobRunner,
     AsyncJobRunnerObserver,
     RetryableError,
+    compute_retry_delay,
 )
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.slow_operation import log_if_slow
@@ -134,7 +135,7 @@ DRIVE_CONCURRENCY = 10
 REVIEW_CONCURRENCY = 8
 
 # The single-turn run stage's knobs — the same posture as the multi-turn
-# drive runner (shared retry classifier, retry count, delay). Like the
+# drive runner (shared retry classifier, retry count, backoff base). Like the
 # multi-turn drive, a run has no app-level timeout: termination is
 # guaranteed by structural bounds (the adapter's tool-call cap and the
 # model client's per-request timeout), and a pathologically slow run is
@@ -147,13 +148,14 @@ RUN_RETRY_DELAY_SECONDS = 1.0
 _SINGLE_TURN_ADAPTER_NAME = "kiln_eval_builder_single_turn"
 
 # The judge lane's retry policy — the same posture (shared classifier, same
-# attempt count and delay) as the drive runner in
+# attempt count and backoff) as the drive runner in
 # kiln_ai.synthetic_user.runner: transient provider failures retry,
 # deterministic ones fail the case immediately. The judge is the one local
 # leg without a runner-owned retry; the remote copilot legs already retry
 # inside kiln_server (pipeline jobs, retries=3), so no client retry stacks
 # on top of them.
 JUDGE_MAX_RETRIES = 2
+# Base of the shared exponential-backoff-with-jitter window, not a flat wait.
 JUDGE_RETRY_DELAY_SECONDS = 1.0
 
 
@@ -171,7 +173,11 @@ async def run_judge_with_retry(*args, **kwargs):
             attempt += 1
             if attempt > JUDGE_MAX_RETRIES or not is_retryable_error(e):
                 raise
-            await asyncio.sleep(JUDGE_RETRY_DELAY_SECONDS)
+            # attempt counts failures so far; the shared backoff windows are
+            # indexed from zero, so the first retry draws from (0, base).
+            await asyncio.sleep(
+                compute_retry_delay(JUDGE_RETRY_DELAY_SECONDS, attempt - 1)
+            )
 
 
 def _sse(payload: dict | BaseModel) -> str:

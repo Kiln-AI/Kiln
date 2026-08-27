@@ -27,6 +27,7 @@ from kiln_ai.datamodel.run_config import (
     ToolsRunConfig,
 )
 from kiln_ai.synthetic_user.runner import NUM_CASES_MAX
+from kiln_ai.utils.async_job_runner import RETRY_BACKOFF_FACTOR
 from kiln_server.custom_errors import connect_custom_errors
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.build_claim_evidence_output import (
@@ -49,7 +50,12 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     FinalJudgementApi,
     JudgeConfig,
 )
-from app.desktop.studio_server.eval_builder_api import connect_eval_builder_api
+from app.desktop.studio_server.eval_builder_api import (
+    JUDGE_MAX_RETRIES,
+    JUDGE_RETRY_DELAY_SECONDS,
+    connect_eval_builder_api,
+    run_judge_with_retry,
+)
 from app.desktop.studio_server.utils.eval_builder_utils import (
     JudgeVerdict,
     build_judge_prompt_template,
@@ -1017,6 +1023,90 @@ def pipeline_seams():
 
 def _events_of(events: list, type_name: str) -> list[dict]:
     return [e for e in events if isinstance(e, dict) and e.get("type") == type_name]
+
+
+class TestRunJudgeWithRetry:
+    """The judge lane's hand-rolled retry, which mirrors the shared runner's
+    posture. The streams cover the observable outcomes; these pin the waits."""
+
+    @pytest.mark.asyncio
+    async def test_transient_failures_back_off_exponentially(self):
+        judge = AsyncMock(
+            side_effect=[
+                _rate_limit_error(),
+                _rate_limit_error(),
+                JudgeVerdict("pass", "fine"),
+            ]
+        )
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+                new=judge,
+            ),
+            patch(
+                "app.desktop.studio_server.eval_builder_api.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as mock_sleep,
+            patch(
+                "app.desktop.studio_server.eval_builder_api.compute_retry_delay",
+                # Pin the jitter draw to the top of each backoff window.
+                side_effect=lambda base, attempt: base * RETRY_BACKOFF_FACTOR**attempt,
+            ) as mock_delay,
+        ):
+            verdict = await run_judge_with_retry("p1", "t1", "in", "out", "judge")
+
+        assert verdict.judge_score == "pass"
+        assert judge.await_count == 3
+        # Zero-indexed attempts: the first retry draws from the base window.
+        assert [call.args for call in mock_delay.call_args_list] == [
+            (JUDGE_RETRY_DELAY_SECONDS, 0),
+            (JUDGE_RETRY_DELAY_SECONDS, 1),
+        ]
+        assert [call.args[0] for call in mock_sleep.await_args_list] == [
+            JUDGE_RETRY_DELAY_SECONDS,
+            JUDGE_RETRY_DELAY_SECONDS * RETRY_BACKOFF_FACTOR,
+        ]
+
+    @pytest.mark.asyncio
+    async def test_retries_are_capped_and_the_last_error_raises(self):
+        judge = AsyncMock(side_effect=_rate_limit_error())
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+                new=judge,
+            ),
+            patch(
+                "app.desktop.studio_server.eval_builder_api.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as mock_sleep,
+        ):
+            with pytest.raises(litellm.RateLimitError):
+                await run_judge_with_retry("p1", "t1", "in", "out", "judge")
+
+        assert judge.await_count == JUDGE_MAX_RETRIES + 1
+        assert mock_sleep.await_count == JUDGE_MAX_RETRIES
+
+    @pytest.mark.asyncio
+    async def test_non_retryable_error_raises_without_waiting(self):
+        judge = AsyncMock(side_effect=ValueError("judge output unparseable"))
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+                new=judge,
+            ),
+            patch(
+                "app.desktop.studio_server.eval_builder_api.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as mock_sleep,
+        ):
+            with pytest.raises(ValueError, match="judge output unparseable"):
+                await run_judge_with_retry("p1", "t1", "in", "out", "judge")
+
+        assert judge.await_count == 1
+        mock_sleep.assert_not_awaited()
 
 
 class TestMultiTurnPipeline:
@@ -2250,7 +2340,11 @@ class TestSingleTurnPipeline:
             _rate_limit_error(),
             recovered_run,
         ]
-        resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
+        # Zero the backoff base so the retry doesn't sleep a real jittered wait.
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.RUN_RETRY_DELAY_SECONDS", 0
+        ):
+            resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
         events = _parse_sse(resp.text)
         assert len(_events_of(events, "case_failed")) == 0
         assert len(_events_of(events, "case_judged")) == 2
