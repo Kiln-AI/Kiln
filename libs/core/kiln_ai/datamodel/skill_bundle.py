@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import errno
 import os
+import re
 import shutil
 import time
 import unicodedata
@@ -48,6 +49,13 @@ _WINDOWS_RESERVED_NAMES = {"con", "prn", "aux", "nul"} | {
 }
 
 
+# Matches Windows drive-letter prefixes ('C:/x', 'C:x'). Checked explicitly and
+# platform-independently: os.path.isabs only detects these on Windows, and
+# validation must behave identically on every OS (a bundle valid on macOS must
+# not stitch outside the staging dir on a Windows machine).
+_WINDOWS_DRIVE_PREFIX = re.compile(r"^[A-Za-z]:")
+
+
 class SkillBundleValidationError(ValueError):
     """A skill bundle failed validation. Carries every failure, not just the first."""
 
@@ -69,7 +77,7 @@ def _unsafe_path_error(path: str) -> str | None:
         path.encode("utf-8")
     except UnicodeEncodeError:
         return f"resource path contains characters that cannot be encoded: {path!r}"
-    if path.startswith("/"):
+    if path.startswith("/") or _WINDOWS_DRIVE_PREFIX.match(path):
         return f"resource path must be relative: {path!r}"
     if path.endswith("/"):
         return f"resource path must include a filename: {path!r}"
@@ -95,7 +103,7 @@ def _unsafe_copy_path_error(path: str) -> str | None:
         os.fsencode(path)
     except UnicodeEncodeError:
         return f"resource path contains characters that cannot be encoded: {path!r}"
-    if path.startswith("/"):
+    if path.startswith(("/", "\\")) or _WINDOWS_DRIVE_PREFIX.match(path):
         return f"resource path must be relative: {path!r}"
     for segment in path.split("/"):
         if segment in ("", ".", ".."):
@@ -404,6 +412,15 @@ def create_skill_with_files(
                     "remove it and retry"
                 ]
             ) from None
+        if final_dir.parent.is_symlink():
+            # mkdir(exist_ok=True) accepts an existing symlink and os.rename
+            # follows it — never commit a bundle outside the project folder.
+            raise SkillBundleValidationError(
+                [
+                    f"{final_dir.parent.name!r} in the project folder is a "
+                    "symlink — remove it and retry"
+                ]
+            )
         if final_dir.exists():
             raise SkillBundleValidationError(
                 [f"skill directory already exists: {final_dir.name}"]

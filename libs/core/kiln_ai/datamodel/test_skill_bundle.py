@@ -63,6 +63,8 @@ class TestValidateResourcePath:
             ("references/./guide.md", "invalid segment"),
             ("references//guide.md", "invalid segment"),
             ("assets/foo\x00bar", "null byte"),
+            ("C:/evil.md", "must be relative"),
+            ("/etc/passwd", "must be relative"),
             ("references/a\ud800.md", "cannot be encoded"),
             ("references/bad:name.md", "not allowed on Windows"),
             ("references/bad?.md", "not allowed on Windows"),
@@ -176,6 +178,30 @@ class TestCreateSkillWithFiles:
         )
         with pytest.raises(SkillBundleValidationError, match="remove it and retry"):
             create(project)
+
+    def test_windows_drive_paths_rejected_in_copy_files(self, project, tmp_path):
+        # 'C:/x' passes a naive leading-slash check but would override the
+        # staging base when joined on Windows. Rejected on every platform.
+        source = tmp_path / "src.md"
+        source.write_text("x", encoding="utf-8")
+        for bad in ("C:/evil.md", "C:evil.md", "\\\\server\\share\\x"):
+            with pytest.raises(SkillBundleValidationError, match="must be relative"):
+                create_skill_with_files(
+                    project,
+                    name="drive-skill",
+                    description="A test skill.",
+                    body=BODY,
+                    copy_files={bad: source},
+                )
+
+    def test_symlinked_skills_dir_rejected(self, project, tmp_path):
+        target = tmp_path / "elsewhere-skills"
+        target.mkdir()
+        (project.path.parent / "skills").symlink_to(target)
+        with pytest.raises(SkillBundleValidationError, match="symlink"):
+            create(project)
+        # Nothing escaped through the symlink
+        assert not any(target.iterdir())
 
     def test_symlinked_staging_root_rejected(self, project, tmp_path):
         target = tmp_path / "elsewhere"
