@@ -1403,6 +1403,17 @@ export function rejudge_shortfall_notice(
   return `${failed} ${cases} couldn't be re-checked with the improved judge and kept their previous results. They were left out of this review round.`
 }
 
+// The notice for feedback the refine model declined to incorporate. The
+// reviewer would otherwise see their note apparently ignored with no reason,
+// so the model's own words are quoted back. Null when it declined nothing.
+export function declined_feedback_notice(
+  not_incorporated_feedback: string | null,
+): string | null {
+  const text = (not_incorporated_feedback ?? "").trim()
+  if (!text) return null
+  return `Some of your feedback was not applied this round: "${text}"`
+}
+
 // A judge prompt/rubric this long is almost certainly runaway model output,
 // not a rubric — reject it rather than persist it into the judge config.
 export const MAX_JUDGE_PROMPT_CHARS = 20000

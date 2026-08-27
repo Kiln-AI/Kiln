@@ -10,6 +10,7 @@ import {
   build_trace_reviews,
   calibration_gate_target,
   CHAR_CUTOFF,
+  declined_feedback_notice,
   disagreed_trace_indices,
   disagreement_feedback,
   final_judgement_reason,
@@ -1535,6 +1536,25 @@ describe("rejudge_shortfall_notice", () => {
       "left out of this review round",
     )
     expect(rejudge_shortfall_notice(3, "conversation")).not.toMatch(/—/)
+  })
+})
+
+describe("declined_feedback_notice", () => {
+  it("quotes the declined feedback back to the reviewer", () => {
+    expect(
+      declined_feedback_notice("The tone complaint is out of scope."),
+    ).toBe(
+      'Some of your feedback was not applied this round: "The tone complaint is out of scope."',
+    )
+  })
+
+  it("silent when the refine declined nothing", () => {
+    expect(declined_feedback_notice(null)).toBeNull()
+  })
+
+  it("silent on blank feedback, which says no more than nothing", () => {
+    expect(declined_feedback_notice("")).toBeNull()
+    expect(declined_feedback_notice("   \n\t ")).toBeNull()
   })
 })
 
