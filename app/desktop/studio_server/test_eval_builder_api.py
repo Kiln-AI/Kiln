@@ -948,6 +948,7 @@ def _fake_run_cases_batch(*, fail_case: int | None = None, events_per_case: int 
                     case_index=i,
                     error_code="unexpected_error",
                     message="drive blew up",
+                    error_type="RateLimitError",
                 )
                 failed += 1
                 continue
@@ -1181,7 +1182,8 @@ class TestMultiTurnPipeline:
 
     def test_drive_failure_is_isolated(self, client, pipeline_request, pipeline_seams):
         """THE failure-isolation contract: a case dying in the drive stage
-        must not discard the other case's completed review."""
+        must not discard the other case's completed review. The runner's
+        error_type rides through onto the frame alongside the message."""
         with patch(
             "app.desktop.studio_server.eval_builder_api.run_cases_batch",
             new=_fake_run_cases_batch(fail_case=0),
@@ -1197,6 +1199,7 @@ class TestMultiTurnPipeline:
                 "stage": "drive",
                 "code": "unexpected_error",
                 "message": "drive blew up",
+                "error_type": "RateLimitError",
             }
         ]
         judged = _events_of(events, "case_judged")
@@ -1286,7 +1289,8 @@ class TestMultiTurnPipeline:
         self, client, pipeline_request, pipeline_seams
     ):
         """A KilnRunError-wrapped judge failure must put the ROOT provider
-        error on the wire, not the wrapper's genericized message."""
+        error on the wire — as the message and as error_type — not the
+        wrapper's genericized message or class."""
         root = litellm.BadRequestError(
             message="max_tokens too large for this model",
             model="claude_sonnet_4_6",
@@ -1314,6 +1318,7 @@ class TestMultiTurnPipeline:
             assert "max_tokens too large" in e["message"]
             assert "KilnRunError" not in e["message"]
             assert "unexpected error" not in e["message"]
+            assert e["error_type"] == "BadRequestError"
         assert events[-1] == "complete"
 
     def test_replace_batch_tags_deleted_after_successful_drive(
@@ -2322,6 +2327,7 @@ class TestSingleTurnPipeline:
         assert failed[0]["case_index"] == 0
         assert failed[0]["stage"] == "run"
         assert "model exploded" in failed[0]["message"]
+        assert failed[0]["error_type"] == "ValueError"
 
         judged = _events_of(events, "case_judged")
         assert [e["case_index"] for e in judged] == [1]
@@ -2348,6 +2354,27 @@ class TestSingleTurnPipeline:
         events = _parse_sse(resp.text)
         assert len(_events_of(events, "case_failed")) == 0
         assert len(_events_of(events, "case_judged")) == 2
+
+    def test_exhausted_transient_run_error_names_its_class(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        """A transient failure that never recovers fails the case naming the
+        REAL provider error: the retryable wrapper hides it, so error_type
+        must come from the exception the wrapper was raised from."""
+        failing_input = single_turn_request["inputs"][0]
+        single_turn_seams["runs_by_input"][failing_input] = _rate_limit_error()
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.RUN_RETRY_DELAY_SECONDS", 0
+        ):
+            resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
+        events = _parse_sse(resp.text)
+
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 1
+        assert failed[0]["stage"] == "run"
+        assert failed[0]["error_type"] == "RateLimitError"
+        assert "upstream rate limit" in failed[0]["message"]
+        assert [e["case_index"] for e in _events_of(events, "case_judged")] == [1]
 
     def test_judge_failure_is_isolated(
         self, client, single_turn_request, single_turn_seams
@@ -2474,6 +2501,8 @@ class TestSingleTurnPipeline:
         failed = _events_of(events, "case_failed")
         assert len(failed) == 1
         assert failed[0]["code"] == "missing_output"
+        # No exception underlies an empty output — nothing to name.
+        assert failed[0]["error_type"] is None
         bad_run.delete.assert_called_once()
         # Cost honesty: the discarded run's spend was real — banked into the
         # batch total alongside the surviving case's 0.05.

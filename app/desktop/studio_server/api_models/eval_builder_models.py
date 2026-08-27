@@ -305,6 +305,12 @@ class PipelineCaseFailedEvent(BaseModel):
     stage: Literal["drive", "run", "judge"]
     code: str
     message: str
+    # Exception class name behind a provider or unexpected failure, so clients
+    # can aggregate by type instead of parsing `message`. Always None on
+    # deterministic failures (invalid_input, missing_output, case_timeout,
+    # bad_synthetic_user_info): `code` already names those, and it does so even
+    # where an exception triggered them.
+    error_type: str | None = None
 
 
 class PipelineBatchCompletedEvent(BaseModel):

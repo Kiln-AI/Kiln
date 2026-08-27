@@ -521,6 +521,9 @@ def test_run_cases_batch_emits_full_sse_event_stream(
         "error_code": "bad_synthetic_user_info",
         "message": "missing required tag",
         "total_cost": 0.0,
+        # A deterministic failure leaves error_type None even though a parse
+        # error triggered it: error_code already names the bad input.
+        "error_type": None,
     }
     assert events[4] == {
         "event": "batch_completed",

@@ -113,6 +113,11 @@ class CaseFailedEvent:
     # Actual provider spend across ALL of this case's attempts. Nothing
     # survives on disk, but the billing was real.
     total_cost: float = 0.0
+    # Class name of the provider or unexpected exception behind the failure, so
+    # consumers can group failures by kind instead of parsing `message`. None on
+    # deterministic failures — `error_code` already names those, even the ones an
+    # exception triggered.
+    error_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -227,13 +232,14 @@ async def run_cases_batch(
             self, job: tuple[int, SyntheticUserCase], error: Exception
         ) -> None:
             case_index, _case = job
-            code, message = _failure_details(error)
+            code, message, error_type = _failure_details(error)
             await queue.put(
                 CaseFailedEvent(
                     case_index=case_index,
                     error_code=code,
                     message=message,
                     total_cost=failed_attempt_spend.get(case_index, 0.0),
+                    error_type=error_type,
                 )
             )
 
@@ -310,22 +316,33 @@ class _CaseFailure(Exception):
 
     Deterministic input problems, caller-set per-case timeouts (a retry
     would pin a worker for another full drive budget), and provider errors
-    the shared classifier calls permanent. `code` is surfaced on
-    CaseFailedEvent.
+    the shared classifier calls permanent. `code` and `error_type` are
+    surfaced on CaseFailedEvent.
     """
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, error_type: str | None = None) -> None:
         super().__init__(message)
         self.code = code
+        # Class name of the provider or unexpected exception behind this
+        # failure; None on deterministic failures, whose `code` already names
+        # them.
+        self.error_type = error_type
 
 
-def _failure_details(error: Exception) -> tuple[str, str]:
-    """Map a case's terminal exception to CaseFailedEvent's code and message."""
+def _failure_details(error: Exception) -> tuple[str, str, str | None]:
+    """Map a case's terminal exception to CaseFailedEvent's code, message and
+    error type."""
     if isinstance(error, _CaseFailure):
-        return error.code, str(error)
+        return error.code, str(error), error.error_type
     # A RetryableError whose attempts ran out (or an unexpected
-    # orchestration error surfaced by the job runner).
-    return "unexpected_error", str(error)
+    # orchestration error surfaced by the job runner). The retryable wrapper
+    # is always raised `from` the provider error it classified, so its cause
+    # names the real failure; an error that carries no cause falls back to None.
+    cause = error.__cause__
+    error_type = (
+        type(unwrap_kiln_run_error(cause)).__name__ if cause is not None else None
+    )
+    return "unexpected_error", str(error), error_type
 
 
 async def _drive_one_case_and_emit(
@@ -494,7 +511,9 @@ async def _drive_one_case_and_emit(
             if is_retryable_error(e):
                 raise RetryableError(f"{type(cause).__name__}: {detail}") from e
             raise _CaseFailure(
-                "unexpected_error", f"{type(cause).__name__}: {detail}"
+                "unexpected_error",
+                f"{type(cause).__name__}: {detail}",
+                type(cause).__name__,
             ) from e
         # The drive exceeded its caller-set per-case budget; wait_for already
         # cancelled it. The partial chain was removed like any failed attempt.
@@ -527,7 +546,9 @@ async def _drive_one_case_and_emit(
         if is_retryable_error(e):
             raise RetryableError(f"{type(cause).__name__}: {cause}") from e
         raise _CaseFailure(
-            "unexpected_error", f"{type(cause).__name__}: {cause}"
+            "unexpected_error",
+            f"{type(cause).__name__}: {cause}",
+            type(cause).__name__,
         ) from e
 
 

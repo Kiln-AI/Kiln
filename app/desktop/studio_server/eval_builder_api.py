@@ -571,6 +571,7 @@ class JudgeStreamBase:
                     "judge",
                     "judge_failed",
                     f"{type(root).__name__}: {root}",
+                    type(root).__name__,
                 )
                 return
             self._judged_count += 1
@@ -608,10 +609,21 @@ class JudgeStreamBase:
         stage: Literal["drive", "run", "judge"],
         code: str,
         message: str,
+        error_type: str | None = None,
     ) -> None:
-        """One case died at `stage`; the batch continues without it."""
+        """One case died at `stage`; the batch continues without it.
+
+        `error_type` is the class name of the provider or unexpected exception
+        behind the failure (None on deterministic failures, whose `code` already
+        names them) — included in the log line as a grep-able `error_type=...`
+        field so local logs can be grouped by failure kind, not just the frame.
+        """
         logger.exception(
-            "%s: %s failed for case %d", self._stream_name, stage, case_index
+            "%s: %s failed for case %d, error_type=%s",
+            self._stream_name,
+            stage,
+            case_index,
+            error_type,
         )
         self._failed_count += 1
         await self._emit(
@@ -620,6 +632,7 @@ class JudgeStreamBase:
                 stage=stage,
                 code=code,
                 message=message,
+                error_type=error_type,
             )
         )
 
@@ -753,7 +766,11 @@ class MultiTurnPipelineRun(JudgeStreamBase):
                 # A dead case still billed for every attempt it made.
                 self._total_cost += event.total_cost
                 await self._fail_case(
-                    event.case_index, "drive", event.error_code, event.message
+                    event.case_index,
+                    "drive",
+                    event.error_code,
+                    event.message,
+                    event.error_type,
                 )
             # The runner's BatchCompletedEvent is not forwarded: the
             # pipeline's own batch_completed fires after reviews drain.
@@ -900,21 +917,33 @@ class JudgeTracesRun(JudgeStreamBase):
 class _RunFailure(Exception):
     """A terminal per-case failure of the single-turn run stage — never
     retried. Deterministic input problems and provider errors the shared
-    classifier calls permanent. `code` is surfaced on case_failed.
+    classifier calls permanent. `code` and `error_type` are surfaced on
+    case_failed.
     """
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, error_type: str | None = None) -> None:
         super().__init__(message)
         self.code = code
+        # Class name of the provider or unexpected exception behind this
+        # failure; None on deterministic failures, whose `code` already names
+        # them.
+        self.error_type = error_type
 
 
-def _run_failure_details(error: Exception) -> tuple[str, str]:
-    """Map a case's terminal exception to case_failed's code and message."""
+def _run_failure_details(error: Exception) -> tuple[str, str, str | None]:
+    """Map a case's terminal exception to case_failed's code, message and
+    error type."""
     if isinstance(error, _RunFailure):
-        return error.code, str(error)
+        return error.code, str(error), error.error_type
     # A RetryableError whose attempts ran out (or an unexpected
-    # orchestration error surfaced by the job runner).
-    return "unexpected_error", str(error)
+    # orchestration error surfaced by the job runner). The retryable wrapper
+    # is always raised `from` the provider error it classified, so its cause
+    # names the real failure; an error that carries no cause falls back to None.
+    cause = error.__cause__
+    error_type = (
+        type(unwrap_kiln_run_error(cause)).__name__ if cause is not None else None
+    )
+    return "unexpected_error", str(error), error_type
 
 
 def _run_cost(run: TaskRun) -> float:
@@ -1026,8 +1055,8 @@ class SingleTurnPipelineRun(JudgeStreamBase):
 
             async def on_error(self, job: tuple[int, str], error: Exception) -> None:
                 case_index, _input_text = job
-                code, message = _run_failure_details(error)
-                await fail_case(case_index, "run", code, message)
+                code, message, error_type = _run_failure_details(error)
+                await fail_case(case_index, "run", code, message, error_type)
 
         async def _run_job(job: tuple[int, str]) -> bool:
             await self._run_one_input(job, skills)
@@ -1182,7 +1211,9 @@ class SingleTurnPipelineRun(JudgeStreamBase):
             if is_retryable_error(e):
                 raise RetryableError(f"{type(cause).__name__}: {detail}") from e
             raise _RunFailure(
-                "unexpected_error", f"{type(cause).__name__}: {detail}"
+                "unexpected_error",
+                f"{type(cause).__name__}: {detail}",
+                type(cause).__name__,
             ) from e
 
     async def _delete_partial_run(self, run: TaskRun | None) -> None:
