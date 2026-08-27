@@ -445,11 +445,9 @@ class TestTestCodeTool:
             ),
             patch(TRUST_PATCH, return_value=True),
             patch(
-                "app.desktop.studio_server.code_tool_api.MCPSessionManager"
+                "kiln_ai.tools.mcp_session_manager.MCPSessionManager"
             ) as mock_manager_cls,
-            patch(
-                "app.desktop.studio_server.code_tool_api.clear_agent_run_id"
-            ) as mock_clear,
+            patch("kiln_ai.tools.mcp_session_manager.clear_agent_run_id") as mock_clear,
         ):
             mock_manager_cls.shared.return_value.cleanup_session = cleanup_mock
             response = client.post(
@@ -473,11 +471,9 @@ class TestTestCodeTool:
             ),
             patch(TRUST_PATCH, return_value=True),
             patch(
-                "app.desktop.studio_server.code_tool_api.MCPSessionManager"
+                "kiln_ai.tools.mcp_session_manager.MCPSessionManager"
             ) as mock_manager_cls,
-            patch(
-                "app.desktop.studio_server.code_tool_api.clear_agent_run_id"
-            ) as mock_clear,
+            patch("kiln_ai.tools.mcp_session_manager.clear_agent_run_id") as mock_clear,
         ):
             mock_manager_cls.shared.return_value.cleanup_session = cleanup_mock
             response = error_client.post(
