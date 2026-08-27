@@ -1554,6 +1554,10 @@
         stage: "drive" | "run" | "judge"
         code: string
         message: string
+        // Exception class name behind a provider or unexpected failure, so
+        // analytics can aggregate by type. Null on deterministic failures the
+        // code already names, and absent from older streams.
+        error_type?: string | null
       }
     | {
         type: "batch_completed"
@@ -2174,6 +2178,7 @@
           posthog.capture("eval_v2_pipeline_case_failed", {
             stage: event.stage,
             code: event.code,
+            error_type: event.error_type ?? null,
           })
         } else if (event.type === "batch_failed") {
           posthog.capture("eval_v2_pipeline_batch_failed", {
@@ -2700,6 +2705,7 @@
           posthog.capture("eval_v2_pipeline_case_failed", {
             stage: event.stage,
             code: event.code,
+            error_type: event.error_type ?? null,
           })
         } else if (event.type === "batch_failed") {
           posthog.capture("eval_v2_pipeline_batch_failed", {
