@@ -662,7 +662,14 @@
       // suggester is deterministic over similar descriptions, so a second eval
       // on this task would regenerate a taken name — take the nearest available
       // variant instead (best-effort).
-      if (should_prefill_suggested_name(name, prefilled_name)) {
+      // The server does not constrain the suggestion: an invalid one would land
+      // in the field and block the Step 3 gate, so it is dropped here the same
+      // way the refine prefill drops one.
+      if (
+        should_prefill_suggested_name(name, prefilled_name) &&
+        data.suggested_name &&
+        filename_string_short_validator(data.suggested_name) === null
+      ) {
         name =
           (await resolve_available_name(data.suggested_name))?.name ??
           data.suggested_name
