@@ -130,6 +130,7 @@ from .task_output_rating_type import TaskOutputRatingType
 from .task_run import TaskRun
 from .task_run_intermediate_outputs_type_0 import TaskRunIntermediateOutputsType0
 from .tools_run_config import ToolsRunConfig
+from .unauthorized_response import UnauthorizedResponse
 from .usage import Usage
 from .validation_error import ValidationError
 from .validation_error_context import ValidationErrorContext
@@ -253,6 +254,7 @@ __all__ = (
     "TaskRun",
     "TaskRunIntermediateOutputsType0",
     "ToolsRunConfig",
+    "UnauthorizedResponse",
     "Usage",
     "ValidationError",
     "ValidationErrorContext",
