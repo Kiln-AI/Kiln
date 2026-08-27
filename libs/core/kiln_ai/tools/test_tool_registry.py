@@ -32,6 +32,7 @@ from kiln_ai.tools.tool_registry import (
     tool_definitions_from_ids,
     tool_from_id,
     tool_from_id_and_project,
+    validate_unique_allowlist_tool_names,
 )
 
 
@@ -915,3 +916,43 @@ class TestCodeToolRegistry:
     def test_code_tool_no_project_raises(self):
         with pytest.raises(ValueError, match="Requires a parent project"):
             tool_from_id_and_project("kiln_tool::code::12345")
+
+
+class TestValidateUniqueAllowlistToolNames:
+    def _make_code_tool(self, project, function_name):
+        from kiln_ai.datamodel.code_tool import CodeTool
+
+        ct = CodeTool(
+            name=function_name,
+            tool_function_name=function_name,
+            tool_description="d",
+            parameters_schema={"type": "object", "properties": {}},
+            code="def run() -> str:\n    return 'ok'\n",
+            parent=project,
+        )
+        ct.save_to_file()
+        return ct
+
+    @pytest.fixture
+    def project(self, tmp_path):
+        project = Project(name="test_proj", path=tmp_path / "project.kiln")
+        project.save_to_file()
+        return project
+
+    async def test_accepts_unique_and_empty(self, project):
+        tool_a = self._make_code_tool(project, "tool_a")
+        tool_b = self._make_code_tool(project, "tool_b")
+        await validate_unique_allowlist_tool_names([], project)
+        await validate_unique_allowlist_tool_names(
+            [f"kiln_tool::code::{tool_a.id}", f"kiln_tool::code::{tool_b.id}"],
+            project,
+        )
+
+    async def test_rejects_duplicate_function_names(self, project):
+        dup_a = self._make_code_tool(project, "dup_tool")
+        dup_b = self._make_code_tool(project, "dup_tool")
+        with pytest.raises(ValueError, match="share the same function name: dup_tool"):
+            await validate_unique_allowlist_tool_names(
+                [f"kiln_tool::code::{dup_a.id}", f"kiln_tool::code::{dup_b.id}"],
+                project,
+            )

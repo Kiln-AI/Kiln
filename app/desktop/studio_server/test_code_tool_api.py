@@ -136,6 +136,42 @@ class TestCreateCodeTool:
         assert response.status_code == 200
         assert response.json()["id"] is not None
 
+    def test_create_rejects_ambiguous_allowlist(
+        self, client, test_project, mock_project_from_id, create_request
+    ):
+        # Two allowlisted tools sharing a function name would make calls from
+        # sandboxed code ambiguous: rejected at creation.
+        allowlisted = []
+        for _ in range(2):
+            ct = CodeTool(
+                name="dup_tool",
+                tool_function_name="dup_tool",
+                tool_description="d",
+                parameters_schema=SIMPLE_SCHEMA,
+                code=SIMPLE_CODE,
+                parent=test_project,
+            )
+            ct.save_to_file()
+            allowlisted.append(f"kiln_tool::code::{ct.id}")
+
+        create_request["tool_allowlist"] = allowlisted
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json=create_request,
+            )
+        assert response.status_code == 400
+        assert "share the same function name: dup_tool" in response.json()["message"]
+
+        # A single one of them is fine.
+        create_request["tool_allowlist"] = allowlisted[:1]
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json=create_request,
+            )
+        assert response.status_code == 200
+
     def test_create_validation_error(self, client, test_project, mock_project_from_id):
         with patch(TRUST_PATCH, return_value=True):
             response = client.post(

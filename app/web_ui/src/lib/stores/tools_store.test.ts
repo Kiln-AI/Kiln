@@ -7,6 +7,7 @@ import {
   kiln_task_tool_server_id,
   split_tool_and_skill_ids,
   tool_display_name,
+  tool_qualifier_id,
 } from "./tools_store"
 
 describe("tools_store", () => {
@@ -137,7 +138,32 @@ describe("tools_store", () => {
         expect(tool_display_name(summarize_tool, new Set())).toBe("summarize")
       })
 
-      it("leaves non-Kiln-task tools alone, since their group already names them", () => {
+      it("qualifies ambiguous code and search tools with their embedded id", () => {
+        expect(
+          tool_display_name(
+            {
+              id: "kiln_tool::code::333",
+              name: "Summarize",
+              description: null,
+              function_name: "summarize",
+            },
+            new Set(["Summarize"]),
+          ),
+        ).toBe("Summarize (333)")
+        expect(
+          tool_display_name(
+            {
+              id: "kiln_tool::rag::444",
+              name: "Docs Search",
+              description: null,
+              function_name: "docs_search",
+            },
+            new Set(["Docs Search"]),
+          ),
+        ).toBe("Docs Search (444)")
+      })
+
+      it("leaves MCP tools alone, since their group already names them", () => {
         expect(
           tool_display_name(
             {
@@ -148,6 +174,21 @@ describe("tools_store", () => {
             new Set(["summarize"]),
           ),
         ).toBe("summarize")
+      })
+    })
+
+    describe("tool_qualifier_id", () => {
+      it("returns the embedded id for kiln task, code, and search tools", () => {
+        expect(tool_qualifier_id("kiln_task::111")).toBe("111")
+        expect(tool_qualifier_id("kiln_tool::code::333")).toBe("333")
+        expect(tool_qualifier_id("kiln_tool::rag::444")).toBe("444")
+      })
+
+      it("returns null for other tool types and empty ids", () => {
+        expect(tool_qualifier_id("mcp::local::456::read")).toBe(null)
+        expect(tool_qualifier_id("kiln_tool::add_numbers")).toBe(null)
+        expect(tool_qualifier_id("kiln_tool::skill::555")).toBe(null)
+        expect(tool_qualifier_id("kiln_tool::code::")).toBe(null)
       })
     })
 

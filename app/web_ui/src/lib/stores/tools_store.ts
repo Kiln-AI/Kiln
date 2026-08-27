@@ -134,14 +134,15 @@ export function duplicate_tool_names(
 
 // What to call a tool wherever it is listed for a user.
 //
-// Nothing stops two Kiln task tools from carrying the same name and description --
-// the create form defaults the name to the task's, so two run configs of one task
-// collide by default -- which leaves them indistinguishable in a list or a picker.
-// An ambiguous one is qualified by its tool server id, the same id shown on its
-// detail page and in that page's URL, so the user has something to match against.
+// Nothing stops two Kiln task tools, code tools, or search tools from carrying
+// the same name and description -- duplicates are allowed within a project, and
+// the Kiln task create form even defaults the name to the task's -- which leaves
+// them indistinguishable in a list or a picker. An ambiguous one is qualified by
+// the id inside its tool id, the same id shown on its detail page and in that
+// page's URL, so the user has something to match against.
 //
-// Only Kiln task tools earn the qualifier: MCP tools are already grouped under
-// their server, and search and code tools show their function name as a badge.
+// MCP tools never earn the qualifier: they are already grouped under their
+// server, and their id's tail is the tool name itself, not an id.
 export function tool_display_name(
   tool: ToolApiDescription,
   duplicate_names: Set<string>,
@@ -149,11 +150,28 @@ export function tool_display_name(
   if (!duplicate_names.has(tool.name)) {
     return tool.name
   }
-  const tool_server_id = kiln_task_tool_server_id(tool.id)
-  return tool_server_id ? `${tool.name} (${tool_server_id})` : tool.name
+  const qualifier_id = tool_qualifier_id(tool.id)
+  return qualifier_id ? `${tool.name} (${qualifier_id})` : tool.name
+}
+
+// The persistent-object id inside a Kiln task, code, or search tool id -- the id
+// that disambiguates same-named tools of these types. Null for every other type.
+export function tool_qualifier_id(tool_id: string): string | null {
+  for (const prefix of [
+    KILN_TASK_TOOL_ID_PREFIX,
+    CODE_TOOL_ID_PREFIX,
+    RAG_TOOL_ID_PREFIX,
+  ]) {
+    if (tool_id.startsWith(prefix)) {
+      return tool_id.slice(prefix.length) || null
+    }
+  }
+  return null
 }
 
 const KILN_TASK_TOOL_ID_PREFIX = "kiln_task::"
+const CODE_TOOL_ID_PREFIX = "kiln_tool::code::"
+const RAG_TOOL_ID_PREFIX = "kiln_tool::rag::"
 
 // The tool server id inside a Kiln task tool id, or null for every other tool type.
 export function kiln_task_tool_server_id(tool_id: string): string | null {

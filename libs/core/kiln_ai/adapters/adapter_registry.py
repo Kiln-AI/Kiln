@@ -30,11 +30,13 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 def load_skills_from_tool_ids(
     task: datamodel.Task,
     tool_ids: list[str],
+    require_all: bool = False,
 ) -> SkillsDict:
     """Load Skill objects for any skill tool IDs in the given list.
 
     Performs a single directory scan of the parent project to resolve all
-    referenced skills at once.
+    referenced skills at once. Unresolvable skill IDs are silently dropped
+    unless require_all is set, in which case they raise ValueError.
     """
     skill_ids = {
         skill_id_from_tool_id(tid)
@@ -44,9 +46,19 @@ def load_skills_from_tool_ids(
     if not skill_ids:
         return {}
     project = task.parent_project()
-    if project is None:
-        return {}
-    return Skill.from_ids_and_parent_path(skill_ids, project.path)
+    skills = (
+        Skill.from_ids_and_parent_path(skill_ids, project.path)
+        if project is not None
+        else {}
+    )
+    if require_all:
+        missing_skill_ids = sorted(skill_ids - set(skills.keys()))
+        if missing_skill_ids:
+            raise ValueError(
+                "Skill(s) referenced in run config not found in the project: "
+                f"{', '.join(missing_skill_ids)}"
+            )
+    return skills
 
 
 def load_skills_for_task(
@@ -83,18 +95,7 @@ async def validate_run_config_tool_names(
     tools_config = as_kiln_agent_run_config(run_config_properties).tools_config
     if tools_config is None or not tools_config.tools:
         return
-    skills = load_skills_from_tool_ids(task, tools_config.tools)
-    requested_skill_ids = {
-        skill_id_from_tool_id(tid)
-        for tid in tools_config.tools
-        if tid.startswith(SKILL_TOOL_ID_PREFIX)
-    }
-    missing_skill_ids = sorted(requested_skill_ids - set(skills.keys()))
-    if missing_skill_ids:
-        raise ValueError(
-            "Skill(s) referenced in run config not found in the project: "
-            f"{', '.join(missing_skill_ids)}"
-        )
+    skills = load_skills_from_tool_ids(task, tools_config.tools, require_all=True)
     await assemble_unique_agent_tools(task, tools_config.tools, list(skills.values()))
 
 

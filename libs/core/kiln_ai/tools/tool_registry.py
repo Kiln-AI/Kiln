@@ -180,6 +180,33 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
     return tool_from_id_and_project(tool_id, project=project, task=task)
 
 
+async def validate_unique_allowlist_tool_names(
+    tool_allowlist: list[str],
+    project: Project,
+    task: Task | None = None,
+) -> None:
+    """Reject a tool allowlist whose tools would collide on their dispatch name.
+
+    Tool names may repeat across a project, but sandboxed code calls
+    allowlisted tools by name (see sandbox_bridge.name_map), so an allowlist
+    carrying two tools with the same function name would make those calls
+    ambiguous. Raises ValueError naming the colliding function names. The
+    sandbox bridge's call-time ambiguity error remains the backstop, since
+    tools can be renamed after the allowlist is saved.
+    """
+    names = [
+        await tool_from_id_and_project(tool_id, project=project, task=task).name()
+        for tool_id in tool_allowlist
+    ]
+    duplicates = sorted({n for n in names if names.count(n) > 1})
+    if duplicates:
+        raise ValueError(
+            f"Multiple allowlisted tools share the same function name: "
+            f"{', '.join(duplicates)}. Tools are called by name from sandboxed "
+            "code, so each tool in the allowlist must have a unique name."
+        )
+
+
 async def tool_definitions_from_ids(
     tool_ids: list[str], task: Task | None = None
 ) -> list[ToolCallDefinition]:
