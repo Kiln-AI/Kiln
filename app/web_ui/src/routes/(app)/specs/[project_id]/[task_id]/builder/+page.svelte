@@ -36,6 +36,7 @@
     builder_mock_active,
     draft_after_save_keeping_stranded_tags,
     draft_has_content,
+    questions_are_current,
     reset_draft_keeping_tags,
     restore_step,
     reusable_cached_cases,
@@ -636,6 +637,10 @@
 
   // ── Step 2 state — questions
   let question_set: QuestionSet | null = null
+  // Identity snapshot of the description the current question_set was
+  // generated from; null until a set successfully lands. Drives the
+  // regeneration gate below.
+  let question_set_source: string | null = null
   let questions_loading = false
   let questions_error: string | null = null
   let questions_form_error: KilnError | null = null
@@ -648,6 +653,12 @@
   async function load_questions() {
     questions_loading = true
     questions_error = null
+    // A validation message about the set being replaced must not outlive it:
+    // the answers it complained about are cleared with the questions below.
+    questions_form_error = null
+    // Pin the description this set is being generated from before the await,
+    // so a later edit can't be mistaken for the text the copilot actually saw.
+    const source = description
     try {
       const { data, error } = await client.POST("/api/copilot/question_spec", {
         body: {
@@ -658,7 +669,7 @@
             task_input_schema: "",
             task_output_schema: "",
           },
-          target_specification: description,
+          target_specification: source,
         },
         signal: new_copilot_abort_signal(),
       })
@@ -667,6 +678,7 @@
         return
       }
       question_set = data as QuestionSet
+      question_set_source = source
       selections = question_set.questions.map(() => null)
       other_texts = question_set.questions.map(() => "")
     } catch (e) {
@@ -3711,8 +3723,14 @@
     }
   }
 
-  // Auto-load questions when entering Step 2
-  $: if (current_step === "clarify" && !question_set && !questions_loading) {
+  // Auto-load questions when entering Step 2, and regenerate them when the
+  // user went Back and edited the description: the questions on screen were
+  // authored against the old text, so they no longer fit the new spec.
+  $: if (
+    current_step === "clarify" &&
+    !questions_are_current(question_set_source, description) &&
+    !questions_loading
+  ) {
     load_questions()
   }
 

@@ -5,6 +5,7 @@ import {
   create_eval_button_label,
   draft_after_save_keeping_stranded_tags,
   draft_has_content,
+  questions_are_current,
   reset_draft_keeping_tags,
   restore_step,
   reusable_cached_cases,
@@ -304,6 +305,40 @@ describe("reusable_cached_cases — SU-case reuse", () => {
     expect(
       reusable_cached_cases(cache, ["scenario b", "scenario a"], spec),
     ).toBeNull()
+  })
+})
+
+describe("questions_are_current — clarify staleness gate", () => {
+  const description = "The agent must not fabricate policies."
+
+  // An aborted or failed request must leave the source unset: recording one
+  // for a set that never landed would let stale questions read as current.
+  it("is false with no source — nothing has landed yet", () => {
+    expect(questions_are_current(null, description)).toBe(false)
+  })
+
+  it("is true for an empty description once an empty set landed", () => {
+    // The null guard means "no set has landed yet", not "the text is empty".
+    expect(questions_are_current("", "")).toBe(true)
+  })
+
+  it("is true when the description is unchanged", () => {
+    // A no-op Back-then-forward must not burn another paid copilot call.
+    expect(questions_are_current(description, description)).toBe(true)
+  })
+
+  it("is false after a one-byte edit", () => {
+    expect(
+      questions_are_current(
+        description,
+        "The agent must not fabricate policy.",
+      ),
+    ).toBe(false)
+  })
+
+  it("is false for a whitespace-only difference — raw byte compare", () => {
+    expect(questions_are_current(description, description + "\n")).toBe(false)
+    expect(questions_are_current(description + " ", description)).toBe(false)
   })
 })
 

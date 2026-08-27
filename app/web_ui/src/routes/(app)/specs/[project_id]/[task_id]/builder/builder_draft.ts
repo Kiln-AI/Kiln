@@ -78,6 +78,17 @@ export function reusable_minted_inputs(
   return cache.inputs
 }
 
+// Whether the clarify questions still fit the description on screen: source
+// is a snapshot of the exact text they were generated from, byte-compared
+// because the copilot saw that raw string. Null means no set has landed, so
+// regenerate.
+export function questions_are_current(
+  source: string | null,
+  description: string,
+): boolean {
+  return source !== null && source === description
+}
+
 export type BuilderDraft = {
   // Step 1-3 — spec authoring.
   description: string
