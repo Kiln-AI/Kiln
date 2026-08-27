@@ -3282,7 +3282,8 @@ export interface paths {
          *       - case_driven     { case_index, leaf_run_id }
          *       - case_judged     { case_index, leaf_run_id, raw_input, raw_output,
          *                           judge_score, judge_reasoning, total_cost }
-         *       - case_failed     { case_index, stage, code, message }  (batch continues)
+         *       - case_failed     { case_index, stage, code, message, error_type }
+         *                           (batch continues)
          *       - batch_completed { judged, failed, batch_tag, total_cost }
          *       - batch_aborted   { error, stage }  (in place of batch_completed:
          *                           a config-scoped judge failure aborted the whole
@@ -3324,7 +3325,7 @@ export interface paths {
          *                           judge_score, judge_reasoning, total_cost,
          *                           trace }
          *       - case_failed     { case_index, stage: "run" | "judge", code,
-         *                           message }  (batch continues)
+         *                           message, error_type }  (batch continues)
          *       - batch_completed { judged, failed, batch_tag, total_cost }
          *       - batch_aborted   { error, stage }  (in place of batch_completed:
          *                           a config-scoped judge failure aborted the whole
@@ -3371,7 +3372,8 @@ export interface paths {
          *       - case_judged     { case_index, leaf_run_id, raw_input, raw_output,
          *                           judge_score, judge_reasoning, total_cost: 0,
          *                           trace }
-         *       - case_failed     { case_index, stage: "judge", code, message }
+         *       - case_failed     { case_index, stage: "judge", code, message,
+         *                           error_type }
          *                           (batch continues; a run that cannot be
          *                           reloaded fails with code trace_not_found,
          *                           missing_trace, or missing_output)
