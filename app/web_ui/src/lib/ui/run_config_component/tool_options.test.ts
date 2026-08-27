@@ -101,8 +101,14 @@ describe("build_tool_option_groups labelling", () => {
   it("selects tool ids by default", () => {
     const [option] = all_options(build_tool_option_groups([mcp_set]))
     expect(option.value).toBe("mcp::remote::demo::search_docs")
-    // The function name is not the value here, so it is not worth a badge.
+    // Function name matches the label, so repeating it as a badge is noise.
     expect(option.badge).toBeUndefined()
+  })
+
+  it("badges the function name in id pickers when it differs from the label", () => {
+    const [option] = all_options(build_tool_option_groups([kiln_task_set]))
+    expect(option.label).toBe("Summarize")
+    expect(option.badge).toBe("summarize")
   })
 })
 

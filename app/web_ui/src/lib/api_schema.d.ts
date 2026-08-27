@@ -11948,7 +11948,11 @@ export interface components {
             /** Unacceptable Examples */
             unacceptable_examples?: string;
         };
-        /** ToolApiDescription */
+        /**
+         * ToolApiDescription
+         * @description A tool as shown in pickers: name is the user-facing display name,
+         *     function_name the callable name the model sees (they often coincide).
+         */
         ToolApiDescription: {
             /** Id */
             id: string;

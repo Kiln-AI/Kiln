@@ -117,7 +117,7 @@ class TestCreateCodeTool:
         assert result["not_trusted"] is True
         assert result["id"] is None
 
-    def test_create_uniqueness_conflict(
+    def test_create_allows_duplicate_function_names(
         self,
         client,
         test_project,
@@ -125,25 +125,8 @@ class TestCreateCodeTool:
         saved_code_tool,
         create_request,
     ):
-        create_request["tool_function_name"] = saved_code_tool.tool_function_name
-        with patch(TRUST_PATCH, return_value=True):
-            response = client.post(
-                f"/api/projects/{test_project.id}/code_tools",
-                json=create_request,
-            )
-        assert response.status_code == 400
-        assert "already exists" in response.json()["message"]
-
-    def test_create_allows_duplicate_when_archived(
-        self,
-        client,
-        test_project,
-        mock_project_from_id,
-        saved_code_tool,
-        create_request,
-    ):
-        saved_code_tool.is_archived = True
-        saved_code_tool.save_to_file()
+        # Duplicate function names are allowed within a project; collisions are
+        # rejected per run config at run config creation time instead.
         create_request["tool_function_name"] = saved_code_tool.tool_function_name
         with patch(TRUST_PATCH, return_value=True):
             response = client.post(
@@ -151,6 +134,7 @@ class TestCreateCodeTool:
                 json=create_request,
             )
         assert response.status_code == 200
+        assert response.json()["id"] is not None
 
     def test_create_validation_error(self, client, test_project, mock_project_from_id):
         with patch(TRUST_PATCH, return_value=True):

@@ -4,6 +4,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
     BaseAdapter,
     SkillsDict,
+    assemble_unique_agent_tools,
 )
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
@@ -63,6 +64,26 @@ def load_skills_for_task(
     if tool_config is None or tool_config.tools is None:
         return {}
     return load_skills_from_tool_ids(task, tool_config.tools)
+
+
+async def validate_run_config_tool_names(
+    task: datamodel.Task,
+    run_config_properties: RunConfigProperties,
+) -> None:
+    """Reject a run config whose tools would collide at runtime.
+
+    Resolves every attached tool and skill and raises ValueError when two share
+    a name (see assemble_unique_agent_tools). Run configs and skills are
+    immutable, so validating at creation time catches every collision that
+    would otherwise surface as a runtime failure.
+    """
+    if run_config_properties.type != "kiln_agent":
+        return
+    tools_config = as_kiln_agent_run_config(run_config_properties).tools_config
+    if tools_config is None or not tools_config.tools:
+        return
+    skills = load_skills_from_tool_ids(task, tools_config.tools)
+    await assemble_unique_agent_tools(task, tools_config.tools, list(skills.values()))
 
 
 def litellm_core_provider_config(

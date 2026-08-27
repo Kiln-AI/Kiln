@@ -16,6 +16,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
     BaseAdapter,
     RunOutput,
+    assemble_unique_agent_tools,
 )
 from kiln_ai.adapters.model_adapters.stream_events import (
     AiSdkEventType,
@@ -1005,8 +1006,52 @@ async def test_available_tools_duplicate_names_raises_error(base_project):
         mock_tool_from_id.side_effect = [mock_tool1, mock_tool2]
 
         # Should raise ValueError when tools have duplicate names
-        with pytest.raises(ValueError, match="Each tool must have a unique name"):
+        with pytest.raises(
+            ValueError, match="share the same function name: duplicate_name"
+        ):
             await adapter.available_tools()
+
+
+async def test_assemble_unique_agent_tools_lists_colliding_names(base_project):
+    task = Task(name="test_task", instruction="test_instruction", parent=base_project)
+
+    def mock_tool(name: str) -> KilnToolInterface:
+        tool = MagicMock(spec=KilnToolInterface)
+        tool.name = AsyncMock(return_value=name)
+        return tool
+
+    with patch(
+        "kiln_ai.adapters.model_adapters.base_adapter.tool_from_id"
+    ) as mock_tool_from_id:
+        mock_tool_from_id.side_effect = [
+            mock_tool("dup_a"),
+            mock_tool("dup_a"),
+            mock_tool("dup_b"),
+            mock_tool("dup_b"),
+        ]
+        with pytest.raises(
+            ValueError, match="share the same function name: dup_a, dup_b"
+        ):
+            await assemble_unique_agent_tools(
+                task, ["id_1", "id_2", "id_3", "id_4"], []
+            )
+
+
+async def test_assemble_unique_agent_tools_reserved_skill_name(base_project):
+    task = Task(name="test_task", instruction="test_instruction", parent=base_project)
+    skill = Skill(name="my-skill", description="d", parent=base_project)
+
+    tool_named_skill = MagicMock(spec=KilnToolInterface)
+    tool_named_skill.name = AsyncMock(return_value="skill")
+
+    with patch(
+        "kiln_ai.adapters.model_adapters.base_adapter.tool_from_id",
+        return_value=tool_named_skill,
+    ):
+        with pytest.raises(ValueError) as exc_info:
+            await assemble_unique_agent_tools(task, ["id_1"], [skill])
+    assert "share the same function name: skill" in str(exc_info.value)
+    assert "reserved" in str(exc_info.value)
 
 
 async def test_custom_prompt_builder(base_task):

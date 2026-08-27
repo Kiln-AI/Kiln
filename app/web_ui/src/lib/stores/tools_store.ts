@@ -141,7 +141,7 @@ export function duplicate_tool_names(
 // detail page and in that page's URL, so the user has something to match against.
 //
 // Only Kiln task tools earn the qualifier: MCP tools are already grouped under
-// their server, and search tools name their RAG config in their description.
+// their server, and search and code tools show their function name as a badge.
 export function tool_display_name(
   tool: ToolApiDescription,
   duplicate_names: Set<string>,

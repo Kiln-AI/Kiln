@@ -225,17 +225,6 @@ def connect_code_tool_api(app: FastAPI):
         if not has_add_code_trust(str(project.path)):
             return CodeToolCreateResponse(not_trusted=True)
 
-        existing = project.code_tools(readonly=True)
-        for ct in existing:
-            if (
-                not ct.is_archived
-                and ct.tool_function_name == request.tool_function_name
-            ):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"A non-archived code tool with function name '{request.tool_function_name}' already exists.",
-                )
-
         try:
             code_tool = CodeTool(
                 name=request.name,

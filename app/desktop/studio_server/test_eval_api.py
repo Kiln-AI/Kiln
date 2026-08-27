@@ -7042,7 +7042,7 @@ async def test_create_task_run_config_rejects_duplicate_skill_names(
         json=request_body(duplicate_ids),
     )
     assert response.status_code == 422
-    assert "same name" in response.text
+    assert "Duplicate skill name 'dup-skill'" in response.text
 
     # Distinct names: accepted.
     response = client.post(
@@ -7050,3 +7050,108 @@ async def test_create_task_run_config_rejects_duplicate_skill_names(
         json=request_body([duplicate_ids[0], unique.id]),
     )
     assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_rejects_duplicate_tool_function_names(
+    client, mock_task_from_id, mock_task
+):
+    from kiln_ai.datamodel.code_tool import CodeTool
+
+    mock_task_from_id.return_value = mock_task
+    project = mock_task.parent_project()
+
+    def make_code_tool(function_name: str) -> CodeTool:
+        code_tool = CodeTool(
+            name=function_name,
+            tool_function_name=function_name,
+            tool_description="d",
+            parameters_schema={"type": "object", "properties": {}},
+            code="def run() -> str:\n    return 'ok'\n",
+            parent=project,
+        )
+        code_tool.save_to_file()
+        return code_tool
+
+    dup_a = make_code_tool("dup_tool")
+    dup_b = make_code_tool("dup_tool")
+    unique = make_code_tool("unique_tool")
+
+    def request_body(tool_ids):
+        return {
+            "name": "RC",
+            "run_config_properties": {
+                "model_name": "gpt-4o",
+                "model_provider_name": "openai",
+                "prompt_id": "simple_chain_of_thought_prompt_builder",
+                "structured_output_mode": "json_schema",
+                "tools_config": {"tools": tool_ids},
+            },
+        }
+
+    # Two tools resolving to the same function name in one run config: rejected.
+    response = client.post(
+        "/api/projects/project1/tasks/task1/run_configs",
+        json=request_body(
+            [f"kiln_tool::code::{dup_a.id}", f"kiln_tool::code::{dup_b.id}"]
+        ),
+    )
+    assert response.status_code == 422
+    assert "share the same function name: dup_tool" in response.text
+
+    # Distinct function names: accepted.
+    response = client.post(
+        "/api/projects/project1/tasks/task1/run_configs",
+        json=request_body(
+            [f"kiln_tool::code::{dup_a.id}", f"kiln_tool::code::{unique.id}"]
+        ),
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_create_task_run_config_rejects_tool_colliding_with_skill_loader(
+    client, mock_task_from_id, mock_task
+):
+    from kiln_ai.datamodel.code_tool import CodeTool
+    from kiln_ai.datamodel.skill import Skill
+
+    mock_task_from_id.return_value = mock_task
+    project = mock_task.parent_project()
+
+    code_tool = CodeTool(
+        name="skill",
+        tool_function_name="skill",
+        tool_description="d",
+        parameters_schema={"type": "object", "properties": {}},
+        code="def run() -> str:\n    return 'ok'\n",
+        parent=project,
+    )
+    code_tool.save_to_file()
+    skill = Skill(name="my-skill", description="d", parent=project)
+    skill.save_to_file()
+    skill.save_skill_md("# body")
+
+    # A tool named "skill" collides with the skill loader tool when skills are
+    # attached: rejected with a hint about the reserved name.
+    response = client.post(
+        "/api/projects/project1/tasks/task1/run_configs",
+        json={
+            "name": "RC",
+            "run_config_properties": {
+                "model_name": "gpt-4o",
+                "model_provider_name": "openai",
+                "prompt_id": "simple_chain_of_thought_prompt_builder",
+                "structured_output_mode": "json_schema",
+                "tools_config": {
+                    "tools": [
+                        f"kiln_tool::code::{code_tool.id}",
+                        f"kiln_tool::skill::{skill.id}",
+                    ]
+                },
+            },
+        },
+    )
+    assert response.status_code == 422
+    assert "share the same function name: skill" in response.text
+    assert "reserved" in response.text
