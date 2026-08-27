@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from kiln_ai.datamodel.project import Project
@@ -407,6 +409,9 @@ class TestCloneSkill:
         # skill.kiln and SKILL.md are regenerated, never copied
         assert Skill.load_from_file(clone.path).id != source.id
 
+    @pytest.mark.skipif(
+        os.name == "nt", reason="backslash is a path separator on Windows"
+    )
     def test_clone_allows_backslash_in_filename(self, project, source):
         # A backslash is a legal filename character on POSIX; hand-added
         # files must not make a skill uncloneable.

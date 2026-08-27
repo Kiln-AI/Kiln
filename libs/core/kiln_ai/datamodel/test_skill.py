@@ -555,3 +555,20 @@ def test_list_resources_skips_vanished_file(skill_with_resources, monkeypatch):
     paths = [p for p, _ in skill_with_resources.list_resources_with_sizes()]
     assert "assets/ghost.png" not in paths
     assert "assets/logo.png" in paths
+
+
+def test_symlinked_resource_root_rejected(mock_project, tmp_path):
+    skill = save_skill_with_body(mock_project)
+    outside = tmp_path / "private"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("secret", encoding="utf-8")
+    # Replace the assets dir with a symlink pointing outside the skill
+    skill.assets_dir().rmdir()
+    skill.assets_dir().symlink_to(outside)
+
+    with pytest.raises(ValueError, match="symlink"):
+        skill.read_resource_bytes("assets/secret.txt")
+    with pytest.raises(ValueError, match="symlink"):
+        skill.read_asset("secret.txt")
+    # Listing skips the symlinked root rather than walking outside
+    assert skill.list_resources_with_sizes() == []

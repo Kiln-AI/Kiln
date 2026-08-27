@@ -98,6 +98,13 @@ class Skill(KilnParentedModel):
         if not relative_path or not relative_path.strip():
             raise ValueError("Path cannot be empty")
 
+        # A symlinked resource root would become the containment base after
+        # resolve(), silently exposing whatever it points at.
+        if base_dir.is_symlink():
+            raise ValueError(
+                f"Resource directory {base_dir.name!r} is a symlink, which is not allowed"
+            )
+
         target = base_dir / relative_path
         try:
             resolved = target.resolve()
@@ -185,7 +192,9 @@ class Skill(KilnParentedModel):
         Symlinks are skipped."""
         resources: List[tuple[str, int]] = []
         for base_dir in (self.references_dir(), self.assets_dir()):
-            if not base_dir.is_dir():
+            # Skip symlinked roots: walking one would list files outside the
+            # skill bundle.
+            if not base_dir.is_dir() or base_dir.is_symlink():
                 continue
             for root, _dirs, files in os.walk(base_dir, followlinks=False):
                 root_path = Path(root)
