@@ -28,6 +28,7 @@ from kiln_ai.datamodel.run_config import (
     ToolsRunConfig,
 )
 from kiln_ai.synthetic_user.runner import NUM_CASES_MAX
+from kiln_ai.utils.async_job_runner import RETRY_BACKOFF_FACTOR
 from kiln_server.custom_errors import connect_custom_errors
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.build_claim_evidence_output import (
@@ -50,7 +51,12 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     FinalJudgementApi,
     JudgeConfig,
 )
-from app.desktop.studio_server.eval_builder_api import connect_eval_builder_api
+from app.desktop.studio_server.eval_builder_api import (
+    JUDGE_MAX_RETRIES,
+    JUDGE_RETRY_DELAY_SECONDS,
+    connect_eval_builder_api,
+    run_judge_with_retry,
+)
 
 # TODO(eval-v2): remove — ClaimDebug capture scaffolding, deleted before GA.
 from app.desktop.studio_server.utils.claim_debug_capture import ClaimDebug
@@ -946,6 +952,7 @@ def _fake_run_cases_batch(*, fail_case: int | None = None, events_per_case: int 
                     case_index=i,
                     error_code="unexpected_error",
                     message="drive blew up",
+                    error_type="RateLimitError",
                 )
                 failed += 1
                 continue
@@ -1023,6 +1030,90 @@ def _events_of(events: list, type_name: str) -> list[dict]:
     return [e for e in events if isinstance(e, dict) and e.get("type") == type_name]
 
 
+class TestRunJudgeWithRetry:
+    """The judge lane's hand-rolled retry, which mirrors the shared runner's
+    posture. The streams cover the observable outcomes; these pin the waits."""
+
+    @pytest.mark.asyncio
+    async def test_transient_failures_back_off_exponentially(self):
+        judge = AsyncMock(
+            side_effect=[
+                _rate_limit_error(),
+                _rate_limit_error(),
+                JudgeVerdict("pass", "fine"),
+            ]
+        )
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+                new=judge,
+            ),
+            patch(
+                "app.desktop.studio_server.eval_builder_api.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as mock_sleep,
+            patch(
+                "app.desktop.studio_server.eval_builder_api.compute_retry_delay",
+                # Pin the jitter draw to the top of each backoff window.
+                side_effect=lambda base, attempt: base * RETRY_BACKOFF_FACTOR**attempt,
+            ) as mock_delay,
+        ):
+            verdict = await run_judge_with_retry("p1", "t1", "in", "out", "judge")
+
+        assert verdict.judge_score == "pass"
+        assert judge.await_count == 3
+        # Zero-indexed attempts: the first retry draws from the base window.
+        assert [call.args for call in mock_delay.call_args_list] == [
+            (JUDGE_RETRY_DELAY_SECONDS, 0),
+            (JUDGE_RETRY_DELAY_SECONDS, 1),
+        ]
+        assert [call.args[0] for call in mock_sleep.await_args_list] == [
+            JUDGE_RETRY_DELAY_SECONDS,
+            JUDGE_RETRY_DELAY_SECONDS * RETRY_BACKOFF_FACTOR,
+        ]
+
+    @pytest.mark.asyncio
+    async def test_retries_are_capped_and_the_last_error_raises(self):
+        judge = AsyncMock(side_effect=_rate_limit_error())
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+                new=judge,
+            ),
+            patch(
+                "app.desktop.studio_server.eval_builder_api.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as mock_sleep,
+        ):
+            with pytest.raises(litellm.RateLimitError):
+                await run_judge_with_retry("p1", "t1", "in", "out", "judge")
+
+        assert judge.await_count == JUDGE_MAX_RETRIES + 1
+        assert mock_sleep.await_count == JUDGE_MAX_RETRIES
+
+    @pytest.mark.asyncio
+    async def test_non_retryable_error_raises_without_waiting(self):
+        judge = AsyncMock(side_effect=ValueError("judge output unparseable"))
+
+        with (
+            patch(
+                "app.desktop.studio_server.eval_builder_api.run_judge_for_trace",
+                new=judge,
+            ),
+            patch(
+                "app.desktop.studio_server.eval_builder_api.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as mock_sleep,
+        ):
+            with pytest.raises(ValueError, match="judge output unparseable"):
+                await run_judge_with_retry("p1", "t1", "in", "out", "judge")
+
+        assert judge.await_count == 1
+        mock_sleep.assert_not_awaited()
+
+
 class TestMultiTurnPipeline:
     def test_happy_path_full_stream(self, client, pipeline_request, pipeline_seams):
         resp = client.post(PIPELINE_URL, json=pipeline_request)
@@ -1095,7 +1186,8 @@ class TestMultiTurnPipeline:
 
     def test_drive_failure_is_isolated(self, client, pipeline_request, pipeline_seams):
         """THE failure-isolation contract: a case dying in the drive stage
-        must not discard the other case's completed review."""
+        must not discard the other case's completed review. The runner's
+        error_type rides through onto the frame alongside the message."""
         with patch(
             "app.desktop.studio_server.eval_builder_api.run_cases_batch",
             new=_fake_run_cases_batch(fail_case=0),
@@ -1111,6 +1203,7 @@ class TestMultiTurnPipeline:
                 "stage": "drive",
                 "code": "unexpected_error",
                 "message": "drive blew up",
+                "error_type": "RateLimitError",
             }
         ]
         judged = _events_of(events, "case_judged")
@@ -1200,7 +1293,8 @@ class TestMultiTurnPipeline:
         self, client, pipeline_request, pipeline_seams
     ):
         """A KilnRunError-wrapped judge failure must put the ROOT provider
-        error on the wire, not the wrapper's genericized message."""
+        error on the wire — as the message and as error_type — not the
+        wrapper's genericized message or class."""
         root = litellm.BadRequestError(
             message="max_tokens too large for this model",
             model="claude_sonnet_4_6",
@@ -1228,6 +1322,7 @@ class TestMultiTurnPipeline:
             assert "max_tokens too large" in e["message"]
             assert "KilnRunError" not in e["message"]
             assert "unexpected error" not in e["message"]
+            assert e["error_type"] == "BadRequestError"
         assert events[-1] == "complete"
 
     def test_replace_batch_tags_deleted_after_successful_drive(
@@ -2236,6 +2331,7 @@ class TestSingleTurnPipeline:
         assert failed[0]["case_index"] == 0
         assert failed[0]["stage"] == "run"
         assert "model exploded" in failed[0]["message"]
+        assert failed[0]["error_type"] == "ValueError"
 
         judged = _events_of(events, "case_judged")
         assert [e["case_index"] for e in judged] == [1]
@@ -2254,10 +2350,35 @@ class TestSingleTurnPipeline:
             _rate_limit_error(),
             recovered_run,
         ]
-        resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
+        # Zero the backoff base so the retry doesn't sleep a real jittered wait.
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.RUN_RETRY_DELAY_SECONDS", 0
+        ):
+            resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
         events = _parse_sse(resp.text)
         assert len(_events_of(events, "case_failed")) == 0
         assert len(_events_of(events, "case_judged")) == 2
+
+    def test_exhausted_transient_run_error_names_its_class(
+        self, client, single_turn_request, single_turn_seams
+    ):
+        """A transient failure that never recovers fails the case naming the
+        REAL provider error: the retryable wrapper hides it, so error_type
+        must come from the exception the wrapper was raised from."""
+        failing_input = single_turn_request["inputs"][0]
+        single_turn_seams["runs_by_input"][failing_input] = _rate_limit_error()
+        with patch(
+            "app.desktop.studio_server.eval_builder_api.RUN_RETRY_DELAY_SECONDS", 0
+        ):
+            resp = client.post(SINGLE_TURN_URL, json=single_turn_request)
+        events = _parse_sse(resp.text)
+
+        failed = _events_of(events, "case_failed")
+        assert len(failed) == 1
+        assert failed[0]["stage"] == "run"
+        assert failed[0]["error_type"] == "RateLimitError"
+        assert "upstream rate limit" in failed[0]["message"]
+        assert [e["case_index"] for e in _events_of(events, "case_judged")] == [1]
 
     def test_judge_failure_is_isolated(
         self, client, single_turn_request, single_turn_seams
@@ -2384,6 +2505,8 @@ class TestSingleTurnPipeline:
         failed = _events_of(events, "case_failed")
         assert len(failed) == 1
         assert failed[0]["code"] == "missing_output"
+        # No exception underlies an empty output — nothing to name.
+        assert failed[0]["error_type"] is None
         bad_run.delete.assert_called_once()
         # Cost honesty: the discarded run's spend was real — banked into the
         # batch total alongside the surviving case's 0.05.

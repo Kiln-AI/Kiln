@@ -12,8 +12,10 @@ import re
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
+import litellm
 import pytest
 
+from kiln_ai.adapters.errors import KilnRunError, format_error_message
 from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
@@ -506,6 +508,38 @@ async def test_target_invoke_failure_surfaces_as_case_failed(
 
 
 @pytest.mark.asyncio
+async def test_terminal_provider_error_names_its_class_on_the_event(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A provider error the shared classifier calls permanent carries its
+    exception class on the event, so failures can be counted by kind without
+    parsing the message."""
+    _patch_adapter_for_task(
+        monkeypatch,
+        litellm.BadRequestError(
+            message="max_tokens too large for this model",
+            model="gpt_5_5",
+            llm_provider="openrouter",
+        ),
+    )
+    _patch_su_driver(monkeypatch, replies_per_case=["x"])
+
+    events = await _collect(
+        run_cases_batch(
+            cases=[_case()],
+            target_task=fake_task,
+            target_run_config=_target_run_config(),
+            su_driver_config=_su_driver_config(),
+            turns=1,
+        )
+    )
+
+    failed = next(e for e in events if isinstance(e, CaseFailedEvent))
+    assert failed.error_code == "unexpected_error"
+    assert failed.error_type == "BadRequestError"
+
+
+@pytest.mark.asyncio
 async def test_tag_leaf_failure_surfaces_as_case_failed(
     fake_task: Mock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -632,6 +666,9 @@ async def test_case_timeout_fails_case_and_deletes_partial_chain(
 
     failed = next(e for e in events if isinstance(e, CaseFailedEvent))
     assert failed.error_code == "case_timeout"
+    # A deterministic failure leaves error_type None even though a TimeoutError
+    # triggered it: error_code already names the budget firing.
+    assert failed.error_type is None
     turn_one.delete.assert_called_once()
     completed = next(e for e in events if isinstance(e, BatchCompletedEvent))
     assert completed.failed == 1
@@ -711,6 +748,9 @@ async def test_raw_provider_timeout_is_not_a_case_timeout(
     # A bare TimeoutError has no str(); the message must still say what
     # happened instead of trailing off after the type name.
     assert failed.message == "TimeoutError: The model provider request timed out."
+    # The same failure, structured: consumers group by class name instead of
+    # parsing the prose above.
+    assert failed.error_type == "TimeoutError"
     turn_one.delete.assert_called_once()
     # Raw timeouts are not classified transient: one attempt only.
     assert calls["n"] == 2
@@ -757,12 +797,27 @@ async def test_transient_error_exhausts_retries_then_fails_once(
     fake_task: Mock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Retries exhausted → exactly ONE case_failed (never one per attempt),
-    with the underlying error in the message."""
+    with the underlying error in the message and named on the event.
+
+    Runs a real transient provider error through the shared classifier, wrapped
+    the way the model adapter delivers it: both the KilnRunError wrapper and
+    the retryable wrapper hide the original, so message and error_type must
+    name the innermost provider error."""
     monkeypatch.setattr(runner_mod, "DRIVE_RETRY_DELAY_SECONDS", 0)
-    monkeypatch.setattr(
-        runner_mod, "is_retryable_error", lambda e: isinstance(e, RuntimeError)
-    )
-    invoke = _patch_adapter_for_task(monkeypatch, RuntimeError("flaky 502"))
+
+    def _raise_as_the_adapter_does(*args: Any, **kwargs: Any) -> None:
+        original = litellm.RateLimitError(
+            message="upstream rate limit",
+            model="gpt_5_5",
+            llm_provider="openrouter",
+        )
+        raise KilnRunError(
+            message=format_error_message(original),
+            partial_trace=None,
+            original=original,
+        ) from original
+
+    invoke = _patch_adapter_for_task(monkeypatch, _raise_as_the_adapter_does)
     _patch_su_driver(monkeypatch, replies_per_case=["x"])
 
     events = await _collect(
@@ -778,7 +833,8 @@ async def test_transient_error_exhausts_retries_then_fails_once(
     failed = [e for e in events if isinstance(e, CaseFailedEvent)]
     assert len(failed) == 1
     assert failed[0].error_code == "unexpected_error"
-    assert "flaky 502" in failed[0].message
+    assert "upstream rate limit" in failed[0].message
+    assert failed[0].error_type == "RateLimitError"
     # One invoke per attempt at turns=1: the first try plus the retries.
     assert invoke.call_count == 1 + runner_mod.DRIVE_MAX_RETRIES
 

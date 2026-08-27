@@ -14,7 +14,11 @@ from kiln_ai.adapters.chat.chat_formatter import (
     chat_strategy_for_run,
     get_chat_formatter,
 )
-from kiln_ai.adapters.errors import KilnRunError, format_error_message
+from kiln_ai.adapters.errors import (
+    KilnRunError,
+    StructuredOutputParseError,
+    format_error_message,
+)
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     StructuredOutputMode,
@@ -277,10 +281,20 @@ class BaseAdapter(metaclass=ABCMeta):
                 if self.output_schema is not None:
                     # Parse json to dict if we have structured output
                     if isinstance(parsed_output.output, str):
-                        parsed_output.output = parse_json_string(parsed_output.output)
+                        try:
+                            parsed_output.output = parse_json_string(
+                                parsed_output.output
+                            )
+                        except ValueError as e:
+                            # Re-type (message unchanged) so retries treat bad
+                            # JSON like a schema mismatch: a one-off model slip.
+                            raise StructuredOutputParseError(str(e)) from e
 
                     if not isinstance(parsed_output.output, dict):
-                        raise RuntimeError(
+                        # Valid JSON of the wrong shape (often the object wrapped
+                        # in a list) is the same one-off model slip as bad JSON,
+                        # so it carries the retryable type too.
+                        raise StructuredOutputParseError(
                             f"structured response is not a dict: {parsed_output.output}"
                         )
                     validate_schema_with_value_error(
@@ -476,9 +490,17 @@ class BaseAdapter(metaclass=ABCMeta):
 
             if self.output_schema is not None:
                 if isinstance(parsed_output.output, str):
-                    parsed_output.output = parse_json_string(parsed_output.output)
+                    try:
+                        parsed_output.output = parse_json_string(parsed_output.output)
+                    except ValueError as e:
+                        # Re-type (message unchanged) so retries treat bad JSON
+                        # like a schema mismatch: a one-off model slip.
+                        raise StructuredOutputParseError(str(e)) from e
                 if not isinstance(parsed_output.output, dict):
-                    raise RuntimeError(
+                    # Valid JSON of the wrong shape (often the object wrapped in
+                    # a list) is the same one-off model slip as bad JSON, so it
+                    # carries the retryable type too.
+                    raise StructuredOutputParseError(
                         f"structured response is not a dict: {parsed_output.output}"
                     )
                 validate_schema_with_value_error(

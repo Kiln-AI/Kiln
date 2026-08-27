@@ -10,6 +10,7 @@ from litellm.types.utils import (
     StreamingChoices,
 )
 
+from kiln_ai.adapters.errors import StructuredOutputParseError
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
@@ -22,6 +23,7 @@ from kiln_ai.adapters.model_adapters.stream_events import (
     ToolCallEventType,
 )
 from kiln_ai.adapters.prompt_builders import BasePromptBuilder
+from kiln_ai.adapters.retry_classification import is_retryable_error
 from kiln_ai.datamodel import Task, TaskRun, Usage
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, ModelProviderName
 from kiln_ai.datamodel.project import Project
@@ -1580,7 +1582,37 @@ class TestFinalizeStream:
         run = adapter._finalize_stream(adapter_stream, "test input", None)
         assert isinstance(run, TaskRun)
 
-    def test_finalize_stream_structured_output_not_dict_raises(self, base_task):
+    def test_finalize_stream_structured_output_unparseable_json_is_retryable(
+        self, base_task
+    ):
+        # A streamed response that isn't JSON is the same one-off model slip as
+        # the non-streaming path, so it must carry the retryable type too.
+        schema = '{"type": "object", "properties": {"val": {"type": "integer"}}, "required": ["val"]}'
+        adapter = self._make_structured_adapter(base_task, schema)
+
+        provider = MagicMock()
+        provider.parser = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        adapter_stream = self._make_adapter_stream("Sure! Here you go.")
+        with pytest.raises(StructuredOutputParseError) as exc_info:
+            adapter._finalize_stream(adapter_stream, "test input", None)
+        assert is_retryable_error(exc_info.value) is True
+
+    @pytest.mark.parametrize(
+        "stream_output,expected_message",
+        [
+            # Already a non-dict value, so no JSON parsing is involved...
+            (42, "structured response is not a dict: 42"),
+            # ...and valid JSON that parses to a non-dict (the object wrapped in
+            # a list, a common model slip). Both are wrong-shape output.
+            ('[{"x": "y"}]', "structured response is not a dict: [{'x': 'y'}]"),
+        ],
+    )
+    def test_finalize_stream_structured_output_not_dict_raises(
+        self, base_task, stream_output, expected_message
+    ):
         schema = '{"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"]}'
         adapter = self._make_structured_adapter(base_task, schema)
 
@@ -1589,9 +1621,13 @@ class TestFinalizeStream:
         provider.reasoning_capable = False
         adapter.model_provider = MagicMock(return_value=provider)
 
-        adapter_stream = self._make_adapter_stream(42)
-        with pytest.raises(RuntimeError, match="structured response is not a dict"):
+        adapter_stream = self._make_adapter_stream(stream_output)
+        with pytest.raises(StructuredOutputParseError) as exc_info:
             adapter._finalize_stream(adapter_stream, "test input", None)
+        # Retryable like a parse failure, and the message the user sees is
+        # unchanged from when this raised RuntimeError.
+        assert is_retryable_error(exc_info.value) is True
+        assert str(exc_info.value) == expected_message
 
     def test_finalize_stream_non_structured_non_string_raises(self, finalize_adapter):
         provider = MagicMock()

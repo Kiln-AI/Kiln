@@ -71,6 +71,7 @@ from kiln_ai.utils.async_job_runner import (
     AsyncJobRunner,
     AsyncJobRunnerObserver,
     RetryableError,
+    compute_retry_delay,
 )
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.slow_operation import log_if_slow
@@ -137,7 +138,7 @@ DRIVE_CONCURRENCY = 10
 REVIEW_CONCURRENCY = 8
 
 # The single-turn run stage's knobs — the same posture as the multi-turn
-# drive runner (shared retry classifier, retry count, delay). Like the
+# drive runner (shared retry classifier, retry count, backoff base). Like the
 # multi-turn drive, a run has no app-level timeout: termination is
 # guaranteed by structural bounds (the adapter's tool-call cap and the
 # model client's per-request timeout), and a pathologically slow run is
@@ -150,13 +151,14 @@ RUN_RETRY_DELAY_SECONDS = 1.0
 _SINGLE_TURN_ADAPTER_NAME = "kiln_eval_builder_single_turn"
 
 # The judge lane's retry policy — the same posture (shared classifier, same
-# attempt count and delay) as the drive runner in
+# attempt count and backoff) as the drive runner in
 # kiln_ai.synthetic_user.runner: transient provider failures retry,
 # deterministic ones fail the case immediately. The judge is the one local
 # leg without a runner-owned retry; the remote copilot legs already retry
 # inside kiln_server (pipeline jobs, retries=3), so no client retry stacks
 # on top of them.
 JUDGE_MAX_RETRIES = 2
+# Base of the shared exponential-backoff-with-jitter window, not a flat wait.
 JUDGE_RETRY_DELAY_SECONDS = 1.0
 
 
@@ -174,7 +176,11 @@ async def run_judge_with_retry(*args, **kwargs):
             attempt += 1
             if attempt > JUDGE_MAX_RETRIES or not is_retryable_error(e):
                 raise
-            await asyncio.sleep(JUDGE_RETRY_DELAY_SECONDS)
+            # attempt counts failures so far; the shared backoff windows are
+            # indexed from zero, so the first retry draws from (0, base).
+            await asyncio.sleep(
+                compute_retry_delay(JUDGE_RETRY_DELAY_SECONDS, attempt - 1)
+            )
 
 
 def _sse(payload: dict | BaseModel) -> str:
@@ -568,6 +574,7 @@ class JudgeStreamBase:
                     "judge",
                     "judge_failed",
                     f"{type(root).__name__}: {root}",
+                    type(root).__name__,
                 )
                 return
             self._judged_count += 1
@@ -605,10 +612,21 @@ class JudgeStreamBase:
         stage: Literal["drive", "run", "judge"],
         code: str,
         message: str,
+        error_type: str | None = None,
     ) -> None:
-        """One case died at `stage`; the batch continues without it."""
+        """One case died at `stage`; the batch continues without it.
+
+        `error_type` is the class name of the provider or unexpected exception
+        behind the failure (None on deterministic failures, whose `code` already
+        names them) — included in the log line as a grep-able `error_type=...`
+        field so local logs can be grouped by failure kind, not just the frame.
+        """
         logger.exception(
-            "%s: %s failed for case %d", self._stream_name, stage, case_index
+            "%s: %s failed for case %d, error_type=%s",
+            self._stream_name,
+            stage,
+            case_index,
+            error_type,
         )
         self._failed_count += 1
         await self._emit(
@@ -617,6 +635,7 @@ class JudgeStreamBase:
                 stage=stage,
                 code=code,
                 message=message,
+                error_type=error_type,
             )
         )
 
@@ -750,7 +769,11 @@ class MultiTurnPipelineRun(JudgeStreamBase):
                 # A dead case still billed for every attempt it made.
                 self._total_cost += event.total_cost
                 await self._fail_case(
-                    event.case_index, "drive", event.error_code, event.message
+                    event.case_index,
+                    "drive",
+                    event.error_code,
+                    event.message,
+                    event.error_type,
                 )
             # The runner's BatchCompletedEvent is not forwarded: the
             # pipeline's own batch_completed fires after reviews drain.
@@ -897,21 +920,33 @@ class JudgeTracesRun(JudgeStreamBase):
 class _RunFailure(Exception):
     """A terminal per-case failure of the single-turn run stage — never
     retried. Deterministic input problems and provider errors the shared
-    classifier calls permanent. `code` is surfaced on case_failed.
+    classifier calls permanent. `code` and `error_type` are surfaced on
+    case_failed.
     """
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, error_type: str | None = None) -> None:
         super().__init__(message)
         self.code = code
+        # Class name of the provider or unexpected exception behind this
+        # failure; None on deterministic failures, whose `code` already names
+        # them.
+        self.error_type = error_type
 
 
-def _run_failure_details(error: Exception) -> tuple[str, str]:
-    """Map a case's terminal exception to case_failed's code and message."""
+def _run_failure_details(error: Exception) -> tuple[str, str, str | None]:
+    """Map a case's terminal exception to case_failed's code, message and
+    error type."""
     if isinstance(error, _RunFailure):
-        return error.code, str(error)
+        return error.code, str(error), error.error_type
     # A RetryableError whose attempts ran out (or an unexpected
-    # orchestration error surfaced by the job runner).
-    return "unexpected_error", str(error)
+    # orchestration error surfaced by the job runner). The retryable wrapper
+    # is always raised `from` the provider error it classified, so its cause
+    # names the real failure; an error that carries no cause falls back to None.
+    cause = error.__cause__
+    error_type = (
+        type(unwrap_kiln_run_error(cause)).__name__ if cause is not None else None
+    )
+    return "unexpected_error", str(error), error_type
 
 
 def _run_cost(run: TaskRun) -> float:
@@ -1023,8 +1058,8 @@ class SingleTurnPipelineRun(JudgeStreamBase):
 
             async def on_error(self, job: tuple[int, str], error: Exception) -> None:
                 case_index, _input_text = job
-                code, message = _run_failure_details(error)
-                await fail_case(case_index, "run", code, message)
+                code, message, error_type = _run_failure_details(error)
+                await fail_case(case_index, "run", code, message, error_type)
 
         async def _run_job(job: tuple[int, str]) -> bool:
             await self._run_one_input(job, skills)
@@ -1179,7 +1214,9 @@ class SingleTurnPipelineRun(JudgeStreamBase):
             if is_retryable_error(e):
                 raise RetryableError(f"{type(cause).__name__}: {detail}") from e
             raise _RunFailure(
-                "unexpected_error", f"{type(cause).__name__}: {detail}"
+                "unexpected_error",
+                f"{type(cause).__name__}: {detail}",
+                type(cause).__name__,
             ) from e
 
     async def _delete_partial_run(self, run: TaskRun | None) -> None:
@@ -1240,7 +1277,8 @@ def connect_eval_builder_api(app: FastAPI):
           - case_driven     { case_index, leaf_run_id }
           - case_judged     { case_index, leaf_run_id, raw_input, raw_output,
                               judge_score, judge_reasoning, total_cost }
-          - case_failed     { case_index, stage, code, message }  (batch continues)
+          - case_failed     { case_index, stage, code, message, error_type }
+                              (batch continues)
           - batch_completed { judged, failed, batch_tag, total_cost }
           - batch_aborted   { error, stage }  (in place of batch_completed:
                               a config-scoped judge failure aborted the whole
@@ -1315,7 +1353,7 @@ def connect_eval_builder_api(app: FastAPI):
                               judge_score, judge_reasoning, total_cost,
                               trace }
           - case_failed     { case_index, stage: "run" | "judge", code,
-                              message }  (batch continues)
+                              message, error_type }  (batch continues)
           - batch_completed { judged, failed, batch_tag, total_cost }
           - batch_aborted   { error, stage }  (in place of batch_completed:
                               a config-scoped judge failure aborted the whole
@@ -1381,7 +1419,8 @@ def connect_eval_builder_api(app: FastAPI):
           - case_judged     { case_index, leaf_run_id, raw_input, raw_output,
                               judge_score, judge_reasoning, total_cost: 0,
                               trace }
-          - case_failed     { case_index, stage: "judge", code, message }
+          - case_failed     { case_index, stage: "judge", code, message,
+                              error_type }
                               (batch continues; a run that cannot be
                               reloaded fails with code trace_not_found,
                               missing_trace, or missing_output)
