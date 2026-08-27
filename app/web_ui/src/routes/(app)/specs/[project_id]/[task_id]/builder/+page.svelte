@@ -354,6 +354,7 @@
   $: current_draft = draft_ready
     ? {
         description,
+        continued_description,
         spec_type,
         name,
         property_values,
@@ -423,6 +424,9 @@
     const saved = get(store)
     if (draft_has_content(saved)) {
       description = saved.description
+      // Pre-pairing drafts have no such key: null restores the "no Continue on
+      // record" state, which the gate's fallback already covers.
+      continued_description = saved.continued_description ?? null
       spec_type = saved.spec_type
       name = saved.name
       // An empty stored record keeps the var's seeded default (e.g.
@@ -554,6 +558,14 @@
   }
   let classifying = false
   let classify_error: string | null = null
+  // The description the last Continue processed (the text classify ran on).
+  // Questions pair against this, not the live textarea, so a browser Forward
+  // past an edit the user never continued from keeps the question set that
+  // still matches the classified property_values.
+  let continued_description: string | null = null
+  // The text questions are paired against; the live description only when no
+  // Continue is on record (a first entry, or a draft saved before this key).
+  $: questions_source = continued_description ?? description
   $: field_configs = spec_field_configs[spec_type]
 
   // Resolve a candidate eval name against the task's existing specs — the
@@ -588,23 +600,16 @@
   async function classify_then_continue() {
     classifying = true
     classify_error = null
+    // Pin the description this Continue is processing before any await, so the
+    // request and everything derived from it describe the same text even if the
+    // user edits the textarea mid-flight.
+    const source = description
     try {
-      // Seed property_values.issue_description from the free-text description
-      // up front. This is the fallback shape for the "issue" default — when
-      // the classifier ships, it'll overwrite below. Done here so Step 3's
-      // Refine reflects what the user typed in Step 1 (and Step 2's
-      // refine_spec_with_question_answers has something to refine from),
-      // even if classification fails.
-      property_values = {
-        ...property_values,
-        issue_description: description,
-      }
-
       const { data, error } = await client.POST(
         "/api/copilot/classify_spec_description",
         {
           body: {
-            description,
+            description: source,
             task_prompt: task?.instruction ?? null,
           },
           signal: new_copilot_abort_signal(),
@@ -613,10 +618,27 @@
       if (error || !data) {
         classify_error =
           "Couldn't classify your description. Continuing with the default 'issue' type."
+        // Seed the "issue" fallback shape here rather than before the await:
+        // the success path replaces property_values wholesale, and seeding
+        // early would leak an edit into the effective spec text on a Continue
+        // that never lands (abort or network error).
+        property_values = {
+          ...property_values,
+          issue_description: source,
+        }
+        continued_description = source
         goto_step("clarify")
         return
       }
+      // Land the classified state and the pairing record together, before the
+      // name prefill's un-abortable await: a Forward during that window must
+      // not pair the old question set against this Continue.
       spec_type = data.spec_type as SpecType
+      // The classifier returns the property_values dict already keyed for
+      // this spec_type. Cast to the looser Record shape consumed by
+      // Questions and the refine form.
+      property_values = data.property_values as Record<string, string | null>
+      continued_description = source
       // Prefill the Eval Name only while the field is untouched — the steps
       // stay mounted under browser Back, so a second Continue must not clobber
       // a name the user typed on step 3. The suggester is deterministic over
@@ -627,10 +649,6 @@
           (await resolve_available_name(data.suggested_name))?.name ??
           data.suggested_name
       }
-      // The classifier returns the property_values dict already keyed for
-      // this spec_type. Cast to the looser Record shape consumed by
-      // Questions and the refine form.
-      property_values = data.property_values as Record<string, string | null>
       goto_step("clarify")
     } catch (e) {
       if (is_abort_error(e)) return
@@ -662,9 +680,10 @@
     // A validation message about the set being replaced must not outlive it:
     // the answers it complained about are cleared with the questions below.
     questions_form_error = null
-    // Pin the description this set is being generated from before the await,
-    // so a later edit can't be mistaken for the text the copilot actually saw.
-    const source = description
+    // Pin the text this set is being generated from before the await, so a
+    // later edit can't be mistaken for what the copilot actually saw. An edit
+    // the user hasn't continued from takes effect on the next Continue.
+    const source = questions_source
     try {
       const { data, error } = await client.POST("/api/copilot/question_spec", {
         body: {
@@ -3778,12 +3797,13 @@
     }
   }
 
-  // Auto-load questions when entering Step 2, and regenerate them when the
-  // user went Back and edited the description: the questions on screen were
-  // authored against the old text, so they no longer fit the new spec.
+  // Auto-load questions when entering Step 2, and regenerate them when a
+  // Continue processed text the current set wasn't authored against: those
+  // questions no longer fit the new spec. Gating on questions_source rather
+  // than the live description keeps navigation alone from regenerating.
   $: if (
     current_step === "clarify" &&
-    !questions_are_current(question_set_source, description) &&
+    !questions_are_current(question_set_source, questions_source) &&
     !questions_loading
   ) {
     load_questions()

@@ -21,6 +21,10 @@ import {
 // fixtures below carve it down.
 const full_draft: BuilderDraft = {
   description: "The agent must not fabricate policies.",
+  // Deliberately NOT equal to description: the live text drifts past the last
+  // Continue whenever the user edits without continuing, and a fixture where
+  // the two match couldn't catch the fields being crossed on save or restore.
+  continued_description: "The agent must not fabricate refund policies.",
   spec_type: "issue",
   name: "no-fabrication",
   property_values: {

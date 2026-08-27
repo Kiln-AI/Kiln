@@ -78,15 +78,15 @@ export function reusable_minted_inputs(
   return cache.inputs
 }
 
-// Whether the clarify questions still fit the description on screen: source
-// is a snapshot of the exact text they were generated from, byte-compared
-// because the copilot saw that raw string. Null means no set has landed, so
-// regenerate.
+// Whether the clarify questions still fit the text the caller pairs them
+// against: source is a snapshot of the exact text they were generated from,
+// byte-compared because the copilot saw that raw string. Null means no set
+// has landed, so regenerate.
 export function questions_are_current(
   source: string | null,
-  description: string,
+  paired_against: string,
 ): boolean {
-  return source !== null && source === description
+  return source !== null && source === paired_against
 }
 
 // Whether a suggested eval name may be written into the name field. The
@@ -122,6 +122,10 @@ export function should_invalidate_refined_values(
 export type BuilderDraft = {
   // Step 1-3 — spec authoring.
   description: string
+  // Which text the last Continue processed. The clarify gate pairs questions
+  // to this, so a reload must not swap the pairing target to an un-Continued
+  // edit; drafts written before this key restore it as null.
+  continued_description: string | null
   spec_type: SpecType
   name: string
   property_values: Record<string, string | null>
@@ -157,6 +161,7 @@ export type BuilderDraft = {
 
 export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   description: "",
+  continued_description: null,
   spec_type: "issue",
   name: "",
   property_values: {},
