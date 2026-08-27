@@ -10,6 +10,8 @@ import {
   restore_step,
   reusable_cached_cases,
   reusable_minted_inputs,
+  should_invalidate_refined_values,
+  should_prefill_suggested_name,
   EMPTY_BUILDER_DRAFT,
   type BuilderDraft,
   type CachedSuCases,
@@ -502,6 +504,110 @@ describe("draft_after_save_keeping_stranded_tags", () => {
     expect(
       draft_after_save_keeping_stranded_tags("only_batch", ["only_batch"]),
     ).toEqual(EMPTY_BUILDER_DRAFT)
+  })
+})
+
+describe("should_prefill_suggested_name", () => {
+  it("prefills an empty field", () => {
+    expect(should_prefill_suggested_name("")).toBe(true)
+  })
+
+  it("prefills a whitespace-only field — a stray space is not a typed name", () => {
+    expect(should_prefill_suggested_name("   ")).toBe(true)
+  })
+
+  it("leaves a typed name alone — a second Continue must not clobber it", () => {
+    expect(should_prefill_suggested_name("no-fabrication")).toBe(false)
+  })
+})
+
+describe("should_invalidate_refined_values", () => {
+  // The refined text a successful refine wrote, and the classified values it
+  // was derived from — plus what those classified values became after the user
+  // went back and rewrote the description.
+  const refined = {
+    issue_description: "The agent must not fabricate or guess at policies.",
+  }
+  const refined_json = JSON.stringify(refined)
+  const old_source = JSON.stringify({
+    issue_description: "The agent must not fabricate policies.",
+  })
+  const new_source = JSON.stringify({
+    issue_description: "The agent must not invent warranty terms.",
+  })
+
+  it("discards programmatic values whose source moved underneath them", () => {
+    // The whole point: stale refined text must not outrank the description
+    // the user just rewrote.
+    expect(
+      should_invalidate_refined_values(
+        refined,
+        refined_json,
+        old_source,
+        new_source,
+      ),
+    ).toBe(true)
+  })
+
+  it("keeps programmatic values when the source is unchanged", () => {
+    // A transient refine failure must not destroy an accepted refinement.
+    expect(
+      should_invalidate_refined_values(
+        refined,
+        refined_json,
+        old_source,
+        old_source,
+      ),
+    ).toBe(false)
+  })
+
+  it("keeps user-edited values even when the source moved", () => {
+    expect(
+      should_invalidate_refined_values(
+        { issue_description: "My own wording." },
+        refined_json,
+        old_source,
+        new_source,
+      ),
+    ).toBe(false)
+  })
+
+  it("keeps values with no snapshot", () => {
+    // Draft-restored values have unknowable authorship, so they are kept.
+    expect(
+      should_invalidate_refined_values(refined, null, null, new_source),
+    ).toBe(false)
+  })
+
+  it("reads reordered keys as user-edited — compares are byte-exact", () => {
+    // No canonicalization: both sides must be stringified from the same
+    // construction. A future second rendered field inherits this constraint.
+    const current = { issue_description: "a", issue_examples: "b" }
+    const reordered = JSON.stringify({
+      issue_examples: "b",
+      issue_description: "a",
+    })
+    expect(
+      should_invalidate_refined_values(
+        current,
+        reordered,
+        old_source,
+        new_source,
+      ),
+    ).toBe(false)
+  })
+
+  it("round-trips a null-valued field", () => {
+    // Unanswered fields ride as null, not "" — the compare must survive them.
+    const with_null = { issue_description: "Kept.", non_issue_examples: null }
+    expect(
+      should_invalidate_refined_values(
+        with_null,
+        JSON.stringify(with_null),
+        old_source,
+        new_source,
+      ),
+    ).toBe(true)
   })
 })
 

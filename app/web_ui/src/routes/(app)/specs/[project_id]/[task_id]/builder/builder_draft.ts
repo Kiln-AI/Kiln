@@ -89,6 +89,36 @@ export function questions_are_current(
   return source !== null && source === description
 }
 
+// Whether a suggested eval name may be written into the name field. The
+// wizard's steps stay mounted across browser Back/Forward, so a suggester can
+// fire again after the user typed a name — only an untouched (empty or
+// whitespace-only) field is safe to prefill. User input always wins.
+export function should_prefill_suggested_name(current_name: string): boolean {
+  return current_name.trim() === ""
+}
+
+// Whether a failed refine may discard the refine form's current values.
+// Content the user may have edited is never discarded (current must still be
+// byte-equal to what the code last wrote); programmatic content is discarded
+// only when the classified values it was derived from have changed underneath
+// it. A transient failure with an unchanged source therefore keeps the good
+// refinement, and a null snapshot (values restored from a saved draft, where
+// authorship is unknowable) always means keep.
+// The byte-compares rely on callers snapshotting the object they just built
+// with the same construction on both sides, not on JSON canonicalization.
+export function should_invalidate_refined_values(
+  current: Record<string, string | null>,
+  programmatic_json: string | null,
+  derived_from_json: string | null,
+  current_source_json: string,
+): boolean {
+  return (
+    programmatic_json !== null &&
+    JSON.stringify(current) === programmatic_json &&
+    derived_from_json !== current_source_json
+  )
+}
+
 export type BuilderDraft = {
   // Step 1-3 — spec authoring.
   description: string

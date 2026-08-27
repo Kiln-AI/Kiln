@@ -41,6 +41,8 @@
     restore_step,
     reusable_cached_cases,
     reusable_minted_inputs,
+    should_invalidate_refined_values,
+    should_prefill_suggested_name,
     EMPTY_BUILDER_DRAFT,
     type BuilderDraft,
     type CachedMintedInputs,
@@ -615,12 +617,16 @@
         return
       }
       spec_type = data.spec_type as SpecType
-      // The suggester is deterministic over similar descriptions, so a
-      // second eval on this task would regenerate a taken name — prefill
-      // the nearest available variant instead (best-effort).
-      name =
-        (await resolve_available_name(data.suggested_name))?.name ??
-        data.suggested_name
+      // Prefill the Eval Name only while the field is untouched — the steps
+      // stay mounted under browser Back, so a second Continue must not clobber
+      // a name the user typed on step 3. The suggester is deterministic over
+      // similar descriptions, so a second eval on this task would regenerate a
+      // taken name — take the nearest available variant instead (best-effort).
+      if (should_prefill_suggested_name(name)) {
+        name =
+          (await resolve_available_name(data.suggested_name))?.name ??
+          data.suggested_name
+      }
       // The classifier returns the property_values dict already keyed for
       // this spec_type. Cast to the looser Record shape consumed by
       // Questions and the refine form.
@@ -699,12 +705,32 @@
   // issue spec_type); this list must move with spec_type if that changes.
   const RENDERED_REFINE_FIELDS: readonly string[] = ["issue_description"]
   let refined_property_values: Record<string, string | null> = {}
+  // Snapshot of refined_property_values as the CODE last wrote it (refine
+  // success or a seed). The form's bind:value mutates the values without
+  // touching this, so "still byte-equal" means untouched model output — the
+  // only content a failed refine may discard. Null (draft-restored values)
+  // reads as user-owned.
+  let refined_values_programmatic_json: string | null = null
+  // Snapshot of the classified values that same write was derived from. A
+  // failure only discards programmatic content once this no longer matches the
+  // current property_values — otherwise the refined text still fits the
+  // description on screen and is worth keeping.
+  let refined_values_derived_from_json: string | null = null
   let suggested_edits: Record<string, SuggestedEdit> = {}
   let refine_form_error: KilnError | null = null
   let refined_preview_loading = false
   // Non-blocking: refinement failing still lands the user on an editable
   // refine step, but they should know their answers weren't incorporated.
   let refine_warning: string | null = null
+
+  // The classified values as the refine form sees them. Every snapshot and
+  // compare of the form's source goes through here, so both sides of a byte
+  // compare are built the same way and key order can never differ.
+  function rendered_source_json(): string {
+    return JSON.stringify(
+      keep_rendered_fields(property_values, RENDERED_REFINE_FIELDS),
+    )
+  }
 
   // A failed refine still lands on an editable form: seed it from the
   // current values, unless a prior visit already populated it (a re-entered
@@ -718,7 +744,31 @@
         property_values,
         RENDERED_REFINE_FIELDS,
       )
+      refined_values_programmatic_json = JSON.stringify(refined_property_values)
+      refined_values_derived_from_json = rendered_source_json()
     }
+  }
+
+  // A failed refine must not leave a previous round's refined text in place
+  // once the description behind it changed: it would silently outrank the
+  // user's newer description everywhere the spec text is read, while the
+  // warning above the form says their answers were not incorporated. Discard it
+  // — and the suggestions that annotate it — only when it is still exactly what
+  // the code wrote AND its source has moved, so both step 3 edits and a good
+  // refinement that merely hit a transient failure survive.
+  function reseed_refine_form_after_failure() {
+    if (
+      should_invalidate_refined_values(
+        refined_property_values,
+        refined_values_programmatic_json,
+        refined_values_derived_from_json,
+        rendered_source_json(),
+      )
+    ) {
+      refined_property_values = {}
+      suggested_edits = {}
+    }
+    seed_refine_form_if_empty()
   }
 
   // Called by Questions component on Next. Fires the refinement call and
@@ -760,7 +810,7 @@
         refine_warning = `Couldn't refine the spec from your answers (${createKilnError(
           error,
         ).getMessage()}). Edit it directly below.`
-        seed_refine_form_if_empty()
+        reseed_refine_form_after_failure()
         return
       }
 
@@ -774,7 +824,7 @@
       // validator the name field enforces. User input always wins; an invalid
       // or absent suggestion leaves the field untouched.
       if (
-        !name.trim() &&
+        should_prefill_suggested_name(name) &&
         refine_response.suggested_name &&
         filename_string_short_validator(refine_response.suggested_name) === null
       ) {
@@ -807,6 +857,11 @@
         ...keep_rendered_fields(property_values, RENDERED_REFINE_FIELDS),
         ...split.refined_edits,
       }
+      refined_values_programmatic_json = JSON.stringify(refined_property_values)
+      // The classified values this refine ran against (property_values is not
+      // touched during the call), so a later failure can tell whether the
+      // description behind these values has since moved.
+      refined_values_derived_from_json = rendered_source_json()
       suggested_edits = split.suggested_edits
     } catch (e) {
       if (is_abort_error(e)) return
@@ -814,7 +869,7 @@
       // either way — but the failure must not be silent.
       refine_warning =
         "Couldn't refine your eval from your answers. Edit it directly below."
-      seed_refine_form_if_empty()
+      reseed_refine_form_after_failure()
     } finally {
       refined_preview_loading = false
     }
