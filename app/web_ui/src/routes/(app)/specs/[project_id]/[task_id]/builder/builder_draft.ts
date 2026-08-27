@@ -89,12 +89,18 @@ export function questions_are_current(
   return source !== null && source === paired_against
 }
 
-// Whether a suggested eval name may be written into the name field. The
-// wizard's steps stay mounted across browser Back/Forward, so a suggester can
-// fire again after the user typed a name — only an untouched (empty or
-// whitespace-only) field is safe to prefill. User input always wins.
-export function should_prefill_suggested_name(current_name: string): boolean {
-  return current_name.trim() === ""
+// Whether a suggested eval name may be written into the name field. A name
+// the user typed is never overwritten; an untouched field is always safe to
+// fill. Untouched means either empty/whitespace-only (nothing to lose, and a
+// stray space is not a typed name) or still byte-equal to prefilled_name, the
+// name the MACHINE last wrote — that one tracks the model's latest suggestion,
+// so rewriting the description and continuing again renames the eval after the
+// new one. Raw byte compare: a trailing space is a real edit.
+export function should_prefill_suggested_name(
+  current_name: string,
+  prefilled_name: string | null,
+): boolean {
+  return current_name.trim() === "" || current_name === prefilled_name
 }
 
 // Whether a failed refine may discard the refine form's current values.
@@ -128,6 +134,13 @@ export type BuilderDraft = {
   continued_description: string | null
   spec_type: SpecType
   name: string
+  // Which name the machine last wrote, so a reload keeps a still-untouched
+  // suggestion replaceable; drafts from before this key restore null, which
+  // safely treats the restored name as the user's own. Deliberately unlike
+  // refined_values_programmatic_json, whose snapshot is NOT persisted so refine
+  // text always restores as user-owned: discarding that text destroys content,
+  // while a name suggestion is cheap to replace.
+  prefilled_name: string | null
   property_values: Record<string, string | null>
   refined_property_values: Record<string, string | null>
   suggested_edits: Record<string, SuggestedEdit>
@@ -164,6 +177,7 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   continued_description: null,
   spec_type: "issue",
   name: "",
+  prefilled_name: null,
   property_values: {},
   refined_property_values: {},
   suggested_edits: {},

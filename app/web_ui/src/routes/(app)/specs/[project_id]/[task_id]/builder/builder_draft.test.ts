@@ -22,11 +22,17 @@ import {
 const full_draft: BuilderDraft = {
   description: "The agent must not fabricate policies.",
   // Deliberately NOT equal to description: the live text drifts past the last
-  // Continue whenever the user edits without continuing, and a fixture where
-  // the two match couldn't catch the fields being crossed on save or restore.
+  // Continue whenever the user edits without continuing. The round trip below
+  // only serializes, so it can't catch the two being crossed — distinctness
+  // keeps the fixture discriminating for any future test that drives the real
+  // save and restore paths.
   continued_description: "The agent must not fabricate refund policies.",
   spec_type: "issue",
   name: "no-fabrication",
+  // Deliberately NOT equal to name: this fixture is a user who renamed. Same
+  // reason as continued_description above — distinctness is what would let a
+  // test of the real save/restore paths catch the two fields being crossed.
+  prefilled_name: "no-fabricated-policies",
   property_values: {
     issue_description: "The agent must not fabricate policies.",
     issue_examples: "Invented a 90-day return window.",
@@ -513,15 +519,39 @@ describe("draft_after_save_keeping_stranded_tags", () => {
 
 describe("should_prefill_suggested_name", () => {
   it("prefills an empty field", () => {
-    expect(should_prefill_suggested_name("")).toBe(true)
+    expect(should_prefill_suggested_name("", null)).toBe(true)
   })
 
   it("prefills a whitespace-only field — a stray space is not a typed name", () => {
-    expect(should_prefill_suggested_name("   ")).toBe(true)
+    expect(should_prefill_suggested_name("   ", null)).toBe(true)
   })
 
-  it("leaves a typed name alone — a second Continue must not clobber it", () => {
-    expect(should_prefill_suggested_name("no-fabrication")).toBe(false)
+  it("leaves a typed name alone when no machine name is on record — a restored draft keeps the user's name", () => {
+    expect(should_prefill_suggested_name("no-fabrication", null)).toBe(false)
+  })
+
+  it("replaces an untouched machine name — it tracks the newest suggestion", () => {
+    expect(
+      should_prefill_suggested_name("no-fabrication", "no-fabrication"),
+    ).toBe(true)
+  })
+
+  // The compare is raw bytes, not trimmed: a trailing space is a real edit.
+  it("treats a trailing space on the machine's name as a user edit", () => {
+    expect(
+      should_prefill_suggested_name("no-fabrication ", "no-fabrication"),
+    ).toBe(false)
+  })
+
+  // Clearing a typed name hands ownership back, so the next Continue refills.
+  it("prefills a cleared field even with a machine name on record", () => {
+    expect(should_prefill_suggested_name("   ", "no-fabrication")).toBe(true)
+  })
+
+  it("keeps a name the user edited away from the machine's — it survives every later Continue", () => {
+    expect(
+      should_prefill_suggested_name("refund-accuracy", "no-fabrication"),
+    ).toBe(false)
   })
 })
 

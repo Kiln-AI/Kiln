@@ -357,6 +357,7 @@
         continued_description,
         spec_type,
         name,
+        prefilled_name,
         property_values,
         refined_property_values,
         suggested_edits,
@@ -429,6 +430,10 @@
       continued_description = saved.continued_description ?? null
       spec_type = saved.spec_type
       name = saved.name
+      // Pre-prefill-tracking drafts have no such key: null restores the "no
+      // machine claim on record" state, so the saved name is left as the
+      // user's and never clobbered by a later suggestion.
+      prefilled_name = saved.prefilled_name ?? null
       // An empty stored record keeps the var's seeded default (e.g.
       // property_values starts with the issue keys) instead of erasing it.
       if (Object.keys(saved.property_values).length > 0) {
@@ -551,6 +556,11 @@
   // classification fails or is unavailable.
   let spec_type: SpecType = "issue"
   let name = ""
+  // The name the machine last wrote. While `name` still matches it — or the
+  // field is empty — the field is machine-owned and a newer suggestion may
+  // replace it. Typing a different name takes ownership; clearing the field
+  // hands ownership back.
+  let prefilled_name: string | null = null
   let property_values: Record<string, string | null> = {
     issue_description: "",
     issue_examples: "",
@@ -645,15 +655,18 @@
       // A new Continue is a fresh attempt: a stale question failure from the
       // previous source must not block regeneration on this one.
       questions_error = null
-      // Prefill the Eval Name only while the field is untouched — the steps
-      // stay mounted under browser Back, so a second Continue must not clobber
-      // a name the user typed on step 3. The suggester is deterministic over
-      // similar descriptions, so a second eval on this task would regenerate a
-      // taken name — take the nearest available variant instead (best-effort).
-      if (should_prefill_suggested_name(name)) {
+      // Prefill the Eval Name while the field is still machine-owned: a name
+      // this code wrote tracks the model's latest run, so rewriting the
+      // description and continuing again renames the eval after the new one.
+      // Typing in the field takes ownership and ends the tracking. The
+      // suggester is deterministic over similar descriptions, so a second eval
+      // on this task would regenerate a taken name — take the nearest available
+      // variant instead (best-effort).
+      if (should_prefill_suggested_name(name, prefilled_name)) {
         name =
           (await resolve_available_name(data.suggested_name))?.name ??
           data.suggested_name
+        prefilled_name = name
       }
       goto_step("clarify")
     } catch (e) {
@@ -853,12 +866,12 @@
         suggested_name?: string
       }
 
-      // Prefill the Eval Name from the model's suggestion, but only when the
-      // user hasn't typed one and the suggestion passes the same filename-safe
-      // validator the name field enforces. User input always wins; an invalid
-      // or absent suggestion leaves the field untouched.
+      // Prefill the Eval Name from the model's suggestion while the field is
+      // still machine-owned, and only when the suggestion passes the same
+      // filename-safe validator the name field enforces. Typing in the field
+      // takes ownership; an invalid or absent suggestion leaves it untouched.
       if (
-        should_prefill_suggested_name(name) &&
+        should_prefill_suggested_name(name, prefilled_name) &&
         refine_response.suggested_name &&
         filename_string_short_validator(refine_response.suggested_name) === null
       ) {
@@ -867,6 +880,7 @@
         name =
           (await resolve_available_name(refine_response.suggested_name))
             ?.name ?? refine_response.suggested_name
+        prefilled_name = name
       }
 
       // Start from current values, then apply the edits the form can show.
