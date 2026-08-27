@@ -4097,8 +4097,12 @@
               />
               {#if suggested_edits.issue_description?.reason_for_edit}
                 <div class="text-xs text-gray-500 italic mt-2">
-                  Refinement: {suggested_edits.issue_description
-                    .reason_for_edit}
+                  <span
+                    class="tooltip tooltip-top before:z-50 before:whitespace-normal"
+                    data-tip={suggested_edits.issue_description.reason_for_edit}
+                  >
+                    We updated this based on your answers.
+                  </span>
                 </div>
               {/if}
             </div>
