@@ -187,7 +187,10 @@ class MCPAdapter(BaseAdapter):
                 else:
                     parsed_output = run_output.output
                 if not isinstance(parsed_output, dict):
-                    raise RuntimeError(
+                    # Valid JSON of the wrong shape (often the object wrapped in
+                    # a list) is the same one-off model slip as bad JSON, so it
+                    # carries the retryable type too.
+                    raise StructuredOutputParseError(
                         f"structured response is not a dict: {parsed_output}"
                     )
                 validate_schema_with_value_error(

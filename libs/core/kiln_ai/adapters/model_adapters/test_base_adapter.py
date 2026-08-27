@@ -1600,7 +1600,19 @@ class TestFinalizeStream:
             adapter._finalize_stream(adapter_stream, "test input", None)
         assert is_retryable_error(exc_info.value) is True
 
-    def test_finalize_stream_structured_output_not_dict_raises(self, base_task):
+    @pytest.mark.parametrize(
+        "stream_output,expected_message",
+        [
+            # Already a non-dict value, so no JSON parsing is involved...
+            (42, "structured response is not a dict: 42"),
+            # ...and valid JSON that parses to a non-dict (the object wrapped in
+            # a list, a common model slip). Both are wrong-shape output.
+            ('[{"x": "y"}]', "structured response is not a dict: [{'x': 'y'}]"),
+        ],
+    )
+    def test_finalize_stream_structured_output_not_dict_raises(
+        self, base_task, stream_output, expected_message
+    ):
         schema = '{"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"]}'
         adapter = self._make_structured_adapter(base_task, schema)
 
@@ -1609,9 +1621,13 @@ class TestFinalizeStream:
         provider.reasoning_capable = False
         adapter.model_provider = MagicMock(return_value=provider)
 
-        adapter_stream = self._make_adapter_stream(42)
-        with pytest.raises(RuntimeError, match="structured response is not a dict"):
+        adapter_stream = self._make_adapter_stream(stream_output)
+        with pytest.raises(StructuredOutputParseError) as exc_info:
             adapter._finalize_stream(adapter_stream, "test input", None)
+        # Retryable like a parse failure, and the message the user sees is
+        # unchanged from when this raised RuntimeError.
+        assert is_retryable_error(exc_info.value) is True
+        assert str(exc_info.value) == expected_message
 
     def test_finalize_stream_non_structured_non_string_raises(self, finalize_adapter):
         provider = MagicMock()

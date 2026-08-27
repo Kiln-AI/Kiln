@@ -5,8 +5,8 @@ Provides:
 - `KilnRunError`: the exception thrown by the adapter that carries the partial
   conversation trace across the exception boundary so the API layer can return
   it to the client.
-- `StructuredOutputParseError`: the model's response wasn't parseable JSON on a
-  structured-output task.
+- `StructuredOutputParseError`: on a structured-output task, the model's
+  response wasn't parseable JSON, or parsed to something other than an object.
 - `format_error_message`: maps known exceptions to user-friendly text.
 """
 
@@ -53,11 +53,13 @@ class KilnRunError(Exception):
 
 
 class StructuredOutputParseError(ValueError):
-    """Raised when a structured-output task's model response isn't valid JSON.
+    """Raised when a structured-output task's model response is the wrong
+    shape: not valid JSON, or valid JSON that isn't the object the task needs
+    (a list, number, or null — commonly the object wrapped in a list).
 
     Subclasses ValueError so existing `except ValueError` handling and the
     user-facing message are unchanged. The distinct type exists so retry
-    classification can treat unparseable output like a schema mismatch: both
+    classification can treat wrong-shape output like a schema mismatch: both
     mean the model flubbed its output shape once, and a retry may fix it.
     """
 

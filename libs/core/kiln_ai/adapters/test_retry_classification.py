@@ -4,7 +4,7 @@ import httpx
 import litellm
 import pytest
 
-from kiln_ai.adapters.errors import KilnRunError
+from kiln_ai.adapters.errors import KilnRunError, StructuredOutputParseError
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.retry_classification import (
@@ -26,6 +26,10 @@ COUNT_SCHEMA = json.dumps(
 # Model output that json parsing must reject, shared so the test can ask the
 # parser for the exact message it raises on this same input.
 UNPARSEABLE_MODEL_OUTPUT = "Sure! Here you go."
+
+# Valid JSON that still isn't the object a structured task needs: the model
+# wrapped its answer in a list, one of the most common shape slips.
+WRONG_SHAPE_MODEL_OUTPUT = '[{"count": 1}]'
 
 
 def _provider_error(cls, message: str = "boom"):
@@ -133,37 +137,48 @@ class TestSchemaMismatchClassification:
         assert is_retryable_error(exc_info.value) is True
 
 
-class _UnparseableOutputAdapter(BaseAdapter):
-    """Adapter whose model returns text that isn't JSON at all."""
+class _CannedOutputAdapter(BaseAdapter):
+    """Adapter whose model returns a fixed output, so tests exercise the real
+    parse and shape checks in `invoke` instead of hand-built exceptions."""
+
+    def __init__(self, model_output: str, **kwargs):
+        super().__init__(**kwargs)
+        self._model_output = model_output
 
     async def _run(self, input, trace_ref, **kwargs):
-        output = RunOutput(output=UNPARSEABLE_MODEL_OUTPUT, intermediate_outputs=None)
+        output = RunOutput(output=self._model_output, intermediate_outputs=None)
         return output, None
 
     def adapter_name(self) -> str:
         return "test"
 
 
+def _structured_adapter(model_output: str) -> _CannedOutputAdapter:
+    task = Task(
+        name="test task",
+        instruction="test instruction",
+        output_json_schema=COUNT_SCHEMA,
+    )
+    return _CannedOutputAdapter(
+        model_output,
+        task=task,
+        run_config=KilnAgentRunConfigProperties(
+            model_name="phi_3_5",
+            model_provider_name="ollama",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+    )
+
+
 class TestStructuredOutputParseClassification:
     async def test_real_json_parse_failure_raise_site_is_retryable(self):
         # A structured-output task whose model output can't be parsed is the
         # same one-off model slip as a schema mismatch, so it must retry too.
-        task = Task(
-            name="test task",
-            instruction="test instruction",
-            output_json_schema=COUNT_SCHEMA,
-        )
-        adapter = _UnparseableOutputAdapter(
-            task=task,
-            run_config=KilnAgentRunConfigProperties(
-                model_name="phi_3_5",
-                model_provider_name="ollama",
-                prompt_id="simple_prompt_builder",
-                structured_output_mode="json_schema",
-            ),
-        )
+        adapter = _structured_adapter(UNPARSEABLE_MODEL_OUTPUT)
         with pytest.raises(KilnRunError) as exc_info:
             await adapter.invoke("test input")
+        assert isinstance(exc_info.value.original, StructuredOutputParseError)
         assert is_retryable_error(exc_info.value) is True
 
         # Re-typing must not alter the message. Compare against what the parser
@@ -174,6 +189,22 @@ class TestStructuredOutputParseClassification:
         assert str(exc_info.value.original) == parser_message
         # And the message the user sees survives the KilnRunError wrapping.
         assert str(exc_info.value) == parser_message
+
+    async def test_real_wrong_shape_raise_site_is_retryable(self):
+        # Valid JSON of the wrong shape (here, the object wrapped in a list)
+        # never reaches the parse failure above, so it needs its own pin: it is
+        # the same one-off model slip and must retry rather than fail the run.
+        adapter = _structured_adapter(WRONG_SHAPE_MODEL_OUTPUT)
+        with pytest.raises(KilnRunError) as exc_info:
+            await adapter.invoke("test input")
+        assert isinstance(exc_info.value.original, StructuredOutputParseError)
+        assert is_retryable_error(exc_info.value) is True
+
+        # Re-typing must not alter what the user sees: same text the raise site
+        # produced when it was a RuntimeError.
+        expected_message = "structured response is not a dict: [{'count': 1}]"
+        assert str(exc_info.value.original) == expected_message
+        assert str(exc_info.value) == expected_message
 
     def test_bare_value_error_is_not_retryable(self):
         # Only the structured-output parse failure is retryable; ValueError

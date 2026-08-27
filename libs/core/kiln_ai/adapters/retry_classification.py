@@ -46,8 +46,9 @@ def is_retryable_error(e: BaseException) -> bool:
     ):
         return True
 
-    # The model returned something that wasn't parseable JSON on a
-    # structured-output task. Same transient event as a schema mismatch below.
+    # The model's output wasn't the JSON object a structured-output task
+    # requires (unparseable, or valid JSON of the wrong shape). Same
+    # transient event as a schema mismatch below.
     if isinstance(e, StructuredOutputParseError):
         return True
 

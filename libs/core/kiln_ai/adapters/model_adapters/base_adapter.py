@@ -291,7 +291,10 @@ class BaseAdapter(metaclass=ABCMeta):
                             raise StructuredOutputParseError(str(e)) from e
 
                     if not isinstance(parsed_output.output, dict):
-                        raise RuntimeError(
+                        # Valid JSON of the wrong shape (often the object wrapped
+                        # in a list) is the same one-off model slip as bad JSON,
+                        # so it carries the retryable type too.
+                        raise StructuredOutputParseError(
                             f"structured response is not a dict: {parsed_output.output}"
                         )
                     validate_schema_with_value_error(
@@ -494,7 +497,10 @@ class BaseAdapter(metaclass=ABCMeta):
                         # like a schema mismatch: a one-off model slip.
                         raise StructuredOutputParseError(str(e)) from e
                 if not isinstance(parsed_output.output, dict):
-                    raise RuntimeError(
+                    # Valid JSON of the wrong shape (often the object wrapped in
+                    # a list) is the same one-off model slip as bad JSON, so it
+                    # carries the retryable type too.
+                    raise StructuredOutputParseError(
                         f"structured response is not a dict: {parsed_output.output}"
                     )
                 validate_schema_with_value_error(
