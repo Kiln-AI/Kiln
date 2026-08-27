@@ -5,6 +5,8 @@ Provides:
 - `KilnRunError`: the exception thrown by the adapter that carries the partial
   conversation trace across the exception boundary so the API layer can return
   it to the client.
+- `StructuredOutputParseError`: the model's response wasn't parseable JSON on a
+  structured-output task.
 - `format_error_message`: maps known exceptions to user-friendly text.
 """
 
@@ -50,6 +52,16 @@ class KilnRunError(Exception):
         self.error_type = type(original).__name__
 
 
+class StructuredOutputParseError(ValueError):
+    """Raised when a structured-output task's model response isn't valid JSON.
+
+    Subclasses ValueError so existing `except ValueError` handling and the
+    user-facing message are unchanged. The distinct type exists so retry
+    classification can treat unparseable output like a schema mismatch: both
+    mean the model flubbed its output shape once, and a retry may fix it.
+    """
+
+
 def _safe_str(exc: Exception) -> str:
     """Return str(exc); fall back to the exception class name if the string
     is empty, and to a generic message only if str() itself misbehaves."""
@@ -81,6 +93,11 @@ def format_error_message(exc: Exception) -> str:
             return "Rate limit exceeded. Wait a moment and try again."
         if isinstance(exc, litellm.AuthenticationError):
             return "Authentication with the model provider failed. Check your API key."
+        # Listed before the connection bucket: litellm.Timeout inherits from
+        # openai's connection error, not litellm's, so it needs its own branch
+        # (and a request that timed out did connect, so that message would lie).
+        if isinstance(exc, litellm.Timeout):
+            return "The model provider took too long to respond. Try again in a moment."
         if isinstance(exc, litellm.APIConnectionError):
             return "Could not connect to the model provider. Check your network connection."
         if isinstance(

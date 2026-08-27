@@ -1148,6 +1148,9 @@ async def test_run_job_with_none_trace(
     [
         litellm.RateLimitError("rate limited", "provider", "model", None),
         litellm.APIConnectionError("connection failed", "provider", "model", None),
+        # Timeout takes (message, model, llm_provider) and descends from
+        # openai's connection error, so APIConnectionError above doesn't cover it.
+        litellm.Timeout("timed out", "model", "provider"),
         litellm.InternalServerError("server error", "provider", "model", None),
         litellm.ServiceUnavailableError("unavailable", "provider", "model", None),
         litellm.BadGatewayError("bad gateway", "provider", "model", None),

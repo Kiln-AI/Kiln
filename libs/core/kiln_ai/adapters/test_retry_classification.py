@@ -5,12 +5,27 @@ import litellm
 import pytest
 
 from kiln_ai.adapters.errors import KilnRunError
+from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
+from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.retry_classification import (
     is_batch_fatal_error,
     is_retryable_error,
 )
 from kiln_ai.datamodel import Task
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task_output import TaskOutput
+
+COUNT_SCHEMA = json.dumps(
+    {
+        "type": "object",
+        "properties": {"count": {"type": "integer"}},
+        "required": ["count"],
+    }
+)
+
+# Model output that json parsing must reject, shared so the test can ask the
+# parser for the exact message it raises on this same input.
+UNPARSEABLE_MODEL_OUTPUT = "Sure! Here you go."
 
 
 def _provider_error(cls, message: str = "boom"):
@@ -91,6 +106,18 @@ class TestUnwrapInteraction:
         assert is_batch_fatal_error(wrapped) is False
 
 
+class TestTransientProviderClassification:
+    def test_provider_timeout_is_retryable(self):
+        # litellm.Timeout descends from openai's connection error, not
+        # litellm's, so the classifier has to name it explicitly. Build a real
+        # instance so a litellm upgrade that reshuffles the hierarchy fails here.
+        error = litellm.Timeout(
+            message="request timed out", model="gpt_5_5", llm_provider="openrouter"
+        )
+        assert isinstance(error, litellm.APIConnectionError) is False
+        assert is_retryable_error(error) is True
+
+
 class TestSchemaMismatchClassification:
     def test_real_schema_mismatch_raise_site_is_retryable(self):
         # Trigger an actual production raise site rather than a hand-built
@@ -98,15 +125,57 @@ class TestSchemaMismatchClassification:
         task = Task(
             name="test task",
             instruction="test instruction",
-            output_json_schema=json.dumps(
-                {
-                    "type": "object",
-                    "properties": {"count": {"type": "integer"}},
-                    "required": ["count"],
-                }
-            ),
+            output_json_schema=COUNT_SCHEMA,
         )
         output = TaskOutput(output=json.dumps({"count": "not_an_int"}))
         with pytest.raises(ValueError) as exc_info:
             output.validate_output_format(task)
         assert is_retryable_error(exc_info.value) is True
+
+
+class _UnparseableOutputAdapter(BaseAdapter):
+    """Adapter whose model returns text that isn't JSON at all."""
+
+    async def _run(self, input, trace_ref, **kwargs):
+        output = RunOutput(output=UNPARSEABLE_MODEL_OUTPUT, intermediate_outputs=None)
+        return output, None
+
+    def adapter_name(self) -> str:
+        return "test"
+
+
+class TestStructuredOutputParseClassification:
+    async def test_real_json_parse_failure_raise_site_is_retryable(self):
+        # A structured-output task whose model output can't be parsed is the
+        # same one-off model slip as a schema mismatch, so it must retry too.
+        task = Task(
+            name="test task",
+            instruction="test instruction",
+            output_json_schema=COUNT_SCHEMA,
+        )
+        adapter = _UnparseableOutputAdapter(
+            task=task,
+            run_config=KilnAgentRunConfigProperties(
+                model_name="phi_3_5",
+                model_provider_name="ollama",
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+            ),
+        )
+        with pytest.raises(KilnRunError) as exc_info:
+            await adapter.invoke("test input")
+        assert is_retryable_error(exc_info.value) is True
+
+        # Re-typing must not alter the message. Compare against what the parser
+        # itself raises for the same output, so the two can't drift apart.
+        with pytest.raises(ValueError) as parser_exc_info:
+            parse_json_string(UNPARSEABLE_MODEL_OUTPUT)
+        parser_message = str(parser_exc_info.value)
+        assert str(exc_info.value.original) == parser_message
+        # And the message the user sees survives the KilnRunError wrapping.
+        assert str(exc_info.value) == parser_message
+
+    def test_bare_value_error_is_not_retryable(self):
+        # Only the structured-output parse failure is retryable; ValueError
+        # stays terminal everywhere else (config errors, bad arguments, etc.).
+        assert is_retryable_error(ValueError("some judge parsing problem")) is False

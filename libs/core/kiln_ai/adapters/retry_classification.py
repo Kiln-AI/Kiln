@@ -8,7 +8,7 @@ the synthetic-user batch runner).
 
 import litellm
 
-from kiln_ai.adapters.errors import KilnRunError
+from kiln_ai.adapters.errors import KilnRunError, StructuredOutputParseError
 from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
 
 
@@ -34,12 +34,21 @@ def is_retryable_error(e: BaseException) -> bool:
         (
             litellm.RateLimitError,
             litellm.APIConnectionError,
+            # Listed separately: litellm.Timeout inherits from openai's
+            # connection error, not litellm's, so APIConnectionError above
+            # does not cover it.
+            litellm.Timeout,
             litellm.InternalServerError,
             litellm.ServiceUnavailableError,
             litellm.BadGatewayError,
             litellm.JSONSchemaValidationError,
         ),
     ):
+        return True
+
+    # The model returned something that wasn't parseable JSON on a
+    # structured-output task. Same transient event as a schema mismatch below.
+    if isinstance(e, StructuredOutputParseError):
         return True
 
     # ValueError raised when structured output doesn't match the task's schema;

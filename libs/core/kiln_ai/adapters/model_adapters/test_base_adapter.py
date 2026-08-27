@@ -10,6 +10,7 @@ from litellm.types.utils import (
     StreamingChoices,
 )
 
+from kiln_ai.adapters.errors import StructuredOutputParseError
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
@@ -22,6 +23,7 @@ from kiln_ai.adapters.model_adapters.stream_events import (
     ToolCallEventType,
 )
 from kiln_ai.adapters.prompt_builders import BasePromptBuilder
+from kiln_ai.adapters.retry_classification import is_retryable_error
 from kiln_ai.datamodel import Task, TaskRun, Usage
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, ModelProviderName
 from kiln_ai.datamodel.project import Project
@@ -1579,6 +1581,24 @@ class TestFinalizeStream:
         adapter_stream = self._make_adapter_stream('{"val": 42}')
         run = adapter._finalize_stream(adapter_stream, "test input", None)
         assert isinstance(run, TaskRun)
+
+    def test_finalize_stream_structured_output_unparseable_json_is_retryable(
+        self, base_task
+    ):
+        # A streamed response that isn't JSON is the same one-off model slip as
+        # the non-streaming path, so it must carry the retryable type too.
+        schema = '{"type": "object", "properties": {"val": {"type": "integer"}}, "required": ["val"]}'
+        adapter = self._make_structured_adapter(base_task, schema)
+
+        provider = MagicMock()
+        provider.parser = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        adapter_stream = self._make_adapter_stream("Sure! Here you go.")
+        with pytest.raises(StructuredOutputParseError) as exc_info:
+            adapter._finalize_stream(adapter_stream, "test input", None)
+        assert is_retryable_error(exc_info.value) is True
 
     def test_finalize_stream_structured_output_not_dict_raises(self, base_task):
         schema = '{"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"]}'

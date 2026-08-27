@@ -1,7 +1,11 @@
 import json
 from typing import Tuple
 
-from kiln_ai.adapters.errors import KilnRunError, format_error_message
+from kiln_ai.adapters.errors import (
+    KilnRunError,
+    StructuredOutputParseError,
+    format_error_message,
+)
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, BaseAdapter
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.run_output import RunOutput
@@ -174,7 +178,12 @@ class MCPAdapter(BaseAdapter):
 
             if self.output_schema is not None:
                 if isinstance(run_output.output, str):
-                    parsed_output = parse_json_string(run_output.output)
+                    try:
+                        parsed_output = parse_json_string(run_output.output)
+                    except ValueError as e:
+                        # Re-type (message unchanged) so retries treat bad JSON
+                        # like a schema mismatch: a one-off model slip.
+                        raise StructuredOutputParseError(str(e)) from e
                 else:
                     parsed_output = run_output.output
                 if not isinstance(parsed_output, dict):
