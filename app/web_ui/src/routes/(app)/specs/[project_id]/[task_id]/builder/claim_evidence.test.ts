@@ -543,7 +543,9 @@ describe("resolve_citation_span", () => {
         to: "purchase",
       },
     )
-    expect(span).toEqual({ start: 17, end: 38 })
+    // from_end closes the `from` anchor alone, for callers that cannot place
+    // the whole span.
+    expect(span).toEqual({ start: 17, from_end: 24, end: 38 })
   })
 
   it("returns null when an anchor is missing", () => {
@@ -933,6 +935,8 @@ describe("map_output_span_to_trace — flattener block layout port", () => {
     expect("Our return window is 30 days.".slice(h!.start, h!.end)).toBe(
       "Our return window is 30 days",
     )
+    // Both anchors sit in this turn, so the whole span is marked.
+    expect(h!.from_anchor_only).toBe(false)
   })
 
   it("maps a span in a reasoning block", () => {
@@ -952,15 +956,80 @@ describe("map_output_span_to_trace — flattener block layout port", () => {
     expect(h!.kind).toBe("tool_calls")
   })
 
-  it("returns null when the span straddles two blocks", () => {
-    // from lands in the user turn, to in the reasoning turn — no single block
-    // contains the span, so there is no honest highlight.
+  it("marks the from anchor alone when the span crosses two turns", () => {
+    // from lands in the user turn, to in the reasoning turn. No block holds
+    // the whole span, so the anchor the model wrote is what gets marked.
     const span = resolve_citation_span(raw_output, {
       from: "What is the return",
       to: "think about",
     })
     expect(span).not.toBeNull()
-    expect(map_output_span_to_trace(trace, raw_output, span!)).toBeNull()
+    const h = map_output_span_to_trace(trace, raw_output, span!)
+    expect(h).not.toBeNull()
+    expect(h!.trace_index).toBe(0)
+    expect(h!.kind).toBe("content")
+    expect(h!.from_anchor_only).toBe(true)
+    expect("What is the return window?".slice(h!.start, h!.end)).toBe(
+      "What is the return",
+    )
+  })
+
+  it("returns null when the span starts in the flattener's tag chrome", () => {
+    // The recovery is scoped to the block holding `from`; an anchor that is
+    // part of the chrome belongs to no block and has nothing to mark.
+    const start = raw_output.indexOf("<assistant_reasoning_message>")
+    expect(start).toBeGreaterThan(0)
+    expect(
+      map_output_span_to_trace(trace, raw_output, {
+        start,
+        from_end: start + 5,
+        end: start + 5,
+      }),
+    ).toBeNull()
+  })
+
+  it("refuses a block whose text has drifted from raw_output", () => {
+    // The byte-identity guard: the recomputed layout says this block holds the
+    // span, but raw_output disagrees at that offset, so the port has drifted
+    // and no highlight is honest — recovery included.
+    const drifted = raw_output.replace(
+      "Let me think about policy.",
+      "Let me think about POLICY!",
+    )
+    const span = resolve_citation_span(drifted, {
+      from: "think about",
+      to: "POLICY",
+    })
+    expect(span).not.toBeNull()
+    expect(map_output_span_to_trace(trace, drifted, span!)).toBeNull()
+    // And with a cross-turn span, so the from-anchor path hits it too.
+    const crossing = resolve_citation_span(drifted, {
+      from: "think about",
+      to: "Our return window",
+    })
+    expect(crossing).not.toBeNull()
+    expect(map_output_span_to_trace(trace, drifted, crossing!)).toBeNull()
+  })
+
+  it("recovers a whitespace-drifted cross-turn citation", () => {
+    // The strict resolver misses anchors the model retyped with different
+    // whitespace; the tolerant one finds them, and the block mapper still
+    // adjudicates the result — here down to the from anchor.
+    const anchors = {
+      from: "Let me think\nabout policy",
+      to: "Our return window",
+    }
+    expect(resolve_citation_span(raw_output, anchors)).toBeNull()
+    const span = resolve_citation_span_whitespace_tolerant(raw_output, anchors)
+    expect(span).not.toBeNull()
+    const h = map_output_span_to_trace(trace, raw_output, span!)
+    expect(h).not.toBeNull()
+    expect(h!.trace_index).toBe(1)
+    expect(h!.kind).toBe("reasoning")
+    expect(h!.from_anchor_only).toBe(true)
+    expect("Let me think about policy.".slice(h!.start, h!.end)).toBe(
+      "Let me think about policy",
+    )
   })
 })
 

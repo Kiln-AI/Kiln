@@ -12,7 +12,10 @@ import { render, cleanup, fireEvent } from "@testing-library/svelte"
 import ChatTrace from "./chat_trace.svelte"
 import type { Trace as TraceType, TraceMessage } from "$lib/types"
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 
 // jsdom's <dialog> doesn't keep the `open` flag in sync with
 // showModal()/close() reliably (and didn't implement them at all before
@@ -89,6 +92,20 @@ function makeToolCall(
     type: "function" as const,
     function: { name, arguments: JSON.stringify(args) },
   }
+}
+
+// A highlight that only expands and scrolls to a bubble looks exactly like a
+// broken citation, so every such case has to log. Tests that reach one stub
+// console.warn (the warning is expected output, not suite noise) and read the
+// reason code back from the message.
+function stub_warn() {
+  return vi.spyOn(console, "warn").mockImplementation(() => {})
+}
+
+function warned_no_mark(warn: ReturnType<typeof stub_warn>): boolean {
+  return warn.mock.calls.some((call) =>
+    String(call[0]).includes("no_mark_drawn"),
+  )
 }
 
 describe("ChatTrace component — layout & roles", () => {
@@ -982,6 +999,7 @@ describe("ChatTrace component — citation highlight", () => {
     // isError envelope without an output field: the chat displays the
     // unwrapped error while citation offsets index the raw JSON — a mark in
     // either string would be misplaced, so the bubble stays the target.
+    const warn = stub_warn()
     const content = JSON.stringify({ isError: true, error: "boom" })
     const trace: TraceType = [
       assistantMsg(null, {
@@ -999,6 +1017,7 @@ describe("ChatTrace component — citation highlight", () => {
     const target = container.querySelector("[data-highlight-target]")
     expect(target).not.toBeNull()
     expect(target?.tagName).not.toBe("MARK")
+    expect(warned_no_mark(warn)).toBe(true)
   })
 
   it("marks an isError envelope that still carries a string output", () => {
@@ -1027,6 +1046,7 @@ describe("ChatTrace component — citation highlight", () => {
   it("marks a plain non-JSON tool result", () => {
     // The commonest shape after the Kiln envelope: the content IS the raw
     // text the citation offsets index.
+    const warn = stub_warn()
     const content = "HTTP 200\nbody: return window is 30 days"
     const trace: TraceType = [
       assistantMsg(null, {
@@ -1044,12 +1064,15 @@ describe("ChatTrace component — citation highlight", () => {
     })
     const mark = container.querySelector("mark")
     expect(mark?.textContent).toBe("30 days")
+    // A citation that really is marked has nothing to report.
+    expect(warned_no_mark(warn)).toBe(false)
   })
 
   it("suppresses the mark when the envelope's output is not a string", () => {
     // The display pretty-prints the object while the offsets could only
     // index a raw string — no mark can be honest, so the bubble stays the
     // target.
+    const warn = stub_warn()
     const content = JSON.stringify({ output: { rows: [1, 2, 3] } })
     const trace: TraceType = [
       assistantMsg(null, {
@@ -1067,12 +1090,14 @@ describe("ChatTrace component — citation highlight", () => {
     expect(
       container.querySelector("[data-highlight-target]")?.tagName,
     ).not.toBe("MARK")
+    expect(warned_no_mark(warn)).toBe(true)
   })
 
   it("falls back to the bubble when duplicate call ids point the display at a different message", () => {
     // Two tool messages share one call id (a retried call): the bubble
     // renders the LAST result, but the citation names the FIRST message's
     // trace index — slicing the displayed text would mark the wrong bytes.
+    const warn = stub_warn()
     const first = "attempt one: timed out"
     const second = "attempt two: return window is 30 days"
     const trace: TraceType = [
@@ -1093,6 +1118,27 @@ describe("ChatTrace component — citation highlight", () => {
     const target = container.querySelector("[data-highlight-target]")
     expect(target).not.toBeNull()
     expect(target?.tagName).not.toBe("MARK")
+    expect(warned_no_mark(warn)).toBe(true)
+  })
+
+  it("logs a tool-call citation, which lands on the whole bubble", () => {
+    // A tool CALL renders through a component rather than plain text, so the
+    // bubble only expands and scrolls — the one highlight kind that never
+    // marks, whatever the result beside it looks like.
+    const warn = stub_warn()
+    const trace: TraceType = [
+      assistantMsg(null, {
+        tool_calls: [makeToolCall("call_1", "load_skill")],
+      }),
+    ]
+    const { container } = render(ChatTrace, {
+      props: {
+        trace,
+        highlight: { trace_index: 0, kind: "tool_calls", start: 0, end: 9 },
+      },
+    })
+    expect(container.querySelector("mark")).toBeNull()
+    expect(warned_no_mark(warn)).toBe(true)
   })
 })
 
