@@ -4888,7 +4888,9 @@
      submit both name the action, because that is all this dialog does: it
      re-plans, it generates nothing. The guidance box starts EMPTY — a
      prefilled template invites editing a prompt the user didn't write, and a
-     blank steer costs the planner nothing. -->
+     blank steer costs the planner nothing. That empty box is a valid
+     submission, so the guidance field is marked optional: without it the
+     default "just re-plan" path would fail validation and never submit. -->
 <Dialog
   bind:this={new_plan_dialog}
   title="New Batch Plan"
@@ -4906,6 +4908,7 @@
       count_label="Trace Count"
       bind:guidance={plan_steer}
       guidance_id="plan_steer"
+      guidance_optional={true}
       warning_message={new_plan_warning}
     />
   </FormContainer>

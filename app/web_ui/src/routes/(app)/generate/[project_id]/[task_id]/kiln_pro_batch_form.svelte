@@ -25,6 +25,11 @@
   // Example text shown in the empty guidance box. Surfaces that start the box
   // empty (no template to reset to) use it to show the shape of a good answer.
   export let guidance_placeholder: string | null = null
+  // Whether an empty guidance box is a valid submission. Off by default so the
+  // surfaces that prefill guidance keep requiring one; surfaces where a blank
+  // steer is the intended default turn it on, which also renders the standard
+  // "Optional" badge so the empty box reads as deliberate rather than unfilled.
+  export let guidance_optional: boolean = false
 
   // Optional caution rendered after the rows, so in a dialog it sits directly
   // above the submit button the surrounding context owns. It is written flush
@@ -49,6 +54,7 @@
   description={`This allows you to control the dataset you are generating. For example, "10% of the dataset should be in Spanish."`}
   inputType="textarea"
   height="xl"
+  optional={guidance_optional}
   placeholder={guidance_placeholder}
   bind:value={guidance}
   inline_action={guidance_template && guidance !== guidance_template

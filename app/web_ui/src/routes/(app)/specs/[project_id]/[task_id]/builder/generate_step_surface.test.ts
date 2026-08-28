@@ -533,6 +533,13 @@ describe("New Batch Plan dialog", () => {
     expect(new_plan_dialog).not.toContain("guidance_template=")
   })
 
+  it("marks the guidance box optional so a blank steer submits", () => {
+    // The box starts empty on purpose, so the default "just re-plan" click
+    // sends nothing. Without this the shared field's required-validator
+    // rejects the empty box and the regenerate path can never run.
+    expect(normalize(new_plan_dialog)).toContain("guidance_optional={true}")
+  })
+
   it("leaves the guidance example to the shared field's own description", () => {
     // The shared Guidance field already carries an example; a second one
     // stacked under it reads as noise.

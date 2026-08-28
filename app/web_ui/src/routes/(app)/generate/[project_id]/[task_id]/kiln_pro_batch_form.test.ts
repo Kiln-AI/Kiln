@@ -1,7 +1,16 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from "vitest"
+import { describe, it, expect, vi, afterEach } from "vitest"
 import { render, cleanup, fireEvent } from "@testing-library/svelte"
+import { tick } from "svelte"
 import KilnProBatchForm from "./kiln_pro_batch_form.svelte"
+import KilnProBatchFormInFormContainer from "./__tests__/kiln_pro_batch_form_in_form_container.svelte"
+
+// FormContainer (used by the submit tests below) registers a navigation guard
+// on mount, which has no router behind it under jsdom.
+vi.mock("$app/navigation", () => ({
+  goto: vi.fn(),
+  beforeNavigate: vi.fn(),
+}))
 
 const GUIDANCE_DESCRIPTION = `This allows you to control the dataset you are generating. For example, "10% of the dataset should be in Spanish."`
 
@@ -18,6 +27,15 @@ function setup(props: Record<string, unknown> = {}) {
     "textarea",
   ) as HTMLTextAreaElement
   return { ...utils, count_input, guidance_box }
+}
+
+// The badge FormElement puts in a field's label row when it is optional.
+function optional_badge(container: HTMLElement): HTMLElement | null {
+  return (
+    Array.from(container.querySelectorAll("span")).find(
+      (s) => s.textContent?.trim() === "Optional",
+    ) ?? null
+  )
 }
 
 function reset_button(container: HTMLElement): HTMLButtonElement | null {
@@ -155,5 +173,77 @@ describe("KilnProBatchForm", () => {
 
     await fireEvent.input(guidance_box, { target: { value: "be terse" } })
     expect(bound_prop<string>(component, "guidance")).toBe("be terse")
+  })
+
+  it("treats guidance as required by default, with no Optional badge", () => {
+    // Pins the shipped /generate rendering: that page prefills the box, so a
+    // blank one there means the user cleared a prompt rather than opted out.
+    const { container } = setup()
+    expect(optional_badge(container)).toBeNull()
+  })
+
+  it("badges guidance Optional when guidance_optional is set", () => {
+    // The empty box has no placeholder of its own, so this badge is the only
+    // cue that leaving it blank is a valid answer.
+    const { container } = setup({ guidance_optional: true })
+    expect(optional_badge(container)).not.toBeNull()
+  })
+})
+
+describe("KilnProBatchForm inside a form", () => {
+  function submit_setup(props: Record<string, unknown> = {}) {
+    const on_submit = vi.fn()
+    const utils = render(KilnProBatchFormInFormContainer, {
+      props: { count: 50, guidance: "", ...props },
+    })
+    utils.component.$on("submit", on_submit)
+    const submit = utils.container.querySelector(
+      'button[type="submit"]',
+    ) as HTMLButtonElement
+    const guidance_box = utils.container.querySelector(
+      "textarea",
+    ) as HTMLTextAreaElement
+    return { ...utils, on_submit, submit, guidance_box }
+  }
+
+  // Leaves the guidance box empty the way a user does: type, then clear. This
+  // is what makes FormElement mark the field, which is the state FormContainer
+  // reads when it decides whether the submit may go through.
+  async function empty_the_box(guidance_box: HTMLTextAreaElement) {
+    await fireEvent.input(guidance_box, { target: { value: "x" } })
+    await fireEvent.input(guidance_box, { target: { value: "" } })
+    await tick()
+  }
+
+  // FormContainer validates asynchronously and flushes the DOM before it
+  // decides, so let the whole chain settle before asserting.
+  async function click_submit(button: HTMLButtonElement) {
+    await fireEvent.click(button)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await tick()
+  }
+
+  it("blocks a submit on an empty guidance box by default", async () => {
+    const { container, on_submit, submit, guidance_box } = submit_setup()
+    await empty_the_box(guidance_box)
+    expect(guidance_box.className).toContain("textarea-error")
+    await click_submit(submit)
+    expect(on_submit).not.toHaveBeenCalled()
+    expect(container.textContent).toContain("Please correct the errors above")
+  })
+
+  it("submits an empty guidance box when guidance_optional is set", async () => {
+    // The regression this guards: a surface whose guidance box is empty by
+    // design could never submit, because the shared field refused the blank.
+    const { container, on_submit, submit, guidance_box } = submit_setup({
+      guidance_optional: true,
+    })
+    await empty_the_box(guidance_box)
+    expect(guidance_box.className).not.toContain("textarea-error")
+    await click_submit(submit)
+    expect(on_submit).toHaveBeenCalledTimes(1)
+    expect(container.textContent).not.toContain(
+      "Please correct the errors above",
+    )
   })
 })
