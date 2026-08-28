@@ -303,8 +303,11 @@ export function driven_data_confirm(
 // Regenerating the plan ALWAYS confirms — a plan alone costs minutes to
 // make. Three-tier wording: what you lose scales the message — plan only /
 // plan + row deletions / driven results. The first two tiers are SDG's
-// exact formulas. plan_noun is the arm's word for the plan's rows —
-// "scenarios" (multi-turn) or "planned inputs" (single-turn).
+// exact formulas, and take plan_noun — the arm's word for the plan's rows,
+// "scenarios" (multi-turn) or "planned inputs" (single-turn). The driven
+// tier names the ACTION instead: SDG's formula puts the subject in front of
+// a verb ("... will discard them"), where a plural row noun reads as broken
+// grammar.
 export function new_plan_confirm(state: {
   has_driven_results: boolean
   survivors: number
@@ -315,7 +318,7 @@ export function new_plan_confirm(state: {
   const plan_noun = state.plan_noun ?? "scenarios"
   if (state.has_driven_results) {
     return driven_data_confirm(
-      `New ${plan_noun}`,
+      "A new batch plan",
       state.survivors,
       state.include_review_progress,
     )
@@ -323,6 +326,24 @@ export function new_plan_confirm(state: {
   return state.plan_edited
     ? `Are you sure you want to discard the current ${plan_noun}, including the ones you removed? This cannot be undone.`
     : `Are you sure you want to discard the current ${plan_noun}? This cannot be undone.`
+}
+
+// What the drive is about to spend, shown on the button that spends it. The
+// multi-turn arm bills per TURN (every case is a whole conversation), so it
+// states the multiplication rather than the case count alone; the single-turn
+// arm runs the task once per input and counts those.
+export function drive_cost_warning(args: {
+  is_multi_turn: boolean
+  count: number
+  turns_per_case: number
+}): string {
+  if (!args.is_multi_turn) {
+    return `This will run your task on ${args.count} test input${
+      args.count === 1 ? "" : "s"
+    } and may use considerable credits.`
+  }
+  const total_turns = args.count * args.turns_per_case
+  return `This will run ${total_turns} model turns (${args.count} x ${args.turns_per_case}) and may use considerable credits.`
 }
 
 // ── The preparing-review gate ────────────────────────────────────────────

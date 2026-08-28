@@ -61,7 +61,11 @@
   // Step 4 plan approval reuses the /generate batch-plan components — one
   // plan-review surface across the app rather than a builder-local fork.
   import KilnProBatchPlan from "../../../../generate/[project_id]/[task_id]/kiln_pro_batch_plan.svelte"
+  // The New Batch Plan dialog reuses /generate's batch form rows (count
+  // stepper + guidance box) so both flows ask for a batch the same way.
+  import KilnProBatchForm from "../../../../generate/[project_id]/[task_id]/kiln_pro_batch_form.svelte"
   import {
+    compose_plan_guidance,
     grounding_data_guide,
     multiturn_plan_guidance,
     single_turn_plan_guidance,
@@ -108,6 +112,7 @@
   import {
     compact_batch_slots,
     dominant_failure_message,
+    drive_cost_warning,
     drive_lanes_unchanged,
     drive_stop_banner,
     driven_data_confirm,
@@ -981,11 +986,18 @@
   // always free.
   let reviewed_identity: string | null = null
 
-  // Number of cases in one batch (conversations to drive, or single-turn
-  // inputs to run) — matches NUM_CASES_MAX in
-  // libs/core/kiln_ai/synthetic_user/runner.py and the single-turn
-  // pipeline's inputs cap.
+  // Default size of one batch (conversations to drive, or single-turn inputs
+  // to run) — what the first plan asks for before the user picks a size in
+  // the New Batch Plan dialog. The dialog's ceiling is the server's cap
+  // (NUM_CASES_MAX in libs/core/kiln_ai/synthetic_user/runner.py, mirrored by
+  // the batch-plan and pipeline routes), not this number.
   const NUM_CASES = 40
+  // The largest batch the server will plan or drive. Mirrors NUM_CASES_MAX in
+  // libs/core/kiln_ai/synthetic_user/runner.py, which the batch-plan and
+  // pipeline routes enforce — asking for more is rejected before anything
+  // runs, so the stepper stops here rather than letting the user compose a
+  // request that can only fail.
+  const NUM_CASES_MAX = 200
   // Batch plan for Step 4 — one prompt per unit of work (a conversation
   // scenario or a single-turn test input), drafted by the copilot batch
   // planner and approved (with edits/deletions) by the user before anything
@@ -1014,9 +1026,16 @@
   // was drafted under. Null when the task has no runs — grounding is
   // best-effort, never a gate.
   let grounding_sample: TaskSampleExample | null = null
-  // Approved plan length drives the batch size; NUM_CASES is the requested
-  // plan size before any deletions.
-  $: planned_total = batch_plan?.prompts.length ?? NUM_CASES
+  // Approved plan length drives the batch size; before a plan exists it is
+  // the size that was requested, which the user may have changed.
+  $: planned_total = batch_plan?.prompts.length ?? eval_input_count
+  // What the approved plan will cost to run, shown in the settings dialog
+  // directly above the button that spends it.
+  $: drive_cost_message = drive_cost_warning({
+    is_multi_turn,
+    count: planned_total,
+    turns_per_case: drive_turns_per_case,
+  })
   // Which loading stage Step 4 is in — drives the progress screen only.
   // The interactive plan-approval view is DERIVED (show_plan_approval below),
   // not a phase, so no code path can strand it behind a stale flag.
@@ -1041,10 +1060,10 @@
     !preparing_review &&
     claims_gate_error === null
   // Eager lane resolution when the plan surface becomes visible, so the
-  // primary run starts instantly and the models link opens a prefilled
-  // dialog. Fire-and-forget: prepopulate_lanes only fills null lanes (never
-  // overwrites a draft/user choice) and its own guard makes the drive's
-  // later call a no-op, so this never starts a drive nor races the run flow.
+  // settings dialog opens on filled dropdowns. Fire-and-forget:
+  // prepopulate_lanes only fills null lanes (never overwrites a draft/user
+  // choice) and memoizes the pass, so the dialog's later call awaits this
+  // one rather than starting a second — and neither starts a drive.
   $: if (show_plan_approval && !lanes_prepopulated) {
     void prepopulate_lanes()
   }
@@ -1201,14 +1220,19 @@
   //      the PipelineEvent frames drive progress + the review results.
   //
   const TURNS_PER_CASE = 5
+  // The turn count one drive spends per conversation. EVERY reader goes
+  // through this alias — the cost warning, the drive request, the progress
+  // denominator, and the saved drive stamp — so what the user is quoted, what
+  // runs, and what is persisted can never disagree. Currently fixed; this is
+  // the single line that changes when the user gets to choose the count.
+  $: drive_turns_per_case = TURNS_PER_CASE
 
-  // ── Model lanes (SDG's Generation Settings pattern). The primary button
-  // runs immediately with these lanes resolved to their defaults; the
-  // "Advanced" dialog lets the user pick them first — the user simulator
-  // (multi-turn), the input generator (single-turn), and the judge — and
-  // its submit starts the run the same way. The committed lanes ride the
-  // persisted draft; the builder has no hardcoded model or provider
-  // anywhere.
+  // ── Model lanes (SDG's Generation Settings pattern). The Generation
+  // Settings dialog is the drive's only entrance: it shows the lanes the
+  // run will spend on — the user simulator (multi-turn), the input
+  // generator (single-turn), and the judge — resolved to their defaults,
+  // and its submit starts the run. The committed lanes ride the persisted
+  // draft; the builder has no hardcoded model or provider anywhere.
   let su_driver: ModelChoice | null = null
   let input_generator: ModelChoice | null = null
   let judge_model: ModelChoice | null = null
@@ -1231,7 +1255,30 @@
   let drive_settings_error: KilnError | null = null
   // One pre-population pass per mount; lanes the draft restored (or the
   // user committed) are never overwritten — only null lanes are filled.
-  let lanes_prepopulated = false
+  // Held as the pass's PROMISE, not a done flag: the plan surface starts the
+  // pass eagerly, so a later caller has to await the one in flight rather
+  // than return early while the lanes are still null.
+  let lanes_prepopulated: Promise<void> | null = null
+
+  // ── New Batch Plan dialog. Replaces the native confirm on the regenerate
+  // button: the same warning now rides a form that also asks how many traces
+  // to plan and what to steer the planner toward.
+  let new_plan_dialog: Dialog | null = null
+  let new_plan_submitting = false
+  // How many traces the next plan asks for, and the count the last plan was
+  // REQUESTED with. Seeded from the plan on screen each time the dialog opens,
+  // so "regenerate" defaults to the size the user is already looking at; with
+  // no plan on screen (the last attempt failed) it keeps what was asked for,
+  // so the dialog and Retry agree on the size.
+  let eval_input_count = NUM_CASES
+  // The steer the NEXT plan request will send, appended to the arm's base
+  // guidance. Committed from the dialog's box on submit and cleared only once
+  // a plan arrives, so a failed attempt's Retry re-sends what was asked for.
+  let pending_plan_steer = ""
+  // The dialog's own guidance box. A draft until submit: closing the dialog
+  // without submitting resets it to the committed steer, so a typed-then-
+  // cancelled steer never rides a later request.
+  let plan_steer = ""
 
   // Judge lane from the task's LAST SAVED eval — the replay-what-worked
   // tier of pre-population. The judge lives on the eval's current config
@@ -1289,9 +1336,12 @@
   // Recommended badges). A lane with no usable model anywhere stays null:
   // the dropdown's empty state names the way out and submit refuses to
   // start.
-  async function prepopulate_lanes() {
-    if (lanes_prepopulated) return
-    lanes_prepopulated = true
+  function prepopulate_lanes(): Promise<void> {
+    if (!lanes_prepopulated) lanes_prepopulated = fill_null_lanes()
+    return lanes_prepopulated
+  }
+
+  async function fill_null_lanes() {
     const su_needed = is_multi_turn && su_driver === null
     const input_gen_needed = !is_multi_turn && input_generator === null
     if (!su_needed && !input_gen_needed && judge_model !== null) return
@@ -1333,7 +1383,14 @@
   async function open_drive_settings() {
     drive_settings_error = null
     drive_settings_dialog?.show()
-    await prepopulate_lanes()
+    // Await the pre-population pass (usually already in flight from the plan
+    // surface) so the reseed below reads resolved lanes: the dialog shows
+    // immediately and its dropdowns fill when the lanes land.
+    try {
+      await prepopulate_lanes()
+    } catch (e) {
+      console.warn("Could not resolve the default models:", e)
+    }
     // Reseed the dropdowns from the committed lanes (also discards any
     // uncommitted picks from a previously cancelled dialog).
     su_model_combined = su_driver
@@ -1345,22 +1402,6 @@
     judge_model_combined = judge_model
       ? `${judge_model.model_provider}/${judge_model.model_name}`
       : judge_model_combined
-  }
-
-  // Run-immediately (the plan-approval primary button): resolve the default
-  // model lanes (draft → saved-eval judge → registry suggestion) and start
-  // the drive without a settings detour — the common path is "just make my
-  // data". If a lane can't be resolved (no usable model anywhere), the
-  // drive opens the dialog instead of running — fail-loud recovery, never a
-  // silent substitution of some other model. "Advanced" opens the same
-  // dialog up front for users who want to pick the models before spending.
-  async function start_drive_with_defaults() {
-    await prepopulate_lanes()
-    if (is_multi_turn) {
-      on_drive_multi_turn()
-    } else {
-      void on_drive_single_turn()
-    }
   }
 
   // The authored multi-turn judge prompt, cached against BOTH authoring
@@ -1620,10 +1661,16 @@
         {
           params: { path: { project_id, task_id } },
           body: {
-            guidance: is_multi_turn
-              ? multiturn_plan_guidance(spec_text())
-              : single_turn_plan_guidance(spec_text()),
-            count: NUM_CASES,
+            // The arm's base guidance carries the balance policy; the user's
+            // steer (when they typed one) is appended to it, never replaces
+            // it — see compose_plan_guidance.
+            guidance: compose_plan_guidance(
+              is_multi_turn
+                ? multiturn_plan_guidance(spec_text())
+                : single_turn_plan_guidance(spec_text()),
+              pending_plan_steer,
+            ),
+            count: eval_input_count,
             // The grounding sample rides the planner's data-guide param
             // (multi-turn plans scenarios, not inputs — no guide there).
             data_guide: is_multi_turn
@@ -1642,12 +1689,17 @@
       const prompts = data.prompts
         .map((p) => p.trim())
         .filter(Boolean)
-        .slice(0, NUM_CASES)
+        .slice(0, eval_input_count)
       if (prompts.length === 0) {
         generation_error = `The planner returned no usable ${plan_noun}. Retry.`
         return
       }
       batch_plan = { prompts, summary: data.summary }
+      // A plan landed, so the steer it was drafted under is spent. Every
+      // earlier return in this function leaves it in place, which is what
+      // makes Retry re-send the steer the user asked for.
+      pending_plan_steer = ""
+      plan_steer = ""
     } catch (e) {
       if (is_abort_error(e)) return
       generation_error = e instanceof Error ? e.message : "Planning failed."
@@ -1718,18 +1770,41 @@
     batch_plan_edited = true
   }
 
-  // New Batch Plan ALWAYS confirms — a plan alone costs minutes to make
-  // (SDG's New Batch Plan routes through its destructive-back confirm too).
-  function on_new_plan_with_confirm() {
-    const msg = new_plan_confirm({
-      has_driven_results,
-      survivors: trace_claims.length,
-      include_review_progress: drive_stop === null,
-      plan_edited: batch_plan_edited,
-      plan_noun,
-    })
-    if (!confirm(msg)) return
-    on_plan_batch()
+  // New Batch Plan ALWAYS warns — a plan alone costs minutes to make. The
+  // warning rides inside the dialog (above its submit) rather than a native
+  // confirm, so the same click that accepts the loss also chooses the size
+  // and steer of what replaces it.
+  $: new_plan_warning = new_plan_confirm({
+    has_driven_results,
+    survivors: trace_claims.length,
+    include_review_progress: drive_stop === null,
+    plan_edited: batch_plan_edited,
+    plan_noun: "planned traces",
+  })
+
+  function open_new_plan_dialog() {
+    // Default to the size of the plan on screen. With no plan (the last
+    // attempt failed) eval_input_count still holds the size that attempt
+    // asked for, so the dialog and Retry never disagree about it.
+    if (batch_plan) eval_input_count = batch_plan.prompts.length
+    new_plan_dialog?.show()
+  }
+
+  // Any close that isn't a submit — Esc, the X, the backdrop — discards the
+  // typed steer, so a steer the user abandoned can't ride the next request.
+  // A submitted one has already moved to pending_plan_steer, which this
+  // restores verbatim.
+  function discard_plan_steer_draft() {
+    plan_steer = pending_plan_steer
+  }
+
+  function submit_new_plan() {
+    new_plan_submitting = false
+    // Commit the typed steer: from here it survives failed attempts (Retry
+    // re-sends it) until a plan actually arrives.
+    pending_plan_steer = plan_steer
+    new_plan_dialog?.close()
+    void on_plan_batch()
   }
 
   // Step 4 (multi-turn) part 2 — drive from the approved plan. The approved
@@ -1790,16 +1865,16 @@
   }
 
   async function on_drive_multi_turn() {
-    // The plan surface's primary button calls this directly (no FormContainer
-    // submit debounce anymore), so guard reentry: a double-click during lane
-    // resolution must not start a second concurrent pipeline.
+    // Only the Generation Settings dialog's submit starts a drive, and it is
+    // a plain click handler (no FormContainer submit debounce), so guard
+    // reentry: a double-click must not start a second concurrent pipeline.
     if (generation_loading) return
     if (!batch_plan || batch_plan.prompts.length === 0) {
       generation_error = "No approved scenarios. Draft scenarios first."
       return
     }
-    // Lanes uncommitted (internal re-drive path reached before any
-    // Drive Settings submit) — ask, don't guess.
+    // Backstop for an unset lane — ask, don't guess: send the user back to
+    // the dialog rather than drive on a null model.
     const chosen_su = su_driver
     const chosen_judge_model = judge_model
     if (!chosen_su || !chosen_judge_model) {
@@ -2023,7 +2098,7 @@
         },
         body: JSON.stringify({
           cases: drive_plan.items,
-          turns: TURNS_PER_CASE,
+          turns: drive_turns_per_case,
           target_run_config_id,
           su_driver: chosen_su,
           // A top-off drives into the existing batch's tag; null lets the
@@ -2368,16 +2443,16 @@
   // single_turn_pipeline stream runs [run → judge] per input — the task
   // executes once per input with tools live on the user's keys.
   async function on_drive_single_turn() {
-    // The plan surface's primary button calls this directly, so guard
-    // reentry: a double-click during lane resolution must not start a
+    // Only the Generation Settings dialog's submit starts a run, and it is a
+    // plain click handler, so guard reentry: a double-click must not start a
     // second concurrent pipeline.
     if (generation_loading) return
     if (!batch_plan || batch_plan.prompts.length === 0) {
       generation_error = "No approved inputs. Draft a plan first."
       return
     }
-    // Lanes uncommitted (internal re-run path reached before any settings
-    // submit) — ask, don't guess.
+    // Backstop for an unset lane — ask, don't guess: send the user back to
+    // the dialog rather than run on a null model.
     const chosen_input_gen = input_generator
     const chosen_judge_model = judge_model
     if (!chosen_input_gen || !chosen_judge_model) {
@@ -2789,21 +2864,22 @@
   }
 
   function on_continue_from_generate_step() {
-    // No plan → plan; otherwise (re)drive the approved plan. A re-drive
-    // passes the previous batch tags so their runs are deleted server-side.
+    // No plan → plan; otherwise open the settings dialog, whose submit is the
+    // re-drive. Retrying a failed drive is still a drive, so it goes through
+    // the single entrance: the same lanes and the same cost warning the first
+    // attempt passed. (A re-drive passes the previous batch tags so their runs
+    // are deleted server-side.)
     if (batch_plan === null) {
       on_plan_batch()
-    } else if (is_multi_turn) {
-      on_drive_multi_turn()
     } else {
-      void on_drive_single_turn()
+      void open_drive_settings()
     }
   }
 
   // Advance from the Refine step (3) into Generate (4). Both arms plan
   // immediately (planning needs no model choice); an existing plan renders
-  // for re-approval instead. Model choices are confirmed on the plan
-  // screen — run-immediately with defaults, or the settings link.
+  // for re-approval instead. Model choices are confirmed one step later, in
+  // the Generation Settings dialog the plan's primary button opens.
   function on_advance_to_generate() {
     goto_step("generate")
     if (batch_plan === null) on_plan_batch()
@@ -2937,7 +3013,7 @@
         ? `${su_lane.model_provider}/${su_lane.model_name}`
         : null,
       judge,
-      turns: su_lane ? TURNS_PER_CASE : null,
+      turns: su_lane ? drive_turns_per_case : null,
       batch_tag: multi_turn_batch_tag ?? single_turn_batch_tag,
     }
     try {
@@ -3499,12 +3575,10 @@
       return
     }
     if (trace_claims.length === 0) {
-      // Nothing to show (a Back aborted the pipeline) — re-drive.
-      if (is_multi_turn) {
-        on_drive_multi_turn()
-      } else {
-        void on_drive_single_turn()
-      }
+      // Nothing to show (a Back aborted the pipeline) — re-drive through the
+      // settings dialog, the drive's single entrance, so this run states its
+      // lanes and its cost like every other.
+      void open_drive_settings()
       return
     }
     // Claims are lazy on both arms — gate the advance on the selected
@@ -3628,7 +3702,7 @@
                 drive_config: {
                   model_name: saved_su_driver.model_name,
                   model_provider: saved_su_driver.model_provider,
-                  turns: TURNS_PER_CASE,
+                  turns: drive_turns_per_case,
                 },
               },
             },
@@ -3961,7 +4035,7 @@
   // for the smooth turn-level progress (cases run in parallel waves, so this
   // climbs steadily where the case count would sit still then jump). Uses
   // the DRIVEN case count: salvage can drive fewer cases than the plan has.
-  $: multi_turn_total_turns = pipeline_total_cases * TURNS_PER_CASE
+  $: multi_turn_total_turns = pipeline_total_cases * drive_turns_per_case
 
   // Step 4 loading-stage title + caption for the pre-pipeline stages (the
   // pipeline stage has its own progress screen below). One phase machine,
@@ -3981,8 +4055,8 @@
   $: generate_animation_description =
     generation_phase === "planning"
       ? is_multi_turn
-        ? `Drafting a balanced set of ${NUM_CASES} scenarios for your eval.`
-        : `Drafting a balanced plan of ${NUM_CASES} test inputs for your eval.`
+        ? `Drafting a balanced set of ${eval_input_count} scenarios for your eval.`
+        : `Drafting a balanced plan of ${eval_input_count} test inputs for your eval.`
       : generation_phase === "authoring_judge"
         ? "Authoring a judge rubric tailored to your eval."
         : generation_phase === "preflight"
@@ -4234,7 +4308,7 @@
           {/if}
           {#if generation_loading && !pipeline_running}
             <!-- Plan, SU generation, and input minting are each one long
-                 request/job (minutes at a 40-case batch) — the standard
+                 request/job (minutes at a full batch) — the standard
                  animation warning line sets the expectation, matching every
                  other long wait in the app. Multi-turn is building
                  conversations, so it uses the chat-bubble animation;
@@ -4369,7 +4443,10 @@
             <div class="text-center py-4 flex justify-center gap-2">
               {#if batch_plan !== null}
                 <!-- Drive failed after approval — let the user rework the plan
-                     instead of only retrying it verbatim. -->
+                     instead of only retrying it verbatim. Retry itself opens
+                     Generation Settings (the drive's single entrance) with the
+                     committed lanes and the cost of this batch, so the models
+                     can be changed on the way back in. -->
                 <button
                   class="btn btn-outline"
                   on:click={() => {
@@ -4413,49 +4490,27 @@
               </div>
             {/if}
             <!-- Plan approval: the run starts only after the user approves
-                 the plan — the shared /generate batch-plan surface,
-                 relabelled per arm (scenarios / planned test inputs). The
-                 primary button runs immediately with the default model
-                 lanes; the settings link (slotted above the button) opens
-                 the same settings dialog to pick them first. -->
+                 the plan — the shared /generate batch-plan surface, on its
+                 own default header and regenerate labels so the two flows
+                 read alike. Only the subheader differs per arm, because the
+                 arms do different things to each item. The primary button
+                 opens Generation Settings rather than driving: that dialog
+                 is the single entrance, so every run passes its lanes and
+                 its cost warning. -->
             <KilnProBatchPlan
               plan={batch_plan}
               summary_out_of_sync={batch_plan_edited}
-              header_label={is_multi_turn ? "Scenarios" : "Planned Test Inputs"}
               subheader={is_multi_turn
-                ? "Each scenario becomes one eval input. Edit any before starting."
-                : "Each plan line becomes one test input your task runs on. Edit any before starting."}
-              regenerate_label={is_multi_turn ? "New Scenarios" : "New Plan"}
-              on_generate_inputs={start_drive_with_defaults}
-              on_regenerate={on_new_plan_with_confirm}
+                ? "Kiln will run each item as a test conversation with your agent. Remove any you don't want before starting."
+                : "Kiln will run your task on each item. Remove any you don't want before starting."}
+              on_generate_inputs={open_drive_settings}
+              on_regenerate={open_new_plan_dialog}
               on_delete_prompt={on_delete_plan_prompt}
               hide_generate_button={has_data_accepted}
               generate_button_outline={has_driven_results &&
                 drive_stop !== null}
-              generate_button_label={is_multi_turn
-                ? `Create ${batch_plan.prompts.length} Eval Input${
-                    batch_plan.prompts.length === 1 ? "" : "s"
-                  }`
-                : `Run Task on ${batch_plan.prompts.length} Input${
-                    batch_plan.prompts.length === 1 ? "" : "s"
-                  }`}
-            >
-              <svelte:fragment slot="advanced">
-                {#if !has_data_accepted}
-                  <!-- v1 wizard idiom for a secondary action by the primary
-                       (see refine_spec's "or Save Refined Eval…" link). -->
-                  <div class="flex flex-row gap-1 items-baseline">
-                    <span class="text-sm text-gray-500">or</span>
-                    <button
-                      class="link underline text-sm text-gray-500"
-                      on:click={open_drive_settings}
-                    >
-                      choose which models to use
-                    </button>
-                  </div>
-                {/if}
-              </svelte:fragment>
-            </KilnProBatchPlan>
+              generate_button_label={`Generate Traces (${batch_plan.prompts.length})`}
+            />
             <!-- Wizard chrome stays outside the shared component (it has no
                  slots): once this exact plan has driven results, offer the
                  way forward to review. Stepping back is the browser's Back. -->
@@ -4755,22 +4810,50 @@
   </AppPage>
 </div>
 
-<!-- Drive settings dialog (SDG's Generation Settings pattern): the primary
-     button runs immediately with the default lanes, so this opens only from
-     the settings link (pre-run model choice) or as fail-loud recovery when
-     a default lane can't be resolved. Its submit starts the run either way.
-     Model-only lanes — the user-simulator, input generator, and judge are
-     fixed-prompt internal roles, so no run-config extras. Lane filters: the
-     simulator and input generator want a data-gen model (SDG's settings);
-     judge needs structured output (v1 judge form's settings). With no
-     usable model, the dropdowns' own empty state links to provider settings
-     (same-tab, so the models list is fresh when the user returns) and
-     submit refuses to start. -->
-<Dialog bind:this={drive_settings_dialog} title="Advanced Settings">
+<!-- The New Batch Plan dialog: /generate's batch form rows (count stepper +
+     guidance box) wrapped in a form this page owns, so the destructive
+     warning, the size and the steer are all settled by one click. Title and
+     submit both name the action, because that is all this dialog does: it
+     re-plans, it generates nothing. The guidance box starts EMPTY — a
+     prefilled template invites editing a prompt the user didn't write, and a
+     blank steer costs the planner nothing. -->
+<Dialog
+  bind:this={new_plan_dialog}
+  title="New Batch Plan"
+  on:close={discard_plan_steer_draft}
+>
   <FormContainer
-    submit_label={is_multi_turn
-      ? `Create ${planned_total} Eval Input${planned_total === 1 ? "" : "s"}`
-      : `Run Task on ${planned_total} Input${planned_total === 1 ? "" : "s"}`}
+    submit_label="New Batch Plan"
+    bind:submitting={new_plan_submitting}
+    on:submit={submit_new_plan}
+    keyboard_submit={false}
+  >
+    <KilnProBatchForm
+      bind:count={eval_input_count}
+      count_max={NUM_CASES_MAX}
+      count_label="Trace Count"
+      bind:guidance={plan_steer}
+      guidance_id="plan_steer"
+      warning_message={new_plan_warning}
+    />
+  </FormContainer>
+</Dialog>
+
+<!-- Generation Settings: the drive's single entrance. Every run passes
+     through here, which is what puts the lanes it will spend on and the
+     cost of spending them in front of the one button that starts it.
+     Model-only lanes — the user-simulator, input generator, and judge are
+     fixed-prompt internal roles, so no run-config extras. Each lane's
+     explanation is pinned to its label as a tooltip (the RunConfigComponent
+     idiom) rather than set below it, so three lanes and a warning still read
+     as a short form. Lane filters: the simulator and input generator want a
+     data-gen model (SDG's settings); judge needs structured output (v1 judge
+     form's settings). With no usable model, the dropdowns' own empty state
+     links to provider settings (same-tab, so the models list is fresh when
+     the user returns) and submit refuses to start. -->
+<Dialog bind:this={drive_settings_dialog} title="Generation Settings">
+  <FormContainer
+    submit_label={`Generate Traces (${planned_total})`}
     bind:submitting={drive_settings_submitting}
     error={drive_settings_error}
     on:submit={submit_drive_settings}
@@ -4778,8 +4861,8 @@
   >
     {#if is_multi_turn}
       <AvailableModelsDropdown
-        label="Model that plays the user"
-        description="Plays your agent's user in each test conversation."
+        label="Model that writes the user's messages"
+        info_description="Stands in for a real user in each test conversation. Your agent replies to it."
         bind:model={su_model_combined}
         bind:model_name={su_model_id}
         bind:provider_name={su_provider_id}
@@ -4791,7 +4874,7 @@
     {:else}
       <AvailableModelsDropdown
         label="Model that writes the test inputs"
-        description="Writes one test input from each approved plan line; your task then runs on them."
+        info_description="Writes one test input from each approved plan line; your task then runs on them."
         bind:model={input_gen_model_combined}
         bind:model_name={input_gen_model_id}
         bind:provider_name={input_gen_provider_id}
@@ -4802,8 +4885,12 @@
       />
     {/if}
     <AvailableModelsDropdown
-      label="Model that judges the results"
-      description={`Reviews each ${judged_noun} against your eval's criteria and decides pass or fail.`}
+      label={is_multi_turn
+        ? "Model that grades each conversation"
+        : "Model that grades each result"}
+      info_description={is_multi_turn
+        ? "Checks each conversation against your eval's criteria, then marks pass or fail."
+        : "Checks each result against your eval's criteria, then marks pass or fail."}
       bind:model={judge_model_combined}
       bind:model_name={judge_model_id}
       bind:provider_name={judge_provider_id}
@@ -4811,6 +4898,13 @@
         requires_structured_output: true,
         suggested_mode: "evals",
       }}
+    />
+    <!-- What the run costs, last child of the form so it sits directly above
+         the submit row (run_eval's placement). -->
+    <Warning
+      warning_color="warning"
+      warning_message={drive_cost_message}
+      tight={true}
     />
   </FormContainer>
 </Dialog>

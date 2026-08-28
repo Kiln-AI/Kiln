@@ -30,6 +30,7 @@ from kiln_ai.datamodel.run_config import (
 from kiln_ai.synthetic_user.runner import NUM_CASES_MAX
 from kiln_ai.utils.async_job_runner import RETRY_BACKOFF_FACTOR
 from kiln_server.custom_errors import connect_custom_errors
+from pydantic import ValidationError
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.build_claim_evidence_output import (
     BuildClaimEvidenceOutput,
@@ -54,6 +55,7 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
 from app.desktop.studio_server.eval_builder_api import (
     JUDGE_MAX_RETRIES,
     JUDGE_RETRY_DELAY_SECONDS,
+    SingleTurnPipelineRequest,
     connect_eval_builder_api,
     run_judge_with_retry,
 )
@@ -1456,6 +1458,14 @@ class TestMultiTurnPipeline:
         resp = client.post(PIPELINE_URL, json=pipeline_request)
         assert resp.status_code == 422
 
+    def test_accepts_batch_at_the_cap(self, client, pipeline_request, pipeline_seams):
+        """The cap is inclusive — a full-size batch clears validation and opens
+        the stream. Pairs with the over-cap test to pin both sides."""
+        pipeline_request["cases"] = [_pipeline_case(i) for i in range(NUM_CASES_MAX)]
+        resp = client.post(PIPELINE_URL, json=pipeline_request)
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+
     def test_rejects_retired_spec_name_field(
         self, client, pipeline_request, pipeline_seams
     ):
@@ -1955,6 +1965,18 @@ class TestJudgeTraces:
         ]
         resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
         assert resp.status_code == 422
+
+    def test_accepts_batch_at_the_cap(
+        self, client, judge_traces_request, judge_traces_seams
+    ):
+        """The cap is inclusive — a full-size re-judge clears validation and
+        opens the stream. Pairs with the over-cap test to pin both sides."""
+        judge_traces_request["leaf_run_ids"] = [
+            f"leaf-{i}" for i in range(NUM_CASES_MAX)
+        ]
+        resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
 
     def test_rejects_retired_spec_name_field(
         self, client, judge_traces_request, judge_traces_seams
@@ -2595,6 +2617,21 @@ class TestSingleTurnPipeline:
 
         unknown_field = {**single_turn_request, "cases": []}
         assert client.post(SINGLE_TURN_URL, json=unknown_field).status_code == 422
+
+    def test_inputs_bound_is_the_shared_batch_budget(self, single_turn_request):
+        """Both sides of the cap, checked on the model: at the cap the request
+        is valid, one over is not. Posting the at-cap body would drive a full
+        mocked batch for no added signal."""
+        at_cap = {
+            **single_turn_request,
+            "inputs": [f"input {i}" for i in range(NUM_CASES_MAX)],
+        }
+        parsed = SingleTurnPipelineRequest.model_validate(at_cap)
+        assert len(parsed.inputs) == NUM_CASES_MAX
+
+        over_cap = {**single_turn_request, "inputs": at_cap["inputs"] + ["one more"]}
+        with pytest.raises(ValidationError):
+            SingleTurnPipelineRequest.model_validate(over_cap)
 
 
 # ───────────────────────── preflight_model ─────────────────────────

@@ -22,6 +22,9 @@
   // The text the guidance box started from. When set and the user has edited
   // away from it, a Reset link offers to put it back.
   export let guidance_template: string | null = null
+  // Example text shown in the empty guidance box. Surfaces that start the box
+  // empty (no template to reset to) use it to show the shape of a good answer.
+  export let guidance_placeholder: string | null = null
 
   // Optional caution rendered after the rows, so in a dialog it sits directly
   // above the submit button the surrounding context owns. It is written flush
@@ -46,6 +49,7 @@
   description={`This allows you to control the dataset you are generating. For example, "10% of the dataset should be in Spanish."`}
   inputType="textarea"
   height="xl"
+  placeholder={guidance_placeholder}
   bind:value={guidance}
   inline_action={guidance_template && guidance !== guidance_template
     ? {

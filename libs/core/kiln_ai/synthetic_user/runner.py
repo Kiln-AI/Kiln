@@ -44,7 +44,12 @@ from kiln_ai.utils.slow_operation import log_if_slow
 logger = logging.getLogger(__name__)
 
 # Module constants.
-NUM_CASES_MAX = 40
+# Largest supported batch size. The runner itself doesn't enforce it: it's the
+# shared limit callers validate against, and it's mirrored anywhere a batch
+# size is chosen, so this is the one place to change it. Each case is a full
+# multi-turn conversation, so the cap bounds worst-case fan-out cost and wall
+# time.
+NUM_CASES_MAX = 200
 MAX_TURNS_DEFAULT = 5
 CONCURRENCY = 4
 # Transient drive failures (see kiln_ai.adapters.retry_classification) retry

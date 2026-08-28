@@ -29,6 +29,7 @@ from kiln_ai.synthetic_user.case import SyntheticUserCase
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
 from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
 from kiln_ai.synthetic_user.runner import (
+    NUM_CASES_MAX,
     BatchCompletedEvent,
     BatchEvent,
     BatchStartedEvent,
@@ -150,6 +151,12 @@ async def _collect(gen) -> list[BatchEvent]:
 
 
 # ───────────────────────── input validation ─────────────────────────
+
+
+def test_num_cases_max_is_pinned() -> None:
+    """Callers mirror this cap in their own bounds, so a change here is a
+    contract change for all of them — not a local tweak."""
+    assert NUM_CASES_MAX == 200
 
 
 @pytest.mark.asyncio

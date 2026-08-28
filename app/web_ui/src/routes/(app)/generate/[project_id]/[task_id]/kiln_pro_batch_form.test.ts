@@ -73,6 +73,24 @@ describe("KilnProBatchForm", () => {
     expect(guidance_box.className).toContain("h-96")
   })
 
+  it("leaves the guidance box on FormElement's label placeholder by default", () => {
+    // Unset, the prop changes nothing: FormElement keeps falling back to the
+    // field's own label, which is what every existing caller renders today.
+    const { guidance_box } = setup()
+    expect(guidance_box.getAttribute("placeholder")).toBe("Guidance")
+  })
+
+  it("passes guidance_placeholder through to the guidance box", () => {
+    // Surfaces that start the box empty show the shape of a good answer here
+    // instead of prefilling text the user didn't write.
+    const { guidance_box } = setup({
+      guidance_placeholder: `For example, "Fewer refund scenarios."`,
+    })
+    expect(guidance_box.getAttribute("placeholder")).toBe(
+      `For example, "Fewer refund scenarios."`,
+    )
+  })
+
   it("uses a guidance_id override for the field's id", () => {
     const { guidance_box } = setup({ guidance_id: "eval_batch_guidance" })
     expect(guidance_box.id).toBe("eval_batch_guidance")

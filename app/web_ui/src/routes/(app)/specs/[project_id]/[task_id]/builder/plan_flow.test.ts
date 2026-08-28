@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   compact_batch_slots,
   dominant_failure_message,
+  drive_cost_warning,
   drive_lanes_unchanged,
   drive_stop_banner,
   driven_data_confirm,
@@ -182,8 +183,26 @@ describe("new_plan_confirm", () => {
         plan_edited: true,
       }),
     ).toBe(
-      "You have 40 completed eval inputs and your review progress. New scenarios will discard them. This cannot be undone.",
+      "You have 40 completed eval inputs and your review progress. A new batch plan will discard them. This cannot be undone.",
     )
+  })
+
+  it("names the action, not the plan's rows, in the driven tier", () => {
+    // "New planned traces will discard them" is broken grammar; the driven
+    // tier states the action the user is about to take instead. Pinned on
+    // BOTH arms' plan nouns, since neither may leak into this sentence.
+    for (const plan_noun of ["scenarios", "planned inputs", "planned traces"]) {
+      const msg = new_plan_confirm({
+        has_driven_results: true,
+        survivors: 3,
+        include_review_progress: false,
+        plan_edited: false,
+        plan_noun,
+      })
+      expect(msg).toBe(
+        "You have 3 completed eval inputs. A new batch plan will discard them. This cannot be undone.",
+      )
+    }
   })
 })
 
@@ -411,13 +430,15 @@ describe("new_plan_confirm — single-turn plan noun", () => {
     )
     expect(
       new_plan_confirm({
-        has_driven_results: true,
-        survivors: 5,
-        include_review_progress: true,
-        plan_edited: false,
+        has_driven_results: false,
+        survivors: 0,
+        include_review_progress: false,
+        plan_edited: true,
         plan_noun: "planned inputs",
       }),
-    ).toContain("New planned inputs will discard them.")
+    ).toBe(
+      "Are you sure you want to discard the current planned inputs, including the ones you removed? This cannot be undone.",
+    )
   })
 })
 
@@ -629,5 +650,68 @@ describe("compact_batch_slots", () => {
       enriched,
       t("b"),
     ])
+  })
+})
+
+describe("drive_cost_warning", () => {
+  it("states the turn multiplication on the multi-turn arm", () => {
+    expect(
+      drive_cost_warning({
+        is_multi_turn: true,
+        count: 40,
+        turns_per_case: 5,
+      }),
+    ).toBe(
+      "This will run 200 model turns (40 x 5) and may use considerable credits.",
+    )
+  })
+
+  it("counts test inputs on the single-turn arm", () => {
+    expect(
+      drive_cost_warning({
+        is_multi_turn: false,
+        count: 40,
+        turns_per_case: 5,
+      }),
+    ).toBe(
+      "This will run your task on 40 test inputs and may use considerable credits.",
+    )
+  })
+
+  it("says one test input, not 1 test inputs", () => {
+    // A one-row plan is reachable: the user can delete rows down to one.
+    expect(
+      drive_cost_warning({
+        is_multi_turn: false,
+        count: 1,
+        turns_per_case: 5,
+      }),
+    ).toBe(
+      "This will run your task on 1 test input and may use considerable credits.",
+    )
+  })
+
+  it("ignores turns_per_case on the single-turn arm", () => {
+    // Single-turn runs the task once per input; a turns value must not leak
+    // into its wording or its arithmetic.
+    const a = drive_cost_warning({
+      is_multi_turn: false,
+      count: 12,
+      turns_per_case: 5,
+    })
+    const b = drive_cost_warning({
+      is_multi_turn: false,
+      count: 12,
+      turns_per_case: 9,
+    })
+    expect(a).toBe(b)
+  })
+
+  it("multiplies through a changed turns_per_case", () => {
+    expect(
+      drive_cost_warning({ is_multi_turn: true, count: 7, turns_per_case: 3 }),
+    ).toBe(
+      "This will run 21 model turns (7 x 3) and may use considerable credits.",
+    )
   })
 })

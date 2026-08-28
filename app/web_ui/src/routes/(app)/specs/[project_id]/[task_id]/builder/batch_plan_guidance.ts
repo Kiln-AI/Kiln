@@ -35,6 +35,21 @@ Balance the batch roughly 50/50 between:
 Include boundary and ambiguous cases where the right behavior is debatable, and vary difficulty across the batch. Every input must stay realistic — written by an ordinary user pursuing their own goal, not a tester probing the spec.`
 }
 
+// The user's optional steer ("fewer refund scenarios") joined onto the arm's
+// base guidance. The base is APPENDED TO, never rewritten: it is a strict
+// prefix of the result, because the arm is identified by reading the start of
+// the guidance and a steer that displaced it would mis-route the whole batch.
+// A blank steer returns the base byte-identical, so an untouched box costs
+// the planner nothing.
+export function compose_plan_guidance(base: string, steer: string): string {
+  const trimmed = steer.trim()
+  if (!trimmed) return base
+  return `${base}
+
+The user has asked for this batch specifically:
+${trimmed}`
+}
+
 // Multi-turn: recasts each planned "input" as a conversation scenario.
 export function multiturn_plan_guidance(spec: string): string {
   return `Each input is a scenario for one multi-turn synthetic-user conversation with the agent: the user's situation, their opening request, and how they press the agent as the conversation unfolds.
