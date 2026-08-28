@@ -155,6 +155,51 @@ describe("ClaimCard — final judgement evidence", () => {
   })
 })
 
+describe("ClaimCard — the blind final judgement", () => {
+  it("records the label as agreement with the judge, inverting on a pass call", async () => {
+    // The judge passed this one, so "Pass" is the agreeing label and "Fail"
+    // is the contradiction — the mirror of a failed call. Agreement is
+    // computed, never asked, so the card writes the same verdict either way.
+    const verdict = fresh_verdict()
+    const { container, getByText, queryByText } = render(ClaimCard, {
+      props: {
+        claim: claim({
+          claim: "The bot answered from the policy page.",
+          expected_result: "pass",
+          evidence: "It linked the page [1].",
+          citations: [
+            { marker: 1, source: "output", from: "page", to: "page" },
+          ],
+        }),
+        verdict,
+        is_final_judgement: true,
+        blind: true,
+        judged_noun: "conversation",
+      },
+    })
+
+    expect(getByText("Does this conversation pass?")).toBeTruthy()
+    expect(queryByText("Correct")).toBeNull()
+
+    await fireEvent.click(getByText("Pass"))
+    expect(verdict.agrees).toBe(true)
+    expect(container.querySelector("textarea")).toBeNull()
+
+    await fireEvent.click(getByText("Fail"))
+    expect(verdict.agrees).toBe(false)
+    // The reveal names the judge's call, which is the opposite of the label
+    // just given.
+    expect(
+      getByText("Your eval disagrees. It thinks this passes."),
+    ).toBeTruthy()
+    expect(
+      (container.querySelector("textarea") as HTMLTextAreaElement).placeholder,
+    ).toBe(
+      "Describe why this fails. Detailed explanations will improve the judge.",
+    )
+  })
+})
+
 describe("ClaimCard — display only", () => {
   it("renders the claim as reading material, with no way to grade it", () => {
     // A disagreeing verdict is the state that renders both controls, so it is

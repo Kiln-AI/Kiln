@@ -1,10 +1,14 @@
 <script lang="ts">
-  // Claim/Evidence review step — one trace at a time. The reviewer grades a
-  // few statements (Correct/Incorrect on distilled claims) without reading
-  // the trace, opening a [n] citation into the trace modal only for the
-  // hard calls. Claim text never states the verdict — the reviewer's calls
-  // calibrate the judge, so its label must not anchor them; the overall
-  // verdict lives on the final card, pinned last as the conclusion.
+  // Claim/Evidence review step — one trace at a time. The reviewer answers the
+  // overall pass/fail call without reading the trace, opening a [n] citation
+  // into the trace modal only for the hard calls. Nothing on screen states the
+  // call before that answer — the reviewer's calls calibrate the judge, so its
+  // label must not anchor them.
+  //
+  // The overall call is the only answer the gate requires (is_trace_reviewed
+  // wants it plus a reason for any dissent), so its card comes FIRST and the
+  // distilled claims sit under it behind an All Claims disclosure, collapsed.
+  // Claim grades were always optional, so folding them changes no behavior.
   //
   // Subset review: `selected_indices` is the judge-stratified sample the
   // reviewer grades (sized to the golden answer key) — the review shows
@@ -81,10 +85,20 @@
   const BLIND_WHY_ID = "trace-first-why"
 
   // The server returns every claim importance-ordered; we show only the most
-  // important few plus the (always-present, top-level) final judgement pinned
-  // last as the conclusion. Claims may be EMPTY for trivial evals — the final
-  // judgement alone is then the whole review.
+  // important few under the (always-present, top-level) final judgement, which
+  // leads the review as the one answer the gate requires. Claims may be EMPTY
+  // for trivial evals — the final judgement alone is then the whole review.
   const MAX_CLAIMS = 3
+
+  // The claims disclosure, in the batch plan's row idiom
+  // (kiln_pro_prompts_table) so the two surfaces read as one app. Sticky
+  // across traces rather than reset per trace: opening it is the reviewer
+  // saying they want to grade claims, and re-collapsing it on every
+  // conversation would undo that choice once per screen.
+  let claims_expanded = false
+  const CLAIMS_DISCLOSURE_DESCRIPTION =
+    "These are the facts your eval used to reach its call."
+  $: claims_toggle_label = `${claims_expanded ? "Hide" : "Show"} all claims`
 
   // Why the primary action is held disabled on the last trace. Stated in the
   // component's own terms (the parent owns how many grades the gate wants,
@@ -230,9 +244,9 @@
   {#if current && current_verdicts}
     <!-- Trace header: just the quiet escape hatch to whichever content the
          gate demoted — the claims on the trace-first arm, the trace on the
-         claims-first one. The verdict label stays off this row (the overall
-         card carries it, pinned last) and review-order position lives under
-         the nav. -->
+         claims-first one. The verdict label stays off this row (nothing states
+         the call before the reviewer answers) and review-order position lives
+         under the nav. -->
     <div class="flex items-center justify-end mb-4">
       {#if trace_first}
         <button class="btn btn-xs btn-ghost" on:click={open_claims}>
@@ -267,7 +281,7 @@
         >
           <div class="flex items-center justify-between gap-3">
             <div class="font-medium text-sm min-w-0">
-              Does this response pass?
+              Does this {judged_noun} pass?
             </div>
             <div class="flex gap-2 flex-none">
               <button
@@ -351,15 +365,10 @@
       {/if}
     {:else if current.claims_state === "built"}
       <div class="space-y-3">
-        {#each visible as { claim, index } (index)}
-          <ClaimCard
-            {claim}
-            bind:verdict={current_verdicts.claim_verdicts[index]}
-            on_cite={open_citation}
-          />
-        {/each}
-        <!-- The overall verdict, pinned last as the conclusion. Always present
-             even when the claims list is empty. -->
+        <!-- The overall call, FIRST and asked blind: it is the only answer the
+             gate requires, and on this arm the trace is behind a button, so
+             the card carries the judgement's reason and its cited evidence to
+             answer from. Always present even when the claims list is empty. -->
         {#if current.final_judgement}
           <ClaimCard
             claim={current.final_judgement}
@@ -367,8 +376,58 @@
             on_cite={open_citation}
             on_view_trace={() => current && trace_modal?.open_trace(current)}
             is_final_judgement
+            blind
             {judged_noun}
           />
+        {/if}
+        {#if visible.length > 0}
+          <!-- The claims, folded. Optional to grade, so they read as backing
+               material for the call above rather than as the review itself. -->
+          <div class="rounded-lg border">
+            <button
+              class="w-full flex items-center justify-between px-4 py-3 text-left"
+              aria-label={claims_toggle_label}
+              aria-expanded={claims_expanded}
+              on:click={() => (claims_expanded = !claims_expanded)}
+            >
+              <div class="flex flex-col gap-2">
+                <span class="text-sm font-medium"
+                  >All Claims ({visible.length})</span
+                >
+                {#if claims_expanded}
+                  <div class="text-sm text-gray-500">
+                    {CLAIMS_DISCLOSURE_DESCRIPTION}
+                  </div>
+                {/if}
+              </div>
+              <div class="flex items-center text-sm text-gray-500">
+                <svg
+                  class="w-4 h-4 transition-transform {claims_expanded
+                    ? 'rotate-180'
+                    : ''}"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </div>
+            </button>
+            {#if claims_expanded}
+              <div class="space-y-3 p-4 pt-0">
+                {#each visible as { claim, index } (index)}
+                  <ClaimCard
+                    {claim}
+                    bind:verdict={current_verdicts.claim_verdicts[index]}
+                    on_cite={open_citation}
+                  />
+                {/each}
+              </div>
+            {/if}
+          </div>
         {/if}
       </div>
     {:else if current.claims_state === "error"}

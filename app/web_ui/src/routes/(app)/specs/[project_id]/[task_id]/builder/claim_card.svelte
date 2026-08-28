@@ -1,3 +1,9 @@
+<script context="module" lang="ts">
+  // Instance counter, so a blind card's "Teach the Judge" label points at its
+  // own textarea even if two cards are ever mounted at once.
+  let blind_card_seq = 0
+</script>
+
 <script lang="ts">
   // One claim in the Claim/Evidence review — to the reviewer it's just a
   // question to answer: the atomic statement, its one-sentence evidence with
@@ -5,7 +11,11 @@
   // required reason on Incorrect, which feeds the refine loop). Same grading
   // mechanics for claims and the final judgement; regular claims never
   // surface expected_result (the final-judgement headline does — see below).
+  // The final judgement also has a BLIND variant, which asks the pass/fail
+  // question with the call withheld — see the `blind` prop.
   import {
+    blind_label_agrees,
+    blind_label_from_verdict,
     final_judgement_reason,
     type Citation,
     type Claim,
@@ -40,6 +50,15 @@
   // writable control for the same verdict lets one grade silently overwrite
   // the other. Defaults to the interactive card.
   export let display_only = false
+  // The blind final-judgement variant: the card asks "Does this {judged_noun}
+  // pass?" and answers Pass/Fail, with the call itself withheld — no verdict
+  // word, no icon, no tint — so nothing anchors the reviewer before they
+  // answer. The reason and its cited evidence still render: the conclusion is
+  // what's withheld, never the substance the answer is made from. Agreement
+  // with the judge is computed from the label (blind_label_agrees), so this
+  // writes the same verdict the stated-verdict card writes and the save, gate
+  // and refine paths see one shape. Only meaningful with is_final_judgement.
+  export let blind = false
 
   // The reason under the headline: the claim builder's contract makes this
   // the substantive reason-only line, "" when there is nothing beyond the
@@ -96,6 +115,35 @@
   $: show_trace_fallback =
     is_final_judgement && !!on_view_trace && !has_resolvable_citation
 
+  // Blind mode reads the judge's call off the final judgement's
+  // expected_result, which the server pins to the judge's real score — the
+  // same field the stated-verdict headline is built from.
+  $: blind_verdict = is_final_judgement && blind
+  const blind_why_id = `claim-card-why-${blind_card_seq++}`
+  // The reviewer's label, derived from the stored verdict rather than held
+  // separately, so a revisited card shows the label its reviewer already gave.
+  $: blind_label = blind_verdict
+    ? blind_label_from_verdict(claim.expected_result, verdict.agrees)
+    : null
+  // The call appears only where the reviewer contradicts it.
+  $: blind_mismatch = blind_verdict && !display_only && verdict.agrees === false
+  // Keyed off the REVIEWER's label rather than the judge's, since it describes
+  // the verdict just given: a "Pass" label on a failed case asks why it passes.
+  $: teach_the_judge_placeholder = `Describe why this ${
+    blind_label ? "passes" : "fails"
+  }. Detailed explanations will improve the judge.`
+
+  // Record the blind label as the same final-judgement verdict the stated
+  // card writes: agreement is computed against the judge, never asked.
+  function set_blind_label(user_says_pass: boolean) {
+    verdict.agrees = blind_label_agrees(claim.expected_result, user_says_pass)
+    // Agreeing closes the reveal, so drop any reason typed against the
+    // previous label rather than shipping text the reviewer can no longer see.
+    if (verdict.agrees) verdict.why = ""
+    verdict = verdict
+    if (!verdict.agrees) setTimeout(() => why_input?.focus(), 0)
+  }
+
   function set_agrees(value: boolean) {
     verdict.agrees = value
     // Agreeing hides the reason box — clear any text typed while disagreeing
@@ -116,22 +164,35 @@
      formula) with only the hue keyed to the verdict, so the conclusion
      reads as a different kind of card than the claims above it. The
      verdict is stated in the headline, so the color adds emphasis, not
-     information. border-base-300 rides the non-final branch instead of the
-     shared class list, a deliberate departure from card_style.md's "always
-     use ... border-base-300": sibling border-color utilities are all
-     equal-specificity single classes, so the winner is decided by generated
-     stylesheet order (Tailwind's own sort), not by class order — branching
-     removes that unknowable rather than betting on it. -->
+     information. The blind variant takes the plain claim-card chrome
+     instead: a tint keyed to the verdict would answer the card's own
+     question before the reviewer does. border-base-300 rides the untinted
+     branch instead of the shared class list, a deliberate departure from
+     card_style.md's "always use ... border-base-300": sibling border-color
+     utilities are all equal-specificity single classes, so the winner is
+     decided by generated stylesheet order (Tailwind's own sort), not by
+     class order — branching removes that unknowable rather than betting on
+     it. -->
 <div
-  class="card card-bordered shadow-md p-4 {is_final_judgement
+  class="card card-bordered shadow-md p-4 {is_final_judgement && !blind_verdict
     ? claim.expected_result === 'fail'
       ? 'bg-warning/5 border-warning/40'
       : 'bg-success/5 border-success/40'
     : 'bg-base-100 border-base-300'}"
 >
-  <div class="flex items-start justify-between gap-3">
+  <!-- items-center on the blind card: one short question reads aligned beside
+       the buttons where a wrapping claim would not. -->
+  <div
+    class="flex {blind_verdict
+      ? 'items-center'
+      : 'items-start'} justify-between gap-3"
+  >
     <div class="font-medium text-sm min-w-0">
-      {#if is_final_judgement}
+      {#if blind_verdict}
+        <!-- Nothing on this card states the call before the reviewer makes
+             their own. -->
+        Does this {judged_noun} pass?
+      {:else if is_final_judgement}
         <!-- Deterministic headline from the server-pinned expected_result —
              the judge is an implementation detail the reviewer doesn't
              need: the question is simply whether the overall call on the
@@ -183,22 +244,43 @@
          the same whichever direction the claim points. -->
     {#if !display_only}
       <div class="flex gap-2 flex-none">
-        <button
-          class="btn btn-sm {verdict.agrees === true
-            ? 'btn-success'
-            : 'btn-outline'}"
-          on:click={() => set_agrees(true)}
-        >
-          Correct
-        </button>
-        <button
-          class="btn btn-sm {verdict.agrees === false
-            ? 'btn-error'
-            : 'btn-outline'}"
-          on:click={() => set_agrees(false)}
-        >
-          Incorrect
-        </button>
+        {#if blind_verdict}
+          <!-- Pass/Fail, the same pair the trace-first arm and the spec
+               builder's review table answer this question with. -->
+          <button
+            class="btn btn-sm {blind_label === true
+              ? 'btn-success'
+              : 'btn-outline'}"
+            on:click={() => set_blind_label(true)}
+          >
+            Pass
+          </button>
+          <button
+            class="btn btn-sm {blind_label === false
+              ? 'btn-error'
+              : 'btn-outline'}"
+            on:click={() => set_blind_label(false)}
+          >
+            Fail
+          </button>
+        {:else}
+          <button
+            class="btn btn-sm {verdict.agrees === true
+              ? 'btn-success'
+              : 'btn-outline'}"
+            on:click={() => set_agrees(true)}
+          >
+            Correct
+          </button>
+          <button
+            class="btn btn-sm {verdict.agrees === false
+              ? 'btn-error'
+              : 'btn-outline'}"
+            on:click={() => set_agrees(false)}
+          >
+            Incorrect
+          </button>
+        {/if}
       </div>
     {/if}
   </div>
@@ -233,7 +315,41 @@
     >
   {/if}
 
-  {#if !display_only && verdict.agrees === false}
+  {#if blind_mismatch}
+    <!-- MISMATCH only: now the call is worth stating, because the reviewer is
+         contradicting it. One line and no explanation — the reason and its
+         cited evidence are already on the card above, so there is nothing
+         here to repeat. "Your eval", not "the judge": the reviewer is
+         building an eval, and its parts are not theirs to keep track of. -->
+    <div
+      class="mt-3 rounded-lg border border-warning/40 bg-warning/5 px-4 py-3"
+    >
+      <div class="text-sm font-medium">
+        Your eval disagrees. It thinks this {claim.expected_result === "pass"
+          ? "passes"
+          : "fails"}.
+      </div>
+      <!-- FormElement's label typography, hand-rolled so the card's own error
+           state stays the one in play. Label only: the placeholder states the
+           ask, so a description line under it would just say it twice. -->
+      <label
+        class="text-sm font-medium text-left flex flex-col gap-1 w-full mt-3"
+        for={blind_why_id}
+      >
+        <span>Teach the Judge</span>
+      </label>
+      <textarea
+        id={blind_why_id}
+        class="textarea textarea-bordered textarea-sm w-full mt-2 {needs_reason
+          ? 'textarea-error'
+          : ''}"
+        placeholder={teach_the_judge_placeholder}
+        bind:value={verdict.why}
+        bind:this={why_input}
+        rows="2"
+      ></textarea>
+    </div>
+  {:else if !display_only && !blind_verdict && verdict.agrees === false}
     <textarea
       class="textarea textarea-bordered textarea-sm w-full mt-3 {needs_reason
         ? 'textarea-error'
