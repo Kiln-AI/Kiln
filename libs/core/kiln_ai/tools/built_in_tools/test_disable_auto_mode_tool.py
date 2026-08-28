@@ -9,6 +9,11 @@ from kiln_ai.tools.built_in_tools.disable_auto_mode_tool import (
     DisableAutoModeTool,
 )
 
+_REFUSAL = {
+    "status": "not_available",
+    "message": "Auto mode can only be turned off by the user (Stop button).",
+}
+
 
 @pytest.fixture
 def tool():
@@ -24,6 +29,10 @@ class TestDisableAutoModeToolMetadata:
         description = await tool.description()
         assert description
         assert "auto mode" in description.lower()
+        # FR1: the description must tell the model this is refused, not that
+        # it disables auto mode — the model has no off-switch.
+        assert "not_available" in description
+        assert "Stop button" in description
 
     @pytest.mark.asyncio
     async def test_toolcall_definition_schema(self, tool):
@@ -41,29 +50,29 @@ class TestDisableAutoModeToolMetadata:
 
 class TestDisableAutoModeToolRun:
     """run() is a signal no-op: in chat it is intercepted by name and never
-    executed, but it must return a valid disabled signal to keep the libs/core
-    tool surface complete and standalone."""
+    executed, but standalone it must mirror the app server's refusal (FR1:
+    auto mode turns off only by user action — the model has no off-switch)."""
 
     @pytest.mark.asyncio
-    async def test_run_returns_disabled_signal(self, tool):
+    async def test_run_returns_refusal(self, tool):
         result = await tool.run()
         assert result.is_error is False
-        assert json.loads(result.output) == {"status": "disabled"}
+        assert json.loads(result.output) == _REFUSAL
 
     @pytest.mark.asyncio
     async def test_run_with_reason_arg_is_noop(self, tool):
         # The optional reason is accepted and ignored by the no-op.
         result = await tool.run(reason="user asked to stop")
-        assert json.loads(result.output) == {"status": "disabled"}
+        assert json.loads(result.output) == _REFUSAL
 
     @pytest.mark.asyncio
     async def test_run_with_positional_context(self, tool):
         # Mirrors LiteLlmAdapter.process_tool_calls: context passed positionally.
         result = await tool.run(ToolCallContext(allow_saving=False))
-        assert json.loads(result.output) == {"status": "disabled"}
+        assert json.loads(result.output) == _REFUSAL
 
     @pytest.mark.asyncio
     async def test_run_without_context(self, tool):
         # Mirrors studio_server executor: tool.run(**args) with no context.
         result = await tool.run(**{})
-        assert json.loads(result.output) == {"status": "disabled"}
+        assert json.loads(result.output) == _REFUSAL

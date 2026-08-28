@@ -18,6 +18,21 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class WaitTimeoutBounds:
+    """Bounds for the jobs-wait endpoint's timeout (seconds).
+
+    The wait must always be bounded: this is a plain (non-streaming) handler,
+    so Starlette does not cancel it on client disconnect — an unbounded wait on
+    a job that never terminates (e.g. paused by the user) would leak the
+    coroutine for the life of the process and hang the calling agent's tool
+    call. Callers wanting longer horizons re-issue the wait; 504 means
+    "still running", not failure.
+    """
+
+    DEFAULT = 600.0
+    MAX = 3600.0
+
+
 class BackgroundJobStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"

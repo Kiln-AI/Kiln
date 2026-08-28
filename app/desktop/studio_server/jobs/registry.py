@@ -589,10 +589,16 @@ class JobRegistry:
         """
         # Validate every id and register its event up front, with no await in
         # between, so there's no race window where a job goes terminal before we
-        # start observing it (mirrors wait()).
+        # start observing it (mirrors wait()). Hold the record references too:
+        # a terminal job in the set can legally be delete()d while we await the
+        # rest, so re-reading self._jobs after the await could KeyError — the
+        # captured records (mutated in place by the registry) reflect final
+        # state either way, matching wait()'s behavior.
+        records: dict[str, JobRecord] = {}
         pending_events: list[asyncio.Event] = []
         for job_id in job_ids:
             job = self._require(job_id)
+            records[job_id] = job
             ev = self._completion_events.setdefault(job_id, asyncio.Event())
             if not job.status.is_terminal:
                 pending_events.append(ev)
@@ -600,7 +606,7 @@ class JobRegistry:
             await asyncio.wait_for(
                 asyncio.gather(*(ev.wait() for ev in pending_events)), timeout
             )
-        return [self._jobs[job_id] for job_id in job_ids]
+        return [records[job_id] for job_id in job_ids]
 
 
 job_registry = JobRegistry()

@@ -3878,8 +3878,10 @@ export interface paths {
          * Wait For Jobs
          * @description Block until ALL the given jobs reach a terminal state, then return
          *     their records (order preserved). A pure observer, like the SSE stream:
-         *     disconnecting tears down only the awaiter, never the jobs. The timeout
-         *     bounds the whole set. Empty `ids` returns an empty list.
+         *     disconnecting tears down only the awaiter, never the jobs. The (always
+         *     bounded) timeout covers the whole set. Empty `ids` returns an empty
+         *     list. A PAUSED job is not terminal: waiting on one runs out the timeout
+         *     (504) — inspect its status via GET /api/jobs/{id} instead.
          */
         post: operations["wait_for_jobs_api_jobs_wait_post"];
         delete?: never;
@@ -12924,9 +12926,10 @@ export interface components {
             ids?: string[];
             /**
              * Timeout
-             * @description Seconds to wait before giving up (504 on timeout). Omit to wait indefinitely.
+             * @description Seconds to wait before giving up (504 on timeout; jobs keep running — re-issue the wait to keep waiting). Defaults to 600s, capped at 3600s: the wait is always bounded, since a job that never terminates (e.g. paused by the user) would otherwise hang the caller indefinitely.
+             * @default 600
              */
-            timeout?: number | null;
+            timeout: number;
         };
     };
     responses: never;

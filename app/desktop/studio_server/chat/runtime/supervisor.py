@@ -51,6 +51,7 @@ import asyncio
 import json
 import logging
 import os
+import urllib.parse
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Literal
 
 import httpx
@@ -683,6 +684,18 @@ class ConversationSupervisor:
         trace = await self._fetch_persisted_trace(conv, fetch_key)
         if not trace:
             return None
+        # Re-run the entry guards after the fetch await: two tabs refreshing
+        # concurrently both pass the checks above, and without this re-check
+        # each would mint its OWN batch — the second overwriting the first, so
+        # the first tab's batch id 404s on decide and the pending event is
+        # emitted twice. First fetch to complete wins; the loser returns the
+        # winner's batch (or defers to a run that started meanwhile).
+        if conv.pending_batch is not None and not conv.pending_batch.decided.is_set():
+            return conv.pending_batch
+        if conv.task is not None and not conv.task.done():
+            return None
+        if conv.record.state.is_terminal:
+            return None
         events, signal_events, assistant_text = _pending_events_from_trace_tail(trace)
         # FR2 (spawning requires auto mode): with the flag OFF, a pending
         # spawn_subagent in the tail is a gating CONSENT call whose dialog
@@ -775,7 +788,13 @@ class ConversationSupervisor:
         # rstrip guards the join: upstream_url is minted with a trailing slash
         # (routes._chat_url), but a caller passing it bare would otherwise
         # silently produce …/v1/chatsessions/… and read as "nothing persisted".
-        url = f"{conv.upstream_url.rstrip('/')}/sessions/{session_key}"
+        # The key is quoted (safe=""): it can be the verbatim session_id a
+        # browser POSTed, and an unencoded '/', '..', '?' or '#' would reach a
+        # different upstream path with the user's bearer token attached.
+        url = (
+            f"{conv.upstream_url.rstrip('/')}/sessions/"
+            f"{urllib.parse.quote(session_key, safe='')}"
+        )
         try:
             async with httpx.AsyncClient(
                 timeout=REHYDRATE_FETCH_TIMEOUT_SECONDS
@@ -894,10 +913,10 @@ class ConversationSupervisor:
             # check would never fire and the record would stay stuck as auto).
             # Armed-only enables skip the guard: flipping the flag while a
             # burst is RUNNING is legal (the run holds its policy; the flag
-            # applies at the next boundary). start_run repeats the check, but
-            # only AFTER the pending batch below executes — for the FR2
-            # spawn-consent accept that would spawn a real child whose result
-            # is then discarded.
+            # applies at the next boundary). The window between this guard and
+            # start_run (the pending-batch await below) is closed by
+            # pre-marking the record RUNNING for the batch's duration, so a
+            # racing send cannot start a burst in between.
             if not armed_only and conv.task is not None and not conv.task.done():
                 raise RuntimeError(
                     f"conversation {record.session_id} already has a run in flight"
@@ -937,19 +956,34 @@ class ConversationSupervisor:
         # lineage/ownership is unchanged.
         sibling_results: dict[str, str] = {}
         if pending_tool_calls:
-            sibling_results = await execute_tool_batch(
-                [
-                    ToolCallInfo(
-                        toolCallId=tc.tool_call_id,
-                        toolName=tc.tool_name,
-                        input=tc.input,
-                        requiresApproval=False,
-                    )
-                    for tc in pending_tool_calls
-                ],
-                {},
-                orchestration_ctx=self._orchestration_ctx(conv),
-            )
+            # Pre-mark RUNNING across the await: the busy guard above ran
+            # before this batch executes, and for the FR2 spawn-consent accept
+            # the batch REALLY spawns the child — a ``POST /{sid}/messages``
+            # landing in this await window must queue to the inbox (the
+            # RUNNING branch of send_message), not start a burst that would
+            # make start_run below 409 and strand the executed spawn's results
+            # (leaving the gating spawn_subagent call in the persisted trace
+            # forever unanswered). Rolled back if the batch raises so the
+            # record isn't stuck RUNNING with no task.
+            prior_state = record.state
+            record.state = RunState.RUNNING
+            try:
+                sibling_results = await execute_tool_batch(
+                    [
+                        ToolCallInfo(
+                            toolCallId=tc.tool_call_id,
+                            toolName=tc.tool_name,
+                            input=tc.input,
+                            requiresApproval=False,
+                        )
+                        for tc in pending_tool_calls
+                    ],
+                    {},
+                    orchestration_ctx=self._orchestration_ctx(conv),
+                )
+            except BaseException:
+                record.state = prior_state
+                raise
 
         body = build_auto_seed_body(
             # The enable call belongs to the assistant turn persisted at the
@@ -1543,6 +1577,15 @@ class ConversationSupervisor:
             # the lifecycle marker).
             self._publish_state(conv)
             await batch.decided.wait()
+            # Tell live observers the run resumed. The frontend's box-clearing
+            # logic relies on a RUNNING conversation-state event to clear a
+            # stale approval box in OTHER tabs (chat_session_store's
+            # onWorkingChange(true)); the runless-batch path gets this from
+            # start_run, but this live-parked path would otherwise publish
+            # nothing. Stamp RUNNING before publishing so the event carries
+            # the true state (the engine re-stamps it right after we return).
+            record.state = RunState.RUNNING
+            self._publish_state(conv)
             # The batch stays on the conversation (decided) until the run
             # settles or the next park replaces it, so a second decide can be
             # answered with a conflict rather than a 404 (functional spec §5:

@@ -19,7 +19,7 @@ from app.desktop.studio_server.eval_api import eval_from_id, resolved_split_or_4
 
 from . import error_log
 from .events import JobEvent
-from .models import BackgroundJobStatus, JobRecord
+from .models import BackgroundJobStatus, JobRecord, WaitTimeoutBounds
 from .registry import JobNotFoundError, JobOperationError, job_registry
 from .workers.eval import EvalJobParams, EvalJobWorker
 
@@ -50,11 +50,15 @@ class WaitForJobsRequest(BaseModel):
         default_factory=list,
         description="Job ids to wait for. All must reach a terminal state.",
     )
-    timeout: float | None = Field(
-        default=None,
+    timeout: float = Field(
+        default=WaitTimeoutBounds.DEFAULT,
         ge=0,
-        description="Seconds to wait before giving up (504 on timeout). "
-        "Omit to wait indefinitely.",
+        le=WaitTimeoutBounds.MAX,
+        description="Seconds to wait before giving up (504 on timeout; jobs keep "
+        f"running — re-issue the wait to keep waiting). Defaults to "
+        f"{WaitTimeoutBounds.DEFAULT:.0f}s, capped at {WaitTimeoutBounds.MAX:.0f}s: "
+        "the wait is always bounded, since a job that never terminates (e.g. "
+        "paused by the user) would otherwise hang the caller indefinitely.",
     )
 
 
@@ -168,8 +172,6 @@ def connect_jobs_api(app: FastAPI) -> None:
             limit=limit,
         )
 
-    # Two-segment path so it can never collide with the generic single-segment
-    # POST /api/jobs/{type} (i.e. type="evals"), independent of route order.
     @app.post(
         "/api/jobs/evals/run",
         summary="Run Eval Job",
@@ -220,8 +222,10 @@ def connect_jobs_api(app: FastAPI) -> None:
     async def wait_for_jobs(request: WaitForJobsRequest) -> list[JobRecord]:
         """Block until ALL the given jobs reach a terminal state, then return
         their records (order preserved). A pure observer, like the SSE stream:
-        disconnecting tears down only the awaiter, never the jobs. The timeout
-        bounds the whole set. Empty `ids` returns an empty list."""
+        disconnecting tears down only the awaiter, never the jobs. The (always
+        bounded) timeout covers the whole set. Empty `ids` returns an empty
+        list. A PAUSED job is not terminal: waiting on one runs out the timeout
+        (504) — inspect its status via GET /api/jobs/{id} instead."""
         if not request.ids:
             return []
         try:

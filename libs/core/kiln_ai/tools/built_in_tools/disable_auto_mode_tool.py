@@ -1,14 +1,16 @@
-"""Disable Auto Mode Tool — a signal the model emits when the user asks to stop auto mode.
+"""Disable Auto Mode Tool — a legacy signal the model can no longer use to end auto mode.
 
-This tool is **client-visible** and **never executed in chat**: when the model calls it, the app
-server intercepts it by name (``disable_auto_mode``), clears the conversation's auto-mode flag, ends
-the run, and resolves the call so the backend continues interactively. The :meth:`run`
-implementation here is a signal no-op — it exists only to keep the ``libs/core`` tool surface
-complete and standalone (the external backend exposes this tool via its ``kiln-ai`` dependency, and
-the library must be usable on its own). It must NOT be added to the app server's
+Auto mode turns off only by user action (the Stop button): the app server **refuses** a
+``disable_auto_mode`` call with ``{"status": "not_available", ...}`` and never clears the flag. The
+tool is no longer offered upstream; it exists so pre-upgrade conversations that resume with a
+pending ``disable_auto_mode`` call (or an old server during rollout) still resolve the call cleanly
+— with the same refusal — instead of erroring on an unknown tool. The :meth:`run` implementation
+here is a signal no-op that mirrors that refusal — it exists only to keep the ``libs/core`` tool
+surface complete and standalone (the external backend exposes this tool via its ``kiln-ai``
+dependency, and the library must be usable on its own). It must NOT be added to the app server's
 ``FUNCTION_NAME_TO_TOOL_ID`` — interception by name happens first and the tool is never meant to run.
 
-Symmetric counterpart to :mod:`enable_auto_mode_tool`.
+Counterpart to :mod:`enable_auto_mode_tool` (which remains a live, consent-gated signal).
 """
 
 import json
@@ -24,7 +26,7 @@ DISABLE_AUTO_MODE_TOOL_NAME = "disable_auto_mode"
 
 
 class DisableAutoModeTool(KilnTool):
-    """Tool the model calls to disable auto mode when the user asks to stop it."""
+    """Legacy tool whose calls are refused: auto mode is turned off only by the user."""
 
     def __init__(self):
         super().__init__(
@@ -36,11 +38,9 @@ class DisableAutoModeTool(KilnTool):
 
     @staticmethod
     def _build_description() -> str:
-        return """Disable auto mode so you stop running autonomously and return to asking the user for approval on each step.
+        return """Not available: auto mode can only be turned off by the user, via the Stop button.
 
-Call this when the user signals they want auto mode to stop (e.g. "stop auto mode", "stop doing this automatically", "ask me before each step again"). Call it ALONE — do not request any other tool calls in the same turn.
-
-After calling it you will receive {"status": "disabled"} and should continue interactively."""
+Do not call this tool. If the user asks you to stop auto mode, direct them to the Stop button instead. A call to this tool is refused with {"status": "not_available"} and auto mode stays on."""
 
     @staticmethod
     def _build_parameters_schema() -> dict[str, Any]:
@@ -61,8 +61,15 @@ After calling it you will receive {"status": "disabled"} and should continue int
     ) -> ToolCallResult:
         # Signal no-op. In chat this is intercepted by name and never executed;
         # this body exists only so the libs/core tool surface is complete and the
-        # library is usable standalone. The "disabled" status mirrors what the app
-        # server resolves an intercepted disable call to.
+        # library is usable standalone. The refusal mirrors what the app server
+        # resolves an intercepted (stale) disable call to: auto mode turns off
+        # only by user action, never by the model.
         return ToolCallResult(
-            output=json.dumps({"status": "disabled"}, ensure_ascii=False)
+            output=json.dumps(
+                {
+                    "status": "not_available",
+                    "message": "Auto mode can only be turned off by the user (Stop button).",
+                },
+                ensure_ascii=False,
+            )
         )
