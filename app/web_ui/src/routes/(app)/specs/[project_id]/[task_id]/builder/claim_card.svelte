@@ -5,12 +5,12 @@
 </script>
 
 <script lang="ts">
-  // One claim in the Claim/Evidence review — to the reviewer it's just a
-  // question to answer: the atomic statement, its one-sentence evidence with
-  // clickable [n] citations into the trace, and Correct/Incorrect (+ a
-  // required reason on Incorrect, which feeds the refine loop). Same grading
-  // mechanics for claims and the final judgement; regular claims never
-  // surface expected_result (the final-judgement headline does — see below).
+  // One claim in the Claim/Evidence review — to the reviewer it's just
+  // something to read and push back on: the atomic statement, its
+  // one-sentence evidence with clickable [n] citations into the trace, and a
+  // single Disagree toggle (+ a required reason once flagged, which feeds the
+  // refine loop). Regular claims never surface expected_result (the
+  // final-judgement headline does — see below).
   // The final judgement also has a BLIND variant, which asks the pass/fail
   // question with the call withheld — see the `blind` prop.
   import {
@@ -144,6 +144,22 @@
     if (!verdict.agrees) setTimeout(() => why_input?.focus(), 0)
   }
 
+  // A regular claim offers only Disagree: agreeing with one changes nothing
+  // downstream. It does not move the review gate (sub-claim verdicts are
+  // optional), does not enter the disagreement count that starts a refine
+  // round, and does not put the trace in the next round's subset — only a
+  // disagreement and its reason travel. Clicking again clears the flag and
+  // the reason typed under it.
+  function toggle_disagree() {
+    if (verdict.agrees === false) {
+      verdict.agrees = null
+      verdict.why = ""
+      verdict = verdict
+      return
+    }
+    set_agrees(false)
+  }
+
   function set_agrees(value: boolean) {
     verdict.agrees = value
     // Agreeing hides the reason box — clear any text typed while disagreeing
@@ -239,9 +255,6 @@
         {claim.claim}
       {/if}
     </div>
-    <!-- Correct/Incorrect (not Agree/Disagree): the reviewer grades each
-         statement as right or wrong — lower cognitive load, and it reads
-         the same whichever direction the claim points. -->
     {#if !display_only}
       <div class="flex gap-2 flex-none">
         {#if blind_verdict}
@@ -263,7 +276,10 @@
           >
             Fail
           </button>
-        {:else}
+        {:else if is_final_judgement}
+          <!-- The stated-verdict card (a failed claims build) still grades a
+               claim that names its own conclusion, so it is marked right or
+               wrong rather than answered. -->
           <button
             class="btn btn-sm {verdict.agrees === true
               ? 'btn-success'
@@ -279,6 +295,21 @@
             on:click={() => set_agrees(false)}
           >
             Incorrect
+          </button>
+        {:else}
+          <!-- "Disagree" is the word the payload already stores, so nothing is
+               translated between the click and the record, and it states the
+               reviewer's stance rather than a property of the agent. The label
+               holds still when active: changing the word under the cursor
+               makes the stack harder to scan on a second pass, and the reason
+               box appearing is unambiguous feedback already. -->
+          <button
+            class="btn btn-sm {verdict.agrees === false
+              ? 'btn-error'
+              : 'btn-outline'}"
+            on:click={toggle_disagree}
+          >
+            Disagree
           </button>
         {/if}
       </div>

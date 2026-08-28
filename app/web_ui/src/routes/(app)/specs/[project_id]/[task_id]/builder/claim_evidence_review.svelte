@@ -96,8 +96,10 @@
   // saying they want to grade claims, and re-collapsing it on every
   // conversation would undo that choice once per screen.
   let claims_expanded = false
+  // Second sentence names the only control the claim cards carry, so the
+  // description can never describe an answer the reviewer is not offered.
   const CLAIMS_DISCLOSURE_DESCRIPTION =
-    "These are the facts your eval used to reach its call."
+    "These are the facts your eval used to reach its call. Disagree with any that look wrong."
   $: claims_toggle_label = `${claims_expanded ? "Hide" : "Show"} all claims`
 
   // Why the primary action is held disabled on the last trace. Stated in the

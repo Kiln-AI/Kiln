@@ -4,6 +4,7 @@ import { render, fireEvent, cleanup } from "@testing-library/svelte"
 import { tick } from "svelte"
 import ClaimEvidenceReview from "./claim_evidence_review.svelte"
 import {
+  build_claim_review_payload,
   build_trace_reviews,
   CHAR_CUTOFF,
   is_trace_reviewed,
@@ -969,9 +970,8 @@ describe("ClaimEvidenceReview — the claims-first arm asks the call first", () 
   })
 
   it("folds the claims behind a collapsed disclosure", async () => {
-    const { container, queryByText, getByText } = render_multi_turn([
-      claims_first_trace(),
-    ])
+    const { container, queryByText, getByText, getAllByText } =
+      render_multi_turn([claims_first_trace()])
 
     // Collapsed on arrival: the count is on screen, the claims are not.
     expect(claims_toggle(container).getAttribute("aria-expanded")).toBe("false")
@@ -983,10 +983,16 @@ describe("ClaimEvidenceReview — the claims-first arm asks the call first", () 
     await expand_claims(container)
     expect(claims_toggle(container).getAttribute("aria-expanded")).toBe("true")
     expect(
-      getByText("These are the facts your eval used to reach its call."),
+      getByText(
+        "These are the facts your eval used to reach its call. Disagree with any that look wrong.",
+      ),
     ).toBeTruthy()
     expect(getByText("The agent stated a return window as fact.")).toBeTruthy()
     expect(getByText("The agent named no policy page.")).toBeTruthy()
+    // The description names the only control the cards carry: one flag per
+    // claim, and no way to record agreement.
+    expect(getAllByText("Disagree")).toHaveLength(2)
+    expect(queryByText("Correct")).toBeNull()
   })
 
   it("finishes a conversation on the overall call, with the claims ungraded", async () => {
@@ -1011,6 +1017,80 @@ describe("ClaimEvidenceReview — the claims-first arm asks the call first", () 
       true,
     )
     expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(true)
+    expect((getByText("Next") as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+describe("ClaimEvidenceReview — what a flagged claim records", () => {
+  it("carries only the flagged claim into the payload, never an agreement", async () => {
+    const traces = [claims_first_trace()]
+    const verdicts = build_trace_reviews(traces)
+    const { container, getAllByText, getByText } = render(ClaimEvidenceReview, {
+      props: {
+        traces,
+        verdicts,
+        selected_indices: [0],
+        judged_noun: "conversation",
+        is_multi_turn: true,
+      },
+    })
+
+    await fireEvent.click(getByText("Fail"))
+    await expand_claims(container)
+    await fireEvent.click(getAllByText("Disagree")[0])
+    await fireEvent.input(
+      container.querySelectorAll("textarea")[0] as HTMLTextAreaElement,
+      { target: { value: "The window is published." } },
+    )
+
+    // The flagged claim carries a reason, so the conversation is complete.
+    expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(true)
+
+    // Only the flagged claim reaches the record. The one left alone is
+    // absent, which the contract reads as no signal — never as agreement.
+    const payload = build_claim_review_payload(traces[0], verdicts[0])
+    expect(payload.claims).toHaveLength(1)
+    expect(payload.claims[0].claim).toBe(
+      "The agent stated a return window as fact.",
+    )
+    expect(payload.claims[0].human_grade).toBe("disagree")
+    expect(payload.claims[0].human_feedback).toBe("The window is published.")
+    expect(payload.final_judgement.human_grade).toBe("agree")
+  })
+
+  it("blocks the conversation until a flagged claim carries a reason", async () => {
+    // The one place a claim verdict can still hold up Next: a disagreement
+    // without a reason is an incomplete review, flag-only control or not.
+    const traces = [claims_first_trace(), claims_first_trace()]
+    traces[1].trace_id = "mt_1"
+    const verdicts = build_trace_reviews(traces)
+    const { container, getAllByText, getByText } = render(ClaimEvidenceReview, {
+      props: {
+        traces,
+        verdicts,
+        selected_indices: [0, 1],
+        judged_noun: "conversation",
+        is_multi_turn: true,
+      },
+    })
+
+    await fireEvent.click(getByText("Fail"))
+    expect((getByText("Next") as HTMLButtonElement).disabled).toBe(false)
+
+    await expand_claims(container)
+    await fireEvent.click(getAllByText("Disagree")[0])
+    expect((getByText("Next") as HTMLButtonElement).disabled).toBe(true)
+
+    await fireEvent.input(
+      container.querySelectorAll("textarea")[0] as HTMLTextAreaElement,
+      { target: { value: "The window is published." } },
+    )
+    expect((getByText("Next") as HTMLButtonElement).disabled).toBe(false)
+
+    // Clearing the flag also clears the reason it demanded, and the
+    // conversation is complete again on the overall call alone.
+    await fireEvent.click(getAllByText("Disagree")[0])
+    expect(verdicts[0].claim_verdicts[0]).toEqual({ agrees: null, why: "" })
     expect((getByText("Next") as HTMLButtonElement).disabled).toBe(false)
   })
 })

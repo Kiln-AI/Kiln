@@ -20,38 +20,40 @@ function claim(overrides: Partial<Claim> = {}): Claim {
   }
 }
 
-describe("ClaimCard — flipping to Correct", () => {
-  it("clears a reason typed while disagreeing", async () => {
-    // A verdict left mid-disagreement carries a reason; flipping to Correct
-    // hides the reason box, so the stale text must not ride the agree grade.
-    const verdict: ClaimVerdict = { agrees: false, why: "The window is real." }
-    const { getByText } = render(ClaimCard, {
-      props: { claim: claim(), verdict },
-    })
-
-    await fireEvent.click(getByText("Correct"))
-
-    expect(verdict.agrees).toBe(true)
-    expect(verdict.why).toBe("")
-  })
-
-  it("keeps the reason while still disagreeing", async () => {
-    const verdict: ClaimVerdict = { agrees: false, why: "The window is real." }
-    const { getByText } = render(ClaimCard, {
-      props: { claim: claim(), verdict },
-    })
-
-    // Re-clicking Incorrect must not wipe an in-progress reason.
-    await fireEvent.click(getByText("Incorrect"))
-
-    expect(verdict.agrees).toBe(false)
-    expect(verdict.why).toBe("The window is real.")
-  })
-})
-
 function fresh_verdict(): ClaimVerdict {
   return { agrees: null, why: "" }
 }
+
+describe("ClaimCard — the Disagree toggle", () => {
+  it("flags a claim and opens the reason, then clears both on a second click", async () => {
+    const verdict = fresh_verdict()
+    const { container, getByText, queryByText } = render(ClaimCard, {
+      props: { claim: claim(), verdict },
+    })
+
+    // There is no positive answer to give: an agreed claim carries no signal
+    // downstream, so the card offers the flag alone.
+    expect(queryByText("Correct")).toBeNull()
+    expect(queryByText("Incorrect")).toBeNull()
+
+    await fireEvent.click(getByText("Disagree"))
+    expect(verdict.agrees).toBe(false)
+    // The word holds still; only the selection styling moves.
+    expect(getByText("Disagree").className).toContain("btn-error")
+    const why = container.querySelector("textarea") as HTMLTextAreaElement
+    expect(why).not.toBeNull()
+    await fireEvent.input(why, { target: { value: "The window is real." } })
+    expect(verdict.why).toBe("The window is real.")
+
+    // Clicking again clears the flag and the reason under it, so the claim
+    // goes back to carrying no signal at all rather than a stale one.
+    await fireEvent.click(getByText("Disagree"))
+    expect(verdict.agrees).toBeNull()
+    expect(verdict.why).toBe("")
+    expect(container.querySelector("textarea")).toBeNull()
+    expect(getByText("Disagree").className).toContain("btn-outline")
+  })
+})
 
 describe("ClaimCard — final judgement evidence", () => {
   it("renders clickable [n] chips for its evidence and no trace fallback", async () => {
@@ -216,8 +218,7 @@ describe("ClaimCard — display only", () => {
 
     expect(getByText("The agent stated a return window as fact.")).toBeTruthy()
     expect(queryByTitle("View in trace")).toBeTruthy()
-    expect(queryByText("Correct")).toBeNull()
-    expect(queryByText("Incorrect")).toBeNull()
+    expect(queryByText("Disagree")).toBeNull()
     expect(container.querySelector("textarea")).toBeNull()
   })
 })
