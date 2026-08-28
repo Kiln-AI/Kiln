@@ -7,9 +7,6 @@ from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.generate_synthetic_users_request import GenerateSyntheticUsersRequest
 from ...models.generate_synthetic_users_response import GenerateSyntheticUsersResponse
-from ...models.generate_v1_synthetic_user_generate_post_response_401 import (
-    GenerateV1SyntheticUserGeneratePostResponse401,
-)
 from ...models.generate_v1_synthetic_user_generate_post_response_500 import (
     GenerateV1SyntheticUserGeneratePostResponse500,
 )
@@ -17,6 +14,7 @@ from ...models.generate_v1_synthetic_user_generate_post_response_502 import (
     GenerateV1SyntheticUserGeneratePostResponse502,
 )
 from ...models.http_validation_error import HTTPValidationError
+from ...models.unauthorized_response import UnauthorizedResponse
 from ...types import Response
 
 
@@ -43,10 +41,10 @@ def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
 ) -> (
     GenerateSyntheticUsersResponse
-    | GenerateV1SyntheticUserGeneratePostResponse401
     | GenerateV1SyntheticUserGeneratePostResponse500
     | GenerateV1SyntheticUserGeneratePostResponse502
     | HTTPValidationError
+    | UnauthorizedResponse
     | None
 ):
     if response.status_code == 200:
@@ -55,7 +53,7 @@ def _parse_response(
         return response_200
 
     if response.status_code == 401:
-        response_401 = GenerateV1SyntheticUserGeneratePostResponse401.from_dict(response.json())
+        response_401 = UnauthorizedResponse.from_dict(response.json())
 
         return response_401
 
@@ -84,10 +82,10 @@ def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
 ) -> Response[
     GenerateSyntheticUsersResponse
-    | GenerateV1SyntheticUserGeneratePostResponse401
     | GenerateV1SyntheticUserGeneratePostResponse500
     | GenerateV1SyntheticUserGeneratePostResponse502
     | HTTPValidationError
+    | UnauthorizedResponse
 ]:
     return Response(
         status_code=HTTPStatus(response.status_code),
@@ -103,10 +101,10 @@ def sync_detailed(
     body: GenerateSyntheticUsersRequest,
 ) -> Response[
     GenerateSyntheticUsersResponse
-    | GenerateV1SyntheticUserGeneratePostResponse401
     | GenerateV1SyntheticUserGeneratePostResponse500
     | GenerateV1SyntheticUserGeneratePostResponse502
     | HTTPValidationError
+    | UnauthorizedResponse
 ]:
     """Generate
 
@@ -128,7 +126,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[GenerateSyntheticUsersResponse | GenerateV1SyntheticUserGeneratePostResponse401 | GenerateV1SyntheticUserGeneratePostResponse500 | GenerateV1SyntheticUserGeneratePostResponse502 | HTTPValidationError]
+        Response[GenerateSyntheticUsersResponse | GenerateV1SyntheticUserGeneratePostResponse500 | GenerateV1SyntheticUserGeneratePostResponse502 | HTTPValidationError | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -148,10 +146,10 @@ def sync(
     body: GenerateSyntheticUsersRequest,
 ) -> (
     GenerateSyntheticUsersResponse
-    | GenerateV1SyntheticUserGeneratePostResponse401
     | GenerateV1SyntheticUserGeneratePostResponse500
     | GenerateV1SyntheticUserGeneratePostResponse502
     | HTTPValidationError
+    | UnauthorizedResponse
     | None
 ):
     """Generate
@@ -174,7 +172,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        GenerateSyntheticUsersResponse | GenerateV1SyntheticUserGeneratePostResponse401 | GenerateV1SyntheticUserGeneratePostResponse500 | GenerateV1SyntheticUserGeneratePostResponse502 | HTTPValidationError
+        GenerateSyntheticUsersResponse | GenerateV1SyntheticUserGeneratePostResponse500 | GenerateV1SyntheticUserGeneratePostResponse502 | HTTPValidationError | UnauthorizedResponse
     """
 
     return sync_detailed(
@@ -189,10 +187,10 @@ async def asyncio_detailed(
     body: GenerateSyntheticUsersRequest,
 ) -> Response[
     GenerateSyntheticUsersResponse
-    | GenerateV1SyntheticUserGeneratePostResponse401
     | GenerateV1SyntheticUserGeneratePostResponse500
     | GenerateV1SyntheticUserGeneratePostResponse502
     | HTTPValidationError
+    | UnauthorizedResponse
 ]:
     """Generate
 
@@ -214,7 +212,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[GenerateSyntheticUsersResponse | GenerateV1SyntheticUserGeneratePostResponse401 | GenerateV1SyntheticUserGeneratePostResponse500 | GenerateV1SyntheticUserGeneratePostResponse502 | HTTPValidationError]
+        Response[GenerateSyntheticUsersResponse | GenerateV1SyntheticUserGeneratePostResponse500 | GenerateV1SyntheticUserGeneratePostResponse502 | HTTPValidationError | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -232,10 +230,10 @@ async def asyncio(
     body: GenerateSyntheticUsersRequest,
 ) -> (
     GenerateSyntheticUsersResponse
-    | GenerateV1SyntheticUserGeneratePostResponse401
     | GenerateV1SyntheticUserGeneratePostResponse500
     | GenerateV1SyntheticUserGeneratePostResponse502
     | HTTPValidationError
+    | UnauthorizedResponse
     | None
 ):
     """Generate
@@ -258,7 +256,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        GenerateSyntheticUsersResponse | GenerateV1SyntheticUserGeneratePostResponse401 | GenerateV1SyntheticUserGeneratePostResponse500 | GenerateV1SyntheticUserGeneratePostResponse502 | HTTPValidationError
+        GenerateSyntheticUsersResponse | GenerateV1SyntheticUserGeneratePostResponse500 | GenerateV1SyntheticUserGeneratePostResponse502 | HTTPValidationError | UnauthorizedResponse
     """
 
     return (

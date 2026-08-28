@@ -76,7 +76,6 @@ from .generate_judge_prompt_api_input_trace_type import GenerateJudgePromptApiIn
 from .generate_judge_prompt_output import GenerateJudgePromptOutput
 from .generate_synthetic_users_request import GenerateSyntheticUsersRequest
 from .generate_synthetic_users_response import GenerateSyntheticUsersResponse
-from .generate_v1_synthetic_user_generate_post_response_401 import GenerateV1SyntheticUserGeneratePostResponse401
 from .generate_v1_synthetic_user_generate_post_response_500 import GenerateV1SyntheticUserGeneratePostResponse500
 from .generate_v1_synthetic_user_generate_post_response_502 import GenerateV1SyntheticUserGeneratePostResponse502
 from .generate_v1_synthetic_user_generate_post_response_502_code import (
@@ -231,7 +230,6 @@ __all__ = (
     "GenerateJudgePromptOutput",
     "GenerateSyntheticUsersRequest",
     "GenerateSyntheticUsersResponse",
-    "GenerateV1SyntheticUserGeneratePostResponse401",
     "GenerateV1SyntheticUserGeneratePostResponse500",
     "GenerateV1SyntheticUserGeneratePostResponse502",
     "GenerateV1SyntheticUserGeneratePostResponse502Code",

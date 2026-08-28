@@ -12,12 +12,12 @@ import pytest
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     GenerateSyntheticUsersResponse,
-    GenerateV1SyntheticUserGeneratePostResponse401,
     GenerateV1SyntheticUserGeneratePostResponse500,
     GenerateV1SyntheticUserGeneratePostResponse502,
     GenerateV1SyntheticUserGeneratePostResponse502Code,
     HTTPValidationError,
     SyntheticUserCase,
+    UnauthorizedResponse,
     ValidationError,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
@@ -230,9 +230,11 @@ async def test_generate_500_with_unset_code_falls_back(
 async def test_generate_401_surfaces_as_request_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    parsed = GenerateV1SyntheticUserGeneratePostResponse401(
+    """The server answers every route's 401 with one shared body. It carries
+    no code, so the wrapper supplies the classification itself."""
+    parsed = UnauthorizedResponse(
         message="invalid api key",
-        code="unauthorized",
+        trace_id="trace-abc123",
     )
     _patch_generate(monkeypatch, AsyncMock(return_value=_err_response(401, parsed)))
 
@@ -243,24 +245,6 @@ async def test_generate_401_surfaces_as_request_error(
 
     assert exc.value.code == "unauthorized"
     assert exc.value.status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_generate_401_with_unset_code_uses_default(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    parsed = GenerateV1SyntheticUserGeneratePostResponse401(
-        message="invalid api key",
-        code=UNSET,  # type: ignore[arg-type]
-    )
-    _patch_generate(monkeypatch, AsyncMock(return_value=_err_response(401, parsed)))
-
-    with pytest.raises(SyntheticUserRequestError) as exc:
-        await _make_client().generate(
-            target_task_prompt="p", target_specification="s", num_cases=1
-        )
-
-    assert exc.value.code == "unauthorized"
 
 
 # ───────────────────────── 422 (HTTPValidationError) ─────────────────────────
