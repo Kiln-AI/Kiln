@@ -23,7 +23,7 @@
   import {
     map_input_span_to_trace,
     map_output_span_to_trace,
-    resolve_citation_span,
+    resolve_citation_span_whitespace_tolerant,
     single_turn_sections_resolver,
     type Citation,
     type CitationSource,
@@ -103,6 +103,10 @@
   // message). Null for legacy traces or unmappable spans — ChatTrace then
   // renders without a highlight rather than a wrong one, and the miss is
   // logged so the silence is observable.
+  //
+  // The anchors resolve through the whitespace-tolerant resolver, which absorbs
+  // the retyping drift a model introduces. That cannot mis-place a mark here:
+  // the mapper's byte-identity guards still adjudicate whatever it returns.
   $: chat_highlight = single_turn
     ? null
     : compute_chat_highlight(trace, active_source, active_citation)
@@ -117,25 +121,51 @@
       return null
     }
     const raw = source === "input" ? t.raw_input : t.raw_output
-    const span = resolve_citation_span(raw, citation)
-    let mapped = span
-      ? source === "input"
+    const span = resolve_citation_span_whitespace_tolerant(raw, citation)
+    if (!span) {
+      warn_citation("anchor_not_found", citation, source)
+      return null
+    }
+    const mapped =
+      source === "input"
         ? map_input_span_to_trace(t.trace, t.raw_input, span)
         : map_output_span_to_trace(t.trace, t.raw_output, span)
-      : null
-    if (mapped && !chat_renders_highlight(t.trace, mapped)) {
+    if (!mapped) {
+      // A span that resolves in the raw text but sits in no recomputed block,
+      // or one a byte-identity guard rejected: either way our flattener port
+      // no longer matches what the server rendered.
+      warn_citation("flattener_drift", citation, source)
+      return null
+    }
+    if (!chat_renders_highlight(t.trace, mapped)) {
       // The flattener emits blocks for rows the chat drops (system /
       // developer), so a span can map onto a node ChatTrace will never
       // draw — passing it through would be a highlight with no target.
-      mapped = null
+      warn_citation("row_not_rendered", citation, source)
+      return null
     }
-    if (!mapped) {
-      console.warn(
-        "Citation could not be mapped onto the trace; showing it without a highlight.",
-        { marker: citation.marker, source, from: citation.from },
-      )
+    if (mapped.from_anchor_only) {
+      // The highlight is honest but partial. Worth logging anyway: a citation
+      // whose two anchors sit in different turns is a model-side defect.
+      warn_citation("spans_two_turns", citation, source)
     }
     return mapped
+  }
+
+  // One shape for every citation-mapping warning. The reason code is in the
+  // message so a console filter finds it, and the anchors travel with it so the
+  // miss can be reproduced without re-driving the trace.
+  function warn_citation(
+    reason: string,
+    citation: Citation,
+    source: CitationSource,
+  ) {
+    console.warn(`Citation highlight issue (${reason}).`, {
+      marker: citation.marker,
+      source,
+      from: citation.from,
+      to: citation.to,
+    })
   }
 
   // Whether ChatTrace draws a row that can carry this highlight: tool
@@ -177,7 +207,10 @@
     trace = t
     active_source = citation.source
     active_citation = citation
-    active_span = resolve_citation_span(text_for(citation.source), citation)
+    active_span = resolve_citation_span_whitespace_tolerant(
+      text_for(citation.source),
+      citation,
+    )
     dialog?.show()
     reset_scroll()
     // Wait for the <mark> to render, then bring it into view. Only the raw

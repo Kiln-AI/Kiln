@@ -158,6 +158,39 @@
       ? owner_of_tool_result(highlight.trace_index)
       : null
 
+  // Whether the highlighted node draws a <mark>, or only expands and scrolls to
+  // the bubble: a tool-CALL block renders through a component rather than plain
+  // text, and a tool result falls back to its bubble when the displayed text is
+  // not the raw string the offsets index.
+  $: highlight_draws_mark = draws_highlight_mark(
+    highlight,
+    tool_result_owner,
+    tool_results_by_call_id,
+  )
+  function draws_highlight_mark(
+    h: typeof highlight,
+    owner: { index: number; tcIdx: number } | null,
+    results: Map<string, { message: TraceMessage; trace_index: number }>,
+  ): boolean {
+    if (!h) return true
+    if (h.kind === "tool_calls") return false
+    if (h.kind !== "tool_result") return true
+    if (!owner) return false
+    const call = tool_calls_from_message(trace[owner.index])?.[owner.tcIdx]
+    const result = call ? results.get(call.id) ?? null : null
+    if (!result || result.trace_index !== h.trace_index) return false
+    return tool_result_citation_text(result.message) !== null
+  }
+
+  // Log the scroll-only case. A citation that expands a bubble and draws
+  // nothing looks identical to a broken one, so the silence has to end here.
+  $: if (highlight && !highlight_draws_mark) {
+    console.warn("Citation highlight issue (no_mark_drawn).", {
+      trace_index: highlight.trace_index,
+      kind: highlight.kind,
+    })
+  }
+
   let thinkingExpanded: Record<number, boolean> = {}
   // Keyed by `${trace_index}-${tool_call_index}` so each tool call within an
   // assistant message expands independently.

@@ -83,6 +83,7 @@
     build_graded_traces,
     build_trace_reviews,
     calibration_gate_target,
+    declined_feedback_notice,
     disagreed_trace_indices,
     disagreement_feedback,
     empty_claim_verdicts,
@@ -98,6 +99,7 @@
     reviewed_trace_count,
     select_calibration_subset,
     select_review_subset,
+    strip_wrapping_code_fence,
     user_says_meets_spec,
     validate_refined_judge_prompt,
     type Claim,
@@ -295,6 +297,9 @@
     calibration_phase = "idle"
     calibration_error = null
     calibration_refine_error = null
+    // The declined-feedback notice belongs to the round the reviewer was in;
+    // leaving review retires it rather than re-opening it later out of context.
+    calibration_declined_feedback_notice = null
     current_step = step
   }
   $: sync_step_from_history(
@@ -1457,6 +1462,11 @@
     prompt: string
   } | null = null
 
+  // How many extra authoring calls an unusable prompt is worth. An invalid
+  // authored prompt is model variance on a paid call, so one automatic re-ask
+  // recovers most of them without hiding a persistent failure behind spend.
+  const JUDGE_AUTHOR_RESAMPLE_ATTEMPTS = 1
+
   // Author a spec-tailored judge prompt via the studio (kiln_server's
   // multi-turn judge author) — the multi-turn counterpart of clarify_spec's
   // judge_result. Authoring is REQUIRED: any failure, deadline expiry, or
@@ -1475,55 +1485,81 @@
     ) {
       return authored_judge_cache.prompt
     }
-    const { signal, timed_out } = with_deadline(
-      user_signal,
-      JUDGE_COPILOT_DEADLINE_MS,
-    )
-    let data, error
-    try {
-      ;({ data, error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/eval_builder/author_judge",
-        {
-          params: { path: { project_id, task_id } },
-          body: {
-            target_specification: spec,
-            target_task_prompt: task_prompt,
+    // One authoring call and its validation: the usable prompt, or null when
+    // only the prompt itself was unusable — the single case worth re-asking.
+    // Every other failure throws from here, exactly as before.
+    async function author_attempt(): Promise<string | null> {
+      const { signal, timed_out } = with_deadline(
+        user_signal,
+        JUDGE_COPILOT_DEADLINE_MS,
+      )
+      let data, error
+      try {
+        ;({ data, error } = await client.POST(
+          "/api/projects/{project_id}/tasks/{task_id}/eval_builder/author_judge",
+          {
+            params: { path: { project_id, task_id } },
+            body: {
+              target_specification: spec,
+              target_task_prompt: task_prompt,
+            },
+            signal,
           },
-          signal,
-        },
-      ))
-    } catch (e) {
-      // Deadline check FIRST: its rejection is a TimeoutError (not
-      // AbortError) in most engines, but engines vary — timed_out() is the
-      // authoritative discriminator either way.
-      if (timed_out()) {
-        posthog.capture("eval_v2_judge_author_failure", { reason: "timeout" })
-        throw new KilnError("Authoring your judge took too long. Try again.")
+        ))
+      } catch (e) {
+        // Deadline check FIRST: its rejection is a TimeoutError (not
+        // AbortError) in most engines, but engines vary — timed_out() is the
+        // authoritative discriminator either way.
+        if (timed_out()) {
+          posthog.capture("eval_v2_judge_author_failure", { reason: "timeout" })
+          throw new KilnError("Authoring your judge took too long. Try again.")
+        }
+        if (is_abort_error(e)) throw e
+        posthog.capture("eval_v2_judge_author_failure", {
+          reason: "request_failed",
+        })
+        // Thrown = the request never completed (network/transport) — the one
+        // case where "check your connection" is the right diagnosis.
+        throw new KilnError(
+          "Couldn't reach the server to author a judge for your spec. Check your connection and try again.",
+        )
       }
-      if (is_abort_error(e)) throw e
-      posthog.capture("eval_v2_judge_author_failure", {
-        reason: "request_failed",
-      })
-      // Thrown = the request never completed (network/transport) — the one
-      // case where "check your connection" is the right diagnosis.
-      throw new KilnError(
-        "Couldn't reach the server to author a judge for your spec. Check your connection and try again.",
-      )
+      if (error || !data?.judge_prompt) {
+        posthog.capture("eval_v2_judge_author_failure", {
+          reason: "request_failed",
+        })
+        // The request completed and the server said no — surface ITS detail
+        // (e.g. "API key not configured"), like every sibling copilot call.
+        throw new KilnError(
+          `Couldn't author a judge for your spec: ${createKilnError(error).getMessage()}`,
+        )
+      }
+      // Same mechanical validation as the refine path: the prompt renders
+      // into the judge harness verbatim, so an unusable one is a failure.
+      if (!validate_refined_judge_prompt(data.judge_prompt)) {
+        return data.judge_prompt
+      }
+      // A prompt the model wrapped in a code fence is good content in bad
+      // packaging: unwrap it and re-validate rather than spend another call.
+      const unwrapped = strip_wrapping_code_fence(data.judge_prompt)
+      if (!validate_refined_judge_prompt(unwrapped)) {
+        posthog.capture("eval_v2_judge_prompt_sanitized", { site: "author" })
+        return unwrapped
+      }
+      return null
     }
-    if (error || !data?.judge_prompt) {
-      posthog.capture("eval_v2_judge_author_failure", {
-        reason: "request_failed",
-      })
-      // The request completed and the server said no — surface ITS detail
-      // (e.g. "API key not configured"), like every sibling copilot call.
-      throw new KilnError(
-        `Couldn't author a judge for your spec: ${createKilnError(error).getMessage()}`,
-      )
+
+    let prompt: string | null = null
+    for (
+      let attempt = 0;
+      prompt === null && attempt <= JUDGE_AUTHOR_RESAMPLE_ATTEMPTS;
+      attempt++
+    ) {
+      prompt = await author_attempt()
     }
-    // Same mechanical validation as the refine path: the prompt renders
-    // into the judge harness verbatim, so an unusable one is a failure.
-    const validation_error = validate_refined_judge_prompt(data.judge_prompt)
-    if (validation_error) {
+    if (prompt === null) {
+      // Captured once, here: the event means the user saw the failure, not
+      // that some attempt along the way came back unusable.
       posthog.capture("eval_v2_judge_author_failure", {
         reason: "invalid_authored_prompt",
       })
@@ -1532,9 +1568,9 @@
     authored_judge_cache = {
       spec_text: spec,
       task_prompt,
-      prompt: data.judge_prompt,
+      prompt,
     }
-    return data.judge_prompt
+    return prompt
   }
 
   // Commit the lanes and the conversation length, then start the run. Refuses
@@ -1609,6 +1645,10 @@
         stage: "drive" | "run" | "judge"
         code: string
         message: string
+        // Exception class name behind a provider or unexpected failure, so
+        // analytics can aggregate by type. Null on deterministic failures the
+        // code already names, and absent from older streams.
+        error_type?: string | null
       }
     | {
         type: "batch_completed"
@@ -2272,6 +2312,7 @@
           posthog.capture("eval_v2_pipeline_case_failed", {
             stage: event.stage,
             code: event.code,
+            error_type: event.error_type ?? null,
           })
         } else if (event.type === "batch_failed") {
           posthog.capture("eval_v2_pipeline_batch_failed", {
@@ -2799,6 +2840,7 @@
           posthog.capture("eval_v2_pipeline_case_failed", {
             stage: event.stage,
             code: event.code,
+            error_type: event.error_type ?? null,
           })
         } else if (event.type === "batch_failed") {
           posthog.capture("eval_v2_pipeline_batch_failed", {
@@ -3235,6 +3277,9 @@
   // Cases without a fresh verdict last round — surfaced honestly above the
   // review; they keep stale results and sit the round out.
   let calibration_failed_count = 0
+  // Feedback the last refine declined to incorporate, as the notice to show
+  // over the round it produced — otherwise the reviewer's note looks ignored.
+  let calibration_declined_feedback_notice: string | null = null
   // Durable run ids of traces graded in ANY round — the fresh top-up must
   // never re-serve them as "never reviewed".
   let calibration_reviewed_keys = new Set<string>()
@@ -3256,6 +3301,7 @@
     calibration_error = null
     calibration_refine_error = null
     calibration_failed_count = 0
+    calibration_declined_feedback_notice = null
     calibration_reviewed_keys = new Set()
     calibration_pending_judge = null
     calibration_pending_disagreed = []
@@ -3306,6 +3352,9 @@
   async function refine_judge_for_calibration(
     judge: JudgeConfig,
   ): Promise<JudgeConfig> {
+    // A fresh refine answers the current grades: whatever the last one
+    // declined is no longer what the reviewer is about to see.
+    calibration_declined_feedback_notice = null
     const graded_traces = build_graded_traces(trace_claims, trace_reviews)
     const { signal, timed_out } = with_deadline(
       new_copilot_abort_signal(),
@@ -3341,16 +3390,32 @@
       )
     }
     const proposal = data as RefineJudgeProposal
-    const validation_error = validate_refined_judge_prompt(
-      proposal.refined_judge_prompt,
-    )
+    let refined_prompt = proposal.refined_judge_prompt
+    let validation_error = validate_refined_judge_prompt(refined_prompt)
+    if (validation_error) {
+      // A prompt the model wrapped in a code fence is good content in bad
+      // packaging: unwrap it and re-validate rather than fail the round.
+      const unwrapped = strip_wrapping_code_fence(refined_prompt)
+      validation_error = validate_refined_judge_prompt(unwrapped)
+      if (!validation_error) {
+        posthog.capture("eval_v2_judge_prompt_sanitized", {
+          site: "calibration_refine",
+        })
+        refined_prompt = unwrapped
+      }
+    }
     if (validation_error) {
       throw new CalibrationRefineError(
         "invalid_refined_prompt",
         "The refined judge prompt wasn't usable.",
       )
     }
-    return { ...judge, prompt: proposal.refined_judge_prompt }
+    // Feedback the model says it left out — carried into the re-review the
+    // refined judge produces, where the reviewer is looking for their note.
+    calibration_declined_feedback_notice = declined_feedback_notice(
+      proposal.not_incorporated_feedback,
+    )
+    return { ...judge, prompt: refined_prompt }
   }
 
   // Re-judge every driven case with the refined judge over the judge_traces
@@ -4776,6 +4841,17 @@
                     calibration_failed_count,
                     case_noun,
                   )}
+                />
+              </div>
+            {/if}
+            {#if calibration_declined_feedback_notice}
+              <!-- Feedback the refine declined, said out loud over the round
+                   it produced — a note silently dropped reads as ignored. -->
+              <div class="mb-4">
+                <Warning
+                  warning_color="primary"
+                  warning_icon="info"
+                  warning_message={calibration_declined_feedback_notice}
                 />
               </div>
             {/if}

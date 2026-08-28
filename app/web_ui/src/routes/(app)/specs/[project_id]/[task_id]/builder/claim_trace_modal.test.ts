@@ -87,6 +87,14 @@ function multi_turn_trace(overrides: Partial<TraceClaims> = {}): TraceClaims {
   }
 }
 
+// The reason codes a run of the modal logged. The code travels in the warning
+// message so a console filter can find it; the tests read it back the same way.
+function warn_reasons(warn: { mock: { calls: unknown[][] } }): string[] {
+  return warn.mock.calls
+    .map((call) => String(call[0]).match(/\(([a-z_]+)\)/)?.[1] ?? "")
+    .filter(Boolean)
+}
+
 function input_citation(): Citation {
   return {
     marker: 1,
@@ -118,18 +126,57 @@ describe("claim_trace_modal — citation mapping fallbacks", () => {
       container.querySelector("[data-testid='chat-msg-user']"),
     ).not.toBeNull()
     expect(container.querySelector("mark")).toBeNull()
-    // The silent miss is observable.
-    expect(warn).toHaveBeenCalled()
+    // The silent miss is observable. One code covers every mapping refusal;
+    // the payload's `source` is what says this was the input path.
+    expect(warn_reasons(warn)).toContain("flattener_drift")
   })
 
-  it("logs a span that resolves but maps onto no single chat node", async () => {
+  it("logs a citation whose anchors are nowhere in the source", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const { container, component } = render(ClaimTraceModal, {
+      props: { single_turn: false },
+    })
+    component.open_citation(multi_turn_trace(), {
+      marker: 1,
+      source: "output",
+      from: "a sentence this trace never contained",
+      to: "nor this one",
+    })
+    await tick()
+
+    expect(container.querySelector("mark")).toBeNull()
+    expect(warn_reasons(warn)).toContain("anchor_not_found")
+  })
+
+  it("marks a citation the strict resolver would have missed", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const { container, component } = render(ClaimTraceModal, {
+      props: { single_turn: false },
+    })
+    // Anchors retyped with a line break where the trace has a space: the
+    // tolerant resolver finds them, and the block mapper still adjudicates.
+    component.open_citation(multi_turn_trace(), {
+      marker: 1,
+      source: "output",
+      from: "Happy to help\nwith",
+      to: "the return",
+    })
+    await tick()
+
+    expect(container.querySelector("mark")?.textContent).toBe(
+      "Happy to help with the return",
+    )
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it("marks the from anchor of a citation that spans two turns", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
     const { container, component } = render(ClaimTraceModal, {
       props: { single_turn: false },
     })
     // Both anchors exist in raw_output but in different blocks (user turn →
-    // assistant turn), so the span straddles the flattener's tag chrome and
-    // map_output_span_to_trace refuses.
+    // assistant turn). The anchor the model wrote still has a home, so the
+    // citation highlights there instead of dying.
     component.open_citation(multi_turn_trace(), {
       marker: 1,
       source: "output",
@@ -138,8 +185,10 @@ describe("claim_trace_modal — citation mapping fallbacks", () => {
     })
     await tick()
 
-    expect(container.querySelector("mark")).toBeNull()
-    expect(warn).toHaveBeenCalled()
+    expect(container.querySelector("mark")?.textContent).toBe("return my order")
+    // Partial, and the model wrote a citation across two turns — both worth
+    // knowing about.
+    expect(warn_reasons(warn)).toContain("spans_two_turns")
   })
 
   it("rejects a highlight onto a row the chat never draws", async () => {
@@ -171,7 +220,7 @@ describe("claim_trace_modal — citation mapping fallbacks", () => {
     await tick()
 
     expect(container.querySelector("mark")).toBeNull()
-    expect(warn).toHaveBeenCalled()
+    expect(warn_reasons(warn)).toContain("row_not_rendered")
   })
 
   it("does not warn on an empty trace — the raw panels carry the mark", async () => {

@@ -10,6 +10,7 @@ import {
   build_trace_reviews,
   calibration_gate_target,
   CHAR_CUTOFF,
+  declined_feedback_notice,
   disagreed_trace_indices,
   disagreement_feedback,
   final_judgement_reason,
@@ -36,6 +37,7 @@ import {
   single_turn_output_text,
   single_turn_sections,
   single_turn_sections_resolver,
+  strip_wrapping_code_fence,
   user_says_meets_spec,
   validate_refined_judge_prompt,
   WHITESPACE_FREE_FOLD,
@@ -534,6 +536,65 @@ describe("validate_refined_judge_prompt", () => {
   })
 })
 
+describe("strip_wrapping_code_fence", () => {
+  it("unwraps a fenced prompt, with or without a language tag", () => {
+    expect(strip_wrapping_code_fence("```\nPASS if polite.\n```")).toBe(
+      "PASS if polite.",
+    )
+    expect(strip_wrapping_code_fence("```markdown\nPASS if polite.\n```")).toBe(
+      "PASS if polite.",
+    )
+    expect(
+      validate_refined_judge_prompt(
+        strip_wrapping_code_fence("```markdown\nPASS if polite.\n```"),
+      ),
+    ).toBeNull()
+  })
+
+  it("leaves a prompt without a wrapping fence unchanged", () => {
+    const plain = "PASS if the reply is polite, FAIL otherwise."
+    expect(strip_wrapping_code_fence(plain)).toBe(plain)
+  })
+
+  it("leaves interior and one-sided fences unchanged", () => {
+    const interior = "Judge this:\n```\nexample\n```\nThen decide."
+    expect(strip_wrapping_code_fence(interior)).toBe(interior)
+    const open_only = "```markdown\nPASS if polite."
+    expect(strip_wrapping_code_fence(open_only)).toBe(open_only)
+    const close_only = "PASS if polite.\n```"
+    expect(strip_wrapping_code_fence(close_only)).toBe(close_only)
+  })
+
+  it("strips only one wrapping pair, so a doubly wrapped prompt still fails", () => {
+    const doubled = "```\n```\nPASS if polite.\n```\n```"
+    expect(strip_wrapping_code_fence(doubled)).toBe("```\nPASS if polite.\n```")
+    expect(
+      validate_refined_judge_prompt(strip_wrapping_code_fence(doubled)),
+    ).toMatch(/fences/)
+  })
+
+  it("recovers the wrapping only, never the content", () => {
+    // Jinja braces inside the fence survive the unwrap and still fail.
+    expect(
+      validate_refined_judge_prompt(
+        strip_wrapping_code_fence("```\nScore {{ trace }}\n```"),
+      ),
+    ).toMatch(/Jinja/)
+    // An empty fence unwraps to nothing, which is still not a judge prompt.
+    expect(
+      validate_refined_judge_prompt(strip_wrapping_code_fence("```\n\n```")),
+    ).toMatch(/empty/)
+    // Runaway output stays runaway once the fence is off.
+    expect(
+      validate_refined_judge_prompt(
+        strip_wrapping_code_fence(
+          `\`\`\`\n${"a".repeat(MAX_JUDGE_PROMPT_CHARS + 1)}\n\`\`\``,
+        ),
+      ),
+    ).toMatch(/too long/)
+  })
+})
+
 describe("resolve_citation_span", () => {
   it("resolves from/to anchors in order", () => {
     const span = resolve_citation_span(
@@ -543,7 +604,9 @@ describe("resolve_citation_span", () => {
         to: "purchase",
       },
     )
-    expect(span).toEqual({ start: 17, end: 38 })
+    // from_end closes the `from` anchor alone, for callers that cannot place
+    // the whole span.
+    expect(span).toEqual({ start: 17, from_end: 24, end: 38 })
   })
 
   it("returns null when an anchor is missing", () => {
@@ -933,6 +996,8 @@ describe("map_output_span_to_trace — flattener block layout port", () => {
     expect("Our return window is 30 days.".slice(h!.start, h!.end)).toBe(
       "Our return window is 30 days",
     )
+    // Both anchors sit in this turn, so the whole span is marked.
+    expect(h!.from_anchor_only).toBe(false)
   })
 
   it("maps a span in a reasoning block", () => {
@@ -952,15 +1017,80 @@ describe("map_output_span_to_trace — flattener block layout port", () => {
     expect(h!.kind).toBe("tool_calls")
   })
 
-  it("returns null when the span straddles two blocks", () => {
-    // from lands in the user turn, to in the reasoning turn — no single block
-    // contains the span, so there is no honest highlight.
+  it("marks the from anchor alone when the span crosses two turns", () => {
+    // from lands in the user turn, to in the reasoning turn. No block holds
+    // the whole span, so the anchor the model wrote is what gets marked.
     const span = resolve_citation_span(raw_output, {
       from: "What is the return",
       to: "think about",
     })
     expect(span).not.toBeNull()
-    expect(map_output_span_to_trace(trace, raw_output, span!)).toBeNull()
+    const h = map_output_span_to_trace(trace, raw_output, span!)
+    expect(h).not.toBeNull()
+    expect(h!.trace_index).toBe(0)
+    expect(h!.kind).toBe("content")
+    expect(h!.from_anchor_only).toBe(true)
+    expect("What is the return window?".slice(h!.start, h!.end)).toBe(
+      "What is the return",
+    )
+  })
+
+  it("returns null when the span starts in the flattener's tag chrome", () => {
+    // The recovery is scoped to the block holding `from`; an anchor that is
+    // part of the chrome belongs to no block and has nothing to mark.
+    const start = raw_output.indexOf("<assistant_reasoning_message>")
+    expect(start).toBeGreaterThan(0)
+    expect(
+      map_output_span_to_trace(trace, raw_output, {
+        start,
+        from_end: start + 5,
+        end: start + 5,
+      }),
+    ).toBeNull()
+  })
+
+  it("refuses a block whose text has drifted from raw_output", () => {
+    // The byte-identity guard: the recomputed layout says this block holds the
+    // span, but raw_output disagrees at that offset, so the port has drifted
+    // and no highlight is honest — recovery included.
+    const drifted = raw_output.replace(
+      "Let me think about policy.",
+      "Let me think about POLICY!",
+    )
+    const span = resolve_citation_span(drifted, {
+      from: "think about",
+      to: "POLICY",
+    })
+    expect(span).not.toBeNull()
+    expect(map_output_span_to_trace(trace, drifted, span!)).toBeNull()
+    // And with a cross-turn span, so the from-anchor path hits it too.
+    const crossing = resolve_citation_span(drifted, {
+      from: "think about",
+      to: "Our return window",
+    })
+    expect(crossing).not.toBeNull()
+    expect(map_output_span_to_trace(trace, drifted, crossing!)).toBeNull()
+  })
+
+  it("recovers a whitespace-drifted cross-turn citation", () => {
+    // The strict resolver misses anchors the model retyped with different
+    // whitespace; the tolerant one finds them, and the block mapper still
+    // adjudicates the result — here down to the from anchor.
+    const anchors = {
+      from: "Let me think\nabout policy",
+      to: "Our return window",
+    }
+    expect(resolve_citation_span(raw_output, anchors)).toBeNull()
+    const span = resolve_citation_span_whitespace_tolerant(raw_output, anchors)
+    expect(span).not.toBeNull()
+    const h = map_output_span_to_trace(trace, raw_output, span!)
+    expect(h).not.toBeNull()
+    expect(h!.trace_index).toBe(1)
+    expect(h!.kind).toBe("reasoning")
+    expect(h!.from_anchor_only).toBe(true)
+    expect("Let me think about policy.".slice(h!.start, h!.end)).toBe(
+      "Let me think about policy",
+    )
   })
 })
 
@@ -1406,6 +1536,25 @@ describe("rejudge_shortfall_notice", () => {
       "left out of this review round",
     )
     expect(rejudge_shortfall_notice(3, "conversation")).not.toMatch(/—/)
+  })
+})
+
+describe("declined_feedback_notice", () => {
+  it("quotes the declined feedback back to the reviewer", () => {
+    expect(
+      declined_feedback_notice("The tone complaint is out of scope."),
+    ).toBe(
+      'Some of your feedback was not applied this round: "The tone complaint is out of scope."',
+    )
+  })
+
+  it("silent when the refine declined nothing", () => {
+    expect(declined_feedback_notice(null)).toBeNull()
+  })
+
+  it("silent on blank feedback, which says no more than nothing", () => {
+    expect(declined_feedback_notice("")).toBeNull()
+    expect(declined_feedback_notice("   \n\t ")).toBeNull()
   })
 })
 

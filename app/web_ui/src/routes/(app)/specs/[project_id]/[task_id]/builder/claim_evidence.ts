@@ -109,6 +109,15 @@ export type TraceReview = {
 
 // ── Citation resolution ──────────────────────────────────────────────────
 
+// A resolved citation: the whole [start, end) span, plus where the `from`
+// anchor alone ends. from_end lets a caller that cannot place the whole span
+// fall back to the anchor the model actually wrote, instead of nothing.
+export type CitationSpan = {
+  start: number
+  end: number
+  from_end: number
+}
+
 // Resolve a citation to a [start, end) span in its source text. Finds the
 // first occurrence of `from`, then the first `to` at/after it (so `to` can sit
 // later in the text; equal to `from` for a short span). Returns null if either
@@ -122,7 +131,7 @@ export type TraceReview = {
 export function resolve_citation_span(
   text: string,
   citation: Pick<Citation, "from" | "to">,
-): { start: number; end: number } | null {
+): CitationSpan | null {
   const haystack = fold_typography(text)
   const from = fold_typography(citation.from)
   const to = fold_typography(citation.to)
@@ -130,7 +139,8 @@ export function resolve_citation_span(
   if (start < 0) return null
   const to_at = haystack.indexOf(to, start)
   if (to_at < 0) return null
-  return { start, end: to_at + to.length }
+  // The fold is 1:1 here, so the anchor's folded length is its raw length.
+  return { start, from_end: start + from.length, end: to_at + to.length }
 }
 
 // Curly punctuation folded to its straight form. Models retype anchors from
@@ -296,7 +306,7 @@ export const WHITESPACE_FREE_FOLD: FoldRule[] = [
 export function resolve_citation_span_whitespace_tolerant(
   text: string,
   citation: Pick<Citation, "from" | "to">,
-): { start: number; end: number } | null {
+): CitationSpan | null {
   return (
     resolve_span_in_fold(text, citation, WHITESPACE_TOLERANT_FOLD) ??
     resolve_span_in_fold(text, citation, WHITESPACE_FREE_FOLD)
@@ -307,7 +317,7 @@ function resolve_span_in_fold(
   text: string,
   citation: Pick<Citation, "from" | "to">,
   rules: FoldRule[],
-): { start: number; end: number } | null {
+): CitationSpan | null {
   const haystack = fold_with_offsets(text, rules)
   // The needle folds through the SAME rules, or the two would be normalized
   // into different alphabets and never meet.
@@ -326,6 +336,9 @@ function resolve_span_in_fold(
   const end = to_at + to.length
   return {
     start: span_start(haystack, start),
+    // Mapped the same way the whole span's end is: a folded character can
+    // stand for a wider run, so the anchor's end is not start + from.length.
+    from_end: span_end(haystack, start + from.length - 1),
     end: span_end(haystack, end - 1),
   }
 }
@@ -380,6 +393,10 @@ export type TraceHighlight = {
   kind: TraceHighlightKind
   start: number
   end: number
+  // True when only the citation's `from` anchor could be marked because its
+  // `to` anchor landed in a later turn. Callers surface it as a model-side
+  // citation defect; absent means the whole span is highlighted.
+  from_anchor_only?: boolean
 }
 
 // One emitted flattener block with its absolute span in the recomputed string.
@@ -560,11 +577,15 @@ function flatten_output_blocks(trace: TraceMessage[]): FlattenedBlock[] {
 }
 
 // Map a resolved [start, end) span in raw_output to the trace node it came
-// from. Returns null when the span doesn't sit cleanly inside one block's text
-// (e.g. it straddles the tag chrome or two messages), or when the recomputed
-// layout doesn't match raw_output byte-for-byte at that offset — a mismatch
-// means our port drifted from the server, so we surface NO highlight rather
-// than a wrong one.
+// from. Returns null when the span doesn't start inside a block's text (e.g.
+// it starts in the tag chrome), or when the recomputed layout doesn't match
+// raw_output byte-for-byte at that offset — a mismatch means our port drifted
+// from the server, so we surface NO highlight rather than a wrong one.
+//
+// A span whose `to` anchor landed in a LATER turn falls back to marking its
+// `from` anchor alone (from_anchor_only). A chat node can only carry a span
+// that lives inside it, and the model's own anchor is an honest partial
+// highlight where the whole span has no node to live in.
 //
 // Two raw_output shapes reach this: the flattened transcript above, and the
 // unflattened case where raw_output is one message's content verbatim. The
@@ -573,7 +594,7 @@ function flatten_output_blocks(trace: TraceMessage[]): FlattenedBlock[] {
 export function map_output_span_to_trace(
   trace: TraceMessage[],
   raw_output: string,
-  span: { start: number; end: number },
+  span: { start: number; end: number; from_end?: number },
 ): TraceHighlight | null {
   return (
     map_span_in_flattened_layout(trace, raw_output, span) ??
@@ -584,22 +605,32 @@ export function map_output_span_to_trace(
 function map_span_in_flattened_layout(
   trace: TraceMessage[],
   raw_output: string,
-  span: { start: number; end: number },
+  span: { start: number; end: number; from_end?: number },
 ): TraceHighlight | null {
   for (const block of flatten_output_blocks(trace)) {
-    if (span.start >= block.content_start && span.end <= block.content_end) {
-      if (
-        raw_output.slice(block.content_start, block.content_end) !==
-        block.content
-      ) {
-        return null
-      }
-      return {
-        trace_index: block.trace_index,
-        kind: block.kind,
-        start: span.start - block.content_start,
-        end: span.end - block.content_start,
-      }
+    // The block holding the `from` anchor. Blocks are disjoint, so at most one
+    // matches and no other block could hold the whole span either.
+    if (span.start < block.content_start || span.start >= block.content_end) {
+      continue
+    }
+    // `to` resolved past this block, so scoping the search to the block leaves
+    // the anchor alone as the span worth marking.
+    const from_anchor_only = span.end > block.content_end
+    const end = from_anchor_only ? span.from_end : span.end
+    if (end === undefined || end < span.start || end > block.content_end) {
+      return null
+    }
+    if (
+      raw_output.slice(block.content_start, block.content_end) !== block.content
+    ) {
+      return null
+    }
+    return {
+      trace_index: block.trace_index,
+      kind: block.kind,
+      start: span.start - block.content_start,
+      end: end - block.content_start,
+      from_anchor_only,
     }
   }
   return null
@@ -1372,6 +1403,17 @@ export function rejudge_shortfall_notice(
   return `${failed} ${cases} couldn't be re-checked with the improved judge and kept their previous results. They were left out of this review round.`
 }
 
+// The notice for feedback the refine model declined to incorporate. The
+// reviewer would otherwise see their note apparently ignored with no reason,
+// so the model's own words are quoted back. Null when it declined nothing.
+export function declined_feedback_notice(
+  not_incorporated_feedback: string | null,
+): string | null {
+  const text = (not_incorporated_feedback ?? "").trim()
+  if (!text) return null
+  return `Some of your feedback was not applied this round: "${text}"`
+}
+
 // A judge prompt/rubric this long is almost certainly runaway model output,
 // not a rubric — reject it rather than persist it into the judge config.
 export const MAX_JUDGE_PROMPT_CHARS = 20000
@@ -1400,6 +1442,19 @@ export function validate_refined_judge_prompt(prompt: string): string | null {
     }
   }
   return null
+}
+
+// Strip a single code fence that WRAPS the whole prompt (opening fence with
+// an optional language tag on its own first line, closing fence alone on the
+// last), returning the inner text. A model that fence-wraps an otherwise-good
+// prompt is a recoverable presentation slip, not bad content, so unwrapping it
+// saves re-paying for the same answer. It recovers the wrapping ONLY: anything
+// else — interior or one-sided fences, a second wrapping pair, Jinja braces,
+// length — is left in place to fail validation as before.
+export function strip_wrapping_code_fence(prompt: string): string {
+  const text = (prompt ?? "").trim()
+  const wrapped = /^```[^\n`]*\n([\s\S]*)\n```$/.exec(text)
+  return wrapped ? wrapped[1] : prompt
 }
 
 // ── The verdict card's reason line ────────────────────────────────────────
