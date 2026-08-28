@@ -303,11 +303,11 @@ export function driven_data_confirm(
 // Regenerating the plan ALWAYS confirms — a plan alone costs minutes to
 // make. Three-tier wording: what you lose scales the message — plan only /
 // plan + row deletions / driven results. The first two tiers are SDG's
-// exact formulas, and take plan_noun — the arm's word for the plan's rows,
-// "scenarios" (multi-turn) or "planned inputs" (single-turn). The driven
-// tier names the ACTION instead: SDG's formula puts the subject in front of
-// a verb ("... will discard them"), where a plural row noun reads as broken
-// grammar.
+// exact formulas, and take plan_noun — the word for the plan's rows, which
+// the eval builder passes as "items" on both arms so the confirm matches the
+// plan surface's own header. The driven tier names the ACTION instead: SDG's
+// formula puts the subject in front of a verb ("... will discard them"),
+// where a plural row noun reads as broken grammar.
 export function new_plan_confirm(state: {
   has_driven_results: boolean
   survivors: number
@@ -315,7 +315,7 @@ export function new_plan_confirm(state: {
   plan_edited: boolean
   plan_noun?: string
 }): string {
-  const plan_noun = state.plan_noun ?? "scenarios"
+  const plan_noun = state.plan_noun ?? "items"
   if (state.has_driven_results) {
     return driven_data_confirm(
       "A new batch plan",

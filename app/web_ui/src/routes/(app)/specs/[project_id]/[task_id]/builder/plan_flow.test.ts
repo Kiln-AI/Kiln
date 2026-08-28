@@ -157,7 +157,7 @@ describe("new_plan_confirm", () => {
         plan_edited: false,
       }),
     ).toBe(
-      "Are you sure you want to discard the current scenarios? This cannot be undone.",
+      "Are you sure you want to discard the current items? This cannot be undone.",
     )
   })
 
@@ -170,7 +170,7 @@ describe("new_plan_confirm", () => {
         plan_edited: true,
       }),
     ).toBe(
-      "Are you sure you want to discard the current scenarios, including the ones you removed? This cannot be undone.",
+      "Are you sure you want to discard the current items, including the ones you removed? This cannot be undone.",
     )
   })
 
@@ -188,21 +188,19 @@ describe("new_plan_confirm", () => {
   })
 
   it("names the action, not the plan's rows, in the driven tier", () => {
-    // "New planned traces will discard them" is broken grammar; the driven
-    // tier states the action the user is about to take instead. Pinned on
-    // BOTH arms' plan nouns, since neither may leak into this sentence.
-    for (const plan_noun of ["scenarios", "planned inputs", "planned traces"]) {
-      const msg = new_plan_confirm({
-        has_driven_results: true,
-        survivors: 3,
-        include_review_progress: false,
-        plan_edited: false,
-        plan_noun,
-      })
-      expect(msg).toBe(
-        "You have 3 completed eval inputs. A new batch plan will discard them. This cannot be undone.",
-      )
-    }
+    // "New items will discard them" is broken grammar; the driven tier states
+    // the action the user is about to take instead, so the caller's row noun
+    // must not reach this sentence.
+    const msg = new_plan_confirm({
+      has_driven_results: true,
+      survivors: 3,
+      include_review_progress: false,
+      plan_edited: false,
+      plan_noun: "items",
+    })
+    expect(msg).toBe(
+      "You have 3 completed eval inputs. A new batch plan will discard them. This cannot be undone.",
+    )
   })
 })
 
@@ -412,33 +410,6 @@ describe("drive_stop_banner — single-turn case noun", () => {
     )
     expect(aborted).toContain("12 test runs completed before the stop.")
     expect(aborted).not.toContain("conversation")
-  })
-})
-
-describe("new_plan_confirm — single-turn plan noun", () => {
-  it("speaks of planned inputs, not scenarios", () => {
-    expect(
-      new_plan_confirm({
-        has_driven_results: false,
-        survivors: 0,
-        include_review_progress: false,
-        plan_edited: false,
-        plan_noun: "planned inputs",
-      }),
-    ).toBe(
-      "Are you sure you want to discard the current planned inputs? This cannot be undone.",
-    )
-    expect(
-      new_plan_confirm({
-        has_driven_results: false,
-        survivors: 0,
-        include_review_progress: false,
-        plan_edited: true,
-        plan_noun: "planned inputs",
-      }),
-    ).toBe(
-      "Are you sure you want to discard the current planned inputs, including the ones you removed? This cannot be undone.",
-    )
   })
 })
 

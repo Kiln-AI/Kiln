@@ -91,6 +91,77 @@ describe("plan surface copy", () => {
       ),
     ).toBe(true)
   })
+
+  it("names the plan's rows items and drops the /generate sub-line", () => {
+    // One noun prop, so the header reads "All Items (n)" and a screen reader
+    // hears "items" too. The /generate sentence is about dataset samples, which
+    // is not what this surface's rows become.
+    expect(normalize(plan_surface)).toContain('items_label="Items"')
+    expect(normalize(plan_surface)).toContain("expanded_description={false}")
+  })
+})
+
+describe("plan drafting screen", () => {
+  const planning_copy = region(
+    "$: generate_animation_title =",
+    "$: generate_animation_warning =",
+  )
+
+  it("uses the synthetic data flow's title, with no arm-specific noun", () => {
+    expect(planning_copy).toContain(`? "Planning Batch"`)
+    expect(planning_copy).not.toContain("Drafting Scenarios")
+    expect(planning_copy).not.toContain("Planning Test Inputs")
+  })
+
+  it("describes the batch with each arm's artifact noun and the chosen count", () => {
+    expect(
+      contains(
+        "`Kiln is planning a diverse batch of ${eval_input_count} traces, tailored to your task and guidance.`",
+      ),
+    ).toBe(true)
+    expect(
+      contains(
+        "`Kiln is planning a diverse batch of ${eval_input_count} test inputs, tailored to your task and guidance.`",
+      ),
+    ).toBe(true)
+  })
+})
+
+// Drops both comment forms — Svelte markup comments and script line comments —
+// so the vocabulary scan below reads only what ships. The `://` guard keeps a
+// URL inside an attribute value from being mistaken for a comment, which would
+// truncate that attribute mid-string.
+function strip_comments(source: string): string {
+  return source.replace(/<!--[\s\S]*?-->/g, "").replace(/(?<!:)\/\/.*$/gm, "")
+}
+
+// Every quoted span in the source. Run against whitespace-normalized text, so a
+// string Prettier wrapped across lines is still read as one string.
+const QUOTED_STRING = /"[^"]*"|'[^']*'|`[^`]*`/g
+
+describe("ruled vocabulary", () => {
+  it("leaves no user-facing scenario wording on the page", () => {
+    // Rows are "items" and the artifact is "traces" / "test inputs". Comments
+    // may still say scenario (it is the planner's own term); a shipped string
+    // may not.
+    const shipped = normalize(strip_comments(page_source))
+    const offenders = (shipped.match(QUOTED_STRING) ?? []).filter((s) =>
+      /scenario/i.test(s),
+    )
+    expect(offenders).toEqual([])
+  })
+
+  it("uses one word for the plan's rows on both arms", () => {
+    expect(contains('const plan_noun = "items"')).toBe(true)
+  })
+
+  it("sends both arms back to the same plan screen", () => {
+    expect(page_source).not.toContain("Back to Scenarios")
+    // One label for both arms, matching the Batch Plan surface it leads to.
+    expect(contains("Plan Batch")).toBe(true)
+    expect(page_source).not.toContain("Plan Traces")
+    expect(page_source).not.toContain("Plan Test Inputs")
+  })
 })
 
 describe("single entrance to the drive", () => {
@@ -197,6 +268,22 @@ describe("Generation Settings dialog", () => {
         `"Checks each result against your eval's criteria, then marks pass or fail."`,
       ),
     ).toBe(true)
+  })
+
+  it("quiets the suggested-model advisory on every lane", () => {
+    // Three lanes stacked in one dialog, each confirming a good default, is a
+    // wall of green checks. The flag drops only that confirmation; a lane on a
+    // model we don't suggest still says so.
+    const lanes = drive_settings_dialog
+      .split("<AvailableModelsDropdown")
+      .slice(1)
+      // Bound each chunk at its own tag close, or a flag on the last lane would
+      // satisfy the assertion for every earlier one.
+      .map((chunk) => chunk.slice(0, chunk.indexOf("/>")))
+    expect(lanes.length).toBe(3)
+    for (const lane of lanes) {
+      expect(normalize(lane)).toContain("quiet_suggested={true}")
+    }
   })
 
   it("puts the cost warning immediately before the submit", () => {

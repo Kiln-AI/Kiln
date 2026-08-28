@@ -401,7 +401,7 @@
             trace_claims.length,
             drive_stop === null,
           )
-        : "Are you sure you want to start over? Your draft (description, eval details, and scenarios) will be discarded. This cannot be undone."
+        : "Are you sure you want to start over? Your draft (description, eval details, and the batch plan) will be discarded. This cannot be undone."
     if (!confirm(msg)) return
     const carried = draft_store ? get(draft_store) : EMPTY_BUILDER_DRAFT
     draft_ready = false
@@ -1681,7 +1681,7 @@
         },
       )
       if (error || !data) {
-        generation_error = `Failed to draft ${plan_noun}.`
+        generation_error = "Failed to draft a batch plan."
         return
       }
       // Clamp: the planner is an LLM and can over-deliver or emit blanks;
@@ -1779,7 +1779,7 @@
     survivors: trace_claims.length,
     include_review_progress: drive_stop === null,
     plan_edited: batch_plan_edited,
-    plan_noun: "planned traces",
+    plan_noun,
   })
 
   function open_new_plan_dialog() {
@@ -1870,7 +1870,7 @@
     // reentry: a double-click must not start a second concurrent pipeline.
     if (generation_loading) return
     if (!batch_plan || batch_plan.prompts.length === 0) {
-      generation_error = "No approved scenarios. Draft scenarios first."
+      generation_error = "No approved items. Plan a batch first."
       return
     }
     // Backstop for an unset lane — ask, don't guess: send the user back to
@@ -2006,7 +2006,8 @@
           },
         )
         if (cases_resp.error || !cases_resp.data) {
-          generation_error = "Failed to create eval inputs from the scenarios."
+          generation_error =
+            "Failed to create eval inputs from the approved items."
           return
         }
         cases = cases_resp.data.cases as SyntheticUserCaseWire[]
@@ -2448,7 +2449,7 @@
     // second concurrent pipeline.
     if (generation_loading) return
     if (!batch_plan || batch_plan.prompts.length === 0) {
-      generation_error = "No approved inputs. Draft a plan first."
+      generation_error = "No approved items. Plan a batch first."
       return
     }
     // Backstop for an unset lane — ask, don't guess: send the user back to
@@ -2952,9 +2953,10 @@
   })
   // The arm's word for one reviewed item, for copy that counts them.
   $: judged_noun = is_multi_turn ? "conversation" : "example"
-  // The arm's words for the plan's rows and one unit of drive work — the
-  // step-4 surfaces (plan screen, confirms, stop banner) count in these.
-  $: plan_noun = is_multi_turn ? "scenarios" : "planned inputs"
+  // The plan's rows read as "items" on both arms (the plan surface labels them
+  // that way), so the errors and confirms about them use the same word. Only
+  // one unit of drive work still differs per arm.
+  const plan_noun = "items"
   $: case_noun = is_multi_turn ? "conversation" : "test run"
   // Bound out of the review component: true only while it shows its last
   // trace, which is where it renders the primary CTA. The save-without-
@@ -4042,9 +4044,7 @@
   // arm-specific words for the arm-specific stages.
   $: generate_animation_title =
     generation_phase === "planning"
-      ? is_multi_turn
-        ? "Drafting Scenarios"
-        : "Planning Test Inputs"
+      ? "Planning Batch"
       : generation_phase === "authoring_judge"
         ? "Authoring Judge"
         : generation_phase === "preflight"
@@ -4055,8 +4055,8 @@
   $: generate_animation_description =
     generation_phase === "planning"
       ? is_multi_turn
-        ? `Drafting a balanced set of ${eval_input_count} scenarios for your eval.`
-        : `Drafting a balanced plan of ${eval_input_count} test inputs for your eval.`
+        ? `Kiln is planning a diverse batch of ${eval_input_count} traces, tailored to your task and guidance.`
+        : `Kiln is planning a diverse batch of ${eval_input_count} test inputs, tailored to your task and guidance.`
       : generation_phase === "authoring_judge"
         ? "Authoring a judge rubric tailored to your eval."
         : generation_phase === "preflight"
@@ -4067,7 +4067,7 @@
             }, and the judge all respond before creating your eval data.`
           : generation_phase === "minting_inputs"
             ? `Writing ${planned_total} test inputs from the approved plan.`
-            : `Setting up ${planned_total} simulated users from the approved scenarios.`
+            : `Setting up ${planned_total} simulated users from the approved plan.`
 
   // The long-wait line, on exactly the stages that run one long request with
   // no progress bar. Stages that show a bar let the bar carry the wait, and
@@ -4429,7 +4429,7 @@
                   claims_gate_error = null
                 }}
               >
-                {is_multi_turn ? "Back to Scenarios" : "Back to Plan"}
+                Back to Plan
               </button>
               <button
                 class="btn btn-primary"
@@ -4453,7 +4453,7 @@
                     generation_error = null
                   }}
                 >
-                  {is_multi_turn ? "Back to Scenarios" : "Back to Plan"}
+                  Back to Plan
                 </button>
               {/if}
               <button
@@ -4510,6 +4510,8 @@
               generate_button_outline={has_driven_results &&
                 drive_stop !== null}
               generate_button_label={`Generate Traces (${batch_plan.prompts.length})`}
+              items_label="Items"
+              expanded_description={false}
             />
             <!-- Wizard chrome stays outside the shared component (it has no
                  slots): once this exact plan has driven results, offer the
@@ -4576,7 +4578,7 @@
                   class="relative btn btn-primary min-w-64 px-12"
                   on:click={on_plan_batch}
                 >
-                  {is_multi_turn ? "Draft Scenarios" : "Plan Test Inputs"}
+                  Plan Batch
                   <span class="absolute opacity-80 right-4 text-xs font-light">
                     {#if isMacOS()}
                       <span class="tracking-widest">⌘↵</span>
@@ -4870,6 +4872,7 @@
           requires_data_gen: true,
           suggested_mode: "data_gen",
         }}
+        quiet_suggested={true}
       />
     {:else}
       <AvailableModelsDropdown
@@ -4882,6 +4885,7 @@
           requires_data_gen: true,
           suggested_mode: "data_gen",
         }}
+        quiet_suggested={true}
       />
     {/if}
     <AvailableModelsDropdown
@@ -4898,6 +4902,7 @@
         requires_structured_output: true,
         suggested_mode: "evals",
       }}
+      quiet_suggested={true}
     />
     <!-- What the run costs, last child of the form so it sits directly above
          the submit row (run_eval's placement). -->
