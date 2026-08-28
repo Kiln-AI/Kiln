@@ -361,28 +361,29 @@
 
   {#if blind_mismatch}
     <!-- MISMATCH only: now the call is worth stating, because the reviewer is
-         contradicting it. One line and no explanation — answering released the
-         reason and its cited evidence onto the card above, so there is nothing
-         here to repeat. It names the judge, matching the step header and
-         the Teach the Judge label directly below, and says "scored" rather
-         than "thinks" because that is the house verb for what a judge does. -->
+         contradicting it. One line and no explanation, since answering already
+         released the reason and its cited evidence onto the card above. It
+         names the judge, matching the step header and this block's own label,
+         and says "scored" because that is the house verb for what a judge
+         does. -->
     <div
       class="mt-3 rounded-lg border border-warning/40 bg-warning/5 px-4 py-3"
     >
-      <div class="text-sm font-medium">
-        The judge disagrees. It scored this as a {claim.expected_result ===
-        "pass"
-          ? "pass"
-          : "fail"}.
-      </div>
       <!-- FormElement's label typography, hand-rolled so the card's own error
-           state stays the one in play. Label only: the placeholder states the
-           ask, so a description line under it would just say it twice. -->
+           state stays the one in play. The mismatch rides the description slot
+           rather than a second heading: one medium line per field is the house
+           shape, and the placeholder still states the ask. -->
       <label
-        class="text-sm font-medium text-left flex flex-col gap-1 w-full mt-3"
+        class="text-sm font-medium text-left flex flex-col gap-1 w-full"
         for={blind_why_id}
       >
         <span>Teach the Judge</span>
+        <span class="text-xs text-gray-500">
+          The judge disagrees. It scored this as a {claim.expected_result ===
+          "pass"
+            ? "pass"
+            : "fail"}.
+        </span>
       </label>
       <textarea
         id={blind_why_id}
