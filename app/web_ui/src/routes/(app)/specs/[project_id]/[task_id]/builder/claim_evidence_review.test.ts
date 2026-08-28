@@ -318,8 +318,8 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
       getByText("The judge disagrees. It scored this as a fail."),
     ).toBeTruthy()
     expect(container.textContent).toContain("Fails Eval: fabricated policy.")
-    // The Teach the Judge label, with no description line under it — the
-    // placeholder carries the whole ask, keyed to the REVIEWER's label.
+    // The Teach the Judge label. Its description names the mismatch; the ask
+    // itself stays in the placeholder, keyed to the REVIEWER's label.
     expect(getByText("Teach the Judge")).toBeTruthy()
     expect(container.textContent).not.toContain("Detailed explanations")
 
@@ -1043,7 +1043,7 @@ describe("ClaimEvidenceReview — the claims-first arm asks the call first", () 
     const { container, queryByText, getByText, getAllByText } =
       render_multi_turn([claims_first_trace()])
 
-    // Collapsed on arrival: the count is on screen, the claims are not.
+    // Collapsed on arrival: the row is on screen, the claims are not.
     expect(claims_toggle(container).getAttribute("aria-expanded")).toBe("false")
     expect(queryByText("The agent stated a return window as fact.")).toBeNull()
     expect(container.textContent).not.toContain("The main facts the judge used")

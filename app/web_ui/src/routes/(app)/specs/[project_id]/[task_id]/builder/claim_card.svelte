@@ -385,8 +385,13 @@
             : "fail"}.
         </span>
       </label>
+      <!-- Names the field explicitly, the way FormElement does on every input
+           it renders. Without it the description nested in the label above
+           becomes part of this field's accessible name, so a screen reader
+           announces the whole mismatch sentence on every focus. -->
       <textarea
         id={blind_why_id}
+        aria-label="Teach the Judge"
         class="textarea textarea-bordered textarea-sm w-full mt-2 {needs_reason
           ? 'textarea-error'
           : ''}"

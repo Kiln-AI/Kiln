@@ -83,8 +83,8 @@
   // is a historical shape, not a reserved slot: the final judgement used to be
   // the third card in this stack and now leads the review as its own card, so
   // the effective cap here is simply two claims. Real traces carry more than
-  // that, which is why the disclosure label counts what it shows rather than
-  // calling itself complete. Claims may also be EMPTY for trivial evals — the
+  // that, which is why the disclosure names the claims without counting them.
+  // Claims may also be EMPTY for trivial evals — the
   // final judgement alone is then the whole review.
   const MAX_CLAIMS = 3
 
@@ -94,8 +94,8 @@
   // saying they want to grade claims, and re-collapsing it on every
   // conversation would undo that choice once per screen.
   let claims_expanded = false
-  // "Key facts" rather than "the facts": the cards below are the top of an
-  // importance-ordered list, not all of it. Second sentence names the only
+  // "The main facts" rather than "the facts": the cards below are the top of
+  // an importance-ordered list, not all of it. Second sentence names the only
   // control the claim cards carry, so the description can never describe an
   // answer the reviewer is not offered.
   // Names the judge, because the rest of this step does: the header says a
