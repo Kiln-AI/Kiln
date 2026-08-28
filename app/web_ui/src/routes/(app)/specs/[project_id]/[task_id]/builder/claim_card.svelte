@@ -59,6 +59,13 @@
   // writes the same verdict the stated-verdict card writes and the save, gate
   // and refine paths see one shape. Only meaningful with is_final_judgement.
   export let blind = false
+  // Blind cards only: hold the judgement's reason and evidence back until the
+  // reviewer has answered. For the arm that renders the trace itself — the
+  // reviewer already has the material to answer from, so the eval's own
+  // reasoning would do nothing but telegraph its call. The arm that keeps the
+  // trace behind a button leaves this off, since the reason is the only
+  // substance it has to offer.
+  export let defer_reason = false
 
   // The reason under the headline: the claim builder's contract makes this
   // the substantive reason-only line, "" when there is nothing beyond the
@@ -119,6 +126,12 @@
   // expected_result, which the server pins to the judge's real score — the
   // same field the stated-verdict headline is built from.
   $: blind_verdict = is_final_judgement && blind
+  // The reason and evidence are on screen unless this card is holding them
+  // until an answer is given. Answering either way releases them: what the
+  // blind card withholds is the conclusion, and only until it can no longer
+  // anchor anyone.
+  $: substance_shown =
+    !blind_verdict || !defer_reason || verdict.agrees !== null
   const blind_why_id = `claim-card-why-${blind_card_seq++}`
   // The reviewer's label, derived from the stored verdict rather than held
   // separately, so a revisited card shows the label its reviewer already gave.
@@ -316,12 +329,12 @@
     {/if}
   </div>
 
-  {#if is_final_judgement && final_reason && !final_evidence_is_reason}
+  {#if substance_shown && is_final_judgement && final_reason && !final_evidence_is_reason}
     <!-- The model's conclusion, demoted to the verdict's reason. Skipped when
          it's identical to the evidence sentence (rendered once below). -->
     <p class="text-sm text-gray-600 mt-2 leading-relaxed">{final_reason}</p>
   {/if}
-  {#if !is_final_judgement || final_evidence_shown}
+  {#if substance_shown && (!is_final_judgement || final_evidence_shown)}
     <!-- Evidence: one sentence with inline [n] chips that open the trace modal. -->
     <p class="text-sm text-gray-600 mt-2 leading-relaxed">
       {#each tokens as token}
@@ -336,7 +349,7 @@
       {/each}
     </p>
   {/if}
-  {#if show_trace_fallback}
+  {#if substance_shown && show_trace_fallback}
     <!-- No clickable citation to reach the trace, so give a quiet link that
          opens it directly. -->
     <button
@@ -348,8 +361,8 @@
 
   {#if blind_mismatch}
     <!-- MISMATCH only: now the call is worth stating, because the reviewer is
-         contradicting it. One line and no explanation — the reason and its
-         cited evidence are already on the card above, so there is nothing
+         contradicting it. One line and no explanation — answering released the
+         reason and its cited evidence onto the card above, so there is nothing
          here to repeat. "Your eval", not "the judge": the reviewer is
          building an eval, and its parts are not theirs to keep track of. -->
     <div

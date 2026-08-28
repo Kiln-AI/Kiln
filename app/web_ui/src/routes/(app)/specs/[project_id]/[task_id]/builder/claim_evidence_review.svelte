@@ -35,13 +35,12 @@
   import { isMacOS } from "$lib/utils/platform"
   import {
     blind_final_judgement,
-    blind_label_agrees,
-    blind_label_from_verdict,
     final_judgement_reason,
     is_trace_first_review,
     is_trace_reviewed,
     single_turn_sections_resolver,
     type Citation,
+    type Claim,
     type TraceClaims,
     type TraceReview,
   } from "./claim_evidence"
@@ -79,15 +78,14 @@
   let current_index = 0
   let trace_modal: ClaimTraceModal | null = null
   let claims_dialog: Dialog | null = null
-  let blind_why_input: HTMLTextAreaElement | null = null
-  // Only one blind row is ever mounted, so a constant id ties its label to its
-  // textarea without an index.
-  const BLIND_WHY_ID = "trace-first-why"
-
-  // The server returns every claim importance-ordered; we show only the most
-  // important few under the (always-present, top-level) final judgement, which
-  // leads the review as the one answer the gate requires. Claims may be EMPTY
-  // for trivial evals — the final judgement alone is then the whole review.
+  // The server returns every claim importance-ordered, so the first few are
+  // the ones worth reading; the review shows that many and no more. The "- 1"
+  // is a historical shape, not a reserved slot: the final judgement used to be
+  // the third card in this stack and now leads the review as its own card, so
+  // the effective cap here is simply two claims. Real traces carry more than
+  // that, which is why the disclosure label counts what it shows rather than
+  // calling itself complete. Claims may also be EMPTY for trivial evals — the
+  // final judgement alone is then the whole review.
   const MAX_CLAIMS = 3
 
   // The claims disclosure, in the batch plan's row idiom
@@ -96,11 +94,13 @@
   // saying they want to grade claims, and re-collapsing it on every
   // conversation would undo that choice once per screen.
   let claims_expanded = false
-  // Second sentence names the only control the claim cards carry, so the
-  // description can never describe an answer the reviewer is not offered.
+  // "Key facts" rather than "the facts": the cards below are the top of an
+  // importance-ordered list, not all of it. Second sentence names the only
+  // control the claim cards carry, so the description can never describe an
+  // answer the reviewer is not offered.
   const CLAIMS_DISCLOSURE_DESCRIPTION =
-    "These are the facts your eval used to reach its call. Disagree with any that look wrong."
-  $: claims_toggle_label = `${claims_expanded ? "Hide" : "Show"} all claims`
+    "Key facts your eval used to reach its call. Disagree with any that look wrong."
+  $: claims_toggle_label = `${claims_expanded ? "Hide" : "Show"} claims`
 
   // Why the primary action is held disabled on the last trace. Stated in the
   // component's own terms (the parent owns how many grades the gate wants,
@@ -165,58 +165,22 @@
   const read_sections = single_turn_sections_resolver()
   $: inline_sections = trace_first && current ? read_sections(current) : null
 
-  // The reviewer's label, derived from the stored verdict rather than held
-  // separately: the verdict is what survives navigation, so a label read back
-  // from it still shows on Previous instead of resetting to unanswered.
-  $: blind_label =
-    current && current_verdicts
-      ? blind_label_from_verdict(
-          current.judge_score,
-          current_verdicts.final_judgement_verdict.agrees,
-        )
-      : null
-  // The judge appears only where the reviewer contradicts it.
-  $: blind_mismatch = current_verdicts?.final_judgement_verdict.agrees === false
-  $: blind_needs_reason =
-    blind_mismatch && !current_verdicts.final_judgement_verdict.why.trim()
-  // What the reveal reads out under its headline: the final judgement's own
-  // sentence, which is the judge's case-specific explanation and carries the
-  // clickable [n] citations. judge_reasoning stands in only when no final
-  // judgement was built (a failed claims build) or its text is empty — for a
-  // judge model that emits no reasoning trace that field is the server's
-  // placeholder, not an explanation of this trace.
-  $: reveal = current ? judge_reveal(current) : null
-  function judge_reveal(t: TraceClaims): {
-    text: string
-    citations: Citation[]
-  } {
+  // The judgement the blind card grades, on either arm. The distilled final
+  // judgement whenever the claims build produced one carrying a real reason;
+  // otherwise the judge's own reasoning, which is all a failed or reason-less
+  // build leaves to read. Both pin expected_result to the judge's score, which
+  // is what the card computes agreement against.
+  $: blind_judgement = current ? blind_judgement_for(current) : null
+  // Whether this trace's overall call has been given. Gates anything that
+  // would state the verdict, so no surface can leak it ahead of the answer.
+  $: blind_answered =
+    current_verdicts?.final_judgement_verdict.agrees !== null &&
+    current_verdicts?.final_judgement_verdict.agrees !== undefined
+  function blind_judgement_for(t: TraceClaims): Claim {
     const judgement = t.final_judgement
-    const reason = judgement ? final_judgement_reason(judgement.claim) : ""
-    if (judgement && reason) {
-      return { text: reason, citations: judgement.citations }
-    }
-    return { text: t.judge_reasoning.trim(), citations: [] }
-  }
-  // The "Teach the Judge" ask. The block carries no description line, so the
-  // placeholder states the whole ask. Keyed off the REVIEWER's label rather
-  // than the judge's, since it describes the verdict just given: a "Pass"
-  // label on a case the judge failed asks why it passes.
-  $: teach_the_judge_placeholder = `Describe why this ${
-    blind_label ? "passes" : "fails"
-  }. Detailed explanations will improve the judge.`
-
-  // Record the blind label as the shared final-judgement verdict: agreement is
-  // computed against the judge, never asked.
-  function set_blind_label(user_says_pass: boolean) {
-    if (!current || !current_verdicts) return
-    const verdict = current_verdicts.final_judgement_verdict
-    verdict.agrees = blind_label_agrees(current.judge_score, user_says_pass)
-    // Agreeing closes the reveal, so drop any reason typed against the
-    // previous label rather than shipping text the reviewer can no longer see.
-    if (verdict.agrees) verdict.why = ""
-    // Reassign the bound prop so the parent's save gate sees the grade.
-    verdicts = verdicts
-    if (!verdict.agrees) setTimeout(() => blind_why_input?.focus(), 0)
+    return judgement && final_judgement_reason(judgement.claim)
+      ? judgement
+      : blind_final_judgement(t)
   }
 
   // Prev/Next walk the selected sequence. Both drop the claims opt-in: the
@@ -275,95 +239,22 @@
       {:else if inline_sections?.sections}
         <SingleTurnSectionsView sections={inline_sections.sections} />
 
-        <!-- The blind label, in claim-card chrome. items-center rather than the
-             cards' items-start: one short question reads aligned beside the
-             buttons where a wrapping claim would not. -->
-        <div
-          class="card card-bordered shadow-md p-4 bg-base-100 border-base-300 mt-4"
-        >
-          <div class="flex items-center justify-between gap-3">
-            <div class="font-medium text-sm min-w-0">
-              Does this {judged_noun} pass?
-            </div>
-            <div class="flex gap-2 flex-none">
-              <button
-                class="btn btn-sm {blind_label === true
-                  ? 'btn-success'
-                  : 'btn-outline'}"
-                on:click={() => set_blind_label(true)}
-              >
-                Pass
-              </button>
-              <button
-                class="btn btn-sm {blind_label === false
-                  ? 'btn-error'
-                  : 'btn-outline'}"
-                on:click={() => set_blind_label(false)}
-              >
-                Fail
-              </button>
-            </div>
+        <!-- The blind call, in the same card both arms grade on. The trace is
+             already on screen here, so the judgement's reason is held back
+             until an answer is given: it would only telegraph the call. -->
+        {#if blind_judgement}
+          <div class="mt-4">
+            <ClaimCard
+              claim={blind_judgement}
+              bind:verdict={current_verdicts.final_judgement_verdict}
+              on_cite={open_citation}
+              is_final_judgement
+              blind
+              defer_reason
+              {judged_noun}
+            />
           </div>
-
-          {#if blind_mismatch}
-            <!-- MISMATCH only: now the judge is worth reading, because the
-                 reviewer is contradicting it. The reason is what the refine
-                 loop consumes, and the save gate already requires it. -->
-            <div
-              class="mt-3 rounded-lg border border-warning/40 bg-warning/5 px-4 py-3"
-            >
-              <!-- One statement rather than verdict-then-quote: the reveal
-                   exists because the reviewer just contradicted the judge, so
-                   it leads with the disagreement and the explanation below
-                   completes the sentence. The word is the JUDGE's verdict, and
-                   the sentence closes on a period when there is no explanation
-                   to introduce. -->
-              <div class="text-sm font-medium">
-                The judge disagrees. It thinks this {current.judge_score ===
-                "pass"
-                  ? "passes"
-                  : "fails"}{reveal?.text ? " because:" : "."}
-              </div>
-              {#if reveal?.text}
-                <!-- The explanation, with the judgement's citations appended
-                     as [n] chips. A click runs the same open_citation plumbing
-                     the claim cards use, but the chips are derived differently
-                     on purpose: a card tokenizes the [n] markers written into
-                     its evidence sentence, while this shows the claim
-                     sentence, which carries no inline markers — so its
-                     citations ride at the end as evidence links. -->
-                <p class="text-sm text-gray-600 mt-2 leading-relaxed">
-                  {reveal.text}{#each reveal.citations as citation, i (i)}<button
-                      type="button"
-                      class="align-super text-xs text-primary hover:underline font-medium mx-0.5"
-                      on:click={() => open_citation(citation)}
-                      title="View in trace">[{citation.marker || i + 1}]</button
-                    >{/each}
-                </p>
-              {/if}
-              <!-- FormElement's label typography, hand-rolled so the card's
-                   own error state stays the one in play. Label only: the
-                   placeholder states the ask, so a description line under the
-                   label would just say it twice. -->
-              <label
-                class="text-sm font-medium text-left flex flex-col gap-1 w-full mt-3"
-                for={BLIND_WHY_ID}
-              >
-                <span>Teach the Judge</span>
-              </label>
-              <textarea
-                id={BLIND_WHY_ID}
-                class="textarea textarea-bordered textarea-sm w-full mt-2 {blind_needs_reason
-                  ? 'textarea-error'
-                  : ''}"
-                placeholder={teach_the_judge_placeholder}
-                bind:value={current_verdicts.final_judgement_verdict.why}
-                bind:this={blind_why_input}
-                rows="2"
-              ></textarea>
-            </div>
-          {/if}
-        </div>
+        {/if}
       {/if}
     {:else if current.claims_state === "built"}
       <div class="space-y-3">
@@ -393,8 +284,11 @@
               on:click={() => (claims_expanded = !claims_expanded)}
             >
               <div class="flex flex-col gap-2">
+                <!-- Counts what is on screen. There is no "of N": the cap is
+                     an editorial choice, and advertising a remainder the
+                     reviewer cannot reach would only read as withheld. -->
                 <span class="text-sm font-medium"
-                  >All Claims ({visible.length})</span
+                  >Claims ({visible.length})</span
                 >
                 {#if claims_expanded}
                   <div class="text-sm text-gray-500">
@@ -575,7 +469,10 @@
               display_only
             />
           {/each}
-          {#if current.final_judgement}
+          <!-- The overall judgement joins the claims only once the reviewer
+               has answered. Before that it would state the call this arm is
+               built to withhold, and this dialog is reachable at any time. -->
+          {#if current.final_judgement && blind_answered}
             <ClaimCard
               claim={current.final_judgement}
               verdict={current_verdicts.final_judgement_verdict}

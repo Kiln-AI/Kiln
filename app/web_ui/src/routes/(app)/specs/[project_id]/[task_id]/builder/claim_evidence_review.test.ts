@@ -66,8 +66,9 @@ function errored_trace(): TraceClaims {
   }
 }
 
-// A built trace with an EMPTY claims list — only the final-judgement card
-// renders, so grading it (one "Correct" button) reviews the whole trace.
+// A built trace with an EMPTY claims list — only the blind final-judgement
+// card renders, so answering it (one Pass/Fail click) reviews the whole
+// trace, and no claims disclosure is drawn at all.
 function built_trace(id: string): TraceClaims {
   return {
     trace_id: id,
@@ -296,7 +297,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     expect(container.textContent).not.toContain("The window was asserted")
     expect(container.textContent).not.toContain("Overall, this example")
     expect(container.textContent).not.toContain("Fails Eval")
-    expect(container.textContent).not.toContain("The judge disagrees")
+    expect(container.textContent).not.toContain("Your eval disagrees")
 
     // The inverse escape hatch: claims are one click away, the trace is not
     // behind a button any more.
@@ -313,9 +314,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     expect(verdicts[0].final_judgement_verdict.agrees).toBe(false)
     // One sentence: the disagreement, the judge's own verdict word, and the
     // explanation it introduces.
-    expect(
-      getByText("The judge disagrees. It thinks this fails because:"),
-    ).toBeTruthy()
+    expect(getByText("Your eval disagrees. It thinks this fails.")).toBeTruthy()
     expect(container.textContent).toContain("Fails Eval: fabricated policy.")
     // The Teach the Judge label, with no description line under it — the
     // placeholder carries the whole ask, keyed to the REVIEWER's label.
@@ -346,7 +345,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
 
     await fireEvent.click(getByText("Fail"))
     expect(verdicts[0].final_judgement_verdict.agrees).toBe(true)
-    expect(container.textContent).not.toContain("The judge disagrees")
+    expect(container.textContent).not.toContain("Your eval disagrees")
     expect(container.querySelector("textarea")).toBeNull()
     expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(true)
   })
@@ -358,7 +357,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     // Agreeing with a passing judge is the Pass label here.
     await fireEvent.click(getByText("Pass"))
     expect(verdicts[0].final_judgement_verdict.agrees).toBe(true)
-    expect(container.textContent).not.toContain("The judge disagrees")
+    expect(container.textContent).not.toContain("Your eval disagrees")
     // The grade is readable off the row: the chosen side takes the verdict
     // color rather than the neutral outline.
     expect(getByText("Pass").className).toContain("btn-success")
@@ -371,7 +370,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     // The verdict word follows the judge, the placeholder follows the
     // reviewer, so the two point opposite ways here.
     expect(
-      getByText("The judge disagrees. It thinks this passes because:"),
+      getByText("Your eval disagrees. It thinks this passes."),
     ).toBeTruthy()
     expect(
       (container.querySelector("textarea") as HTMLTextAreaElement).placeholder,
@@ -391,7 +390,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     })
 
     await fireEvent.click(getByText("Fail"))
-    expect(container.textContent).not.toContain("The judge disagrees")
+    expect(container.textContent).not.toContain("Your eval disagrees")
     expect(container.querySelector("textarea")).toBeNull()
     // The reason went with the reveal: an agreeing grade never ships text the
     // reviewer can no longer see.
@@ -430,6 +429,42 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     expect(verdicts[0].claim_verdicts.every((v) => v.agrees === null)).toBe(
       true,
     )
+  })
+
+  it("keeps the judgement out of the claims dialog until the call is made", async () => {
+    // The dialog is reachable at any time, so it is a second way to read the
+    // verdict this arm withholds. The claims are reading material and stay;
+    // the overall judgement joins them only once the answer is in.
+    const traces = [short_single_turn_trace()]
+    const { container, getByText } = render_trace_first(traces)
+
+    await fireEvent.click(getByText("View Claims"))
+    const dialog = claims_dialog(container)
+    expect(dialog.textContent).toContain(
+      "The agent stated a return window as fact.",
+    )
+    expect(dialog.textContent).not.toContain("Overall, this example")
+    expect(dialog.textContent).not.toContain("Fails Eval")
+
+    // Answered, so the call is no longer anything to protect.
+    await fireEvent.click(getByText("Pass"))
+    expect(claims_dialog(container).textContent).toContain(
+      "Overall, this example",
+    )
+  })
+
+  it("holds the judgement's reason back until the reviewer has answered", async () => {
+    // The trace is on screen here, so the reviewer has what they need without
+    // the eval's reasoning, which would only telegraph the call. Answering
+    // either way releases it.
+    const traces = [short_single_turn_trace()]
+    const { container, getByText } = render_trace_first(traces)
+    expect(container.textContent).not.toContain("Fails Eval")
+
+    // Agreeing releases it too: the conclusion can no longer anchor anyone.
+    await fireEvent.click(getByText("Fail"))
+    expect(container.textContent).toContain("Fails Eval: fabricated policy.")
+    expect(container.textContent).not.toContain("Your eval disagrees")
   })
 
   it("offers Retry Analysis in the dialog when the claims build failed", async () => {
@@ -485,7 +520,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
 
     await fireEvent.click(getByText("Next"))
     // A fresh trace starts unlabelled: no reveal, no reason carried over.
-    expect(container.textContent).not.toContain("The judge disagrees")
+    expect(container.textContent).not.toContain("Your eval disagrees")
     expect(container.querySelector("textarea")).toBeNull()
     expect(verdicts[1].final_judgement_verdict).toEqual({
       agrees: null,
@@ -498,9 +533,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     )
 
     await fireEvent.click(getByText("Previous"))
-    expect(
-      getByText("The judge disagrees. It thinks this fails because:"),
-    ).toBeTruthy()
+    expect(getByText("Your eval disagrees. It thinks this fails.")).toBeTruthy()
     expect(
       (container.querySelector("textarea") as HTMLTextAreaElement).value,
     ).toBe("The window is documented.")
@@ -528,7 +561,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     expect(multi.getByText("Does this conversation pass?")).toBeTruthy()
     expect(multi.queryAllByText("View Full Trace").length).toBeGreaterThan(0)
     expect(multi.queryByText("View Claims")).toBeNull()
-    expect(multi.getByText("All Claims (1)")).toBeTruthy()
+    expect(multi.getByText("Claims (1)")).toBeTruthy()
     expect(
       multi.container.querySelector("[data-testid='review-input']"),
     ).toBeNull()
@@ -558,7 +591,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
 
     // Claims-first: the trace is behind its button, not rendered inline.
     expect(queryByText("View Claims")).toBeNull()
-    expect(getByText("All Claims (1)")).toBeTruthy()
+    expect(getByText("Claims (1)")).toBeTruthy()
     expect(container.querySelector("[data-testid='review-input']")).toBeNull()
   })
 
@@ -671,7 +704,7 @@ describe("ClaimEvidenceReview — what the mismatch reveal explains", () => {
     ])
 
     await fireEvent.click(getByText("Pass"))
-    expect(getByText("The judge disagrees. It thinks this fails.")).toBeTruthy()
+    expect(getByText("Your eval disagrees. It thinks this fails.")).toBeTruthy()
   })
 
   it("chips the final judgement's citations into the same trace view the claim cards open", async () => {
@@ -764,14 +797,16 @@ function render_multi_turn(traces: TraceClaims[]) {
 // arm, so anything rendered by a claim card needs it opened first.
 function claims_toggle(container: HTMLElement): HTMLButtonElement {
   const found = [...container.querySelectorAll("button")].find((b) =>
-    b.textContent?.trim().startsWith("All Claims ("),
+    b.textContent?.trim().startsWith("Claims ("),
   )
   if (!found) throw new Error("no claims disclosure rendered")
   return found as HTMLButtonElement
 }
 
 async function expand_claims(container: HTMLElement) {
-  await fireEvent.click(claims_toggle(container))
+  const toggle = claims_toggle(container)
+  if (toggle.getAttribute("aria-expanded") === "true") return
+  await fireEvent.click(toggle)
 }
 
 // The trace modal, picked out of the mounted dialogs by its title.
@@ -943,7 +978,7 @@ describe("ClaimEvidenceReview — the claims-first arm asks the call first", () 
     const text = container.textContent ?? ""
     expect(text).toContain("Does this conversation pass?")
     expect(text.indexOf("Does this conversation pass?")).toBeLessThan(
-      text.indexOf("All Claims (2)"),
+      text.indexOf("Claims (2)"),
     )
 
     // The trace is behind a button and the claims are folded, so the reason
@@ -955,18 +990,47 @@ describe("ClaimEvidenceReview — the claims-first arm asks the call first", () 
     expect(cited_text(container)).toBe("30 days")
   })
 
-  it("states no verdict before the reviewer answers", () => {
-    const { container, getByText } = render_multi_turn([claims_first_trace()])
+  it("states no verdict before the reviewer answers, on either call", () => {
+    // Both directions: the tint that would give a fail away is amber, the one
+    // that would give a pass away is green, so a single fixture can only ever
+    // prove half of this.
+    for (const judge_score of ["fail", "pass"] as const) {
+      const { container, getByText } = render_multi_turn([
+        claims_first_trace(judge_score),
+      ])
 
+      expect(container.textContent).not.toContain("Overall, this conversation")
+      expect(container.textContent).not.toContain("Your eval disagrees")
+      // Neither side of the pair reads as chosen yet.
+      expect(getByText("Pass").className).toContain("btn-outline")
+      expect(getByText("Fail").className).toContain("btn-outline")
+      expect(container.querySelector("[class*='bg-warning/5']")).toBeNull()
+      expect(container.querySelector("[class*='bg-success/5']")).toBeNull()
+      cleanup()
+    }
+  })
+
+  it("passes a verdict-phrased reason straight through to the card", () => {
+    // The reason line renders the judgement's text verbatim. Nothing on the
+    // client inspects it for verdict phrasing, so the guarantee that it
+    // carries none is the claim builder's, server-side. This pins what the
+    // CARD controls — headline, tint, reveal — against a reason that states
+    // the call outright, and documents that the sentence itself is passed on
+    // as written.
+    const leaky = claims_first_trace()
+    leaky.final_judgement = {
+      ...leaky.final_judgement!,
+      claim: "Fails Eval: fabricated policy.",
+    }
+    const { container, getByText } = render_multi_turn([leaky])
+
+    // Everything the card decides for itself stays blind.
     expect(container.textContent).not.toContain("Overall, this conversation")
-    expect(container.textContent).not.toContain("Your eval disagrees")
-    // Neither side of the pair reads as chosen yet.
-    expect(getByText("Pass").className).toContain("btn-outline")
-    expect(getByText("Fail").className).toContain("btn-outline")
-    // And no verdict tint: a warning or success card would answer the
-    // question before the reviewer does.
     expect(container.querySelector("[class*='bg-warning/5']")).toBeNull()
-    expect(container.querySelector("[class*='bg-success/5']")).toBeNull()
+    expect(getByText("Pass").className).toContain("btn-outline")
+    // The reason is not filtered. If the server ever emits verdict phrasing,
+    // it reaches the reviewer, and this assertion is what will change.
+    expect(container.textContent).toContain("Fails Eval: fabricated policy.")
   })
 
   it("folds the claims behind a collapsed disclosure", async () => {
@@ -976,15 +1040,13 @@ describe("ClaimEvidenceReview — the claims-first arm asks the call first", () 
     // Collapsed on arrival: the count is on screen, the claims are not.
     expect(claims_toggle(container).getAttribute("aria-expanded")).toBe("false")
     expect(queryByText("The agent stated a return window as fact.")).toBeNull()
-    expect(container.textContent).not.toContain(
-      "These are the facts your eval used",
-    )
+    expect(container.textContent).not.toContain("Key facts your eval used")
 
     await expand_claims(container)
     expect(claims_toggle(container).getAttribute("aria-expanded")).toBe("true")
     expect(
       getByText(
-        "These are the facts your eval used to reach its call. Disagree with any that look wrong.",
+        "Key facts your eval used to reach its call. Disagree with any that look wrong.",
       ),
     ).toBeTruthy()
     expect(getByText("The agent stated a return window as fact.")).toBeTruthy()
