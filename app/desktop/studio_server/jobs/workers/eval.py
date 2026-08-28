@@ -83,10 +83,10 @@ class _EvalErrorLogObserver(AsyncJobRunnerObserver[EvalJob]):
             _error_detail(error),
             dataset_id=job.item.id,
             # An EvalInput-backed split puts EvalInput ids in dataset_id, which is
-            # named for TaskRuns. The key is kept — the sibling judge-feedback worker
-            # writes the same one, and renaming it would fork the log's shape for no
-            # reader's benefit — so the source is logged next to it instead. Without
-            # this the id is source-blind, and ids collide across the two stores.
+            # named for TaskRuns. The key is kept — renaming it would fork the log's
+            # shape for no reader's benefit — so the source is logged next to it
+            # instead. Without this the id is source-blind, and ids collide across
+            # the two stores.
             item_source=_item_source(job.item),
             run_config_id=job.task_run_config.id if job.task_run_config else None,
         )
