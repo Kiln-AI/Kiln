@@ -53,6 +53,13 @@ function mentions(symbol: string): number {
   return page_source.split(symbol).length - 1
 }
 
+// Mentions of a symbol as a whole word — so counting TURNS_PER_CASE isn't
+// inflated by MIN_TURNS_PER_CASE / MAX_TURNS_PER_CASE.
+function whole_word_mentions(symbol: string): number {
+  const pattern = new RegExp(`(?<![A-Za-z0-9_])${symbol}(?![A-Za-z0-9_])`, "g")
+  return (page_source.match(pattern) ?? []).length
+}
+
 const plan_surface = region("<KilnProBatchPlan", "/>")
 const new_plan_dialog = region("bind:this={new_plan_dialog}", "</Dialog>")
 const drive_settings_dialog = region(
@@ -183,7 +190,7 @@ describe("single entrance to the drive", () => {
   })
 
   it("starts a drive only from the settings dialog's submit", () => {
-    const submit = function_body("function submit_drive_settings() {")
+    const submit = function_body("async function submit_drive_settings() {")
     expect(submit).toContain("on_drive_multi_turn()")
     expect(submit).toContain("on_drive_single_turn()")
     // Each arm's drive function is named exactly twice on the page: its own
@@ -210,12 +217,186 @@ describe("single entrance to the drive", () => {
   })
 
   it("derives every turn count from the one alias", () => {
-    // TURNS_PER_CASE is named twice: its definition and the alias. Every
-    // reader — the cost warning, the drive request, the progress denominator,
-    // the saved drive stamp — goes through drive_turns_per_case, so what the
-    // user is quoted and what runs cannot drift apart.
-    expect(mentions("TURNS_PER_CASE")).toBe(2)
-    expect(contains("$: drive_turns_per_case = TURNS_PER_CASE")).toBe(true)
+    // The committed value reaches the drive only through the clamped alias, so
+    // what runs, what is stamped, and what the progress bar counts cannot
+    // drift apart or fall outside the range the route accepts.
+    expect(
+      contains(
+        "$: drive_turns_per_case = clamp_turns_per_case(turns_per_case)",
+      ),
+    ).toBe(true)
+    // TURNS_PER_CASE is read as a DEFAULT only: its definition, the knob's
+    // seed, and the restore fallback. A fourth reader would be a drive value
+    // that ignores the user's choice.
+    expect(whole_word_mentions("TURNS_PER_CASE")).toBe(3)
+    expect(contains("const TURNS_PER_CASE = 5")).toBe(true)
+    expect(contains("let turns_per_case = TURNS_PER_CASE")).toBe(true)
+  })
+})
+
+describe("the turns knob", () => {
+  // The multi-turn half of the dialog's arm branch: the lane and the turns row
+  // that only exist when there are conversations to run.
+  const multi_turn_branch = (() => {
+    const start = drive_settings_dialog.indexOf("{#if is_multi_turn}")
+    const end = drive_settings_dialog.indexOf("{:else}", start)
+    if (start < 0 || end < 0) {
+      throw new Error("the drive dialog's arm branch was not found")
+    }
+    return drive_settings_dialog.slice(start, end)
+  })()
+  // The single-turn half of the same branch, so the negatives below are about
+  // THIS dialog's other arm rather than the whole page.
+  const single_turn_branch = (() => {
+    const start = drive_settings_dialog.indexOf("{:else}")
+    const end = drive_settings_dialog.indexOf("{/if}", start)
+    if (start < 0 || end < 0) {
+      throw new Error("the drive dialog's single-turn arm was not found")
+    }
+    return drive_settings_dialog.slice(start, end)
+  })()
+  // The multi-turn save block, from its own guard to the request it sends.
+  const multi_turn_save = region(
+    "if (multi_turn_batch_tag === null || driven_cases.length === 0) {",
+    "signal: new_copilot_abort_signal(),",
+  )
+
+  it("renders the stepper row only on the multi-turn arm", () => {
+    // A single-turn run is one shot per input — a length control there would
+    // be a knob that changes nothing.
+    expect(multi_turn_branch).toContain("Turns per conversation")
+    expect(single_turn_branch).not.toContain("Turns per conversation")
+    expect(single_turn_branch).not.toContain("<IncrementUi")
+  })
+
+  it("labels the row and pins its explanation as a tooltip", () => {
+    expect(normalize(multi_turn_branch)).toContain(
+      "<span>Turns per conversation</span>",
+    )
+    expect(normalize(multi_turn_branch)).toContain("font-medium text-sm")
+    expect(
+      contains(
+        'tooltip_text="One turn is one exchange: the user sends a message and your agent replies. More turns test deeper behavior and cost more."',
+      ),
+    ).toBe(true)
+  })
+
+  it("binds the stepper to the STAGED knob, bounded by the route's own range", () => {
+    // Staged like the dialog's model lanes: the stepper never writes the
+    // committed value directly, so leaving without submitting discards it.
+    const stepper = normalize(
+      multi_turn_branch.slice(multi_turn_branch.indexOf("<IncrementUi")),
+    )
+    expect(stepper).toContain("bind:value={staged_turns_per_case}")
+    expect(stepper).not.toContain("bind:value={turns_per_case}")
+    expect(stepper).toContain("min={MIN_TURNS_PER_CASE}")
+    expect(stepper).toContain("max={MAX_TURNS_PER_CASE}")
+  })
+
+  it("discards a nudge when the dialog closes without submitting", () => {
+    // Esc / X / backdrop leave the committed value alone; the next open
+    // reseeds the staged copy from it. Without this reseed a cancelled nudge
+    // would survive into the next drive — and silently disqualify a top-off,
+    // which refuses to mix conversation lengths.
+    const open = function_body("async function open_drive_settings() {")
+    expect(open).toContain("staged_turns_per_case = turns_per_case")
+  })
+
+  it("commits the staged length on submit, clamped, before driving", () => {
+    const submit = function_body("async function submit_drive_settings() {")
+    const commit = submit.indexOf(
+      "turns_per_case = clamp_turns_per_case(staged_turns_per_case)",
+    )
+    expect(commit).toBeGreaterThan(-1)
+    expect(commit).toBeLessThan(submit.indexOf("on_drive_multi_turn()"))
+    // The clamped alias is a reactive derivation, so it still holds the
+    // pre-submit length during the synchronous handler — the drive has to
+    // start after the commit has landed, or it runs the old number.
+    const settle = submit.indexOf("await tick()")
+    expect(settle).toBeGreaterThan(commit)
+    expect(settle).toBeLessThan(submit.indexOf("on_drive_multi_turn()"))
+  })
+
+  it("puts the cost warning after the row, and quotes the staged length", () => {
+    // Same form, and the warning reads the clamp of the STAGED value — moving
+    // the stepper re-quotes the run before the user spends on it, even though
+    // nothing is committed until submit.
+    const dialog = normalize(drive_settings_dialog)
+    expect(dialog.indexOf("Turns per conversation")).toBeLessThan(
+      dialog.indexOf("warning_message={drive_cost_message}"),
+    )
+    expect(contains("turns_per_case: staged_drive_turns_per_case,")).toBe(true)
+    expect(
+      contains(
+        "$: staged_drive_turns_per_case = clamp_turns_per_case(staged_turns_per_case)",
+      ),
+    ).toBe(true)
+  })
+
+  it("sends one length per drive, read once at the top", () => {
+    // Read once into a local, so a stepper moved mid-drive can't change what
+    // the request, the top-off decision, and the stamp are talking about.
+    const drive = function_body("async function on_drive_multi_turn() {")
+    expect(drive).toContain("const chosen_turns = drive_turns_per_case")
+    expect(drive).toContain("turns: chosen_turns,")
+    expect(drive).not.toContain("turns: drive_turns_per_case,")
+  })
+
+  it("captures the driven length beside the synthetic-user model", () => {
+    // Same capture/rollback pattern as driven_su_driver: stamped at batch
+    // commit, restored when nothing drove so the previous batch's stamp
+    // survives a failed re-drive.
+    const drive = function_body("async function on_drive_multi_turn() {")
+    expect(drive).toContain(
+      "const previous_driven_turns_per_case = driven_turns_per_case",
+    )
+    expect(drive).toContain("driven_turns_per_case = chosen_turns")
+    expect(drive).toContain(
+      "driven_turns_per_case = previous_driven_turns_per_case",
+    )
+  })
+
+  it("refuses a top-off that would mix conversation lengths", () => {
+    const drive = function_body("async function on_drive_multi_turn() {")
+    const guard = drive.slice(drive.indexOf("drive_lanes_unchanged({"))
+    expect(normalize(guard)).toContain("turns: chosen_turns,")
+    expect(normalize(guard)).toContain("batch_turns: driven_turns_per_case,")
+  })
+
+  it("stamps the driven length on save, never the live knob", () => {
+    // The stepper can move after the drive; the saved eval must describe the
+    // conversations that exist on disk. Save fails loud rather than guessing a
+    // length for chains it has no record of.
+    expect(multi_turn_save).toContain(
+      "const saved_turns_per_case = driven_turns_per_case",
+    )
+    expect(multi_turn_save).toContain(
+      "No conversation length was recorded for the driven conversations. Go back to Step 4.",
+    )
+    expect(normalize(multi_turn_save)).toContain("turns: saved_turns_per_case,")
+    expect(multi_turn_save).not.toContain("drive_turns_per_case")
+  })
+
+  it("counts progress against the driven length", () => {
+    // A stepper moved while the bar is on screen must not restate the
+    // denominator under a batch already running at another length.
+    expect(
+      contains(
+        "$: multi_turn_total_turns = pipeline_total_cases * (driven_turns_per_case ?? drive_turns_per_case)",
+      ),
+    ).toBe(true)
+  })
+
+  it("persists the chosen length and restores it through the clamp", () => {
+    // The mirror is what puts the choice on disk; without it a reload silently
+    // puts the drive back on the default. A stored value can predate today's
+    // range, and a draft written before the knob existed carries no value.
+    const mirror = region("$: current_draft = draft_ready", "    : null")
+    expect(normalize(mirror)).toContain("turns_per_case,")
+    const restore = normalize(function_body("async function restore_draft() {"))
+    expect(restore).toContain(
+      "turns_per_case = restore_turns_per_case( saved.turns_per_case, TURNS_PER_CASE, )",
+    )
   })
 })
 

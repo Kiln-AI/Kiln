@@ -51,6 +51,42 @@ export type DriveStop = {
   preflight?: PreflightFailure | null
 }
 
+// ── Conversation length ───────────────────────────────────────────────────
+
+// The range the multi-turn drive route accepts for its turn count
+// (multiturn_sdg_api's `turns` field is ge=1, le=20). Mirrored here so the
+// stepper and every restored value stay inside what the route will take.
+export const MIN_TURNS_PER_CASE = 1
+export const MAX_TURNS_PER_CASE = 20
+
+// The turn count a drive actually runs at. A saved draft can carry a value
+// from an older range (or no number at all), so every reader goes through
+// this instead of trusting the stored one — that way the quote, the request,
+// and the stamp can never describe a length the route would reject. A
+// non-numeric value falls back to the minimum, matching the stepper's own
+// blank-entry behavior.
+export function clamp_turns_per_case(turns: number): number {
+  if (!Number.isFinite(turns)) return MIN_TURNS_PER_CASE
+  return Math.min(
+    MAX_TURNS_PER_CASE,
+    Math.max(MIN_TURNS_PER_CASE, Math.round(turns)),
+  )
+}
+
+// The length a restored draft starts at. The clamp above exists to pull a
+// number from an older range back inside today's bounds, so only a genuine
+// number is worth clamping: a draft with no value on record — or one whose
+// stored value isn't a finite number at all — has expressed no choice, and
+// restoring it as the clamp's minimum would quietly hand the user a
+// one-turn run they never picked. Those restore the default instead.
+export function restore_turns_per_case(
+  stored: number | null | undefined,
+  fallback: number,
+): number {
+  if (typeof stored !== "number" || !Number.isFinite(stored)) return fallback
+  return clamp_turns_per_case(stored)
+}
+
 // ── Top-off drive planning ────────────────────────────────────────────────
 //
 // A retry after a partial drive must fill the batch, not replace it: the
@@ -128,17 +164,20 @@ export function plan_drive<T, R>(args: {
   }
 }
 
-// Whether the current batch was produced under the same model lanes this
-// attempt would drive with. A changed judge (or, on multi-turn, a changed
-// synthetic-user model) forces a fresh batch instead of a top-off: one
-// review may not mix two judges' verdicts, and the saved drive stamp must
-// describe every conversation in the batch. `su` is omitted entirely on
-// the single-turn arm, which has no synthetic-user lane.
+// Whether the current batch was produced under the same drive settings this
+// attempt would run with. A changed judge — or, on multi-turn, a changed
+// synthetic-user model or conversation length — forces a fresh batch instead
+// of a top-off: one review may not mix two judges' verdicts, and the saved
+// drive stamp must describe every conversation in the batch. `su` and `turns`
+// are omitted entirely on the single-turn arm, which has neither a
+// synthetic-user lane nor conversations to length.
 export function drive_lanes_unchanged(args: {
   judge: unknown
   batch_judge: unknown | null
   su?: unknown
   batch_su?: unknown | null
+  turns?: number
+  batch_turns?: number | null
 }): boolean {
   if (args.batch_judge === null) return false
   if (JSON.stringify(args.judge) !== JSON.stringify(args.batch_judge)) {
@@ -147,6 +186,15 @@ export function drive_lanes_unchanged(args: {
   if (args.su !== undefined) {
     if (args.batch_su === null || args.batch_su === undefined) return false
     if (JSON.stringify(args.su) !== JSON.stringify(args.batch_su)) return false
+  }
+  if (args.turns !== undefined) {
+    // Topping off at a different length would leave one batch holding
+    // conversations of two lengths, under a single stamp that can only name
+    // one of them.
+    if (args.batch_turns === null || args.batch_turns === undefined) {
+      return false
+    }
+    if (args.turns !== args.batch_turns) return false
   }
   return true
 }

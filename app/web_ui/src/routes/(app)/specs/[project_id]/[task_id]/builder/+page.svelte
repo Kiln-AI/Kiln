@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
   import { page } from "$app/stores"
-  import { onMount, onDestroy } from "svelte"
+  import { onMount, onDestroy, tick } from "svelte"
   import { agentInfo } from "$lib/agent"
   import {
     afterNavigate,
@@ -110,6 +110,7 @@
   // Step 4 plan-flow logic (stop banner, destructive-action confirms, the
   // preparing-review gate's resolved counting) — pure and unit-tested.
   import {
+    clamp_turns_per_case,
     compact_batch_slots,
     dominant_failure_message,
     drive_cost_warning,
@@ -120,6 +121,9 @@
     new_plan_confirm,
     plan_drive,
     resolved_selected_count,
+    restore_turns_per_case,
+    MAX_TURNS_PER_CASE,
+    MIN_TURNS_PER_CASE,
     type DriveStop,
     type PreflightFailure,
     type PreflightLane,
@@ -163,6 +167,9 @@
   } from "$lib/stores/copilot_connection_store"
   import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  // The house stepper + label tooltip, for the Generation Settings turns row.
+  import IncrementUi from "$lib/ui/increment_ui.svelte"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import type {
     Task,
     ModelProviderName,
@@ -377,6 +384,7 @@
         su_driver,
         input_generator,
         judge_model,
+        turns_per_case,
       }
     : null
   $: if (current_draft && draft_store) {
@@ -467,6 +475,13 @@
       su_driver = saved.su_driver ?? null
       input_generator = saved.input_generator ?? null
       judge_model = saved.judge_model ?? null
+      // Conversation length: no key, no choice on record, or a stored value
+      // that isn't a number restores the default; a real number is clamped in
+      // case it predates today's range.
+      turns_per_case = restore_turns_per_case(
+        saved.turns_per_case,
+        TURNS_PER_CASE,
+      )
       // Rebuild the shallow-routing chain up to the restored step (the
       // mount already seeded "describe") so the browser's Back walks the
       // wizard steps exactly as in the original session instead of
@@ -1030,11 +1045,13 @@
   // the size that was requested, which the user may have changed.
   $: planned_total = batch_plan?.prompts.length ?? eval_input_count
   // What the approved plan will cost to run, shown in the settings dialog
-  // directly above the button that spends it.
+  // directly above the button that spends it. Quotes the STAGED length, so the
+  // number moves with the stepper the user is holding rather than with the
+  // value the last submit committed.
   $: drive_cost_message = drive_cost_warning({
     is_multi_turn,
     count: planned_total,
-    turns_per_case: drive_turns_per_case,
+    turns_per_case: staged_drive_turns_per_case,
   })
   // Which loading stage Step 4 is in — drives the progress screen only.
   // The interactive plan-approval view is DERIVED (show_plan_approval below),
@@ -1115,6 +1132,11 @@
   // su_driver picker can change after the drive (Advanced dialog), and the
   // stamp must describe the conversations that exist, not a later pick.
   let driven_su_driver: ModelChoice | null = null
+  // The conversation length driven_cases actually ran for, captured at batch
+  // commit beside the synthetic-user model above. The progress denominator and
+  // the save stamp read THIS: the stepper can move after (or during) a drive,
+  // and both must describe the conversations that exist.
+  let driven_turns_per_case: number | null = null
   // batch_tag from each arm's pipeline batch_started event — passed to the
   // save endpoint so the backend can tag the matching runs for the eval
   // dataset.
@@ -1219,13 +1241,29 @@
   //      ([drive → judge]) or single_turn_pipeline ([run → judge]) — and
   //      the PipelineEvent frames drive progress + the review results.
   //
+  // The default conversation length, matching the drive loop's own default
+  // (MAX_TURNS_DEFAULT in libs/core/kiln_ai/synthetic_user/runner.py) so an
+  // untouched knob runs exactly what the SDK would run on its own.
   const TURNS_PER_CASE = 5
-  // The turn count one drive spends per conversation. EVERY reader goes
-  // through this alias — the cost warning, the drive request, the progress
-  // denominator, and the saved drive stamp — so what the user is quoted, what
-  // runs, and what is persisted can never disagree. Currently fixed; this is
-  // the single line that changes when the user gets to choose the count.
-  $: drive_turns_per_case = TURNS_PER_CASE
+  // The conversation length the user COMMITTED in Generation Settings. Rides
+  // the persisted draft, so a reload keeps the choice.
+  let turns_per_case = TURNS_PER_CASE
+  // The dialog's working copy, edited by the stepper. Staged like the model
+  // lanes' dropdown bindings: open_drive_settings reseeds it from the
+  // committed value and only submit commits it back, so leaving the dialog by
+  // Esc, X, or the backdrop discards a nudge — which matters because a
+  // half-changed length would otherwise silently disqualify a top-off drive.
+  let staged_turns_per_case = turns_per_case
+  // The turn count one drive spends per conversation. EVERY reader of the
+  // COMMITTED length goes through this alias — the drive request, the progress
+  // denominator, and the saved drive stamp — so what runs and what is
+  // persisted can never disagree. Clamped to the range the drive route
+  // accepts, so no stored value can compose a request that only 422s.
+  $: drive_turns_per_case = clamp_turns_per_case(turns_per_case)
+  // The same clamp over the staged value: what the open dialog quotes. Keeps
+  // the cost warning honest as the stepper moves, and never quotes a length
+  // the route would reject.
+  $: staged_drive_turns_per_case = clamp_turns_per_case(staged_turns_per_case)
 
   // ── Model lanes (SDG's Generation Settings pattern). The Generation
   // Settings dialog is the drive's only entrance: it shows the lanes the
@@ -1382,6 +1420,10 @@
 
   async function open_drive_settings() {
     drive_settings_error = null
+    // Reseed the stepper from the committed length before the dialog paints,
+    // so a cancelled nudge is gone the next time it opens. Unlike the lanes it
+    // waits on nothing, so it is seeded here rather than after the await.
+    staged_turns_per_case = turns_per_case
     drive_settings_dialog?.show()
     // Await the pre-population pass (usually already in flight from the plan
     // surface) so the reseed below reads resolved lanes: the dialog shows
@@ -1495,10 +1537,10 @@
     return data.judge_prompt
   }
 
-  // Commit the lanes and start the run. Refuses on an unset lane — the
-  // SDG flow would fall through to raw server errors here; we stop with a
-  // visible error instead.
-  function submit_drive_settings() {
+  // Commit the lanes and the conversation length, then start the run. Refuses
+  // on an unset lane — the SDG flow would fall through to raw server errors
+  // here; we stop with a visible error instead.
+  async function submit_drive_settings() {
     drive_settings_submitting = false
     const su_ok = !is_multi_turn || (su_model_id && su_provider_id)
     const input_gen_ok =
@@ -1518,8 +1560,16 @@
       input_generator = model_choice(input_gen_model_id, input_gen_provider_id)
     }
     judge_model = model_choice(judge_model_id, judge_provider_id)
+    // Commit the staged length. Clamped on the way in so the committed value —
+    // what the request, the draft, and the stamp all read — is always one the
+    // drive route accepts.
+    turns_per_case = clamp_turns_per_case(staged_turns_per_case)
     drive_settings_error = null
     drive_settings_dialog?.close()
+    // Let the commit above reach the reactive graph before driving: the drive
+    // reads the clamped alias derived from turns_per_case, and Svelte
+    // recomputes derivations on the next tick, not on assignment.
+    await tick()
     if (is_multi_turn) {
       on_drive_multi_turn()
     } else {
@@ -1881,6 +1931,10 @@
       open_drive_settings()
       return
     }
+    // Read the length ONCE, here: everything below (the top-off decision, the
+    // request, the stamp) must describe one drive, even if the knob moves
+    // while it runs.
+    const chosen_turns = drive_turns_per_case
     const approved_prompts = batch_plan.prompts
     generation_loading = true
     generation_error = null
@@ -2021,13 +2075,15 @@
       // 5. The drive plan: TOP OFF the current batch — drive only the
       // missing slots, into the same batch tag, keeping the paid
       // successes — when the batch was driven from these exact cases under
-      // the same judge and synthetic user; otherwise a fresh batch under
-      // replace semantics.
+      // the same judge, synthetic user, and conversation length; otherwise a
+      // fresh batch under replace semantics.
       const lanes_unchanged = drive_lanes_unchanged({
         judge,
         batch_judge: review_judge,
         su: chosen_su,
         batch_su: driven_su_driver,
+        turns: chosen_turns,
+        batch_turns: driven_turns_per_case,
       })
       const drive_plan = plan_drive({
         items: cases,
@@ -2046,11 +2102,12 @@
       // superseded from here (the pipeline deletes their chains once this
       // drive has produced replacements) and the slate resets; a top-off
       // keeps the batch's results and bookkeeping — it only fills holes.
-      // The synthetic-user stamp flips with the cases (and rolls back with
-      // them below if nothing is driven).
+      // The synthetic-user and conversation-length stamps flip with the cases
+      // (and roll back with them below if nothing is driven).
       const previous_batch_tag = multi_turn_batch_tag
       const previous_driven_cases = driven_cases
       const previous_driven_su_driver = driven_su_driver
+      const previous_driven_turns_per_case = driven_turns_per_case
       const previous_batch_cases = batch_cases
       const previous_built_by_case = built_by_case
       const previous_driven_slots = driven_slots
@@ -2061,6 +2118,7 @@
       const previous_review_judge = review_judge
       const previous_reviewed_identity = reviewed_identity
       driven_su_driver = chosen_su
+      driven_turns_per_case = chosen_turns
       if (!drive_plan.top_off) {
         trace_claims = []
         trace_reviews = []
@@ -2099,7 +2157,7 @@
         },
         body: JSON.stringify({
           cases: drive_plan.items,
-          turns: drive_turns_per_case,
+          turns: chosen_turns,
           target_run_config_id,
           su_driver: chosen_su,
           // A top-off drives into the existing batch's tag; null lets the
@@ -2252,12 +2310,13 @@
         }
       } else {
         // Nothing was driven: no replacement chains, no deletions — keep
-        // pointing at the previous batch (its cases, slots, and the
-        // synthetic user that drove them) so save/cleanup/top-off still
+        // pointing at the previous batch (its cases, slots, and the synthetic
+        // user and length that drove them) so save/cleanup/top-off still
         // work.
         multi_turn_batch_tag = previous_batch_tag
         driven_cases = previous_driven_cases
         driven_su_driver = previous_driven_su_driver
+        driven_turns_per_case = previous_driven_turns_per_case
         batch_cases = previous_batch_cases
         built_by_case = previous_built_by_case
         driven_slots = previous_driven_slots
@@ -3015,7 +3074,7 @@
         ? `${su_lane.model_provider}/${su_lane.model_name}`
         : null,
       judge,
-      turns: su_lane ? drive_turns_per_case : null,
+      turns: su_lane ? driven_turns_per_case ?? drive_turns_per_case : null,
       batch_tag: multi_turn_batch_tag ?? single_turn_batch_tag,
     }
     try {
@@ -3660,6 +3719,14 @@
             "No simulated-user model was recorded. Go back to Step 4."
           return
         }
+        // The length those chains actually ran for, captured at the same
+        // commit — missing means no drive happened.
+        const saved_turns_per_case = driven_turns_per_case
+        if (saved_turns_per_case === null) {
+          save_error =
+            "No conversation length was recorded for the driven conversations. Go back to Step 4."
+          return
+        }
         // Carry the human's review through save: each reviewed trace maps to
         // its chain-leaf TaskRun (leaf_run_id from run_cases_batch); the
         // studio writes the golden rating + per-claim grades onto that leaf.
@@ -3704,7 +3771,7 @@
                 drive_config: {
                   model_name: saved_su_driver.model_name,
                   model_provider: saved_su_driver.model_provider,
-                  turns: drive_turns_per_case,
+                  turns: saved_turns_per_case,
                 },
               },
             },
@@ -4036,8 +4103,11 @@
   // Total assistant turns expected across the whole batch — the denominator
   // for the smooth turn-level progress (cases run in parallel waves, so this
   // climbs steadily where the case count would sit still then jump). Uses
-  // the DRIVEN case count: salvage can drive fewer cases than the plan has.
-  $: multi_turn_total_turns = pipeline_total_cases * drive_turns_per_case
+  // the DRIVEN case count and the DRIVEN length: salvage can drive fewer cases
+  // than the plan has, and the bar must not restate itself against a length
+  // the running batch isn't using.
+  $: multi_turn_total_turns =
+    pipeline_total_cases * (driven_turns_per_case ?? drive_turns_per_case)
 
   // Step 4 loading-stage title + caption for the pre-pipeline stages (the
   // pipeline stage has its own progress screen below). One phase machine,
@@ -4874,6 +4944,29 @@
         }}
         quiet_suggested={true}
       />
+      <!-- Conversation length, in the synthetic data dialog's stepper-row
+           shape: label left, its tooltip pinned to the right of the label,
+           the stepper on the row's right. Inside the multi-turn branch by
+           construction — a single-turn run has no conversation to length.
+           The stepper's bounds are the drive route's own, so the dialog can
+           only compose a request the route accepts, and the cost warning
+           below restates the spend as it moves. -->
+      <div class="flex flex-row items-center gap-4">
+        <div class="flex flex-row items-center grow font-medium text-sm">
+          <span>Turns per conversation</span>
+          <span class="grow"></span>
+          <div class="text-gray-500">
+            <InfoTooltip
+              tooltip_text="One turn is one exchange: the user sends a message and your agent replies. More turns test deeper behavior and cost more."
+            />
+          </div>
+        </div>
+        <IncrementUi
+          bind:value={staged_turns_per_case}
+          min={MIN_TURNS_PER_CASE}
+          max={MAX_TURNS_PER_CASE}
+        />
+      </div>
     {:else}
       <AvailableModelsDropdown
         label="Model that writes the test inputs"

@@ -170,6 +170,12 @@ export type BuilderDraft = {
   su_driver: ModelChoice | null
   input_generator: ModelChoice | null
   judge_model: ModelChoice | null
+  // The Generation Settings conversation length (multi-turn). Persisted for
+  // the same reason as the lanes above: a reload should not silently put the
+  // drive back on the default length. Null means no choice on record — drafts
+  // written before this key restore that way — and the page falls back to its
+  // default turn count.
+  turns_per_case: number | null
 }
 
 export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
@@ -192,6 +198,7 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   su_driver: null,
   input_generator: null,
   judge_model: null,
+  turns_per_case: null,
 }
 
 export function builder_draft_key(project_id: string, task_id: string): string {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  clamp_turns_per_case,
   compact_batch_slots,
   dominant_failure_message,
   drive_cost_warning,
@@ -12,6 +13,9 @@ import {
   new_plan_confirm,
   plan_drive,
   resolved_selected_count,
+  restore_turns_per_case,
+  MAX_TURNS_PER_CASE,
+  MIN_TURNS_PER_CASE,
   type DriveStop,
 } from "./plan_flow"
 import type { ClaimsBuildState } from "./claim_evidence"
@@ -544,6 +548,72 @@ describe("plan_drive — slot/item length agreement", () => {
   })
 })
 
+describe("clamp_turns_per_case", () => {
+  it("mirrors the drive route's accepted range", () => {
+    // multiturn_sdg_api declares turns as ge=1, le=20. A stepper that could
+    // exceed either end would compose a request that can only 422.
+    expect(MIN_TURNS_PER_CASE).toBe(1)
+    expect(MAX_TURNS_PER_CASE).toBe(20)
+  })
+
+  it("passes an in-range value through untouched", () => {
+    // The default (5) above all: an untouched knob must drive exactly what the
+    // builder drove before the knob existed.
+    expect(clamp_turns_per_case(5)).toBe(5)
+    expect(clamp_turns_per_case(1)).toBe(1)
+    expect(clamp_turns_per_case(20)).toBe(20)
+    expect(clamp_turns_per_case(12)).toBe(12)
+  })
+
+  it("clamps to both ends of the range", () => {
+    expect(clamp_turns_per_case(0)).toBe(1)
+    expect(clamp_turns_per_case(-4)).toBe(1)
+    expect(clamp_turns_per_case(21)).toBe(20)
+    expect(clamp_turns_per_case(500)).toBe(20)
+  })
+
+  it("rounds a fractional value to a whole turn", () => {
+    expect(clamp_turns_per_case(3.4)).toBe(3)
+    expect(clamp_turns_per_case(3.6)).toBe(4)
+  })
+
+  it("falls back to the minimum for a non-numeric value", () => {
+    // A corrupt or hand-edited draft can carry anything; the drive still has
+    // to send a number the route accepts.
+    expect(clamp_turns_per_case(NaN)).toBe(1)
+    expect(clamp_turns_per_case(Infinity)).toBe(1)
+    expect(clamp_turns_per_case(undefined as unknown as number)).toBe(1)
+  })
+})
+
+describe("restore_turns_per_case", () => {
+  // The builder's page default; passed in so the helper stays free of the
+  // page's constants.
+  const PAGE_DEFAULT = 5
+
+  it("clamps a genuine number", () => {
+    expect(restore_turns_per_case(8, PAGE_DEFAULT)).toBe(8)
+    expect(restore_turns_per_case(99, PAGE_DEFAULT)).toBe(20)
+    expect(restore_turns_per_case(0, PAGE_DEFAULT)).toBe(1)
+  })
+
+  it("restores the default when no choice is on record", () => {
+    expect(restore_turns_per_case(null, PAGE_DEFAULT)).toBe(PAGE_DEFAULT)
+    expect(restore_turns_per_case(undefined, PAGE_DEFAULT)).toBe(PAGE_DEFAULT)
+  })
+
+  it("restores the default for a value that is not a finite number", () => {
+    // The clamp's minimum is for numbers that fell out of range, not for
+    // garbage: a corrupt draft must not hand the user a one-turn run they
+    // never picked.
+    expect(restore_turns_per_case(NaN, PAGE_DEFAULT)).toBe(PAGE_DEFAULT)
+    expect(restore_turns_per_case(Infinity, PAGE_DEFAULT)).toBe(PAGE_DEFAULT)
+    expect(restore_turns_per_case("8" as unknown as number, PAGE_DEFAULT)).toBe(
+      PAGE_DEFAULT,
+    )
+  })
+})
+
 describe("drive_lanes_unchanged", () => {
   const judge = { prompt: "p", model_name: "m", model_provider: "openai" }
 
@@ -598,6 +668,36 @@ describe("drive_lanes_unchanged", () => {
         batch_judge: { ...judge },
         su,
         batch_su: null,
+      }),
+    ).toBe(false)
+  })
+
+  it("a changed conversation length forces a fresh batch", () => {
+    // A top-off at a different length would put 5-turn and 10-turn
+    // conversations in one batch under a stamp that can name only one length.
+    const su = { model_name: "su", model_provider: "openai" }
+    const same_lanes = { judge, batch_judge: { ...judge }, su, batch_su: su }
+    expect(
+      drive_lanes_unchanged({ ...same_lanes, turns: 5, batch_turns: 5 }),
+    ).toBe(true)
+    expect(
+      drive_lanes_unchanged({ ...same_lanes, turns: 10, batch_turns: 5 }),
+    ).toBe(false)
+    expect(
+      drive_lanes_unchanged({ ...same_lanes, turns: 5, batch_turns: 10 }),
+    ).toBe(false)
+  })
+
+  it("no recorded batch length means no batch to top off", () => {
+    const su = { model_name: "su", model_provider: "openai" }
+    expect(
+      drive_lanes_unchanged({
+        judge,
+        batch_judge: { ...judge },
+        su,
+        batch_su: su,
+        turns: 5,
+        batch_turns: null,
       }),
     ).toBe(false)
   })

@@ -16,6 +16,7 @@ import {
   type BuilderDraft,
   type CachedSuCases,
 } from "./builder_draft"
+import { restore_turns_per_case } from "./plan_flow"
 
 // A draft with every field populated — the round-trip and resolution
 // fixtures below carve it down.
@@ -99,6 +100,9 @@ const full_draft: BuilderDraft = {
     model_name: "gpt_5_4",
     model_provider: "openai",
   },
+  // Deliberately NOT the default 5: a fixture on the default couldn't tell a
+  // restored choice from the fallback.
+  turns_per_case: 8,
 }
 
 describe("draft round-trip", () => {
@@ -690,5 +694,53 @@ describe("model lanes (su_driver / judge_model)", () => {
         su_driver: { model_name: "m", model_provider: "openai" },
       }),
     ).toBe(false)
+  })
+})
+
+describe("conversation length (turns_per_case)", () => {
+  // The builder restores with `restore_turns_per_case(saved.turns_per_case,
+  // TURNS_PER_CASE)` — mirrored here so the cases that matter (a stored
+  // choice, no choice, an out-of-range choice, a corrupt one) are pinned
+  // against the real helper.
+  const PAGE_DEFAULT = 5
+  const restore = (saved: BuilderDraft) =>
+    restore_turns_per_case(saved.turns_per_case, PAGE_DEFAULT)
+
+  it("round-trips the chosen length", () => {
+    const restored = JSON.parse(JSON.stringify(full_draft)) as BuilderDraft
+    expect(restored.turns_per_case).toBe(8)
+    expect(restore(restored)).toBe(8)
+  })
+
+  it("restores the default when no choice is on record", () => {
+    // Both shapes reach here: a draft from before this key existed (no key at
+    // all) and a reset draft (explicit null).
+    const { turns_per_case: _turns, ...legacy } = full_draft
+    const legacy_restored = JSON.parse(JSON.stringify(legacy)) as BuilderDraft
+    expect(restore(legacy_restored)).toBe(PAGE_DEFAULT)
+    expect(EMPTY_BUILDER_DRAFT.turns_per_case).toBeNull()
+    expect(restore(EMPTY_BUILDER_DRAFT)).toBe(PAGE_DEFAULT)
+  })
+
+  it("clamps a stored length that falls outside today's range", () => {
+    expect(restore({ ...full_draft, turns_per_case: 99 })).toBe(20)
+    expect(restore({ ...full_draft, turns_per_case: 0 })).toBe(1)
+  })
+
+  it("restores the default when the stored length isn't a number", () => {
+    // A draft round-trips through JSON in IndexedDB, so a corrupt or
+    // hand-edited record can carry anything. That is no choice on record, not
+    // a choice of one turn.
+    expect(restore({ ...full_draft, turns_per_case: NaN })).toBe(PAGE_DEFAULT)
+    expect(
+      restore({
+        ...full_draft,
+        turns_per_case: "8" as unknown as number,
+      }),
+    ).toBe(PAGE_DEFAULT)
+  })
+
+  it("reset drops the choice back to the default", () => {
+    expect(reset_draft_keeping_tags(full_draft).turns_per_case).toBeNull()
   })
 })
