@@ -98,8 +98,10 @@
   // importance-ordered list, not all of it. Second sentence names the only
   // control the claim cards carry, so the description can never describe an
   // answer the reviewer is not offered.
-  const CLAIMS_DISCLOSURE_DESCRIPTION =
-    "Key facts your eval used to reach its call. Disagree with any that look wrong."
+  // Names the judge, because the rest of this step does: the header says a
+  // judge scored the runs, and the feedback box below is labelled Teach the
+  // Judge. "Score" is the house verb for what it did.
+  $: claims_disclosure_description = `The main facts the judge used to score this ${judged_noun}. Disagree with any that are wrong.`
   $: claims_toggle_label = `${claims_expanded ? "Hide" : "Show"} claims`
 
   // Why the primary action is held disabled on the last trace. Stated in the
@@ -284,15 +286,14 @@
               on:click={() => (claims_expanded = !claims_expanded)}
             >
               <div class="flex flex-col gap-2">
-                <!-- Counts what is on screen. There is no "of N": the cap is
-                     an editorial choice, and advertising a remainder the
-                     reviewer cannot reach would only read as withheld. -->
-                <span class="text-sm font-medium"
-                  >Claims ({visible.length})</span
-                >
+                <!-- No count. The list is capped to the most important few,
+                     so any number here invites "of how many?" and the honest
+                     answer is a remainder the reviewer cannot reach. The row
+                     names what is behind it and nothing more. -->
+                <span class="text-sm font-medium">Claims</span>
                 {#if claims_expanded}
                   <div class="text-sm text-gray-500">
-                    {CLAIMS_DISCLOSURE_DESCRIPTION}
+                    {claims_disclosure_description}
                   </div>
                 {/if}
               </div>

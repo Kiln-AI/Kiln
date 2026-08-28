@@ -363,15 +363,17 @@
     <!-- MISMATCH only: now the call is worth stating, because the reviewer is
          contradicting it. One line and no explanation — answering released the
          reason and its cited evidence onto the card above, so there is nothing
-         here to repeat. "Your eval", not "the judge": the reviewer is
-         building an eval, and its parts are not theirs to keep track of. -->
+         here to repeat. It names the judge, matching the step header and
+         the Teach the Judge label directly below, and says "scored" rather
+         than "thinks" because that is the house verb for what a judge does. -->
     <div
       class="mt-3 rounded-lg border border-warning/40 bg-warning/5 px-4 py-3"
     >
       <div class="text-sm font-medium">
-        Your eval disagrees. It thinks this {claim.expected_result === "pass"
-          ? "passes"
-          : "fails"}.
+        The judge disagrees. It scored this as a {claim.expected_result ===
+        "pass"
+          ? "pass"
+          : "fail"}.
       </div>
       <!-- FormElement's label typography, hand-rolled so the card's own error
            state stays the one in play. Label only: the placeholder states the

@@ -4851,7 +4851,7 @@
                  can never be met and no explanation for it. -->
             <Warning
               warning_color="warning"
-              warning_message={`Kiln could not analyze any of these ${judged_noun}s. Try creating your eval data again.`}
+              warning_message={`Couldn't analyze any of these ${judged_noun}s. Create your eval data again.`}
             />
           {:else}
             {#if calibration_rounds_completed > 0 && rejudge_shortfall_notice(calibration_failed_count, case_noun)}

@@ -192,7 +192,7 @@ describe("ClaimCard — the blind final judgement", () => {
     // The reveal names the judge's call, which is the opposite of the label
     // just given.
     expect(
-      getByText("Your eval disagrees. It thinks this passes."),
+      getByText("The judge disagrees. It scored this as a pass."),
     ).toBeTruthy()
     expect(
       (container.querySelector("textarea") as HTMLTextAreaElement).placeholder,

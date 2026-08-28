@@ -297,7 +297,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     expect(container.textContent).not.toContain("The window was asserted")
     expect(container.textContent).not.toContain("Overall, this example")
     expect(container.textContent).not.toContain("Fails Eval")
-    expect(container.textContent).not.toContain("Your eval disagrees")
+    expect(container.textContent).not.toContain("The judge disagrees")
 
     // The inverse escape hatch: claims are one click away, the trace is not
     // behind a button any more.
@@ -314,7 +314,9 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     expect(verdicts[0].final_judgement_verdict.agrees).toBe(false)
     // One sentence: the disagreement, the judge's own verdict word, and the
     // explanation it introduces.
-    expect(getByText("Your eval disagrees. It thinks this fails.")).toBeTruthy()
+    expect(
+      getByText("The judge disagrees. It scored this as a fail."),
+    ).toBeTruthy()
     expect(container.textContent).toContain("Fails Eval: fabricated policy.")
     // The Teach the Judge label, with no description line under it — the
     // placeholder carries the whole ask, keyed to the REVIEWER's label.
@@ -345,7 +347,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
 
     await fireEvent.click(getByText("Fail"))
     expect(verdicts[0].final_judgement_verdict.agrees).toBe(true)
-    expect(container.textContent).not.toContain("Your eval disagrees")
+    expect(container.textContent).not.toContain("The judge disagrees")
     expect(container.querySelector("textarea")).toBeNull()
     expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(true)
   })
@@ -357,7 +359,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     // Agreeing with a passing judge is the Pass label here.
     await fireEvent.click(getByText("Pass"))
     expect(verdicts[0].final_judgement_verdict.agrees).toBe(true)
-    expect(container.textContent).not.toContain("Your eval disagrees")
+    expect(container.textContent).not.toContain("The judge disagrees")
     // The grade is readable off the row: the chosen side takes the verdict
     // color rather than the neutral outline.
     expect(getByText("Pass").className).toContain("btn-success")
@@ -370,7 +372,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     // The verdict word follows the judge, the placeholder follows the
     // reviewer, so the two point opposite ways here.
     expect(
-      getByText("Your eval disagrees. It thinks this passes."),
+      getByText("The judge disagrees. It scored this as a pass."),
     ).toBeTruthy()
     expect(
       (container.querySelector("textarea") as HTMLTextAreaElement).placeholder,
@@ -390,7 +392,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     })
 
     await fireEvent.click(getByText("Fail"))
-    expect(container.textContent).not.toContain("Your eval disagrees")
+    expect(container.textContent).not.toContain("The judge disagrees")
     expect(container.querySelector("textarea")).toBeNull()
     // The reason went with the reveal: an agreeing grade never ships text the
     // reviewer can no longer see.
@@ -464,7 +466,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     // Agreeing releases it too: the conclusion can no longer anchor anyone.
     await fireEvent.click(getByText("Fail"))
     expect(container.textContent).toContain("Fails Eval: fabricated policy.")
-    expect(container.textContent).not.toContain("Your eval disagrees")
+    expect(container.textContent).not.toContain("The judge disagrees")
   })
 
   it("offers Retry Analysis in the dialog when the claims build failed", async () => {
@@ -520,7 +522,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
 
     await fireEvent.click(getByText("Next"))
     // A fresh trace starts unlabelled: no reveal, no reason carried over.
-    expect(container.textContent).not.toContain("Your eval disagrees")
+    expect(container.textContent).not.toContain("The judge disagrees")
     expect(container.querySelector("textarea")).toBeNull()
     expect(verdicts[1].final_judgement_verdict).toEqual({
       agrees: null,
@@ -533,7 +535,9 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     )
 
     await fireEvent.click(getByText("Previous"))
-    expect(getByText("Your eval disagrees. It thinks this fails.")).toBeTruthy()
+    expect(
+      getByText("The judge disagrees. It scored this as a fail."),
+    ).toBeTruthy()
     expect(
       (container.querySelector("textarea") as HTMLTextAreaElement).value,
     ).toBe("The window is documented.")
@@ -561,7 +565,7 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     expect(multi.getByText("Does this conversation pass?")).toBeTruthy()
     expect(multi.queryAllByText("View Full Trace").length).toBeGreaterThan(0)
     expect(multi.queryByText("View Claims")).toBeNull()
-    expect(multi.getByText("Claims (1)")).toBeTruthy()
+    expect(multi.getByRole("button", { name: "Show claims" })).toBeTruthy()
     expect(
       multi.container.querySelector("[data-testid='review-input']"),
     ).toBeNull()
@@ -587,11 +591,11 @@ describe("ClaimEvidenceReview — trace-first arm", () => {
     // Length is what decides, for JSON as for prose.
     const raw_output = JSON.stringify({ answer: "x".repeat(CHAR_CUTOFF) })
     const traces = [{ ...short_single_turn_trace(), raw_output }]
-    const { container, getByText, queryByText } = render_trace_first(traces)
+    const { container, getByRole, queryByText } = render_trace_first(traces)
 
     // Claims-first: the trace is behind its button, not rendered inline.
     expect(queryByText("View Claims")).toBeNull()
-    expect(getByText("Claims (1)")).toBeTruthy()
+    expect(getByRole("button", { name: "Show claims" })).toBeTruthy()
     expect(container.querySelector("[data-testid='review-input']")).toBeNull()
   })
 
@@ -704,7 +708,9 @@ describe("ClaimEvidenceReview — what the mismatch reveal explains", () => {
     ])
 
     await fireEvent.click(getByText("Pass"))
-    expect(getByText("Your eval disagrees. It thinks this fails.")).toBeTruthy()
+    expect(
+      getByText("The judge disagrees. It scored this as a fail."),
+    ).toBeTruthy()
   })
 
   it("chips the final judgement's citations into the same trace view the claim cards open", async () => {
@@ -797,7 +803,7 @@ function render_multi_turn(traces: TraceClaims[]) {
 // arm, so anything rendered by a claim card needs it opened first.
 function claims_toggle(container: HTMLElement): HTMLButtonElement {
   const found = [...container.querySelectorAll("button")].find((b) =>
-    b.textContent?.trim().startsWith("Claims ("),
+    b.textContent?.trim().startsWith("Claims"),
   )
   if (!found) throw new Error("no claims disclosure rendered")
   return found as HTMLButtonElement
@@ -978,7 +984,7 @@ describe("ClaimEvidenceReview — the claims-first arm asks the call first", () 
     const text = container.textContent ?? ""
     expect(text).toContain("Does this conversation pass?")
     expect(text.indexOf("Does this conversation pass?")).toBeLessThan(
-      text.indexOf("Claims (2)"),
+      text.indexOf("Claims"),
     )
 
     // The trace is behind a button and the claims are folded, so the reason
@@ -1000,7 +1006,7 @@ describe("ClaimEvidenceReview — the claims-first arm asks the call first", () 
       ])
 
       expect(container.textContent).not.toContain("Overall, this conversation")
-      expect(container.textContent).not.toContain("Your eval disagrees")
+      expect(container.textContent).not.toContain("The judge disagrees")
       // Neither side of the pair reads as chosen yet.
       expect(getByText("Pass").className).toContain("btn-outline")
       expect(getByText("Fail").className).toContain("btn-outline")
@@ -1040,13 +1046,13 @@ describe("ClaimEvidenceReview — the claims-first arm asks the call first", () 
     // Collapsed on arrival: the count is on screen, the claims are not.
     expect(claims_toggle(container).getAttribute("aria-expanded")).toBe("false")
     expect(queryByText("The agent stated a return window as fact.")).toBeNull()
-    expect(container.textContent).not.toContain("Key facts your eval used")
+    expect(container.textContent).not.toContain("The main facts the judge used")
 
     await expand_claims(container)
     expect(claims_toggle(container).getAttribute("aria-expanded")).toBe("true")
     expect(
       getByText(
-        "Key facts your eval used to reach its call. Disagree with any that look wrong.",
+        "The main facts the judge used to score this conversation. Disagree with any that are wrong.",
       ),
     ).toBeTruthy()
     expect(getByText("The agent stated a return window as fact.")).toBeTruthy()
@@ -1173,7 +1179,7 @@ describe("ClaimEvidenceReview — the claims-first contradiction reveal", () => 
 
     await fireEvent.click(getByText("Fail"))
     expect(verdicts[0].final_judgement_verdict.agrees).toBe(true)
-    expect(container.textContent).not.toContain("Your eval disagrees")
+    expect(container.textContent).not.toContain("The judge disagrees")
     expect(container.querySelector("textarea")).toBeNull()
     expect(getByText("Fail").className).toContain("btn-error")
   })
@@ -1195,7 +1201,9 @@ describe("ClaimEvidenceReview — the claims-first contradiction reveal", () => 
     expect(verdicts[0].final_judgement_verdict.agrees).toBe(false)
     // One line and a full stop: the reason is already on the card, so the
     // reveal has nothing to introduce.
-    expect(getByText("Your eval disagrees. It thinks this fails.")).toBeTruthy()
+    expect(
+      getByText("The judge disagrees. It scored this as a fail."),
+    ).toBeTruthy()
     expect(getAllByText("The window was given without a source.")).toHaveLength(
       1,
     )
