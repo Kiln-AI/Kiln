@@ -9,6 +9,7 @@ import {
   build_graded_traces,
   build_trace_reviews,
   calibration_gate_target,
+  reviewable_subset,
   CHAR_CUTOFF,
   declined_feedback_notice,
   disagreed_trace_indices,
@@ -1353,6 +1354,48 @@ describe("select_calibration_subset", () => {
         judged: [0, 3, 4],
       }),
     ).toEqual([])
+  })
+})
+
+describe("reviewable_subset — what the reviewer is really shown", () => {
+  // Claims state is the only field this reads, so the fixtures say just that.
+  function states(...states: ("built" | "error")[]) {
+    return states.map((claims_state) => ({ claims_state }))
+  }
+
+  it("drops the conversations whose claims never built", () => {
+    // Ten selected out of forty, two of which failed to analyze.
+    const traces = states(...Array<"built">(38).fill("built"), "error", "error")
+    const selected = [0, 1, 2, 3, 4, 5, 6, 7, 38, 39]
+
+    expect(reviewable_subset(traces, selected)).toEqual([
+      0, 1, 2, 3, 4, 5, 6, 7,
+    ])
+  })
+
+  it("keeps a fully built selection exactly as it was", () => {
+    const traces = states("built", "built", "built")
+    expect(reviewable_subset(traces, [0, 2])).toEqual([0, 2])
+  })
+
+  it("empties when nothing could be analyzed", () => {
+    // The all-errored case: the review has nothing to show, and the page owes
+    // the reviewer a message rather than an empty walk.
+    expect(reviewable_subset(states("error", "error"), [0, 1])).toEqual([])
+  })
+
+  it("makes the gate, the header count and the review counter agree", () => {
+    // Three numbers are drawn from these two values: the save gate's target,
+    // the step header's "reviewing N of M", and the review's own "1 of N".
+    const traces = states(...Array<"built">(38).fill("built"), "error", "error")
+    const walked = reviewable_subset(traces, [0, 1, 2, 3, 4, 5, 6, 7, 38, 39])
+    const target = calibration_gate_target(traces.length, walked.length)
+
+    expect(target).toBe(walked.length)
+    // Uncapped, the target is a pure function of the batch size, so it would
+    // still demand ten reviews of a walk that only offers eight.
+    expect(review_target(traces.length)).toBe(10)
+    expect(target).toBe(8)
   })
 })
 

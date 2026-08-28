@@ -1018,6 +1018,24 @@ export function review_target(total: number): number {
 // demanding the full target then would deadlock the gate on traces the
 // reviewer was never shown. First-round subsets are sized to the target, so
 // this only ever bites mid-loop.
+// The subset the reviewer actually walks: the selected traces minus any whose
+// claims build FAILED. Such a trace carries nothing gradable — no distilled
+// claims, and an overall card that could only state the verdict the review is
+// built to withhold — so it drops out rather than becoming a dead screen.
+// Nothing is built to replace it: the claims gate has already finished paying
+// for the round's builds.
+//
+// An excluded trace is an unselected one in every sense: never shown, so never
+// graded, so absent from the answer key and left to the train split unrated.
+// Pair it with calibration_gate_target so the save gate, the step header's
+// "reviewing N of M" and the review's own counter all read one number.
+export function reviewable_subset(
+  traces: Pick<TraceClaims, "claims_state">[],
+  selected: number[],
+): number[] {
+  return selected.filter((i) => traces[i]?.claims_state !== "error")
+}
+
 export function calibration_gate_target(
   total: number,
   subset_size: number,

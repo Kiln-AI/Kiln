@@ -95,7 +95,7 @@
     refine_judge_tooltip,
     rejudge_shortfall_notice,
     review_cta,
-    review_target,
+    reviewable_subset,
     reviewed_trace_count,
     select_calibration_subset,
     select_review_subset,
@@ -3025,22 +3025,35 @@
   // subset — unselected traces are not shown; they land in the train split
   // unrated.
   let selected_trace_indices: number[] = []
+  // What the reviewer actually walks (see reviewable_subset). Every claims
+  // build is resolved before either gate opens a review, and an excluded trace
+  // is never shown and so never rebuilt, so this list is fixed for the whole
+  // walk: nothing vanishes from under a reviewer mid-review. The raw selection
+  // stays the progress bar's denominator, since a failed build is still a
+  // build that was waited on.
+  $: reviewable_trace_indices = reviewable_subset(
+    trace_claims,
+    selected_trace_indices,
+  )
   // Save gate (both arms): the human-rated golden answer key caps at 25% of
   // the batch runs server-side, so the reviewer must rate at least N//4
-  // traces — reviewing more is welcome, fewer starves the answer key.
-  // Calibration rounds cap the demand at the round's actual subset size: a
-  // re-judge shortfall can surface fewer traces than the standard target,
-  // and the gate must never demand reviews of traces it didn't show.
-  $: review_target_count =
-    calibration_rounds_completed > 0
-      ? calibration_gate_target(
-          trace_claims.length,
-          selected_trace_indices.length,
-        )
-      : review_target(trace_claims.length)
+  // traces — reviewing more is welcome, fewer starves the answer key. Capped
+  // by what the round actually surfaced, every round: a re-judge shortfall or
+  // a failed claims build can leave fewer traces on screen than the standard
+  // target, and the gate must never demand reviews of traces it didn't show.
+  // This number also writes the step's "reviewing N of M" sentence, so the
+  // header, the gate and the review's own counter all read the same subset.
+  $: review_target_count = calibration_gate_target(
+    trace_claims.length,
+    reviewable_trace_indices.length,
+  )
   $: reviewed_count = reviewed_trace_count(trace_claims, trace_reviews)
+  // An empty subset has a target of zero, which would otherwise read as a met
+  // gate before the reviewer has graded anything.
   $: save_gate_met =
-    trace_claims.length > 0 && reviewed_count >= review_target_count
+    trace_claims.length > 0 &&
+    reviewable_trace_indices.length > 0 &&
+    reviewed_count >= review_target_count
   // The review CTA says what clicking it does: with any graded disagreement
   // a save enters a refine round, so the button reads Refine Judge (with a
   // tooltip naming the count). It flips back to Save the moment the last
@@ -3211,8 +3224,8 @@
   // EVERY selected trace is RESOLVED — built or errored. Review then opens
   // fully loaded: Previous can revisit any earlier trace, so every selected
   // claim set must be resolved before the review opens, not just the first.
-  // Errored builds don't hold the door — they keep their in-review
-  // error+retry card.
+  // Errored builds don't hold the door: they resolve like any other, then
+  // drop out of the reviewed subset.
   let preparing_review = false
   let claims_gate_error: string | null = null
   // Gate start time for the claims-build duration telemetry event.
@@ -3633,7 +3646,8 @@
 
   // The round's claims gate: once every selected trace resolved (built or
   // errored), open the re-review. Same wait-for-all rule as the first-round
-  // gate; errored builds keep their in-review retry card.
+  // gate. The same exclusion applies to the round's subset, so a trace
+  // dropped in one round can never come back in a later one without claims.
   $: if (
     calibration_phase === "building_claims" &&
     selected_trace_indices.length > 0 &&
@@ -3809,8 +3823,9 @@
             leaf_run_id: tc.leaf_run_id as string,
             user_says_meets_spec: user_says_meets_spec(tc, review),
             feedback: disagreement_feedback(review),
-            // A trace can be reviewed on the blind verdict alone when its
-            // claims build failed — the rating stands, the grades don't.
+            // Claim grades ride along only where claims were built. A
+            // failed build leaves the review entirely, so this is a guard
+            // rather than a path.
             claim_review:
               tc.claims_state === "built"
                 ? build_claim_review_payload(tc, review)
@@ -3906,8 +3921,9 @@
           leaf_run_id: tc.leaf_run_id as string,
           user_says_meets_spec: user_says_meets_spec(tc, review),
           feedback: disagreement_feedback(review),
-          // A trace can be reviewed on the blind verdict alone when its
-          // claims build failed — the rating stands, the grades don't.
+          // Claim grades ride along only where claims were built. A failed
+          // build leaves the review entirely, so this is a guard rather than
+          // a path.
           claim_review:
             tc.claims_state === "built"
               ? build_claim_review_payload(tc, review)
@@ -4829,6 +4845,14 @@
               warning_color="warning"
               warning_message="There is nothing to review yet. Create your eval data first."
             />
+          {:else if reviewable_trace_indices.length === 0}
+            <!-- Every selected trace failed its claims build, so the subset
+                 emptied. Say so: an empty review would leave a save gate that
+                 can never be met and no explanation for it. -->
+            <Warning
+              warning_color="warning"
+              warning_message={`Kiln could not analyze any of these ${judged_noun}s. Try creating your eval data again.`}
+            />
           {:else}
             {#if calibration_rounds_completed > 0 && rejudge_shortfall_notice(calibration_failed_count, case_noun)}
               <!-- Cases without a fresh verdict sat the round out — say so
@@ -4865,7 +4889,7 @@
               <ClaimEvidenceReview
                 traces={trace_claims}
                 bind:verdicts={trace_reviews}
-                selected_indices={selected_trace_indices}
+                selected_indices={reviewable_trace_indices}
                 {judged_noun}
                 {is_multi_turn}
                 {on_open_trace}

@@ -793,7 +793,7 @@ function render_multi_turn(traces: TraceClaims[]) {
   })
 }
 
-// The claims sit behind a collapsed All Claims disclosure on the claims-first
+// The claims sit behind a collapsed Claims disclosure on the claims-first
 // arm, so anything rendered by a claim card needs it opened first.
 function claims_toggle(container: HTMLElement): HTMLButtonElement {
   const found = [...container.querySelectorAll("button")].find((b) =>

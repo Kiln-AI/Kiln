@@ -7,7 +7,7 @@
   //
   // The overall call is the only answer the gate requires (is_trace_reviewed
   // wants it plus a reason for any dissent), so its card comes FIRST and the
-  // distilled claims sit under it behind an All Claims disclosure, collapsed.
+  // distilled claims sit under it behind a Claims disclosure, collapsed.
   // Claim grades were always optional, so folding them changes no behavior.
   //
   // Subset review: `selected_indices` is the judge-stratified sample the
