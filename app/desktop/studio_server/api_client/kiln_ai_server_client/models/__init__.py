@@ -161,6 +161,7 @@ from .task_run_intermediate_outputs_type_0 import TaskRunIntermediateOutputsType
 from .task_skill_info import TaskSkillInfo
 from .task_tool_info import TaskToolInfo
 from .tools_run_config import ToolsRunConfig
+from .unauthorized_response import UnauthorizedResponse
 from .usage import Usage
 from .validation_error import ValidationError
 from .validation_error_context import ValidationErrorContext
@@ -313,6 +314,7 @@ __all__ = (
     "TaskSkillInfo",
     "TaskToolInfo",
     "ToolsRunConfig",
+    "UnauthorizedResponse",
     "Usage",
     "ValidationError",
     "ValidationErrorContext",

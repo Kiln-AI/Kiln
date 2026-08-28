@@ -8,6 +8,7 @@ from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
 from ...models.refine_spec_api_output import RefineSpecApiOutput
 from ...models.submit_answers_request import SubmitAnswersRequest
+from ...models.unauthorized_response import UnauthorizedResponse
 from ...types import Response
 
 
@@ -32,11 +33,16 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | RefineSpecApiOutput | None:
+) -> HTTPValidationError | RefineSpecApiOutput | UnauthorizedResponse | None:
     if response.status_code == 200:
         response_200 = RefineSpecApiOutput.from_dict(response.json())
 
         return response_200
+
+    if response.status_code == 401:
+        response_401 = UnauthorizedResponse.from_dict(response.json())
+
+        return response_401
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
@@ -51,7 +57,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | RefineSpecApiOutput]:
+) -> Response[HTTPValidationError | RefineSpecApiOutput | UnauthorizedResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -64,7 +70,7 @@ def sync_detailed(
     *,
     client: AuthenticatedClient,
     body: SubmitAnswersRequest,
-) -> Response[HTTPValidationError | RefineSpecApiOutput]:
+) -> Response[HTTPValidationError | RefineSpecApiOutput | UnauthorizedResponse]:
     """Refine Spec With Answers
 
      Refine a specification with answers.
@@ -82,7 +88,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | RefineSpecApiOutput]
+        Response[HTTPValidationError | RefineSpecApiOutput | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -100,7 +106,7 @@ def sync(
     *,
     client: AuthenticatedClient,
     body: SubmitAnswersRequest,
-) -> HTTPValidationError | RefineSpecApiOutput | None:
+) -> HTTPValidationError | RefineSpecApiOutput | UnauthorizedResponse | None:
     """Refine Spec With Answers
 
      Refine a specification with answers.
@@ -118,7 +124,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | RefineSpecApiOutput
+        HTTPValidationError | RefineSpecApiOutput | UnauthorizedResponse
     """
 
     return sync_detailed(
@@ -131,7 +137,7 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
     body: SubmitAnswersRequest,
-) -> Response[HTTPValidationError | RefineSpecApiOutput]:
+) -> Response[HTTPValidationError | RefineSpecApiOutput | UnauthorizedResponse]:
     """Refine Spec With Answers
 
      Refine a specification with answers.
@@ -149,7 +155,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | RefineSpecApiOutput]
+        Response[HTTPValidationError | RefineSpecApiOutput | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -165,7 +171,7 @@ async def asyncio(
     *,
     client: AuthenticatedClient,
     body: SubmitAnswersRequest,
-) -> HTTPValidationError | RefineSpecApiOutput | None:
+) -> HTTPValidationError | RefineSpecApiOutput | UnauthorizedResponse | None:
     """Refine Spec With Answers
 
      Refine a specification with answers.
@@ -183,7 +189,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | RefineSpecApiOutput
+        HTTPValidationError | RefineSpecApiOutput | UnauthorizedResponse
     """
 
     return (

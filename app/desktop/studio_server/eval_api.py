@@ -6,6 +6,7 @@ from typing import Annotated, Any, Dict, List, Set, Tuple, Type, TypeVar
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import StreamingResponse
+from kiln_ai.adapters.adapter_registry import load_skills_from_tool_ids
 from kiln_ai.adapters.eval.base_eval import (
     DEFAULT_SYSTEM_PROMPT,
     build_default_llm_judge_prompt,
@@ -1535,6 +1536,35 @@ def compute_score_summary(
     )
 
 
+def validate_unique_skill_names(
+    task: Task, run_config_properties: RunConfigProperties
+) -> None:
+    """Reject a run config attaching two skills that share a name.
+
+    Skill names may repeat across a project (coexisting versions), but the
+    agent's skill tool loads skills by name, so within one run config each
+    attached skill must resolve to a unique name.
+    """
+    if not isinstance(run_config_properties, KilnAgentRunConfigProperties):
+        return
+    tools_config = run_config_properties.tools_config
+    if tools_config is None or not tools_config.tools:
+        return
+    skills = load_skills_from_tool_ids(task, tools_config.tools)
+    names = [skill.name for skill in skills.values()]
+    duplicates = sorted({n for n in names if names.count(n) > 1})
+    if duplicates:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Multiple selected skills share the same name: "
+                f"{', '.join(duplicates)}. Skills are loaded by name at "
+                "runtime, so each skill attached to a run config must have "
+                "a unique name."
+            ),
+        )
+
+
 def connect_evals_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
@@ -1835,6 +1865,7 @@ def connect_evals_api(app: FastAPI):
     ) -> TaskRunConfig:
         task = task_from_id(project_id, task_id)
         name = request.name or generate_memorable_name()
+        validate_unique_skill_names(task, request.run_config_properties)
 
         parent_project = task.parent_project()
         if parent_project is None:

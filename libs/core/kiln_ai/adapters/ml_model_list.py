@@ -216,12 +216,14 @@ class ModelName(str, Enum):
     qwen_3p5_27b = "qwen_3p5_27b"
     qwen_3p5_35b_a3b = "qwen_3p5_35b_a3b"
     qwen_3p8_2p4t_a95b = "qwen_3p8_2p4t_a95b"
+    qwen_3p8_flash = "qwen_3p8_flash"
     qwen_3p8_27b = "qwen_3p8_27b"
     qwen_3p7_flash = "qwen_3p7_flash"
     qwen_3p7_plus = "qwen_3p7_plus"
     qwen_3p7_max = "qwen_3p7_max"
     qwen_3p6_flash = "qwen_3p6_flash"
     qwen_3p6_35b_a3b = "qwen_3p6_35b_a3b"
+    qwen_3p6_27b = "qwen_3p6_27b"
     qwen_3p6_plus = "qwen_3p6_plus"
     qwen_3p5_plus = "qwen_3p5_plus"
     qwen_3p5_397b_a17b = "qwen_3p5_397b_a17b"
@@ -267,6 +269,8 @@ class ModelName(str, Enum):
     kimi_k2_thinking = "kimi_k2_thinking"
     kimi_k2_5 = "kimi_k2_5"
     kimi_dev_72b = "kimi_dev_72b"
+    glm_5_3 = "glm_5_3"
+    glm_5_3_flash = "glm_5_3_flash"
     glm_5_2 = "glm_5_2"
     glm_5_2_fast = "glm_5_2_fast"
     glm_5_1 = "glm_5_1"
@@ -650,6 +654,13 @@ GROK_4_5_OPENROUTER_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
     "High": "high",
+}
+
+# Groq restricts reasoning_effort on Qwen 3.6 to `none` or `default`; any other
+# value is rejected with "`reasoning_effort` must be one of `none` or `default`".
+QWEN_3P6_GROQ_THINKING_LEVELS = {
+    "Off": "none",
+    "On": "default",
 }
 
 
@@ -1964,6 +1975,14 @@ built_in_models: List[KilnModel] = [
                 model_id="gpt-oss:120b",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="openai/gpt-oss-120b",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                # Featherless doesn't advertise tool_use for this model
+                supports_function_calling=False,
             ),
         ],
     ),
@@ -4164,6 +4183,7 @@ built_in_models: List[KilnModel] = [
                 supports_structured_output=True,
                 supports_data_gen=True,
                 model_id="llama-3.3-70b-versatile",
+                deprecated=True,
                 supports_function_calling=False,
             ),
             KilnModelProvider(
@@ -4475,6 +4495,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.groq,
                 model_id="llama-3.1-8b-instant",
+                deprecated=True,
                 supports_function_calling=False,
             ),
             KilnModelProvider(
@@ -4745,6 +4766,13 @@ built_in_models: List[KilnModel] = [
                 uncensored=True,
                 supports_function_calling=False,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="mistralai/Mistral-Small-24B-Instruct-2501",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                uncensored=True,
+                supports_function_calling=False,
+            ),
         ],
     ),
     # Ministral 3 14B 2512
@@ -4935,6 +4963,19 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
                 max_parallel_requests=2,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="google/gemma-4-31B-it",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
             ),
         ],
     ),
@@ -5279,6 +5320,12 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 supports_data_gen=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="deepseek-ai/DeepSeek-V4-Pro",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
         ],
     ),
     # DeepSeek V4 Flash
@@ -5339,6 +5386,11 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="deepseek-ai/DeepSeek-V3.2",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
         ],
     ),
     # DeepSeek 3.1 Terminus
@@ -5390,6 +5442,11 @@ built_in_models: List[KilnModel] = [
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="deepseek-ai/DeepSeek-V3.1",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -6034,6 +6091,35 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Qwen 3.8 Flash
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p8_flash,
+        friendly_name="Qwen 3.8 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.8-flash",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
     # Qwen 3.8 27B
     KilnModel(
         family=ModelFamily.qwen,
@@ -6057,6 +6143,11 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MD,
                 ],
                 multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="Qwen/Qwen3.8-27B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -6233,6 +6324,71 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Qwen 3.6 27B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p6_27b,
+        friendly_name="Qwen 3.6 27B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.6-27b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.groq,
+                model_id="qwen/qwen3.6-27b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=False,
+                supports_function_calling=True,
+                available_thinking_levels=QWEN_3P6_GROQ_THINKING_LEVELS,
+                default_thinking_level="default",
+                # Groq serves this model with image input, but no Groq provider in
+                # Kiln is wired for multimodal yet, so it stays text-only here.
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="qwen3.6:27b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_capable=True,
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="Qwen/Qwen3.6-27B",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -6593,6 +6749,12 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="Qwen/Qwen3-235B-A22B-Thinking-2507",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.optional_r1_thinking,
             ),
         ],
     ),
@@ -8099,41 +8261,84 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # GLM 5.3
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_3,
+        friendly_name="GLM 5.3",
+        featured_rank=4,
+        editorial_notes="Z.ai's newest flagship, with a 1M token context window and configurable reasoning. Strong long-horizon agentic and coding performance.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5.3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+            ),
+        ],
+    ),
+    # GLM 5.3 Flash
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_3_flash,
+        friendly_name="GLM 5.3 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5.3-flash",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
     # GLM 5.2
     KilnModel(
         family=ModelFamily.glm,
         name=ModelName.glm_5_2,
         friendly_name="GLM 5.2",
-        featured_rank=4,
-        editorial_notes="Z.ai's newest flagship, with a 1M token context window. Benchmarks land near Claude Opus 4.8, with strong long-horizon agentic and coding performance.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="z-ai/glm-5.2",
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/glm-5p2",
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="zai-org/GLM-5.2",
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
                 model_id="zai-org/GLM-5.2",
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="zai-org/GLM-5.2",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -8181,6 +8386,11 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="zai-org/GLM-5.1",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -8261,6 +8471,11 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 reasoning_optional_for_structured_output=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="zai-org/GLM-5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
         ],
     ),
     # GLM 4.7
@@ -8286,8 +8501,14 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.cerebras,
                 model_id="zai-glm-4.7",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="zai-org/GLM-4.7",
+                structured_output_mode=StructuredOutputMode.json_instructions,
             ),
         ],
     ),
@@ -8597,6 +8818,11 @@ built_in_models: List[KilnModel] = [
             # SiliconFlow provider omitted: moonshotai/Kimi-K3 returns HTTP 400
             # "Model does not exist" on the .cn endpoint Kiln uses (it appears live
             # on the .com site only). Not yet on Together AI (K2.6 / K2.7).
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="moonshotai/Kimi-K3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
         ],
     ),
     # Kimi K2.6
@@ -8662,6 +8888,20 @@ built_in_models: List[KilnModel] = [
             #     ],
             #     multimodal_requires_pdf_as_image=True,
             # ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="moonshotai/Kimi-K2.6",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
         ],
     ),
     # Kimi K2.5
@@ -8724,6 +8964,11 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="moonshotai/Kimi-K2.5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+            ),
         ],
     ),
     # Kimi K2 Thinking
@@ -8756,6 +9001,12 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="moonshotai/Kimi-K2-Thinking",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.optional_r1_thinking,
             ),
         ],
     ),
@@ -8972,6 +9223,27 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 suggested_for_evals=True,
             ),
+            # Featherless serves the raw weights, which emit <think> inline. Use the
+            # optional parser so the tags are stripped when present, and leave
+            # reasoning_capable False since (per the Fireworks note above) M3 does not
+            # always emit reasoning -- requiring it would error on those responses.
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="MiniMaxAI/MiniMax-M3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.optional_r1_thinking,
+                supports_data_gen=True,
+                # Featherless doesn't advertise tool_use for this model
+                supports_function_calling=False,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+            ),
         ],
     ),
     # Minimax M2.7
@@ -9002,10 +9274,17 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="MiniMaxAI/MiniMax-M2.7",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 reasoning_capable=True,
                 supports_data_gen=True,
                 reasoning_optional_for_structured_output=True,
+                parser=ModelParserID.optional_r1_thinking,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="MiniMaxAI/MiniMax-M2.7",
+                structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.optional_r1_thinking,
             ),
         ],
@@ -9047,6 +9326,12 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 supports_data_gen=True,
                 reasoning_optional_for_structured_output=True,
+                parser=ModelParserID.optional_r1_thinking,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.featherless_ai,
+                model_id="MiniMaxAI/MiniMax-M2.5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.optional_r1_thinking,
             ),
         ],
