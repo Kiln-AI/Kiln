@@ -3,7 +3,7 @@
 import logging
 import random
 from typing import ClassVar
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -14,6 +14,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     TurnMode,
 )
 from kiln_ai.datamodel.eval import MultiTurnDriveConfig
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.run_config import (
     McpRunConfigProperties,
     MCPToolReference,
@@ -25,6 +26,13 @@ from kiln_ai.datamodel.task_output import (
     TaskOutput,
     TaskOutputRating,
 )
+from kiln_ai.run_context import (
+    clear_agent_run_id,
+    get_agent_run_id,
+    set_agent_run_id,
+)
+from mcp.types import ListToolsResult
+from mcp.types import Tool as MCPTool
 
 from app.desktop.studio_server.api_models.copilot_models import (
     ClaimReviewApi,
@@ -1294,15 +1302,18 @@ class TestPersistEvalSlice:
         assert saved_out == eval_inputs
 
 
-class TestTaskCapabilitiesForTask:
-    @pytest.fixture
-    def project_and_task(self, tmp_path):
-        project = Project(name="Capability Project", path=tmp_path / "project.kiln")
-        project.save_to_file()
-        task = Task(name="Capability Task", instruction="Do the thing.", parent=project)
-        task.save_to_file()
-        return project, task
+@pytest.fixture
+def project_and_task(tmp_path):
+    """An empty saved project + task — the starting point for the capability
+    tests, which build their own run config on top."""
+    project = Project(name="Capability Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(name="Capability Task", instruction="Do the thing.", parent=project)
+    task.save_to_file()
+    return project, task
 
+
+class TestTaskCapabilitiesForTask:
     async def test_reads_tools_and_skills_from_default_run_config(
         self, project_and_task, give_task_one_tool_and_skill
     ):
@@ -1482,6 +1493,187 @@ class TestTaskCapabilitiesForTask:
         _, skills = await task_capabilities_for_task(task)
 
         assert [skill.name for skill in skills or []] == ["alpha", "zebra"]
+
+
+class TestTaskCapabilitiesRunContext:
+    """Collection runs inside one MCP session scope, so every tool on a server
+    resolves through one shared session instead of connecting per tool.
+
+    The scope's own semantics are covered in test_mcp_session_manager.py; these
+    assert the adoption — that collection is actually wrapped in one.
+    """
+
+    # The scope tears down through its own module, so that is where the
+    # manager is replaced. The tool resolves sessions through its own binding,
+    # patched separately where a test needs to serve one.
+    SCOPE_MANAGER_PATCH: ClassVar[str] = (
+        "kiln_ai.tools.mcp_session_manager.MCPSessionManager"
+    )
+    TOOL_MANAGER_PATCH: ClassVar[str] = (
+        "kiln_ai.tools.mcp_server_tool.MCPSessionManager"
+    )
+    RUN_ID_PATCH: ClassVar[str] = (
+        "kiln_ai.tools.mcp_session_manager.generate_agent_run_id"
+    )
+
+    @pytest.fixture(autouse=True)
+    def clear_context(self):
+        """No ambient run id, or collection would join a scope it should be
+        opening for itself."""
+        clear_agent_run_id()
+        yield
+        clear_agent_run_id()
+
+    @pytest.fixture
+    def task_with_two_mcp_tools(
+        self, project_and_task, agent_run_config_properties, set_default_run_config
+    ):
+        """A task whose default run config lists two tools from ONE MCP
+        server — the case that used to cost two connections."""
+        project, task = project_and_task
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={"server_url": "https://example.com", "is_archived": False},
+            parent=project,
+        )
+        server.save_to_file()
+        set_default_run_config(
+            task,
+            agent_run_config_properties(
+                tools_config=ToolsRunConfig(
+                    tools=[
+                        f"mcp::remote::{server.id}::alpha",
+                        f"mcp::remote::{server.id}::beta",
+                    ]
+                )
+            ),
+        )
+        return task, server
+
+    @pytest.fixture
+    def mcp_session_serving_alpha_and_beta(self):
+        """A warm session that answers list_tools with both of the server's
+        tools, the way one shared connection serves the whole collection."""
+        session = AsyncMock()
+        session.list_tools = AsyncMock(
+            return_value=ListToolsResult(
+                tools=[
+                    MCPTool(
+                        name="alpha",
+                        description="Alpha tool",
+                        inputSchema={"type": "object", "properties": {}},
+                    ),
+                    MCPTool(
+                        name="beta",
+                        description="Beta tool",
+                        inputSchema={"type": "object", "properties": {}},
+                    ),
+                ]
+            )
+        )
+        return session
+
+    async def test_same_server_tools_share_one_session(
+        self, task_with_two_mcp_tools, mcp_session_serving_alpha_and_beta
+    ):
+        """Both tools resolve through get_or_create_session under the same
+        (server, run id) scope, which the session manager serves from one
+        connection, and that same scope is the one torn down afterwards. The
+        per-call ephemeral client (a fresh connect + teardown per tool) is
+        never reached."""
+        task, server = task_with_two_mcp_tools
+        cleanup_mock = AsyncMock()
+
+        with (
+            patch(self.TOOL_MANAGER_PATCH) as mock_manager_cls,
+            patch(self.SCOPE_MANAGER_PATCH) as mock_scope_manager_cls,
+        ):
+            shared = mock_manager_cls.shared.return_value
+            shared.get_or_create_session = AsyncMock(
+                return_value=mcp_session_serving_alpha_and_beta
+            )
+            mock_scope_manager_cls.shared.return_value.cleanup_session = cleanup_mock
+            tools, _ = await task_capabilities_for_task(task)
+
+        assert tools == [
+            TaskToolInfoApi(name="alpha", description="Alpha tool"),
+            TaskToolInfoApi(name="beta", description="Beta tool"),
+        ]
+        session_calls = shared.get_or_create_session.call_args_list
+        assert session_calls
+        # Asserted as a set of scopes rather than a call count: how many times
+        # a warm session is asked for is an implementation detail, but every
+        # ask landing on ONE (server, run id) pair is the reuse itself.
+        scopes = {(call.args[0].id, call.args[1]) for call in session_calls}
+        assert len(scopes) == 1
+        scoped_server_id, scoped_run_id = next(iter(scopes))
+        assert scoped_server_id == server.id
+        shared.mcp_client.assert_not_called()
+        # The scope torn down must be the one the sessions live under, or they
+        # leak for the life of the process.
+        cleanup_mock.assert_called_once_with(scoped_run_id)
+        assert get_agent_run_id() is None
+
+    async def test_session_is_cleaned_up_when_collection_fails(
+        self, project_and_task, give_task_one_tool_and_skill, caplog
+    ):
+        """The scope still has to close on the failure path: the collection
+        may already have opened sessions before it failed, and the manager has
+        no reaper to catch them."""
+        project, task = project_and_task
+        give_task_one_tool_and_skill(project, task)
+        cleanup_mock = AsyncMock()
+
+        with (
+            patch(self.SCOPE_MANAGER_PATCH) as mock_scope_manager_cls,
+            patch(self.RUN_ID_PATCH, return_value="run_collection"),
+            patch.object(
+                type(task), "run_configs", side_effect=ValueError("corrupt file")
+            ),
+            caplog.at_level(logging.WARNING),
+        ):
+            mock_scope_manager_cls.shared.return_value.cleanup_session = cleanup_mock
+            assert await task_capabilities_for_task(task) == (None, None)
+
+        # The degrade came from the failing read, not from an earlier return
+        # that would never have opened a scope at all.
+        assert "corrupt file" in caplog.text
+        cleanup_mock.assert_called_once_with("run_collection")
+        assert get_agent_run_id() is None
+
+    async def test_a_callers_run_context_is_joined_not_torn_down(
+        self, task_with_two_mcp_tools, mcp_session_serving_alpha_and_beta
+    ):
+        """Inside an existing run context the tools resolve under the CALLER's
+        scope, and the sessions are the caller's to close: tearing them down
+        here would drop connections it still needs.
+
+        Guards against collection going back to minting a run id of its own
+        unconditionally, which is what the scope replaced.
+        """
+        task, server = task_with_two_mcp_tools
+        cleanup_mock = AsyncMock()
+        set_agent_run_id("caller_run_id")
+
+        with (
+            patch(self.TOOL_MANAGER_PATCH) as mock_manager_cls,
+            patch(self.SCOPE_MANAGER_PATCH) as mock_scope_manager_cls,
+        ):
+            shared = mock_manager_cls.shared.return_value
+            shared.get_or_create_session = AsyncMock(
+                return_value=mcp_session_serving_alpha_and_beta
+            )
+            mock_scope_manager_cls.shared.return_value.cleanup_session = cleanup_mock
+            await task_capabilities_for_task(task)
+
+        scopes = {
+            (call.args[0].id, call.args[1])
+            for call in shared.get_or_create_session.call_args_list
+        }
+        assert scopes == {(server.id, "caller_run_id")}
+        cleanup_mock.assert_not_called()
+        assert get_agent_run_id() == "caller_run_id"
 
 
 class TestTaskInfoPayload:

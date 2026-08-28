@@ -34,6 +34,7 @@ from kiln_ai.synthetic_user.parser import (
     SyntheticUserInfoParseError,
     parse_synthetic_user_info,
 )
+from kiln_ai.tools.mcp_session_manager import mcp_session_scope
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 
@@ -170,7 +171,11 @@ async def task_capabilities_for_task(
     """
     started = time.monotonic()
     try:
-        tools, skills = await _collect_task_capabilities(task)
+        # Every tool resolved below shares one session per MCP server instead
+        # of dialing the server again per tool, and the scope closes those
+        # sessions on the way out.
+        async with mcp_session_scope():
+            tools, skills = await _collect_task_capabilities(task)
     except Exception:
         # Collection reads run configs and skills off disk, so one corrupt or
         # forward-versioned file would otherwise fail a whole spec-building
