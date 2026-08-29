@@ -19,23 +19,15 @@
   import { tick } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import ChatTrace from "$lib/ui/trace/chat_trace.svelte"
-  import SingleTurnSectionsView from "./single_turn_sections.svelte"
   import {
     map_input_span_to_trace,
     map_output_span_to_trace,
     resolve_citation_span_whitespace_tolerant,
-    single_turn_sections_resolver,
     type Citation,
     type CitationSource,
     type TraceClaims,
     type TraceHighlight,
   } from "./claim_evidence"
-
-  // Which arm the review that mounts this modal is on. The mounting component
-  // knows it (it is the same flag that picks the review shape), and a trace
-  // cannot be trusted to say: a single-turn tool loop has many messages, and a
-  // multi-turn conversation can be two.
-  export let single_turn = false
 
   let dialog: Dialog | null = null
   let trace: TraceClaims | null = null
@@ -52,31 +44,13 @@
   // the same trace hands the rows the same array and keeps their expansion.
   // `error` is the trace having nothing to render at all; a missing output
   // alone is reported inside the Output section instead.
-  const read_sections = single_turn_sections_resolver()
-  $: sections = single_turn && trace ? read_sections(trace) : null
-
-  // The active citation as the sections take it: the raw source its offsets
-  // index, the span, and the anchors it resolved from — a field that formats
-  // its content re-finds the citation in the formatted body from those. Null
-  // while browsing, which is what puts the sections back on their content-typed
-  // renderers.
-  $: cited =
-    trace && active_source && active_span && active_citation
-      ? {
-          source: active_source,
-          text: text_for(active_source),
-          span: active_span,
-          anchors: active_citation,
-        }
-      : null
 
   // ── Multi-turn ───────────────────────────────────────────────────────
   // Render the chat UI when the trace carries the conversation; otherwise fall
-  // back to the raw flattened input and output panels. Both are gated on the
-  // arm: the single-turn path renders none of it, and mapping a citation onto
-  // chat nodes nothing will draw is work for a highlight that cannot appear.
-  $: use_chat =
-    !single_turn && !!(trace && trace.trace && trace.trace.length > 0)
+  // back to the raw flattened input and output panels. One rendering for both
+  // arms: a single-turn run is a conversation of one turn, and its tool calls
+  // and results are the same nodes a multi-turn trace carries.
+  $: use_chat = !!(trace && trace.trace && trace.trace.length > 0)
 
   function text_for(source: CitationSource): string {
     if (!trace) return ""
@@ -107,9 +81,11 @@
   // The anchors resolve through the whitespace-tolerant resolver, which absorbs
   // the retyping drift a model introduces. That cannot mis-place a mark here:
   // the mapper's byte-identity guards still adjudicate whatever it returns.
-  $: chat_highlight = single_turn
-    ? null
-    : compute_chat_highlight(trace, active_source, active_citation)
+  $: chat_highlight = compute_chat_highlight(
+    trace,
+    active_source,
+    active_citation,
+  )
   function compute_chat_highlight(
     t: TraceClaims | null,
     source: CitationSource | null,
@@ -229,8 +205,8 @@
   // state (Svelte can't see into segments()), so they recompute only because
   // every entry point reassigns `trace` — a setter that changed the citation
   // without doing that would leave a stale mark.
-  $: input_seg = trace && !single_turn && !use_chat ? segments("input") : null
-  $: output_seg = trace && !single_turn && !use_chat ? segments("output") : null
+  $: input_seg = trace && !use_chat ? segments("input") : null
+  $: output_seg = trace && !use_chat ? segments("output") : null
 </script>
 
 <Dialog bind:this={dialog} title="Trace" width="extra_wide">
@@ -246,21 +222,14 @@
       class="space-y-4 text-sm max-h-[min(80vh,calc(100vh-12rem))] overflow-y-auto"
       bind:this={content_el}
     >
-      {#if single_turn}
-        <!-- SINGLE-TURN: the same two sections the inline review shows. -->
-        {#if sections?.error}
-          <div class="text-error">{sections.error}</div>
-        {:else if sections?.sections}
-          <SingleTurnSectionsView sections={sections.sections} {cited} />
-        {/if}
-      {:else if use_chat && trace.trace}
-        <!-- MULTI-TURN: the conversation on its own, as the run pages show it,
-             with the citation mapped onto its exact node (or unhighlighted
-             when just browsing / unmappable). -->
+      {#if use_chat && trace.trace}
+        <!-- The conversation on its own, as the run pages show it, with the
+             citation mapped onto its exact node (or unhighlighted when just
+             browsing / unmappable). -->
         <ChatTrace trace={trace.trace} highlight={chat_highlight} />
       {:else}
-        <!-- MULTI-TURN, no conversation recorded: the raw flattened input and
-             output are the only rendering this trace has. -->
+        <!-- No conversation recorded: the raw flattened input and output are
+             the only rendering this trace has. -->
         <div>
           <div class="text-xs uppercase tracking-wide text-gray-500 mb-1">
             Input

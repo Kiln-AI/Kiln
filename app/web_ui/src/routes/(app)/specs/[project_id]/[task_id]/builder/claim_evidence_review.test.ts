@@ -46,10 +46,6 @@ afterEach(() => {
   cleanup()
 })
 
-// The first suites render the CLAIMS-FIRST arm, so each render declares
-// is_multi_turn — the review shape is gated on it (is_trace_first_review).
-// The trace-first suite at the bottom renders the other arm.
-
 function errored_trace(): TraceClaims {
   return {
     trace_id: "batch1_case_0",
@@ -98,7 +94,6 @@ describe("ClaimEvidenceReview — failed claims build", () => {
         verdicts,
         selected_indices: [0],
         judged_noun: "conversation",
-        is_multi_turn: true,
       },
     })
 
@@ -125,7 +120,6 @@ describe("ClaimEvidenceReview — Next gating", () => {
         verdicts,
         selected_indices: [0, 1],
         judged_noun: "conversation",
-        is_multi_turn: true,
       },
     })
 
@@ -158,7 +152,6 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
         verdicts,
         selected_indices: [0],
         judged_noun: "conversation",
-        is_multi_turn: true,
         save_disabled: true,
       },
     })
@@ -177,7 +170,6 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
         verdicts: build_trace_reviews(traces),
         selected_indices: [0],
         judged_noun: "conversation",
-        is_multi_turn: true,
         save_disabled: false,
       },
     })
@@ -202,7 +194,6 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
         verdicts: build_trace_reviews(traces),
         selected_indices: [0],
         judged_noun: "conversation",
-        is_multi_turn: true,
         save_disabled: false,
         save_label: "Refine Judge",
         save_tooltip: tip,
@@ -419,7 +410,6 @@ describe("ClaimEvidenceReview — what the mismatch reveal explains", () => {
         verdicts: build_trace_reviews(traces),
         selected_indices: [0],
         judged_noun: "conversation",
-        is_multi_turn: true,
       },
     })
     await fireEvent.click(carded.getByTitle("View in trace"))
@@ -477,7 +467,6 @@ function render_multi_turn(traces: TraceClaims[]) {
       verdicts: build_trace_reviews(traces),
       selected_indices: [0],
       judged_noun: "conversation",
-      is_multi_turn: true,
     },
   })
 }
@@ -758,7 +747,6 @@ describe("ClaimEvidenceReview — the claims-first arm asks the call first", () 
         verdicts,
         selected_indices: [0, 1],
         judged_noun: "conversation",
-        is_multi_turn: true,
       },
     })
 
@@ -811,7 +799,6 @@ describe("ClaimEvidenceReview — what a flagged claim records", () => {
         verdicts,
         selected_indices: [0],
         judged_noun: "conversation",
-        is_multi_turn: true,
       },
     })
 
@@ -850,7 +837,6 @@ describe("ClaimEvidenceReview — what a flagged claim records", () => {
         verdicts,
         selected_indices: [0, 1],
         judged_noun: "conversation",
-        is_multi_turn: true,
       },
     })
 
@@ -885,7 +871,6 @@ describe("ClaimEvidenceReview — the claims-first contradiction reveal", () => 
         verdicts,
         selected_indices: [0],
         judged_noun: "conversation",
-        is_multi_turn: true,
       },
     })
 
@@ -905,7 +890,6 @@ describe("ClaimEvidenceReview — the claims-first contradiction reveal", () => 
         verdicts,
         selected_indices: [0],
         judged_noun: "conversation",
-        is_multi_turn: true,
       },
     })
 
@@ -943,472 +927,36 @@ describe("ClaimEvidenceReview — the claims-first contradiction reveal", () => 
   })
 })
 
-describe("the single-turn trace modal anatomy", () => {
-  it("shows an Input field and an Output section, and no chat", async () => {
-    const { container, getByText } = await render_trace_sections([
-      short_single_turn_trace(),
-    ])
-
-    // Both sections, labelled, in their own tints.
-    expect(getByText("Input")).toBeTruthy()
-    expect(getByText("Output")).toBeTruthy()
-    expect(tinted(section(container, "input"), "bg-base-200")).not.toBeNull()
-    expect(tinted(section(container, "output"), "bg-primary/5")).not.toBeNull()
-    expect(section(container, "input").textContent).toContain(
-      "What's the return window?",
-    )
-    expect(section(container, "output").textContent).toContain(
-      "Our return window is 30 days.",
-    )
-
-    // No chat bubbles anywhere: a single exchange is not a conversation.
-    expect(chat_bubbles(container)).toHaveLength(0)
-    // And the blind label is still the arm's one grading control.
-    expect(getByText("Does this example pass?")).toBeTruthy()
-  })
-
-  it("never shows the system prompt", async () => {
-    // The stored trace opens with one; it is task configuration, not something
-    // the reviewer grades, and it has no row and no bubble on this surface.
-    const { container } = await render_trace_sections([
-      trace_with_placeholder_reasoning(),
-    ])
-    expect(container.textContent).not.toContain("SYSTEM")
-    expect(container.textContent).not.toContain("You are a support agent.")
-  })
-
-  it("shows the input once — the sections replace the old chat mount", async () => {
-    const t = trace_with_placeholder_reasoning()
-    const { container } = await render_trace_sections([t])
-    expect(occurrences(container.textContent ?? "", t.raw_input)).toBe(1)
-  })
-
-  it("renders prose through the markdown renderer, in both fields", async () => {
-    const traces = [
-      {
-        ...short_single_turn_trace(),
-        raw_input: "**Which** window applies?",
-        raw_output: "The window is **30 days**.",
-      },
-    ]
-    const { container } = await render_trace_sections(traces)
-
-    for (const name of ["input", "output"] as const) {
-      const field = section(container, name)
-      expect(field.querySelector("strong")).not.toBeNull()
-      expect(field.textContent).not.toContain("**")
-    }
-  })
-
-  it("renders structured content through the house Output idiom", async () => {
-    const raw_output = '{"window_days":30,"answer":"30 days"}'
-    const traces = [
-      {
-        ...short_single_turn_trace(),
-        raw_input: '{"question":"return window?"}',
-        raw_output,
-      },
-    ]
-    const { container } = await render_trace_sections(traces)
-
-    // Pretty-printed, not the compact source string, and syntax highlighted.
-    const output = section(container, "output")
-    expect(output.querySelector("pre")?.textContent).toContain(
-      '"window_days": 30',
-    )
-    expect(output.querySelector("pre")?.textContent).not.toContain(raw_output)
-    expect(output.querySelector(".hljs-attr")).not.toBeNull()
-    expect(section(container, "input").querySelector("pre")).not.toBeNull()
-  })
-})
-
-describe("the trace modal Output section — rows or a field", () => {
-  it("renders a tool loop as rows, with only the FINAL assistant open", async () => {
-    const { container, getByText } = await render_trace_sections([
-      tool_loop_trace(),
-    ])
-    const output = section(container, "output")
-
-    // The rows are what the model did AFTER the input: the system prompt and
-    // the user turn are not among them.
-    expect(linear_role_labels(output)).toEqual([
-      "Assistant",
-      "Assistant",
-      "Tool",
-      "Assistant",
-    ])
-    expect(chat_bubbles(container)).toHaveLength(0)
-
-    // Only the last row starts open — not every assistant, and not the tool.
-    expect(expanded_rows(output)).toEqual([false, false, false, true])
-    // Open means really rendered: the answer comes through Output's <pre>, not
-    // the one-line preview a collapsed row prints.
-    expect(rendered_pre_text(output)).toContain("Our return window is 30 days.")
-    expect(rendered_pre_text(output)).not.toContain(
-      "Let me look up the policy.",
-    )
-    expect(output.textContent).not.toContain("Tool Result")
-
-    // Still the trace-first review: one blind question, judge off screen.
-    expect(getByText("Does this example pass?")).toBeTruthy()
-  })
-
-  it("re-opens the right row after Next moves to another trace", async () => {
-    // One Trace instance serves every trace the reviewer walks, so the second
-    // trace's rows must be re-read. Keeping the first trace's expansion opens
-    // a row by its old position — a tool result, on a surface whose whole
-    // point is that the final answer costs no click.
-    const first = tool_loop_trace({ trace_id: "loop_a" })
-    const second: TraceClaims = {
-      ...tool_loop_trace({ trace_id: "loop_b" }),
-      raw_output: "Exchanges run 14 days.",
-      trace: [
-        { role: "system", content: "You are a support agent." },
-        { role: "user", content: "And the exchange window?" },
-        {
-          role: "assistant",
-          content: null,
-          tool_calls: [
-            {
-              id: "call_2",
-              type: "function",
-              function: {
-                name: "lookup_policy",
-                arguments: '{"topic": "exchanges"}',
-              },
-            },
-          ],
-        },
-        {
-          role: "tool",
-          content: '{"output": "Exchanges accepted within 14 days."}',
-          tool_call_id: "call_2",
-        },
-        { role: "assistant", content: "Exchanges run 14 days." },
-      ] as TraceMessage[],
-    }
-    const { container, getByText, getAllByText } = await render_trace_sections([
-      first,
-      second,
-    ])
-    expect(expanded_rows(section(container, "output"))).toEqual([
-      false,
-      false,
-      false,
-      true,
-    ])
-
-    // Grade the current trace so Next opens, then move on. The modal is
-    // opened imperatively, so it does not follow the navigation — reopening
-    // it is what must re-read the second trace's rows.
-    await fireEvent.click(getByText("Fail"))
-    await fireEvent.click(getByText("Next"))
+describe("the trace modal — one rendering for both arms", () => {
+  it("renders a single-turn trace as a conversation, not as labelled panels", async () => {
+    // A single-turn run is a conversation of one turn, so it opens in the same
+    // chat view multi-turn does. The Input/Output panels the arm used to get
+    // are gone, and with them the second copy of the citation mapping.
+    const { container, getAllByText } = render_review([tool_loop_trace()])
     await fireEvent.click(getAllByText("View Full Trace")[0])
+    const dialog = trace_dialog(container)
 
-    const output = section(container, "output")
-    expect(linear_role_labels(output)).toEqual([
-      "Assistant",
-      "Tool",
-      "Assistant",
-    ])
-    expect(expanded_rows(output)).toEqual([false, false, true])
-    expect(rendered_pre_text(output)).toContain("Exchanges run 14 days.")
-    expect(rendered_pre_text(output)).not.toContain(
-      "Exchanges accepted within 14 days.",
-    )
-  })
-
-  it("renders a record pair as two plain fields, with no accordion", async () => {
-    // A stored two-message record, and the echo a traceless run synthesizes:
-    // one message after the input, so there is no sequence to order.
-    const stored = await render_trace_sections([
-      {
-        ...short_single_turn_trace(),
-        trace: [
-          { role: "user", content: "What's the return window?" },
-          { role: "assistant", content: "Our return window is 30 days." },
-        ] as TraceMessage[],
-      },
-    ])
-    expect(stored.container.querySelectorAll(".collapse")).toHaveLength(0)
-    expect(section(stored.container, "output").textContent).toContain(
-      "Our return window is 30 days.",
-    )
-    cleanup()
-
-    const traceless = await render_trace_sections([short_single_turn_trace()])
-    expect(traceless.container.querySelectorAll(".collapse")).toHaveLength(0)
-    expect(section(traceless.container, "output").textContent).toContain(
-      "Our return window is 30 days.",
-    )
-  })
-
-  it("shows raw_output when the answer is a tool call with null content", async () => {
-    // A function-calling run stores its answer in the call's arguments and
-    // leaves content null. Reading the message alone left the section BLANK on
-    // a run that answered.
-    const raw_output = '{"window_days": 30}'
-    const { container } = await render_trace_sections([
-      {
-        ...short_single_turn_trace(),
-        raw_output,
-        trace: [
-          { role: "user", content: "What's the return window?" },
-          {
-            role: "assistant",
-            content: null,
-            tool_calls: [
-              {
-                id: "call_1",
-                type: "function",
-                function: {
-                  name: "final_answer",
-                  arguments: raw_output,
-                },
-              },
-            ],
-          },
-        ] as TraceMessage[],
-      },
-    ])
-    expect(section(container, "output").textContent).toContain('"window_days"')
-    expect(section(container, "output").textContent).toContain("30")
-  })
-
-  it("reports a missing output in the Output slot, keeping the Input", async () => {
-    // The run recorded no answer anywhere. That is worth saying loudly, but
-    // the input it was given is still on the record and still readable — an
-    // error covering both sections would hide it for no reason.
-    const { container, getByText } = await render_trace_sections([
-      {
-        ...short_single_turn_trace(),
-        raw_output: "",
-        trace: [
-          { role: "user", content: "What's the return window?" },
-          { role: "assistant", content: null },
-        ] as TraceMessage[],
-      },
-    ])
-    expect(section(container, "input").textContent).toContain(
-      "What's the return window?",
-    )
-    const output = section(container, "output")
-    expect(output.textContent).toContain("recorded no output")
-    expect(output.querySelector("[class*='text-error']")).not.toBeNull()
-    // And the grade goes with it: scoping the error to the Output section is
-    // what leaves the reviewer something to answer. A run that returned
-    // nothing is a gradable result, not a trace they have to skip.
-    expect(getByText("Does this example pass?")).toBeTruthy()
-  })
-
-  it("shows a lone tool call rather than an empty output", async () => {
-    // The answer never resolved, but the call the model made is real content
-    // and the rows can render it.
-    const { container } = await render_trace_sections([
-      {
-        ...short_single_turn_trace(),
-        raw_output: "",
-        trace: [
-          { role: "user", content: "What's the return window?" },
-          {
-            role: "assistant",
-            content: null,
-            tool_calls: [
-              {
-                id: "call_1",
-                type: "function",
-                function: {
-                  name: "lookup_policy",
-                  arguments: '{"topic": "returns"}',
-                },
-              },
-            ],
-          },
-        ] as TraceMessage[],
-      },
-    ])
-    const output = section(container, "output")
-    expect(output.textContent).not.toContain("recorded no output")
-    expect(linear_role_labels(output)).toEqual(["Assistant"])
-    expect(output.textContent).toContain("lookup_policy")
-  })
-
-  it("reports a trace it cannot render, and the review stays gradable", async () => {
-    // No transcript and no raws, so the modal has nothing to show. The claims
-    // are the review now, so an unrenderable transcript reports itself inside
-    // the modal instead of taking the reviewer's question off the page.
-    const rendered = render_review([
-      { ...short_single_turn_trace(), raw_input: "", raw_output: "" },
-    ])
-    expect(rendered.getByText("Does this example pass?")).toBeTruthy()
-
-    await fireEvent.click(rendered.getAllByText("View Full Trace")[0])
-    const dialog = trace_dialog(rendered.container)
-    expect(dialog.textContent).toContain("no transcript and no raw input")
+    expect(dialog.querySelector("[data-testid='chat-msg-user']")).not.toBeNull()
+    expect(chat_bubbles(dialog).length).toBeGreaterThan(0)
     expect(dialog.querySelector("[data-testid='review-input']")).toBeNull()
+    expect(dialog.querySelector("[data-testid='review-output']")).toBeNull()
   })
 
-  it("keeps expanded rows through a claims build landing mid-review", async () => {
-    // The parent rebuilds its whole trace array whenever a background claims
-    // build finishes. That churn must not reach the rows: a reviewer who
-    // opened a tool result should not watch it snap shut.
-    const traces = [tool_loop_trace({ claims_state: "unbuilt", claims: null })]
-    const verdicts = build_trace_reviews(traces)
-    const { container, rerender, getAllByText } = render(ClaimEvidenceReview, {
-      props: {
-        traces,
-        verdicts,
-        selected_indices: [0],
-        judged_noun: "example",
-      },
-    })
-    await fireEvent.click(getAllByText("View Full Trace")[0])
-    const dialog = trace_dialog(container)
-    const output = () => section(dialog, "output")
-    const tool_row = [...output().querySelectorAll(".collapse")].find(
-      (block) =>
-        block.querySelector(".collapse-title > span")?.textContent?.trim() ===
-        "Tool",
-    )!
-    await fireEvent.click(
-      tool_row.querySelector<HTMLInputElement>("input[type=checkbox]")!,
-    )
-    expect(expanded_rows(output())).toEqual([false, false, true, true])
-
-    // What patch_trace_claims does: a new array, a new object for the patched
-    // trace, same trace_id and same stored transcript.
-    await rerender({
-      traces: traces.map((t) => ({
-        ...t,
-        claims_state: "built" as const,
-        claims: [],
-      })),
-    })
-    expect(expanded_rows(output())).toEqual([false, false, true, true])
-    expect(rendered_pre_text(output())).toContain(
-      "Returns accepted within 30 days.",
-    )
-  })
-})
-
-function render_single_turn_claims_first(traces: TraceClaims[]) {
-  return render(ClaimEvidenceReview, {
-    props: {
-      traces,
-      verdicts: build_trace_reviews(traces),
-      selected_indices: [0],
-      judged_noun: "example",
-      is_multi_turn: false,
-    },
-  })
-}
-
-describe("the trace modal — single-turn", () => {
-  it("shows the same two sections the inline surface shows", async () => {
-    const traces = [tool_loop_trace()]
-    const { container, getAllByText } = render_single_turn_claims_first(traces)
+  it("shows a single-turn tool loop's calls and results as trace nodes", async () => {
+    // The reason the shared view is worth adopting: the chat surface renders
+    // tool activity as first-class nodes, which the panels never did.
+    const { container, getAllByText } = render_review([tool_loop_trace()])
     await fireEvent.click(getAllByText("View Full Trace")[0])
     const dialog = trace_dialog(container)
 
-    // Input field, output rows, final answer already open — the anatomy, not
-    // a chat and not a raw pair of panels.
-    expect(section(dialog, "input").textContent).toContain(
-      "What's the return window?",
-    )
-    expect(tinted(section(dialog, "input"), "bg-base-200")).not.toBeNull()
-    expect(tinted(section(dialog, "output"), "bg-primary/5")).not.toBeNull()
-    expect(linear_role_labels(section(dialog, "output"))).toEqual([
-      "Assistant",
-      "Assistant",
-      "Tool",
-      "Assistant",
-    ])
-    expect(expanded_rows(section(dialog, "output"))).toEqual([
-      false,
-      false,
-      false,
-      true,
-    ])
-    expect(chat_bubbles(dialog)).toHaveLength(0)
-    expect(dialog.textContent).not.toContain("You are a support agent.")
-    // The input is not repeated as a row inside the output.
-    expect(occurrences(dialog.textContent ?? "", traces[0].raw_input)).toBe(1)
-  })
-
-  it("marks an input citation inside the Input field", async () => {
-    const citation: Citation = {
-      marker: 1,
-      source: "input",
-      from: "return window",
-      to: "window?",
-    }
-    const traces = [tool_loop_trace({}, [citation])]
-    const { container, getByTitle } = render_single_turn_claims_first(traces)
-    await expand_claims(container)
-    await fireEvent.click(getByTitle("View in trace"))
-    const dialog = trace_dialog(container)
-    const mark = dialog.querySelector("mark")
-
-    expect(mark?.textContent).toBe("return window?")
-    // In the Input field, not somewhere in the output.
-    expect(mark?.closest("[data-testid='review-input']")).not.toBeNull()
-  })
-
-  it("marks an output citation inside the row that holds it", async () => {
-    // The citation points INTO the rows rather than replacing them: the row
-    // holding the cited text opens and the mark goes in where it sits, so the
-    // reviewer keeps the tool loop they were reading.
-    const citation: Citation = {
-      marker: 1,
-      source: "output",
-      from: "30 days",
-      to: "30 days",
-    }
-    const traces = [tool_loop_trace({}, [citation])]
-    const { container, getByTitle } = render_single_turn_claims_first(traces)
-    await expand_claims(container)
-    await fireEvent.click(getByTitle("View in trace"))
-    await tick()
-    const dialog = trace_dialog(container)
-    const mark = dialog.querySelector("mark")
-
-    expect(mark?.textContent).toBe("30 days")
-    expect(mark?.closest("[data-testid='review-output']")).not.toBeNull()
-    // The rows are still on screen, and the mark is inside one of them.
+    // The tool call is a node of its own. Its arguments and result sit behind
+    // the node's own disclosure — collapsed until the reviewer opens it, or
+    // until a citation targets it — so the assertion is on the node, not on
+    // content the surface deliberately holds back.
     expect(
-      linear_role_labels(section(dialog, "output")).length,
-    ).toBeGreaterThan(0)
-    expect(mark?.closest(".collapse-content")).not.toBeNull()
-    // The final answer's row, not the tool result that says the same thing.
-    const output_rows = [
-      ...section(dialog, "output").querySelectorAll(".collapse"),
-    ]
-    expect(mark?.closest(".collapse")).toBe(output_rows[output_rows.length - 1])
-    // The Input field is untouched by an output citation.
-    expect(section(dialog, "input").querySelector("mark")).toBeNull()
-  })
-
-  it("goes back to the rows once the citation clears", async () => {
-    const citation: Citation = {
-      marker: 1,
-      source: "output",
-      from: "30 days",
-      to: "30 days",
-    }
-    const traces = [tool_loop_trace({}, [citation])]
-    const { container, getByTitle, getAllByText } =
-      render_single_turn_claims_first(traces)
-    await expand_claims(container)
-    await fireEvent.click(getByTitle("View in trace"))
-    expect(trace_dialog(container).querySelector("mark")).not.toBeNull()
-
-    // Browsing the same trace: the section is a reader again, not a highlight.
-    await fireEvent.click(getAllByText("View Full Trace")[0])
-    const dialog = trace_dialog(container)
-    expect(dialog.querySelector("mark")).toBeNull()
-    expect(
-      linear_role_labels(section(dialog, "output")).length,
-    ).toBeGreaterThan(0)
+      dialog.querySelector("[data-testid='chat-msg-toolcall']"),
+    ).not.toBeNull()
+    expect(dialog.textContent ?? "").toContain("Toolcall")
   })
 })
 

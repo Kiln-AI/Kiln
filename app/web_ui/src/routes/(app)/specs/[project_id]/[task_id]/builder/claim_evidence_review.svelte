@@ -61,10 +61,6 @@
   // What the judge judged, for the verdict card's headline: "conversation"
   // for multi-turn, "example" for single-turn.
   export let judged_noun = "example"
-  // The task-level half of the review-shape gate (the other half is the
-  // trace's own output length). The default describes a single-turn task,
-  // matching judged_noun's default.
-  export let is_multi_turn = false
   // True while the reviewer is on the last selected trace — the only position
   // where the primary action renders. Bound out (read-only for the parent) so
   // anything the parent stacks under that action appears only alongside it.
@@ -370,8 +366,6 @@
   </div>
 </div>
 
-<!-- The modal renders the arm this review is on: single-turn gets the same two
-     sections as the inline surface, multi-turn the chat transcript. The arm is
-     passed rather than inferred, because this component is the one that knows
-     it — a single-turn trace can look like a conversation and vice versa. -->
-<ClaimTraceModal bind:this={trace_modal} single_turn={!is_multi_turn} />
+<!-- One trace rendering for both arms: a single-turn run is a conversation of
+     one turn, so the modal no longer needs to be told which arm it is on. -->
+<ClaimTraceModal bind:this={trace_modal} />

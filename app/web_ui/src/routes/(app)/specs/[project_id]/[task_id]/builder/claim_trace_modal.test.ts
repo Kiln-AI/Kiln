@@ -117,7 +117,7 @@ describe("claim_trace_modal — citation mapping fallbacks", () => {
       ] as unknown as TraceMessage[],
     })
     const { container, component } = render(ClaimTraceModal, {
-      props: { single_turn: false },
+      props: {},
     })
     component.open_citation(diverged, input_citation())
     await tick()
@@ -134,7 +134,7 @@ describe("claim_trace_modal — citation mapping fallbacks", () => {
   it("logs a citation whose anchors are nowhere in the source", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
     const { container, component } = render(ClaimTraceModal, {
-      props: { single_turn: false },
+      props: {},
     })
     component.open_citation(multi_turn_trace(), {
       marker: 1,
@@ -151,7 +151,7 @@ describe("claim_trace_modal — citation mapping fallbacks", () => {
   it("marks a citation the strict resolver would have missed", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
     const { container, component } = render(ClaimTraceModal, {
-      props: { single_turn: false },
+      props: {},
     })
     // Anchors retyped with a line break where the trace has a space: the
     // tolerant resolver finds them, and the block mapper still adjudicates.
@@ -172,7 +172,7 @@ describe("claim_trace_modal — citation mapping fallbacks", () => {
   it("marks the from anchor of a citation that spans two turns", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
     const { container, component } = render(ClaimTraceModal, {
-      props: { single_turn: false },
+      props: {},
     })
     // Both anchors exist in raw_output but in different blocks (user turn →
     // assistant turn). The anchor the model wrote still has a home, so the
@@ -206,7 +206,7 @@ describe("claim_trace_modal — citation mapping fallbacks", () => {
       RAW_OUTPUT,
     ].join("\n\n")
     const { container, component } = render(ClaimTraceModal, {
-      props: { single_turn: false },
+      props: {},
     })
     component.open_citation(
       multi_turn_trace({ trace: trace_with_system, raw_output }),
@@ -226,7 +226,7 @@ describe("claim_trace_modal — citation mapping fallbacks", () => {
   it("does not warn on an empty trace — the raw panels carry the mark", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
     const { container, component } = render(ClaimTraceModal, {
-      props: { single_turn: false },
+      props: {},
     })
     component.open_citation(multi_turn_trace({ trace: [] }), input_citation())
     await tick()
@@ -241,7 +241,7 @@ describe("claim_trace_modal — citation mapping fallbacks", () => {
 describe("claim_trace_modal — scroll position", () => {
   it("every open starts at the top, not the last view's offset", async () => {
     const { container, component } = render(ClaimTraceModal, {
-      props: { single_turn: false },
+      props: {},
     })
     component.open_trace(multi_turn_trace())
     await tick()
