@@ -17,7 +17,6 @@
   // opening a trace triggers its build via `on_open_trace`, and the panel
   // shows a building/error state until they arrive.
   //
-  // Two content shapes, one screen (is_trace_first_review picks): a short
   // single-turn output is cheaper to read whole than as claims, so that trace
   // renders inline and the reviewer labels the output blind, with the claims
   // one click behind [View Claims]. Everything else keeps the claim stack with
@@ -26,19 +25,15 @@
   import ClaimCard from "./claim_card.svelte"
   import ClaimTraceModal from "./claim_trace_modal.svelte"
   import Warning from "$lib/ui/warning.svelte"
-  import Dialog from "$lib/ui/dialog.svelte"
   // The single-turn review anatomy (Input field + Output section), shared with
   // the trace modal so the trace reads the same inline and behind the button.
-  import SingleTurnSectionsView from "./single_turn_sections.svelte"
   // The nav row hand-rolls FormContainer's submit button, so it renders the
   // same keyboard hint using the same platform check.
   import { isMacOS } from "$lib/utils/platform"
   import {
     blind_final_judgement,
     final_judgement_reason,
-    is_trace_first_review,
     is_trace_reviewed,
-    single_turn_sections_resolver,
     type Citation,
     type Claim,
     type TraceClaims,
@@ -77,7 +72,6 @@
 
   let current_index = 0
   let trace_modal: ClaimTraceModal | null = null
-  let claims_dialog: Dialog | null = null
   // The server returns every claim importance-ordered, so the first few are
   // the ones worth reading; the review shows that many and no more. The "- 1"
   // is a historical shape, not a reserved slot: the final judgement used to be
@@ -139,45 +133,12 @@
     if (current) trace_modal?.open_citation(current, citation)
   }
 
-  // ── Trace-first arm ──────────────────────────────────────────────────
-  $: trace_first =
-    !!current &&
-    is_trace_first_review({
-      is_multi_turn,
-      raw_output: current.raw_output,
-    })
-
-  // The demoted claims mount only once the reviewer asks for this trace's
-  // claims: a closed dialog still renders its contents, and the claims state
-  // the judge's call, which the blind label must not be shown before it is
-  // given. Cleared on every move, so each trace is asked for on its own.
-  let claims_opened_for: string | null = null
-  $: claims_open = !!current && claims_opened_for === current.trace_id
-  function open_claims() {
-    if (current) claims_opened_for = current.trace_id
-    claims_dialog?.show()
-  }
-
-  // The Input/Output sections the inline surface shows. Memoized on the trace
-  // content: the parent reassigns its whole trace list whenever a background
-  // claims build lands, and recomputing on that churn would remount the rows
-  // and close whatever the reviewer had open. `error` is the trace having
-  // nothing to render at all — a missing output alone is reported inside the
-  // Output section, which keeps the input on screen.
-  const read_sections = single_turn_sections_resolver()
-  $: inline_sections = trace_first && current ? read_sections(current) : null
-
-  // The judgement the blind card grades, on either arm. The distilled final
-  // judgement whenever the claims build produced one carrying a real reason;
-  // otherwise the judge's own reasoning, which is all a failed or reason-less
-  // build leaves to read. Both pin expected_result to the judge's score, which
-  // is what the card computes agreement against.
+  // The judgement the blind card grades. The distilled final judgement
+  // whenever the claims build produced one carrying a real reason; otherwise
+  // the judge's own reasoning, which is all a reason-less build leaves to
+  // read. Both pin expected_result to the judge's score, which is what the
+  // card computes agreement against.
   $: blind_judgement = current ? blind_judgement_for(current) : null
-  // Whether this trace's overall call has been given. Gates anything that
-  // would state the verdict, so no surface can leak it ahead of the answer.
-  $: blind_answered =
-    current_verdicts?.final_judgement_verdict.agrees !== null &&
-    current_verdicts?.final_judgement_verdict.agrees !== undefined
   function blind_judgement_for(t: TraceClaims): Claim {
     const judgement = t.final_judgement
     return judgement && final_judgement_reason(judgement.claim)
@@ -185,18 +146,14 @@
       : blind_final_judgement(t)
   }
 
-  // Prev/Next walk the selected sequence. Both drop the claims opt-in: the
-  // next trace's claims are its own to ask for, and a revisited trace should
-  // not silently carry the previous visit's answer back onto the screen.
+  // Prev/Next walk the selected sequence.
   function go_prev() {
     const prior = selected.filter((i) => i < current_index)
     if (prior.length > 0) current_index = prior[prior.length - 1]
-    claims_opened_for = null
   }
   function go_next() {
     const later = selected.filter((i) => i > current_index)
     if (later.length > 0) current_index = later[0]
-    claims_opened_for = null
   }
   $: has_prev = selected.some((i) => i < current_index)
   $: has_next = selected.some((i) => i > current_index)
@@ -210,63 +167,27 @@
 
 <div>
   {#if current && current_verdicts}
-    <!-- Trace header: just the quiet escape hatch to whichever content the
-         gate demoted — the claims on the trace-first arm, the trace on the
-         claims-first one. The verdict label stays off this row (nothing states
-         the call before the reviewer answers) and review-order position lives
-         under the nav. -->
+    <!-- Trace header: the quiet escape hatch to the trace the review demotes.
+         The verdict label stays off this row (nothing states the call before
+         the reviewer answers) and review-order position lives under the nav. -->
     <div class="flex items-center justify-end mb-4">
-      {#if trace_first}
-        <button class="btn btn-xs btn-ghost" on:click={open_claims}>
-          View Claims
-        </button>
-      {:else}
-        <button
-          class="btn btn-xs btn-ghost"
-          on:click={() => current && trace_modal?.open_trace(current)}
-        >
-          View Full Trace
-        </button>
-      {/if}
+      <button
+        class="btn btn-xs btn-ghost"
+        on:click={() => current && trace_modal?.open_trace(current)}
+      >
+        View Full Trace
+      </button>
     </div>
 
-    {#if trace_first}
-      <!-- TRACE-FIRST: the trace IS the review. Nothing on this screen states
-           the judge's call before the reviewer makes their own. -->
-      {#if inline_sections?.error}
-        <Warning
-          warning_color="error"
-          warning_message={inline_sections.error}
-        />
-      {:else if inline_sections?.sections}
-        <SingleTurnSectionsView sections={inline_sections.sections} />
-
-        <!-- The blind call, in the same card both arms grade on. The trace is
-             already on screen here, so the judgement's reason is held back
-             until an answer is given: it would only telegraph the call. -->
-        {#if blind_judgement}
-          <div class="mt-4">
-            <ClaimCard
-              claim={blind_judgement}
-              bind:verdict={current_verdicts.final_judgement_verdict}
-              on_cite={open_citation}
-              is_final_judgement
-              blind
-              defer_reason
-              {judged_noun}
-            />
-          </div>
-        {/if}
-      {/if}
-    {:else if current.claims_state === "built"}
+    {#if current.claims_state === "built"}
       <div class="space-y-3">
         <!-- The overall call, FIRST and asked blind: it is the only answer the
-             gate requires, and on this arm the trace is behind a button, so
-             the card carries the judgement's reason and its cited evidence to
-             answer from. Always present even when the claims list is empty. -->
-        {#if current.final_judgement}
+             gate requires, and the trace is behind a button, so the card
+             carries the judgement's reason and its cited evidence to answer
+             from. Always present even when the claims list is empty. -->
+        {#if blind_judgement}
           <ClaimCard
-            claim={current.final_judgement}
+            claim={blind_judgement}
             bind:verdict={current_verdicts.final_judgement_verdict}
             on_cite={open_citation}
             on_view_trace={() => current && trace_modal?.open_trace(current)}
@@ -450,65 +371,3 @@
      passed rather than inferred, because this component is the one that knows
      it — a single-turn trace can look like a conversation and vice versa. -->
 <ClaimTraceModal bind:this={trace_modal} single_turn={!is_multi_turn} />
-
-<!-- The claims the trace-first arm demoted, in the same house Dialog the trace
-     escape hatch opens. DISPLAY ONLY: the blind row is this arm's single
-     grading control. A second writable control for the same judgement, in the
-     card's opposite button vocabulary, would let a reviewer flip their verdict
-     and wipe the reason they typed without seeing it happen; and a trace-first
-     review's refine feed is the final judgement alone by design. -->
-<Dialog bind:this={claims_dialog} title="Claims" width="wide">
-  {#if claims_open && current && current_verdicts}
-    <div class="max-h-[70vh] overflow-y-auto text-left">
-      {#if current.claims_state === "built"}
-        <div class="space-y-3">
-          {#each visible as { claim, index } (index)}
-            <ClaimCard
-              {claim}
-              verdict={current_verdicts.claim_verdicts[index]}
-              on_cite={open_citation}
-              display_only
-            />
-          {/each}
-          <!-- The overall judgement joins the claims only once the reviewer
-               has answered. Before that it would state the call this arm is
-               built to withhold, and this dialog is reachable at any time. -->
-          {#if current.final_judgement && blind_answered}
-            <ClaimCard
-              claim={current.final_judgement}
-              verdict={current_verdicts.final_judgement_verdict}
-              on_cite={open_citation}
-              on_view_trace={() => current && trace_modal?.open_trace(current)}
-              is_final_judgement
-              {judged_noun}
-              display_only
-            />
-          {/if}
-        </div>
-      {:else if current.claims_state === "error"}
-        <!-- The review itself is unaffected — the blind label already carries
-             this trace's grade — but a retry can still recover the claim
-             grades the answer key wants. -->
-        <Warning
-          warning_color="error"
-          warning_message={`Couldn't analyze this ${judged_noun}: ${
-            current.claims_error ?? "unknown error"
-          }`}
-        />
-        <div class="text-center py-4">
-          <button
-            class="btn btn-outline btn-primary"
-            on:click={() => on_open_trace(current_index)}
-          >
-            Retry Analysis
-          </button>
-        </div>
-      {:else}
-        <div class="text-center py-12 text-gray-500">
-          <div class="loading loading-dots loading-md mb-2"></div>
-          <div class="text-sm">Analyzing this {judged_noun}…</div>
-        </div>
-      {/if}
-    </div>
-  {/if}
-</Dialog>

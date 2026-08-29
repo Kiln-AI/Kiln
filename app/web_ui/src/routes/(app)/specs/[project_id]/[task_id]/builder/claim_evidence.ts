@@ -750,32 +750,7 @@ export function reviewed_trace_count(
   return traces.filter((t, i) => is_trace_reviewed(t, reviews[i])).length
 }
 
-// ── Trace-first review (gate + blind label) ──────────────────────────────
-
-// Output length at or above which a review keeps the claim stack: past this
-// the trace costs more to read than the claims that distill it.
-// PLACEHOLDER pending calibration — captured single-turn outputs now span
-// both sides of it, but the boundary has not been fit to reviewer data yet.
-export const CHAR_CUTOFF = 900
-
-// Which review shape a trace gets. Trace-first (read the trace, label the
-// output) only where the raw trace is the cheaper read: one exchange, and
-// short. Multi-turn transcripts and long outputs keep the claim stack.
-// Length is the whole test because length is what predicts read cost. A
-// structured output is not excluded: the Output section renders it through
-// the house Output idiom, the same way Kiln shows output everywhere else, so
-// it is legible on its own. It does occupy more lines per character than
-// prose, since the cutoff counts the raw string while the section
-// pretty-prints it, which is a consideration for whoever calibrates the
-// cutoff. Excluding it outright would also put trace-first out of reach for
-// most real single-turn tasks, which carry an output schema.
-export function is_trace_first_review(args: {
-  is_multi_turn: boolean
-  raw_output: string
-}): boolean {
-  if (args.is_multi_turn) return false
-  return args.raw_output.length < CHAR_CUTOFF
-}
+// ── Blind label ──────────────────────────────────────────────────────────
 
 // What the inline trace renderer is fed: the run's own structured trace, or a
 // two-message echo of the input/output pair when the run recorded none (the

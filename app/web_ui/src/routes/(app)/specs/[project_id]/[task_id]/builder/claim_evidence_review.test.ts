@@ -6,16 +6,15 @@ import ClaimEvidenceReview from "./claim_evidence_review.svelte"
 import {
   build_claim_review_payload,
   build_trace_reviews,
-  CHAR_CUTOFF,
   is_trace_reviewed,
   type Citation,
   type TraceClaims,
 } from "./claim_evidence"
 import type { TraceMessage } from "$lib/types"
 
-// jsdom does not implement HTMLDialogElement.showModal/close. The Dialog
-// component behind View Claims calls them, so polyfill with no-ops that just
-// track the open state.
+// jsdom does not implement HTMLDialogElement.showModal/close. The trace
+// modal's Dialog calls them, so polyfill with no-ops that just track the open
+// state.
 const original_show_modal = HTMLDialogElement.prototype.showModal
 const original_close = HTMLDialogElement.prototype.close
 const original_scroll_into_view = Element.prototype.scrollIntoView
@@ -216,8 +215,9 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
   })
 })
 
-// A short single-turn trace: the shape the gate sends trace-first. Its
-// claims are built and sit behind View Claims.
+// A short single-turn trace with its claims built — the review renders the
+// verdict card and folds the claims under it; the trace itself sits behind
+// View Full Trace.
 function short_single_turn_trace(
   judge_score: "pass" | "fail" = "fail",
 ): TraceClaims {
@@ -248,7 +248,9 @@ function short_single_turn_trace(
   }
 }
 
-function render_trace_first(
+// Render the review on its own — the verdict card and the folded claims, with
+// the trace still behind its button.
+function render_review(
   traces: TraceClaims[],
   verdicts = build_trace_reviews(traces),
 ) {
@@ -265,14 +267,23 @@ function render_trace_first(
   }
 }
 
-// The component mounts two dialogs (the trace modal, then the claim stack);
-// pick the one View Claims opens by its title.
-function claims_dialog(container: HTMLElement): HTMLDialogElement {
-  const found = [...container.querySelectorAll("dialog")].find((d) =>
-    d.textContent?.includes("Claims"),
-  )
-  if (!found) throw new Error("no claims dialog rendered")
-  return found
+// Render the review and open the trace modal, returning the DIALOG as
+// `container`. The Input/Output sections render only inside that modal now, so
+// every section assertion below reads the surface the reviewer actually opens.
+async function render_trace_sections(
+  traces: TraceClaims[],
+  verdicts = build_trace_reviews(traces),
+) {
+  const rendered = render(ClaimEvidenceReview, {
+    props: {
+      traces,
+      verdicts,
+      selected_indices: traces.map((_, i) => i),
+      judged_noun: "example",
+    },
+  })
+  await fireEvent.click(rendered.getAllByText("View Full Trace")[0])
+  return { verdicts, ...rendered, container: trace_dialog(rendered.container) }
 }
 
 // The span the trace modal highlighted for the citation just clicked — only
@@ -281,334 +292,6 @@ function claims_dialog(container: HTMLElement): HTMLDialogElement {
 function cited_text(container: HTMLElement): string | null {
   return container.querySelector("mark")?.textContent ?? null
 }
-
-describe("ClaimEvidenceReview — trace-first arm", () => {
-  it("shows the trace and one blind question, with the judge off screen", () => {
-    const traces = [short_single_turn_trace()]
-    const { container, getByText, queryByText } = render_trace_first(traces)
-
-    // The trace itself, echoed from the raws the run recorded no trace for.
-    expect(container.textContent).toContain("What's the return window?")
-    expect(container.textContent).toContain("Our return window is 30 days.")
-    expect(getByText("Does this example pass?")).toBeTruthy()
-
-    // Nothing states the judge's call, or the claims that argue it, before
-    // the reviewer answers.
-    expect(container.textContent).not.toContain("The window was asserted")
-    expect(container.textContent).not.toContain("Overall, this example")
-    expect(container.textContent).not.toContain("Fails Eval")
-    expect(container.textContent).not.toContain("The judge disagrees")
-
-    // The inverse escape hatch: claims are one click away, the trace is not
-    // behind a button any more.
-    expect(getByText("View Claims")).toBeTruthy()
-    expect(queryByText("View Full Trace")).toBeNull()
-  })
-
-  it("a label contradicting the judge reveals it and demands a reason", async () => {
-    const traces = [short_single_turn_trace("fail")]
-    const { container, getByText, verdicts } = render_trace_first(traces)
-
-    // Judge said fail, reviewer says the response passes: a mismatch.
-    await fireEvent.click(getByText("Pass"))
-    expect(verdicts[0].final_judgement_verdict.agrees).toBe(false)
-    // One sentence: the disagreement, the judge's own verdict word, and the
-    // explanation it introduces.
-    expect(
-      getByText("The judge disagrees. It scored this as a fail."),
-    ).toBeTruthy()
-    expect(container.textContent).toContain("Fails Eval: fabricated policy.")
-    // The Teach the Judge label. Its description names the mismatch; the ask
-    // itself stays in the placeholder, keyed to the REVIEWER's label.
-    expect(getByText("Teach the Judge")).toBeTruthy()
-    expect(container.textContent).not.toContain("Detailed explanations")
-
-    // The reason is required while the mismatch stands.
-    const why = container.querySelector("textarea") as HTMLTextAreaElement
-    expect(why.className).toContain("textarea-error")
-    expect(why.placeholder).toBe(
-      "Describe why this passes. Detailed explanations will improve the judge.",
-    )
-    expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(false)
-
-    await fireEvent.input(why, {
-      target: { value: "The window is documented." },
-    })
-    expect(why.className).not.toContain("textarea-error")
-    expect(verdicts[0].final_judgement_verdict.why).toBe(
-      "The window is documented.",
-    )
-    expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(true)
-  })
-
-  it("a label matching the judge finishes the trace with no interruption", async () => {
-    const traces = [short_single_turn_trace("fail")]
-    const { container, getByText, verdicts } = render_trace_first(traces)
-
-    await fireEvent.click(getByText("Fail"))
-    expect(verdicts[0].final_judgement_verdict.agrees).toBe(true)
-    expect(container.textContent).not.toContain("The judge disagrees")
-    expect(container.querySelector("textarea")).toBeNull()
-    expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(true)
-  })
-
-  it("inverts on a judge-pass trace", async () => {
-    const traces = [short_single_turn_trace("pass")]
-    const { container, getByText, verdicts } = render_trace_first(traces)
-
-    // Agreeing with a passing judge is the Pass label here.
-    await fireEvent.click(getByText("Pass"))
-    expect(verdicts[0].final_judgement_verdict.agrees).toBe(true)
-    expect(container.textContent).not.toContain("The judge disagrees")
-    // The grade is readable off the row: the chosen side takes the verdict
-    // color rather than the neutral outline.
-    expect(getByText("Pass").className).toContain("btn-success")
-
-    await fireEvent.click(getByText("Fail"))
-    expect(verdicts[0].final_judgement_verdict.agrees).toBe(false)
-    // And the color moves with the label, so only one side reads as chosen.
-    expect(getByText("Fail").className).toContain("btn-error")
-    expect(getByText("Pass").className).not.toContain("btn-success")
-    // The verdict word follows the judge, the placeholder follows the
-    // reviewer, so the two point opposite ways here.
-    expect(
-      getByText("The judge disagrees. It scored this as a pass."),
-    ).toBeTruthy()
-    expect(
-      (container.querySelector("textarea") as HTMLTextAreaElement).placeholder,
-    ).toBe(
-      "Describe why this fails. Detailed explanations will improve the judge.",
-    )
-  })
-
-  it("flipping back to agreement clears the reveal and the reason", async () => {
-    const traces = [short_single_turn_trace("fail")]
-    const { container, getByText, verdicts } = render_trace_first(traces)
-
-    await fireEvent.click(getByText("Pass"))
-    const why = container.querySelector("textarea") as HTMLTextAreaElement
-    await fireEvent.input(why, {
-      target: { value: "The window is documented." },
-    })
-
-    await fireEvent.click(getByText("Fail"))
-    expect(container.textContent).not.toContain("The judge disagrees")
-    expect(container.querySelector("textarea")).toBeNull()
-    // The reason went with the reveal: an agreeing grade never ships text the
-    // reviewer can no longer see.
-    expect(verdicts[0].final_judgement_verdict.why).toBe("")
-  })
-
-  it("View Claims opens a display-only claim stack, with no verdict controls", async () => {
-    const traces = [short_single_turn_trace()]
-    const { container, getByText, getAllByText, verdicts } =
-      render_trace_first(traces)
-
-    // Before the click nothing of the claims is mounted, so the judge's call
-    // isn't sitting in a closed dialog on a blind screen.
-    expect(container.textContent).not.toContain("Overall, this example")
-
-    // Label first, so the shared verdict reads "disagree" while the claims are
-    // open — the state that would put a second reason box in the dialog.
-    await fireEvent.click(getByText("Pass"))
-    await fireEvent.click(getByText("View Claims"))
-    const dialog = claims_dialog(container)
-    expect(dialog.open).toBe(true)
-    expect(dialog.textContent).toContain(
-      "The agent stated a return window as fact.",
-    )
-    expect(dialog.textContent).toContain("Overall, this example")
-
-    // The blind row stays the one grading control: its Pass/Fail pair renders
-    // once, and the dialog's cards carry no Correct/Incorrect of their own and
-    // no reason box.
-    expect(getAllByText("Pass")).toHaveLength(1)
-    expect(getAllByText("Fail")).toHaveLength(1)
-    expect(dialog.textContent).not.toContain("Correct")
-    expect(dialog.querySelector("textarea")).toBeNull()
-    // So no sub-claim grade can appear here and quietly demand a reason the
-    // trace-first screen never shows.
-    expect(verdicts[0].claim_verdicts.every((v) => v.agrees === null)).toBe(
-      true,
-    )
-  })
-
-  it("keeps the judgement out of the claims dialog until the call is made", async () => {
-    // The dialog is reachable at any time, so it is a second way to read the
-    // verdict this arm withholds. The claims are reading material and stay;
-    // the overall judgement joins them only once the answer is in.
-    const traces = [short_single_turn_trace()]
-    const { container, getByText } = render_trace_first(traces)
-
-    await fireEvent.click(getByText("View Claims"))
-    const dialog = claims_dialog(container)
-    expect(dialog.textContent).toContain(
-      "The agent stated a return window as fact.",
-    )
-    expect(dialog.textContent).not.toContain("Overall, this example")
-    expect(dialog.textContent).not.toContain("Fails Eval")
-
-    // Answered, so the call is no longer anything to protect.
-    await fireEvent.click(getByText("Pass"))
-    expect(claims_dialog(container).textContent).toContain(
-      "Overall, this example",
-    )
-  })
-
-  it("holds the judgement's reason back until the reviewer has answered", async () => {
-    // The trace is on screen here, so the reviewer has what they need without
-    // the eval's reasoning, which would only telegraph the call. Answering
-    // either way releases it.
-    const traces = [short_single_turn_trace()]
-    const { container, getByText } = render_trace_first(traces)
-    expect(container.textContent).not.toContain("Fails Eval")
-
-    // Agreeing releases it too: the conclusion can no longer anchor anyone.
-    await fireEvent.click(getByText("Fail"))
-    expect(container.textContent).toContain("Fails Eval: fabricated policy.")
-    expect(container.textContent).not.toContain("The judge disagrees")
-  })
-
-  it("offers Retry Analysis in the dialog when the claims build failed", async () => {
-    const traces = [
-      {
-        ...short_single_turn_trace(),
-        claims: null,
-        final_judgement: null,
-        claims_state: "error" as const,
-        claims_error: "Copilot request failed.",
-      },
-    ]
-    const opened: number[] = []
-    const verdicts = build_trace_reviews(traces)
-    const { container, getByText } = render(ClaimEvidenceReview, {
-      props: {
-        traces,
-        verdicts,
-        selected_indices: [0],
-        judged_noun: "example",
-        on_open_trace: (i: number) => opened.push(i),
-      },
-    })
-
-    // The blind label still grades a trace whose claims failed: the reveal
-    // reads the judge's own verdict and reasoning, not the claims.
-    await fireEvent.click(getByText("Fail"))
-    expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(true)
-
-    await fireEvent.click(getByText("View Claims"))
-    expect(claims_dialog(container).textContent).toContain(
-      "Copilot request failed.",
-    )
-    // Landing on the trace already reported it open once, so the retry has to
-    // show up as another report, not merely as a report.
-    const before = opened.filter((i) => i === 0).length
-    await fireEvent.click(getByText("Retry Analysis"))
-    expect(opened.filter((i) => i === 0)).toHaveLength(before + 1)
-  })
-
-  it("carries each trace's label and reason across Next and Previous", async () => {
-    const traces = [short_single_turn_trace(), short_single_turn_trace()]
-    traces[1].trace_id = "st_1"
-    const { container, getByText, verdicts } = render_trace_first(traces)
-    await fireEvent.click(getByText("Pass"))
-    await fireEvent.input(container.querySelector("textarea")!, {
-      target: { value: "The window is documented." },
-    })
-    await fireEvent.click(getByText("View Claims"))
-    expect(claims_dialog(container).textContent).toContain(
-      "Overall, this example",
-    )
-
-    await fireEvent.click(getByText("Next"))
-    // A fresh trace starts unlabelled: no reveal, no reason carried over.
-    expect(container.textContent).not.toContain("The judge disagrees")
-    expect(container.querySelector("textarea")).toBeNull()
-    expect(verdicts[1].final_judgement_verdict).toEqual({
-      agrees: null,
-      why: "",
-    })
-    // And its claims are its own to ask for: the previous trace's opt-in did
-    // not follow the reviewer here.
-    expect(claims_dialog(container).textContent).not.toContain(
-      "Overall, this example",
-    )
-
-    await fireEvent.click(getByText("Previous"))
-    expect(
-      getByText("The judge disagrees. It scored this as a fail."),
-    ).toBeTruthy()
-    expect(
-      (container.querySelector("textarea") as HTMLTextAreaElement).value,
-    ).toBe("The window is documented.")
-    // The grade came back; the claims stay closed until asked for again.
-    expect(claims_dialog(container).textContent).not.toContain(
-      "Overall, this example",
-    )
-  })
-
-  it("keeps the claims-first review for multi-turn", () => {
-    // Same short trace, the other gate arm: the claim stack, not the
-    // question, and the trace back behind its button.
-    const traces = [short_single_turn_trace()]
-    const multi = render(ClaimEvidenceReview, {
-      props: {
-        traces,
-        verdicts: build_trace_reviews(traces),
-        selected_indices: [0],
-        judged_noun: "conversation",
-        is_multi_turn: true,
-      },
-    })
-    // The same blind question in the arm's own noun, and the trace back
-    // behind its button with the claims folded under the call.
-    expect(multi.getByText("Does this conversation pass?")).toBeTruthy()
-    expect(multi.queryAllByText("View Full Trace").length).toBeGreaterThan(0)
-    expect(multi.queryByText("View Claims")).toBeNull()
-    expect(multi.getByRole("button", { name: "Show claims" })).toBeTruthy()
-    expect(
-      multi.container.querySelector("[data-testid='review-input']"),
-    ).toBeNull()
-  })
-
-  it("reviews a short structured output trace-first", () => {
-    // The shape a schema'd single-turn task produces. It reviews on the
-    // trace like any other short output, and the Output section renders the
-    // JSON.
-    const raw_output = JSON.stringify({
-      window_days: 30,
-      answer: "Our return window is 30 days.",
-    })
-    const traces = [{ ...short_single_turn_trace(), raw_output }]
-    const { container, getByText } = render_trace_first(traces)
-
-    expect(getByText("Does this example pass?")).toBeTruthy()
-    expect(container.textContent).toContain("window_days")
-    expect(container.textContent).toContain("Our return window is 30 days.")
-  })
-
-  it("keeps the claims-first review for a structured output over the cutoff", () => {
-    // Length is what decides, for JSON as for prose.
-    const raw_output = JSON.stringify({ answer: "x".repeat(CHAR_CUTOFF) })
-    const traces = [{ ...short_single_turn_trace(), raw_output }]
-    const { container, getByRole, queryByText } = render_trace_first(traces)
-
-    // Claims-first: the trace is behind its button, not rendered inline.
-    expect(queryByText("View Claims")).toBeNull()
-    expect(getByRole("button", { name: "Show claims" })).toBeTruthy()
-    expect(container.querySelector("[data-testid='review-input']")).toBeNull()
-  })
-
-  it("fails loud when a trace has neither a transcript nor raws", () => {
-    const traces = [
-      { ...short_single_turn_trace(), raw_input: "", raw_output: "" },
-    ]
-    const { container, queryByText } = render_trace_first(traces)
-    expect(container.textContent).toContain("no transcript and no raw input")
-    // Nothing to read means nothing to label.
-    expect(queryByText("Does this example pass?")).toBeNull()
-  })
-})
 
 // What the server writes into judge_reasoning when the judge model emits no
 // reasoning trace: honest, and about nothing in this trace.
@@ -642,7 +325,7 @@ function trace_with_placeholder_reasoning(): TraceClaims {
 
 describe("ClaimEvidenceReview — what the mismatch reveal explains", () => {
   it("reads out the final judgement, not the judge's reasoning field", async () => {
-    const { container, getByText } = render_trace_first([
+    const { container, getByText } = render_review([
       trace_with_placeholder_reasoning(),
     ])
 
@@ -656,7 +339,7 @@ describe("ClaimEvidenceReview — what the mismatch reveal explains", () => {
   it("falls back to judge_reasoning when no final judgement was built", async () => {
     // The claims build failed, so there is no distilled judgement to read —
     // the judge's own field is all this trace carries.
-    const { container, getByText } = render_trace_first([
+    const { container, getByText } = render_review([
       {
         ...trace_with_placeholder_reasoning(),
         claims: null,
@@ -666,7 +349,7 @@ describe("ClaimEvidenceReview — what the mismatch reveal explains", () => {
       },
     ])
 
-    await fireEvent.click(getByText("Pass"))
+    await fireEvent.click(getByText("Incorrect"))
     expect(container.textContent).toContain(PLACEHOLDER_REASONING)
   })
 
@@ -674,7 +357,7 @@ describe("ClaimEvidenceReview — what the mismatch reveal explains", () => {
     // The judgement still carries citations: they belong to the sentence that
     // was dropped, so they must go with it rather than chip the judge's
     // placeholder with evidence for text nobody is reading.
-    const { container, getByText } = render_trace_first([
+    const { container, getByText } = render_review([
       {
         ...trace_with_placeholder_reasoning(),
         final_judgement: {
@@ -696,14 +379,14 @@ describe("ClaimEvidenceReview — what the mismatch reveal explains", () => {
   it("closes the headline on a period when there is nothing to explain", async () => {
     // Neither a final judgement nor a reasoning field, so the reveal carries
     // no sentence: the headline has to end rather than trail into "because:".
-    const { getByText } = render_trace_first([
+    // The build SUCCEEDED but distilled nothing — a failed build states its
+    // verdict instead of asking blind, so it has no reveal to close.
+    const { getByText } = render_review([
       {
         ...trace_with_placeholder_reasoning(),
         judge_reasoning: "",
-        claims: null,
+        claims: [],
         final_judgement: null,
-        claims_state: "error" as const,
-        claims_error: "Copilot request failed.",
       },
     ])
 
@@ -717,7 +400,7 @@ describe("ClaimEvidenceReview — what the mismatch reveal explains", () => {
     // The reveal's chip. The trace is structured, so the click lands in the
     // chat view and the mark proves the output span mapped onto the assistant
     // message — the single-turn path through map_output_span_to_trace.
-    const revealed = render_trace_first([trace_with_placeholder_reasoning()])
+    const revealed = render_review([trace_with_placeholder_reasoning()])
     await fireEvent.click(revealed.getByText("Pass"))
     const chip = revealed.getByTitle("View in trace")
     expect(chip.textContent).toBe("[1]")
@@ -1231,9 +914,9 @@ describe("ClaimEvidenceReview — the claims-first contradiction reveal", () => 
   })
 })
 
-describe("the single-turn review anatomy, inline", () => {
-  it("shows an Input field and an Output section, and no chat", () => {
-    const { container, getByText } = render_trace_first([
+describe("the single-turn trace modal anatomy", () => {
+  it("shows an Input field and an Output section, and no chat", async () => {
+    const { container, getByText } = await render_trace_sections([
       short_single_turn_trace(),
     ])
 
@@ -1255,23 +938,23 @@ describe("the single-turn review anatomy, inline", () => {
     expect(getByText("Does this example pass?")).toBeTruthy()
   })
 
-  it("never shows the system prompt", () => {
+  it("never shows the system prompt", async () => {
     // The stored trace opens with one; it is task configuration, not something
     // the reviewer grades, and it has no row and no bubble on this surface.
-    const { container } = render_trace_first([
+    const { container } = await render_trace_sections([
       trace_with_placeholder_reasoning(),
     ])
     expect(container.textContent).not.toContain("SYSTEM")
     expect(container.textContent).not.toContain("You are a support agent.")
   })
 
-  it("shows the input once — the sections replace the old chat mount", () => {
+  it("shows the input once — the sections replace the old chat mount", async () => {
     const t = trace_with_placeholder_reasoning()
-    const { container } = render_trace_first([t])
+    const { container } = await render_trace_sections([t])
     expect(occurrences(container.textContent ?? "", t.raw_input)).toBe(1)
   })
 
-  it("renders prose through the markdown renderer, in both fields", () => {
+  it("renders prose through the markdown renderer, in both fields", async () => {
     const traces = [
       {
         ...short_single_turn_trace(),
@@ -1279,7 +962,7 @@ describe("the single-turn review anatomy, inline", () => {
         raw_output: "The window is **30 days**.",
       },
     ]
-    const { container } = render_trace_first(traces)
+    const { container } = await render_trace_sections(traces)
 
     for (const name of ["input", "output"] as const) {
       const field = section(container, name)
@@ -1288,7 +971,7 @@ describe("the single-turn review anatomy, inline", () => {
     }
   })
 
-  it("renders structured content through the house Output idiom", () => {
+  it("renders structured content through the house Output idiom", async () => {
     const raw_output = '{"window_days":30,"answer":"30 days"}'
     const traces = [
       {
@@ -1297,7 +980,7 @@ describe("the single-turn review anatomy, inline", () => {
         raw_output,
       },
     ]
-    const { container } = render_trace_first(traces)
+    const { container } = await render_trace_sections(traces)
 
     // Pretty-printed, not the compact source string, and syntax highlighted.
     const output = section(container, "output")
@@ -1310,9 +993,11 @@ describe("the single-turn review anatomy, inline", () => {
   })
 })
 
-describe("the single-turn Output section — rows or a field", () => {
-  it("renders a tool loop as rows, with only the FINAL assistant open", () => {
-    const { container, getByText } = render_trace_first([tool_loop_trace()])
+describe("the trace modal Output section — rows or a field", () => {
+  it("renders a tool loop as rows, with only the FINAL assistant open", async () => {
+    const { container, getByText } = await render_trace_sections([
+      tool_loop_trace(),
+    ])
     const output = section(container, "output")
 
     // The rows are what the model did AFTER the input: the system prompt and
@@ -1373,7 +1058,10 @@ describe("the single-turn Output section — rows or a field", () => {
         { role: "assistant", content: "Exchanges run 14 days." },
       ] as TraceMessage[],
     }
-    const { container, getByText } = render_trace_first([first, second])
+    const { container, getByText, getAllByText } = await render_trace_sections([
+      first,
+      second,
+    ])
     expect(expanded_rows(section(container, "output"))).toEqual([
       false,
       false,
@@ -1381,9 +1069,12 @@ describe("the single-turn Output section — rows or a field", () => {
       true,
     ])
 
-    // Grade the current trace so Next opens, then move on.
+    // Grade the current trace so Next opens, then move on. The modal is
+    // opened imperatively, so it does not follow the navigation — reopening
+    // it is what must re-read the second trace's rows.
     await fireEvent.click(getByText("Fail"))
     await fireEvent.click(getByText("Next"))
+    await fireEvent.click(getAllByText("View Full Trace")[0])
 
     const output = section(container, "output")
     expect(linear_role_labels(output)).toEqual([
@@ -1398,10 +1089,10 @@ describe("the single-turn Output section — rows or a field", () => {
     )
   })
 
-  it("renders a record pair as two plain fields, with no accordion", () => {
+  it("renders a record pair as two plain fields, with no accordion", async () => {
     // A stored two-message record, and the echo a traceless run synthesizes:
     // one message after the input, so there is no sequence to order.
-    const stored = render_trace_first([
+    const stored = await render_trace_sections([
       {
         ...short_single_turn_trace(),
         trace: [
@@ -1416,19 +1107,19 @@ describe("the single-turn Output section — rows or a field", () => {
     )
     cleanup()
 
-    const traceless = render_trace_first([short_single_turn_trace()])
+    const traceless = await render_trace_sections([short_single_turn_trace()])
     expect(traceless.container.querySelectorAll(".collapse")).toHaveLength(0)
     expect(section(traceless.container, "output").textContent).toContain(
       "Our return window is 30 days.",
     )
   })
 
-  it("shows raw_output when the answer is a tool call with null content", () => {
+  it("shows raw_output when the answer is a tool call with null content", async () => {
     // A function-calling run stores its answer in the call's arguments and
     // leaves content null. Reading the message alone left the section BLANK on
     // a run that answered.
     const raw_output = '{"window_days": 30}'
-    const { container } = render_trace_first([
+    const { container } = await render_trace_sections([
       {
         ...short_single_turn_trace(),
         raw_output,
@@ -1455,11 +1146,11 @@ describe("the single-turn Output section — rows or a field", () => {
     expect(section(container, "output").textContent).toContain("30")
   })
 
-  it("reports a missing output in the Output slot, keeping the Input", () => {
+  it("reports a missing output in the Output slot, keeping the Input", async () => {
     // The run recorded no answer anywhere. That is worth saying loudly, but
     // the input it was given is still on the record and still readable — an
     // error covering both sections would hide it for no reason.
-    const { container, getByText } = render_trace_first([
+    const { container, getByText } = await render_trace_sections([
       {
         ...short_single_turn_trace(),
         raw_output: "",
@@ -1481,10 +1172,10 @@ describe("the single-turn Output section — rows or a field", () => {
     expect(getByText("Does this example pass?")).toBeTruthy()
   })
 
-  it("shows a lone tool call rather than an empty output", () => {
+  it("shows a lone tool call rather than an empty output", async () => {
     // The answer never resolved, but the call the model made is real content
     // and the rows can render it.
-    const { container } = render_trace_first([
+    const { container } = await render_trace_sections([
       {
         ...short_single_turn_trace(),
         raw_output: "",
@@ -1513,14 +1204,19 @@ describe("the single-turn Output section — rows or a field", () => {
     expect(output.textContent).toContain("lookup_policy")
   })
 
-  it("keeps the whole-surface error when there is nothing to render", () => {
-    // No transcript and no raws: no input either, so the error owns the page.
-    const { container, queryByText } = render_trace_first([
+  it("reports a trace it cannot render, and the review stays gradable", async () => {
+    // No transcript and no raws, so the modal has nothing to show. The claims
+    // are the review now, so an unrenderable transcript reports itself inside
+    // the modal instead of taking the reviewer's question off the page.
+    const rendered = render_review([
       { ...short_single_turn_trace(), raw_input: "", raw_output: "" },
     ])
-    expect(container.textContent).toContain("no transcript and no raw input")
-    expect(container.querySelector("[data-testid='review-input']")).toBeNull()
-    expect(queryByText("Does this example pass?")).toBeNull()
+    expect(rendered.getByText("Does this example pass?")).toBeTruthy()
+
+    await fireEvent.click(rendered.getAllByText("View Full Trace")[0])
+    const dialog = trace_dialog(rendered.container)
+    expect(dialog.textContent).toContain("no transcript and no raw input")
+    expect(dialog.querySelector("[data-testid='review-input']")).toBeNull()
   })
 
   it("keeps expanded rows through a claims build landing mid-review", async () => {
@@ -1529,7 +1225,7 @@ describe("the single-turn Output section — rows or a field", () => {
     // opened a tool result should not watch it snap shut.
     const traces = [tool_loop_trace({ claims_state: "unbuilt", claims: null })]
     const verdicts = build_trace_reviews(traces)
-    const { container, rerender } = render(ClaimEvidenceReview, {
+    const { container, rerender, getAllByText } = render(ClaimEvidenceReview, {
       props: {
         traces,
         verdicts,
@@ -1537,7 +1233,9 @@ describe("the single-turn Output section — rows or a field", () => {
         judged_noun: "example",
       },
     })
-    const output = () => section(container, "output")
+    await fireEvent.click(getAllByText("View Full Trace")[0])
+    const dialog = trace_dialog(container)
+    const output = () => section(dialog, "output")
     const tool_row = [...output().querySelectorAll(".collapse")].find(
       (block) =>
         block.querySelector(".collapse-title > span")?.textContent?.trim() ===
@@ -1564,16 +1262,6 @@ describe("the single-turn Output section — rows or a field", () => {
   })
 })
 
-// A single-turn trace the LENGTH gate sends claims-first: the output is over
-// the cutoff, so the trace lives behind View Full Trace — which is how the
-// single-turn path through the modal is reached.
-function long_single_turn(base: TraceClaims): TraceClaims {
-  return {
-    ...base,
-    raw_output: `${base.raw_output}\n\n${"padding. ".repeat(CHAR_CUTOFF / 5)}`,
-  }
-}
-
 function render_single_turn_claims_first(traces: TraceClaims[]) {
   return render(ClaimEvidenceReview, {
     props: {
@@ -1588,7 +1276,7 @@ function render_single_turn_claims_first(traces: TraceClaims[]) {
 
 describe("the trace modal — single-turn", () => {
   it("shows the same two sections the inline surface shows", async () => {
-    const traces = [long_single_turn(tool_loop_trace())]
+    const traces = [tool_loop_trace()]
     const { container, getAllByText } = render_single_turn_claims_first(traces)
     await fireEvent.click(getAllByText("View Full Trace")[0])
     const dialog = trace_dialog(container)
@@ -1625,7 +1313,7 @@ describe("the trace modal — single-turn", () => {
       from: "return window",
       to: "window?",
     }
-    const traces = [long_single_turn(tool_loop_trace({}, [citation]))]
+    const traces = [tool_loop_trace({}, [citation])]
     const { container, getByTitle } = render_single_turn_claims_first(traces)
     await expand_claims(container)
     await fireEvent.click(getByTitle("View in trace"))
@@ -1647,7 +1335,7 @@ describe("the trace modal — single-turn", () => {
       from: "30 days",
       to: "30 days",
     }
-    const traces = [long_single_turn(tool_loop_trace({}, [citation]))]
+    const traces = [tool_loop_trace({}, [citation])]
     const { container, getByTitle } = render_single_turn_claims_first(traces)
     await expand_claims(container)
     await fireEvent.click(getByTitle("View in trace"))
@@ -1678,7 +1366,7 @@ describe("the trace modal — single-turn", () => {
       from: "30 days",
       to: "30 days",
     }
-    const traces = [long_single_turn(tool_loop_trace({}, [citation]))]
+    const traces = [tool_loop_trace({}, [citation])]
     const { container, getByTitle, getAllByText } =
       render_single_turn_claims_first(traces)
     await expand_claims(container)

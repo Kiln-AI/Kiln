@@ -10,7 +10,6 @@ import {
   build_trace_reviews,
   calibration_gate_target,
   reviewable_subset,
-  CHAR_CUTOFF,
   declined_feedback_notice,
   disagreed_trace_indices,
   disagreement_feedback,
@@ -19,7 +18,6 @@ import {
   fold_with_offsets,
   grade_disagreement_count,
   has_grade_disagreement,
-  is_trace_first_review,
   is_trace_reviewed,
   map_input_span_to_trace,
   map_output_span_to_trace,
@@ -1682,64 +1680,6 @@ describe("review CTA — grade_disagreement_count / refine_judge_tooltip", () =>
     expect(refine_judge_tooltip(2, "example")).toContain(
       "disagreed with the judge on 2 examples.",
     )
-  })
-})
-
-describe("is_trace_first_review — which review shape a trace gets", () => {
-  const short = "x".repeat(CHAR_CUTOFF - 1)
-
-  it("a short single-turn output reviews trace-first", () => {
-    expect(
-      is_trace_first_review({
-        is_multi_turn: false,
-        raw_output: short,
-      }),
-    ).toBe(true)
-  })
-
-  it("multi-turn keeps the claim stack however short the transcript", () => {
-    expect(
-      is_trace_first_review({
-        is_multi_turn: true,
-        raw_output: "Sure, I can help.",
-      }),
-    ).toBe(false)
-  })
-
-  it("a short structured output reviews trace-first, schema flag or not", () => {
-    // Structured output is not a gate arm: the chat bubble renders JSON
-    // formatted, so a short one costs no more to read than short prose. The
-    // extra property is a task flag the gate no longer takes — a gate that
-    // reads it again fails here.
-    const schemad = {
-      is_multi_turn: false,
-      raw_output: JSON.stringify({
-        setup: "Why did the developer quit?",
-        punchline: "They did not get arrays.",
-      }),
-      has_output_schema: true,
-    }
-    expect(is_trace_first_review(schemad)).toBe(true)
-  })
-
-  it("a structured output over the cutoff keeps the claim stack", () => {
-    expect(
-      is_trace_first_review({
-        is_multi_turn: false,
-        raw_output: JSON.stringify({ summary: "x".repeat(CHAR_CUTOFF) }),
-      }),
-    ).toBe(false)
-  })
-
-  it("cuts over at CHAR_CUTOFF: below is trace-first, at it is claims", () => {
-    const at_cutoff = "x".repeat(CHAR_CUTOFF)
-    const args = { is_multi_turn: false }
-    expect(is_trace_first_review({ ...args, raw_output: at_cutoff })).toBe(
-      false,
-    )
-    expect(
-      is_trace_first_review({ ...args, raw_output: at_cutoff.slice(1) }),
-    ).toBe(true)
   })
 })
 
