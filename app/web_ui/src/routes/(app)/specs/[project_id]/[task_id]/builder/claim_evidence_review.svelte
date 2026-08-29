@@ -83,10 +83,11 @@
   const MAX_CLAIMS = 3
 
   // The claims disclosure, in the batch plan's row idiom
-  // (kiln_pro_prompts_table) so the two surfaces read as one app. Sticky
-  // across traces rather than reset per trace: opening it is the reviewer
-  // saying they want to grade claims, and re-collapsing it on every
-  // conversation would undo that choice once per screen.
+  // (kiln_pro_prompts_table) so the two surfaces read as one app. Folded again
+  // on every move: the card asks its question blind, and carrying the previous
+  // example's expansion forward would answer part of the next one before it is
+  // asked. Opening it is a choice about the example in front of the reviewer,
+  // not a standing preference.
   let claims_expanded = false
   // "The main facts" rather than "the facts": the cards below are the top of
   // an importance-ordered list, not all of it. Second sentence names the only
@@ -146,14 +147,17 @@
       : blind_final_judgement(t)
   }
 
-  // Prev/Next walk the selected sequence.
+  // Prev/Next walk the selected sequence. Both fold the claims: the next
+  // example is asked from scratch.
   function go_prev() {
     const prior = selected.filter((i) => i < current_index)
     if (prior.length > 0) current_index = prior[prior.length - 1]
+    claims_expanded = false
   }
   function go_next() {
     const later = selected.filter((i) => i > current_index)
     if (later.length > 0) current_index = later[0]
+    claims_expanded = false
   }
   $: has_prev = selected.some((i) => i < current_index)
   $: has_next = selected.some((i) => i > current_index)

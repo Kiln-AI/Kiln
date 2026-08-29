@@ -772,6 +772,35 @@ describe("ClaimEvidenceReview — the claims-first arm asks the call first", () 
   })
 })
 
+describe("ClaimEvidenceReview — the claims disclosure folds on every move", () => {
+  it("re-folds the claims when the reviewer moves to the next example", async () => {
+    // The card asks blind. Carrying an expansion forward would answer part of
+    // the next example before its question is put.
+    const traces = [short_single_turn_trace(), short_single_turn_trace()]
+    const { getByText, queryByText } = render_review(traces)
+
+    await fireEvent.click(getByText("Claims"))
+    expect(queryByText(/The main facts the judge used/)).toBeTruthy()
+
+    await fireEvent.click(getByText("Pass"))
+    await fireEvent.click(getByText("Next"))
+    expect(queryByText(/The main facts the judge used/)).toBeNull()
+  })
+
+  it("re-folds them walking back too", async () => {
+    const traces = [short_single_turn_trace(), short_single_turn_trace()]
+    const { getByText, queryByText } = render_review(traces)
+
+    await fireEvent.click(getByText("Pass"))
+    await fireEvent.click(getByText("Next"))
+    await fireEvent.click(getByText("Claims"))
+    expect(queryByText(/The main facts the judge used/)).toBeTruthy()
+
+    await fireEvent.click(getByText("Previous"))
+    expect(queryByText(/The main facts the judge used/)).toBeNull()
+  })
+})
+
 describe("ClaimEvidenceReview — what a flagged claim records", () => {
   it("carries only the flagged claim into the payload, never an agreement", async () => {
     const traces = [claims_first_trace()]
