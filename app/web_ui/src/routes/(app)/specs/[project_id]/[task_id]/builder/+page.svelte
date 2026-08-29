@@ -743,10 +743,14 @@
         body: {
           project_id,
           task_id,
+          // The task's real schemas, not blanks. A structured-output task
+          // that reports no schema gets asked to invent the very field names
+          // it already defines, and whatever the user answers then becomes
+          // the judge's idea of a valid value.
           target_task_info: {
             task_prompt: task?.instruction ?? "",
-            task_input_schema: "",
-            task_output_schema: "",
+            task_input_schema: task?.input_json_schema ?? "",
+            task_output_schema: task?.output_json_schema ?? "",
           },
           target_specification: source,
         },
