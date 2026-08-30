@@ -652,6 +652,107 @@ describe("ChatTrace component — thinking", () => {
   })
 })
 
+describe("ChatTrace component — citations inside a tool call", () => {
+  // The flattened block a tool-call citation's offsets index, exactly as the
+  // server renders it: `- Tool Name: {name}\n- Arguments: {args}`.
+  const ARGS = '{"a": 135.0, "b": 0.15}'
+  const PREFIX = `- Tool Name: multiply\n- Arguments: `
+
+  function toolCallTrace(): TraceType {
+    return [
+      userMsg("Work out the refund."),
+      assistantMsg(null, {
+        tool_calls: [makeToolCallRaw("c1", "multiply", ARGS)],
+      }),
+      toolMsg('{"output": "20.25"}', "c1"),
+    ]
+  }
+
+  function makeToolCallRaw(id: string, name: string, args: string) {
+    return {
+      id,
+      type: "function" as const,
+      function: { name, arguments: args },
+    }
+  }
+
+  it("marks the cited arguments without disturbing the JSON rendering", () => {
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: toolCallTrace(),
+        highlight: {
+          trace_index: 1,
+          kind: "tool_calls",
+          start: PREFIX.length,
+          end: PREFIX.length + ARGS.length,
+        },
+      },
+    })
+
+    const marks = container.querySelectorAll("mark")
+    expect(marks.length).toBeGreaterThan(0)
+    // The JSON is still pretty-printed and syntax-highlighted, which is the
+    // point: a cited call looks like an uncited one, plus the mark.
+    const card = container.querySelector("[data-testid='chat-tool-call']")
+    expect(card?.querySelector(".hljs-attr")).not.toBeNull()
+    expect(card?.textContent).toContain('"a"')
+  })
+
+  it("marks a single value when only that value is cited", () => {
+    const value_start = PREFIX.length + ARGS.indexOf("0.15")
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: toolCallTrace(),
+        highlight: {
+          trace_index: 1,
+          kind: "tool_calls",
+          start: value_start,
+          end: value_start + "0.15".length,
+        },
+      },
+    })
+    const marked = [...container.querySelectorAll("mark")]
+      .map((m) => m.textContent)
+      .join("")
+    expect(marked).toBe("0.15")
+  })
+
+  it("draws no mark when the citation covers the tool NAME, which the card does not show as text", () => {
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: toolCallTrace(),
+        highlight: {
+          trace_index: 1,
+          kind: "tool_calls",
+          start: 0,
+          end: "- Tool Name: multiply".length,
+        },
+      },
+    })
+    expect(container.querySelectorAll("mark").length).toBe(0)
+  })
+
+  it("keeps a cited tool RESULT's formatting instead of falling back to raw text", () => {
+    const { container } = render(ChatTrace, {
+      props: {
+        trace: toolCallTrace(),
+        highlight: {
+          trace_index: 2,
+          kind: "tool_result",
+          start: 0,
+          end: "20.25".length,
+        },
+      },
+    })
+    const marked = [...container.querySelectorAll("mark")]
+      .map((m) => m.textContent)
+      .join("")
+    expect(marked).toBe("20.25")
+    // Rendered through Output, not as a plain-text fallback.
+    expect(container.querySelector(".hljs-number")).not.toBeNull()
+  })
+})
+
 describe("ChatTrace component — structured output", () => {
   // A structured-output task returns its answer as arguments to the internal
   // `task_response` tool. The message shape here is copied from a real run:

@@ -15,6 +15,7 @@
   import { onMount, onDestroy } from "svelte"
   import hljs from "highlight.js/lib/core"
   import json from "highlight.js/lib/languages/json"
+  import { map_json_span, mark_html_range } from "$lib/ui/json_span_map"
   hljs.registerLanguage("json", json)
 
   export let raw_output: string
@@ -27,6 +28,11 @@
   export let background_color: "default" | "white" | "transparent" = "default"
 
   export let no_padding: boolean = false
+  // A citation's span, in the coordinates of `raw_output` — the text whoever
+  // made the citation actually read. JSON is re-printed for display, so the
+  // span is translated onto the printed form rather than used directly.
+  // Null for every caller that isn't showing a citation.
+  export let mark: { start: number; end: number } | null = null
   let formatted_json_html: string | null = null
   let is_expanded = false
   let content_element: HTMLElement
@@ -34,11 +40,50 @@
   let resize_observer: ResizeObserver | null = null
 
   // Guarded by the predicate, so the parse here cannot throw.
-  $: formatted_json_html = is_non_string_json(raw_output)
-    ? hljs.highlight(JSON.stringify(JSON.parse(raw_output), null, 2), {
-        language: "json",
-      }).value
+  $: printed_json = is_non_string_json(raw_output)
+    ? JSON.stringify(JSON.parse(raw_output), null, 2)
     : null
+  $: formatted_json_html = printed_json
+    ? hljs.highlight(printed_json, { language: "json" }).value
+    : null
+
+  // The mark rides on top of the normal rendering rather than replacing it:
+  // the JSON looks the same cited or not, which is the point. A span that
+  // cannot be translated yields no mark instead of a wrong one.
+  $: display_json_html =
+    formatted_json_html && printed_json && mark
+      ? mark_printed_json(formatted_json_html, printed_json, mark)
+      : formatted_json_html
+  function mark_printed_json(
+    html: string,
+    printed: string,
+    m: { start: number; end: number },
+  ): string {
+    const translated = map_json_span(raw_output, printed, m)
+    if (!translated) return html
+    return mark_html_range(
+      html,
+      translated.start,
+      translated.end,
+      JSON_MARK_CLASS,
+    )
+  }
+
+  // Plain text needs no translation: the span already indexes what is shown.
+  $: text_segments =
+    mark && !formatted_json_html
+      ? {
+          before: raw_output.slice(0, Math.max(0, mark.start)),
+          mark: raw_output.slice(Math.max(0, mark.start), mark.end),
+          after: raw_output.slice(mark.end),
+        }
+      : null
+
+  const MARK_CLASS = "bg-warning/40 rounded px-0.5"
+  // Marking inside highlighted JSON emits one <mark> per coloured run, so the
+  // pieces must butt together: padding and rounding would draw a seam between
+  // every token of a single citation.
+  const JSON_MARK_CLASS = "bg-warning/40"
 
   function compute_overflow(
     elem: HTMLElement | undefined,
@@ -115,7 +160,10 @@
       class="grow p-3 whitespace-pre-wrap text-xs min-w-0 {no_padding
         ? ''
         : 'p-3'}"
-      style="overflow-wrap: anywhere;">{#if formatted_json_html}{@html formatted_json_html}{:else}{raw_output}{/if}</pre>
+      style="overflow-wrap: anywhere;">{#if display_json_html}{@html display_json_html}{:else if text_segments}{text_segments.before}<mark
+          data-highlight-target
+          class={MARK_CLASS}>{text_segments.mark}</mark
+        >{text_segments.after}{:else}{raw_output}{/if}</pre>
     <!-- eslint-enable svelte/no-at-html-tags -->
     <div class="flex-none">
       <button

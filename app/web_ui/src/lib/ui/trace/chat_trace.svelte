@@ -173,7 +173,12 @@
     results: Map<string, { message: TraceMessage; trace_index: number }>,
   ): boolean {
     if (!h) return true
-    if (h.kind === "tool_calls") return false
+    if (h.kind === "tool_calls") {
+      const calls = tool_calls_from_message(trace[h.trace_index]) ?? []
+      return calls.some(
+        (_, i) => tool_call_argument_mark(h, h.trace_index, i) !== null,
+      )
+    }
     if (h.kind !== "tool_result") return true
     if (!owner) return false
     const call = tool_calls_from_message(trace[owner.index])?.[owner.tcIdx]
@@ -201,6 +206,40 @@
   // it as a tool call presents plumbing as something the agent chose to do.
   // It is the run's OUTPUT, and renders the way output renders everywhere
   // else in the app.
+  // A tool-call citation's offsets index the FLATTENED block the judge read:
+  // `- Tool Name: {name}\n- Arguments: {args}` per call, concatenated with no
+  // separator (EvalTraceFormatter.formatted_tool_calls_from_message). Resolve
+  // the span onto ONE call's arguments so the mark can be drawn there.
+  function tool_call_argument_mark(
+    h: typeof highlight,
+    message_index: number,
+    tcIdx: number,
+  ): { start: number; end: number } | null {
+    if (!h || h.kind !== "tool_calls" || h.trace_index !== message_index) {
+      return null
+    }
+    const calls = tool_calls_from_message(trace[message_index])
+    if (!calls) return null
+    let offset = 0
+    for (let i = 0; i < calls.length; i++) {
+      const args = calls[i].function.arguments ?? ""
+      const args_start =
+        offset + `- Tool Name: ${calls[i].function.name}\n- Arguments: `.length
+      const args_end = args_start + args.length
+      if (i === tcIdx) {
+        // Clipped to the arguments on purpose: a span reaching into the tool
+        // NAME half has no home in the rendered card, and marking the wrong
+        // bytes is worse than marking none.
+        if (h.start < args_start || h.end > args_end || h.end < h.start) {
+          return null
+        }
+        return { start: h.start - args_start, end: h.end - args_start }
+      }
+      offset = args_end
+    }
+    return null
+  }
+
   const INTERNAL_ANSWER_TOOL = "task_response"
   function is_internal_answer(tc: ToolCallMessageParam): boolean {
     return tc.function?.name === INTERNAL_ANSWER_TOOL
@@ -607,6 +646,11 @@
                           </span>
                         </button>
                         {#if toolCallExpanded[tc_key]}
+                          {@const arg_mark = tool_call_argument_mark(
+                            highlight,
+                            index,
+                            tcIdx,
+                          )}
                           <div
                             class="mt-3 flex flex-col gap-3"
                             data-testid="chat-tool-call"
@@ -619,6 +663,7 @@
                                 {tool_call}
                                 {project_id}
                                 persistent_tool_id={kiln_data?.tool_id}
+                                arguments_mark={arg_mark}
                               />
                             </div>
                             {#if result_content !== undefined}
@@ -635,28 +680,24 @@
                                     ? "border border-error/20 rounded-lg p-2"
                                     : ""}
                                 >
-                                  {#if highlight && is_result_cited && result_mark_text !== null}
-                                    {@const seg = highlight_segments(
-                                      result_mark_text,
-                                      highlight,
-                                    )}
-                                    <!-- Marked node renders as raw text: the
-                                       offsets index the flattened result
-                                       string, which pretty-printing would
-                                       re-wrap. -->
-                                    <div class="whitespace-pre-wrap">
-                                      {seg.before}<mark
-                                        data-highlight-target
-                                        class="bg-warning/40 rounded px-0.5"
-                                        >{seg.mark}</mark
-                                      >{seg.after}
-                                    </div>
-                                  {:else}
-                                    <Output
-                                      raw_output={result_content}
-                                      no_padding={true}
-                                    />
-                                  {/if}
+                                  <!-- The result keeps the rendering it has
+                                       when nothing is cited; the mark rides on
+                                       top. Passed only when the displayed text
+                                       IS the string the offsets index, so a
+                                       result whose display diverges gets the
+                                       bubble as its target and no mark. -->
+                                  <Output
+                                    raw_output={result_content}
+                                    no_padding={true}
+                                    mark={highlight &&
+                                    is_result_cited &&
+                                    result_mark_text === result_content
+                                      ? {
+                                          start: highlight.start,
+                                          end: highlight.end,
+                                        }
+                                      : null}
+                                  />
                                 </div>
                               </div>
                             {:else if result === null}
