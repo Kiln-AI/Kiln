@@ -542,7 +542,7 @@ class ConversationSupervisor:
 
     def _swap_to_interactive(self, conv: _Conversation) -> None:
         """Flag-off settle: an OFF-auto conversation IS an idle interactive
-        conversation (the phase-3 TODO). Replaces the old OFF-auto TTL GC —
+        conversation (the phase-3 follow-up). Replaces the old OFF-auto TTL GC —
         the record simply joins the idle-interactive LRU pool and the next
         send runs a normal gated interactive turn (which is also what lifts
         the phase-3 ``send_message`` flag-off refusal: post-swap the policy

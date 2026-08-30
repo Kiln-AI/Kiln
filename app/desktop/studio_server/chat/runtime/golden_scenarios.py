@@ -34,6 +34,7 @@ is the reference implementation.
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -553,7 +554,9 @@ async def _regenerate_all() -> None:
         capture = scenario.run_old or scenario.run_engine
         bodies = await capture()
         _write_fixture(scenario.name, bodies)
-        print(f"wrote {fixture_path(scenario.name)} ({len(bodies)} bodies)")
+        sys.stdout.write(
+            f"wrote {fixture_path(scenario.name)} ({len(bodies)} bodies)\n"
+        )
 
 
 if __name__ == "__main__":
