@@ -652,6 +652,83 @@ describe("ChatTrace component — thinking", () => {
   })
 })
 
+describe("ChatTrace component — structured output", () => {
+  // A structured-output task returns its answer as arguments to the internal
+  // `task_response` tool. The message shape here is copied from a real run:
+  // no content, one tool call, the answer as its JSON arguments.
+  const ANSWER =
+    '{"category": "refund_status", "priority": "normal", "summary": "Refund status for order #987654."}'
+
+  function structuredOutputTrace(): TraceType {
+    return [
+      userMsg("Hi, my order number is #987654. When will my refund arrive?"),
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "toolu_01",
+            type: "function" as const,
+            function: { name: "task_response", arguments: ANSWER },
+          },
+        ],
+      } as TraceMessage,
+    ]
+  }
+
+  it("renders the answer as Output, not as a tool call the agent chose to make", () => {
+    const { container } = render(ChatTrace, {
+      props: { trace: structuredOutputTrace() },
+    })
+
+    expect(
+      container.querySelector("[data-testid='chat-msg-structured-output']"),
+    ).not.toBeNull()
+    // The user never wrote a `task_response` tool, so it must not be presented
+    // as one — neither the name nor the tool-call chrome may appear.
+    expect(container.textContent).not.toContain("task_response")
+    expect(container.textContent).not.toContain("Toolcall:")
+    expect(
+      container.querySelector("[data-testid='chat-msg-toolcall']"),
+    ).toBeNull()
+    expect(container.textContent).toContain("refund_status")
+  })
+
+  it("still renders a real tool call as a tool call in the same message", () => {
+    // Guards the unwrap from over-reaching: only `task_response` is plumbing.
+    const trace: TraceType = [
+      userMsg("Work out the refund."),
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "c1",
+            type: "function" as const,
+            function: { name: "multiply", arguments: '{"a": 135, "b": 0.15}' },
+          },
+          {
+            id: "toolu_01",
+            type: "function" as const,
+            function: { name: "task_response", arguments: ANSWER },
+          },
+        ],
+      } as TraceMessage,
+    ]
+    const { container } = render(ChatTrace, { props: { trace } })
+
+    const toolcalls = container.querySelectorAll(
+      "[data-testid='chat-msg-toolcall']",
+    )
+    expect(toolcalls.length).toBe(1)
+    expect(container.textContent).toContain("multiply")
+    expect(
+      container.querySelector("[data-testid='chat-msg-structured-output']"),
+    ).not.toBeNull()
+    expect(container.textContent).not.toContain("task_response")
+  })
+})
+
 describe("ChatTrace component — tool calls", () => {
   it("renders one bubble per tool call with a 'Toolcall: {name}' label, collapsed by default", () => {
     const trace: TraceType = [

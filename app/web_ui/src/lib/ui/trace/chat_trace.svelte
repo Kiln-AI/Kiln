@@ -195,6 +195,16 @@
   // Keyed by `${trace_index}-${tool_call_index}` so each tool call within an
   // assistant message expands independently.
   let toolCallExpanded: Record<string, boolean> = {}
+  // A structured-output task returns its answer as a call to the internal
+  // `task_response` tool — the adapter strips that name from the real tool
+  // flow for exactly this reason. The user never wrote such a tool, so showing
+  // it as a tool call presents plumbing as something the agent chose to do.
+  // It is the run's OUTPUT, and renders the way output renders everywhere
+  // else in the app.
+  const INTERNAL_ANSWER_TOOL = "task_response"
+  function is_internal_answer(tc: ToolCallMessageParam): boolean {
+    return tc.function?.name === INTERNAL_ANSWER_TOOL
+  }
   let tool_messages_dialog: ToolMessagesDialog | null = null
   let usage_info_dialog: UsageInfoDialog | null = null
 
@@ -543,118 +553,140 @@
                     tcIdx === 0
                   ) ||
                   (is_result_cited && result_mark_text === null)}
-                <div
-                  class="flex flex-col items-start"
-                  data-testid="chat-msg-assistant"
-                >
-                  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+                {#if is_internal_answer(tool_call)}
+                  <!-- The task's structured answer, not a tool the agent
+                       chose to call. Rendered through the shared Output
+                       component so a reviewer is never shown a tool that
+                       does not exist in their task. -->
                   <div
-                    class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm flex flex-col gap-2"
-                    data-highlight-target={is_tc_target ? "" : undefined}
-                    class:cursor-pointer={!toolCallExpanded[tc_key]}
-                    on:click={() => {
-                      if (!toolCallExpanded[tc_key])
-                        toolCallExpanded[tc_key] = true
-                    }}
+                    class="flex flex-col items-start"
+                    data-testid="chat-msg-assistant"
                   >
-                    <div data-testid="chat-msg-toolcall">
-                      <button
-                        type="button"
-                        class="flex w-full items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 cursor-pointer"
-                        on:click|stopPropagation={() =>
-                          (toolCallExpanded[tc_key] =
-                            !toolCallExpanded[tc_key])}
-                        aria-expanded={!!toolCallExpanded[tc_key]}
-                      >
-                        <span class="text-gray-400" aria-hidden="true">
-                          {toolCallExpanded[tc_key] ? "▼" : "▶"}
-                        </span>
-                        <span class="font-medium">
-                          Toolcall: <span class="font-mono"
-                            >{tool_call.function.name}</span
-                          >
-                        </span>
-                      </button>
-                      {#if toolCallExpanded[tc_key]}
-                        <div
-                          class="mt-3 flex flex-col gap-3"
-                          data-testid="chat-tool-call"
+                    <div
+                      class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm flex flex-col gap-2"
+                      data-highlight-target={is_tc_target ? "" : undefined}
+                      data-testid="chat-msg-structured-output"
+                    >
+                      <div class="text-xs text-gray-500 font-medium">
+                        Output
+                      </div>
+                      <Output raw_output={tool_call.function.arguments} />
+                    </div>
+                  </div>
+                {:else}
+                  <div
+                    class="flex flex-col items-start"
+                    data-testid="chat-msg-assistant"
+                  >
+                    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+                    <div
+                      class="rounded-xl bg-base-200 px-4 py-3 w-[70%] text-sm flex flex-col gap-2"
+                      data-highlight-target={is_tc_target ? "" : undefined}
+                      class:cursor-pointer={!toolCallExpanded[tc_key]}
+                      on:click={() => {
+                        if (!toolCallExpanded[tc_key])
+                          toolCallExpanded[tc_key] = true
+                      }}
+                    >
+                      <div data-testid="chat-msg-toolcall">
+                        <button
+                          type="button"
+                          class="flex w-full items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 cursor-pointer"
+                          on:click|stopPropagation={() =>
+                            (toolCallExpanded[tc_key] =
+                              !toolCallExpanded[tc_key])}
+                          aria-expanded={!!toolCallExpanded[tc_key]}
                         >
-                          <div>
-                            <div class="text-xs text-gray-500 font-bold mb-1">
-                              Invoked Tool Call
-                            </div>
-                            <ToolCall
-                              {tool_call}
-                              {project_id}
-                              persistent_tool_id={kiln_data?.tool_id}
-                            />
-                          </div>
-                          {#if result_content !== undefined}
+                          <span class="text-gray-400" aria-hidden="true">
+                            {toolCallExpanded[tc_key] ? "▼" : "▶"}
+                          </span>
+                          <span class="font-medium">
+                            Toolcall: <span class="font-mono"
+                              >{tool_call.function.name}</span
+                            >
+                          </span>
+                        </button>
+                        {#if toolCallExpanded[tc_key]}
+                          <div
+                            class="mt-3 flex flex-col gap-3"
+                            data-testid="chat-tool-call"
+                          >
                             <div>
-                              <div
-                                class="text-xs font-bold mb-1 {tool_error
-                                  ? 'text-error'
-                                  : 'text-gray-500'}"
-                              >
-                                {tool_error ? "Tool Error" : "Tool Result"}
+                              <div class="text-xs text-gray-500 font-bold mb-1">
+                                Invoked Tool Call
                               </div>
-                              <div
-                                class={tool_error
-                                  ? "border border-error/20 rounded-lg p-2"
-                                  : ""}
-                              >
-                                {#if highlight && is_result_cited && result_mark_text !== null}
-                                  {@const seg = highlight_segments(
-                                    result_mark_text,
-                                    highlight,
-                                  )}
-                                  <!-- Marked node renders as raw text: the
+                              <ToolCall
+                                {tool_call}
+                                {project_id}
+                                persistent_tool_id={kiln_data?.tool_id}
+                              />
+                            </div>
+                            {#if result_content !== undefined}
+                              <div>
+                                <div
+                                  class="text-xs font-bold mb-1 {tool_error
+                                    ? 'text-error'
+                                    : 'text-gray-500'}"
+                                >
+                                  {tool_error ? "Tool Error" : "Tool Result"}
+                                </div>
+                                <div
+                                  class={tool_error
+                                    ? "border border-error/20 rounded-lg p-2"
+                                    : ""}
+                                >
+                                  {#if highlight && is_result_cited && result_mark_text !== null}
+                                    {@const seg = highlight_segments(
+                                      result_mark_text,
+                                      highlight,
+                                    )}
+                                    <!-- Marked node renders as raw text: the
                                        offsets index the flattened result
                                        string, which pretty-printing would
                                        re-wrap. -->
-                                  <div class="whitespace-pre-wrap">
-                                    {seg.before}<mark
-                                      data-highlight-target
-                                      class="bg-warning/40 rounded px-0.5"
-                                      >{seg.mark}</mark
-                                    >{seg.after}
-                                  </div>
-                                {:else}
-                                  <Output
-                                    raw_output={result_content}
-                                    no_padding={true}
-                                  />
-                                {/if}
-                              </div>
-                            </div>
-                          {:else if result === null}
-                            <div class="text-xs text-gray-400 italic">
-                              No tool result recorded.
-                            </div>
-                          {/if}
-                          {#if kiln_data}
-                            <div>
-                              <button
-                                class="link text-xs text-gray-500"
-                                on:click={() => {
-                                  tool_messages_dialog?.show(kiln_data)
-                                }}
-                              >
-                                <div class="flex flex-row items-center gap-1">
-                                  <span>Subtask Message Trace</span>
-                                  <div class="w-4 h-4">
-                                    <ArrowRightUpIcon />
-                                  </div>
+                                    <div class="whitespace-pre-wrap">
+                                      {seg.before}<mark
+                                        data-highlight-target
+                                        class="bg-warning/40 rounded px-0.5"
+                                        >{seg.mark}</mark
+                                      >{seg.after}
+                                    </div>
+                                  {:else}
+                                    <Output
+                                      raw_output={result_content}
+                                      no_padding={true}
+                                    />
+                                  {/if}
                                 </div>
-                              </button>
-                            </div>
-                          {/if}
-                        </div>
-                      {/if}
+                              </div>
+                            {:else if result === null}
+                              <div class="text-xs text-gray-400 italic">
+                                No tool result recorded.
+                              </div>
+                            {/if}
+                            {#if kiln_data}
+                              <div>
+                                <button
+                                  class="link text-xs text-gray-500"
+                                  on:click={() => {
+                                    tool_messages_dialog?.show(kiln_data)
+                                  }}
+                                >
+                                  <div class="flex flex-row items-center gap-1">
+                                    <span>Subtask Message Trace</span>
+                                    <div class="w-4 h-4">
+                                      <ArrowRightUpIcon />
+                                    </div>
+                                  </div>
+                                </button>
+                              </div>
+                            {/if}
+                          </div>
+                        {/if}
+                      </div>
                     </div>
                   </div>
-                </div>
+                {/if}
               {/each}
             {/if}
 
