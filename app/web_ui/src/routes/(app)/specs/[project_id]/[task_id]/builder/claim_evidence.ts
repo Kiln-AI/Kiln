@@ -453,18 +453,45 @@ function flattener_reasoning(message: TraceMessage): string | null {
   return null
 }
 
+// The synthetic tool that carries a structured answer back from the model.
+// Not a tool the user defined, so it is never listed as one. Mirrors
+// TASK_RESPONSE_TOOL_NAME in libs/core .../open_ai_types.py.
+const TASK_RESPONSE_TOOL_NAME = "task_response"
+
+// Mirror EvalTraceFormatter.structured_output_from_message: the arguments of
+// the last task_response call, which are the model's answer.
+function flattener_structured_output(message: TraceMessage): string | null {
+  if (!("tool_calls" in message) || !message.tool_calls) return null
+  const calls = message.tool_calls
+  if (!Array.isArray(calls)) return null
+  let args: string | null = null
+  for (const call of calls) {
+    const fn = "function" in call ? call.function : undefined
+    if (fn && fn.name === TASK_RESPONSE_TOOL_NAME) {
+      args = typeof fn.arguments === "string" ? fn.arguments : null
+    }
+  }
+  return args
+}
+
 // Mirror EvalTraceFormatter.formatted_tool_calls_from_message: one
-// "- Tool Name: …\n- Arguments: …" per call, joined by a blank line.
+// "- Tool Name: …\n- Arguments: …" per real call, joined by a blank line.
+// The task_response wrapper is excluded — it is reported as the answer.
 function flattener_tool_calls(message: TraceMessage): string | null {
   if (!("tool_calls" in message) || !message.tool_calls) return null
   const calls = message.tool_calls
   if (!Array.isArray(calls) || calls.length === 0) return null
-  const parts = calls.map((call) => {
-    const fn = "function" in call ? call.function : undefined
-    const name = fn && typeof fn.name === "string" ? fn.name : ""
-    const args = fn && typeof fn.arguments === "string" ? fn.arguments : ""
-    return `- Tool Name: ${name}\n- Arguments: ${args}`
-  })
+  const parts = calls
+    .filter((call) => {
+      const fn = "function" in call ? call.function : undefined
+      return !fn || fn.name !== TASK_RESPONSE_TOOL_NAME
+    })
+    .map((call) => {
+      const fn = "function" in call ? call.function : undefined
+      const name = fn && typeof fn.name === "string" ? fn.name : ""
+      const args = fn && typeof fn.arguments === "string" ? fn.arguments : ""
+      return `- Tool Name: ${name}\n- Arguments: ${args}`
+    })
   const out = parts.join("\n\n")
   return out.length > 0 ? out : null
 }
@@ -543,6 +570,17 @@ function emitted_blocks(
       role_label: role,
       tag: `${role}_message`,
       content,
+      kind: "content",
+    })
+  }
+  // The structured answer renders as the answer, under the same tag a plain
+  // message uses — mirroring the formatter.
+  const structured_output = flattener_structured_output(message)
+  if (structured_output) {
+    blocks.push({
+      role_label: role,
+      tag: `${role}_message`,
+      content: structured_output,
       kind: "content",
     })
   }

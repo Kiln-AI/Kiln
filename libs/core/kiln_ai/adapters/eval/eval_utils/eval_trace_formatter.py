@@ -2,7 +2,10 @@ import json
 import logging
 from dataclasses import dataclass
 
-from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+from kiln_ai.utils.open_ai_types import (
+    TASK_RESPONSE_TOOL_NAME,
+    ChatCompletionMessageParam,
+)
 from openai.types.chat import ChatCompletionMessageToolCallParam
 
 logger = logging.getLogger(__name__)
@@ -15,6 +18,10 @@ class EvalTraceFormatter:
         reasoning_content: str | None
         tool_calls: str | None
         content: str | None
+        # The structured answer the model returned through the internal
+        # task_response tool. Kept apart from tool_calls so it reads as the
+        # answer rather than as a tool the model chose to call.
+        structured_output: str | None
 
     @staticmethod
     def trace_to_formatted_conversation_history(
@@ -77,6 +84,19 @@ class EvalTraceFormatter:
                     )
                 )
 
+            # Emitted under the same tag a plain message uses, because that is
+            # what it is. A new tag would re-expose the plumbing under a
+            # different name, and every judge prompt already knows what an
+            # <assistant_message> is.
+            if message_details.structured_output:
+                blocks.append(
+                    EvalTraceFormatter.format_message(
+                        role,
+                        f"{role}_message",
+                        message_details.structured_output,
+                    )
+                )
+
             if message_details.tool_calls:
                 blocks.append(
                     EvalTraceFormatter.format_message(
@@ -105,6 +125,9 @@ class EvalTraceFormatter:
             ),
             tool_calls=EvalTraceFormatter.formatted_tool_calls_from_message(message),
             content=EvalTraceFormatter.content_from_message(message),
+            structured_output=EvalTraceFormatter.structured_output_from_message(
+                message
+            ),
         )
 
     @staticmethod
@@ -161,14 +184,45 @@ class EvalTraceFormatter:
         if tool_calls is None:
             return None
 
+        # The task_response wrapper is not a tool the model chose to call, so it
+        # is reported as the model's answer instead. See
+        # structured_output_from_message.
+        #
         # Blank line between calls: concatenating them ran the next call's name
         # onto the end of the previous call's arguments, so a message issuing
         # several calls read as one run-on block.
-        return "\n\n".join(
+        described = "\n\n".join(
             f"- Tool Name: {tool_call['function']['name']}\n"
             f"- Arguments: {tool_call['function']['arguments']}"
             for tool_call in tool_calls
+            if tool_call["function"]["name"] != TASK_RESPONSE_TOOL_NAME
         )
+        # None rather than "" so a message whose only call was the wrapper
+        # emits no tool-call block at all.
+        return described or None
+
+    @staticmethod
+    def structured_output_from_message(
+        message: ChatCompletionMessageParam,
+    ) -> str | None:
+        """The structured answer a model returned via the internal task_response tool.
+
+        Function-calling structured output modes carry the answer as the
+        arguments of a synthetic task_response call. Returns those arguments so
+        the trace can show them as the answer rather than as tool use.
+        """
+        tool_calls = EvalTraceFormatter.tool_calls_from_message(message)
+        if tool_calls is None:
+            return None
+
+        arguments = None
+        for tool_call in tool_calls:
+            if tool_call["function"]["name"] == TASK_RESPONSE_TOOL_NAME:
+                # Last one wins, matching the adapter: when a model emits more
+                # than one task_response, the final call is the output the run
+                # was saved with.
+                arguments = tool_call["function"]["arguments"]
+        return arguments
 
     @staticmethod
     def origin_tool_call_name_from_message(

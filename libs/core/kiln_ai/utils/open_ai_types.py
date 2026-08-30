@@ -35,6 +35,13 @@ from typing_extensions import Required, TypedDict
 
 from kiln_ai.utils.usage import MessageUsage
 
+# Name of the synthetic tool that carries a structured output back from the
+# model in function-calling structured output modes. The user never defined it,
+# and the adapter unwraps it into the run's output rather than running it — so
+# consumers reasoning about "tools the model chose to call" must exclude it, and
+# consumers rendering a trace should show its arguments as the model's answer.
+TASK_RESPONSE_TOOL_NAME = "task_response"
+
 
 class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
     """
@@ -255,6 +262,6 @@ def trace_has_pending_client_tool_calls(
     tool_calls = last_msg.get("tool_calls") or []
     return any(
         isinstance(tc, dict)
-        and (tc.get("function") or {}).get("name") != "task_response"
+        and (tc.get("function") or {}).get("name") != TASK_RESPONSE_TOOL_NAME
         for tc in tool_calls
     )

@@ -1842,3 +1842,66 @@ describe("flattener port — every block a message carries", () => {
     ).toBeNull()
   })
 })
+
+describe("flattener port — the structured-output wrapper", () => {
+  const TR = {
+    id: "call_tr",
+    type: "function" as const,
+    function: {
+      name: "task_response",
+      arguments: '{"category": "refund_status"}',
+    },
+  }
+  const REAL = {
+    id: "c1",
+    type: "function" as const,
+    function: { name: "multiply", arguments: '{"a": 135, "b": 0.15}' },
+  }
+
+  it("maps a citation onto the structured answer, rendered as a message", () => {
+    const trace = [
+      { role: "assistant", content: null, tool_calls: [TR] },
+    ] as unknown as TraceMessage[]
+    const raw =
+      'assistant:\n<assistant_message>\n{"category": "refund_status"}\n</assistant_message>'
+    const start = raw.indexOf('"refund_status"')
+    const hit = map_output_span_to_trace(trace, raw, {
+      start,
+      end: start + '"refund_status"'.length,
+    })
+    expect(hit?.kind).toBe("content")
+    expect(hit?.trace_index).toBe(0)
+  })
+
+  it("keeps a real call listed beside the wrapper, and the wrapper out of it", () => {
+    // The wrapper sitting before a real call is what makes this worth pinning:
+    // if the port stopped excluding it, every offset after it would shift.
+    const trace = [
+      { role: "assistant", content: null, tool_calls: [REAL, TR] },
+      { role: "user", content: "thanks" },
+    ] as unknown as TraceMessage[]
+    const raw =
+      'assistant:\n<assistant_message>\n{"category": "refund_status"}\n</assistant_message>\n\n' +
+      "assistant requested tool calls:\n<assistant_requested_tool_calls>\n" +
+      '- Tool Name: multiply\n- Arguments: {"a": 135, "b": 0.15}\n' +
+      "</assistant_requested_tool_calls>\n\n" +
+      "user:\n<user_message>\nthanks\n</user_message>"
+    const call_start = raw.indexOf('{"a": 135')
+    const on_call = map_output_span_to_trace(trace, raw, {
+      start: call_start,
+      end: call_start + '{"a": 135, "b": 0.15}'.length,
+    })
+    expect(on_call?.kind).toBe("tool_calls")
+    expect(on_call?.trace_index).toBe(0)
+
+    // A later turn still resolves, which is what proves no extra block was
+    // emitted for the wrapper and shifted everything after it.
+    const later = raw.lastIndexOf("thanks")
+    const on_later = map_output_span_to_trace(trace, raw, {
+      start: later,
+      end: later + "thanks".length,
+    })
+    expect(on_later?.kind).toBe("content")
+    expect(on_later?.trace_index).toBe(1)
+  })
+})
