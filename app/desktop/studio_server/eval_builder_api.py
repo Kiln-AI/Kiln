@@ -123,6 +123,7 @@ from app.desktop.studio_server.utils.eval_builder_utils import (
     build_claims_for_trace,
     refine_judge_prompt_from_grades,
     run_judge_for_trace,
+    trace_or_echo,
     transcript_io_for_trace,
 )
 
@@ -828,13 +829,13 @@ class JudgeTracesRun(JudgeStreamBase):
     def _judge_view(
         self, case_index: int, trace: list[dict[str, Any]] | None
     ) -> tuple[str, str, list[dict[str, Any]] | None]:
-        # Single-turn judges the run's I/O pair with no judge trace (the
-        # trace on the frame is a UI echo), matching its pipeline and its
-        # saved final_answer eval; multi-turn keeps the base's full-trace
-        # reading.
+        # Single-turn keeps the stored run's input verbatim (see the pipeline's
+        # override); multi-turn takes the base's transcript reading whole.
         if self._single_turn:
-            raw_input, raw_output = self._case_io[case_index]
-            return raw_input, raw_output, None
+            assert trace is not None  # the producer passes a trace or an echo
+            _, raw_output = transcript_io_for_trace(trace)
+            raw_input, _ = self._case_io[case_index]
+            return raw_input, raw_output, trace
         return super()._judge_view(case_index, trace)
 
     async def _produce(self) -> None:
@@ -908,7 +909,11 @@ class JudgeTracesRun(JudgeStreamBase):
             )
             return
         self._case_io[case_index] = (leaf.input, output)
-        trace = [dict(message) for message in leaf.trace] if leaf.trace else None
+        trace = trace_or_echo(
+            [dict(message) for message in leaf.trace] if leaf.trace else None,
+            leaf.input,
+            output,
+        )
         self._review_tasks.append(
             asyncio.create_task(
                 self._judge_case(case_index, leaf_run_id, trace, 0.0),
@@ -1027,12 +1032,20 @@ class SingleTurnPipelineRun(JudgeStreamBase):
     def _judge_view(
         self, case_index: int, trace: list[dict[str, Any]] | None
     ) -> tuple[str, str, list[dict[str, Any]] | None]:
-        # The saved single-turn eval is final_answer: the judge scores the
-        # input/output pair, never the trace — the trace on the frame is a
-        # UI echo only. Keeping the two readings identical is what makes the
-        # calibrated judge byte-equivalent to the one that ships.
-        raw_input, raw_output = self._case_io[case_index]
-        return raw_input, raw_output, None
+        # Single-turn keeps the REQUEST's input string verbatim: the saved
+        # eval stores that same string on its inputs-only item and reads it
+        # back from there (EvalTaskInput.from_trace takes task_input from the
+        # item, not the trace, because the adapter may have reserialized it).
+        # Taking the trace's opening user message instead would judge a
+        # different string than the eval that ships.
+        #
+        # The OUTPUT and the judge trace come from the transcript, so the
+        # judge sees what the agent actually did — tool calls and tool
+        # results included — rather than only its closing message.
+        assert trace is not None  # producers pass a trace or an echo of one
+        _, raw_output = transcript_io_for_trace(trace)
+        raw_input, _ = self._case_io[case_index]
+        return raw_input, raw_output, trace
 
     async def _produce(self) -> None:
         """The producer: run the task once per input; each persisted run
@@ -1171,10 +1184,15 @@ class SingleTurnPipelineRun(JudgeStreamBase):
             await self._emit(
                 PipelineCaseDrivenEvent(case_index=case_index, leaf_run_id=run_id)
             )
-            # The run's structured trace (tool calls included) rides the
-            # case_judged frame for the UI's chat rendering; the judge
-            # itself scores the I/O pair (_judge_view).
-            trace = [dict(message) for message in run.trace] if run.trace else None
+            # The run's structured trace (tool calls included) is what the
+            # judge scores and what rides the case_judged frame. A run that
+            # recorded none is judged on a two-message echo of its I/O pair,
+            # which is lossless: the pair is everything that happened.
+            trace = trace_or_echo(
+                [dict(message) for message in run.trace] if run.trace else None,
+                input_text,
+                output,
+            )
             self._review_tasks.append(
                 asyncio.create_task(
                     self._judge_case(case_index, run_id, trace, case_cost),

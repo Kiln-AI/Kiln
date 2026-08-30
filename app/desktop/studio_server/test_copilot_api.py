@@ -1762,7 +1762,7 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
                 "spec_type": SpecType.issue.value,
                 "issue_description": "Don't make stuff up",
             },
-            "evaluate_full_trace": False,
+            "evaluate_full_trace": True,
             "judge_info": {
                 "prompt": "Test prompt",
                 "model_name": "gpt-4",
@@ -1849,7 +1849,9 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         evals = task.evals()
         assert len(evals) == 1
         eval_obj = evals[0]
-        assert eval_obj.evaluation_data_type == EvalDataType.final_answer
+        # Single-turn saves a full-trace eval now: the builder judged the
+        # transcript, so the eval that ships judges the same thing.
+        assert eval_obj.evaluation_data_type == EvalDataType.full_trace
         assert eval_obj.model_dump()["eval_set_filter_id"] is None
         assert eval_obj.splits["test"] == EvalInputSplit(
             filter_id="tag::test_single_turn_spec"
@@ -1869,7 +1871,9 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         assert len(configs) == 1
         assert configs[0].config_type == EvalConfigType.v2
         assert isinstance(configs[0].properties, LlmJudgeProperties)
-        assert "format_trace" not in configs[0].properties.prompt_template
+        # The judge template renders the transcript on both arms now, so the
+        # saved judge reads what the builder's judge read.
+        assert "format_trace" in configs[0].properties.prompt_template
 
         # The eval slice: one inputs-only EvalInput per generated input,
         # tagged with the eval slice + the drive batch it came from.
@@ -2007,11 +2011,13 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
         assert response.status_code == 422
         assert "at most once" in response.json()["message"]
 
-    def test_validator_rejects_single_turn_with_full_trace(
+    def test_validator_rejects_single_turn_without_full_trace(
         self, client, project_and_task, single_turn_request_data
     ):
+        # Both wizard arms judge the transcript, so the saved eval must too —
+        # otherwise the calibrated judge is not the judge that ships.
         project, task = project_and_task
-        single_turn_request_data["evaluate_full_trace"] = True
+        single_turn_request_data["evaluate_full_trace"] = False
         response = self._post(client, project, task, single_turn_request_data)
         assert response.status_code == 422
         assert "evaluate_full_trace" in str(response.json())

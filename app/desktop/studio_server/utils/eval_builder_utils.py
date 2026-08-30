@@ -98,6 +98,24 @@ def transcript_io_for_trace(trace: list[Any]) -> tuple[str, str]:
     return raw_input, EvalTraceFormatter.trace_to_formatted_conversation_history(trace)
 
 
+def trace_or_echo(
+    trace: list[Any] | None, raw_input: str, raw_output: str
+) -> list[Any]:
+    """The trace to judge, or a two-message echo of the I/O pair.
+
+    Single-turn runs are not guaranteed to have recorded a trace, and both arms
+    now judge the transcript. An echo is lossless for a run with no trace: the
+    pair IS everything that happened, so rendering it as one user turn and one
+    assistant turn says exactly what a real trace would have.
+    """
+    if trace:
+        return trace
+    return [
+        {"role": "user", "content": raw_input},
+        {"role": "assistant", "content": raw_output},
+    ]
+
+
 def build_judge_prompt_template(judge_prompt: str, multi_turn: bool) -> str:
     """Turn the UI's plain-text judge prompt into an llm_judge Jinja template.
 

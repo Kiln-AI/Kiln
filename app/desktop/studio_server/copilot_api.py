@@ -377,15 +377,15 @@ class CreateSpecWithCopilotRequest(BaseModel):
                 "already on disk), or `sdg_session_config` (legacy: fresh "
                 "single-turn synthesis)."
             )
-        if self.multi_turn is not None and not self.evaluate_full_trace:
+        # One rule for both wizard arms: the pipeline judges the transcript, so
+        # the saved eval must too, or the calibrated judge is not the judge that
+        # ships. A single-turn run's transcript is its one exchange.
+        if (
+            self.multi_turn is not None or self.single_turn is not None
+        ) and not self.evaluate_full_trace:
             raise ValueError(
-                "Multi-turn save requires `evaluate_full_trace=True` — the eval "
-                "evaluates full conversation traces, not single I/O pairs."
-            )
-        if self.single_turn is not None and self.evaluate_full_trace:
-            raise ValueError(
-                "Single-turn save requires `evaluate_full_trace=False` — the "
-                "pipeline judged final answers, so the saved eval must too."
+                "A wizard save requires `evaluate_full_trace=True` — the "
+                "pipeline judged full traces, so the saved eval must too."
             )
         return self
 

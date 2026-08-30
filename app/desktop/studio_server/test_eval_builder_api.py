@@ -2043,7 +2043,7 @@ class TestJudgeTracesSingleTurn:
     unit, but the judge scores the stored run's I/O pair — the final_answer
     reading its pipeline and its saved eval use — never the trace."""
 
-    def test_happy_path_judges_stored_io_pair(
+    def test_happy_path_judges_the_stored_trace(
         self, client, judge_traces_request, judge_traces_single_turn_seams
     ):
         resp = client.post(JUDGE_TRACES_URL, json=judge_traces_request)
@@ -2061,7 +2061,10 @@ class TestJudgeTracesSingleTurn:
             # The frame echoes the STORED run's I/O pair verbatim — no
             # transcript flattening on this arm.
             assert e["raw_input"] == f"question {e['case_index']}"
-            assert e["raw_output"] == f"answer {e['case_index']}"
+            # The transcript, not the closing message: the judge sees what
+            # the agent did, so the answer is contained rather than equal.
+            assert f"answer {e['case_index']}" in e["raw_output"]
+            assert "assistant_message" in e["raw_output"]
             assert e["leaf_run_id"] == f"leaf-{e['case_index']}"
             assert e["total_cost"] == 0.0
             # The structured trace still rides along for the chat modal.
@@ -2074,9 +2077,13 @@ class TestJudgeTracesSingleTurn:
         # reading) — passing the trace here would silently flip the judge to
         # the full-trace reading the saved eval never uses.
         for call in judge_traces_single_turn_seams["judge"].call_args_list:
-            assert call.kwargs["trace"] is None
+            # The judge reads the trace (tool calls included) while raw_input
+            # stays the REQUEST's string, which is what the saved eval reads
+            # back from its own item.
+            assert call.kwargs["trace"] is not None
             assert call.args[2].startswith("question ")
-            assert call.args[3].startswith("answer ")
+            # The transcript carries the answer; it no longer IS the answer.
+            assert "answer " in call.args[3]
 
     def test_traceless_run_still_judges(
         self, client, judge_traces_request, judge_traces_single_turn_seams
@@ -2092,8 +2099,14 @@ class TestJudgeTracesSingleTurn:
         events = _parse_sse(resp.text)
         assert _events_of(events, "case_failed") == []
         judged = {e["case_index"]: e for e in _events_of(events, "case_judged")}
-        assert judged[0]["trace"] is None
-        assert judged[0]["raw_output"] == "answer 0"
+        # No stored trace, so the judge gets a two-message echo of the pair —
+        # lossless, because the pair is everything that happened.
+        assert judged[0]["trace"] == [
+            {"role": "user", "content": "question 0"},
+            {"role": "assistant", "content": "answer 0"},
+        ]
+        assert "answer 0" in judged[0]["raw_output"]
+        assert "assistant_message" in judged[0]["raw_output"]
 
     def test_outputless_run_fails_case_and_batch_continues(
         self, client, judge_traces_request, judge_traces_single_turn_seams
@@ -2274,7 +2287,8 @@ class TestSingleTurnPipeline:
         by_index = {e["case_index"]: e for e in judged}
         for i, input_text in enumerate(single_turn_request["inputs"]):
             assert by_index[i]["raw_input"] == input_text
-            assert by_index[i]["raw_output"] == f"answer {i}"
+            assert f"answer {i}" in by_index[i]["raw_output"]
+            assert "assistant_message" in by_index[i]["raw_output"]
             assert by_index[i]["leaf_run_id"] == f"run-{i}"
             assert by_index[i]["judge_score"] == "fail"
             assert by_index[i]["total_cost"] == 0.05
@@ -2293,7 +2307,7 @@ class TestSingleTurnPipeline:
         ]
         assert events[-1] == "complete"
 
-    def test_judge_scores_io_pair_not_trace(
+    def test_judge_reads_the_trace_and_keeps_the_request_input(
         self, client, single_turn_request, single_turn_seams
     ):
         """The judge must receive trace=None (final_answer parity with the
@@ -2303,7 +2317,10 @@ class TestSingleTurnPipeline:
         judge = single_turn_seams["judge"]
         assert judge.await_count == 2
         for call in judge.await_args_list:
-            assert call.kwargs["trace"] is None
+            # The judge reads the trace (tool calls included) while raw_input
+            # stays the REQUEST's string, which is what the saved eval reads
+            # back from its own item.
+            assert call.kwargs["trace"] is not None
 
     def test_runs_are_batch_tagged_and_saved(
         self, client, single_turn_request, single_turn_seams

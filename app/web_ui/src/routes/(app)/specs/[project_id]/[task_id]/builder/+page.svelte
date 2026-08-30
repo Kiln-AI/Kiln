@@ -3941,9 +3941,9 @@
             name,
             definition: issue_description,
             properties: spec_properties,
-            // The pipeline judged final answers, so the saved eval must
-            // too (the server refuses a full-trace single-turn save).
-            evaluate_full_trace: false,
+            // The pipeline judges the transcript, so the saved eval must
+            // too, or the calibrated judge is not the judge that ships.
+            evaluate_full_trace: true,
             judge_info: save_judge,
             single_turn: {
               batch_tag: saved_batch_tag,
