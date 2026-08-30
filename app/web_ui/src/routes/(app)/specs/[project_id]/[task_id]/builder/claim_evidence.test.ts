@@ -965,13 +965,14 @@ describe("map_output_span_to_trace — flattener block layout port", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ] as any[]
 
-  // Build raw_output exactly the way the server flattener does: one block per
-  // emitted message, joined by a blank line.
+  // Build raw_output exactly the way the server flattener does: every block a
+  // message carries, joined by a blank line. Each message here carries one, so
+  // the count matches; a message carrying both text and a call emits two.
   const raw_output = [
     "user:\n<user_message>\nWhat is the return window?\n</user_message>",
     "assistant reasoning:\n<assistant_reasoning_message>\nLet me think about policy.\n</assistant_reasoning_message>",
     'assistant requested tool calls:\n<assistant_requested_tool_calls>\n- Tool Name: lookup_policy\n- Arguments: {"q":1}\n</assistant_requested_tool_calls>',
-    "tool:\n<tool_tool_message>\n30 day window\n</tool_tool_message>",
+    "tool result from lookup_policy:\n<tool_tool_message>\n30 day window\n</tool_tool_message>",
     "assistant:\n<assistant_message>\nOur return window is 30 days.\n</assistant_message>",
   ].join("\n\n")
 
@@ -1747,5 +1748,97 @@ describe("a trace-first review's saved shape", () => {
     expect(graded[0].final_judgement.human_feedback).toBe(
       "The 30-day window is documented.",
     )
+  })
+})
+
+describe("flattener port — every block a message carries", () => {
+  // The port recomputes the server's layout to place citations, so these pin
+  // the cases where a message emits more than one block. Offsets are written
+  // out longhand rather than computed, so a port change that shifts them fails
+  // here instead of silently mis-placing a highlight.
+  const CALL = {
+    id: "c1",
+    type: "function" as const,
+    function: { name: "multiply", arguments: '{"a": 135.0, "b": 0.15}' },
+  }
+
+  it("maps a citation onto the tool call of a message that also has text", () => {
+    const trace = [
+      {
+        role: "assistant",
+        content: "Let me calculate that.",
+        tool_calls: [CALL],
+      },
+    ] as unknown as TraceMessage[]
+    const raw =
+      "assistant:\n<assistant_message>\nLet me calculate that.\n</assistant_message>\n\n" +
+      "assistant requested tool calls:\n<assistant_requested_tool_calls>\n" +
+      '- Tool Name: multiply\n- Arguments: {"a": 135.0, "b": 0.15}\n' +
+      "</assistant_requested_tool_calls>"
+    const start = raw.indexOf('{"a": 135.0')
+    const hit = map_output_span_to_trace(trace, raw, {
+      start,
+      end: start + '{"a": 135.0, "b": 0.15}'.length,
+    })
+    expect(hit).not.toBeNull()
+    expect(hit?.kind).toBe("tool_calls")
+    expect(hit?.trace_index).toBe(0)
+  })
+
+  it("maps a citation onto the text of that same message", () => {
+    const trace = [
+      {
+        role: "assistant",
+        content: "Let me calculate that.",
+        tool_calls: [CALL],
+      },
+    ] as unknown as TraceMessage[]
+    const raw =
+      "assistant:\n<assistant_message>\nLet me calculate that.\n</assistant_message>\n\n" +
+      "assistant requested tool calls:\n<assistant_requested_tool_calls>\n" +
+      '- Tool Name: multiply\n- Arguments: {"a": 135.0, "b": 0.15}\n' +
+      "</assistant_requested_tool_calls>"
+    const start = raw.indexOf("Let me calculate")
+    const hit = map_output_span_to_trace(trace, raw, {
+      start,
+      end: start + "Let me calculate that.".length,
+    })
+    expect(hit?.kind).toBe("content")
+    expect(hit?.trace_index).toBe(0)
+  })
+
+  it("maps a citation onto a tool result whose label names its tool", () => {
+    const trace = [
+      { role: "assistant", content: null, tool_calls: [CALL] },
+      { role: "tool", tool_call_id: "c1", content: "20.25" },
+    ] as unknown as TraceMessage[]
+    const raw =
+      "assistant requested tool calls:\n<assistant_requested_tool_calls>\n" +
+      '- Tool Name: multiply\n- Arguments: {"a": 135.0, "b": 0.15}\n' +
+      "</assistant_requested_tool_calls>\n\n" +
+      "tool result from multiply:\n<tool_tool_message>\n20.25\n</tool_tool_message>"
+    const start = raw.lastIndexOf("20.25")
+    const hit = map_output_span_to_trace(trace, raw, {
+      start,
+      end: start + "20.25".length,
+    })
+    expect(hit?.kind).toBe("tool_result")
+    expect(hit?.trace_index).toBe(1)
+  })
+
+  it("draws nothing when the recomputed layout disagrees with raw_output", () => {
+    const trace = [
+      {
+        role: "assistant",
+        content: "Let me calculate that.",
+        tool_calls: [CALL],
+      },
+    ] as unknown as TraceMessage[]
+    // A transcript that does not match what this trace renders to.
+    const raw =
+      "assistant:\n<assistant_message>\nsomething else\n</assistant_message>"
+    expect(
+      map_output_span_to_trace(trace, raw, { start: 30, end: 39 }),
+    ).toBeNull()
   })
 })

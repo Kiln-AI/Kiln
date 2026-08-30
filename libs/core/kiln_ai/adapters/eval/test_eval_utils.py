@@ -142,7 +142,9 @@ class TestEvalTraceFormatter:
         }  # type: ignore
         result = EvalTraceFormatter.formatted_tool_calls_from_message(message)
         expected = """- Tool Name: tool1
-- Arguments: {"arg1": "value1"}- Tool Name: tool2
+- Arguments: {"arg1": "value1"}
+
+- Tool Name: tool2
 - Arguments: {"arg2": "value2"}"""
         assert result == expected
 
@@ -283,6 +285,11 @@ I need to add 2 and 2 together.
 What is 2+2?
 </user_message>
 
+assistant reasoning:
+<assistant_reasoning_message>
+I need to add 2 and 2 together.
+</assistant_reasoning_message>
+
 assistant:
 <assistant_message>
 4
@@ -347,7 +354,7 @@ assistant requested tool calls:
 - Arguments: {"arg": "value"}
 </assistant_requested_tool_calls>
 
-tool:
+tool result from test_tool:
 <tool_tool_message>
 tool result
 </tool_tool_message>"""
@@ -363,10 +370,17 @@ tool result
             },  # type: ignore
         ]
         result = EvalTraceFormatter.trace_to_formatted_conversation_history(trace)
+        # The originating call is absent, so the tool cannot be named — but the
+        # value it returned is still what a judge needs to see.
         expected = """user:
 <user_message>
 Test
-</user_message>"""
+</user_message>
+
+tool result:
+<tool_tool_message>
+result
+</tool_tool_message>"""
         assert result == expected
 
     def test_trace_to_formatted_conversation_history_empty(self):
@@ -382,7 +396,7 @@ Test
         result = EvalTraceFormatter.trace_to_formatted_conversation_history(trace)
         assert result == ""
 
-    def test_trace_to_formatted_conversation_history_priority_reasoning_then_tool_then_content(
+    def test_trace_to_formatted_conversation_history_emits_every_block(
         self,
     ):
         tool_calls: list[ChatCompletionMessageToolCallParam] = [
@@ -403,10 +417,24 @@ Test
         result_all = EvalTraceFormatter.trace_to_formatted_conversation_history(
             trace_all
         )
-        expected_all = """assistant:
+        # One message carrying reasoning, text and a tool call emits all three,
+        # in the order the model produced them: it thinks, says what it is about
+        # to do, then does it.
+        expected_all = """assistant reasoning:
+<assistant_reasoning_message>
+Thinking step
+</assistant_reasoning_message>
+
+assistant:
 <assistant_message>
 Final answer
-</assistant_message>"""
+</assistant_message>
+
+assistant requested tool calls:
+<assistant_requested_tool_calls>
+- Tool Name: test_tool
+- Arguments: {"arg": "value"}
+</assistant_requested_tool_calls>"""
         assert result_all == expected_all
 
         trace_reasoning_only: list[ChatCompletionMessageParam] = [

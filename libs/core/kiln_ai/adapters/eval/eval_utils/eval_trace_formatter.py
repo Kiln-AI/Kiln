@@ -20,49 +20,75 @@ class EvalTraceFormatter:
     def trace_to_formatted_conversation_history(
         trace: list[ChatCompletionMessageParam],
     ) -> str:
-        """Convert a trace of chat completion messages to a formatted conversation history string."""
-        conversation_history = ""
-        for index, message in enumerate(trace):
+        """Convert a trace of chat completion messages to a formatted conversation history string.
+
+        One message can carry several things at once — a model commonly narrates
+        while it calls a tool — so each is emitted as its own block. Collecting
+        blocks rather than assigning to shared variables is what keeps them: an
+        earlier design assigned and emitted once per message, so the last branch
+        taken silently replaced the others and a tool call accompanied by a
+        sentence never reached the judge.
+        """
+        blocks: list[str] = []
+        for message in trace:
             message_details = EvalTraceFormatter.message_details_from_message(message)
+            role = message_details.role
 
-            role_label = None
-            tag = None
-            content = None
-
-            if message_details.role == "tool" and message_details.content:
+            if role == "tool" and message_details.content:
                 origin_tool_call_name = (
                     EvalTraceFormatter.origin_tool_call_name_from_message(
                         message, trace
                     )
                 )
+                # Named where the name is known, and still emitted where it is
+                # not: an unresolvable origin means we cannot say which tool
+                # answered, not that nothing did. Dropping the result would hide
+                # the value itself, which is the part a judge needs.
+                role_label = (
+                    f"tool result from {origin_tool_call_name}"
+                    if origin_tool_call_name
+                    else "tool result"
+                )
+                blocks.append(
+                    EvalTraceFormatter.format_message(
+                        role_label,
+                        f"{role}_tool_message",
+                        message_details.content,
+                    )
+                )
+                continue
 
-                if origin_tool_call_name:
-                    role_label = message_details.role
-                    tag = f"{message_details.role}_tool_message"
-                    content = message_details.content
+            if message_details.reasoning_content:
+                blocks.append(
+                    EvalTraceFormatter.format_message(
+                        f"{role} reasoning",
+                        f"{role}_reasoning_message",
+                        message_details.reasoning_content,
+                    )
+                )
 
-            else:
-                if message_details.reasoning_content:
-                    role_label = f"{message_details.role} reasoning"
-                    tag = f"{message_details.role}_reasoning_message"
-                    content = message_details.reasoning_content
+            # Content before tool calls: the text in such a message is the
+            # narration introducing the call ("Now I'll subtract that fee"), so
+            # emitting the call first would read backwards.
+            if message_details.content:
+                blocks.append(
+                    EvalTraceFormatter.format_message(
+                        role, f"{role}_message", message_details.content
+                    )
+                )
 
-                if message_details.tool_calls:
-                    role_label = f"{message_details.role} requested tool calls"
-                    tag = f"{message_details.role}_requested_tool_calls"
-                    content = message_details.tool_calls
+            if message_details.tool_calls:
+                blocks.append(
+                    EvalTraceFormatter.format_message(
+                        f"{role} requested tool calls",
+                        f"{role}_requested_tool_calls",
+                        message_details.tool_calls,
+                    )
+                )
 
-                if message_details.content:
-                    role_label = message_details.role
-                    tag = f"{message_details.role}_message"
-                    content = message_details.content
-
-            if role_label and tag and content:
-                if index > 0:
-                    conversation_history += "\n\n"
-                conversation_history += f"{role_label}:\n<{tag}>\n{content}\n</{tag}>"
-
-        return conversation_history
+        # Joined on what was emitted, not on position in the trace: a message
+        # that renders to nothing must not leave a gap behind it.
+        return "\n\n".join(blocks)
 
     @staticmethod
     def format_message(role_label: str, tag: str, content: str) -> str:
@@ -135,15 +161,14 @@ class EvalTraceFormatter:
         if tool_calls is None:
             return None
 
-        tool_calls_description = ""
-        for tool_call in tool_calls:
-            tool_call_function = tool_call["function"]
-            tool_name = tool_call_function["name"]
-            tool_call_arguments = tool_call_function["arguments"]
-            tool_calls_description += (
-                f"- Tool Name: {tool_name}\n- Arguments: {tool_call_arguments}"
-            )
-        return tool_calls_description
+        # Blank line between calls: concatenating them ran the next call's name
+        # onto the end of the previous call's arguments, so a message issuing
+        # several calls read as one run-on block.
+        return "\n\n".join(
+            f"- Tool Name: {tool_call['function']['name']}\n"
+            f"- Arguments: {tool_call['function']['arguments']}"
+            for tool_call in tool_calls
+        )
 
     @staticmethod
     def origin_tool_call_name_from_message(

@@ -374,12 +374,12 @@ function span_end(haystack: FoldedText, last: number): number {
 // there is no second, arm-specific path any more.
 //
 // It works by re-computing the server flattener's block layout in TS. The port
-// mirrors libs/core .../eval_trace_formatter.py EXACTLY — the same per-message
-// block precedence (its lossy rule: content overwrites reasoning/tool blocks so
-// only ONE block is emitted per message), the same tool-call formatting, the
-// same tool-result .output unwrapping, and the same "\n\n" join keyed on the
-// raw trace index. Any drift would shift offsets, so the mapper verifies the
-// recomputed block against raw_output before trusting it (see below).
+// mirrors libs/core .../eval_trace_formatter.py EXACTLY — every block a message
+// carries (reasoning, then content, then tool calls), the same role labels
+// including the tool name on a result, the same tool-call formatting, the same
+// tool-result .output unwrapping, and the same "\n\n" join over emitted blocks.
+// Any drift would shift offsets, so the mapper verifies the recomputed block
+// against raw_output before trusting it (see below).
 
 export type TraceHighlightKind =
   | "content"
@@ -454,40 +454,44 @@ function flattener_reasoning(message: TraceMessage): string | null {
 }
 
 // Mirror EvalTraceFormatter.formatted_tool_calls_from_message: one
-// "- Tool Name: …\n- Arguments: …" per call, concatenated with NO separator.
+// "- Tool Name: …\n- Arguments: …" per call, joined by a blank line.
 function flattener_tool_calls(message: TraceMessage): string | null {
   if (!("tool_calls" in message) || !message.tool_calls) return null
   const calls = message.tool_calls
   if (!Array.isArray(calls) || calls.length === 0) return null
-  let out = ""
-  for (const call of calls) {
+  const parts = calls.map((call) => {
     const fn = "function" in call ? call.function : undefined
     const name = fn && typeof fn.name === "string" ? fn.name : ""
     const args = fn && typeof fn.arguments === "string" ? fn.arguments : ""
-    out += `- Tool Name: ${name}\n- Arguments: ${args}`
-  }
+    return `- Tool Name: ${name}\n- Arguments: ${args}`
+  })
+  const out = parts.join("\n\n")
   return out.length > 0 ? out : null
 }
 
 // The name of the tool call a tool message answers (matched by tool_call_id),
 // searched across the whole trace — mirrors origin_tool_call_name_from_message.
-// Its presence is what lets a tool message emit a block at all.
-function has_origin_tool_call(
+// It names the result's role label; a result whose call cannot be found is
+// still emitted, unnamed, exactly as the formatter does.
+function origin_tool_call_name(
   message: TraceMessage,
   trace: TraceMessage[],
-): boolean {
+): string | null {
   const id =
     "tool_call_id" in message && typeof message.tool_call_id === "string"
       ? message.tool_call_id
       : null
-  if (!id) return false
+  if (!id) return null
   for (const m of trace) {
     if (!("tool_calls" in m) || !Array.isArray(m.tool_calls)) continue
     for (const call of m.tool_calls) {
-      if ("id" in call && call.id === id) return true
+      if ("id" in call && call.id === id) {
+        const fn = "function" in call ? call.function : undefined
+        return fn && typeof fn.name === "string" ? fn.name : null
+      }
     }
   }
-  return false
+  return null
 }
 
 type EmittedBlock = {
@@ -497,80 +501,85 @@ type EmittedBlock = {
   kind: TraceHighlightKind
 }
 
-// The single block one message flattens to (or null). Precedence mirrors the
-// formatter: a tool message emits its result ONLY when its origin call is
-// found; otherwise reasoning → tool_calls → content, where each present block
-// OVERWRITES the prior (the lossy rule — content wins when a message carries
-// both reasoning/tool calls and content).
-function emitted_block(
+// The blocks one message flattens to, in emit order. Mirrors the formatter: a
+// tool message emits its result (named when its originating call is found, and
+// still emitted when it is not); every other message emits each of reasoning,
+// content and tool calls that it carries. A message commonly carries more than
+// one — a model narrates while it calls a tool — which is why this returns a
+// list rather than a single block.
+function emitted_blocks(
   message: TraceMessage,
   trace: TraceMessage[],
-): EmittedBlock | null {
+): EmittedBlock[] {
   const role = trace_role(message)
   const content = flattener_content(message)
 
   if (role === "tool" && content) {
-    if (!has_origin_tool_call(message, trace)) return null
-    return {
-      role_label: role,
-      tag: `${role}_tool_message`,
-      content,
-      kind: "tool_result",
-    }
+    const name = origin_tool_call_name(message, trace)
+    return [
+      {
+        role_label: name ? `tool result from ${name}` : "tool result",
+        tag: `${role}_tool_message`,
+        content,
+        kind: "tool_result",
+      },
+    ]
   }
 
-  let block: EmittedBlock | null = null
+  const blocks: EmittedBlock[] = []
   const reasoning = flattener_reasoning(message)
   if (reasoning) {
-    block = {
+    blocks.push({
       role_label: `${role} reasoning`,
       tag: `${role}_reasoning_message`,
       content: reasoning,
       kind: "reasoning",
-    }
+    })
   }
-  const tool_calls = flattener_tool_calls(message)
-  if (tool_calls) {
-    block = {
-      role_label: `${role} requested tool calls`,
-      tag: `${role}_requested_tool_calls`,
-      content: tool_calls,
-      kind: "tool_calls",
-    }
-  }
+  // Content before tool calls, matching the formatter: the text is the
+  // narration introducing the call.
   if (content) {
-    block = {
+    blocks.push({
       role_label: role,
       tag: `${role}_message`,
       content,
       kind: "content",
-    }
+    })
   }
-  return block
+  const tool_calls = flattener_tool_calls(message)
+  if (tool_calls) {
+    blocks.push({
+      role_label: `${role} requested tool calls`,
+      tag: `${role}_requested_tool_calls`,
+      content: tool_calls,
+      kind: "tool_calls",
+    })
+  }
+  return blocks
 }
 
 // Recompute the flattener's output string and record each block's absolute
-// span. The "\n\n" separator is keyed on the RAW trace index (matching the
-// formatter's `if index > 0`), not on emit order.
+// span. The "\n\n" separator is keyed on EMIT ORDER (matching the formatter's
+// join over emitted blocks), not on position in the trace.
 function flatten_output_blocks(trace: TraceMessage[]): FlattenedBlock[] {
   const blocks: FlattenedBlock[] = []
   let length = 0
   trace.forEach((message, index) => {
-    const block = emitted_block(message, trace)
-    if (!block) return
-    if (index > 0) length += 2 // "\n\n"
-    const header = `${block.role_label}:\n<${block.tag}>\n`
-    const content_start = length + header.length
-    const content_end = content_start + block.content.length
-    blocks.push({
-      trace_index: index,
-      kind: block.kind,
-      content_start,
-      content_end,
-      content: block.content,
-    })
-    // header + content + `\n</${tag}>`
-    length = content_end + `\n</${block.tag}>`.length
+    for (const block of emitted_blocks(message, trace)) {
+      if (blocks.length > 0) length += 2 // "\n\n"
+      const header = `${block.role_label}:\n<${block.tag}>\n`
+      const content_start = length + header.length
+      const content_end = content_start + block.content.length
+      blocks.push({
+        trace_index: index,
+        kind: block.kind,
+        content_start,
+        content_end,
+        content: block.content,
+      })
+      // header + content + `\n</${tag}>`
+      length = content_end + `\n</${block.tag}>`.length
+    }
   })
   return blocks
 }
