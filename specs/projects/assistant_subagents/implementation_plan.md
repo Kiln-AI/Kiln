@@ -11,7 +11,7 @@ The Kiln Assistant (desktop app ↔ copilot backend) should be able to spawn **s
 - Consent: **one-time user consent at spawn**, then sub-agents auto-approve their tools (like auto mode). Auto-mode parents have implied consent.
 - Depth 1 in v1: sub-agents cannot spawn sub-agents (enforced on both sides).
 
-Two repos change: `kiln_server` (backend, `/Users/leonardmarcq/dev/kiln_ws_3/kiln_server`) and `Kiln` (desktop, this repo).
+Two repos change: `kiln_server` (backend, `<path-to>/kiln_server`) and `Kiln` (desktop, this repo).
 
 ## Architecture in one paragraph
 

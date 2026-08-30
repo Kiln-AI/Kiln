@@ -38,7 +38,7 @@ Ordered by dependency. Each phase is one reviewable unit. Details live in `funct
     green-dot/"Working now" grouping, interrupt-on-send; regenerate `api_schema.d.ts`. vitest
     coverage. (`ui_design.md`, Architecture §5.)
 
-- [x] **Phase 5 — External backend wiring + end-to-end** (`/Users/leonardmarcq/Downloads/kiln_server`)
+- [x] **Phase 5 — External backend wiring + end-to-end** (`<path-to>/kiln_server`)
   - Branch `leonard/kil-692-assistant-auto-mode`; repoint `kiln-ai`/`kiln-server` to local editable
     paths (`libs/core`, `libs/server`) + `uv sync`. Register `enable_auto_mode` in
     `CHAT_CLIENT_VISIBLE_TOOLS` + `get_chat_kiln_tool_ids()`; add system-prompt guidance in chat
@@ -68,7 +68,7 @@ Ordered by dependency. Each phase is one reviewable unit. Details live in `funct
     handle `auto-mode-idle` (stay on, optional working/idle sub-state) vs `auto-mode-off` (clear).
     Consent only once per conversation. Update vitest coverage. (`ui_design.md` §2/§6, Arch §13.4.)
 
-- [x] **Phase 8 — Backend wiring for `disable_auto_mode`** (`/Users/leonardmarcq/Downloads/kiln_server`)
+- [x] **Phase 8 — Backend wiring for `disable_auto_mode`** (`<path-to>/kiln_server`)
   - Register `disable_auto_mode` in `CHAT_CLIENT_VISIBLE_TOOLS` + `get_chat_kiln_tool_ids()`
     (mirror enable); add system-prompt guidance: call `disable_auto_mode` (alone) when the user
     asks to stop auto-mode, then continue interactively. Verify. (Architecture §13.3.)

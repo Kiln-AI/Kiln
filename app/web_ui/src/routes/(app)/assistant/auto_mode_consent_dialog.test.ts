@@ -115,9 +115,18 @@ describe("AutoModeConsentDialog", () => {
     ).toBe(true)
   })
 
-  it("omits the spawn callout for the enable variant and the manual prompt", async () => {
+  it("omits the spawn callout for the enable variant", async () => {
     const { component, container } = render(AutoModeConsentDialog)
     component.prompt(payload())
+    await tick()
+    expect(container.textContent).not.toContain(
+      "The assistant wants to spawn a sub-agent",
+    )
+  })
+
+  it("omits the spawn callout for the manual prompt", async () => {
+    const { component, container } = render(AutoModeConsentDialog)
+    component.prompt()
     await tick()
     expect(container.textContent).not.toContain(
       "The assistant wants to spawn a sub-agent",

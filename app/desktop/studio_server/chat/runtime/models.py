@@ -413,7 +413,7 @@ def format_subagent_report(record: ConversationRecord) -> str:
     body = record.final_report or "(no report produced)"
     return (
         f'<subagent_report id="{record.session_id}" '
-        f'agent_type="{record.agent_type}" '
+        f'agent_type="{_escape_attr(record.agent_type or "")}" '
         f'status="{record.state.value}" '
         f'title="{_escape_attr(record.name or "")}">\n'
         f"{body}\n"

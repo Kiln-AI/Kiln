@@ -8,7 +8,7 @@ status: complete
 
 Phase 6 added the `disable_auto_mode` built-in tool to libs/core (signal-only, intercepted by the
 app server, never executed). Phase 8 exposes that tool to the chat model from the external Kiln
-Copilot backend (`/Users/leonardmarcq/Downloads/kiln_server`), exactly mirroring how
+Copilot backend (`<path-to>/kiln_server`), exactly mirroring how
 `enable_auto_mode` was wired in Phase 5. This is pure backend wiring — no app-server or libs/core
 changes. The interception logic already lives in the app server (Phase 6); the model just needs the
 tool registered and prompt guidance telling it when to call it.
@@ -21,8 +21,8 @@ tool registered and prompt guidance telling it when to call it.
    `disable_auto_mode_tool` was not importable. Repoint to the local editable paths (matching the
    documented Phase 5 state and the Phase 8 precondition that the tool is importable) and `uv sync`:
    ```toml
-   kiln-ai = { path = "/Users/leonardmarcq/Downloads/Kiln/libs/core", editable = true }
-   kiln-server = { path = "/Users/leonardmarcq/Downloads/Kiln/libs/server", editable = true }
+   kiln-ai = { path = "<path-to>/Kiln/libs/core", editable = true }
+   kiln-server = { path = "<path-to>/Kiln/libs/server", editable = true }
    ```
    (Before merge, deps get repointed back to a published Kiln git rev that includes the tool — same
    as Phase 5's pre-merge note.)

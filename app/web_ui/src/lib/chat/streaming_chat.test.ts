@@ -133,7 +133,7 @@ describe("autoModeConsentPayloadFromEvent", () => {
       type: "auto-mode-consent-required",
       trigger: "enable_auto_mode",
       gating_tool_call_id: "call_gating",
-      enable_tool_call_id: "call_gating",
+      enable_tool_call_id: "call_enable_fallback",
       reason: null,
     })
     expect(payload.gatingToolCallId).toBe("call_gating")

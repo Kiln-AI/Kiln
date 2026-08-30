@@ -248,13 +248,19 @@
   // The composer stays usable throughout (see ``inputDisabled``) so a message
   // typed mid-turn is queued rather than blocked.
   $: transcriptLoading = isLoading || autoWorking || $autoReconnecting
+  // A child steer POST in flight: the composer is disabled until it settles so
+  // a second Enter can't duplicate the send, and text typed during the await
+  // can't be wiped by the first request's success clearing the input.
+  let childSendPending = false
   // The composer stays usable while a turn is in flight so a message typed mid-
   // turn is queued (held above the input, auto-sent when the turn yields) rather
   // than blocked. Disabled only for a too-old client (sending would just 426
-  // again) or when a finished sub-agent's tab is selected (it can't receive
-  // messages; return to Main to continue).
+  // again), while a child steer send is pending, or when a finished sub-agent's
+  // tab is selected (it can't receive messages; return to Main to continue).
   $: inputDisabled =
-    versionRequired || (selectedChild !== null && !selectedChildRunning)
+    versionRequired ||
+    childSendPending ||
+    (selectedChild !== null && !selectedChildRunning)
   $: composerPlaceholder = selectedChild
     ? selectedChildRunning
       ? "Message this sub-agent…"
@@ -501,14 +507,19 @@
     // the main conversation. Terminal children can't receive messages (the
     // composer is disabled with a hint to return to Main).
     if (selectedChild) {
-      if (!selectedChildRunning) return
-      const result = await conversation_store.sendMessage(
-        selectedChild.session_id,
-        text,
-      )
-      if (!result.ok) return
-      input = ""
-      setTimeout(() => adjustTextareaHeight(), 0)
+      if (!selectedChildRunning || childSendPending) return
+      childSendPending = true
+      try {
+        const result = await conversation_store.sendMessage(
+          selectedChild.session_id,
+          text,
+        )
+        if (!result.ok) return
+        input = ""
+        setTimeout(() => adjustTextareaHeight(), 0)
+      } finally {
+        childSendPending = false
+      }
       return
     }
     const sent = await store.sendMessage(text)

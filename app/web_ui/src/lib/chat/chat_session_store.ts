@@ -970,7 +970,13 @@ export function createChatSessionStore(
     // browser no longer holds trace ids at all (functional spec §4).
     const sessionKey = get(persisted).sessionId ?? get(persisted).rootId
 
+    // Stale guard (same pattern as resyncOnLoad): reset()/loadSession() bump
+    // the generation, so if either ran while ensure() was in flight the
+    // ensured handle belongs to the conversation we ALREADY left — stamping
+    // it back would point the next send at the wrong conversation.
+    const ensureGeneration = generation
     const ensured = await conversationStore.ensure(sessionKey)
+    if (ensureGeneration !== generation) return false
     if (!ensured.ok || !ensured.sessionId) {
       pushInlineError(
         `Couldn't reach the assistant: ${ensured.error ?? "unknown error"}`,

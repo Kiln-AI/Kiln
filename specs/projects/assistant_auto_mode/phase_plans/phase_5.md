@@ -6,7 +6,7 @@ status: complete
 
 ## Overview
 
-This phase wires the external Kiln Copilot backend (`/Users/leonardmarcq/Downloads/kiln_server`,
+This phase wires the external Kiln Copilot backend (`<path-to>/kiln_server`,
 package `kiln-service`) to support auto-mode. The `enable_auto_mode` built-in tool already exists in
 this repo's `libs/core` (Phase 1). Here we make the backend (a) depend on the local `libs/core` /
 `libs/server` so it picks up the new tool, (b) expose `enable_auto_mode` to the chat model as a
@@ -23,8 +23,8 @@ this phase plan). Architecture §7, §11; functional spec §5; implementation pl
    `leonard/kil-692-assistant-auto-mode` off `main`. (Done — repo was clean.)
 
 2. **Repoint deps to local editable paths** in `kiln_server/pyproject.toml` `[tool.uv.sources]`:
-   - `kiln-ai = { path = "/Users/leonardmarcq/Downloads/Kiln/libs/core", editable = true }`
-   - `kiln-server = { path = "/Users/leonardmarcq/Downloads/Kiln/libs/server", editable = true }`
+   - `kiln-ai = { path = "<path-to>/Kiln/libs/core", editable = true }`
+   - `kiln-server = { path = "<path-to>/Kiln/libs/server", editable = true }`
    (Replaces the existing pinned `git`/`rev`/`subdirectory` sources for these two; leave the
    workspace deps untouched.) Then `uv sync` and confirm
    `kiln_ai.tools.built_in_tools.enable_auto_mode_tool.{EnableAutoModeTool, ENABLE_AUTO_MODE_TOOL_NAME}`

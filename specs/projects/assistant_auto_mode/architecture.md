@@ -24,7 +24,7 @@ Three codebases change:
 | **libs/core (`kiln-ai`)** | `libs/core/kiln_ai/tools/` | New built-in tool `EnableAutoModeTool` (mirrors `kiln_api_call_tool.py`): new `KilnBuiltInToolId.ENABLE_AUTO_MODE`, `tool_registry.py` case, schema `enable_auto_mode(reason?: string)`. Lives here so the external backend picks it up via its `kiln-ai` dependency. |
 | **App server (primary)** | `app/desktop/studio_server/chat/` | New `auto/` package: registry, runner, per-run event bus; refactor of `ChatStreamSession` to share round mechanics + intercept `enable_auto_mode`; new endpoints; session-list enrichment. |
 | **Web UI** | `app/web_ui/src/.../assistant/` + `lib/chat/` | Consent dialog, footer indicator/toggle/stop, history "working" treatment, an auto-run store that subscribes to the per-run SSE and drives enable/decline/stop. |
-| **External backend** | `kiln_server` at `/Users/leonardmarcq/Downloads/kiln_server` (separate repo, pkg `kiln-service`) | Repoint `kiln-ai`/`kiln-server` deps at this repo's local `libs/core`+`libs/server` (`uv sync`); register `enable_auto_mode` as a client tool + system-prompt guidance. (Cross-repo — §7, §11.) |
+| **External backend** | `kiln_server` at `<path-to>/kiln_server` (separate repo, pkg `kiln-service`) | Repoint `kiln-ai`/`kiln-server` deps at this repo's local `libs/core`+`libs/server` (`uv sync`); register `enable_auto_mode` as a client tool + system-prompt guidance. (Cross-repo — §7, §11.) |
 
 It mirrors patterns already in the repo: the **background-job system** (`jobs/registry.py`,
 `jobs/events.py`, `jobs/api.py`) for the registry/task-supervision/SSE-observer shape, and the
@@ -377,12 +377,12 @@ its `kiln-ai` dependency), mirroring `call_kiln_api`:
   (per the "libs/core is a standalone library" invariant). **Do not** add it to the app server's
   `FUNCTION_NAME_TO_TOOL_ID` — interception by name happens first, and we never want it executed.
 
-**External backend wiring** (`/Users/leonardmarcq/Downloads/kiln_server`, branch
+**External backend wiring** (`<path-to>/kiln_server`, branch
 `leonard/kil-692-assistant-auto-mode`):
 
 - `pyproject.toml`: repoint `kiln-ai` and `kiln-server` from their pinned `git`/`rev` sources to
   this repo's local paths as editable installs, e.g.
-  `kiln-ai = { path = "/Users/leonardmarcq/Downloads/Kiln/libs/core", editable = true }` and the
+  `kiln-ai = { path = "<path-to>/Kiln/libs/core", editable = true }` and the
   analogous `kiln-server` → `libs/server`; then `uv sync`. This makes the new tool available to the
   backend without publishing.
 - In `kiln-fastapi-api`'s `api/kiln_fastapi_api/chat/config.py`: add `"enable_auto_mode"` to
@@ -457,7 +457,7 @@ disconnect + re-attach + completion.
 ## 11. Pushback / Risks / Open Items
 
 - **Cross-repo dependency (backend tool).** Resolved sequencing: the tool ships in this repo's
-  `libs/core` first; the external backend (`/Users/leonardmarcq/Downloads/kiln_server`) consumes it
+  `libs/core` first; the external backend (`<path-to>/kiln_server`) consumes it
   via local editable deps + registers it as a client tool (§7). The app server is built/tested
   against a fake upstream throughout. End-to-end verification happens once the backend branch is
   wired and `uv sync`'d. Local editable deps are a dev convenience; before merging the backend

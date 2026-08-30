@@ -6,7 +6,7 @@ status: complete
 
 Single-doc architecture (medium project, no component docs). Two repos, one PR each, both branched off `leonard/assistant-subagents`. No wire-contract changes between the repos beyond one *additive* consent-event payload variant (§3.3) consumed only by the bundled web UI — no version gating.
 
-Repo roots: `kiln_server` = `/Users/leonardmarcq/dev/kiln_ws_2/kiln_server`, `Kiln` = `/Users/leonardmarcq/dev/kiln_ws_2/Kiln`.
+Repo roots: `kiln_server` = the kiln_server repository checkout, `Kiln` = the Kiln repository checkout (sibling worktrees).
 
 ## 1. Summary of moving parts
 
