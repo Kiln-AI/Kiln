@@ -7,7 +7,6 @@ create endpoints don't each repeat the same `try/except` or existence-check lamb
 """
 
 from pathlib import Path
-from typing import Type
 
 from fastapi import HTTPException
 from kiln_ai.datamodel.basemodel import KilnParentedModel
@@ -20,7 +19,7 @@ from kiln_ai.datamodel.provenance import (
 def validate_provenance_or_400(
     provenance: KilnArtifactProvenance | None,
     self_id: str | None,
-    sibling_cls: Type[KilnParentedModel],
+    sibling_cls: type[KilnParentedModel],
     parent_path: Path | None,
 ) -> None:
     """Run the create-time `derived_from_ids` check, mapping `ValueError` → HTTP 400.
