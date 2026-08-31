@@ -5,6 +5,7 @@ from typing import Annotated, List, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Query
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.skill import ResourceTooLargeError, Skill
 from kiln_ai.datamodel.skill_bundle import (
     MAX_BUNDLE_BYTES,
@@ -17,6 +18,7 @@ from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.validation import SkillNameString
 from kiln_server.document_api import OpenFileResponse
 from kiln_server.project_api import project_from_id
+from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     DENY_AGENT,
@@ -73,6 +75,10 @@ class SkillCreationRequest(BaseModel):
         max_length=MAX_BUNDLE_FILE_COUNT,
         description="Optional resource files (references/… and assets/…) installed atomically with the skill.",
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this skill exists and what it was derived from.",
+    )
 
     @model_validator(mode="after")
     def check_total_content_size(self) -> "SkillCreationRequest":
@@ -98,6 +104,13 @@ class SkillCloneRequest(BaseModel):
     body: str | None = Field(
         default=None,
         description="The markdown body of the new skill. Defaults to the source skill's body.",
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description=(
+            "Provenance for the clone. Lineage is not stamped automatically: set "
+            "derived_from_ids to the source skill's id to record it."
+        ),
     )
 
 
@@ -145,6 +158,10 @@ class SkillResponse(BaseModel):
     created_at: datetime | None = Field(
         default=None, description="When the skill was created."
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Why this skill exists and what it was derived from, if recorded.",
+    )
 
 
 class SkillContentResponse(BaseModel):
@@ -157,7 +174,13 @@ class SkillContentResponse(BaseModel):
 
 
 def skill_to_response(skill: Skill) -> SkillResponse:
-    return SkillResponse.model_validate(skill.model_dump())
+    # Validate under the loading_from_file context so a forward/back-compat
+    # provenance already on disk (unknown origin, over-length notes) is returned
+    # as-is instead of 500-ing on read. Create-time strictness still applies at
+    # the create endpoint (request parsing + validate_provenance_or_400).
+    return SkillResponse.model_validate(
+        skill.model_dump(), context={"loading_from_file": True}
+    )
 
 
 def _get_project_and_skill(project_id: str, skill_id: str) -> tuple[Project, Skill]:
@@ -273,6 +296,12 @@ def connect_skill_api(app: FastAPI):
         skill_data: SkillCreationRequest,
     ) -> SkillResponse:
         project = project_from_id(project_id)
+        # Lineage is checked before anything is staged, so a bad parent id can't
+        # leave a half-installed bundle behind. The new skill's id is generated
+        # inside the install, so it can't be passed here — the self-reference arm
+        # is unreachable for a create anyway (an id that doesn't exist yet is
+        # already rejected by the sibling-existence check).
+        validate_provenance_or_400(skill_data.provenance, None, Skill, project.path)
         decoded_files, decode_errors = _decode_files(skill_data.files)
         try:
             skill = create_skill_with_files(
@@ -282,6 +311,7 @@ def connect_skill_api(app: FastAPI):
                 body=skill_data.body,
                 files=decoded_files,
                 extra_errors=decode_errors,
+                provenance=skill_data.provenance,
             )
         except SkillBundleValidationError as e:
             raise HTTPException(status_code=422, detail="; ".join(e.errors)) from e
@@ -302,6 +332,7 @@ def connect_skill_api(app: FastAPI):
         clone_data: SkillCloneRequest,
     ) -> SkillResponse:
         project, source = _get_project_and_skill(project_id, skill_id)
+        validate_provenance_or_400(clone_data.provenance, None, Skill, project.path)
         body = clone_data.body
         if body is None:
             try:
@@ -318,6 +349,7 @@ def connect_skill_api(app: FastAPI):
                 name=clone_data.name,
                 description=clone_data.description,
                 body=body,
+                provenance=clone_data.provenance,
             )
         except SkillBundleValidationError as e:
             raise HTTPException(status_code=422, detail="; ".join(e.errors)) from e
@@ -404,7 +436,12 @@ def connect_skill_api(app: FastAPI):
         update_fields = updates.model_dump(exclude_none=True)
         merged = skill.model_dump()
         merged.update(update_fields)
-        updated = Skill.model_validate(merged)
+        # loading_from_file context keeps the stored provenance validation lenient:
+        # merged carries provenance as a dict, so a plain model_validate would re-run
+        # the create-strict provenance validators and 500 on a forward-compat file.
+        # provenance stays immutable (it's not in update_fields); this only edits
+        # name/is_archived.
+        updated = Skill.model_validate(merged, context={"loading_from_file": True})
         updated.path = skill.path
         updated.save_to_file()
 

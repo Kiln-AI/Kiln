@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Dict, Iterable, Optional
 
 from kiln_ai.datamodel.project import Project
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.skill import (
     RESOURCE_DIR_NAMES,
     SKILL_MD_FILENAME,
@@ -283,6 +284,7 @@ def create_skill_with_files(
     extra_dirs: Optional[list[str]] = None,
     validate_files: bool = True,
     extra_errors: Optional[list[str]] = None,
+    provenance: Optional[KilnArtifactProvenance] = None,
 ) -> Skill:
     """Create a skill atomically, with optional resource files.
 
@@ -343,6 +345,7 @@ def create_skill_with_files(
     skill = Skill(
         name=name,
         description=description,
+        provenance=provenance,
         parent=project,
     )
     final_path = skill.build_path()
@@ -464,6 +467,7 @@ def clone_skill(
     name: str,
     description: str,
     body: str,
+    provenance: Optional[KilnArtifactProvenance] = None,
 ) -> Skill:
     """Create a new skill from an existing one, copying its files.
 
@@ -475,7 +479,9 @@ def clone_skill(
     skipped since they already exist on disk; symlinks are not followed.
 
     name/description/body may differ from the source (a clone is a new skill,
-    not a mutation).
+    not a mutation). The source's provenance is never copied — a clone's
+    provenance describes the clone, so the caller supplies it (including the
+    lineage back to the source in derived_from_ids).
     """
     if source.path is None:
         raise ValueError("Source skill must be saved before cloning")
@@ -513,4 +519,5 @@ def clone_skill(
         copy_files=copy_files,
         extra_dirs=extra_dirs,
         validate_files=False,
+        provenance=provenance,
     )

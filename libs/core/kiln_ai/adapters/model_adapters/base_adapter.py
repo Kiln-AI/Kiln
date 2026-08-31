@@ -54,16 +54,8 @@ from kiln_ai.datamodel.run_config import (
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX, skill_id_from_tool_id
-
-# Import agent run context for run lifecycle management
-from kiln_ai.run_context import (
-    clear_agent_run_id,
-    generate_agent_run_id,
-    get_agent_run_id,
-    set_agent_run_id,
-)
 from kiln_ai.tools import KilnToolInterface
-from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.tools.mcp_session_manager import mcp_session_scope
 from kiln_ai.tools.skill_tool import SkillTool
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
@@ -373,25 +365,10 @@ class BaseAdapter(metaclass=ABCMeta):
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
-        # Determine if this is the root agent (no existing run context)
-        is_root_agent = get_agent_run_id() is None
-
-        if is_root_agent:
-            run_id = generate_agent_run_id()
-            set_agent_run_id(run_id)
-
-        try:
+        async with mcp_session_scope():
             return await self._run_returning_run_output(
                 input, input_source, prior_trace, parent_task_run
             )
-        finally:
-            if is_root_agent:
-                try:
-                    run_id = get_agent_run_id()
-                    if run_id:
-                        await MCPSessionManager.shared().cleanup_session(run_id)
-                finally:
-                    clear_agent_run_id()
 
     def invoke_openai_stream(
         self,
@@ -896,11 +873,7 @@ class OpenAIStreamResult:
 
     async def __aiter__(self) -> AsyncIterator[ModelResponseStream]:
         self._task_run = None
-        is_root_agent = get_agent_run_id() is None
-        if is_root_agent:
-            set_agent_run_id(generate_agent_run_id())
-
-        try:
+        async with mcp_session_scope():
             adapter_stream = self._adapter._prepare_stream(
                 self._input, self._prior_trace
             )
@@ -912,14 +885,6 @@ class OpenAIStreamResult:
             self._task_run = self._adapter._finalize_stream(
                 adapter_stream, self._input, self._input_source, self._parent_task_run
             )
-        finally:
-            if is_root_agent:
-                try:
-                    run_id = get_agent_run_id()
-                    if run_id:
-                        await MCPSessionManager.shared().cleanup_session(run_id)
-                finally:
-                    clear_agent_run_id()
 
 
 class AiSdkStreamResult:
@@ -959,11 +924,7 @@ class AiSdkStreamResult:
 
     async def __aiter__(self) -> AsyncIterator[AiSdkStreamEvent]:
         self._task_run = None
-        is_root_agent = get_agent_run_id() is None
-        if is_root_agent:
-            set_agent_run_id(generate_agent_run_id())
-
-        try:
+        async with mcp_session_scope():
             adapter_stream = self._adapter._prepare_stream(
                 self._input, self._prior_trace
             )
@@ -1003,11 +964,3 @@ class AiSdkStreamResult:
             else:
                 for ai_event in converter.finalize():
                     yield ai_event
-        finally:
-            if is_root_agent:
-                try:
-                    run_id = get_agent_run_id()
-                    if run_id:
-                        await MCPSessionManager.shared().cleanup_session(run_id)
-                finally:
-                    clear_agent_run_id()
