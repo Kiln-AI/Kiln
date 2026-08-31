@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ToolCallMessageParam } from "$lib/types"
   import Output from "$lib/ui/output.svelte"
+  import { kiln_task_tool_server_id } from "$lib/stores/tools_store"
 
   export let tool_call: ToolCallMessageParam
   export let nameTag: string = "Tool Name"
@@ -11,15 +12,11 @@
     if (!project_id) return null
 
     // If we have a persistent_tool_id, try to create a specific link
-    if (persistent_tool_id) {
-      // For Kiln task tools, extract tool_server_id from the persistent_tool_id
-      // Kiln task tool IDs have format: "kiln_task::{tool_server_id}"
-      if (persistent_tool_id.startsWith("kiln_task::")) {
-        const tool_server_id = persistent_tool_id.substring(
-          "kiln_task::".length,
-        )
-        return `/tools/${project_id}/kiln_task/${tool_server_id}`
-      }
+    const tool_server_id = persistent_tool_id
+      ? kiln_task_tool_server_id(persistent_tool_id)
+      : null
+    if (tool_server_id) {
+      return `/tools/${project_id}/kiln_task/${tool_server_id}`
     }
 
     return null

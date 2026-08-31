@@ -1,8 +1,10 @@
 import { client } from "$lib/api_client"
-import type { Eval, Task, Spec } from "$lib/types"
+import type { Eval, EvalConfig, Task, Spec } from "$lib/types"
 import { get, writable, type Writable } from "svelte/store"
 import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
 import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
+import { get_eval_steps } from "$lib/utils/eval_steps_utils"
+import { judge_check_description } from "$lib/utils/eval_types/judge_check_description"
 import { available_tools } from "$lib/stores"
 
 /**
@@ -20,6 +22,9 @@ export class SynthDataGuidanceDataModel {
   public task_id: string = ""
   private evaluator: Eval | null = null
   private spec: Spec | null = null
+  // The eval's default judge, when it has one. Only used to prefill batch-plan
+  // guidance for legacy evals (which have no spec definition to point at).
+  private default_judge: EvalConfig | null = null
   public gen_type: "training" | "eval" | null = null
   public splits: Writable<Record<string, number>> = writable({})
   public task: Task | null = null
@@ -119,6 +124,10 @@ export class SynthDataGuidanceDataModel {
       // Load the spec if this eval is associated with one
       await this.load_spec_for_eval(eval_id)
 
+      // Legacy evals have no spec, so their batch-plan guidance is built from
+      // the judge instead. Only fetched when there's a default judge to fetch.
+      await this.load_default_judge(eval_id)
+
       // Generate the select options for the dropdown, with update eval
       this.build_select_options(static_templates, data)
       // Jump to the issue eval template
@@ -128,8 +137,20 @@ export class SynthDataGuidanceDataModel {
         this.selected_template.set("desired_behaviour_eval_template")
       } else if (this.evaluator.template === "kiln_requirements") {
         this.selected_template.set("requirements_eval_template")
-      } else if (this.evaluator.template === "tool_call") {
+      } else if (
+        (this.evaluator.template === "tool_call" ||
+          this.judge_expected_tool_names() !== undefined) &&
+        this.resolved_tool_name(this.evaluator)
+      ) {
+        // Tool evals in either era: the legacy tool_call template, or a
+        // template-less eval scored by the tool_call_check judge. Only
+        // auto-select when the tool name is resolvable — the template can't
+        // be built without it (fall back to custom guidance instead).
         this.selected_template.set("appropriate_tool_use_eval_template")
+      } else if (this.programmatic_judge_check()) {
+        // Judge-only evals (no spec, no template): the judge's deterministic
+        // check is the eval's entire definition, so derive guidance from it.
+        this.selected_template.set("programmatic_eval_template")
       }
     } catch (error) {
       this.loading_error.set(createKilnError(error))
@@ -158,6 +179,74 @@ export class SynthDataGuidanceDataModel {
     } catch {
       // Don't throw, just leave spec as null (legacy eval)
       this.spec = null
+    }
+  }
+
+  private async load_default_judge(eval_id: string): Promise<void> {
+    const config_id = this.evaluator?.current_config_id
+    if (!config_id) {
+      return
+    }
+    try {
+      const { data: configs, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
+        {
+          params: {
+            path: {
+              project_id: this.project_id,
+              task_id: this.task_id,
+              eval_id,
+            },
+          },
+        },
+      )
+      if (error) {
+        // Don't throw: the judge is only used to prefill guidance, which the
+        // user can write themselves. A blank box beats a broken page.
+        return
+      }
+      this.default_judge = configs?.find((c) => c.id === config_id) || null
+    } catch {
+      this.default_judge = null
+    }
+  }
+
+  // The judge's evaluation steps: what the eval actually scores. Prefer the
+  // default judge's own steps — the user may have edited them, and those edits
+  // are the eval's real definition. With no default judge, rebuild the steps the
+  // same way the create-judge page would, from the eval's template.
+  private judge_eval_steps(): string[] {
+    // Legacy (V1) judge configs store eval_steps in an untyped properties
+    // dict; V2 LLM judge configs store judge_instructions. Read through a
+    // loose record so both shapes are handled.
+    const judge_properties = this.default_judge?.properties as
+      | Record<string, unknown>
+      | null
+      | undefined
+    const saved = judge_properties?.["eval_steps"]
+    if (Array.isArray(saved) && saved.length > 0) {
+      return saved.filter((step): step is string => typeof step === "string")
+    }
+    const judge_instructions = judge_properties?.["judge_instructions"]
+    if (Array.isArray(judge_instructions) && judge_instructions.length > 0) {
+      return judge_instructions.filter(
+        (step): step is string => typeof step === "string",
+      )
+    }
+    if (!this.evaluator || !this.task) {
+      return []
+    }
+    try {
+      return get_eval_steps(
+        this.evaluator.template,
+        this.task,
+        this.evaluator,
+        this.spec,
+      )
+    } catch {
+      // get_eval_steps throws when a template's required properties are missing
+      // (e.g. a kiln_issue eval with no issue_prompt). Fall back to no guidance.
+      return []
     }
   }
 
@@ -193,7 +282,98 @@ export class SynthDataGuidanceDataModel {
     this.selected_template.set(template || "custom")
   }
 
+  // Default guidance for the Kiln Pro batch planner. For evals backed by a
+  // definition we embed it (mirroring how the eval judge references it), so the
+  // plan targets the behavior being measured. Legacy evals have no definition,
+  // so we fall back to the judge's evaluation steps. Fine-tuning gets a static
+  // template.
+  public kiln_pro_batch_plan_prefill(): string {
+    if (this.gen_type === "training") {
+      // The batch planner has no topic tree — it plans the N inputs directly —
+      // so this folds the legacy fine-tuning topic + input templates into one
+      // description of the batch we want. "Training set" is the load-bearing
+      // phrase: it's what tells the planner to build a representative batch
+      // rather than the boundary-probing test set an eval asks for. The
+      // edge-case share is stated explicitly so naming edge cases can't tip the
+      // planner into an even pass/fail split.
+      return `A training set to fine-tune a model for this task.
+
+Cover a useful distribution of the data this task will see in practice: spread the batch across the main use cases, topics, and input shapes implied by the task's instructions, so the fine-tuned model learns from a wide range of realistic examples.
+
+Reserve a minority of the batch (roughly 20%) for issues and edge cases. If the task's instructions call out specific edge cases, pitfalls, or behaviours to avoid, include inputs likely to trigger each of them, and add other edge cases that are plausible for this task. The rest of the batch should stay typical and everyday.`
+    }
+    if (this.gen_type === "eval" && this.spec) {
+      // Only what Kiln knows: which eval this is, and its definition. The
+      // definition is what tells the planner this is a coverage batch, and its
+      // own rules then supply the pass/fail split, the difficulty spread, and
+      // the per-condition coverage check — restating them here would duplicate
+      // the planner and drift from it. The definition is delimited so the
+      // planner can't mistake its markdown headings for instructions addressed
+      // to it.
+      return `Generate a diverse batch of inputs that exercise the behaviour defined by the eval "${this.spec.name}", to test whether the task satisfies it.
+
+The eval's definition is below, for reference:
+
+<eval_definition>
+${this.spec.definition}
+</eval_definition>`
+    }
+    if (this.gen_type === "eval" && this.evaluator) {
+      // Legacy eval: no spec, so the criteria this batch gets scored against
+      // live in the judge's evaluation steps. Tagged <judge_instructions>, not
+      // <eval_definition>: these are imperatives written AT a judge ("Does the
+      // model's output contain…"), not a statement of the behaviour itself, and
+      // the planner is told to read the two differently. Either tag marks this
+      // as an eval batch; the delimiter also stops the planner taking the steps
+      // as instructions addressed to itself.
+      const steps = this.judge_eval_steps()
+      if (steps.length > 0) {
+        const numbered = steps
+          .map((step, i) => `${i + 1}. ${step}`)
+          .join("\n\n")
+        return `Generate a diverse batch of inputs to run the eval "${this.evaluator.name}" on. This is the data its judge will score, so the batch should thoroughly exercise the behaviour the judge checks for.
+
+The judge scores each output against the steps below, for reference:
+
+<judge_instructions>
+${numbered}
+</judge_instructions>`
+      }
+
+      // Programmatic judge: no spec and no written steps — the judge's own
+      // config is the eval's entire definition, so describe its deterministic
+      // check for the planner. Delimited for the same reason as the tags
+      // above, and phrased as a description of the check rather than an
+      // instruction to the planner.
+      const check = judge_check_description(this.default_judge?.properties)
+      if (check) {
+        return `Generate a diverse batch of inputs to run the eval "${this.evaluator.name}" on. This is the data its judge will score, so the batch should include inputs a well-behaved model handles correctly alongside inputs likely to expose failures of the check.
+
+The judge's deterministic check is described below, for reference:
+
+<judge_check>
+${check}
+</judge_check>`
+      }
+    }
+    // No spec, and no judge steps or check to derive a batch from: leave it
+    // to the user.
+    return ""
+  }
+
   private apply_selected_template(template: string) {
+    // This runs as a selected_template store subscriber. A throw here would
+    // propagate into Svelte's store flush loop and permanently break every
+    // store subscription in the app (svelte/store's shared subscriber_queue
+    // is never cleared if a subscriber throws), so surface errors instead.
+    try {
+      this.apply_selected_template_inner(template)
+    } catch (error) {
+      this.loading_error.set(createKilnError(error))
+    }
+  }
+
+  private apply_selected_template_inner(template: string) {
     if (template == "custom") {
       this.topic_guidance.set(null)
       this.input_guidance.set(null)
@@ -244,6 +424,21 @@ export class SynthDataGuidanceDataModel {
       this.output_guidance.set(
         this.appropriate_tool_use_eval_template(this.evaluator, "outputs"),
       )
+    }
+
+    if (template == "programmatic_eval_template") {
+      const check = this.programmatic_judge_check()
+      if (check) {
+        this.topic_guidance.set(
+          this.programmatic_eval_template(check, "topics"),
+        )
+        this.input_guidance.set(
+          this.programmatic_eval_template(check, "inputs"),
+        )
+        this.output_guidance.set(
+          this.programmatic_eval_template(check, "outputs"),
+        )
+      }
     }
 
     const static_template = static_templates.find((t) => t.id == template)
@@ -682,19 +877,90 @@ When generating model inputs, generate inputs that are likely to cause the model
     return template
   }
 
+  // Guidance for judge-only evals: the deterministic check is the eval's
+  // entire definition, so the generation prompt embeds it and asks for data
+  // that exercises both sides of the check.
+  private programmatic_eval_template(
+    check: string,
+    task_type: "topics" | "inputs" | "outputs",
+  ): string {
+    if (task_type == "outputs") {
+      return "Generate model outputs without any additional instructions or guidance."
+    }
+
+    let template = `We are building a dataset for an eval scored by a deterministic check (no LLM judging). ${check}
+
+`
+    if (task_type == "topics") {
+      template += `When generating topics, create natural domain-specific topics for this task that exercise the check: typical scenarios where a well-behaved model passes, plus scenarios likely to expose failures (edge cases, tricky phrasings, and inputs where the correct behaviour is easy to get wrong).`
+    } else {
+      template += `When generating model inputs, generate realistic inputs relevant to the topic that exercise the check. Include a mix: inputs a well-behaved model should handle correctly, and harder inputs likely to make a model fail the check.`
+    }
+    return template
+  }
+
+  // The tool being evaluated, wherever this eval keeps it: appropriate_tool_use
+  // specs store tool_function_name, legacy tool_call-template evals store a
+  // tool property, and new-style tool evals (template-less, scored by the
+  // tool_call_check judge) list expected tools on the judge config.
+  private resolved_tool_name(tool_call: Eval | null): string | undefined {
+    const spec_properties = this.spec?.properties
+    if (spec_properties?.spec_type === "appropriate_tool_use") {
+      return spec_properties?.tool_function_name
+    }
+    const legacy_tool = tool_call?.template_properties?.tool as
+      | string
+      | undefined
+    if (legacy_tool) {
+      return legacy_tool
+    }
+    return this.judge_expected_tool_names()
+  }
+
+  // The default judge's deterministic check, described for the guidance
+  // templates. Null for LLM judges (their steps are the guidance source) and
+  // for tool_call_check, which has its own richer tool-use template.
+  private programmatic_judge_check(): string | null {
+    const judge_properties = this.default_judge?.properties as
+      | Record<string, unknown>
+      | null
+      | undefined
+    if (judge_properties?.["type"] === "tool_call_check") {
+      return null
+    }
+    return judge_check_description(judge_properties)
+  }
+
+  // Tool names from a tool_call_check default judge, joined for display when
+  // the judge checks more than one tool. Undefined for any other judge type.
+  private judge_expected_tool_names(): string | undefined {
+    const judge_properties = this.default_judge?.properties as
+      | Record<string, unknown>
+      | null
+      | undefined
+    if (judge_properties?.["type"] !== "tool_call_check") {
+      return undefined
+    }
+    const expected_tools = judge_properties["expected_tools"]
+    if (!Array.isArray(expected_tools)) {
+      return undefined
+    }
+    const names = expected_tools
+      .map((t) =>
+        t && typeof t === "object"
+          ? (t as { tool_name?: unknown }).tool_name
+          : undefined,
+      )
+      .filter((n): n is string => typeof n === "string" && n.length > 0)
+    return names.length > 0 ? names.join(", ") : undefined
+  }
+
   private appropriate_tool_use_eval_template(
     tool_call: Eval,
     task_type: "topics" | "inputs" | "outputs",
   ): string {
-    // Spec uses different keys than legacy eval template_properties
-    // Spec: tool_function_name, Legacy: tool
     const spec_properties = this.spec?.properties
-    let tool: string | undefined = undefined
-    if (spec_properties?.spec_type === "appropriate_tool_use") {
-      tool = spec_properties?.tool_function_name
-    } else {
-      tool = tool_call.template_properties?.tool as string
-    }
+    const tool = this.resolved_tool_name(tool_call)
     if (!tool) {
       throw new Error("Tool is required for tool call template")
     }
@@ -902,17 +1168,29 @@ When generating ${task_type}, use these guidelines to create test cases that are
           description:
             "Generate data expected to trigger the requirements of a specific eval.",
         })
-      } else if (evaluator.template === "tool_call") {
+      } else if (
+        evaluator.template === "tool_call" ||
+        this.judge_expected_tool_names() !== undefined
+      ) {
+        // Legacy tool_call-template evals and new tool_call_check-judge evals
+        // share the same generation guidance.
         eval_options.push({
           label: "Appropriate Tool Use",
           value: "appropriate_tool_use_eval_template",
           description:
             "Generate data expected to trigger a specific tool call, for an eval to detect that tool call.",
         })
+      } else if (this.programmatic_judge_check()) {
+        eval_options.push({
+          label: "Judge Check Eval",
+          value: "programmatic_eval_template",
+          description:
+            "Generate data that exercises this eval's deterministic judge check, including cases likely to fail it.",
+        })
       }
       if (eval_options.length > 0) {
         groups.push({
-          label: "Eval Template",
+          label: "Eval Type",
           options: eval_options,
         })
       }

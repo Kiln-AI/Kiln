@@ -360,6 +360,7 @@ async def test_json_schema_response_format_adds_required_to_nested(config, tmp_p
         (ModelProviderName.huggingface, "huggingface"),
         (ModelProviderName.vertex, "vertex_ai"),
         (ModelProviderName.together_ai, "together_ai"),
+        (ModelProviderName.featherless_ai, "featherless_ai"),
         # for openai-compatible providers, we expect openai as the provider name
         (ModelProviderName.siliconflow_cn, "openai"),
     ],

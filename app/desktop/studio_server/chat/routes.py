@@ -4,6 +4,12 @@ from http import HTTPStatus
 from typing import Annotated, Any, NoReturn
 
 import httpx
+from fastapi import FastAPI, HTTPException, Path, Query
+from fastapi.responses import StreamingResponse
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
+from kiln_server.git_sync_decorators import no_write_lock
+from kiln_server.utils.agent_checks.policy import DENY_AGENT
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.chat import (
     delete_session_v1_chat_sessions_session_id_delete,
@@ -27,12 +33,6 @@ from app.desktop.studio_server.chat.stream_session import (
     execute_tool_batch,
 )
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
-from fastapi import FastAPI, HTTPException, Path, Query
-from fastapi.responses import StreamingResponse
-from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
-from kiln_server.git_sync_decorators import no_write_lock
-from kiln_server.utils.agent_checks.policy import DENY_AGENT
-from pydantic import BaseModel, ConfigDict, ValidationError
 
 
 def _build_upstream_headers(api_key: str) -> dict[str, str]:

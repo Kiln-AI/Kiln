@@ -443,6 +443,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/memories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Memories
+         * @description List memory summaries newest-first. content_length 0 means the overview
+         *     is the whole memory. Truncation fields nudge how to narrow the results.
+         */
+        get: operations["list_memories_api_projects__project_id__memories_get"];
+        put?: never;
+        /** Save Memory */
+        post: operations["save_memory_api_projects__project_id__memories_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/memories/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Summary
+         * @description Cheap per-scope orientation (counts, newest timestamp, tag cardinalities)
+         *     with no record content. Call before targeted list queries.
+         */
+        get: operations["memory_summary_api_projects__project_id__memories_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/memories/by_ids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Memories
+         * @description Fetch full memory records by id. Unknown ids are omitted from the result.
+         */
+        get: operations["get_memories_api_projects__project_id__memories_by_ids_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/memories/{memory_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Memory
+         * @description Hard-delete a memory. For junk, wrong, or obsolete memories; use update
+         *     instead if the memory should be corrected rather than removed.
+         */
+        delete: operations["delete_memory_api_projects__project_id__memories__memory_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Memory */
+        patch: operations["update_memory_api_projects__project_id__memories__memory_id__patch"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents/bulk": {
         parameters: {
             query?: never;
@@ -1363,6 +1448,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/provider/verify_kiln_copilot_api_key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Verify Kiln Copilot API Key
+         * @description Verify the stored Kiln Copilot API key against the Kiln server.
+         *
+         *     Returns `{is_valid: bool}`. A stale key the server rejects with
+         *     401/403 is cleared from local config so subsequent flows fall back to
+         *     the connect screen instead of silently using a dead key. Network
+         *     failures leave the key in place and report `false` for this check
+         *     only — they shouldn't punish the user for a transient blip.
+         */
+        get: operations["verify_kiln_copilot_api_key_api_provider_verify_kiln_copilot_api_key_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/gen_prompt/{prompt_id}": {
         parameters: {
             query?: never;
@@ -1583,6 +1694,82 @@ export interface paths {
         put?: never;
         /** Generate Sample */
         post: operations["generate_sample_api_projects__project_id__tasks__task_id__generate_sample_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/generate_inputs_batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Inputs Batch
+         * @description Start an in-process job that generates one input per prompt in
+         *     parallel. Poll the status endpoint for progress and results.
+         */
+        post: operations["start_generate_inputs_batch_api_projects__project_id__tasks__task_id__generate_inputs_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/generate_inputs_batch/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Generate Inputs Batch Status */
+        get: operations["generate_inputs_batch_status_api_projects__project_id__tasks__task_id__generate_inputs_batch__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/generate_outputs_batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Outputs Batch
+         * @description Start an in-process job that runs the task on each input in parallel.
+         *     Poll the status endpoint for progress and the resulting (unsaved) runs.
+         */
+        post: operations["start_generate_outputs_batch_api_projects__project_id__tasks__task_id__generate_outputs_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/generate_outputs_batch/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Generate Outputs Batch Status */
+        get: operations["generate_outputs_batch_status_api_projects__project_id__tasks__task_id__generate_outputs_batch__job_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1877,6 +2064,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_default_judge_types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Default Judge Types
+         * @description Map of eval ID to its default judge's type discriminator.
+         *
+         *     V2 configs report their properties type (e.g. "code_eval",
+         *     "llm_judge"); legacy configs report their config_type (e.g. "g_eval").
+         *     Evals with no default judge are omitted. Used by the evals list to
+         *     display each eval's type without fetching every config.
+         */
+        get: operations["get_eval_default_judge_types_api_projects__project_id__tasks__task_id__eval_default_judge_types_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs": {
         parameters: {
             query?: never;
@@ -1939,6 +2151,80 @@ export interface paths {
         put?: never;
         /** Create Eval Config */
         post: operations["create_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__create_eval_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/create_llm_judge_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create LLM Judge Eval Config */
+        post: operations["create_llm_judge_config_api_projects__project_id__tasks__task_id__evals__eval_id__create_llm_judge_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/default_llm_judge_prompt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Default LLM Judge Prompt */
+        get: operations["get_default_llm_judge_prompt_api_projects__project_id__tasks__task_id__evals__eval_id__default_llm_judge_prompt_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/test_v2_eval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test V2 Eval Config */
+        post: operations["test_v2_eval_api_projects__project_id__tasks__task_id__evals__eval_id__test_v2_eval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/test_v2_eval_draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test V2 Eval Config Draft
+         * @description Test a judge config for an eval that hasn't been created yet.
+         *
+         *     Builds a transient in-memory eval from the drafted output_scores so
+         *     the creation flow can test its judge before saving anything.
+         */
+        post: operations["test_v2_eval_draft_api_projects__project_id__tasks__task_id__test_v2_eval_draft_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2009,7 +2295,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Eval Run Results */
+        /**
+         * Get Eval Run Results
+         * @description Results for one run config, scoped to one of the eval's splits.
+         */
         get: operations["get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get"];
         put?: never;
         post?: never;
@@ -2098,6 +2387,24 @@ export interface paths {
         get: operations["get_run_config_eval_scores_api_projects__project_id__tasks__task_id__run_configs__run_config_id__eval_scores_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/add_code_trust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check code trust for a project */
+        get: operations["check_add_code_trust_endpoint_api_projects__project_id__add_code_trust_get"];
+        put?: never;
+        /** Add code trust for a project */
+        post: operations["add_code_trust_endpoint_api_projects__project_id__add_code_trust_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2457,6 +2764,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/code_tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Code Tools */
+        get: operations["list_code_tools_api_projects__project_id__code_tools_get"];
+        put?: never;
+        /** Create Code Tool */
+        post: operations["create_code_tool_api_projects__project_id__code_tools_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/test_code_tool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Code Tool */
+        post: operations["test_code_tool_api_projects__project_id__test_code_tool_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/code_tools/{code_tool_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Code Tool */
+        get: operations["get_code_tool_api_projects__project_id__code_tools__code_tool_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Code Tool */
+        delete: operations["delete_code_tool_api_projects__project_id__code_tools__code_tool_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Code Tool Metadata */
+        patch: operations["update_code_tool_api_projects__project_id__code_tools__code_tool_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/code_tools/{code_tool_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive/Unarchive Code Tool */
+        post: operations["archive_code_tool_api_projects__project_id__code_tools__code_tool_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/skills": {
         parameters: {
             query?: never;
@@ -2758,6 +3136,105 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Data Guide Job
+         * @description Kick off the input data guide draft job on kiln_server and return its
+         *     job id. The job summarizes and aggregates the heterogeneous list of
+         *     input examples (manual entries, existing task runs, uploaded text
+         *     documents) into a draft guide.
+         *
+         *     The job runs in the background so the user can leave the page and come
+         *     back. The web UI polls `.../data_guide_job/{job_id}/status` and, once
+         *     the job succeeds, fetches `.../data_guide_job/{job_id}/result` and
+         *     generates preview inputs locally via the existing
+         *     `/data_gen_guide_preview` flow.
+         */
+        post: operations["start_data_guide_job_api_projects__project_id__tasks__task_id__copilot_data_guide_job_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/copilot/parse_import_file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Parse Import File
+         * @description Parse an uploaded bulk-import file of input examples for the data
+         *     guide, server-side.
+         *
+         *     Both task types use a single-column CSV (parsed with the stdlib csv
+         *     reader). Plaintext tasks take each cell as the raw input; structured
+         *     tasks take each cell as a JSON object, validated against the task's input
+         *     schema. Returns the parsed example strings plus any whole-file `error` or
+         *     partial-skip `warning` so the web UI just renders the result.
+         */
+        post: operations["parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/{job_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Data Guide Job Status
+         * @description Return the current status of a data guide draft job (e.g. running,
+         *     succeeded, failed, cancelled). The web UI polls this while showing the
+         *     analyzing animation and the task-wide progress widget.
+         */
+        get: operations["data_guide_job_status_api_projects__project_id__tasks__task_id__copilot_data_guide_job__job_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/{job_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Data Guide Job Result
+         * @description Return the draft guide markdown produced by a completed data guide
+         *     draft job. The web UI calls this once the job status is `succeeded`.
+         */
+        get: operations["data_guide_job_result_api_projects__project_id__tasks__task_id__copilot_data_guide_job__job_id__result_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot": {
         parameters: {
             query?: never;
@@ -2783,6 +3260,28 @@ export interface paths {
          *     no data is persisted.
          */
         post: operations["create_spec_with_copilot_api_projects__project_id__tasks__task_id__spec_with_copilot_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/copilot/batch_plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch Plan
+         * @description Plan a synthetic batch: turn the user's guidance + count into one
+         *     tailored prompt per input (plus a user-facing summary). Requires a
+         *     connected Kiln Pro / Copilot key (connection only, no paid tier).
+         */
+        post: operations["batch_plan_api_projects__project_id__tasks__task_id__copilot_batch_plan_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3744,16 +4243,26 @@ export interface components {
             spec_type: "appropriate_tool_use";
             /** Core Requirement */
             core_requirement: string;
-            /** Tool Id */
-            tool_id: string;
-            /** Tool Function Name */
-            tool_function_name: string;
             /** Tool Use Guidelines */
             tool_use_guidelines: string;
             /** Appropriate Tool Use Examples */
             appropriate_tool_use_examples: string;
             /** Inappropriate Tool Use Examples */
             inappropriate_tool_use_examples: string;
+            /** Tool Id */
+            tool_id?: string;
+            /** Tool Function Name */
+            tool_function_name?: string;
+        };
+        /** ArgMatch */
+        ArgMatch: {
+            value: components["schemas"]["JsonValue"];
+            /**
+             * Match Mode
+             * @default exact
+             * @enum {string}
+             */
+            match_mode: "exact" | "contains" | "regex";
         };
         /**
          * Audio
@@ -3832,6 +4341,38 @@ export interface components {
              * @description Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting. COT will not be used unless this is provided.
              */
             chain_of_thought_instructions?: string | null;
+        };
+        /** BatchPlanApiInput */
+        BatchPlanApiInput: {
+            /**
+             * Guidance
+             * @description User guidance describing this batch (distribution, focus, edge cases).
+             * @default
+             */
+            guidance: string;
+            /**
+             * Count
+             * @description Number of inputs to plan — the planner returns one prompt per input.
+             */
+            count: number;
+            /**
+             * Data Guide
+             * @description The task's input data guide (input profile) to include, or null to omit.
+             */
+            data_guide?: string | null;
+        };
+        /** BatchPlanApiOutput */
+        BatchPlanApiOutput: {
+            /**
+             * Prompts
+             * @description One tailored prompt per input; length equals the requested count.
+             */
+            prompts: string[];
+            /**
+             * Summary
+             * @description A short, user-facing overview of the planned batch.
+             */
+            summary: string;
         };
         /** BiasProperties */
         BiasProperties: {
@@ -3912,6 +4453,15 @@ export interface components {
              * @description Tags to remove from the task runs.
              */
             remove_tags?: string[] | null;
+        };
+        /** Body_parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post */
+        Body_parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post: {
+            /**
+             * File
+             * Format: binary
+             * @description The file of input examples to parse and validate.
+             */
+            file: string;
         };
         /**
          * BuildPromptRequest
@@ -4197,6 +4747,8 @@ export interface components {
             has_train_set: boolean;
             /** Model Is Supported */
             model_is_supported: boolean;
+            /** Unsupported Reason */
+            unsupported_reason?: string | null;
         };
         /**
          * CheckRunConfigResponse
@@ -4358,6 +4910,175 @@ export interface components {
              */
             message: string;
         };
+        /** CodeEvalProperties */
+        CodeEvalProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "code_eval";
+            /** Code */
+            code: string;
+            /**
+             * Reference Keys
+             * @default []
+             */
+            reference_keys: string[];
+            /**
+             * Timeout Seconds
+             * @default 180
+             */
+            timeout_seconds: number;
+            /**
+             * Tool Allowlist
+             * @description Explicit per-tool allowlist of tools the scorer code may call.
+             */
+            tool_allowlist?: string[];
+        };
+        /** CodeToolArchiveRequest */
+        CodeToolArchiveRequest: {
+            /**
+             * Archived
+             * @description Whether to archive or unarchive the tool.
+             */
+            archived: boolean;
+        };
+        /** CodeToolCreateRequest */
+        CodeToolCreateRequest: {
+            /**
+             * Name
+             * @description User-facing display name.
+             */
+            name: string;
+            /**
+             * Description
+             * @description User-facing notes shown in the UI.
+             */
+            description?: string | null;
+            /**
+             * Tool Function Name
+             * @description The function name exposed to the model.
+             */
+            tool_function_name: string;
+            /**
+             * Tool Description
+             * @description Shown to agents as the tool description.
+             */
+            tool_description: string;
+            /**
+             * Parameters Schema
+             * @description JSON Schema for the tool's parameters.
+             */
+            parameters_schema: {
+                [key: string]: unknown;
+            };
+            /**
+             * Code
+             * @description Inline Python source.
+             */
+            code: string;
+            /**
+             * Timeout Seconds
+             * @description Wall-clock timeout.
+             * @default 60
+             */
+            timeout_seconds: number;
+            /**
+             * Tool Allowlist
+             * @description Tools this code tool may call.
+             */
+            tool_allowlist?: string[];
+        };
+        /** CodeToolCreateResponse */
+        CodeToolCreateResponse: {
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /**
+             * Is Archived
+             * @default false
+             */
+            is_archived: boolean;
+            /** Tool Function Name */
+            tool_function_name?: string | null;
+            /** Tool Description */
+            tool_description?: string | null;
+            /** Parameters Schema */
+            parameters_schema?: {
+                [key: string]: unknown;
+            } | null;
+            /** Code */
+            code?: string | null;
+            /** Timeout Seconds */
+            timeout_seconds?: number | null;
+            /** Tool Allowlist */
+            tool_allowlist?: string[];
+            /** Created At */
+            created_at?: string | null;
+            /** Created By */
+            created_by?: string | null;
+            /**
+             * Not Trusted
+             * @default false
+             */
+            not_trusted: boolean;
+        };
+        /** CodeToolResponse */
+        CodeToolResponse: {
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Is Archived
+             * @default false
+             */
+            is_archived: boolean;
+            /** Tool Function Name */
+            tool_function_name: string;
+            /** Tool Description */
+            tool_description: string;
+            /** Parameters Schema */
+            parameters_schema: {
+                [key: string]: unknown;
+            };
+            /** Code */
+            code: string;
+            /** Timeout Seconds */
+            timeout_seconds: number;
+            /** Tool Allowlist */
+            tool_allowlist?: string[];
+            /** Created At */
+            created_at?: string | null;
+            /** Created By */
+            created_by?: string | null;
+        };
+        /** CodeToolUpdateRequest */
+        CodeToolUpdateRequest: {
+            /**
+             * Name
+             * @description User-facing display name.
+             */
+            name?: string | null;
+            /**
+             * Description
+             * @description User-facing notes shown in the UI.
+             */
+            description?: string | null;
+        };
+        /**
+         * CodeTrustResponse
+         * @description Response indicating whether code is trusted for a project in this session.
+         */
+        CodeTrustResponse: {
+            /** Trusted */
+            trusted: boolean;
+        };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
             /**
@@ -4379,6 +5100,31 @@ export interface components {
             complete_examples: string;
             /** Incomplete Examples */
             incomplete_examples: string;
+        };
+        /** ContainsProperties */
+        ContainsProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "contains";
+            /** Value Expression */
+            value_expression?: string | null;
+            /** Substring */
+            substring?: string | null;
+            /** Reference Key */
+            reference_key?: string | null;
+            /**
+             * Case Sensitive
+             * @default true
+             */
+            case_sensitive: boolean;
+            /**
+             * Mode
+             * @default must_contain
+             * @enum {string}
+             */
+            mode: "must_contain" | "must_not_contain";
         };
         /** CorrelationResult */
         CorrelationResult: {
@@ -4480,11 +5226,11 @@ export interface components {
             };
             /**
              * Model Name
-             * @description The model to use for evaluation.
+             * @description The model to use for evaluation. Required for LLM-based eval types.
              */
-            model_name: string;
-            /** @description The provider of the evaluation model. */
-            provider: components["schemas"]["ModelProviderName"];
+            model_name?: string | null;
+            /** @description The provider of the evaluation model. Required for LLM-based eval types. */
+            provider?: components["schemas"]["ModelProviderName"] | null;
         };
         /**
          * CreateEvaluatorRequest
@@ -4505,14 +5251,14 @@ export interface components {
             template?: components["schemas"]["EvalTemplateId"] | null;
             /**
              * Output Scores
-             * @description The scores this evaluator should produce.
+             * @description The scores this evaluator should produce. When omitted, a pass/fail score named after the eval is generated.
              */
-            output_scores: components["schemas"]["EvalOutputScore"][];
+            output_scores?: components["schemas"]["EvalOutputScore"][] | null;
             /**
              * Eval Set Filter Id
-             * @description The dataset filter for the eval set.
+             * @description The dataset filter for the eval set. When omitted, tag-based eval/train/golden filters are generated from the eval name, matching what spec-backed evals get.
              */
-            eval_set_filter_id: string;
+            eval_set_filter_id?: string | null;
             /**
              * Eval Configs Filter Id
              * @description The dataset filter for comparing eval configs.
@@ -4527,6 +5273,16 @@ export interface components {
             } | null;
             /** @description The type of task output to evaluate. */
             evaluation_data_type: components["schemas"]["EvalDataType"];
+            /**
+             * @description The priority of the eval.
+             * @default 1
+             */
+            priority: components["schemas"]["Priority"];
+            /**
+             * @description The status of the eval.
+             * @default active
+             */
+            status: components["schemas"]["EvalStatus"];
         };
         /** CreateExtractorConfigRequest */
         CreateExtractorConfigRequest: {
@@ -4647,6 +5403,44 @@ export interface components {
              * @description Kinde OAuth access token.
              */
             access_token: string;
+        };
+        /**
+         * CreateLlmJudgeConfigRequest
+         * @description Request to create a V2 llm_judge eval config with server-baked template.
+         */
+        CreateLlmJudgeConfigRequest: {
+            /**
+             * Model Name
+             * @description The LLM model to use as judge.
+             */
+            model_name: string;
+            /** @description The model provider. */
+            provider: components["schemas"]["ModelProviderName"];
+            /**
+             * G Eval
+             * @description Whether to use G-Eval logprob scoring.
+             */
+            g_eval: boolean;
+            /**
+             * Judge Prompt
+             * @description Override the judge prompt template. If unset, the server assembles a rich default from the eval's task and spec.
+             */
+            judge_prompt?: string | null;
+            /**
+             * System Prompt
+             * @description Override the judge system prompt. Defaults to 'You are an evaluator.'
+             */
+            system_prompt?: string | null;
+            /**
+             * Judge Instructions
+             * @description User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.
+             */
+            judge_instructions?: string[] | null;
+            /**
+             * Name
+             * @description The name of the eval config.
+             */
+            name?: string | null;
         };
         /**
          * CreateMcpRunConfigRequest
@@ -5002,7 +5796,7 @@ export interface components {
             guidance?: string | null;
             /**
              * Data Guide
-             * @description Optional per-run data guide override. Replaces the task's persisted data guide for this run.
+             * @description Optional per-run input data guide override. Replaces the task's persisted input data guide for this run.
              */
             data_guide?: string | null;
             /** @description The run config properties to use for input generation */
@@ -5043,11 +5837,6 @@ export interface components {
              */
             guidance?: string | null;
             /**
-             * Data Guide
-             * @description Optional per-run data guide override. Replaces the task's persisted data guide for this run.
-             */
-            data_guide?: string | null;
-            /**
              * Tags
              * @description Tags to add to the sample
              */
@@ -5055,15 +5844,29 @@ export interface components {
         };
         /**
          * DataGuide
-         * @description Persistent data guide for synthetic data generation, stored as a child
-         *     of a Task.
+         * @description Persistent input data guide for synthetic data generation, stored as a
+         *     child of a Task.
          *
-         *     The guide is a single markdown body — typically two top-level sections:
-         *     `# Reference Examples` (user-authored input/output pairs) and
-         *     `# Guidelines & Rules` (structural and semantic constraints, often
-         *     LLM-authored via refine). Either or both may be present; the metaprompter
-         *     treats the whole body as one editable artifact and returns a refined
-         *     version on each refine pass.
+         *     The guide describes what realistic *inputs* to this task look like — input
+         *     shape, format, distribution, and the kinds of values inputs contain. It is
+         *     consumed at the topic and input generation stages of synthetic data
+         *     generation, never at the output stage. Output behavior is the job of the
+         *     task's system prompt, not this guide.
+         *
+         *     The guide is a single markdown body. Two canonical shapes are supported
+         *     depending on origin:
+         *
+         *     - **Manual flow** (user-authored examples): leads with `# Reference Inputs`
+         *       (user-owned `## Example N` blocks), followed by `# Semantics`, `# Style`,
+         *       `# Presentation Defaults`.
+         *     - **Kiln Pro / Copilot flow** (analyze pipeline): only `# Semantics`,
+         *       `# Style`, `# Presentation Defaults` — the analyze prompt derives rules
+         *       from input documents rather than quoting them, matching Mike's
+         *       GENERATE_CORPUS_GUIDELINES vocabulary.
+         *
+         *     The metaprompter treats the whole body as one editable artifact and returns
+         *     a refined version on each refine pass; refine auto-detects which shape it
+         *     is working on by checking for a `# Reference Inputs` heading.
          */
         DataGuide: {
             /**
@@ -5095,12 +5898,41 @@ export interface components {
             created_by?: string;
             /**
              * Guide
-             * @description Markdown body of the data guide. Typically contains a `# Reference Examples` section and a `# Guidelines & Rules` section.
+             * @description Markdown body of the input data guide. Manual-flow guides start with `# Reference Inputs`; Kiln Pro / Copilot-flow guides have only `# Semantics`, `# Style`, `# Presentation Defaults`.
              * @default
              */
             guide: string;
+            /**
+             * Source
+             * @description Which flow created this guide. Refine + verify pipelines branch on this to choose the right metaprompter (manual = user-curated examples + edits all sections; kiln_pro = LLM-derived, refine is feedback-only surgical edits).
+             * @default manual
+             * @enum {string}
+             */
+            source: "manual" | "kiln_pro";
             /** Model Type */
             readonly model_type: string;
+        };
+        /**
+         * DataGuideJobResultApiOutput
+         * @description Result of a completed data guide draft job.
+         */
+        DataGuideJobResultApiOutput: {
+            /**
+             * Draft Guide
+             * @description Full draft input data guide markdown.
+             */
+            draft_guide: string;
+        };
+        /**
+         * DataGuideJobStatusApiOutput
+         * @description Current status of a data guide draft job.
+         */
+        DataGuideJobStatusApiOutput: {
+            /**
+             * Status
+             * @description Current job status (e.g. running, succeeded, failed, cancelled).
+             */
+            status: string;
         };
         /**
          * DataSource
@@ -5236,6 +6068,21 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        /**
+         * DefaultLlmJudgePromptResponse
+         * @description Response from the default LLM judge prompt endpoint.
+         */
+        DefaultLlmJudgePromptResponse: {
+            /** Judge Prompt */
+            judge_prompt: string;
+            /** System Prompt */
+            system_prompt: string;
+            /**
+             * Reference Keys
+             * @description Reference data keys the server will require of a judge for this eval, derived the same way `create_llm_judge_config` derives them. Returned so the builder can offer a place to supply them when testing, rather than re-deriving the rule client-side from the prompt's text.
+             */
+            reference_keys?: string[];
+        };
         /**
          * DeleteConfigResponse
          * @description Confirmation that a git sync configuration was deleted.
@@ -5542,19 +6389,28 @@ export interface components {
             current_config_id?: string | null;
             /**
              * Eval Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id and train_set_filter_id.
+             * @deprecated
+             * @description Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['test'] once, and the field is then cleared. It is always saved as null. Read splits['test'] instead.
              */
-            eval_set_filter_id: string;
+            eval_set_filter_id?: string | null;
             /**
              * Eval Configs Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id.
+             * @description The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings.
              */
             eval_configs_filter_id?: string | null;
             /**
              * Train Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning. Should be mutually exclusive with eval_set_filter_id.
+             * @deprecated
+             * @description Deprecated, and neither read nor written. It exists only so evals written by a Kiln build that predates `splits` still load: on load its value is migrated into splits['train'] once, and the field is then cleared. It is always saved as null. Read splits['train'] instead.
              */
             train_set_filter_id?: string | null;
+            /**
+             * Splits
+             * @description The eval's dataset splits, keyed by split name ('test', 'train', 'val'), and the only place they are stored. Each split names the store its items come from and the filter that selects them. Keys this build doesn't know are preserved but not exposed. 'golden' is not a split and does not belong here: the golden set must be dataset (TaskRun) based, because human ratings only exist on dataset items, so it is stored in eval_configs_filter_id instead. Nothing reads splits['golden'] — writing it is accepted and silently ignored. In Python, prefer Eval.set_split() to assigning into this dict: it refuses to mutate a readonly (cached) eval, and marks the field as set so exclude_unset dumps keep it.
+             */
+            splits?: {
+                [key: string]: components["schemas"]["TaskRunSplit"] | components["schemas"]["EvalInputSplit"];
+            };
             /**
              * Output Scores
              * @description The scores this evaluator should produce.
@@ -5566,6 +6422,10 @@ export interface components {
              * @default false
              */
             favourite: boolean;
+            /** @description The priority of the eval. None on evals created before priority lived on evals; read through resolved_priority(), which falls back to the associated spec. */
+            priority?: components["schemas"]["Priority"] | null;
+            /** @description The status of the eval. None on evals created before status lived on evals; read through resolved_status(), which falls back to the associated spec. */
+            status?: components["schemas"]["EvalStatus"] | null;
             /**
              * Template Properties
              * @description Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.
@@ -5574,10 +6434,10 @@ export interface components {
                 [key: string]: string | number | boolean;
             } | null;
             /**
-             * @description The output of the task run to evaluate. Can be final answer or full trace.
+             * @description The output of the task run to evaluate. Can be final answer, full trace, or None for V2 evals.
              * @default final_answer
              */
-            evaluation_data_type: components["schemas"]["EvalDataType"];
+            evaluation_data_type: components["schemas"]["EvalDataType"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -5622,14 +6482,14 @@ export interface components {
             name: string;
             /**
              * Model Name
-             * @description The name of the model to use for this eval config.
+             * @description The name of the model to use for this eval config. Required for legacy configs, None for V2.
              */
-            model_name: string;
+            model_name?: string | null;
             /**
              * Model Provider
-             * @description The provider of the model to use for this eval config.
+             * @description The provider of the model to use for this eval config. Required for legacy configs, None for V2.
              */
-            model_provider: string;
+            model_provider?: string | null;
             /**
              * @description This is used to determine the type of eval to run.
              * @default g_eval
@@ -5637,12 +6497,11 @@ export interface components {
             config_type: components["schemas"]["EvalConfigType"];
             /**
              * Properties
-             * @description Properties to be used to execute the eval config. This is config_type specific and should serialize to a json dict.
-             * @default {}
+             * @description Properties to be used to execute the eval config. Legacy configs use a dict; V2 configs use typed properties.
              */
-            properties: {
+            properties?: (components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"]) | {
                 [key: string]: unknown;
-            };
+            } | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -5710,19 +6569,60 @@ export interface components {
              * @description Percent of the dataset processed.
              */
             percent_complete: number;
+            /**
+             * N Excluded
+             * @description Number of EvalRuns excluded due to skipped_reason.
+             * @default 0
+             */
+            n_excluded: number;
         };
         /**
          * EvalConfigType
          * @description The type of eval configuration, determining how scores are generated.
          * @enum {string}
          */
-        EvalConfigType: "g_eval" | "llm_as_judge";
+        EvalConfigType: "g_eval" | "llm_as_judge" | "v2";
         /**
          * EvalDataType
          * @description The type of task output data to evaluate.
          * @enum {string}
          */
         EvalDataType: "final_answer" | "full_trace" | "reference_answer";
+        /**
+         * EvalInputSplit
+         * @description A split whose items are EvalInputs, selected by an eval-input filter.
+         */
+        EvalInputSplit: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            source: "eval_input";
+            /** Filter Id */
+            filter_id: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * EvalItemSource
+         * @description The eval dataset item a TaskRun was generated for.
+         *
+         *     Not the run config — that lives on the same TaskRun at
+         *     `output.source.run_config_id`.
+         */
+        EvalItemSource: {
+            /**
+             * Source Type
+             * @description Which store the dataset item came from: an EvalInput (V2) or a TaskRun (V1-backed split).
+             * @enum {string}
+             */
+            source_type: "eval_input" | "task_run";
+            /**
+             * Source Id
+             * @description The id of the dataset item this run was generated for. Interpreted within the store named by source_type — ids are only unique within a store.
+             */
+            source_id: string;
+        };
         /**
          * EvalOutputScore
          * @description A definition of a score that an evaluator will produce.
@@ -5775,9 +6675,14 @@ export interface components {
             golden_dataset_fully_rated_count: number;
             /**
              * Train Dataset Size
-             * @description The total size of the train dataset.
+             * @description The total size of the train split. 0 when the eval has no train split.
              */
             train_dataset_size: number;
+            /**
+             * Val Dataset Size
+             * @description The total size of the val split. 0 when the eval has no val split.
+             */
+            val_dataset_size: number;
             /** @description The currently selected eval config. */
             current_eval_method?: components["schemas"]["EvalConfig"] | null;
         };
@@ -5894,13 +6799,27 @@ export interface components {
         };
         /**
          * EvalRun
-         * @description The results of running an eval on a single dataset item.
+         * @description The scores an eval produced for a single dataset item.
          *
          *     This is a child of an EvalConfig, which specifies how the scores were generated.
          *
          *     Eval runs can be one of 2 types:
-         *     1) eval_config_eval=False: we were evaluating a task run (a method of running the task). We get the task input from the dataset_id.input, run the task with the task_run_config, then ran the evaluator on that output. task_run_config_id must be set. The output saved in this model is the output of the task run.
-         *     2) eval_config_eval=True: we were evaluating an eval config (a method of evaluating the task). We used the existing dataset item input/output, and ran the evaluator on it. task_run_config_id must be None. The input/output saved in this model is the input/output of the dataset item.
+         *     1) eval_config_eval=False (scoring): we were evaluating a task run config (a method of running the task). We take the item's input, run the task with the task_run_config, then run the evaluator on that output. task_run_config_id must be set.
+         *     2) eval_config_eval=True (calibration): we were evaluating an eval config (a method of evaluating the task). We used an existing human-rated dataset item's input/output, and ran the evaluator on it. task_run_config_id must be None.
+         *
+         *     A record is described by two independent facts — whether it points at a TaskRun, and
+         *     whether it was skipped — which `validate_record_mode` constrains to three legal
+         *     shapes. What is exclusive is where the trace lives: on the record, or on the TaskRun,
+         *     never both.
+         *
+         *     - **Pointer** (new): `scored_run_id` names the TaskRun that holds the trace. All
+         *       inline trace fields must be None.
+         *     - **Skipped**: `skipped_reason` set, so scores are not required. It also carries a
+         *       `scored_run_id` if the trace existed and only scoring was skipped — so a skip can
+         *       be a pointer record too — and none if the skip happened before generation.
+         *     - **Legacy inline**: no `scored_run_id`; the trace lives on this record, and `input`
+         *       is required unless the record was skipped. Every record written before the
+         *       trace/score split is in this state, and it stays valid forever.
          */
         EvalRun: {
             /**
@@ -5932,9 +6851,14 @@ export interface components {
             created_by?: string;
             /**
              * Dataset Id
-             * @description The ID of the dataset item that was used for this run. Must belong to the same Task as the grand-parent eval of this EvalRun.
+             * @description The ID of the dataset item (TaskRun) that was used for this run. Mutually exclusive with eval_input_id.
              */
-            dataset_id: string | null;
+            dataset_id?: string | null;
+            /**
+             * Scored Run Id
+             * @description The ID of the TaskRun this score was computed over. None for legacy records that carry their trace inline. A dangling reference is tolerated: the score still renders and still aggregates, only the trace drill-through is unavailable.
+             */
+            scored_run_id?: string | null;
             /**
              * Task Run Config Id
              * @description The ID of the TaskRunConfig that was run, if this eval run was based on a task run. Must belong to the same Task as this eval. Can be None if this eval run is based on an eval config.
@@ -5948,17 +6872,20 @@ export interface components {
             eval_config_eval: boolean;
             /**
              * Input
-             * @description The input to the task. JSON formatted for structured input, plaintext for unstructured input.
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.input instead. The input to the task. JSON formatted for structured input, plaintext for unstructured input. Required on legacy records (those with neither a scored_run_id nor a skipped_reason), never set on new ones.
              */
-            input: string;
+            input?: string | null;
             /**
              * Output
-             * @description The output of the task. JSON formatted for structured output, plaintext for unstructured output.
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.output.output instead. The output of the task. None for skipped-before-execution runs.
              */
-            output: string;
+            output?: string | null;
             /**
              * Reference Answer
-             * @description The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id. The reference answer for the input. JSON formatted for structured reference answer, plaintext for unstructured reference answer. Used for reference answer evals.
              */
             reference_answer?: string | null;
             /**
@@ -5970,18 +6897,40 @@ export interface components {
             } | null;
             /**
              * Task Run Trace
-             * @description The JSON formatted trace of the task run that produced the output.
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.trace instead. The JSON formatted trace of the task run that produced the output.
              */
             task_run_trace?: string | null;
             /**
              * Scores
              * @description The output scores of the evaluator (aligning to those required by the grand-parent Eval this object is a child of).
+             * @default {}
              */
             scores: {
                 [key: string]: number;
             };
-            /** @description The usage of the task run that produced this eval run output (not the usage by the evaluation model). */
+            /**
+             * @deprecated
+             * @description DEPRECATED: the trace now lives on the TaskRun named by scored_run_id; read TaskRun.usage instead. The usage of the task run that produced this eval run output (not the usage by the evaluation model).
+             */
             task_run_usage?: components["schemas"]["Usage"] | null;
+            /** @description The usage of the evaluation model (judge) that produced this eval run's scores, aggregated across every LLM call the judgment made. Distinct from task_run_usage, which is the evaluated task run's usage. None for non-LLM evals (e.g. code evals) and for records that predate this field. */
+            eval_usage?: components["schemas"]["Usage"] | null;
+            /**
+             * Eval Input Id
+             * @description ID of the EvalInput used for this run (V2 evals). Mutually exclusive with dataset_id.
+             */
+            eval_input_id?: string | null;
+            /**
+             * Skipped Reason
+             * @description If set, this run was skipped. Stored as str for back/forward-compat; conventionally a SkippedReason value.
+             */
+            skipped_reason?: string | null;
+            /**
+             * Skipped Detail
+             * @description Case-specific detail for skipped runs (e.g. missing key name).
+             */
+            skipped_detail?: string | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -5994,7 +6943,7 @@ export interface components {
              * Results
              * @description The individual eval run results.
              */
-            results: components["schemas"]["EvalRun"][];
+            results: components["schemas"]["EvalRunWithTrace"][];
             /** @description The parent eval. */
             eval: components["schemas"]["Eval"];
             /** @description The eval config used. */
@@ -6003,11 +6952,117 @@ export interface components {
             run_config: components["schemas"]["TaskRunConfig"];
         };
         /**
+         * EvalRunWithTrace
+         * @description An eval's scores for one item, plus the trace those scores were computed over.
+         *
+         *     Where the trace lives depends on the record: on a TaskRun named by `scored_run_id`,
+         *     inline on the EvalRun for records written before the trace/score split, or nowhere at
+         *     all for a run that was skipped before anything was generated. This resolves whichever
+         *     applies - falling back to the dataset item for the input of that last kind - so
+         *     callers see one shape regardless of which it is.
+         */
+        EvalRunWithTrace: {
+            /** @description The score record itself. */
+            eval_run: components["schemas"]["EvalRun"];
+            /**
+             * Input
+             * @description The input the task was run on. From the scored TaskRun, from the EvalRun itself for legacy records, or from the dataset item for records that were skipped before anything was generated.
+             */
+            input: string | null;
+            /**
+             * Output
+             * @description What the task produced. Always the original output, never a repaired one: a repair can happen after scoring, so it is not what was scored. None when nothing was generated, or when the scored TaskRun is missing.
+             */
+            output: string | null;
+            /**
+             * Task Run Trace
+             * @description The JSON formatted trace of the task run that produced the output, if it recorded one.
+             */
+            task_run_trace: string | null;
+            /** @description The usage of the task run that produced the output. Not the judge's own usage, which is on the EvalRun as eval_usage. */
+            task_run_usage: components["schemas"]["Usage"] | null;
+        };
+        /**
+         * EvalStatus
+         * @description Lifecycle status of an eval (and, historically, of a spec).
+         * @enum {string}
+         */
+        EvalStatus: "active" | "future" | "deprecated" | "archived";
+        /**
+         * EvalTaskInput
+         * @description The runtime data bundle passed to V2 evaluators.
+         *
+         *     Assembled by the eval runner from the item being evaluated and the task run that
+         *     was scored. The item is either an EvalInput or a TaskRun drawn from the dataset;
+         *     which one it is determines where `reference_data` and `task_input` come from.
+         */
+        EvalTaskInput: {
+            /**
+             * Final Message
+             * @description The final model output (task output text).
+             */
+            final_message: string;
+            /**
+             * Trace
+             * @description The full conversation trace, if available.
+             */
+            trace?: {
+                [key: string]: unknown;
+            }[] | null;
+            /**
+             * Reference Data
+             * @description Ground-truth data for the item being evaluated, keyed by reference name. Taken from EvalInput.reference for an EvalInput-backed item; for a TaskRun-backed dataset item it is the item's own stored output under the key 'reference_answer', since that output is the curated answer. None when a TaskRun is scored as itself (judge calibration), where the item and the scored run are the same record.
+             */
+            reference_data?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Task Input
+             * @description The original task input text.
+             */
+            task_input?: string | null;
+        };
+        /**
          * EvalTemplateId
          * @description An eval template is a pre-defined eval that can be used as a starting point for a new eval.
          * @enum {string}
          */
         EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
+        /**
+         * EvalsResponse
+         * @description The evals of a task, plus how many eval files this version of Kiln couldn't read.
+         */
+        EvalsResponse: {
+            /**
+             * Evals
+             * @description The evals which loaded successfully.
+             */
+            evals: components["schemas"]["Eval"][];
+            /**
+             * Load Error Count
+             * @description How many eval files failed to load. Usually because they were written by a newer version of Kiln.
+             */
+            load_error_count: number;
+        };
+        /** ExactMatchProperties */
+        ExactMatchProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "exact_match";
+            /** Value Expression */
+            value_expression?: string | null;
+            /** Expected Value */
+            expected_value?: string | null;
+            /** Reference Key */
+            reference_key?: string | null;
+            /**
+             * Case Sensitive
+             * @default true
+             */
+            case_sensitive: boolean;
+        };
         /**
          * ExampleWithFeedbackApi
          * @description An example with user feedback for spec refinement.
@@ -6847,6 +7902,74 @@ export interface components {
                 [key: string]: components["schemas"]["SampleApi"][];
             };
         };
+        /** GenerateInputsBatchInput */
+        GenerateInputsBatchInput: {
+            /**
+             * Prompts
+             * @description One tailored prompt per input. Each is used as the guidance for a single input-generation call.
+             */
+            prompts: string[];
+            /**
+             * Data Guide
+             * @description The input data guide to include in every input-generation call. Send it when the user has 'Use Data Guide' on, and null when off — null means 'do not use a guide', not 'fall back to the task's saved guide'.
+             */
+            data_guide?: string | null;
+            /** @description The run config properties (model, provider, tools, skills) to use for input generation. */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
+        };
+        /** GenerateOutputsBatchInput */
+        GenerateOutputsBatchInput: {
+            /**
+             * Items
+             * @description The inputs to generate outputs for.
+             */
+            items: components["schemas"]["GenerateOutputsBatchItem"][];
+            /**
+             * Input Model Name
+             * @description The model used to generate the inputs (recorded on each run).
+             */
+            input_model_name: string;
+            /**
+             * Input Provider
+             * @description The provider used to generate the inputs (recorded on each run).
+             */
+            input_provider: string;
+            /**
+             * Run Config Properties
+             * @description The run config properties to use for output generation.
+             */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
+            /**
+             * Guidance
+             * @description Optional custom guidance for output generation.
+             */
+            guidance?: string | null;
+            /**
+             * Session Id
+             * @description Optional session ID to group generated samples.
+             */
+            session_id?: string | null;
+            /**
+             * Tags
+             * @description Tags to add to each generated sample.
+             */
+            tags?: string[] | null;
+        };
+        /** GenerateOutputsBatchItem */
+        GenerateOutputsBatchItem: {
+            /**
+             * Index
+             * @description Stable index of this item within the batch.
+             */
+            index: number;
+            /**
+             * Input
+             * @description The generated input to run the task on.
+             */
+            input: string | {
+                [key: string]: unknown;
+            };
+        };
         /** GetRagConfigProgressRequest */
         GetRagConfigProgressRequest: {
             /**
@@ -6910,14 +8033,12 @@ export interface components {
         GuidePreviewInput: {
             /**
              * Guide
-             * @description Markdown body of the data guide being previewed.
+             * @description Markdown body of the input data guide being previewed.
              * @default
              */
             guide: string;
             /** @description The model config to use for preview input generation */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
-            /** @description Optional model config to use for preview output generation. Defaults to the input run config when not provided. */
-            output_run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
             /**
              * Num Samples
              * @description Number of preview samples to generate
@@ -6932,40 +8053,38 @@ export interface components {
              * @description Generated sample input
              */
             input: string;
-            /**
-             * Output
-             * @description Generated sample output
-             */
-            output: string;
         };
         /** GuideRefineInput */
         GuideRefineInput: {
             /**
              * Current Guide
-             * @description Markdown body of the current data guide — the metaprompter rewrites it wholesale.
+             * @description Markdown body of the current input data guide — the metaprompter rewrites it wholesale.
              * @default
              */
             current_guide: string;
             /**
+             * Source
+             * @description Which flow owns the in-memory guide, so the metaprompter branches correctly during the pre-save refine loop. When omitted, falls back to the persisted guide's source (correct only once the guide is saved).
+             */
+            source?: ("manual" | "kiln_pro") | null;
+            /**
              * Feedback
-             * @description User feedback on what's wrong with preview samples
+             * @description User feedback on what's wrong with the previewed inputs
              */
             feedback: string;
             /**
              * Preview Samples
-             * @description The previewed samples the user is giving feedback on, each rated by the user as realistic (true) or needs work (false)
+             * @description The previewed inputs the user is giving feedback on, each rated by the user as realistic (true) or needs work (false)
              */
             preview_samples: components["schemas"]["RatedSample"][];
             /** @description The model config to use for the metaprompter call itself. */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
-            /** @description The user's chosen output-generation run config. Its prompt template is rendered server-side and used as runtime context for the metaprompter, so the rules it produces match what the model actually sees at synthesis time. Falls back to `task.instruction` when not provided — accurate for users on the default simple prompt template, stale for users on prompt-optimization or saved-prompt run configs. */
-            output_run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
         };
         /** GuideRefineResponse */
         GuideRefineResponse: {
             /**
              * Refined Guide
-             * @description The refined data guide markdown returned by the metaprompter.
+             * @description The refined input data guide markdown returned by the metaprompter.
              */
             refined_guide: string;
         };
@@ -7005,6 +8124,39 @@ export interface components {
              * @enum {string}
              */
             format: "wav" | "mp3";
+        };
+        /** InputsBatchResultItem */
+        InputsBatchResultItem: {
+            /** Index */
+            index: number;
+            /** Input */
+            input?: string | {
+                [key: string]: unknown;
+            } | null;
+            /** Error */
+            error?: string | null;
+        };
+        /** InputsBatchStatusOutput */
+        InputsBatchStatusOutput: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "complete" | "error";
+            /** Total */
+            total: number;
+            /** Completed */
+            completed: number;
+            /** Errors */
+            errors: number;
+            /** Model Name */
+            model_name: string;
+            /** Model Provider */
+            model_provider: string;
+            /** Results */
+            results: components["schemas"]["InputsBatchResultItem"][];
+            /** Error Message */
+            error_message?: string | null;
         };
         /** IssueProperties */
         IssueProperties: {
@@ -7199,6 +8351,7 @@ export interface components {
          * @enum {string}
          */
         JobStatus: "cancelled" | "failed" | "pending" | "running" | "succeeded";
+        JsonValue: unknown;
         /**
          * KilnAgentRunConfigProperties
          * @description A configuration for running a task using a Kiln AI agent.
@@ -7533,6 +8686,69 @@ export interface components {
             /** Prompt Audio */
             prompt_audio: string;
         };
+        /**
+         * LlmJudgeBuilderInput
+         * @description Shared fields for llm_judge: model, provider, g_eval.
+         */
+        LlmJudgeBuilderInput: {
+            /**
+             * Model Name
+             * @description The LLM model to use as judge.
+             */
+            model_name: string;
+            /** @description The model provider. */
+            provider: components["schemas"]["ModelProviderName"];
+            /**
+             * G Eval
+             * @description Whether to use G-Eval logprob scoring.
+             */
+            g_eval: boolean;
+            /**
+             * Judge Prompt
+             * @description Override the judge prompt template. If unset, the server assembles a rich default from the eval's task and spec.
+             */
+            judge_prompt?: string | null;
+            /**
+             * System Prompt
+             * @description Override the judge system prompt. Defaults to 'You are an evaluator.'
+             */
+            system_prompt?: string | null;
+            /**
+             * Judge Instructions
+             * @description User-written evaluation steps, bound to {{ judge_instructions }} when the judge prompt is rendered. Used by evals with no spec or template to derive default steps from.
+             */
+            judge_instructions?: string[] | null;
+        };
+        /** LlmJudgeProperties */
+        LlmJudgeProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "llm_judge";
+            /** Model Name */
+            model_name: string;
+            /** Model Provider */
+            model_provider: string;
+            /** System Prompt */
+            system_prompt?: string | null;
+            /** Prompt Template */
+            prompt_template: string;
+            /**
+             * Reference Keys
+             * @default []
+             */
+            reference_keys: string[];
+            /** Thinking Instruction */
+            thinking_instruction?: string | null;
+            /**
+             * G Eval
+             * @default false
+             */
+            g_eval: boolean;
+            /** Judge Instructions */
+            judge_instructions?: string[] | null;
+        };
         /** LocalServerProperties */
         LocalServerProperties: {
             /** Command */
@@ -7709,6 +8925,114 @@ export interface components {
             mean_total_llm_latency_ms?: number | null;
         };
         /**
+         * Memory
+         * @description One memory record of the assistant working on this project.
+         *
+         *     Stored at assistant_memory/{id}/memory.kiln. Concurrent-append safe
+         *     (file per memory); updates are last-writer-wins.
+         */
+        Memory: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Overview
+             * @description One-line summary written so a future reader can decide whether to fetch the full content. For very short memories this IS the whole memory (leave content null). No newlines.
+             */
+            overview: string;
+            /**
+             * Content
+             * @description The memory body: the finding/fact/decision with its conditions and evidence level, citing related Kiln records as prose IDs (e.g. 'run_config 184623901234', 'eval 5678'). Null when the overview says everything. Record observations with conditions ('batch API 429'd at 50rps on 07-04'), never universal rules.
+             */
+            content?: string | null;
+            /**
+             * Tags
+             * @description Snake_case tags for filtering (existing Kiln tag rules). Free-form; skills define the working vocabulary (e.g. experiment, dead_end, constraint, api_quirk, session_state; faceted tags like lever_prompt, verdict_accept, evidence_weak).
+             */
+            tags?: string[];
+            /**
+             * Scope
+             * @description Opaque scope string, exact-match filterable. Conventions: 'project' for project-wide knowledge (constraints, environment facts); 'task::<task_id>' for task-scoped work. Not validated against existing records — a convention, not a reference.
+             */
+            scope: string;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * MemoryListResult
+         * @description A page of list_memories results plus the truncation nudge data.
+         *
+         *     remaining_tag_counts is computed over the records beyond this page (the
+         *     not-returned remainder), sorted by count descending. Adapters render it into
+         *     a prompt-facing nudge string like "62 more — filter by tag: probe(18), ...".
+         */
+        MemoryListResult: {
+            /** Listings */
+            listings: components["schemas"]["MemoryListing"][];
+            /** Matched */
+            matched: number;
+            /** Remaining */
+            remaining: number;
+            /** Remaining Tag Counts */
+            remaining_tag_counts: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * MemoryListing
+         * @description A single row in a list_memories result. Carries content_length, not content.
+         */
+        MemoryListing: {
+            /** Id */
+            id: string;
+            /** Overview */
+            overview: string;
+            /** Tags */
+            tags: string[];
+            /** Scope */
+            scope: string;
+            /** Content Length */
+            content_length: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+        };
+        /** MemorySummary */
+        MemorySummary: {
+            /** Total */
+            total: number;
+            /** Scopes */
+            scopes: components["schemas"]["ScopeSummary"][];
+        };
+        /**
          * MessageUsage
          * @description Token usage and cost for a single LLM call or a multi-message sum.
          *
@@ -7811,7 +9135,7 @@ export interface components {
          * @description Enumeration of supported AI model providers.
          * @enum {string}
          */
-        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
+        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner" | "featherless_ai";
         /**
          * NewProposedSpecEditApi
          * @description A proposed edit to a spec field.
@@ -7960,6 +9284,58 @@ export interface components {
          * @enum {string}
          */
         OutputFormat: "text/plain" | "text/markdown";
+        /** OutputsBatchResultItem */
+        OutputsBatchResultItem: {
+            /** Index */
+            index: number;
+            task_run?: components["schemas"]["TaskRun-Output"] | null;
+            /** Error */
+            error?: string | null;
+        };
+        /** OutputsBatchStatusOutput */
+        OutputsBatchStatusOutput: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "complete" | "error";
+            /** Total */
+            total: number;
+            /** Completed */
+            completed: number;
+            /** Errors */
+            errors: number;
+            /** Results */
+            results: components["schemas"]["OutputsBatchResultItem"][];
+            /** Error Message */
+            error_message?: string | null;
+        };
+        /**
+         * ParseImportFileApiOutput
+         * @description Result of parsing an uploaded bulk-import file of input examples.
+         *
+         *     Plaintext tasks parse a single-column CSV; structured-input tasks parse one
+         *     JSON object per line, validated against the task's input schema. A non-null
+         *     `error` means the whole file was rejected; `warning` means it was accepted
+         *     but some examples were skipped (e.g. over the length limit).
+         */
+        ParseImportFileApiOutput: {
+            /**
+             * Rows
+             * @description Parsed example input strings, ready to add. Empty when error is set.
+             */
+            rows: string[];
+            /**
+             * Error
+             * @description Set when the whole file was rejected (invalid format/encoding).
+             */
+            error?: string | null;
+            /**
+             * Warning
+             * @description Set when the file was accepted but some examples were skipped.
+             */
+            warning?: string | null;
+        };
         /** PatchDocumentRequest */
         PatchDocumentRequest: {
             /**
@@ -7995,6 +9371,24 @@ export interface components {
              * @description Whether the extractor config is archived
              */
             is_archived?: boolean | null;
+        };
+        /** PatternMatchProperties */
+        PatternMatchProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "pattern_match";
+            /** Value Expression */
+            value_expression?: string | null;
+            /** Pattern */
+            pattern: string;
+            /**
+             * Mode
+             * @default must_match
+             * @enum {string}
+             */
+            mode: "must_match" | "must_not_match";
         };
         /**
          * Priority
@@ -8667,10 +10061,10 @@ export interface components {
         };
         /**
          * RatedSample
-         * @description A preview sample (input/output pair) plus the user's rating, used as
-         *     feedback input to the data-guide refinement metaprompter. Shared between
-         *     the API surface and the prompt builder so callers don't have to flatten
-         *     into positional tuples.
+         * @description A previewed input sample plus the user's rating, used as feedback input
+         *     to the input-data-guide refinement metaprompter. Shared between the API
+         *     surface and the prompt builder so callers don't have to flatten into
+         *     positional tuples.
          */
         RatedSample: {
             /**
@@ -8679,13 +10073,8 @@ export interface components {
              */
             input: string;
             /**
-             * Output
-             * @description Generated sample output
-             */
-            output: string;
-            /**
              * Looks Good
-             * @description User rating: true if the sample looks realistic, false if it needs work
+             * @description User rating: true if the input looks realistic, false if it needs work
              */
             looks_good: boolean;
         };
@@ -9162,6 +10551,38 @@ export interface components {
              * @default false
              */
             remove_conflicting_id: boolean;
+            /**
+             * Trusted
+             * @description Must be true to confirm trust before importing. Kiln projects can contain code that runs on your machine.
+             * @default false
+             */
+            trusted: boolean;
+        };
+        /**
+         * SaveMemoryRequest
+         * @description Body for creating a memory. `scope` is required — there is no default.
+         */
+        SaveMemoryRequest: {
+            /**
+             * Overview
+             * @description One-line summary written so a future reader can decide whether to fetch the content. For very short memories this IS the whole memory (leave content null). No newlines.
+             */
+            overview: string;
+            /**
+             * Scope
+             * @description Opaque scope string. Conventions: 'project' for project-wide knowledge; 'task::<task_id>' for task-scoped work. Not validated against existing records.
+             */
+            scope: string;
+            /**
+             * Content
+             * @description The memory body: the finding/fact/decision with its conditions and evidence level. Null when the overview says everything.
+             */
+            content?: string | null;
+            /**
+             * Tags
+             * @description Snake_case tags (no spaces) for filtering.
+             */
+            tags?: string[];
         };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
@@ -9195,10 +10616,15 @@ export interface components {
         SaveTaskDataGuideInput: {
             /**
              * Guide
-             * @description Markdown body of the data guide.
+             * @description Markdown body of the input data guide.
              * @default
              */
             guide: string;
+            /**
+             * Source
+             * @description Which flow created this guide. Determines which refine metaprompter branch runs on subsequent edits. On edit, omit to preserve the existing source; on first save, send the originating flow.
+             */
+            source?: ("manual" | "kiln_pro") | null;
         };
         /**
          * ScanProjectsRequest
@@ -9222,6 +10648,24 @@ export interface components {
              */
             projects: components["schemas"]["ProjectInfo"][];
         };
+        /** ScopeSummary */
+        ScopeSummary: {
+            /** Scope */
+            scope: string;
+            /** Count */
+            count: number;
+            /**
+             * Newest
+             * Format: date-time
+             */
+            newest: string;
+            /** Tags */
+            tags: {
+                [key: string]: number;
+            };
+            /** Untagged */
+            untagged?: number | null;
+        };
         /**
          * ScoreSummary
          * @description Summary of scores for an eval run.
@@ -9229,9 +10673,19 @@ export interface components {
         ScoreSummary: {
             /**
              * Mean Score
-             * @description The mean score across all runs.
+             * @description The mean score across all used runs. None when n_used == 0.
              */
-            mean_score: number;
+            mean_score: number | null;
+            /**
+             * N Used
+             * @description Number of EvalRuns with all expected scores and not skipped.
+             */
+            n_used: number;
+            /**
+             * N Excluded
+             * @description Number of EvalRuns excluded due to skipped_reason.
+             */
+            n_excluded: number;
         };
         /** SearchResult */
         SearchResult: {
@@ -9307,6 +10761,25 @@ export interface components {
              * @description The breakpoint percentile threshold to use for the chunker.
              */
             breakpoint_percentile_threshold: number;
+        };
+        /** SetCheckProperties */
+        SetCheckProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_check";
+            /** Value Expression */
+            value_expression?: string | null;
+            /** Expected Set */
+            expected_set?: string[] | null;
+            /** Reference Key */
+            reference_key?: string | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "subset" | "superset" | "equal";
         };
         /**
          * SkillContentResponse
@@ -9449,7 +10922,7 @@ export interface components {
              * @description The status of the spec.
              * @default active
              */
-            status: components["schemas"]["SpecStatus"];
+            status: components["schemas"]["EvalStatus"];
             /**
              * Tags
              * @description The tags of the spec.
@@ -9511,7 +10984,7 @@ export interface components {
              * @description The status of the spec.
              * @default active
              */
-            status: components["schemas"]["SpecStatus"];
+            status: components["schemas"]["EvalStatus"];
             /**
              * Tags
              * @description The tags of the spec.
@@ -9540,12 +11013,6 @@ export interface components {
             target_specification: string;
         };
         /**
-         * SpecStatus
-         * @description Defines the status of a spec.
-         * @enum {string}
-         */
-        SpecStatus: "active" | "future" | "deprecated" | "archived";
-        /**
          * SpecificationInput
          * @description The specification to refine.
          */
@@ -9564,6 +11031,41 @@ export interface components {
             spec_field_current_values: {
                 [key: string]: string;
             };
+        };
+        /** StartBatchJobOutput */
+        StartBatchJobOutput: {
+            /**
+             * Job Id
+             * @description Identifier for the started batch job.
+             */
+            job_id: string;
+        };
+        /**
+         * StartDataGuideJobApiInput
+         * @description Input to kick off the input data guide draft job.
+         *
+         *     Carries only the input examples. All task info the job needs — the runtime
+         *     prompt and the input JSON schema — is derived server-side from the task
+         *     identified by the route, so the client can't supply a manipulated prompt or
+         *     schema, and the output schema / description never reach the guide LLM.
+         */
+        StartDataGuideJobApiInput: {
+            /**
+             * Input Examples
+             * @description Heterogeneous list of input examples — short manual entries, the input portion of selected task runs, or full text of uploaded text documents (txt, md, csv). Every entry is a string and is treated as a candidate reference input regardless of source.
+             */
+            input_examples: string[];
+        };
+        /**
+         * StartDataGuideJobApiOutput
+         * @description Identifier for the started data guide draft job.
+         */
+        StartDataGuideJobApiOutput: {
+            /**
+             * Job Id
+             * @description Identifier for the started data guide draft job.
+             */
+            job_id: string;
         };
         /** StartPromptOptimizationJobRequest */
         StartPromptOptimizationJobRequest: {
@@ -9639,6 +11141,23 @@ export interface components {
              * @description [compare_paired] per-case treatment values (null allowed), positionally paired with values_a.
              */
             values_b?: (number | null)[] | null;
+        };
+        /** StepCountCheckProperties */
+        StepCountCheckProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "step_count_check";
+            /**
+             * Count Type
+             * @enum {string}
+             */
+            count_type: "tool_calls" | "model_responses" | "turns";
+            /** Min Count */
+            min_count?: number | null;
+            /** Max Count */
+            max_count?: number | null;
         };
         /**
          * StructuredOutputMode
@@ -10200,6 +11719,8 @@ export interface components {
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
              */
             parent_task_run_id?: string | null;
+            /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
+            eval_source?: components["schemas"]["EvalItemSource"] | null;
         };
         /**
          * TaskRun
@@ -10279,6 +11800,8 @@ export interface components {
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
              */
             parent_task_run_id?: string | null;
+            /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
+            eval_source?: components["schemas"]["EvalItemSource"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -10348,6 +11871,21 @@ export interface components {
         TaskRunSnapshot: {
             /** Trace */
             trace?: components["schemas"]["TraceMessage"][] | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * TaskRunSplit
+         * @description A split whose items are TaskRuns, selected by a dataset filter.
+         */
+        TaskRunSplit: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            source: "task_run";
+            /** Filter Id */
+            filter_id: string;
         } & {
             [key: string]: unknown;
         };
@@ -10481,6 +12019,128 @@ export interface components {
              */
             auth_method?: string | null;
         };
+        /** TestCodeToolRequest */
+        TestCodeToolRequest: {
+            /** Tool Function Name */
+            tool_function_name: string;
+            /**
+             * Tool Description
+             * @default test
+             */
+            tool_description: string;
+            /** Parameters Schema */
+            parameters_schema: {
+                [key: string]: unknown;
+            };
+            /** Code */
+            code: string;
+            /**
+             * Timeout Seconds
+             * @default 60
+             */
+            timeout_seconds: number;
+            /** Tool Allowlist */
+            tool_allowlist?: string[];
+            /**
+             * Params
+             * @description Invocation arguments for the test.
+             */
+            params: {
+                [key: string]: unknown;
+            };
+        };
+        /** TestCodeToolResponse */
+        TestCodeToolResponse: {
+            /** Result */
+            result?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Traceback */
+            traceback?: string | null;
+            /**
+             * Not Trusted
+             * @default false
+             */
+            not_trusted: boolean;
+            /**
+             * Stdout
+             * @default
+             */
+            stdout: string;
+            /**
+             * Stderr
+             * @default
+             */
+            stderr: string;
+            /** Tool Call Log */
+            tool_call_log?: components["schemas"]["ToolCallLogEntryResponse"][];
+            /**
+             * Duration Ms
+             * @default 0
+             */
+            duration_ms: number;
+        };
+        /**
+         * TestV2EvalDraftRequest
+         * @description Request to test-run a V2 eval config for an eval that doesn't exist yet.
+         *
+         *     Used by the creation flow, where the eval (and its scores) are still being
+         *     drafted; the server builds a transient in-memory eval from output_scores.
+         */
+        TestV2EvalDraftRequest: {
+            /**
+             * Properties
+             * @description The V2 eval config properties to test.
+             */
+            properties: components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"];
+            /**
+             * Output Scores
+             * @description The scores the drafted eval will declare; returned scores are validated against them.
+             */
+            output_scores: components["schemas"]["EvalOutputScore"][];
+            /** @description The input to evaluate. */
+            eval_input: components["schemas"]["EvalTaskInput"];
+        };
+        /**
+         * TestV2EvalRequest
+         * @description Request to test-run a V2 eval config without persisting.
+         */
+        TestV2EvalRequest: {
+            /**
+             * Properties
+             * @description The V2 eval config properties to test. Required unless llm_judge_builder_input is set.
+             */
+            properties?: (components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"]) | null;
+            /** @description The input to evaluate. */
+            eval_input: components["schemas"]["EvalTaskInput"];
+            /** @description Builder input for llm_judge; when set, the server bakes the full properties from the eval's output_scores. */
+            llm_judge_builder_input?: components["schemas"]["LlmJudgeBuilderInput"] | null;
+        };
+        /**
+         * TestV2EvalResponse
+         * @description Response from a test-run of a V2 eval.
+         */
+        TestV2EvalResponse: {
+            /** Scores */
+            scores?: {
+                [key: string]: number;
+            };
+            /** Skipped Reason */
+            skipped_reason?: string | null;
+            /** Skipped Detail */
+            skipped_detail?: string | null;
+            /** Score Range Errors */
+            score_range_errors?: string[] | null;
+            /** Intermediate Outputs */
+            intermediate_outputs?: {
+                [key: string]: string;
+            } | null;
+            /**
+             * Tool Call Log
+             * @description Tools the scorer code called, in call order. Code evals only.
+             */
+            tool_call_log?: components["schemas"]["ToolCallLogEntryResponse"][];
+        };
         /**
          * TestWriteAccessRequest
          * @description Request to test push/write access to a cloned repo's remote.
@@ -10533,6 +12193,30 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
+            /** Function Name */
+            function_name?: string | null;
+        };
+        /** ToolCallCheckProperties */
+        ToolCallCheckProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "tool_call_check";
+            /** Expected Tools */
+            expected_tools: components["schemas"]["ToolCallSpec"][];
+            /**
+             * Match Mode
+             * @default all
+             * @enum {string}
+             */
+            match_mode: "any" | "all" | "ordered" | "never";
+            /**
+             * On Unexpected Tools
+             * @default ignore
+             * @enum {string}
+             */
+            on_unexpected_tools: "ignore" | "fail";
         };
         /** ToolCallInfo */
         ToolCallInfo: {
@@ -10546,6 +12230,33 @@ export interface components {
             };
             /** Requiresapproval */
             requiresApproval: boolean;
+        };
+        /**
+         * ToolCallLogEntryResponse
+         * @description One nested tool call a sandboxed run made, as reported to a test pane.
+         */
+        ToolCallLogEntryResponse: {
+            /** Tool Name */
+            tool_name: string;
+            /** Arguments */
+            arguments: {
+                [key: string]: unknown;
+            };
+            /** Output Preview */
+            output_preview: string;
+            /** Is Error */
+            is_error: boolean;
+            /** Duration Ms */
+            duration_ms: number;
+        };
+        /** ToolCallSpec */
+        ToolCallSpec: {
+            /** Tool Name */
+            tool_name: string;
+            /** Expected Args */
+            expected_args?: {
+                [key: string]: components["schemas"]["ArgMatch"];
+            } | null;
         };
         /**
          * ToolDefinitionResponse
@@ -10587,7 +12298,7 @@ export interface components {
          * ToolSetType
          * @enum {string}
          */
-        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin";
+        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin" | "code" | "sandbox_code";
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.
@@ -10687,6 +12398,10 @@ export interface components {
              * @description The updated description.
              */
             description?: string | null;
+            /** @description The updated priority. */
+            priority?: components["schemas"]["Priority"] | null;
+            /** @description The updated status. */
+            status?: components["schemas"]["EvalStatus"] | null;
             /**
              * Train Set Filter Id
              * @description The updated train set filter ID.
@@ -10708,6 +12423,33 @@ export interface components {
              * @description The updated description.
              */
             description?: string | null;
+        };
+        /**
+         * UpdateMemoryRequest
+         * @description Body for updating a memory. Only provided fields are changed; an explicit
+         *     null clears `content`. Omitted fields are left untouched.
+         */
+        UpdateMemoryRequest: {
+            /**
+             * Overview
+             * @description New one-line summary. No newlines.
+             */
+            overview?: string | null;
+            /**
+             * Content
+             * @description New memory body. Empty or null clears it.
+             */
+            content?: string | null;
+            /**
+             * Tags
+             * @description Snake_case tags (no spaces) for filtering.
+             */
+            tags?: string[] | null;
+            /**
+             * Scope
+             * @description Opaque scope string. Conventions: 'project' for project-wide knowledge; 'task::<task_id>' for task-scoped work. Not validated against existing records.
+             */
+            scope?: string | null;
         };
         /**
          * UpdateRagConfigRequest
@@ -10774,7 +12516,7 @@ export interface components {
             /** @description The updated priority. */
             priority?: components["schemas"]["Priority"] | null;
             /** @description The updated status. */
-            status?: components["schemas"]["SpecStatus"] | null;
+            status?: components["schemas"]["EvalStatus"] | null;
             /**
              * Tags
              * @description The updated tags.
@@ -11108,6 +12850,8 @@ export interface operations {
                 project_path: string;
                 /** @description When true and a duplicate project ID conflict is detected, remove the existing project registration before importing. */
                 remove_conflicting_id?: boolean;
+                /** @description Must be true to confirm trust before importing. Kiln projects can contain code that runs on your machine. */
+                trusted?: boolean;
             };
             header?: never;
             path?: never;
@@ -11853,7 +13597,10 @@ export interface operations {
     };
     get_runs_api_projects__project_id__tasks__task_id__runs_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Maximum number of runs to return. When set, the most recent runs (by created_at) are returned. When omitted, all runs are returned. */
+                limit?: number | null;
+            };
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */
@@ -12255,6 +14002,227 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_memories_api_projects__project_id__memories_get: {
+        parameters: {
+            query?: {
+                /** @description Exact-match scope filter. Omit for all scopes. */
+                scope?: string | null;
+                /** @description Memory must have ALL of these tags (AND). Repeat the param for multiple tags; omit for no tag filter. */
+                tags?: string[] | null;
+                /** @description Case-insensitive regex over overview + content. */
+                content_match?: string | null;
+                /** @description Max rows to return. */
+                limit?: number;
+                /** @description Rows to skip. */
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryListResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_memory_api_projects__project_id__memories_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveMemoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Memory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    memory_summary_api_projects__project_id__memories_summary_get: {
+        parameters: {
+            query?: {
+                /** @description Limit to one scope. Omit for all scopes. */
+                scope?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemorySummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_memories_api_projects__project_id__memories_by_ids_get: {
+        parameters: {
+            query: {
+                /** @description The memory ids to fetch. */
+                ids: string[];
+            };
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Memory"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_memory_api_projects__project_id__memories__memory_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the memory. */
+                memory_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_memory_api_projects__project_id__memories__memory_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the memory. */
+                memory_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMemoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Memory"];
                 };
             };
             /** @description Validation Error */
@@ -12734,6 +14702,8 @@ export interface operations {
             query?: {
                 /** @description Comma-separated list of tags to filter documents by. */
                 tags?: string | null;
+                /** @description Comma-separated list of document ids to filter by. Combined (AND) with tags when both are set. */
+                document_ids?: string | null;
             };
             header?: never;
             path: {
@@ -14211,6 +16181,26 @@ export interface operations {
             };
         };
     };
+    verify_kiln_copilot_api_key_api_provider_verify_kiln_copilot_api_key_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     generate_prompt_api_projects__project_id__tasks__task_id__gen_prompt__prompt_id__get: {
         parameters: {
             query?: never;
@@ -14644,6 +16634,154 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_generate_inputs_batch_api_projects__project_id__tasks__task_id__generate_inputs_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateInputsBatchInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartBatchJobOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_inputs_batch_status_api_projects__project_id__tasks__task_id__generate_inputs_batch__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The batch job identifier. */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InputsBatchStatusOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_generate_outputs_batch_api_projects__project_id__tasks__task_id__generate_outputs_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateOutputsBatchInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartBatchJobOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_outputs_batch_status_api_projects__project_id__tasks__task_id__generate_outputs_batch__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The batch job identifier. */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutputsBatchStatusOutput"];
                 };
             };
             /** @description Validation Error */
@@ -15525,7 +17663,43 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Eval"][];
+                    "application/json": components["schemas"]["EvalsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_eval_default_judge_types_api_projects__project_id__tasks__task_id__eval_default_judge_types_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -15693,6 +17867,160 @@ export interface operations {
             };
         };
     };
+    create_llm_judge_config_api_projects__project_id__tasks__task_id__evals__eval_id__create_llm_judge_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the eval. */
+                eval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLlmJudgeConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_default_llm_judge_prompt_api_projects__project_id__tasks__task_id__evals__eval_id__default_llm_judge_prompt_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the eval. */
+                eval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DefaultLlmJudgePromptResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_v2_eval_api_projects__project_id__tasks__task_id__evals__eval_id__test_v2_eval_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the eval. */
+                eval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestV2EvalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestV2EvalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_v2_eval_draft_api_projects__project_id__tasks__task_id__test_v2_eval_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestV2EvalDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestV2EvalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     run_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_comparison_get: {
         parameters: {
             query?: {
@@ -15812,7 +18140,10 @@ export interface operations {
     };
     get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get: {
         parameters: {
-            query?: never;
+            query: {
+                /** @description Which of the eval's dataset splits to return results for. Required: every response about eval results is scoped to exactly one split, and reading has no obvious default the way running does. */
+                split: "train" | "val" | "test";
+            };
             header?: never;
             path: {
                 /** @description The unique identifier of the project. */
@@ -16017,6 +18348,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_add_code_trust_endpoint_api_projects__project_id__add_code_trust_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeTrustResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_code_trust_endpoint_api_projects__project_id__add_code_trust_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeTrustResponse"];
                 };
             };
             /** @description Validation Error */
@@ -16782,6 +19177,256 @@ export interface operations {
             };
         };
     };
+    list_code_tools_api_projects__project_id__code_tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeToolResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_code_tool_api_projects__project_id__code_tools_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeToolCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeToolCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_code_tool_api_projects__project_id__test_code_tool_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestCodeToolRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestCodeToolResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_code_tool_api_projects__project_id__code_tools__code_tool_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the code tool. */
+                code_tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeToolResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_code_tool_api_projects__project_id__code_tools__code_tool_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the code tool. */
+                code_tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_code_tool_api_projects__project_id__code_tools__code_tool_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the code tool. */
+                code_tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeToolUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeToolResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_code_tool_api_projects__project_id__code_tools__code_tool_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the code tool. */
+                code_tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeToolArchiveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeToolResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_skills_api_projects__project_id__skills_get: {
         parameters: {
             query?: never;
@@ -17404,6 +20049,154 @@ export interface operations {
             };
         };
     };
+    start_data_guide_job_api_projects__project_id__tasks__task_id__copilot_data_guide_job_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartDataGuideJobApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartDataGuideJobApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_parse_import_file_api_projects__project_id__tasks__task_id__copilot_parse_import_file_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParseImportFileApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    data_guide_job_status_api_projects__project_id__tasks__task_id__copilot_data_guide_job__job_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The data guide draft job identifier. */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataGuideJobStatusApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    data_guide_job_result_api_projects__project_id__tasks__task_id__copilot_data_guide_job__job_id__result_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The data guide draft job identifier. */
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataGuideJobResultApiOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_spec_with_copilot_api_projects__project_id__tasks__task_id__spec_with_copilot_post: {
         parameters: {
             query?: never;
@@ -17429,6 +20222,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    batch_plan_api_projects__project_id__tasks__task_id__copilot_batch_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchPlanApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchPlanApiOutput"];
                 };
             };
             /** @description Validation Error */

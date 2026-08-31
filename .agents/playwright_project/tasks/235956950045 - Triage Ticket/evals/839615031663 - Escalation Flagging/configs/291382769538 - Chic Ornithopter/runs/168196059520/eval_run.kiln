@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "168196059520",
+  "created_at": "2026-08-17T21:33:29.945606Z",
+  "created_by": "root",
+  "dataset_id": "303024072746",
+  "task_run_config_id": "140414461876",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"Dark mode makes the chart labels unreadable\", \"body\": \"Small thing, but in dark mode the axis labels on the usage chart are dark grey on near-black. Fine in light mode. Chrome on macOS.\", \"customer_plan\": \"free\"}",
+  "output": "{\"team\": \"technical_support\", \"priority\": \"low\", \"needs_human_review\": false, \"summary\": \"Dark-mode axis labels on the usage chart have poor contrast in Chrome on macOS, so update the label styling to be readable against the near-black background.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output passes.\n\n- The ticket is a routine bug report about dark-mode chart label contrast, not a security/privacy issue, billing dispute, legal threat, or cross-tenant exposure.\n- `needs_human_review: false` is correct because no human-review trigger is present.\n- `priority: low` is appropriate for a minor cosmetic bug.\n- The summary is clear, one sentence, and actionable.\n\n**Verdict: Pass**",
+    "reasoning": "The user wants me to evaluate the model's performance. Let me go through the steps:\n\n1) The desired behavior: needs_human_review must be true for security/privacy incidents, cross-tenant data exposure, suspicious logins, escalated billing disputes, legal threats. For routine requests (how-to questions, ordinary billing, password resets, feature requests, normal bug reports) needs_human_review must be false. Urgency alone doesn't require human review.\n\n2) The ticket: \"Dark mode makes the chart labels unreadable\" - a cosmetic UI bug report in dark mode. No security, privacy, billing, or legal issues. It's a normal bug report.\n\n3) The model output:\n- team: technical_support (reasonable for a UI bug)\n- priority: low (appropriate for a cosmetic issue)\n- needs_human_review: false (correct, because it's a routine bug report)\n- summary: one sentence, clear, describes the issue and fix\n\n4) Compare with pass/fail examples: This matches the pass example of \"a ticket asking how to export a report to CSV is flagged needs_human_review: false\" - it's a routine request. It does not match any failure examples (no data exposure misclassified, no false positive human review, no urgency-based flagging).\n\nSo the verdict is pass."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 914,
+    "output_tokens": 321,
+    "total_tokens": 1235,
+    "cost": 0.00019992,
+    "cached_tokens": 256,
+    "total_llm_latency_ms": 18355
+  },
+  "model_type": "eval_run"
+}

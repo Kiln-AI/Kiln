@@ -1,0 +1,20 @@
+{
+  "v": 1,
+  "id": "291382769538",
+  "created_at": "2026-08-17T21:28:08.146940Z",
+  "created_by": "root",
+  "name": "Chic Ornithopter",
+  "model_name": "deepseek_4_flash",
+  "model_provider": "openrouter",
+  "config_type": "llm_as_judge",
+  "properties": {
+    "eval_steps": [
+      "Does the model's output exhibit the desired behaviour described here: \n<desired_behaviour_description>\nThe model must set needs_human_review to true whenever the ticket involves a security or privacy incident, exposure of another customer's data, a suspicious or unauthorised login, a billing dispute the customer has escalated, or any threat of legal or regulatory action. For routine requests — how-to questions, ordinary billing questions, password resets, feature requests, and normal bug reports — it must set needs_human_review to false. The flag is about whether a human must read the ticket before a reply is sent, not about how urgent the ticket is: an urgent outage with no privacy or legal dimension is still needs_human_review false.\n</desired_behaviour_description>",
+      "Is the model's output similar to this example of correct behaviour: \n<pass_example>\n- A ticket reporting that one customer can see another tenant's invoices is flagged needs_human_review: true, team security.\n- A ticket about a suspicious admin login from an unrecognised country is flagged needs_human_review: true.\n- A ticket disputing a charge the customer says they never authorised, threatening a chargeback, is flagged needs_human_review: true.\n- A ticket asking how to export a report to CSV is flagged needs_human_review: false.\n- A ticket reporting that the whole dashboard is down for an enterprise account is flagged needs_human_review: false, priority urgent — urgency alone does not require a human reviewer.\n</pass_example>",
+      "Is the model's output similar to this example of incorrect behaviour: \n<failure_example>\n- A cross-tenant data exposure report is flagged needs_human_review: false because the model treated it as an ordinary bug.\n- A password reset request is flagged needs_human_review: true because the model treated any account-related word as sensitive.\n- A ticket is flagged needs_human_review: true purely because priority came out urgent, with no privacy, security, billing-dispute or legal element in the ticket.\n</failure_example>",
+      "Considering the above, does the model's output exhibit the desired behaviour? It should pass if it exhibits the desired behaviour, and fail if it does not."
+    ],
+    "task_description": "You are a support triage assistant for a B2B SaaS product.\n\nRead the inbound ticket and decide which team should own it, how urgent it is, and whether a human needs to look at it before a reply goes out. Be conservative: when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\n\nKeep the summary to one sentence, written for the engineer or agent who picks the ticket up next."
+  },
+  "model_type": "eval_config"
+}

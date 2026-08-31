@@ -37,8 +37,6 @@ class TestNetworkFailureOnStaleRead:
     async def test_stale_read_network_failure(
         self, api_ctx, git_repos, network_failure, monkeypatch
     ):
-        local_path, remote_path = git_repos
-
         monkeypatch.setattr(
             GitSyncManager,
             "_fetch_sync",
@@ -63,7 +61,7 @@ class TestNetworkFailureOnStaleRead:
         self, api_ctx, git_repos, network_failure, monkeypatch
     ):
         """Network failure on read does not corrupt local state."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         pre_head = get_head_sync(local_path)
 
         monkeypatch.setattr(
@@ -91,7 +89,7 @@ class TestNetworkFailureOnWrite:
         self, write_ctx, git_repos, network_failure, monkeypatch
     ):
         """Failure during pre-write ensure_fresh fetch."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         pre_head = get_head_sync(local_path)
         pre_count = get_commit_count(local_path)
 
@@ -121,7 +119,7 @@ class TestNetworkFailureOnWrite:
         self, write_ctx, git_repos, network_failure, monkeypatch
     ):
         """Failure during post-write push."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
 
         result = await write_ctx.do_write(lambda p: (p / "seed.txt").write_text("seed"))
         assert result.committed
@@ -157,7 +155,7 @@ class TestNetworkFailureOnWrite:
         self, write_ctx, git_repos, network_failure, monkeypatch
     ):
         """Next request succeeds after connectivity is restored."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
 
         monkeypatch.setattr(
             GitSyncManager,
@@ -190,7 +188,7 @@ class TestNetworkFailureOnWrite:
         self, write_ctx, git_repos, network_failure, monkeypatch
     ):
         """Push failure leaves no partial commits on remote."""
-        local_path, remote_path = git_repos
+        _local_path, remote_path = git_repos
 
         result = await write_ctx.do_write(lambda p: (p / "seed.txt").write_text("seed"))
         assert result.committed
@@ -224,8 +222,6 @@ class TestNetworkFailureAPIStatusCodes:
         self, api_ctx, git_repos, network_failure, monkeypatch
     ):
         """Fetch failure on write returns error status (401 for auth, 503 otherwise)."""
-        local_path, _ = git_repos
-
         monkeypatch.setattr(
             GitSyncManager,
             "_fetch_sync",
@@ -252,8 +248,6 @@ class TestNetworkFailureAPIStatusCodes:
         self, api_ctx, git_repos, network_failure, monkeypatch
     ):
         """Read failure when stale returns error status (401 for auth, 503 otherwise)."""
-        local_path, _ = git_repos
-
         monkeypatch.setattr(
             GitSyncManager,
             "_fetch_sync",

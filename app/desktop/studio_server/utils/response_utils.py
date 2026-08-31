@@ -1,11 +1,13 @@
 import json
 
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    HTTPValidationError,
-)
-from app.desktop.studio_server.api_client.kiln_ai_server_client.types import Response
 from fastapi import HTTPException
 from typing_extensions import TypeVar
+
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    HTTPValidationError,
+    UnauthorizedResponse,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.types import Response
 
 
 def check_response_error(
@@ -32,7 +34,7 @@ T = TypeVar("T")
 
 
 def unwrap_response_allow_none(
-    response: Response[T | HTTPValidationError],
+    response: Response[T | HTTPValidationError | UnauthorizedResponse],
     default_detail: str = "Unknown error.",
 ) -> T | None:
     """
@@ -43,16 +45,16 @@ def unwrap_response_allow_none(
     check_response_error(response, default_detail=default_detail)
 
     parsed_response = response.parsed
-    # we must check for this to narrow down the type, but this should never
-    # happen since check_response_error should raise if it is a validation error
-    if isinstance(parsed_response, HTTPValidationError):
+    # we must check for these to narrow down the type, but this should never
+    # happen since check_response_error should raise on any non-2xx response
+    if isinstance(parsed_response, (HTTPValidationError, UnauthorizedResponse)):
         raise RuntimeError("An unknown error occurred.")
 
     return parsed_response
 
 
 def unwrap_response(
-    response: Response[T | HTTPValidationError],
+    response: Response[T | HTTPValidationError | UnauthorizedResponse],
     default_detail: str = "Unknown error.",
     none_detail: str = "An unknown error occurred.",
 ) -> T:
@@ -68,3 +70,41 @@ def unwrap_response(
         raise HTTPException(status_code=500, detail=none_detail)
 
     return parsed
+
+
+def upstream_unreachable(service: str) -> HTTPException:
+    """A transport-level failure talking to kiln_server (unreachable host, TLS,
+    timeout).
+
+    502, not 500: the failure is in the upstream we proxy to, not in us. Left
+    uncaught, httpx's exception escapes and FastAPI reports a bare 500, which
+    tells the user nothing about where to look.
+    """
+    return HTTPException(
+        status_code=502,
+        detail=(
+            f"Couldn't reach the Kiln {service} service. Check your connection, "
+            "and that your Kiln server supports it."
+        ),
+    )
+
+
+def upstream_route_missing(service: str) -> HTTPException:
+    """kiln_server 404'd a request that names no resource — so the route itself
+    isn't there (an older deployment, or staging without the feature).
+
+    502, not a propagated 404. Our own 404 must keep meaning "this studio route
+    doesn't exist"; passing the upstream 404 straight through sends the user
+    hunting for a missing endpoint on the wrong server.
+
+    Only for endpoints that address no resource (e.g. POST /copilot/batch_plan).
+    Where the request DOES name a resource (GET /jobs/{id}), a 404 genuinely
+    means that resource is missing and must be propagated as-is.
+    """
+    return HTTPException(
+        status_code=502,
+        detail=(
+            f"This Kiln server doesn't support {service}. It may be an older "
+            "deployment — check which Kiln server you're pointed at."
+        ),
+    )

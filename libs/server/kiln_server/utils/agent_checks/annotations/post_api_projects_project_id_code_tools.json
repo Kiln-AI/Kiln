@@ -1,0 +1,9 @@
+{
+  "method": "post",
+  "path": "/api/projects/{project_id}/code_tools",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": true,
+    "approval_description": "Allow agent to create and save a code tool (Python that runs on your machine)?"
+  }
+}

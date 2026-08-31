@@ -3,11 +3,13 @@ import { build_eval_options } from "./eval_options"
 import type { Eval, Spec } from "$lib/types"
 
 function make_eval(id: string, name: string): Eval {
-  return {
+  const evaluator: Partial<Eval> = {
     id,
     name,
-    eval_set_filter_id: `tag::eval_set_${id}`,
-  } as Eval
+    output_scores: [],
+    splits: { test: { source: "task_run", filter_id: `tag::eval_set_${id}` } },
+  }
+  return evaluator as Eval
 }
 
 function make_spec(id: string, name: string, eval_id: string | null): Spec {

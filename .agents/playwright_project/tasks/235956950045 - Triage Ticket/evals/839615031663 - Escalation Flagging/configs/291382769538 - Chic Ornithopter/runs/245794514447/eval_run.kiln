@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "245794514447",
+  "created_at": "2026-08-17T21:32:57.174888Z",
+  "created_by": "root",
+  "dataset_id": "267255821357",
+  "task_run_config_id": "177167545173",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"Webhook deliveries silently stopped\", \"body\": \"Our endpoint has not received a webhook since Saturday 02:14 UTC. The delivery log in your dashboard shows no attempts at all — not failures, just nothing. The endpoint is up and responds 200 to a manual POST.\", \"customer_plan\": \"enterprise\"}",
+  "output": "{\"team\": \"technical_support\", \"priority\": \"high\", \"needs_human_review\": false, \"summary\": \"Enterprise customer reports webhook deliveries stopped abruptly with zero attempts in the delivery log since Saturday 02:14 UTC, while their endpoint responds 200 to manual POSTs, requiring investigation of the delivery pipeline or configuration.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output exhibits the desired behaviour.\n\n- **needs_human_review: false** is correct: the ticket is a functional/technical outage report about webhook deliveries, with no security incident, privacy breach, billing dispute, or legal threat. Urgency alone does not require human review.\n- **team: technical_support** is appropriate.\n- **priority: high** is reasonable for an enterprise customer’s webhook delivery pipeline being silently stopped.\n- The summary is one sentence and clearly describes the issue for the next engineer.\n\nVerdict: Pass.",
+    "reasoning": "We need to output final result. We already reasoned. Need to give pass/fail. Since desired behavior is met (needs_human_review false on an outage with no sensitive dimension), pass. We should mention concise."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 458,
+    "output_tokens": 515,
+    "total_tokens": 973,
+    "cost": 0.00020832,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 9365
+  },
+  "model_type": "eval_run"
+}

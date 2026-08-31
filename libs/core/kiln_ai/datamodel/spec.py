@@ -1,11 +1,10 @@
-from enum import Enum
 from typing import List
 
 from pydantic import BaseModel, Field, model_validator
 from typing_extensions import Self
 
 from kiln_ai.datamodel.basemodel import ID_TYPE, FilenameString, KilnParentedModel
-from kiln_ai.datamodel.datamodel_enums import Priority
+from kiln_ai.datamodel.datamodel_enums import EvalStatus, Priority
 from kiln_ai.datamodel.spec_properties import SpecProperties
 from kiln_ai.utils.validation import validate_tags
 
@@ -41,13 +40,9 @@ class SyntheticDataGenerationSessionConfig(BaseModel):
     )
 
 
-class SpecStatus(str, Enum):
-    """Defines the status of a spec."""
-
-    active = "active"
-    future = "future"
-    deprecated = "deprecated"
-    archived = "archived"
+# Status moved to the shared EvalStatus enum when priority/status moved from
+# specs to evals. The alias keeps existing imports and serialized values working.
+SpecStatus = EvalStatus
 
 
 class Spec(KilnParentedModel):

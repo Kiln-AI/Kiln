@@ -1,5 +1,6 @@
 import json
 import sys
+from typing import get_args
 
 import pytest
 from pydantic import ValidationError
@@ -19,6 +20,9 @@ from kiln_ai.datamodel import (
     TaskRun,
     Usage,
 )
+from kiln_ai.datamodel.eval import EvalRun
+from kiln_ai.datamodel.eval_splits import ItemSource, eval_run_item_key
+from kiln_ai.datamodel.task_run import EvalItemSource, eval_item_key
 
 
 @pytest.fixture
@@ -1124,3 +1128,61 @@ def test_task_run_loads_legacy_cumulative_usage_with_populated_latency(valid_tas
     assert reloaded.cumulative_usage is not None
     assert reloaded.cumulative_usage.input_tokens == 7
     assert not hasattr(reloaded.cumulative_usage, "total_llm_latency_ms")
+
+
+def test_task_run_eval_source_defaults_to_none(valid_task_run):
+    assert valid_task_run.eval_source is None
+
+
+@pytest.mark.parametrize("source_type", ["eval_input", "task_run"])
+def test_task_run_eval_source_round_trip(valid_task_run, source_type):
+    valid_task_run.eval_source = EvalItemSource(
+        source_type=source_type, source_id="item123"
+    )
+
+    reloaded = TaskRun.model_validate(valid_task_run.model_dump(mode="json"))
+
+    assert reloaded.eval_source == EvalItemSource(
+        source_type=source_type, source_id="item123"
+    )
+
+
+def test_eval_item_source_rejects_unknown_source_type():
+    with pytest.raises(ValidationError):
+        EvalItemSource(source_type="something_else", source_id="item123")
+
+
+@pytest.mark.parametrize("source_id", [None, ""])
+def test_eval_item_source_requires_a_real_source_id(source_id):
+    """An id-less source is a trace-index key that collides with every other id-less
+    source. Absence is expressed by TaskRun.eval_source being None, not by an empty id."""
+    with pytest.raises(ValidationError):
+        EvalItemSource(source_type="eval_input", source_id=source_id)
+
+
+def test_eval_item_source_type_tracks_item_source():
+    """EvalItemSource.source_type restates eval_splits.ItemSource, because eval_splits
+    imports task_run at runtime so the alias can't come back the other way. Nothing else
+    fails if a third member is added to one and not the other."""
+    assert set(get_args(ItemSource)) == set(
+        get_args(EvalItemSource.model_fields["source_type"].annotation)
+    )
+
+
+@pytest.mark.parametrize("source_type", ["eval_input", "task_run"])
+def test_eval_item_key_matches_eval_run_item_key(source_type):
+    """A trace's source and a score's item must resolve to the same ItemKey, or the
+    runner would index traces under one identity and look them up under another."""
+    source = EvalItemSource(source_type=source_type, source_id="item123")
+
+    id_field = "eval_input_id" if source_type == "eval_input" else "dataset_id"
+    eval_run = EvalRun(
+        **{id_field: "item123"},
+        task_run_config_id="rc1",
+        input="in",
+        output="out",
+        scores={"accuracy": 1.0},
+    )
+
+    assert eval_item_key(source) == eval_run_item_key(eval_run)
+    assert eval_item_key(source) == (source_type, "item123")
