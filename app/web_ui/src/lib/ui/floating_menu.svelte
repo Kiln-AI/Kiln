@@ -122,6 +122,19 @@
                   >
                     {item.label}
                   </a>
+                {:else if item.description}
+                  <button
+                    type="button"
+                    class="flex flex-col items-start gap-0.5"
+                    on:click={(e) => handleItemClick(e, item)}
+                  >
+                    <span>{item.label}</span>
+                    <span
+                      class="text-xs font-light text-gray-500 whitespace-normal"
+                    >
+                      {item.description}
+                    </span>
+                  </button>
                 {:else}
                   <button
                     type="button"

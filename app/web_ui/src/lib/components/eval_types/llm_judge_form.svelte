@@ -5,6 +5,8 @@
   import { available_models } from "$lib/stores"
   import Collapse from "$lib/ui/collapse.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
+  import FormList from "$lib/utils/form_list.svelte"
+  import JudgePromptFields from "$lib/components/eval_types/judge_prompt_fields.svelte"
   import { getDefaultLlmJudgePrompt } from "$lib/api/v2_eval_api"
   import { onMount } from "svelte"
 
@@ -20,14 +22,56 @@
   export let judge_prompt: string | undefined = undefined
   export let system_prompt: string | undefined = undefined
 
+  // Evals with no spec or template have no data to derive judging steps from;
+  // the user writes them here instead. The steps are stored on the judge
+  // config and bound to {{ judge_instructions }} in the prompt template, so
+  // there's nothing to keep in sync between the two editing surfaces.
+  // The server decides which evals these are: its default prompt references
+  // {{ judge_instructions }} exactly when steps can't be derived, so keying
+  // the UI off the fetched default can never drift from the backend logic.
+  export let judge_instructions: string[] = []
+  let show_instructions_ui = false
+
+  // FormList keys its rows by item value, so a plain string[] breaks the
+  // moment two rows are empty (duplicate keys). Wrap each step in an object
+  // (unique by identity) and derive the exported string[] from it.
+  let instruction_items: { value: string }[] = [{ value: "" }]
+  $: judge_instructions = instruction_items.map((item) => item.value)
+
+  const instruction_placeholders = [
+    'e.g. "Does the model\'s output contain the issue X?"',
+    'e.g. "Is the model\'s output missing any required information?"',
+    'e.g. "Considering the above, should the output pass or fail?"',
+  ]
+
   let prompt_fetch_error: string | null = null
+
+  /**
+   * The reference data keys the server will require of this judge, and whether they
+   * could be fetched at all. Bound out so the Test Judge pane can offer a place to
+   * supply them: the server derives the requirement from the eval, not from the prompt
+   * text, so editing the reference block out of the prompt does not remove it.
+   *
+   * `default_prompt_unavailable` tracks the outcome of each fetch attempt, not just
+   * its failures — see the clear in `onMount`. The pane fails open on "unknown", so a
+   * value left set from a previous attempt would keep offering an input nothing needs.
+   */
+  export let default_reference_keys: string[] = []
+  export let default_prompt_unavailable: boolean = false
 
   onMount(async () => {
     try {
+      // Cleared up front, not left to the initializer: `bind:` seeds this child from
+      // the parent's retained value, so a form recreated after one failed fetch starts
+      // at `true` and would stay there for the session.
+      default_prompt_unavailable = false
       const defaults = await getDefaultLlmJudgePrompt(
         project_id,
         task_id,
         eval_id,
+      )
+      show_instructions_ui = defaults.judge_prompt.includes(
+        "{{ judge_instructions }}",
       )
       if (judge_prompt === undefined) {
         judge_prompt = defaults.judge_prompt
@@ -35,9 +79,11 @@
       if (system_prompt === undefined) {
         system_prompt = defaults.system_prompt
       }
+      default_reference_keys = defaults.reference_keys ?? []
     } catch (e) {
       prompt_fetch_error =
         "Could not load default judge prompt. The server will use its default."
+      default_prompt_unavailable = true
       console.warn("Failed to fetch default LLM judge prompt:", e)
     }
   })
@@ -276,53 +322,49 @@
     </div>
   {/if}
 
-  <Collapse title="Advanced: Judge Prompt">
-    <div class="flex flex-col gap-2">
-      <p class="text-xs text-gray-500 font-medium">
-        Customizing the judge prompt can improve eval quality. We've pre-filled
-        a default based on your task and spec.
-      </p>
-      <p class="text-xs text-gray-500">
-        The judge prompt is in Jinja2 format and may contain the following
-        variables:
-      </p>
-      <ul class="text-xs text-gray-500 list-disc list-inside mb-2 indent-2">
-        <li>
-          <span class="font-mono font-bold">{"{{ task_input }}"}</span> The input
-          to the task.
-        </li>
-        <li>
-          <span class="font-mono font-bold">{"{{ final_message }}"}</span> The final
-          message from the model.
-        </li>
-        <li>
-          <span class="font-mono font-bold">{"{{ trace }}"}</span> The entire trace.
-        </li>
-        <li>
-          <span class="font-mono font-bold">{"{{ reference_data }}"}</span> Reference
-          data attached to to eval case.
-        </li>
-      </ul>
+  {#if show_instructions_ui}
+    <div class="text-sm font-medium text-left flex flex-col gap-1">
+      <div class="text-xl font-bold">Evaluation Instructions</div>
+      <div class="text-xs text-gray-500">
+        A list of instructions to be used by the evaluator's model. It will
+        'think' through each of these steps in order before generating final
+        scores.
+      </div>
     </div>
-    {#if prompt_fetch_error}
-      <div class="text-xs text-warning mb-2">{prompt_fetch_error}</div>
-    {/if}
-    <FormElement
-      inputType="textarea"
-      id="judge_prompt"
-      label="Judge Prompt"
-      bind:value={judge_prompt}
-      optional={true}
-      height="xl"
-      description="The Jinja2 template used to prompt the judge model."
-    />
-    <FormElement
-      inputType="textarea"
-      id="system_prompt"
-      label="System Prompt"
-      bind:value={system_prompt}
-      optional={true}
-      height="base"
-    />
-  </Collapse>
+    <FormList
+      bind:content={instruction_items}
+      content_label="Evaluation Step"
+      empty_content={{ value: "" }}
+      let:item_index
+    >
+      <FormElement
+        label=""
+        aria_label="Evaluation Step"
+        inputType="textarea"
+        id="judge_instruction_{item_index}"
+        placeholder={instruction_placeholders[
+          Math.min(item_index, instruction_placeholders.length - 1)
+        ]}
+        bind:value={instruction_items[item_index].value}
+      />
+    </FormList>
+
+    <div class="flex flex-col gap-2">
+      <div class="text-xl font-bold">Judge Prompt</div>
+      <JudgePromptFields
+        bind:judge_prompt
+        bind:system_prompt
+        {prompt_fetch_error}
+        show_judge_instructions_variable={true}
+      />
+    </div>
+  {:else}
+    <Collapse title="Advanced: Judge Prompt">
+      <JudgePromptFields
+        bind:judge_prompt
+        bind:system_prompt
+        {prompt_fetch_error}
+      />
+    </Collapse>
+  {/if}
 </div>

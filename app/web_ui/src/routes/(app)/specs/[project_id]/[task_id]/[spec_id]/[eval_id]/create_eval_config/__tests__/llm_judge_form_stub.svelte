@@ -6,6 +6,9 @@
   let _initial_model_name: string | undefined = undefined
   let _initial_provider_name: string | undefined = undefined
   let _initial_judge_prompt: string | undefined = undefined
+  // What the real form learns from the default-prompt endpoint and binds out.
+  let _initial_default_reference_keys: string[] | undefined = undefined
+  let _initial_default_prompt_unavailable: boolean | undefined = undefined
 
   export function setInitialLlmJudgeValues(values: {
     selected_algo?: EvalConfigType
@@ -13,12 +16,16 @@
     model_name?: string
     provider_name?: string
     judge_prompt?: string
+    default_reference_keys?: string[]
+    default_prompt_unavailable?: boolean
   }) {
     _initial_selected_algo = values.selected_algo
     _initial_combined_model_name = values.combined_model_name
     _initial_model_name = values.model_name
     _initial_provider_name = values.provider_name
     _initial_judge_prompt = values.judge_prompt
+    _initial_default_reference_keys = values.default_reference_keys
+    _initial_default_prompt_unavailable = values.default_prompt_unavailable
   }
 
   export function resetInitialLlmJudgeValues() {
@@ -27,6 +34,8 @@
     _initial_model_name = undefined
     _initial_provider_name = undefined
     _initial_judge_prompt = undefined
+    _initial_default_reference_keys = undefined
+    _initial_default_prompt_unavailable = undefined
   }
 </script>
 
@@ -41,6 +50,10 @@
   export let selected_algo: EvalConfigType | undefined = _initial_selected_algo
   export let judge_prompt: string | undefined = _initial_judge_prompt
   export let system_prompt: string | undefined = undefined
+  export let default_reference_keys: string[] =
+    _initial_default_reference_keys ?? []
+  export let default_prompt_unavailable: boolean =
+    _initial_default_prompt_unavailable ?? false
 
   // Force-push initial values via reactive assignment so bind: propagates
   // them to the parent. In Svelte 4, bind: sends the parent's initial
@@ -58,6 +71,10 @@
       selected_algo = _initial_selected_algo
     if (_initial_judge_prompt !== undefined)
       judge_prompt = _initial_judge_prompt
+    if (_initial_default_reference_keys !== undefined)
+      default_reference_keys = _initial_default_reference_keys
+    if (_initial_default_prompt_unavailable !== undefined)
+      default_prompt_unavailable = _initial_default_prompt_unavailable
   }
 </script>
 

@@ -33,7 +33,7 @@ V2 code adds new fields, new enum values, and new parsing branches. It never rew
 **Where it lands:**
 - The entire coexistence layer (`components/15_v1_v2_coexistence.md`) derives from this principle -- legacy enum dispatch, additive fields, parsing routing, validator bypass, filter coexistence.
 - `EvalConfig` adds `config_type = "v2"` as a new enum value; legacy `g_eval`/`llm_as_judge` stay in the enum forever (`components/10_data_model.md`).
-- `EvalRun` gains additive optional fields (`eval_input_id`, `reference_data`, `skipped_reason`) that V1 EvalRuns load with as `None` (`components/10_data_model.md`).
+- `EvalRun` gains additive optional fields (`eval_input_id`, `skipped_reason`) that V1 EvalRuns load with as `None` (`components/10_data_model.md`).
 - Runner constructor branches on source type without changing V1 paths (`components/45_runner_architecture.md`).
 - D.5 ("V1 backwards compatibility is absolute") locks zero V1 behavior changes for read + execution of existing records (`components/40_template_and_extraction.md`).
 
@@ -90,7 +90,7 @@ V2 is allowed to invent. Framing missing V1 pieces as "gaps to patch" would narr
 
 ### In scope: V2.0 launch deliverables
 
-**Data model** (`components/10_data_model.md`): `EvalInput` entity with discriminated `EvalInputData` variants (single-turn, multi-turn-synthetic), universal `reference: dict[str, JsonValue]` and `tags`. `EvalConfig` V2 shape (`config_type = "v2"`, typed discriminated `properties` union). `EvalRun` additive fields (`eval_input_id`, `reference_data`, `skipped_reason`). `Eval` additive field (`eval_input_filter_id`).
+**Data model** (`components/10_data_model.md`): `EvalInput` entity with discriminated `EvalInputData` variants (single-turn, multi-turn-synthetic), universal `reference: dict[str, JsonValue]` and `tags`. `EvalConfig` V2 shape (`config_type = "v2"`, typed discriminated `properties` union). `EvalRun` additive fields (`eval_input_id`, `skipped_reason`). `Eval` additive field (`eval_input_filter_id`).
 
 **V1/V2 coexistence** (`components/15_v1_v2_coexistence.md`): Legacy enum dispatch, additive fields, parsing routing, EvalRun field coexistence, filter coexistence, validator V2 bypass, V2-only EvalConfig creation paths (K.3), TaskRun-to-EvalInput runtime translation (B2.1).
 

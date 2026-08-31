@@ -45,6 +45,7 @@
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import posthog from "posthog-js"
   import { agentInfo } from "$lib/agent"
+  import { task_run_split_filter_id } from "$lib/utils/eval_splits"
 
   function tagFromFilterId(filter_id: string): string | undefined {
     if (filter_id.startsWith("tag::")) {
@@ -324,26 +325,25 @@
       evals_loading = true
       evals_error = null
 
-      const { data: evals_data, error: evals_fetch_error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/evals",
-        {
+      const { data: evals_response, error: evals_fetch_error } =
+        await client.GET("/api/projects/{project_id}/tasks/{task_id}/evals", {
           params: {
             path: {
               project_id,
               task_id,
             },
           },
-        },
-      )
+        })
 
       if (evals_fetch_error) {
         throw evals_fetch_error
       }
 
-      if (!evals_data) {
+      if (!evals_response) {
         evals_with_configs = []
         return
       }
+      const evals_data = evals_response.evals
 
       const evals_with_configs_promises = evals_data.map(async (evalItem) => {
         if (!evalItem.id) {
@@ -516,10 +516,22 @@
         evals_with_configs[index].has_default_config = data.has_default_config
         evals_with_configs[index].has_train_set = data.has_train_set
         evals_with_configs[index].model_is_supported = data.model_is_supported
+        if (data.unsupported_reason) {
+          evals_with_configs[index].other_error = data.unsupported_reason
+        }
 
-        // If has train set, fetch the size
-        if (data.has_train_set && item.eval.train_set_filter_id) {
-          const train_tag = tagFromFilterId(item.eval.train_set_filter_id)
+        // Reset before the conditional size fetch below: a stale count from a
+        // previous TaskRun-backed split must not survive a switch to an
+        // EvalInput-backed split, where the size is unknown.
+        evals_with_configs[index].train_set_size = null
+
+        // If has train set, fetch the size. The size fetch reads tag counts over
+        // dataset runs, so it only applies to TaskRun-backed train splits. For an
+        // EvalInput-backed train split (now valid for optimization) the size stays
+        // unknown (null) and the empty-set error below does not apply.
+        const train_filter_id = task_run_split_filter_id(item.eval, "train")
+        if (data.has_train_set && train_filter_id) {
+          const train_tag = tagFromFilterId(train_filter_id)
           if (train_tag) {
             try {
               const { data: tag_counts, error: tag_error } = await client.GET(
@@ -561,7 +573,8 @@
 
         const has_errors =
           evals_with_configs[index].judge_error !== null ||
-          evals_with_configs[index].train_error !== null
+          evals_with_configs[index].train_error !== null ||
+          evals_with_configs[index].other_error !== null
         evals_with_configs[index].validation_status = has_errors
           ? "invalid"
           : "valid"
@@ -620,7 +633,7 @@
     )
 
     if (evals_data) {
-      const evals_by_id = new Map(evals_data.map((e) => [e.id, e]))
+      const evals_by_id = new Map(evals_data.evals.map((e) => [e.id, e]))
       const configs_by_eval_id = await Promise.all(
         evals_with_configs.map(async (item) => {
           const eval_id = item.eval.id
@@ -1071,7 +1084,8 @@
                             <td class="text-sm whitespace-nowrap">
                               {#if train_set_size !== null}
                                 {@const train_tag = tagFromFilterId(
-                                  evalItem.train_set_filter_id || "",
+                                  task_run_split_filter_id(evalItem, "train") ||
+                                    "",
                                 )}
                                 {@const dataset_link = train_tag
                                   ? `/dataset/${project_id}/${task_id}?tags=${train_tag}`
@@ -1108,7 +1122,8 @@
                               {:else if validation_status === "invalid"}
                                 {@const eval_configs_link = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}/eval_configs`}
                                 {@const train_tag = tagFromFilterId(
-                                  evalItem.train_set_filter_id || "",
+                                  task_run_split_filter_id(evalItem, "train") ||
+                                    "",
                                 )}
                                 {@const dataset_add_link =
                                   train_tag &&

@@ -25,6 +25,10 @@
   export let aria_label: string | null = null
   export let inline_action: InlineAction | null = null
   export let radio_options: RadioOption[] = []
+  export let empty_label: string | undefined = undefined
+  export let empty_state_message: string | undefined = undefined
+  export let empty_state_subtitle: string | undefined = undefined
+  export let empty_state_link: string | undefined = undefined
   export let on_radio_change: (() => void) | null = null
 
   export let validator: (value: unknown) => string | null = () => null
@@ -42,6 +46,10 @@
   data-inline-action-label={inline_action?.label || ""}
   data-hide-label={hide_label ? "true" : "false"}
   data-placeholder={placeholder || ""}
+  data-empty-label={empty_label || ""}
+  data-empty-state-message={empty_state_message || ""}
+  data-empty-state-subtitle={empty_state_subtitle || ""}
+  data-empty-state-link={empty_state_link || ""}
 >
   {#if inputType === "radio"}
     <div data-testid="radio-group-{id}">
@@ -67,13 +75,20 @@
   {:else if inputType === "input"}
     <input type="text" data-testid="input-{id}" {placeholder} bind:value />
   {:else if inputType === "fancy_select"}
-    <div data-testid="fancy-select-{id}">
+    <div
+      data-testid="fancy-select-{id}"
+      data-group-labels={JSON.stringify(
+        fancy_select_options.map((group) => group.label ?? ""),
+      )}
+    >
       {#each fancy_select_options as group}
         {#each group.options as option}
           <button
             type="button"
             data-testid="fancy-option-{option.value}"
             data-value={option.value}
+            data-option-description={option.description || ""}
+            data-badge={option.badge || ""}
             class:selected={value === option.value}
             on:click={() => {
               value = option.value

@@ -198,8 +198,9 @@ class Task(
         self,
         readonly: bool = False,
         include_intermediate_runs: bool = False,
+        include_eval_generated: bool = False,
     ) -> list[TaskRun]:
-        """Return TaskRuns for this task with leaf-only filtering by default.
+        """Return TaskRuns for this task with leaf-only, dataset-only filtering by default.
 
         For multiturn tasks, child TaskRuns reference their parent via
         ``parent_task_run_id``. By default we return only the leaves of those
@@ -213,15 +214,28 @@ class Task(
         complete on-disk set (e.g. walking ancestors, diagnostics). For
         single-turn tasks the two modes are equivalent.
 
-        Note: this filter only affects in-process iteration. Filesystem-level
+        ``runs/`` also holds eval-generated traces (``eval_source`` set) alongside the
+        dataset corpus. Those are excluded by default: they are a byproduct of running
+        an eval, not data the user curated, and leaking them into fine-tune sets or
+        few-shot prompts would feed a model its own eval outputs. Default-exclude rather
+        than an opt-out filter is deliberate - forgetting to handle eval traces then
+        fails visibly (missing data) instead of silently (contaminated data).
+        ``include_eval_generated=True`` is meant for the eval runner alone, which needs
+        to find the traces it can reuse; nothing else should pass it.
+
+        The two filters compose: a run must pass both to be returned.
+
+        Note: these filters only affect in-process iteration. Filesystem-level
         operations that copy the ``runs/`` directory (e.g. project export)
-        copy every run regardless of leaf-ness.
+        copy every run regardless.
         """
-        raw = self._runs(readonly=readonly)  # type: ignore[attr-defined]
-        if include_intermediate_runs:
-            return raw
-        parent_ids = {r.parent_task_run_id for r in raw if r.parent_task_run_id}
-        return [r for r in raw if r.id not in parent_ids]
+        runs = self._runs(readonly=readonly)  # type: ignore[attr-defined]
+        if not include_intermediate_runs:
+            parent_ids = {r.parent_task_run_id for r in runs if r.parent_task_run_id}
+            runs = [r for r in runs if r.id not in parent_ids]
+        if not include_eval_generated:
+            runs = [r for r in runs if r.eval_source is None]
+        return runs
 
     # These wrappers help for typechecking. We should fix this in KilnParentModel
     def dataset_splits(self, readonly: bool = False) -> list[DatasetSplit]:

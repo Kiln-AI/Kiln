@@ -81,7 +81,7 @@ export async function fetch_task_sample_candidates(
     throw new Error(
       typeof error === "string"
         ? error
-        : (error as { detail?: string }).detail ?? "Failed to fetch runs",
+        : (error as { message?: string }).message ?? "Failed to fetch runs",
     )
   }
 
@@ -145,7 +145,7 @@ export async function build_prompt_with_task_sample(
     throw new Error(
       typeof error === "string"
         ? error
-        : (error as { detail?: string }).detail ?? "Failed to build prompt",
+        : (error as { message?: string }).message ?? "Failed to build prompt",
     )
   }
 

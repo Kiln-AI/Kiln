@@ -9,6 +9,9 @@
   const dispatch = createEventDispatcher<{ change: string }>()
 
   export function setValue(newValue: string) {
+    // Matches the real editor: CodeMirror only fires docChanged (and so our
+    // change event) when the content actually differs.
+    if (newValue === value) return
     value = newValue
     dispatch("change", value)
   }

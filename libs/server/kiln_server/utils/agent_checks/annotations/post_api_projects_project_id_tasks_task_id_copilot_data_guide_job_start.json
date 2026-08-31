@@ -1,0 +1,9 @@
+{
+  "method": "post",
+  "path": "/api/projects/{project_id}/tasks/{task_id}/copilot/data_guide_job/start",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": true,
+    "approval_description": "Draft a data guide from input examples with Copilot?"
+  }
+}

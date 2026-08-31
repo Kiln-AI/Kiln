@@ -57,7 +57,12 @@ from kiln_ai.datamodel.task_output import (
     TaskOutput,
     TaskOutputRating,
 )
-from kiln_ai.datamodel.task_run import MessageUsage, TaskRun, Usage
+from kiln_ai.datamodel.task_run import (
+    EvalItemSource,
+    MessageUsage,
+    TaskRun,
+    Usage,
+)
 
 __all__ = [
     "BasePrompt",
@@ -68,6 +73,7 @@ __all__ = [
     "DataSourceType",
     "DatasetSplit",
     "DatasetSplitDefinition",
+    "EvalItemSource",
     "ExternalToolServer",
     "Feedback",
     "FeedbackSource",

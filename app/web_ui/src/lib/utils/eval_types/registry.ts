@@ -1,5 +1,7 @@
 import type { ComponentType } from "svelte"
 import { assertNever } from "$lib/utils/exhaustive"
+import { SHOW_REFERENCE_DATA_UI } from "$lib/utils/eval_types/reference_data_ui"
+import { uses_reference_data_llm_judge } from "$lib/utils/eval_types/reference_data_gate"
 import type { V2EvalConfigProperties } from "$lib/api/v2_eval_api"
 import type { components } from "$lib/api_schema"
 import type { EvalConfig } from "$lib/types"
@@ -73,11 +75,78 @@ export type ReferenceDataUsageMode =
   | "none"
 
 /**
- * Maps a V2 eval type to its reference-data usage mode.
+ * What the builder knows about the llm_judge being drafted, as far as reference data
+ * is concerned. Required by `referenceDataUsageMode` rather than defaulted: omitting it
+ * would silently hide the reference-data input, which is the failure item 3 exists to
+ * remove. Non-LLM callers pass `NO_JUDGE_PROMPT`.
+ */
+export interface JudgeReferenceSignals {
+  /** The judge prompt as currently drafted. */
+  prompt_template: string
+  /**
+   * `reference_keys` the server derived for this eval, from the default-prompt
+   * endpoint. Authoritative: it is what the saved judge will require, whatever the
+   * prompt now says.
+   */
+  server_reference_keys: string[]
+  /** True when the default-prompt fetch failed, so neither field above is known. */
+  prompt_unavailable: boolean
+}
+
+/** For judge types that have no prompt at all. */
+export const NO_JUDGE_PROMPT: JudgeReferenceSignals = {
+  prompt_template: "",
+  server_reference_keys: [],
+  prompt_unavailable: false,
+}
+
+/**
+ * Maps a V2 eval type to its reference-data usage mode, for the judge currently
+ * being built.
+ *
+ * An llm_judge resolves per config, because the Test Judge pane is the only place a
+ * reference answer can be supplied: without the input, a reference-answer judge is
+ * validated against a prompt whose reference block is missing and then saved as one
+ * that renders it. Three ways to earn the input, any one of them enough:
+ *
+ * - the server declared a `reference_keys` requirement for this eval. Authoritative,
+ *   and the only signal that survives the user editing the reference block out of the
+ *   prompt — the server keeps requiring the key either way, so a pane that read only
+ *   the prompt would hide the input for a judge whose every test run needs it.
+ * - the prompt reads reference data. Covers hand-written prompts the server derives
+ *   nothing for.
+ * - the prompt could not be fetched, so nothing is known. Fail open: offering an
+ *   unused input is the harmless direction (see `reference_data_gate.ts`), and the
+ *   save path bakes the server's default — reference block and required key included —
+ *   whether or not the client ever saw it.
+ *
+ * Every other type stays behind SHOW_REFERENCE_DATA_UI, which also still gates their
+ * "Reference Data Field" pickers in the judge forms.
+ *
+ * The declared mode is resolved first in every branch, so an unknown type throws in
+ * every configuration rather than silently reporting "none".
+ */
+export function referenceDataUsageMode(
+  type: V2EvalType,
+  judge: JudgeReferenceSignals,
+): ReferenceDataUsageMode {
+  const declared = declaredReferenceDataUsageMode(type)
+  if (declared === "llm_judge") {
+    const needs_reference =
+      judge.prompt_unavailable ||
+      judge.server_reference_keys.length > 0 ||
+      uses_reference_data_llm_judge(judge.prompt_template)
+    return needs_reference ? declared : "none"
+  }
+  return SHOW_REFERENCE_DATA_UI ? declared : "none"
+}
+
+/**
+ * The mode a type declares, independent of whether the UI currently shows it.
  * Uses assertNever so adding a new V2EvalType forces a compile error
  * until its mode is declared here.
  */
-export function referenceDataUsageMode(
+function declaredReferenceDataUsageMode(
   type: V2EvalType,
 ): ReferenceDataUsageMode {
   switch (type) {
@@ -95,6 +164,36 @@ export function referenceDataUsageMode(
       return "none"
     default:
       return assertNever(type)
+  }
+}
+
+/**
+ * The reference-data keys a single V2 judge declares as required.
+ *
+ * TypeScript mirror of `reference_data_keys` (`libs/core/kiln_ai/datamodel/eval.py`).
+ * Kept client-side rather than fetched: eval config `properties` are already on the
+ * wire, so a round-trip would only re-derive what the page holds. Guarded with
+ * assertNever for the same reason the mode map above is — adding a V2 type without
+ * declaring its reference keys breaks the build.
+ *
+ * Note the singular/plural split: the deterministic comparison types carry one
+ * optional `reference_key`, the judge types carry a `reference_keys` list.
+ */
+export function referenceDataKeys(props: V2EvalConfigProperties): string[] {
+  switch (props.type) {
+    case "exact_match":
+    case "contains":
+    case "set_check":
+      return props.reference_key ? [props.reference_key] : []
+    case "llm_judge":
+    case "code_eval":
+      return [...props.reference_keys]
+    case "pattern_match":
+    case "tool_call_check":
+    case "step_count_check":
+      return []
+    default:
+      return assertNever(props)
   }
 }
 
@@ -160,15 +259,17 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
     case "exact_match":
       return {
         label: "Exact Match",
-        description:
-          "Output field should exactly equal an expected value or a reference-data value.",
+        description: SHOW_REFERENCE_DATA_UI
+          ? "Output field should exactly equal an expected value or a reference-data value."
+          : "Output field should exactly equal an expected value.",
 
         requiresTrust: false,
         tags: [],
         pageTitle: "Add an Exact Match Check",
         pageSubtitle: "Pass when the output equals an expected value.",
-        explainer:
-          "Compares the model output (or a value extracted from it) against a fixed expected value or a value from your reference data. Useful for tasks with a single correct answer.",
+        explainer: SHOW_REFERENCE_DATA_UI
+          ? "Compares the model output (or a value extracted from it) against a fixed expected value or a value from your reference data. Useful for tasks with a single correct answer."
+          : "Compares the model output (or a value extracted from it) against a fixed expected value. Useful for tasks with a single correct answer.",
         example:
           'If you expect the model to output "yes" or "no", Exact Match can verify the answer is correct.',
         createFormComponent: ExactMatchForm,
@@ -191,15 +292,17 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
     case "contains":
       return {
         label: "Contains",
-        description:
-          "Output contains (or doesn't contain) a string or reference value.",
+        description: SHOW_REFERENCE_DATA_UI
+          ? "Output contains (or doesn't contain) a string or reference value."
+          : "Output contains (or doesn't contain) a string.",
 
         requiresTrust: false,
         tags: [],
         pageTitle: "Add a Contains Check",
         pageSubtitle: "Pass when the output contains (or omits) a substring.",
-        explainer:
-          "Checks whether the model output includes or excludes a specific substring. The substring can be a fixed value or pulled from your reference data.",
+        explainer: SHOW_REFERENCE_DATA_UI
+          ? "Checks whether the model output includes or excludes a specific substring. The substring can be a fixed value or pulled from your reference data."
+          : "Checks whether the model output includes or excludes a specific substring.",
         createFormComponent: ContainsForm,
         resultRendererComponent: ContainsResult,
       }
@@ -239,15 +342,16 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
       return {
         label: "Step Count Check",
         description:
-          "Count steps in the trace and check they're within bounds.",
+          "Check the agent finished within an expected number of steps.",
 
         requiresTrust: false,
         tags: [],
         pageTitle: "Add a Step Count Check",
-        pageSubtitle:
-          "Check the number of steps in the trace is within bounds.",
+        pageSubtitle: "Pass when the agent's step count is within bounds.",
         explainer:
-          "Counts tool calls, model responses, or turns in the agent's trace and checks whether the count falls within specified bounds.",
+          "Counts steps in the agent's trace — tool calls, model responses, or conversation turns — and passes when the count is within the bounds you set.",
+        example:
+          "Cap an agent at 5 tool calls to catch runaway loops, or require at least 1 to confirm it actually used a tool.",
         createFormComponent: StepCountCheckForm,
         resultRendererComponent: StepCountCheckResult,
       }
@@ -276,8 +380,9 @@ export function getV2EvalTypeMetadata(type: V2EvalType): V2EvalTypeMetadata {
         tags: [{ label: "Beta", tone: "beta" }],
         pageTitle: "Add a Code Judge",
         pageSubtitle: "Write a Python function that scores model outputs.",
-        explainer:
-          "Write a custom Python scoring function that can use the model's output, trace, and reference data. Faster and cheaper than LLM as a judge.",
+        explainer: SHOW_REFERENCE_DATA_UI
+          ? "Write a custom Python scoring function that can use the model's output, trace, and reference data. Faster and cheaper than LLM as a judge."
+          : "Write a custom Python scoring function that can use the model's output and trace. Faster and cheaper than LLM as a judge.",
         createFormComponent: CodeEvalForm,
         resultRendererComponent: CodeEvalResult,
       }

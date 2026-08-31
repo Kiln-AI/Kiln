@@ -1296,7 +1296,7 @@ class TestAgentRunContextLifecycle:
                 "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
             ),
             patch(
-                "kiln_ai.adapters.model_adapters.base_adapter.MCPSessionManager"
+                "kiln_ai.tools.mcp_session_manager.MCPSessionManager"
             ) as mock_manager_class,
         ):
             mock_parser_factory.return_value = parser
@@ -1310,10 +1310,92 @@ class TestAgentRunContextLifecycle:
             # cleanup_session should have been called
             mock_manager.cleanup_session.assert_called_once()
             # The run ID should be a string that starts with "run_"
-            call_args = mock_manager.cleanup_session.call_args
-            assert call_args is not None
-            run_id = call_args[0][0] if call_args[0] else call_args[1]["run_id"]
+            run_id = mock_manager.cleanup_session.call_args[0][0]
             assert run_id.startswith("run_")
+
+    @staticmethod
+    def _fake_adapter_stream():
+        """A one-chunk stand-in for the model stream, so these tests exercise
+        the session scope around iteration rather than a real model path."""
+
+        class FakeAdapterStream:
+            async def __aiter__(self):
+                yield ModelResponseStream(
+                    id="test",
+                    choices=[
+                        StreamingChoices(
+                            index=0,
+                            delta=Delta(content="hi"),
+                            finish_reason=None,
+                        )
+                    ],
+                )
+
+        return FakeAdapterStream()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_session_called_after_openai_stream(
+        self, adapter, clear_context
+    ):
+        """The streaming path opens the same session scope as invoke, so a
+        consumed stream must close its sessions and release the run id too."""
+        from kiln_ai.run_context import get_agent_run_id
+
+        with (
+            patch.object(
+                adapter, "_prepare_stream", return_value=self._fake_adapter_stream()
+            ),
+            patch.object(
+                adapter, "_finalize_stream", return_value=MagicMock(spec=TaskRun)
+            ),
+            patch(
+                "kiln_ai.tools.mcp_session_manager.MCPSessionManager"
+            ) as mock_manager_class,
+        ):
+            mock_manager = MagicMock()
+            mock_manager_class.shared.return_value = mock_manager
+            mock_manager.cleanup_session = AsyncMock()
+
+            async for _chunk in adapter.invoke_openai_stream("test input"):
+                pass
+
+            mock_manager.cleanup_session.assert_called_once()
+            run_id = mock_manager.cleanup_session.call_args[0][0]
+            assert run_id.startswith("run_")
+            assert get_agent_run_id() is None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_session_called_after_ai_sdk_stream(
+        self, adapter, clear_context
+    ):
+        """Same guarantee for the AI SDK stream: it owns a scope of its own."""
+        from kiln_ai.run_context import get_agent_run_id
+
+        finalized_run = MagicMock(spec=TaskRun)
+        # Pins the finish branch: a bare mock is truthy here, which would
+        # silently route the stream down the tool-calls-pending path instead.
+        finalized_run.is_toolcall_pending = False
+
+        with (
+            patch.object(
+                adapter, "_prepare_stream", return_value=self._fake_adapter_stream()
+            ),
+            patch.object(adapter, "_finalize_stream", return_value=finalized_run),
+            patch(
+                "kiln_ai.tools.mcp_session_manager.MCPSessionManager"
+            ) as mock_manager_class,
+        ):
+            mock_manager = MagicMock()
+            mock_manager_class.shared.return_value = mock_manager
+            mock_manager.cleanup_session = AsyncMock()
+
+            async for _event in adapter.invoke_ai_sdk_stream("test input"):
+                pass
+
+            mock_manager.cleanup_session.assert_called_once()
+            run_id = mock_manager.cleanup_session.call_args[0][0]
+            assert run_id.startswith("run_")
+            assert get_agent_run_id() is None
 
 
 class TestStreamMethods:

@@ -68,7 +68,7 @@ class TestPushConflictRebaseSucceeds:
     @pytest.mark.asyncio
     async def test_both_changes_preserved(self, write_ctx, git_repos, second_clone):
         """Both the remote and local changes exist after successful rebase."""
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
 
         push_call_count = 0
         original_push = GitSyncManager._push_sync
@@ -103,7 +103,7 @@ class TestPushConflictRebaseFails:
     async def test_unresolvable_conflict_rolls_back(
         self, write_ctx, git_repos, second_clone
     ):
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
 
         push_call_count = 0
 
@@ -143,8 +143,6 @@ class TestPushConflictRebaseFails:
         self, api_ctx, git_repos, second_clone
     ):
         """API mode: unresolvable conflict returns 409."""
-        local_path, _ = git_repos
-
         push_call_count = 0
 
         def push_with_conflict(self):
@@ -225,7 +223,7 @@ class TestAddAddConflict:
 
     @pytest.mark.asyncio
     async def test_add_add_conflict(self, write_ctx, git_repos, second_clone):
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
 
         push_call_count = 0
 
@@ -258,7 +256,7 @@ class TestEmptyCommitAfterRebase:
 
     @pytest.mark.asyncio
     async def test_identical_changes_graceful(self, write_ctx, git_repos, second_clone):
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
 
         push_call_count = 0
         original_push = GitSyncManager._push_sync
@@ -296,7 +294,7 @@ class TestABASecondPushFails:
 
     @pytest.mark.asyncio
     async def test_aba_double_conflict(self, write_ctx, git_repos, second_clone):
-        local_path, remote_path = git_repos
+        local_path, _remote_path = git_repos
         pre_head = get_head_sync(local_path)
 
         push_call_count = 0
@@ -329,8 +327,6 @@ class TestABASecondPushFails:
     @pytest.mark.asyncio
     async def test_aba_api_returns_409(self, api_ctx, git_repos, second_clone):
         """API mode: ABA conflict returns 409."""
-        local_path, _ = git_repos
-
         push_call_count = 0
 
         def push_always_fail(self):

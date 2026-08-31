@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from app.desktop.git_sync.config import AuthMode
 from app.desktop.git_sync.git_sync_manager import GitSyncManager
@@ -19,8 +19,8 @@ class GitSyncRegistry:
 
     # Class-level mutable state: intentional singleton pattern.
     # All instances share one registry; access is guarded by _lock.
-    _managers: dict[Path, GitSyncManager] = {}
-    _background_syncs: dict[Path, BackgroundSync] = {}
+    _managers: ClassVar[dict[Path, GitSyncManager]] = {}
+    _background_syncs: ClassVar[dict[Path, BackgroundSync]] = {}
     _lock: threading.Lock = threading.Lock()
 
     @classmethod

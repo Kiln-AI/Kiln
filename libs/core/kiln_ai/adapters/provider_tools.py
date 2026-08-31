@@ -26,6 +26,10 @@ from kiln_ai.utils.project_utils import project_from_id
 
 logger = logging.getLogger(__name__)
 
+# Some providers (Ollama, LM Studio, other local servers) don't use an API key, but the
+# OpenAI client and LiteLLM both error out when constructed without one. Send this instead.
+PLACEHOLDER_API_KEY = "NA"
+
 
 async def provider_enabled(provider_name: ModelProviderName) -> bool:
     if provider_name == ModelProviderName.ollama:
@@ -535,6 +539,8 @@ def provider_name_from_id(id: str) -> str:
                 return "SiliconFlow"
             case ModelProviderName.cerebras:
                 return "Cerebras"
+            case ModelProviderName.featherless_ai:
+                return "Featherless AI"
             case ModelProviderName.docker_model_runner:
                 return "Docker Model Runner"
             case _:
@@ -602,6 +608,10 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
     ModelProviderName.cerebras: ModelProviderWarning(
         required_config_keys=["cerebras_api_key"],
         message="Attempted to use Cerebras without an API key set. \nGet your API key from https://cloud.cerebras.ai/platform",
+    ),
+    ModelProviderName.featherless_ai: ModelProviderWarning(
+        required_config_keys=["featherless_ai_api_key"],
+        message="Attempted to use Featherless AI without an API key set. \nGet your API key from https://featherless.ai/account/api-keys",
     ),
 }
 
@@ -681,7 +691,7 @@ def lite_llm_core_config_for_provider(
                 base_url=ollama_base_url + "/v1",
                 additional_body_options={
                     # LiteLLM errors without an api_key, even though Ollama doesn't support one
-                    "api_key": "NA",
+                    "api_key": PLACEHOLDER_API_KEY,
                 },
             )
         case ModelProviderName.docker_model_runner:
@@ -748,6 +758,18 @@ def lite_llm_core_config_for_provider(
                     "api_key": Config.shared().cerebras_api_key,
                 },
             )
+        case ModelProviderName.featherless_ai:
+            return LiteLlmCoreConfig(
+                # Featherless recommends these headers so they can support mutual
+                # users, and for analytics. Same pattern as OpenRouter/SiliconFlow.
+                default_headers={
+                    "HTTP-Referer": "https://kiln.tech/featherless",
+                    "X-Title": "KilnAI",
+                },
+                additional_body_options={
+                    "api_key": Config.shared().featherless_ai_api_key,
+                },
+            )
         case ModelProviderName.openai_compatible:
             # openai compatible requires a model name in the format "provider::model_name"
             if openai_compatible_provider_name is None:
@@ -771,7 +793,7 @@ def lite_llm_core_config_for_provider(
                 )
 
             # API key optional - some providers like Ollama don't use it, but LiteLLM errors without one
-            api_key = provider.get("api_key") or "NA"
+            api_key = provider.get("api_key") or PLACEHOLDER_API_KEY
             base_url = provider.get("base_url")
             if base_url is None:
                 raise ValueError(

@@ -11,10 +11,6 @@ from unittest.mock import patch
 
 import pytest
 
-from kiln_ai.adapters.eval.v2_eval_code_eval import (
-    grant_code_eval_trust,
-    revoke_code_eval_trust,
-)
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.project import Project
 from kiln_ai.sandbox.spawn import _spawn_lock
@@ -24,10 +20,13 @@ from kiln_ai.tools.base_tool import (
     ToolCallResult,
 )
 from kiln_ai.tools.code_tool import (
-    CODE_TOOL_MAX_CONCURRENCY,
     PythonCodeTool,
     ToolCallLogEntry,
-    _code_tool_depth,
+)
+from kiln_ai.tools.sandbox_bridge import (
+    CODE_SANDBOX_MAX_CONCURRENCY,
+    NestedToolServer,
+    _depth,
 )
 
 # ---------------------------------------------------------------------------
@@ -134,15 +133,6 @@ class FakeTool(KilnToolInterface):
 # ---------------------------------------------------------------------------
 # Child / protocol tests (real spawns)
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def _trust_all_projects(tmp_path):
-    """Grant trust for tests so the trust gate doesn't block execution."""
-    path = str(tmp_path / "project")
-    grant_code_eval_trust(path)
-    yield
-    revoke_code_eval_trust(path)
 
 
 class TestChildSyncRun:
@@ -283,7 +273,7 @@ class TestStdoutStderr:
     async def test_stdout_captured(self, tmp_path):
         project = _make_project(tmp_path)
         ct = _make_code_tool(
-            'def run(x):\n    print("debug")\n    return "ok"\n',
+            'import sys\ndef run(x):\n    sys.stdout.write("debug")\n    return "ok"\n',
         )
         ct.parent = project
         pct = PythonCodeTool(ct, project)
@@ -295,7 +285,7 @@ class TestStdoutStderr:
     async def test_stdout_truncation(self, tmp_path):
         project = _make_project(tmp_path)
         ct = _make_code_tool(
-            'def run(x):\n    print("A" * 100000)\n    return "ok"\n',
+            'import sys\ndef run(x):\n    sys.stdout.write("A" * 100000)\n    return "ok"\n',
         )
         ct.parent = project
         pct = PythonCodeTool(ct, project)
@@ -352,7 +342,6 @@ class TestMissingRun:
         )
         object.__setattr__(ct, "__pydantic_fields_set__", set())
         pct = PythonCodeTool(ct, project)
-        grant_code_eval_trust(str(project.path))
         result = await pct.run(None)
         assert result.is_error
         assert "run" in result.output.lower()
@@ -723,13 +712,13 @@ class TestDepthCap:
     async def test_depth_cap_at_10(self, tmp_path):
         """Depth >= 10 returns an error without spawning."""
         tool = _make_python_code_tool(tmp_path, 'def run(x):\n    return "ok"\n')
-        token = _code_tool_depth.set(10)
+        token = _depth.set(10)
         try:
             result = await tool.run(None, x="test")
         finally:
-            _code_tool_depth.reset(token)
+            _depth.reset(token)
         assert result.is_error
-        assert "max code tool depth exceeded" in result.output
+        assert "maximum nested code execution depth exceeded" in result.output
 
 
 class TestSemaphore:
@@ -750,30 +739,18 @@ class TestSemaphore:
 
         async def run_nested(i: int):
             tool = _make_python_code_tool(tmp_path, code)
-            token = _code_tool_depth.set(1)
+            token = _depth.set(1)
             try:
                 r = await tool.run(None, x=str(i))
                 results.append(r)
             finally:
-                _code_tool_depth.reset(token)
+                _depth.reset(token)
 
-        await asyncio.gather(*(run_nested(i) for i in range(CODE_TOOL_MAX_CONCURRENCY)))
-        assert len(results) == CODE_TOOL_MAX_CONCURRENCY
+        await asyncio.gather(
+            *(run_nested(i) for i in range(CODE_SANDBOX_MAX_CONCURRENCY))
+        )
+        assert len(results) == CODE_SANDBOX_MAX_CONCURRENCY
         assert all(not r.is_error for r in results)
-
-
-class TestTrustRefusal:
-    @pytest.mark.asyncio
-    async def test_trust_refusal_no_spawn(self, tmp_path):
-        project = Project(name="untrusted", path=tmp_path / "untrusted")
-        project.save_to_file()
-        revoke_code_eval_trust(str(project.path))
-        ct = _make_code_tool('def run(x):\n    return "should_not_run"\n')
-        ct.parent = project
-        pct = PythonCodeTool(ct, project)
-        result = await pct.run(None, x="test")
-        assert result.is_error
-        assert "not trusted" in result.error_message.lower()
 
 
 class TestToolCallRecorder:
@@ -957,11 +934,11 @@ class TestUnicodePassthrough:
 
 class TestSpawnLockIdentity:
     def test_spawn_lock_shared(self):
-        """PythonCodeTool and run_scorer share the same _spawn_lock."""
-        from kiln_ai.adapters.eval import sandbox_worker
+        """Code tools and code evals spawn through the same bridge / _spawn_lock."""
+        from kiln_ai.tools import sandbox_bridge
 
         assert (
-            sandbox_worker.start_process_with_light_main.__module__
+            sandbox_bridge.start_process_with_light_main.__module__
             == "kiln_ai.sandbox.spawn"
         )
         from kiln_ai.sandbox.spawn import _spawn_lock as shared_lock
@@ -1137,9 +1114,10 @@ class TestRealBuiltInTools:
                 tool_allowlist=[tool_id],
             )
             ct.parent = project
-            pct = PythonCodeTool(ct, project)
-            name_map = await pct._build_name_map()
-            dispatch_names = list(name_map.keys())
+            server = NestedToolServer(
+                allowlist=ct.tool_allowlist, project=project, task=None, context=None
+            )
+            dispatch_names = list((await server.name_map()).keys())
 
             assert dispatch_names == [real_name], (
                 f"For {builtin_id}: dispatch name {dispatch_names} != "

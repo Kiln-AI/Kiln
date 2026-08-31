@@ -6,7 +6,11 @@ export default {
   content: ["./src/**/*.{html,js,svelte,ts}"],
   safelist: ["h-18", "h-36", "h-60", "h-96"],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        sans: ["InterVariable", "Inter", "system-ui", "sans-serif"],
+      },
+    },
   },
   plugins: [typography, daisyui],
   daisyui: {
