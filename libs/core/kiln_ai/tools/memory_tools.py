@@ -145,10 +145,16 @@ class SaveMemoryTool(_MemoryTool):
     async def run(
         self, context: ToolCallContext | None = None, **kwargs
     ) -> ToolCallResult:
+        overview = kwargs.get("overview")
+        if not overview:
+            return self._error(ValueError("overview is required"))
+        scope = kwargs.get("scope")
+        if not scope:
+            return self._error(ValueError("scope is required"))
         try:
             memory = self._store.save_memory(
-                overview=kwargs["overview"],
-                scope=kwargs["scope"],
+                overview=overview,
+                scope=scope,
                 content=kwargs.get("content"),
                 tags=kwargs.get("tags"),
             )

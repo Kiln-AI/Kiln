@@ -162,6 +162,19 @@ async def test_save_over_length_overview_is_tool_error(project):
     assert result.error_message
 
 
+@pytest.mark.parametrize("kwargs", [{"scope": "project"}, {"overview": "a"}, {}])
+async def test_save_missing_required_param_is_tool_error(project, kwargs):
+    # An LLM can omit a "required" param; that must be a tool error, not a crash.
+    result = await tool(project, "save").run(**kwargs)
+    assert result.is_error
+    assert result.error_message
+
+
+async def test_list_negative_pagination_is_tool_error(project):
+    result = await tool(project, "list").run(limit=-1)
+    assert result.is_error
+
+
 async def test_list_invalid_regex_is_tool_error(project):
     result = await tool(project, "list").run(content_match="[unclosed")
     assert result.is_error

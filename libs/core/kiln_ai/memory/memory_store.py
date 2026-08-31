@@ -151,6 +151,13 @@ class MemoryStore:
         limit: int = 50,
         offset: int = 0,
     ) -> MemoryListResult:
+        # Negative values would silently become Python's negative-index slicing,
+        # returning a surprising page and a wrong remaining count.
+        if limit < 0:
+            raise ValueError("limit cannot be negative")
+        if offset < 0:
+            raise ValueError("offset cannot be negative")
+
         memories = self._all()
 
         if scope is not None:
