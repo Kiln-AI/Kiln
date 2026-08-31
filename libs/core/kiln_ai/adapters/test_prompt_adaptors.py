@@ -34,7 +34,7 @@ def get_all_models_and_providers():
 async def test_groq(tmp_path):
     if os.getenv("GROQ_API_KEY") is None:
         pytest.skip("GROQ_API_KEY not set")
-    await run_simple_test(tmp_path, "llama_3_3_70b", "groq")
+    await run_simple_test(tmp_path, "gpt_oss_20b", "groq")
 
 
 @pytest.mark.parametrize(
