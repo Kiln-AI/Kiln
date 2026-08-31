@@ -706,9 +706,8 @@
       has_pro: has_kiln_copilot,
     })
     if (has_kiln_copilot) {
-      // Pro users land on the v2 builder. The legacy template carousel
-      // remains reachable via the "Evals Legacy" sidebar entry during
-      // the bug bash; remove the fallback once v2 ships GA.
+      // Pro users land on the v2 builder, where the copilot drafts the spec.
+      // The builder's own create-manually link is their way to the carousel.
       goto(`/specs/${project_id}/${task_id}/builder`)
     } else {
       // Everyone else starts at the template picker; the Pro-vs-Manual
