@@ -35,6 +35,7 @@ from kiln_ai.datamodel.dataset_split import DatasetSplit, DatasetSplitDefinition
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.feedback import Feedback
 from kiln_ai.datamodel.finetune import Finetune
+from kiln_ai.datamodel.memory import Memory
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.prompt_id import (
@@ -80,6 +81,7 @@ __all__ = [
     "FineTuneStatusType",
     "Finetune",
     "KilnArtifactProvenance",
+    "Memory",
     "MessageUsage",
     "Priority",
     "Project",
