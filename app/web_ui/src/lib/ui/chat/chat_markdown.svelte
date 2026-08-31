@@ -120,10 +120,10 @@
 
 {#if sanitized}
   <div
-    class="chat-markdown prose prose-sm max-w-none overflow-x-auto leading-tight prose-p:my-3 prose-ul:my-3 prose-ol:my-3 prose-li:my-2 prose-headings:mt-3 prose-headings:mb-1 prose-pre:my-1.5 prose-blockquote:my-1.5 prose-table:my-2 prose-a:link"
+    class="chat-markdown prose prose-sm max-w-none overflow-x-auto break-words leading-tight prose-p:my-3 prose-ul:my-3 prose-ol:my-3 prose-li:my-2 prose-headings:mt-3 prose-headings:mb-1 prose-pre:my-1.5 prose-blockquote:my-1.5 prose-table:my-2 prose-a:link"
   >
     {@html sanitized}
   </div>
 {:else}
-  <span class="whitespace-pre-wrap">{text || ""}</span>
+  <span class="whitespace-pre-wrap break-words">{text || ""}</span>
 {/if}

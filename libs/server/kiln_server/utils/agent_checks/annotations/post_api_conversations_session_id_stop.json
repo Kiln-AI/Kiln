@@ -1,0 +1,8 @@
+{
+  "method": "post",
+  "path": "/api/conversations/{session_id}/stop",
+  "agent_policy": {
+    "permission": "deny",
+    "requires_approval": false
+  }
+}

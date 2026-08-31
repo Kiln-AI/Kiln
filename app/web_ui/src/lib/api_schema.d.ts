@@ -3534,29 +3534,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chat/execute-tools": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Execute approved client tools and continue chat stream
-         * @description Tool calls that require user approval are streamed to the client for approval, along with the
-         *     other toolcalls part of the same turn. The user must approve / reject all the approval-requiring
-         *     toolcalls in the UI, then send back the decisions through this endpoint, which will execute
-         *     the toolcalls and continue the chat stream.
-         */
-        post: operations["post_execute_tools_api_chat_execute_tools_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/chat/version_policy": {
         parameters: {
             query?: never;
@@ -3610,14 +3587,31 @@ export interface paths {
         };
         /**
          * Get chat session
-         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions/{session_id}``.
+         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions/{id}``.
+         *
+         *     Phase 6: accepts any browser conversation key. For a LIVE
+         *     conversation the desktop substitutes the record's freshest upstream
+         *     identity (its current leaf — hydration is always fresh); any other
+         *     key is forwarded VERBATIM, because the upstream now resolves either
+         *     id kind itself (root ids via the pointer index, architecture §8 —
+         *     the phase-5 desktop-side root→leaf scan and its 503 surface are
+         *     gone; the upstream owns that failure mode now and this proxy passes
+         *     its status through like any other error). 404 when the key yields
+         *     nothing to forward: a dead ``cv_`` handle after a desktop restart,
+         *     or a live record with nothing persisted yet.
          */
         get: operations["get_chat_session_api_chat_sessions__session_id__get"];
         put?: never;
         post?: never;
         /**
          * Delete chat session
-         * @description Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{session_id}``.
+         * @description Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{id}``.
+         *
+         *     Phase 6: accepts any browser conversation key; live records forward
+         *     their freshest upstream identity, cold keys forward verbatim (the
+         *     upstream deletes by either id kind — root ids resolve to the current
+         *     leaf server-side, so the desktop no longer needs the leaf to delete a
+         *     root-keyed session).
          */
         delete: operations["delete_chat_session_api_chat_sessions__session_id__delete"];
         options?: never;
@@ -3625,7 +3619,132 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chat": {
+    "/api/chat/debug_status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assistant debug-logging status
+         * @description Whether ``KILN_CHAT_DEBUG_LOG`` forensic logging is on — the UI
+         *     surfaces the conversation id (the join key for the desktop and
+         *     kiln_server debug logs) when it is.
+         */
+        get: operations["chat_debug_status_api_chat_debug_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List conversations */
+        get: operations["list_conversations_api_conversations_get"];
+        put?: never;
+        /**
+         * Create (or adopt/flip) a conversation
+         * @description Create a conversation, by kind (functional spec §2; phase 5 keys
+         *     the body on ``session_id`` — see ``CreateConversationRequest``):
+         *
+         *     - ``kind="interactive"`` (phase 4): create-or-adopt the conversation
+         *       for the given key — the replacement for the old ``POST /api/chat``
+         *       conversation-per-request model. Idempotent: a key resolving to a
+         *       live record (any kind) returns that record's session id; a
+         *       TERMINAL record's key (a finished sub-agent reopened from history)
+         *       continues its trace on a fresh interactive record; a cold key
+         *       (upstream root id / legacy leaf) is adopted VERBATIM — the backend
+         *       resolves it on the first turn (phase 6) — and rehydrates pending
+         *       approvals from the persisted trace tail
+         *       (functional spec §5 restart recovery); a dead ``cv_`` key — the
+         *       record died with a desktop restart — creates a fresh empty record
+         *       (exactly the old world's no-stored-trace behavior).
+         *     - ``kind="auto"`` (default): enable auto mode — flip the named
+         *       conversation, or create one for the armed-first-send seed (old
+         *       ``POST /api/chat/auto/enable``; see ``supervisor.enable_auto`` for
+         *       the preserved entry shapes, including the ARMED-only manual enable
+         *       that never POSTs an empty turn upstream).
+         *
+         *     Runs are supervised by the conversation supervisor and survive client
+         *     disconnects.
+         */
+        post: operations["create_conversation_api_conversations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream conversation state events
+         * @description Registry-level firehose of ``conversation-state`` events (snapshot
+         *     then live).
+         */
+        get: operations["stream_conversation_state_events_api_conversations_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a conversation */
+        get: operations["get_conversation_api_conversations__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream a conversation's chat events
+         * @description Pure-observer SSE (buffer replay + state marker + live); 404 if
+         *     unknown or GC'd. Any number of concurrent observers; disconnect never
+         *     affects the run.
+         */
+        get: operations["stream_conversation_events_api_conversations__session_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}/stop": {
         parameters: {
             query?: never;
             header?: never;
@@ -3635,10 +3754,133 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Stream Chat
-         * @description Forward chat to Kiln Copilot and stream AI SDK events as Server-Sent Events.
+         * Stop a conversation's run
+         * @description Stop the run. Idempotent — stopping an unknown or terminal
+         *     conversation is a no-op (a child's report, if any, is still delivered
+         *     to the parent). Same 202-always contract as the old stop endpoint.
+         *     ``cascade=true`` stops the children FIRST (their reports are
+         *     suppressed — the parent is being torn down, same order as session
+         *     deletion) and then the conversation itself.
          */
-        post: operations["chat_api_chat_post"];
+        post: operations["stop_conversation_api_conversations__session_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}/auto": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Flip a conversation's auto-mode flag
+         * @description Flip the auto-mode flag on an EXISTING conversation (functional
+         *     spec §2). ``enabled=false`` → today's disable semantics (old
+         *     ``AutoChatRegistry.disable``: cancel a live burst, publish the off
+         *     state with reason ``user_disabled``, cascade-stop sub-agent children;
+         *     phase 4: the record then swaps back to its interactive life instead
+         *     of TTL GC). ``enabled=false`` + ``decline`` → the consent-decline
+         *     flow (old ``/api/chat/auto/decline``, folded in): resolve the pending
+         *     gating call — ``enable_auto_mode``, or the FR2 spawn-consent
+         *     ``spawn_subagent`` — as declined + denied siblings via an interactive
+         *     continuation turn that streams on the observer channel.
+         *     ``enabled=true`` → enable/re-arm: the record flips to the auto policy
+         *     (ARMED-only: flag on, no upstream POST — the next message starts the
+         *     burst). 404 unknown, 409 for sub-agent records / a decline racing an
+         *     in-flight run, 429 when enabling would exceed the concurrency cap.
+         */
+        post: operations["set_auto_mode_api_conversations__session_id__auto_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the conversation's pending approval batch
+         * @description The parked approval batch awaiting decisions (functional spec §2).
+         *
+         *     Replaces the tail half of the old two-request approval flow (the
+         *     stream used to END at ``tool-calls-pending`` and the browser POSTed
+         *     ``/api/chat/execute-tools``): the run now PARKS and the browser
+         *     fetches the batch here — keyed off the ``tool-calls-pending`` event /
+         *     the AWAITING_APPROVAL state — then answers via
+         *     ``POST /{sid}/approvals/decisions``. When no batch is in memory, the
+         *     supervisor attempts trace-tail rehydration first (functional spec §5:
+         *     desktop restart / graceful-stop leftovers), so a recoverable batch is
+         *     indistinguishable from a live one to the browser. 404 when the
+         *     conversation is unknown or nothing is pending.
+         */
+        get: operations["get_pending_approvals_api_conversations__session_id__approvals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}/approvals/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve the conversation's pending approval batch
+         * @description Resolve a parked approval batch (functional spec §2/§5): the run
+         *     resumes (or a resume run starts, for a rehydrated batch) and results
+         *     stream on the events channel. One decision set per batch — first
+         *     decision set wins; a second tab deciding the same batch gets 409;
+         *     an unknown conversation/batch id gets 404.
+         */
+        post: operations["post_approval_decisions_api_conversations__session_id__approvals_decisions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/conversations/{session_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a user message into a conversation
+         * @description Queue a user message (202, functional spec §2). Behavior by state:
+         *     IDLE → starts a turn/burst (an interactive send here is the phase-4
+         *     replacement for the old ``POST /api/chat``, byte-identical upstream);
+         *     RUNNING → queued into the inbox, drained at the next round boundary
+         *     (steer/inject); AWAITING_APPROVAL → queued until decisions resolve.
+         *     The message is echoed to observers at enqueue time; the response
+         *     carries its stable id so the sending tab can dedupe its own echo.
+         *     404 for unknown conversations, 409 for terminal ones (and for the
+         *     narrow flag-off-but-still-auto-policy window during a disable — the
+         *     old "no longer active" refusal; once the settle swaps the record back
+         *     to interactive, sends run normal gated turns).
+         */
+        post: operations["send_conversation_message_api_conversations__session_id__messages_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3683,7 +3925,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/jobs/{type}": {
+    "/api/jobs/evals/run": {
         parameters: {
             query?: never;
             header?: never;
@@ -3692,8 +3934,41 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Job */
-        post: operations["create_job_api_jobs__type__post"];
+        /**
+         * Run Eval Job
+         * @description Kick off an eval as a background job and return immediately.
+         *
+         *     A typed, approval-gated entry point for agents. Unlike the UI's SSE
+         *     run endpoints, this does not stream — the job runs in the background.
+         *     Poll `GET /api/jobs/{id}` (or `/api/jobs/wait`) for progress and the
+         *     result.
+         */
+        post: operations["run_eval_job_api_jobs_evals_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wait For Jobs
+         * @description Block until ALL the given jobs reach a terminal state, then return
+         *     their records (order preserved). A pure observer, like the SSE stream:
+         *     disconnecting tears down only the awaiter, never the jobs. The (always
+         *     bounded) timeout covers the whole set. Empty `ids` returns an empty
+         *     list. A PAUSED job is not terminal: waiting on one runs out the timeout
+         *     (504) — inspect its status via GET /api/jobs/{id} instead.
+         */
+        post: operations["wait_for_jobs_api_jobs_wait_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3727,30 +4002,6 @@ export interface paths {
         };
         /** Get Job Result */
         get: operations["get_job_result_api_jobs__id__result_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/jobs/{id}/wait": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Wait For Job
-         * @description Block until the job reaches a terminal state, then return its record.
-         *
-         *     A pure observer, like the SSE stream: if the client disconnects, uvicorn
-         *     cancels this handler coroutine, which cancels the wait() await and tears
-         *     down only the awaiter — the job's supervising task keeps running.
-         */
-        get: operations["wait_for_job_api_jobs__id__wait_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4233,6 +4484,8 @@ export interface components {
              * @description The user who created the prompt.
              */
             created_by?: string | null;
+            /** @description Why this prompt exists and what it was derived from, if recorded. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** AppropriateToolUseProperties */
         AppropriateToolUseProperties: {
@@ -4253,6 +4506,20 @@ export interface components {
             tool_id?: string;
             /** Tool Function Name */
             tool_function_name?: string;
+        };
+        /**
+         * ApprovalDecisionsRequest
+         * @description ``POST /{sid}/approvals/decisions`` — one decision set for the whole
+         *     batch (partial decisions are not allowed; matches today's UI, functional
+         *     spec §2). Keys are tool_call_ids; True = run, False/absent = deny.
+         */
+        ApprovalDecisionsRequest: {
+            /** Batch Id */
+            batch_id: string;
+            /** Decisions */
+            decisions: {
+                [key: string]: boolean;
+            };
         };
         /** ArgMatch */
         ArgMatch: {
@@ -4695,25 +4962,13 @@ export interface components {
             /** Name */
             name?: string;
         };
-        /** ChatRequest */
-        ChatRequest: {
-            /** Messages */
-            messages: components["schemas"]["ChatRequestMessage"][];
-            /** Trace Id */
-            trace_id?: string | null;
-        } & {
-            [key: string]: unknown;
-        };
-        /** ChatRequestMessage */
-        ChatRequestMessage: {
-            /** Role */
-            role: string;
-            /** Content */
-            content?: string | {
-                [key: string]: unknown;
-            }[] | null;
-        } & {
-            [key: string]: unknown;
+        /**
+         * ChatDebugStatus
+         * @description Whether assistant forensic debug logging (``KILN_CHAT_DEBUG_LOG``) is on.
+         */
+        ChatDebugStatus: {
+            /** Debug Log Enabled */
+            debug_log_enabled: boolean;
         };
         /** ChatSessionListItem */
         ChatSessionListItem: {
@@ -4723,12 +4978,37 @@ export interface components {
             title?: string | null;
             /** Updated At */
             updated_at?: string | null;
+            /**
+             * Auto Active
+             * @default false
+             */
+            auto_active: boolean;
+            /** Auto Run Id */
+            auto_run_id?: string | null;
+            /** Agent Type */
+            agent_type?: string | null;
+            /** Root Id */
+            root_id?: string | null;
+            /** Parent Root Id */
+            parent_root_id?: string | null;
+            /**
+             * Is Subagent
+             * @default false
+             */
+            is_subagent: boolean;
+            /** Subagent Id */
+            subagent_id?: string | null;
+            /** Subagent Status */
+            subagent_status?: string | null;
         };
         /** ChatSessionSnapshot */
         ChatSessionSnapshot: {
             /** Id */
             id: string;
             task_run: components["schemas"]["TaskRunSnapshot"];
+            context_usage?: components["schemas"]["ContextUsage"] | null;
+            /** Root Id */
+            root_id?: string | null;
         };
         /**
          * ChatStrategy
@@ -4807,6 +5087,8 @@ export interface components {
              * @description Properties to be used to execute the chunker config. This is chunker_type specific and should serialize to a json dict.
              */
             properties: components["schemas"]["SemanticChunkerProperties"] | components["schemas"]["FixedWindowChunkerProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -4988,6 +5270,8 @@ export interface components {
              * @description Tools this code tool may call.
              */
             tool_allowlist?: string[];
+            /** @description Provenance: why this code tool exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CodeToolCreateResponse */
         CodeToolCreateResponse: {
@@ -5020,6 +5304,7 @@ export interface components {
             created_at?: string | null;
             /** Created By */
             created_by?: string | null;
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /**
              * Not Trusted
              * @default false
@@ -5057,6 +5342,7 @@ export interface components {
             created_at?: string | null;
             /** Created By */
             created_by?: string | null;
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CodeToolUpdateRequest */
         CodeToolUpdateRequest: {
@@ -5126,6 +5412,107 @@ export interface components {
              */
             mode: "must_contain" | "must_not_contain";
         };
+        /**
+         * ContextUsage
+         * @description Proxy mirror of the kiln_server ``ContextUsage`` value object.
+         *
+         *     Carries only the gauge numbers and the ``compacted`` flag — never any trace
+         *     content — so it is safe to surface to the web UI. Every field is optional so
+         *     an older upstream that doesn't emit ``context_usage`` (or emits a partial
+         *     object) never 500s the proxy; the web UI hides the gauge when it's absent.
+         */
+        ContextUsage: {
+            /** Context Tokens */
+            context_tokens?: number | null;
+            /** Context Limit */
+            context_limit?: number | null;
+            /** Context Percent */
+            context_percent?: number | null;
+            /** Compacted */
+            compacted?: boolean | null;
+        };
+        /** ConversationCreatedResponse */
+        ConversationCreatedResponse: {
+            /** Session Id */
+            session_id: string;
+        };
+        /**
+         * ConversationItem
+         * @description UI-facing view of one conversation record.
+         *
+         *     Field notes:
+         *
+         *     - ``state`` uses the unified ``RunState`` vocabulary; every value the old
+         *       ``SubAgentStatus`` could produce keeps its exact string, so terminal
+         *       checks port mechanically.
+         *     - ``current_trace_id`` (phases 2-4) is GONE: browsers never see trace ids
+         *       (functional spec §4). History hydration goes through
+         *       ``GET /api/chat/sessions/{session_id}`` and the DESKTOP resolves the
+         *       record's current leaf (``routes.resolve_conversation_key``) — strictly
+         *       fresher than the re-fetched field the browser used to hold.
+         *     - ``root_id`` is the upstream session's DURABLE id (``session_meta.
+         *       root_id``) when the desktop has learned it — a SESSION id, exposed so
+         *       the browser can persist a restart-proof recovery key (the in-memory
+         *       ``session_id`` dies with the desktop process; since phase 6 the
+         *       recovery key resumes via the backend's own session-id resolution, no
+         *       leaf bookkeeping anywhere).
+         *     - ``final_report`` is included only when requested with
+         *       ``include_report`` (same contract as the old API).
+         */
+        ConversationItem: {
+            /** Session Id */
+            session_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "interactive" | "auto" | "subagent";
+            state: components["schemas"]["RunState"];
+            /** Name */
+            name?: string | null;
+            /** Agent Type */
+            agent_type?: string | null;
+            /** Parent Session Id */
+            parent_session_id?: string | null;
+            /** Root Id */
+            root_id?: string | null;
+            /**
+             * Auto Flag
+             * @default false
+             */
+            auto_flag: boolean;
+            /** Idle Reason */
+            idle_reason?: string | null;
+            /**
+             * Rounds Used
+             * @default 0
+             */
+            rounds_used: number;
+            /**
+             * Report Available
+             * @default false
+             */
+            report_available: boolean;
+            /**
+             * Report Delivered
+             * @default false
+             */
+            report_delivered: boolean;
+            /** Final Report */
+            final_report?: string | null;
+        };
+        /**
+         * ConversationMessageAccepted
+         * @description 202 body for ``POST /{sid}/messages`` (phase 4): the accepted
+         *     message's stable server-minted id. The sending tab renders the typed
+         *     text locally and uses this id to dedupe the run's ``user-message`` echo
+         *     (whose content carries the app-context header only OTHER observers
+         *     should render, stripped).
+         */
+        ConversationMessageAccepted: {
+            /** Message Id */
+            message_id: string;
+        };
         /** CorrelationResult */
         CorrelationResult: {
             /** Mean Absolute Error */
@@ -5159,6 +5546,45 @@ export interface components {
             chunker_type: components["schemas"]["ChunkerType"];
             /** Properties */
             properties: components["schemas"]["SemanticChunkerPropertiesPublic"] | components["schemas"]["FixedWindowChunkerPropertiesPublic"];
+            /** @description Provenance: why this chunker config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
+        };
+        /**
+         * CreateConversationRequest
+         * @description ``POST /api/conversations`` body.
+         *
+         *     ``kind`` selects the flow (phase 4); phase 5 re-keys the body from
+         *     ``trace_id`` to ``session_id`` (functional spec §4: browsers never see
+         *     trace ids — the desktop resolves the key to the upstream leaf):
+         *
+         *     - ``"auto"`` (default — the phase-3 enable flow, session-id keyed): the
+         *       old ``EnableAutoRequest`` = ``AutoChatSeed`` + reason, field semantics
+         *       preserved verbatim. Flips the named conversation — or creates one when
+         *       ``session_id`` is absent (armed-first-send, Revision R2).
+         *     - ``"interactive"``: create-or-adopt the conversation for ``session_id``
+         *       (functional spec §2 "create"; idempotent — a key resolving to a live
+         *       record returns that record's session id). The first message goes
+         *       through ``POST /{sid}/messages`` like every other message.
+         */
+        CreateConversationRequest: {
+            /**
+             * Kind
+             * @default auto
+             * @enum {string}
+             */
+            kind: "interactive" | "auto";
+            /** Session Id */
+            session_id?: string | null;
+            /** Enable Tool Call Id */
+            enable_tool_call_id?: string | null;
+            /** Pending Tool Calls */
+            pending_tool_calls?: components["schemas"]["ToolCallInfo"][];
+            /** Extra Messages */
+            extra_messages?: {
+                [key: string]: unknown;
+            }[];
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * CreateDatasetSplitRequest
@@ -5204,6 +5630,8 @@ export interface components {
             model_name: string;
             /** @description Properties to be used to execute the embedding config. */
             properties?: components["schemas"]["EmbeddingProperties"];
+            /** @description Provenance: why this embedding config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateEvalConfigRequest
@@ -5231,6 +5659,8 @@ export interface components {
             model_name?: string | null;
             /** @description The provider of the evaluation model. Required for LLM-based eval types. */
             provider?: components["schemas"]["ModelProviderName"] | null;
+            /** @description Provenance: why this eval config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateEvaluatorRequest
@@ -5312,6 +5742,8 @@ export interface components {
             passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
             /** @description The properties of the extractor config, specific to the selected extractor_type. */
             properties: components["schemas"]["LitellmExtractorConfigProperties"];
+            /** @description Provenance: why this extractor config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateFeedbackRequest
@@ -5357,31 +5789,8 @@ export interface components {
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
             run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
-        };
-        /**
-         * CreateJobRequest
-         * @description Request body for creating a job. Params are validated per job type.
-         */
-        CreateJobRequest: {
-            /**
-             * Params
-             * @description Type-specific job parameters, validated against the type's params model.
-             */
-            params?: {
-                [key: string]: unknown;
-            };
-            /**
-             * Project Id
-             * @description Project to scope this job to (for filtering/visibility). Falls back to the params' project_id when omitted.
-             */
-            project_id?: string | null;
-            /**
-             * Metadata
-             * @description Free-form pass-through attribution, stored verbatim.
-             */
-            metadata?: {
-                [key: string]: unknown;
-            } | null;
+            /** @description Provenance: why this fine-tune exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateJobResponse
@@ -5462,6 +5871,8 @@ export interface components {
              * @description The MCP tool ID to use.
              */
             tool_id: string;
+            /** @description Provenance: why this run config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CreateRagConfigRequest */
         CreateRagConfigRequest: {
@@ -5515,6 +5926,8 @@ export interface components {
              * @description List of document tags to filter by. If None, all documents in the project are used.
              */
             tags?: string[] | null;
+            /** @description Provenance: why this RAG config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** CreateRerankerConfigRequest */
         CreateRerankerConfigRequest: {
@@ -5547,6 +5960,8 @@ export interface components {
              *     }
              */
             properties: components["schemas"]["CohereCompatibleProperties"];
+            /** @description Provenance: why this reranker config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateSpecWithCopilotRequest
@@ -5618,6 +6033,8 @@ export interface components {
              * @description The instruction for the new task.
              */
             instruction: string;
+            /** @description Provenance stamped onto the created run config. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateTaskRunConfigRequest
@@ -5639,6 +6056,8 @@ export interface components {
              * @description The run configuration properties.
              */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
+            /** @description Provenance: why this run config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * CreateTaskRunRequest
@@ -5698,6 +6117,8 @@ export interface components {
              * @description The properties of the vector store config, specific to the selected store_type.
              */
             properties: components["schemas"]["LanceDBConfigFTSPropertiesPublic"] | components["schemas"]["LanceDBConfigVectorPropertiesPublic"] | components["schemas"]["LanceDBConfigHybridPropertiesPublic"];
+            /** @description Provenance: why this vector store config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** DataGenCategoriesApiInput */
         DataGenCategoriesApiInput: {
@@ -6069,6 +6490,19 @@ export interface components {
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
         /**
+         * DeclineAutoModeContext
+         * @description Consent-decline context riding ``POST /{sid}/auto`` with
+         *     ``enabled=false`` (phase 4 — the old ``DeclineAutoRequest`` minus its
+         *     ``trace_id``: the conversation record's own leaf is authoritative now
+         *     that the conversation is addressed by session id).
+         */
+        DeclineAutoModeContext: {
+            /** Gating Tool Call Id */
+            gating_tool_call_id: string;
+            /** Siblings */
+            siblings?: components["schemas"]["ToolCallInfo"][];
+        };
+        /**
          * DefaultLlmJudgePromptResponse
          * @description Response from the default LLM judge prompt endpoint.
          */
@@ -6239,6 +6673,8 @@ export interface components {
             model_name: string;
             /** @description Properties to be used to execute the embedding config. */
             properties: components["schemas"]["EmbeddingProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -6502,6 +6938,8 @@ export interface components {
             properties?: (components["schemas"]["LlmJudgeProperties"] | components["schemas"]["ExactMatchProperties"] | components["schemas"]["PatternMatchProperties"] | components["schemas"]["SetCheckProperties"] | components["schemas"]["ToolCallCheckProperties"] | components["schemas"]["ContainsProperties"] | components["schemas"]["StepCountCheckProperties"] | components["schemas"]["CodeEvalProperties"]) | {
                 [key: string]: unknown;
             } | null;
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -6622,6 +7060,44 @@ export interface components {
              * @description The id of the dataset item this run was generated for. Interpreted within the store named by source_type — ids are only unique within a store.
              */
             source_id: string;
+        };
+        /** EvalJobParams */
+        EvalJobParams: {
+            /**
+             * Project Id
+             * @description Id of the project the eval belongs to.
+             */
+            project_id: string;
+            /**
+             * Task Id
+             * @description Id of the task the eval belongs to.
+             */
+            task_id: string;
+            /**
+             * Eval Id
+             * @description Id of the eval to run.
+             */
+            eval_id: string;
+            /**
+             * Eval Config Id
+             * @description Id of the eval config (judge) to evaluate the run's output with.
+             */
+            eval_config_id: string;
+            /**
+             * Run Config Id
+             * @description Id of the task run config whose outputs are being evaluated.
+             */
+            run_config_id: string;
+            /**
+             * Concurrency
+             * @description Max dataset items evaluated in parallel by the runner. Leave null to use the runner's default (25).
+             */
+            concurrency?: number | null;
+            /**
+             * Split
+             * @description Which of the eval's dataset splits to run: train, val, or test. Fails with 422 if the eval has no such split. Leave null to run the test split, which is what running an eval has always meant.
+             */
+            split?: ("train" | "val" | "test") | null;
         };
         /**
          * EvalOutputScore
@@ -7079,17 +7555,6 @@ export interface components {
             /** User Feedback */
             user_feedback?: string | null;
         };
-        /** ExecuteToolsRequest */
-        ExecuteToolsRequest: {
-            /** Trace Id */
-            trace_id: string;
-            /** Tool Calls */
-            tool_calls: components["schemas"]["ToolCallInfo"][];
-            /** Decisions */
-            decisions: {
-                [key: string]: boolean;
-            };
-        };
         /**
          * ExternalToolApiDescription
          * @description This class is a wrapper of MCP's Tool / KilnTaskTool objects to be displayed in the UI under tool_server/[tool_server_id].
@@ -7356,6 +7821,8 @@ export interface components {
              * @description Properties to be used to execute the extractor config. This is extractor_type specific and should serialize to a json dict.
              */
             properties: components["schemas"]["LitellmExtractorConfigProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -7682,6 +8149,8 @@ export interface components {
             data_strategy: components["schemas"]["ChatStrategy"];
             /** @description The run configuration for this fine-tune. */
             run_config?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -8290,6 +8759,13 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             /**
+             * Properties
+             * @description Optional static, worker-published descriptive properties for this job (validated against the worker's properties_model). Derived once from params at create time and unchanged over the run.
+             */
+            properties?: {
+                [key: string]: unknown;
+            } | null;
+            /**
              * Params
              * @description The validated parameters this job was created with.
              */
@@ -8403,6 +8879,31 @@ export interface components {
              * @description Optional transform applied to the task input at run time, producing the first user message sent to the model. Default None preserves the identity path.
              */
             input_transform?: components["schemas"]["JinjaInputTransform"] | null;
+        };
+        /**
+         * KilnArtifactProvenance
+         * @description Why this artifact exists and what it was derived from.
+         *
+         *     Written once at creation; immutable thereafter (enforced at the API layer).
+         *     Compile-time metadata for future agent sessions and humans — never shown to
+         *     runtime models (not part of any tool/prompt surface).
+         */
+        KilnArtifactProvenance: {
+            /**
+             * Notes
+             * @description Why this artifact exists: the problem/hypothesis it addresses, what changed vs. the derived_from_ids parents, what validation/evidence supports it (cite eval/run_config/trace IDs inline), and known limits. First line = one-sentence summary. Record observations with conditions, never universal rules. Max ~2000 chars.
+             */
+            notes?: string | null;
+            /**
+             * Derived From Ids
+             * @description IDs of same-type sibling artifacts this one was derived from. Ordered: first = primary parent (the artifact this replaces or is a new version of); further entries = additional sources merged in. Empty = not derived. IDs resolve among siblings in the same parent scope only.
+             */
+            derived_from_ids?: (string | null)[];
+            /**
+             * Origin
+             * @description Whose judgment created this artifact. 'human': a person authored it directly OR an agent created it fulfilling a direct human request. 'agent': an agent created it autonomously. None: unknown/legacy. Required when this provenance is created; consumers must tolerate unknown values.
+             */
+            origin?: string | null;
         };
         KilnAttachmentModel: {
             [key: string]: string;
@@ -9391,6 +9892,24 @@ export interface components {
             mode: "must_match" | "must_not_match";
         };
         /**
+         * PendingApprovalsResponse
+         * @description ``GET /{sid}/approvals`` — the parked batch awaiting decisions.
+         *
+         *     ``items`` is the exact wire shape of the ``tool-calls-pending`` event
+         *     items (toolCallId/toolName/input/requiresApproval[/permission/
+         *     approvalDescription]) so the approval box consumes either source
+         *     identically; ``batch_id`` is what ``POST decisions`` must echo back
+         *     (validated — a stale batch id 404s, an already-decided batch 409s).
+         */
+        PendingApprovalsResponse: {
+            /** Batch Id */
+            batch_id: string;
+            /** Items */
+            items: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
          * Priority
          * @description Priority levels, where P0 is highest priority.
          * @enum {integer}
@@ -9556,6 +10075,8 @@ export interface components {
              * @description Chain of thought instructions to include in the prompt.
              */
             chain_of_thought_instructions?: string | null;
+            /** @description Provenance: why this prompt exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * PromptGenerator
@@ -9898,6 +10419,8 @@ export interface components {
              * @description List of document tags to filter by. If None, all documents in the project are used.
              */
             tags?: string[] | null;
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -9962,6 +10485,8 @@ export interface components {
              * @description Tags for document filtering.
              */
             tags?: string[] | null;
+            /** @description Provenance: why this RAG config exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /** RagProgress */
         RagProgress: {
@@ -10304,6 +10829,8 @@ export interface components {
              * @description The properties of the reranker config, specific to the selected type.
              */
             properties: components["schemas"]["CohereCompatibleProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -10393,6 +10920,18 @@ export interface components {
             /** @description Average usage statistics across eval runs. */
             mean_usage?: components["schemas"]["MeanUsage"] | null;
         };
+        /**
+         * RunState
+         * @description Lifecycle state of a conversation's run (functional spec §1).
+         *
+         *     ``COMPLETED``/``FAILED``/``STOPPED``/``TIMEOUT`` are reachable only by
+         *     one-shot (sub-agent) policies — they preserve ``SubAgentStatus``'s
+         *     one-shot semantics 1:1. Interactive/auto conversations cycle
+         *     IDLE ⇄ RUNNING ⇄ AWAITING_APPROVAL forever; "auto mode off" is the
+         *     ``auto_flag`` axis, not a state.
+         * @enum {string}
+         */
+        RunState: "idle" | "running" | "awaiting_approval" | "completed" | "failed" | "stopped" | "timeout";
         /**
          * RunSummary
          * @description A summary of a task run for list views.
@@ -10762,6 +11301,25 @@ export interface components {
              */
             breakpoint_percentile_threshold: number;
         };
+        /** SendConversationMessageRequest */
+        SendConversationMessageRequest: {
+            /** Content */
+            content: string;
+        };
+        /**
+         * SetAutoModeRequest
+         * @description ``POST /api/conversations/{sid}/auto`` — flip the auto-mode flag on an
+         *     EXISTING conversation (functional spec §2). With ``enabled=false`` and a
+         *     ``decline`` context this is the consent-decline flow (the old
+         *     ``/api/chat/auto/decline``, folded in): the pending ``enable_auto_mode``
+         *     call resolves as declined + denied siblings through an interactive
+         *     continuation turn streaming on the observer channel.
+         */
+        SetAutoModeRequest: {
+            /** Enabled */
+            enabled: boolean;
+            decline?: components["schemas"]["DeclineAutoModeContext"] | null;
+        };
         /** SetCheckProperties */
         SetCheckProperties: {
             /**
@@ -10817,6 +11375,8 @@ export interface components {
              * @description The markdown body of the skill.
              */
             body: string;
+            /** @description Provenance: why this skill exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * SkillResponse
@@ -10854,6 +11414,8 @@ export interface components {
              * @description When the skill was created.
              */
             created_at?: string | null;
+            /** @description Why this skill exists and what it was derived from, if recorded. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
         };
         /**
          * SkillUpdateRequest
@@ -11864,6 +12426,8 @@ export interface components {
              * @default false
              */
             starred: boolean;
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -12682,6 +13246,8 @@ export interface components {
              * @description The properties of the vector store config, specific to the selected store_type.
              */
             properties: components["schemas"]["LanceDBConfigFTSProperties"] | components["schemas"]["LanceDBConfigVectorProperties"] | components["schemas"]["LanceDBConfigHybridProperties"];
+            /** @description Why this artifact exists and what it was derived from. */
+            provenance?: components["schemas"]["KilnArtifactProvenance"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -12691,6 +13257,23 @@ export interface components {
          * @enum {string}
          */
         VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
+        /**
+         * WaitForJobsRequest
+         * @description Request body for waiting on a set of jobs.
+         */
+        WaitForJobsRequest: {
+            /**
+             * Ids
+             * @description Job ids to wait for. All must reach a terminal state.
+             */
+            ids?: string[];
+            /**
+             * Timeout
+             * @description Seconds to wait before giving up (504 on timeout; jobs keep running — re-issue the wait to keep waiting). Defaults to 600s, capped at 3600s: the wait is always bounded, since a job that never terminates (e.g. paused by the user) would otherwise hang the caller indefinitely.
+             * @default 600
+             */
+            timeout: number;
+        };
     };
     responses: never;
     parameters: never;
@@ -20795,39 +21378,6 @@ export interface operations {
             };
         };
     };
-    post_execute_tools_api_chat_execute_tools_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ExecuteToolsRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     chat_version_policy_api_chat_version_policy_get: {
         parameters: {
             query?: never;
@@ -20887,7 +21437,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Chat session id (same as trace id for continuation). */
+                /** @description Conversation key: a live conversation's session id, an upstream root id, or (legacy sessions only) a leaf id. */
                 session_id: string;
             };
             cookie?: never;
@@ -20919,7 +21469,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Chat session id to delete. */
+                /** @description Conversation key of the session to delete. */
                 session_id: string;
             };
             cookie?: never;
@@ -20944,7 +21494,59 @@ export interface operations {
             };
         };
     };
-    chat_api_chat_post: {
+    chat_debug_status_api_chat_debug_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatDebugStatus"];
+                };
+            };
+        };
+    };
+    list_conversations_api_conversations_get: {
+        parameters: {
+            query?: {
+                /** @description Filter to children of this conversation, by the parent's session id. Omit for all live conversations. */
+                parent?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_conversation_api_conversations_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -20953,7 +21555,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ChatRequest"];
+                "application/json": components["schemas"]["CreateConversationRequest"];
             };
         };
         responses: {
@@ -20963,7 +21565,269 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    "application/json": components["schemas"]["ConversationCreatedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_conversation_state_events_api_conversations_events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_conversation_api_conversations__session_id__get: {
+        parameters: {
+            query?: {
+                /** @description Include the final report for terminal runs. */
+                include_report?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The conversation session id. */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_conversation_events_api_conversations__session_id__events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The conversation session id to observe. */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_conversation_api_conversations__session_id__stop_post: {
+        parameters: {
+            query?: {
+                /** @description Also stop every running sub-agent child (kill the whole tree). Without it an interactive stop only cancels the in-flight turn; auto/sub-agent stops cascade regardless. */
+                cascade?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The conversation session id to stop. */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_auto_mode_api_conversations__session_id__auto_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The conversation session id. */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAutoModeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_pending_approvals_api_conversations__session_id__approvals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The conversation session id. */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingApprovalsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_approval_decisions_api_conversations__session_id__approvals_decisions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The conversation session id. */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApprovalDecisionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_conversation_message_api_conversations__session_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The conversation session id to message. */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendConversationMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationMessageAccepted"];
                 };
             };
             /** @description Validation Error */
@@ -21053,24 +21917,16 @@ export interface operations {
             };
         };
     };
-    create_job_api_jobs__type__post: {
+    run_eval_job_api_jobs_evals_run_post: {
         parameters: {
-            query?: {
-                /** @description When true, block until the job reaches a terminal state and return the full JobRecord instead of CreateJobResponse. */
-                wait?: boolean;
-                /** @description Seconds to wait when wait=true (504 on timeout). Omit to wait indefinitely. */
-                timeout?: number | null;
-            };
+            query?: never;
             header?: never;
-            path: {
-                /** @description The registered job type to run. */
-                type: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateJobRequest"];
+                "application/json": components["schemas"]["EvalJobParams"];
             };
         };
         responses: {
@@ -21080,7 +21936,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CreateJobResponse"] | components["schemas"]["JobRecord"];
+                    "application/json": components["schemas"]["CreateJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    wait_for_jobs_api_jobs_wait_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WaitForJobsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRecord"][];
                 };
             };
             /** @description Validation Error */
@@ -21177,41 +22066,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    wait_for_job_api_jobs__id__wait_get: {
-        parameters: {
-            query?: {
-                /** @description Seconds to wait before giving up (504 on timeout). Omit to wait indefinitely. */
-                timeout?: number | null;
-            };
-            header?: never;
-            path: {
-                /** @description The job id. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobRecord"];
                 };
             };
             /** @description Validation Error */

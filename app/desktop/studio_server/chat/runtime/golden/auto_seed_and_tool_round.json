@@ -1,0 +1,31 @@
+{
+  "scenario": "auto_seed_and_tool_round",
+  "bodies": [
+    {
+      "trace_id": "tr-0",
+      "messages": [
+        {
+          "role": "tool",
+          "tool_call_id": "enable-1",
+          "content": "{\"status\": \"enabled\"}"
+        }
+      ],
+      "auto_mode": true
+    },
+    {
+      "trace_id": "tr-1",
+      "messages": [
+        {
+          "role": "tool",
+          "tool_call_id": "tc1",
+          "content": "2"
+        },
+        {
+          "role": "user",
+          "content": "<system-reminder>This message arrived from the user while you are working autonomously in auto mode. Treat it as a side note: weave any acknowledgment or answer into your ongoing work and keep going in the same turn — do not end your turn just to reply. Stop only if the message explicitly asks you to, or your task is already complete.</system-reminder>\n\nalso do X"
+        }
+      ],
+      "auto_mode": true
+    }
+  ]
+}

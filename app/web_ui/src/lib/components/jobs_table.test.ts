@@ -22,6 +22,9 @@ const api = {
   delete_job: vi.fn().mockResolvedValue(undefined),
   get_job_errors: vi.fn().mockResolvedValue([]),
   get_job_result: vi.fn().mockResolvedValue({}),
+  // Real-shaped passthrough: the table calls this for every row.
+  eval_job_properties: (job: JobRecord) =>
+    job.type === "eval" && job.properties ? job.properties : null,
 }
 vi.mock("$lib/stores/jobs_api", () => api)
 
@@ -142,5 +145,46 @@ describe("JobsTable", () => {
     connection.set("errored")
     const { getByText } = render(JobsTable)
     expect(getByText("Can't connect to the job stream")).not.toBeNull()
+  })
+
+  it("renders eval job properties inline in the Details cell", () => {
+    jobs.set([
+      makeJob({
+        id: "j_eval",
+        type: "eval",
+        properties: {
+          eval_name: "Toxicity check",
+          run_config_name: "GLM run",
+          run_config_model_name: "gpt-4o",
+          run_config_model_provider: "openai",
+          run_config_prompt_name: "Few-Shot",
+          run_config_tools_count: 2,
+          run_config_skills_count: 1,
+          judge_name: "Magical Yeti",
+          judge_algorithm: "g_eval",
+          judge_model_name: "claude",
+          judge_model_provider: "anthropic",
+        },
+      }),
+    ])
+    const { getByText } = render(JobsTable)
+    // Eval name is the header; run-config summary lines follow.
+    expect(getByText(/Eval: Toxicity check/)).not.toBeNull()
+    expect(getByText(/Run config: GLM run/)).not.toBeNull()
+    // Model line flows through the model-name helper (unknown id -> "Model ID:").
+    expect(getByText(/Model:/)).not.toBeNull()
+    expect(getByText(/Prompt: Few-Shot/)).not.toBeNull()
+    // Non-zero counts render the "N available" branch.
+    expect(getByText(/Tools: 2 available/)).not.toBeNull()
+    expect(getByText(/Skills: 1 available/)).not.toBeNull()
+    // The judge line shows the judge (eval-config) name plus its algorithm.
+    expect(getByText(/Judge: Magical Yeti \(G-Eval\)/)).not.toBeNull()
+    expect(getByText(/Judge model:/)).not.toBeNull()
+  })
+
+  it("renders no eval properties for non-eval jobs", () => {
+    jobs.set([makeJob({ id: "j_noop", type: "noop" })])
+    const { queryByText } = render(JobsTable)
+    expect(queryByText(/Run config:/)).toBeNull()
   })
 })

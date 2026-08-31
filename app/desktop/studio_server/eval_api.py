@@ -70,6 +70,7 @@ from kiln_ai.datamodel.eval_splits import (
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
 from kiln_ai.datamodel.prompt_type import generator_label
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
@@ -82,6 +83,7 @@ from kiln_ai.utils.open_ai_types import serialize_trace
 from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
+from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -302,6 +304,10 @@ class CreateEvalConfigRequest(BaseModel):
         default=None,
         description="The provider of the evaluation model. Required for LLM-based eval types.",
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this eval config exists and what it was derived from.",
+    )
 
 
 class LlmJudgeBuilderInput(BaseModel):
@@ -459,6 +465,10 @@ class CreateTaskRunConfigRequest(BaseModel):
     )
     run_config_properties: RunConfigProperties = Field(
         description="The run configuration properties."
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this run config exists and what it was derived from.",
     )
 
 
@@ -1747,6 +1757,13 @@ def connect_evals_api(app: FastAPI):
             run_config_properties=run_config_properties,
             description=request.description,
             prompt=frozen_prompt,
+            provenance=request.provenance,
+        )
+        validate_provenance_or_400(
+            task_run_config.provenance,
+            task_run_config.id,
+            TaskRunConfig,
+            task.path,
         )
         if isinstance(
             task_run_config.run_config_properties, KilnAgentRunConfigProperties
@@ -1840,6 +1857,7 @@ def connect_evals_api(app: FastAPI):
                 properties=request.properties,
                 model_name=request.model_name,
                 model_provider=request.provider,
+                provenance=request.provenance,
                 parent=eval,
             )
         except ValidationError:
@@ -1852,6 +1870,12 @@ def connect_evals_api(app: FastAPI):
                 status_code=400,
                 detail=str(e),
             )
+        validate_provenance_or_400(
+            eval_config.provenance,
+            eval_config.id,
+            EvalConfig,
+            eval.path,
+        )
 
         # Trust-conferral gate: saving a code eval admits new code as
         # trusted-forever, so it requires code trust for this session.
@@ -2027,7 +2051,9 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison",
         summary="Run Run Config Comparison",
         tags=["Evals"],
-        openapi_extra=agent_policy_require_approval("Run eval comparison?"),
+        # SSE run endpoint for the UI only. Agents kick off evals via the
+        # non-streaming background job API (POST /api/jobs/evals).
+        openapi_extra=DENY_AGENT,
     )
     @no_write_lock
     async def run_eval_config(
@@ -2142,9 +2168,9 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/run_calibration",
         summary="Run Calibration",
         tags=["Evals"],
-        openapi_extra=agent_policy_require_approval(
-            "Run eval calibration? This runs LLM calls across all eval configs and uses AI credits."
-        ),
+        # SSE run endpoint for the UI only. Agents kick off evals via the
+        # non-streaming background job API (POST /api/jobs/evals).
+        openapi_extra=DENY_AGENT,
     )
     @no_write_lock
     async def run_eval_config_eval(
@@ -2177,7 +2203,9 @@ def connect_evals_api(app: FastAPI):
         tags=["Evals"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_eval_run_results(
+    # Sync (not async) on purpose: the body does blocking file scans, so
+    # FastAPI runs it in its threadpool instead of stalling the event loop.
+    def get_eval_run_results(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -2232,7 +2260,9 @@ def connect_evals_api(app: FastAPI):
         tags=["Evals"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_eval_progress(
+    # Sync (not async) on purpose: the body does blocking file scans, so
+    # FastAPI runs it in its threadpool instead of stalling the event loop.
+    def get_eval_progress(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -2295,7 +2325,9 @@ def connect_evals_api(app: FastAPI):
         tags=["Evals"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_eval_config_score_summary(
+    # Sync (not async) on purpose: the body does blocking file scans, so
+    # FastAPI runs it in its threadpool instead of stalling the event loop.
+    def get_eval_config_score_summary(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -2328,7 +2360,9 @@ def connect_evals_api(app: FastAPI):
         tags=["Evals"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_eval_results_summary(
+    # Sync (not async) on purpose: the body does blocking file scans, so
+    # FastAPI runs it in its threadpool instead of stalling the event loop.
+    def get_eval_results_summary(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -2416,7 +2450,9 @@ def connect_evals_api(app: FastAPI):
         tags=["Evals"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_eval_configs_score_summary(
+    # Sync (not async) on purpose: the body does blocking file scans, so
+    # FastAPI runs it in its threadpool instead of stalling the event loop.
+    def get_eval_configs_score_summary(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -2563,7 +2599,9 @@ def connect_evals_api(app: FastAPI):
         tags=["Run Configs"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def get_run_config_eval_scores(
+    # Sync (not async) on purpose: the body does blocking file scans, so
+    # FastAPI runs it in its threadpool instead of stalling the event loop.
+    def get_run_config_eval_scores(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],

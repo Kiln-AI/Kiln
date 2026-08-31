@@ -10,8 +10,10 @@ from kiln_ai.adapters.prompt_builders import (
 )
 from kiln_ai.datamodel import BasePrompt, Prompt, PromptId, Task
 from kiln_ai.datamodel.prompt_type import prompt_type_label
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from pydantic import BaseModel, Field
 
+from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -94,6 +96,26 @@ class ApiPrompt(BasePrompt):
     created_by: str | None = Field(
         default=None, description="The user who created the prompt."
     )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Why this prompt exists and what it was derived from, if recorded.",
+    )
+
+
+def api_prompt_from_prompt(prompt: Prompt) -> ApiPrompt:
+    """Build an ApiPrompt response from a stored Prompt.
+
+    Passes `provenance` as the already-validated instance (never a dict) so a
+    forward/back-compat provenance loaded from disk (unknown origin, over-length
+    notes) is not re-validated in create mode on read — it round-trips as-is.
+    """
+    api_prompt_id = f"id::{prompt.id}"
+    return ApiPrompt(
+        id=api_prompt_id,
+        type=prompt_type_label(api_prompt_id, prompt.generator_id),
+        provenance=prompt.provenance,
+        **prompt.model_dump(exclude={"id", "provenance"}),
+    )
 
 
 class PromptCreateRequest(BaseModel):
@@ -110,6 +132,10 @@ class PromptCreateRequest(BaseModel):
     chain_of_thought_instructions: str | None = Field(
         default=None,
         description="Chain of thought instructions to include in the prompt.",
+    )
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this prompt exists and what it was derived from.",
     )
 
 
@@ -189,15 +215,16 @@ def connect_prompt_api(app: FastAPI):
             description=prompt_data.description,
             prompt=prompt_data.prompt,
             chain_of_thought_instructions=prompt_data.chain_of_thought_instructions,
+            provenance=prompt_data.provenance,
+        )
+        validate_provenance_or_400(
+            prompt.provenance,
+            prompt.id,
+            Prompt,
+            parent_task.path,
         )
         prompt.save_to_file()
-        api_prompt_id = f"id::{prompt.id}"
-        properties = prompt.model_dump(exclude={"id"})
-        return ApiPrompt(
-            id=api_prompt_id,
-            type=prompt_type_label(api_prompt_id, prompt.generator_id),
-            **properties,
-        )
+        return api_prompt_from_prompt(prompt)
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/prompts",
@@ -218,15 +245,7 @@ def connect_prompt_api(app: FastAPI):
 
         prompts: list[ApiPrompt] = []
         for prompt in parent_task.prompts():
-            prompt_id = f"id::{prompt.id}"
-            properties = prompt.model_dump(exclude={"id"})
-            prompts.append(
-                ApiPrompt(
-                    id=prompt_id,
-                    type=prompt_type_label(prompt_id, prompt.generator_id),
-                    **properties,
-                )
-            )
+            prompts.append(api_prompt_from_prompt(prompt))
 
         # Add any task run config prompts to the list
         task_run_configs = parent_task.run_configs()
@@ -277,13 +296,7 @@ def connect_prompt_api(app: FastAPI):
         prompt.name = prompt_data.name
         prompt.description = prompt_data.description
         prompt.save_to_file()
-        api_prompt_id = f"id::{prompt.id}"
-        properties = prompt.model_dump(exclude={"id"})
-        return ApiPrompt(
-            id=api_prompt_id,
-            type=prompt_type_label(api_prompt_id, prompt.generator_id),
-            **properties,
-        )
+        return api_prompt_from_prompt(prompt)
 
     @app.delete(
         "/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}",

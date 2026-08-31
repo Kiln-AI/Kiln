@@ -49,10 +49,12 @@ from kiln_ai.datamodel.dataset_split import (
     Train80Test20SplitDefinition,
     Train80Val20SplitDefinition,
 )
+from kiln_ai.datamodel.provenance import KilnArtifactProvenance
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.name_generator import generate_memorable_name
+from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -171,6 +173,10 @@ class CreateFinetuneRequest(BaseModel):
     custom_thinking_instructions: str | None = None
     data_strategy: ChatStrategy
     run_config_properties: KilnAgentRunConfigProperties | None = None
+    provenance: KilnArtifactProvenance | None = Field(
+        default=None,
+        description="Provenance: why this fine-tune exists and what it was derived from.",
+    )
 
     @model_validator(mode="after")
     def validate_data_strategy(self):
@@ -639,6 +645,19 @@ def connect_fine_tune_api(app: FastAPI):
             task, request.data_strategy, request.custom_thinking_instructions
         )
 
+        # Validate provenance lineage before create_and_start builds + saves the
+        # Finetune. The finetune id is generated inside create_and_start, so it is
+        # not available here; self_id=None makes the self-reference check a no-op,
+        # which is acceptable because that check is P3/defensive (server-generated
+        # ids can't collide) per functional spec §5.2. Format errors (bad origin,
+        # dupes, over-length) already surfaced as 422 at request parsing.
+        validate_provenance_or_400(
+            request.provenance,
+            None,
+            Finetune,
+            task.path,
+        )
+
         _, finetune_model = await finetune_adapter_class.create_and_start(
             dataset=dataset,
             provider_id=request.provider,
@@ -652,6 +671,7 @@ def connect_fine_tune_api(app: FastAPI):
             validation_split_name=request.validation_split_name,
             data_strategy=request.data_strategy,
             run_config=request.run_config_properties,
+            provenance=request.provenance,
         )
 
         return finetune_model
