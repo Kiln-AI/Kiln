@@ -15,6 +15,7 @@ from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool
 from kiln_ai.tools.mcp_session_manager import mcp_session_scope
 from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
+from kiln_ai.tools.tool_registry import validate_unique_allowlist_tool_names
 from kiln_server.project_api import project_from_id
 from kiln_server.provenance_api import validate_provenance_or_400
 from kiln_server.utils.agent_checks.policy import (
@@ -229,18 +230,8 @@ def connect_code_tool_api(app: FastAPI):
         if not has_add_code_trust(str(project.path)):
             return CodeToolCreateResponse(not_trusted=True)
 
-        existing = project.code_tools(readonly=True)
-        for ct in existing:
-            if (
-                not ct.is_archived
-                and ct.tool_function_name == request.tool_function_name
-            ):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"A non-archived code tool with function name '{request.tool_function_name}' already exists.",
-                )
-
         try:
+            await validate_unique_allowlist_tool_names(request.tool_allowlist, project)
             code_tool = CodeTool(
                 name=request.name,
                 description=request.description,
