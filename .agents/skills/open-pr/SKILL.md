@@ -82,9 +82,12 @@ server repo".
 Kiln uses stacked branches. The base branch is not always `main`.
 
 - Ask the user which branch the PR must target, if this is not clear.
-- Find the branch that your work started from. Run `git merge-base HEAD origin/main`.
-  The base is `main` when the result is the tip of `origin/main`. Run the same command
-  against the other candidate branch when the result is older than that tip.
+- Find the branch that your work started from. Run `git log --oneline <candidate>..HEAD`
+  for each candidate branch, for example `origin/main` and the branch that the task names.
+  The base is the candidate that leaves only your own commits in the list.
+- Do not compare a merge base with the tip of a branch. The tip moves after you make your
+  branch, so that comparison gives a wrong answer for a branch that started from `main`.
+- Ask the user when two candidates each leave only your own commits.
 - Set the base branch when you create the PR. Do not accept the default.
 
 Find the companion branches too. A companion branch is a branch that must merge before
@@ -260,7 +263,8 @@ comments usually arrive in less than 30 minutes.
 Ask the user this question every time, after the PR opens:
 
 > The review bots comment about 30 minutes after a push. Do you want me to watch the PR,
-> answer the review comments, and fix CI?
+> answer the review comments, and fix CI? The watch makes commits, pushes them to the
+> branch, and writes comments on the PR.
 
 **Do not watch the PR before the user confirms.** Silence is not a confirmation.
 
