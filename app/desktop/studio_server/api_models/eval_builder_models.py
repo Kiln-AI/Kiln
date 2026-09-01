@@ -290,9 +290,11 @@ class PipelineCaseJudgedEvent(BaseModel):
     """A case completed the [drive → judge] pipeline.
 
     raw_output is the canonical transcript rendering of the runner's REAL
-    trace (tool calls and system turns included) and raw_input is the
-    conversation's opening user message — the same text the judge saw and
-    the claim builder will see, so citations built later resolve against it.
+    trace (tool calls and system turns included) — the same text the judge saw
+    and the claim builder will see, so citations built later resolve against
+    it. raw_input is the conversation's opening user message on the multi-turn
+    stream; the single-turn stream keeps the run's own input string instead,
+    because that is what its saved eval reads back.
     """
 
     type: Literal["case_judged"] = "case_judged"
@@ -306,10 +308,10 @@ class PipelineCaseJudgedEvent(BaseModel):
     # The structured conversation behind raw_output, as raw chat-completion
     # message dicts: the runner's real trace on the multi-turn stream, the
     # run's own trace (tool calls included) on the single-turn one. The
-    # client renders it in the house chat UI. Nullable: legacy streams and
-    # runs whose adapter recorded no trace don't carry it. On the single-turn
-    # stream this is a UI echo only — the judge scores the I/O pair
-    # (final_answer), exactly what the saved eval judges.
+    # client renders it in the house chat UI. Both streams judge this
+    # conversation, exactly what the saved eval judges — a run whose adapter
+    # recorded no trace is judged on a two-message echo of its pair rather
+    # than on nothing. Nullable only for legacy streams that predate it.
     trace: list[dict[str, Any]] | None = None
 
 

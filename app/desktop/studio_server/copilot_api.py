@@ -312,8 +312,8 @@ class CreateSpecWithCopilotRequest(BaseModel):
       generated inputs. Endpoint tags the existing runs with golden/train
       filter tags (writing the verdicts onto the golden ones) and mints one
       EvalInput per input as the eval slice; no new TaskRuns are created and
-      nothing is generated. `evaluate_full_trace` must be False — the
-      pipeline judged final answers, so the saved eval must too.
+      nothing is generated. `evaluate_full_trace` must be True — the
+      pipeline judged the transcript, so the saved eval must too.
 
     - **Multi-turn (wizard):** caller supplies `multi_turn` with a `batch_tag`
       pointing at chains already on disk (created earlier by the

@@ -75,7 +75,7 @@ class JudgeVerdict:
 
 
 def transcript_io_for_trace(trace: list[Any]) -> tuple[str, str]:
-    """Canonical (raw_input, raw_output) for a multi-turn trace.
+    """Canonical (raw_input, raw_output) for a trace, either arm.
 
     raw_output is the role-labelled transcript — the SAME rendering the judge
     template produces via the format_trace filter, so both LLMs and the UI's
@@ -124,6 +124,12 @@ def build_judge_prompt_template(judge_prompt: str, multi_turn: bool) -> str:
     The prompt is raw-wrapped so spec text containing Jinja syntax can't break
     rendering or inject template code; the appended data blocks are filled from
     EvalTaskInput by the adapter (full trace for multi-turn, I/O pair otherwise).
+
+    `multi_turn` asks whether the judge reads a transcript, not what turn mode
+    the task has. The builder's own arms both pass True — the review judge
+    whenever a trace is present, and a wizard save because it requires
+    full-trace evaluation on either arm. The legacy v1 save path still passes
+    the caller's own flag, so the I/O-pair branch stays reachable from it.
     """
     parts = [conditionally_raw_wrap(judge_prompt)]
     parts.append(
@@ -227,8 +233,9 @@ async def run_judge_for_trace(
 ) -> JudgeVerdict:
     """Run the candidate judge over one trace, LOCALLY (the user's keys).
 
-    Multi-turn callers pass the structured `trace` so the judge scores the full
-    conversation rather than a flattened transcript. Raises when the adapter
+    Callers pass the structured `trace` so the judge scores the conversation
+    rather than a flattened transcript; both arms do, so the I/O-pair template
+    is not reachable from here. Raises when the adapter
     skips or returns no score — the orchestrator surfaces that as an error
     frame (trace_error / case_failed), never a fabricated verdict.
     """
