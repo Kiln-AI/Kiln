@@ -4033,7 +4033,9 @@
   // ("Eval Builder"); the position + this name are the first subtitle line
   // ("Step N of TOTAL — <name>"), so the wizard's own chrome doesn't need a
   // separate step-indicator row. The done screen keeps its own title instead.
-  function step_name_for(step: BuilderStep): string {
+  // Only the steps the step line actually names: it renders "" for save and
+  // done, so those two have no name to give and the type says so.
+  function step_name_for(step: Exclude<BuilderStep, "save" | "done">): string {
     switch (step) {
       case "describe":
         return "Describe Your Eval"
@@ -4049,10 +4051,6 @@
         // name points at the judge because that is what this step calibrates;
         // each case's own verdict is still about the AGENT's work.
         return "Validate the Judge"
-      case "save":
-        return "Save Your Eval"
-      case "done":
-        return "Eval Created"
     }
   }
 
@@ -4547,6 +4545,7 @@
               generate_button_label={`Generate Dataset (${batch_plan.prompts.length} items)`}
               items_label="Items"
               expanded_description={false}
+              column_label="Item Guidance"
             />
             <!-- Wizard chrome stays outside the shared component (it has no
                  slots): once this exact plan has driven results, offer the
@@ -4816,7 +4815,7 @@
           <!-- ── Save (transition out of Step 5) ── -->
           {#if saving}
             <SavingAnimation
-              title="Creating Eval"
+              title="Saving Your Eval"
               description={save_animation_description}
             />
           {:else if save_error}
@@ -4877,7 +4876,7 @@
   on:close={discard_plan_steer_draft}
 >
   <FormContainer
-    submit_label="New Batch Plan"
+    submit_label="Refine Plan"
     bind:submitting={new_plan_submitting}
     on:submit={submit_new_plan}
     keyboard_submit={false}

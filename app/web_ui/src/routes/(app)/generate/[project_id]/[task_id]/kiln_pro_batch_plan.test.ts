@@ -43,6 +43,11 @@ function description_text(container: HTMLElement): string | null {
   return node ? node.textContent?.trim() ?? "" : null
 }
 
+// The rows table only mounts once the prompts toggle is expanded.
+function column_header_text(container: HTMLElement): string {
+  return container.querySelector("thead th")?.textContent?.trim() ?? ""
+}
+
 describe("prompts table pass-throughs", () => {
   it("leaves the /generate strings untouched by default", async () => {
     const { container } = setup()
@@ -54,6 +59,17 @@ describe("prompts table pass-throughs", () => {
     expect(description_text(container)).toBe(
       "Each prompt below will be used to guide one dataset sample.",
     )
+    // /generate's rows really are generation prompts, and it overrides
+    // nothing — so the default column header is the one that flow ships.
+    expect(column_header_text(container)).toBe("Prompt")
+  })
+
+  it("passes column_label down to the rows table's header", async () => {
+    // The eval builder reaches the rows table only through this component, so
+    // the override has to survive the hop.
+    const { container } = setup({ column_label: "Item Guidance" })
+    await fireEvent.click(prompts_toggle(container))
+    expect(column_header_text(container)).toBe("Item Guidance")
   })
 
   it("passes items_label down to the header and the aria-label", () => {
@@ -73,5 +89,21 @@ describe("prompts table pass-throughs", () => {
     const custom = setup({ expanded_description: "One line per run." })
     await fireEvent.click(prompts_toggle(custom.container))
     expect(description_text(custom.container)).toBe("One line per run.")
+  })
+})
+
+describe("shared defaults", () => {
+  // Both surfaces render these: /generate passes no override, and the eval
+  // builder deliberately relies on the same defaults. Changing either string
+  // changes both flows at once, so it is pinned here rather than left to a
+  // caller's assertion.
+  it("labels the regenerate button and the summary panel", () => {
+    const { container } = setup()
+    const buttons = Array.from(container.querySelectorAll("button")).map((b) =>
+      b.textContent?.trim(),
+    )
+    expect(buttons).toContain("Refine Plan")
+    expect(container.textContent).toContain("Overview")
+    expect(container.textContent).not.toContain("Batch Overview")
   })
 })

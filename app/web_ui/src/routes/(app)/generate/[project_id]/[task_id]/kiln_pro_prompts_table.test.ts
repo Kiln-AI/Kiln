@@ -11,6 +11,7 @@ const SHIPPED_SHOW_LABEL = "Show dataset items"
 const SHIPPED_HIDE_LABEL = "Hide dataset items"
 const SHIPPED_DESCRIPTION =
   "Each prompt below will be used to guide one dataset sample."
+const SHIPPED_COLUMN_HEADER = "Prompt"
 
 afterEach(cleanup)
 
@@ -53,6 +54,27 @@ describe("KilnProPromptsTable defaults", () => {
     expect(description_text(container)).toBe(SHIPPED_DESCRIPTION)
     expect(toggle.getAttribute("aria-label")).toBe(SHIPPED_HIDE_LABEL)
     expect(toggle.getAttribute("aria-expanded")).toBe("true")
+  })
+})
+
+// The rows table only mounts once expanded, so its header is only readable
+// after the toggle is clicked.
+function column_header_text(container: HTMLElement): string {
+  return container.querySelector("thead th")?.textContent?.trim() ?? ""
+}
+
+describe("column_label", () => {
+  it("renders the shipped column header by default", async () => {
+    // /generate passes nothing here, so the default IS what that flow ships.
+    const { container, toggle } = setup()
+    await fireEvent.click(toggle)
+    expect(column_header_text(container)).toBe(SHIPPED_COLUMN_HEADER)
+  })
+
+  it("forwards a caller's header down to the rows table", async () => {
+    const { container, toggle } = setup({ column_label: "Item Guidance" })
+    await fireEvent.click(toggle)
+    expect(column_header_text(container)).toBe("Item Guidance")
   })
 })
 
