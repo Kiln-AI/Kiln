@@ -501,7 +501,7 @@ def author_judge_input():
 
 @pytest.fixture
 def author_judge_task():
-    """The route derives trace_type from the task — resolve it to a
+    """The route loads the task for its capability surface — resolve it to a
     multi-turn mock unless a test overrides the return value."""
     with patch(
         "app.desktop.studio_server.eval_builder_api.task_from_id",
@@ -543,12 +543,16 @@ class TestAuthorJudge:
             assert response.status_code == 200
             assert "fabrication fails" in response.json()["judge_prompt"]
 
-    def test_author_judge_multi_turn_task_authors_multi_turn(
-        self, client, author_judge_input, mock_api_key, author_judge_task
+    @pytest.mark.parametrize("turn_mode", [TurnMode.multiturn, TurnMode.single_turn])
+    def test_author_judge_authors_against_the_transcript_for_both_arms(
+        self, client, author_judge_input, mock_api_key, author_judge_task, turn_mode
     ):
-        """The SDK payload's trace_type follows the task's turn mode — the
-        rubric routing on kiln_server hangs entirely on this field, so a
-        multi-turn task must author the conversation rubric."""
+        """Both arms judge a transcript, so both must author the rubric that
+        knows what one looks like. The rubric routing on kiln_server hangs
+        entirely on this field: sending single_turn would author against a
+        bare input/output pair, and the judge would then meet role labels and
+        tool-call blocks its rubric never mentioned."""
+        author_judge_task.return_value = _task_mock(turn_mode)
         mock_output = MagicMock(spec=GenerateJudgePromptOutput)
         mock_output.judge_evaluation_prompt = "1. Check the transcript."
         mock_response = MagicMock()
@@ -565,31 +569,6 @@ class TestAuthorJudge:
         body = mock_post.call_args.kwargs["body"]
         assert body.trace_type.value == "multi_turn"
         assert body.target_specification == author_judge_input["target_specification"]
-
-    def test_author_judge_single_turn_task_authors_single_turn(
-        self, client, author_judge_input, mock_api_key, author_judge_task
-    ):
-        """A single-turn task authors the I/O-pair rubric — derived from the
-        task server-side, so the framing can never disagree with the task
-        being judged."""
-        from kiln_ai.datamodel.datamodel_enums import TurnMode
-
-        author_judge_task.return_value = _task_mock(TurnMode.single_turn)
-        mock_output = MagicMock(spec=GenerateJudgePromptOutput)
-        mock_output.judge_evaluation_prompt = "1. Check the reply."
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.parsed = mock_output
-
-        with patch(
-            "app.desktop.studio_server.utils.eval_builder_utils.generate_judge_prompt_v1_copilot_generate_judge_prompt_post.asyncio_detailed",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ) as mock_post:
-            client.post(AUTHOR_JUDGE_URL, json=author_judge_input)
-
-        body = mock_post.call_args.kwargs["body"]
-        assert body.trace_type.value == "single_turn"
 
     def test_author_judge_omits_uncollected_capabilities(
         self, client, author_judge_input, mock_api_key, author_judge_task

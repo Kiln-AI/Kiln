@@ -1639,7 +1639,7 @@
         judge_score: TraceClaims["judge_score"]
         judge_reasoning: string
         total_cost: number
-        // The structured conversation behind raw_output (multi-turn); the
+        // The structured conversation behind raw_output, on either arm; the
         // trace modal renders it in the chat UI. Absent on legacy streams.
         trace?: TraceClaims["trace"]
       }
@@ -2585,8 +2585,8 @@
       const target_run_config_id = drive_config.id
 
       // 2. The judge, authored BEFORE the pipeline so the preflight covers
-      // its lane too. The server frames the rubric for single-turn from the
-      // task's turn mode; the per-spec cache makes re-runs free. A user
+      // its lane too. The server frames every rubric against a transcript,
+      // whatever the turn mode; the per-spec cache makes re-runs free. A user
       // abort during it cancels the whole run.
       generation_phase = "authoring_judge"
       const authored = await author_judge_prompt_for_spec(

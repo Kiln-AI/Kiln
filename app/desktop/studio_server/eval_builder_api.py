@@ -17,14 +17,13 @@ Three streams, one frame contract (see api_models/eval_builder_models.py):
   multi_turn_pipeline: runs [run → judge] per generated input. The task runs
   ONCE per input on the target run config — tools live, the user's keys —
   and each persisted, batch-tagged run pipes into the same judge unit.
-  The judge scores the I/O pair (final_answer), exactly what the saved
-  single-turn eval judges; the run's structured trace is echoed on the
-  frame for the UI only.
+  The judge scores the run's transcript, exactly what the saved eval
+  judges; the same trace is echoed on the frame for the UI.
 
   judge_traces (both arms) — re-judge previously driven results: the same
   judge unit and frames as the driving streams, with the drive replaced by
   a disk reload of each stored run by id. Multi-turn judges the chain
-  leaf's stored trace; single-turn judges the run's I/O pair. Nothing is
+  leaf's stored trace; single-turn judges the run's own. Nothing is
   driven or written; the judge input matches what the saved eval judges.
 
 Only the claim builder reaches the remote kiln_server; the judge runs
@@ -476,12 +475,13 @@ class JudgeStreamBase:
         self, case_index: int, trace: list[dict[str, Any]] | None
     ) -> tuple[str, str, list[dict[str, Any]] | None]:
         """What the judge scores for one case: (raw_input, raw_output, and
-        the structured trace to judge over, None to judge the I/O pair).
+        the structured trace to judge over; the Optional is vestigial, as
+        every arm now judges a transcript).
 
         The default is the multi-turn reading — transcript I/O plus the full
-        trace — matching what the saved full-trace eval judges. The
-        single-turn stream overrides it to the run's I/O pair with no judge
-        trace, matching its saved final_answer eval.
+        trace — matching what the saved eval judges. The single-turn streams
+        override only where raw_input comes from; both arms judge a
+        transcript, so every override still returns one.
         """
         assert trace is not None  # multi-turn streams always carry a trace
         raw_input, raw_output = transcript_io_for_trace(trace)
@@ -795,9 +795,9 @@ class JudgeTracesRun(JudgeStreamBase):
     and frame contract as the driving streams, with the drive replaced by a
     disk reload of each stored run by id. Multi-turn judges the chain leaf's
     stored cumulative trace — exactly the conversation the drive-time judge
-    saw and the saved eval will judge. Single-turn judges the run's stored
-    I/O pair — the same final_answer reading as its pipeline and its saved
-    eval. Nothing is driven and nothing is written.
+    saw and the saved eval will judge. Single-turn judges the run's own
+    stored trace, the same reading as its pipeline and its saved eval.
+    Nothing is driven and nothing is written.
     """
 
     _stream_name = "judge_traces"
@@ -821,9 +821,10 @@ class JudgeTracesRun(JudgeStreamBase):
         self._task = task
         self._leaf_run_ids = input.leaf_run_ids
         self._single_turn = task.turn_mode != TurnMode.multiturn
-        # Single-turn arm: each case's stored (input, output) pair — what
-        # the judge scores and the frames echo (the SingleTurnPipelineRun
-        # convention).
+        # Single-turn arm: each case's stored (input, output) pair. Only the
+        # input is read back — the judge and the frames take raw_input from
+        # here rather than from the transcript (the SingleTurnPipelineRun
+        # convention); raw_output comes from the transcript rendering.
         self._case_io: dict[int, tuple[str, str]] = {}
 
     def _judge_view(
@@ -895,9 +896,9 @@ class JudgeTracesRun(JudgeStreamBase):
     async def _produce_single_turn_case(
         self, case_index: int, leaf_run_id: str, leaf: TaskRun
     ) -> None:
-        """Feed one reloaded single-turn run into the judge unit: the stored
-        I/O pair is what the judge scores (the run's structured trace rides
-        the frame as a UI echo only). drive_cost is 0.0: the original
+        """Feed one reloaded single-turn run into the judge unit: the run's
+        stored transcript is what the judge scores, echoed to a two-message
+        pair when the run recorded none. drive_cost is 0.0: the original
         pipeline already reported this run's spend."""
         output = leaf.output.output if leaf.output is not None else None
         if not output:
@@ -966,8 +967,11 @@ def _run_cost(run: TaskRun) -> float:
 
 def guard_single_turn(task: Task) -> None:
     """Reject early if the caller pointed the single-turn pipeline at a
-    multi-turn task: its judge and save contract are the final_answer ones,
-    and multi-turn conversations have their own drive (multi_turn_pipeline).
+    multi-turn task.
+
+    This pipeline runs the task once per generated input. A multi-turn task
+    needs a synthetic user to carry the conversation forward, which is a
+    different drive entirely (multi_turn_pipeline).
     """
     if task.turn_mode == TurnMode.multiturn:
         raise HTTPException(
@@ -1025,7 +1029,8 @@ class SingleTurnPipelineRun(JudgeStreamBase):
         self._save_context = save_context or default_save_context
         self._batch_tag = input.batch_tag or uuid.uuid4().hex[:12]
         # Each case's (input, output) pair, recorded by the producer for the
-        # judge unit — what the judge scores and the frames echo.
+        # judge unit. Only the input is read back: raw_output and the judge's
+        # trace both come from the transcript (see _judge_view).
         self._case_io: dict[int, tuple[str, str]] = {}
         self._any_case_driven = False
 
@@ -1380,11 +1385,13 @@ def connect_eval_builder_api(app: FastAPI):
                               an orchestration-level crash ended the stream;
                               results already streamed remain valid)
         Terminated by `data: complete`. No turn frames appear on this stream
-        (each case is one run). raw_input/raw_output are the run's I/O
-        pair — what the judge scored and what the saved final_answer eval
-        will score; `trace` is the run's structured trace (tool calls
-        included), echoed for the UI. Claims are built afterwards, per
-        opened trace, via build_claims.
+        (each case is one run). raw_input is the run's own input string,
+        kept verbatim because the saved eval reads that same string back;
+        raw_output is the role-labelled transcript rendering, not the closing
+        message. `trace` is the run's structured trace (tool calls included)
+        and is what the judge scored, matching what the saved eval will
+        score. Claims are built afterwards, per opened trace, via
+        build_claims.
         """
         # Same fail-fast posture as multi_turn_pipeline: this stream runs
         # entirely on the user's keys, but the review that follows builds
@@ -1428,9 +1435,9 @@ def connect_eval_builder_api(app: FastAPI):
         The judge calibration loop's re-score stream, both arms: after a
         refine produces a new judge prompt, this scores the SAME saved
         results again. Each run is reloaded from disk by id; multi-turn
-        judges the chain leaf's stored trace, single-turn judges the run's
-        stored I/O pair — either way the judge input matches what the saved
-        eval will judge. Nothing is driven and nothing is written.
+        judges the chain leaf's stored trace, single-turn the run's own —
+        either way the judge input matches what the saved eval will judge.
+        Nothing is driven and nothing is written.
 
         Emits (all frames `type`-discriminated; errors carry {code, message}):
           - batch_started   { batch_tag: "", total_cases }
@@ -1583,10 +1590,10 @@ def connect_eval_builder_api(app: FastAPI):
     ) -> AuthorJudgeApiOutput:
         """Author a spec-tailored judge prompt for the review — both arms.
 
-        Returns the PROMPT only — the judge model is the user's pick. The
-        rubric's framing follows the task's turn mode: full conversations
-        for multi-turn, one I/O pair for single-turn — derived here, not
-        client-sent, so it can never disagree with the task being judged.
+        Returns the PROMPT only — the judge model is the user's pick. Both
+        arms judge a transcript, so both rubrics are authored against one:
+        the rubric arrives knowing the role labels and tool-call blocks its
+        judge will meet, whatever the task's turn mode.
         Authoring is a REQUIRED step of the drive: an error here stops the
         drive on a retryable error client-side. There is no fallback judge.
         """
@@ -1594,15 +1601,18 @@ def connect_eval_builder_api(app: FastAPI):
         # a keyless caller gets a clean 401, not a deep upstream error.
         get_copilot_api_key()
         task = task_from_id(project_id, task_id)
-        # The task's tools and skills come from the task too, so the rubric can
-        # grade tool and skill use instead of guessing at it.
+        # The task is loaded for its tools and skills, so the rubric can grade
+        # tool and skill use instead of guessing at it.
         task_tools, task_skills = await task_capabilities_for_task(task)
         return await author_judge_prompt(
             target_specification=input.target_specification,
             target_task_prompt=input.target_task_prompt,
-            trace_type=(
-                "multi_turn" if task.turn_mode == TurnMode.multiturn else "single_turn"
-            ),
+            # Constant on purpose: both arms judge a transcript, so both
+            # rubrics are authored against one. "multi_turn" names the
+            # authoring prompt that teaches the transcript's vocabulary — the
+            # role labels, the tool-call blocks, and that a missing tool call
+            # is evidence — not the turn mode of the task being judged.
+            trace_type="multi_turn",
             task_tools=task_tools,
             task_skills=task_skills,
         )

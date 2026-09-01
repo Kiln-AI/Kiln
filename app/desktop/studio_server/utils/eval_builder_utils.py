@@ -75,7 +75,7 @@ class JudgeVerdict:
 
 
 def transcript_io_for_trace(trace: list[Any]) -> tuple[str, str]:
-    """Canonical (raw_input, raw_output) for a multi-turn trace.
+    """Canonical (raw_input, raw_output) for a trace, either arm.
 
     raw_output is the role-labelled transcript — the SAME rendering the judge
     template produces via the format_trace filter, so both LLMs and the UI's
@@ -124,6 +124,12 @@ def build_judge_prompt_template(judge_prompt: str, multi_turn: bool) -> str:
     The prompt is raw-wrapped so spec text containing Jinja syntax can't break
     rendering or inject template code; the appended data blocks are filled from
     EvalTaskInput by the adapter (full trace for multi-turn, I/O pair otherwise).
+
+    `multi_turn` asks whether the judge reads a transcript, not what turn mode
+    the task has. The builder's own arms both pass True — the review judge
+    whenever a trace is present, and a wizard save because it requires
+    full-trace evaluation on either arm. The legacy v1 save path still passes
+    the caller's own flag, so the I/O-pair branch stays reachable from it.
     """
     parts = [conditionally_raw_wrap(judge_prompt)]
     parts.append(
@@ -227,8 +233,9 @@ async def run_judge_for_trace(
 ) -> JudgeVerdict:
     """Run the candidate judge over one trace, LOCALLY (the user's keys).
 
-    Multi-turn callers pass the structured `trace` so the judge scores the full
-    conversation rather than a flattened transcript. Raises when the adapter
+    Callers pass the structured `trace` so the judge scores the conversation
+    rather than a flattened transcript; both arms do, so the I/O-pair template
+    is not reachable from here. Raises when the adapter
     skips or returns no score — the orchestrator surfaces that as an error
     frame (trace_error / case_failed), never a fabricated verdict.
     """
@@ -338,9 +345,11 @@ async def author_judge_prompt(
 
     Thin remote passthrough: marshal → SDK call → map back. The authoring
     (LLM) runs on kiln_server and returns the PROMPT only — the judge model
-    stays the caller's choice. `trace_type` selects the rubric's framing:
-    full conversations (multi-turn) or one I/O pair (single-turn) — one
-    authoring path for both arms. `task_tools` / `task_skills` describe the
+    stays the caller's choice. `trace_type` selects which authoring prompt
+    the server uses. Both arms here judge a transcript, so both send
+    multi_turn, the transcript-aware one; single_turn resolves the server's
+    default, which is written for a bare input/output pair.
+    `task_tools` / `task_skills` describe the
     target task's capability surface so the rubric can reason about tool and
     skill use; None (the default) omits them and authors exactly as before.
     Authoring is REQUIRED for a drive: an error here surfaces to the client,

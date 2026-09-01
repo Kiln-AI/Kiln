@@ -3334,11 +3334,13 @@ export interface paths {
          *                           an orchestration-level crash ended the stream;
          *                           results already streamed remain valid)
          *     Terminated by `data: complete`. No turn frames appear on this stream
-         *     (each case is one run). raw_input/raw_output are the run's I/O
-         *     pair — what the judge scored and what the saved final_answer eval
-         *     will score; `trace` is the run's structured trace (tool calls
-         *     included), echoed for the UI. Claims are built afterwards, per
-         *     opened trace, via build_claims.
+         *     (each case is one run). raw_input is the run's own input string,
+         *     kept verbatim because the saved eval reads that same string back;
+         *     raw_output is the role-labelled transcript rendering, not the closing
+         *     message. `trace` is the run's structured trace (tool calls included)
+         *     and is what the judge scored, matching what the saved eval will
+         *     score. Claims are built afterwards, per opened trace, via
+         *     build_claims.
          */
         post: operations["single_turn_pipeline_api_projects__project_id__tasks__task_id__eval_builder_single_turn_pipeline_post"];
         delete?: never;
@@ -3363,9 +3365,9 @@ export interface paths {
          *     The judge calibration loop's re-score stream, both arms: after a
          *     refine produces a new judge prompt, this scores the SAME saved
          *     results again. Each run is reloaded from disk by id; multi-turn
-         *     judges the chain leaf's stored trace, single-turn judges the run's
-         *     stored I/O pair — either way the judge input matches what the saved
-         *     eval will judge. Nothing is driven and nothing is written.
+         *     judges the chain leaf's stored trace, single-turn the run's own —
+         *     either way the judge input matches what the saved eval will judge.
+         *     Nothing is driven and nothing is written.
          *
          *     Emits (all frames `type`-discriminated; errors carry {code, message}):
          *       - batch_started   { batch_tag: "", total_cases }
@@ -3461,10 +3463,10 @@ export interface paths {
          * Author Judge
          * @description Author a spec-tailored judge prompt for the review — both arms.
          *
-         *     Returns the PROMPT only — the judge model is the user's pick. The
-         *     rubric's framing follows the task's turn mode: full conversations
-         *     for multi-turn, one I/O pair for single-turn — derived here, not
-         *     client-sent, so it can never disagree with the task being judged.
+         *     Returns the PROMPT only — the judge model is the user's pick. Both
+         *     arms judge a transcript, so both rubrics are authored against one:
+         *     the rubric arrives knowing the role labels and tool-call blocks its
+         *     judge will meet, whatever the task's turn mode.
          *     Authoring is a REQUIRED step of the drive: an error here stops the
          *     drive on a retryable error client-side. There is no fallback judge.
          */
@@ -4544,9 +4546,9 @@ export interface components {
          * @description The spec + target-task prompt the judge author tailors its rubric to.
          *
          *     One authoring path for both arms: same two inputs, prompt-only output —
-         *     the judge model stays the caller's choice. The rubric's trace framing
-         *     (conversation vs I/O pair) is derived server-side from the task's turn
-         *     mode, never client-sent.
+         *     the judge model stays the caller's choice. Both arms judge a transcript,
+         *     so the rubric is always authored against one; the framing is fixed
+         *     server-side rather than client-sent.
          */
         AuthorJudgeApiInput: {
             /** Target Specification */
@@ -6037,8 +6039,8 @@ export interface components {
          *       generated inputs. Endpoint tags the existing runs with golden/train
          *       filter tags (writing the verdicts onto the golden ones) and mints one
          *       EvalInput per input as the eval slice; no new TaskRuns are created and
-         *       nothing is generated. `evaluate_full_trace` must be False — the
-         *       pipeline judged final answers, so the saved eval must too.
+         *       nothing is generated. `evaluate_full_trace` must be True — the
+         *       pipeline judged the transcript, so the saved eval must too.
          *
          *     - **Multi-turn (wizard):** caller supplies `multi_turn` with a `batch_tag`
          *       pointing at chains already on disk (created earlier by the
