@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, vi, afterEach } from "vitest"
 import { render, cleanup, fireEvent } from "@testing-library/svelte"
 import { tick } from "svelte"
 
@@ -7,41 +7,39 @@ import { tick } from "svelte"
 // Module-level mocks — must come before the dynamic page import
 // ---------------------------------------------------------------------------
 
-const { mockPage, mockClientGET, mockLoadTask, setResultsResponse } =
-  vi.hoisted(() => {
-    const pageValue = {
-      params: {
-        project_id: "proj1",
-        task_id: "task1",
-        spec_id: "spec1",
-        eval_id: "eval1",
-        eval_config_id: "ec1",
-        run_config_id: "rc1",
-      },
-      url: new URL("http://localhost/specs/proj1/task1/spec1/eval1/ec1/rc1"),
-    }
-    const mockPage = {
-      subscribe(fn: (value: typeof pageValue) => void) {
-        fn(pageValue)
-        return () => {}
-      },
-    }
+const { mockPage, mockClientGET, setResultsResponse } = vi.hoisted(() => {
+  const pageValue = {
+    params: {
+      project_id: "proj1",
+      task_id: "task1",
+      spec_id: "spec1",
+      eval_id: "eval1",
+      eval_config_id: "ec1",
+      run_config_id: "rc1",
+    },
+    url: new URL("http://localhost/specs/proj1/task1/spec1/eval1/ec1/rc1"),
+  }
+  const mockPage = {
+    subscribe(fn: (value: typeof pageValue) => void) {
+      fn(pageValue)
+      return () => {}
+    },
+  }
 
-    let results_response: Record<string, unknown> = {}
-    const setResultsResponse = (v: Record<string, unknown>) => {
-      results_response = v
-    }
-    const mockClientGET = vi.fn().mockImplementation(() => {
-      return Promise.resolve({ data: results_response, error: null })
-    })
-
-    return {
-      mockPage,
-      mockClientGET,
-      mockLoadTask: vi.fn(),
-      setResultsResponse,
-    }
+  let results_response: Record<string, unknown> = {}
+  const setResultsResponse = (v: Record<string, unknown>) => {
+    results_response = v
+  }
+  const mockClientGET = vi.fn().mockImplementation(() => {
+    return Promise.resolve({ data: results_response, error: null })
   })
+
+  return {
+    mockPage,
+    mockClientGET,
+    setResultsResponse,
+  }
+})
 
 vi.mock("$app/stores", () => ({
   page: mockPage,
@@ -65,7 +63,6 @@ vi.mock("$lib/stores", () => ({
   provider_name_from_id: () => "Provider",
   prompt_name_from_id: () => "Prompt",
   load_available_models: vi.fn(),
-  load_task: mockLoadTask,
   get_task_composite_id: (project_id: string, task_id: string) =>
     `${project_id}:${task_id}`,
 }))
@@ -136,15 +133,7 @@ const base_response = {
   },
 }
 
-const single_turn_task = {
-  id: "task1",
-  name: "Test Task",
-  turn_mode: "single_turn",
-}
-const multi_turn_task = { ...single_turn_task, turn_mode: "multiturn" }
-
-// Renders with whatever load_task the caller already configured.
-async function render_configured(
+async function render_page(
   results: Array<Record<string, unknown>>,
 ): Promise<HTMLElement> {
   setResultsResponse({ ...base_response, results })
@@ -153,14 +142,6 @@ async function render_configured(
   await new Promise((r) => setTimeout(r, 0))
   await tick()
   return container
-}
-
-async function render_page(
-  results: Array<Record<string, unknown>>,
-  task: Record<string, unknown> = single_turn_task,
-): Promise<HTMLElement> {
-  mockLoadTask.mockResolvedValue(task)
-  return render_configured(results)
 }
 
 // The placeholder copy is wrapped across source lines, so compare on collapsed
@@ -182,7 +163,7 @@ function result_row(overrides: Record<string, unknown>) {
   }
 }
 
-// A plain multi-turn conversation: two user turns and two assistant replies.
+// A multi-turn conversation: two user turns and two assistant replies.
 const conversation = [
   { role: "system", content: "You are a helpful assistant." },
   { role: "user", content: "What is the capital of France?" },
@@ -194,10 +175,6 @@ const conversation = [
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-
-beforeEach(() => {
-  mockLoadTask.mockReset()
-})
 
 afterEach(() => {
   cleanup()
@@ -279,13 +256,25 @@ describe("run result page — missing trace placeholder", () => {
   })
 })
 
-describe("run result page — turn mode gates the conversation view", () => {
+describe("run result page — a renderable trace gates the conversation view", () => {
   // A row that carries a renderable conversation alongside its flat input and
-  // output, so each test can vary only the turn mode.
+  // output, so each test can vary only what the row's trace holds.
   function traced_row(eval_run_extra: Record<string, unknown> = {}) {
+    return traced_row_with(
+      "er_trace",
+      JSON.stringify(conversation),
+      eval_run_extra,
+    )
+  }
+
+  function traced_row_with(
+    id: string,
+    task_run_trace: string,
+    eval_run_extra: Record<string, unknown> = {},
+  ) {
     return result_row({
       eval_run: {
-        id: "er_trace",
+        id,
         scored_run_id: "tr1",
         scores: {},
         intermediate_outputs: null,
@@ -293,48 +282,44 @@ describe("run result page — turn mode gates the conversation view", () => {
       },
       input: "the input",
       output: "the output",
-      task_run_trace: JSON.stringify(conversation),
+      task_run_trace,
     })
   }
 
-  it("keeps the Input & Output view on a single-turn task whose rows carry traces", async () => {
-    const container = await render_page([traced_row()], single_turn_task)
+  it("reads a single exchange as a conversation too", async () => {
+    // A single-turn run records a transcript, so its one exchange gets the
+    // same treatment a longer conversation does.
+    const container = await render_page([
+      traced_row_with(
+        "er_one_exchange",
+        JSON.stringify([
+          { role: "user", content: "What is the capital of France?" },
+          { role: "assistant", content: "Paris." },
+        ]),
+      ),
+    ])
 
     const text = visible_text(container)
-    expect(text).toContain("Input: the input")
-    expect(text).toContain("Output: the output")
-    expect(text).not.toContain("View Full Trace")
-    expect(
-      container.querySelector("[data-testid='chat-trace-stub']"),
-    ).toBeNull()
-  })
-
-  it("keeps the Input & Output view when the task cannot be loaded", async () => {
-    // An unknown turn mode must degrade to today's view, not fail the page.
-    mockLoadTask.mockRejectedValue(new Error("task gone"))
-    const container = await render_configured([traced_row()])
-
-    const text = visible_text(container)
-    expect(text).toContain("Input: the input")
-    expect(text).toContain("Output: the output")
-    expect(text).not.toContain("View Full Trace")
-  })
-
-  it("keeps the Input & Output view for a multi-turn row with no trace", async () => {
-    const container = await render_page(
-      [
-        result_row({
-          eval_run: {
-            id: "er_no_trace",
-            scored_run_id: "gone_run",
-            scores: {},
-            intermediate_outputs: null,
-          },
-          input: "the question from the dataset item",
-        }),
-      ],
-      multi_turn_task,
+    expect(text).toContain("What is the capital of France?")
+    expect(text).toContain("View Full Trace")
+    expect(text).not.toContain("Input: the input")
+    expect(container.querySelector("thead th")?.textContent?.trim()).toBe(
+      "Interaction",
     )
+  })
+
+  it("keeps the Input & Output view for a row with no trace", async () => {
+    const container = await render_page([
+      result_row({
+        eval_run: {
+          id: "er_no_trace",
+          scored_run_id: "gone_run",
+          scores: {},
+          intermediate_outputs: null,
+        },
+        input: "the question from the dataset item",
+      }),
+    ])
 
     const text = visible_text(container)
     expect(text).toContain("the question from the dataset item")
@@ -347,11 +332,38 @@ describe("run result page — turn mode gates the conversation view", () => {
     )
   })
 
-  it("renders a compact row for a multi-turn row with a renderable trace", async () => {
-    const container = await render_page(
-      [traced_row({ reference_answer: "Paris and Madrid." })],
-      multi_turn_task,
+  it("leaves a trace-less row flat on a page that has conversations", async () => {
+    // The conversation view is per row, not per page: one row earning it must
+    // not pull the rows beside it out of the Input & Output view.
+    const container = await render_page([
+      traced_row(),
+      result_row({
+        eval_run: {
+          id: "er_flat",
+          scored_run_id: null,
+          scores: {},
+          intermediate_outputs: null,
+        },
+        input: "the flat input",
+        output: "the flat output",
+      }),
+    ])
+
+    expect(container.querySelector("thead th")?.textContent?.trim()).toBe(
+      "Interaction",
     )
+    const rows = container.querySelectorAll("tbody tr")
+    expect(rows.length).toBe(2)
+    const flat_row = visible_text(rows[1] as HTMLElement)
+    expect(flat_row).toContain("Input: the flat input")
+    expect(flat_row).toContain("Output: the flat output")
+    expect(flat_row).not.toContain("View Full Trace")
+  })
+
+  it("renders a compact row for a row with a renderable trace", async () => {
+    const container = await render_page([
+      traced_row({ reference_answer: "Paris and Madrid." }),
+    ])
 
     const text = visible_text(container)
     expect(text).toContain("What is the capital of France?")
@@ -375,44 +387,41 @@ describe("run result page — turn mode gates the conversation view", () => {
   })
 
   it("renders a compact row for a conversation with a well-formed tool call", async () => {
-    const container = await render_page(
-      [
-        result_row({
-          eval_run: {
-            id: "er_tool_call",
-            scored_run_id: "tr_tool",
-            scores: {},
-            intermediate_outputs: null,
-          },
-          input: "the input",
-          output: "the output",
-          task_run_trace: JSON.stringify([
-            { role: "user", content: "What is the weather in Paris?" },
-            {
-              role: "assistant",
-              content: null,
-              tool_calls: [
-                {
-                  id: "call_1",
-                  type: "function",
-                  function: {
-                    name: "get_weather",
-                    arguments: '{"city":"Paris"}',
-                  },
+    const container = await render_page([
+      result_row({
+        eval_run: {
+          id: "er_tool_call",
+          scored_run_id: "tr_tool",
+          scores: {},
+          intermediate_outputs: null,
+        },
+        input: "the input",
+        output: "the output",
+        task_run_trace: JSON.stringify([
+          { role: "user", content: "What is the weather in Paris?" },
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              {
+                id: "call_1",
+                type: "function",
+                function: {
+                  name: "get_weather",
+                  arguments: '{"city":"Paris"}',
                 },
-              ],
-            },
-            {
-              role: "tool",
-              tool_call_id: "call_1",
-              content: '{"output":"Sunny"}',
-            },
-            { role: "assistant", content: "It is sunny in Paris." },
-          ]),
-        }),
-      ],
-      multi_turn_task,
-    )
+              },
+            ],
+          },
+          {
+            role: "tool",
+            tool_call_id: "call_1",
+            content: '{"output":"Sunny"}',
+          },
+          { role: "assistant", content: "It is sunny in Paris." },
+        ]),
+      }),
+    ])
 
     const text = visible_text(container)
     expect(text).toContain("What is the weather in Paris?")
@@ -421,7 +430,7 @@ describe("run result page — turn mode gates the conversation view", () => {
   })
 
   it("opens the trace dialog with the row's conversation", async () => {
-    const container = await render_page([traced_row()], multi_turn_task)
+    const container = await render_page([traced_row()])
 
     // Nothing of the conversation is on screen until the link opens the dialog.
     expect(
@@ -441,25 +450,22 @@ describe("run result page — turn mode gates the conversation view", () => {
   })
 
   it("falls back to the row input when the conversation has no plain-text user message", async () => {
-    const container = await render_page(
-      [
-        result_row({
-          eval_run: {
-            id: "er_no_user_text",
-            scored_run_id: "tr2",
-            scores: {},
-            intermediate_outputs: null,
-          },
-          input: "the dataset input",
-          output: "the output",
-          task_run_trace: JSON.stringify([
-            { role: "user", content: null },
-            { role: "assistant", content: "Madrid." },
-          ]),
-        }),
-      ],
-      multi_turn_task,
-    )
+    const container = await render_page([
+      result_row({
+        eval_run: {
+          id: "er_no_user_text",
+          scored_run_id: "tr2",
+          scores: {},
+          intermediate_outputs: null,
+        },
+        input: "the dataset input",
+        output: "the output",
+        task_run_trace: JSON.stringify([
+          { role: "user", content: null },
+          { role: "assistant", content: "Madrid." },
+        ]),
+      }),
+    ])
 
     const text = visible_text(container)
     expect(text).toContain("View Full Trace")
@@ -524,7 +530,6 @@ describe("run result page — turn mode gates the conversation view", () => {
           task_run_trace: raw,
         }),
       ),
-      multi_turn_task,
     )
 
     expect(container.querySelectorAll("tbody tr").length).toBe(
@@ -536,18 +541,5 @@ describe("run result page — turn mode gates the conversation view", () => {
       expect(text).toContain(`Output: output for ${label}`)
     }
     expect(text).not.toContain("View Full Trace")
-  })
-
-  it("labels the first column by turn mode", async () => {
-    const single_turn = await render_page([traced_row()], single_turn_task)
-    expect(single_turn.querySelector("thead th")?.textContent?.trim()).toBe(
-      "Input & Output",
-    )
-    cleanup()
-
-    const multi_turn = await render_page([traced_row()], multi_turn_task)
-    expect(multi_turn.querySelector("thead th")?.textContent?.trim()).toBe(
-      "Interaction",
-    )
   })
 })

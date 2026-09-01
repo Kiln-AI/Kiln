@@ -7,7 +7,6 @@
     Eval,
     EvalConfig,
     EvalRunWithTrace,
-    Task,
     TaskRunConfig,
     Trace,
   } from "$lib/types"
@@ -35,7 +34,6 @@
     provider_name_from_id,
     prompt_name_from_id,
     load_available_models,
-    load_task,
   } from "$lib/stores"
   import {
     prompts_by_task_composite_id,
@@ -63,13 +61,6 @@
 
   let trace_dialog: Dialog | null = null
   let displayed_trace: Trace | null = null
-
-  // The task's turn mode decides whether a row reads as a conversation, not the
-  // trace itself: a single-turn tool loop has many messages, and a multi-turn
-  // conversation can be two. A task we could not load leaves this false, so an
-  // unknown turn mode renders the Input/Output view this page has always shown.
-  let task: Task | null = null
-  $: is_multiturn = task?.turn_mode === "multiturn"
 
   // Keyed on the row object, so a reload of results drops the old entries.
   const parsed_traces = new WeakMap<EvalRunWithTrace, Trace | null>()
@@ -188,11 +179,11 @@
   }
 
   // Whether any row actually reads as a conversation. The column header and the
-  // shared trace dialog both hinge on this, so a multi-turn page whose rows all
-  // fall back to the flat view renders exactly as it always has. `parsed_trace`
-  // memoizes per row, so re-running this on a results change is cheap.
-  $: has_conversation_row = !!(
-    is_multiturn && results?.results.some((result) => parsed_trace(result))
+  // shared trace dialog both hinge on this, so a page whose rows all fall back
+  // to the flat view renders exactly as it always has. `parsed_trace` memoizes
+  // per row, so re-running this on a results change is cheap.
+  $: has_conversation_row = !!results?.results.some((result) =>
+    parsed_trace(result),
   )
 
   onMount(() => {
@@ -214,7 +205,6 @@
     load_model_info()
     load_task_prompts(req_project_id, req_task_id)
     load_available_models()
-    get_task(req_project_id, req_task_id)
     get_evals(
       req_project_id,
       req_task_id,
@@ -222,20 +212,6 @@
       req_eval_config_id,
       req_run_config_id,
     )
-  }
-
-  // Loaded only for its turn mode. A failure is deliberately not surfaced: the
-  // results are the page, and an unknown turn mode already falls back to the
-  // Input/Output view, so a task we can't read must not fail the whole screen.
-  async function get_task(req_project_id: string, req_task_id: string) {
-    task = null
-    try {
-      const loaded = await load_task(req_project_id, req_task_id)
-      if (req_project_id !== project_id || req_task_id !== task_id) return
-      task = loaded
-    } catch (_) {
-      // Leave `task` null so `is_multiturn` stays false.
-    }
   }
 
   async function get_evals(
@@ -463,9 +439,10 @@
         </thead>
         <tbody>
           {#each results.results as result}
-            <!-- Only a multi-turn task reads as a conversation, and only when
-                 the row actually carries one we can render. -->
-            {@const row_trace = is_multiturn ? parsed_trace(result) : null}
+            <!-- A row reads as a conversation when it carries one we can
+                 render, whatever the task's turn mode: a single-turn run
+                 records a transcript too, tool calls and all. -->
+            {@const row_trace = parsed_trace(result)}
             <tr>
               <td>
                 {#if row_trace}
