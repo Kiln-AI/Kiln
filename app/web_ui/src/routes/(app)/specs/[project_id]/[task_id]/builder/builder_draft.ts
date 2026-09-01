@@ -31,7 +31,7 @@ export type CachedSuCases = {
 
 // The cached cases iff they were generated from EXACTLY this plan and spec
 // (byte-compare); anything else means regenerate. Fresh variation on the
-// same scenarios is deliberately not offered — that's what New Batch Plan
+// same scenarios is deliberately not offered — that's what Refine Plan
 // is for.
 export function reusable_cached_cases(
   cache: CachedSuCases | null,
