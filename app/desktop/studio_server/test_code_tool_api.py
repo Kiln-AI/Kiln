@@ -117,7 +117,7 @@ class TestCreateCodeTool:
         assert result["not_trusted"] is True
         assert result["id"] is None
 
-    def test_create_uniqueness_conflict(
+    def test_create_allows_duplicate_function_names(
         self,
         client,
         test_project,
@@ -125,26 +125,46 @@ class TestCreateCodeTool:
         saved_code_tool,
         create_request,
     ):
+        # Duplicate function names are allowed within a project; collisions are
+        # rejected per run config at run config creation time instead.
         create_request["tool_function_name"] = saved_code_tool.tool_function_name
         with patch(TRUST_PATCH, return_value=True):
             response = client.post(
                 f"/api/projects/{test_project.id}/code_tools",
                 json=create_request,
             )
-        assert response.status_code == 400
-        assert "already exists" in response.json()["message"]
+        assert response.status_code == 200
+        assert response.json()["id"] is not None
 
-    def test_create_allows_duplicate_when_archived(
-        self,
-        client,
-        test_project,
-        mock_project_from_id,
-        saved_code_tool,
-        create_request,
+    def test_create_rejects_ambiguous_allowlist(
+        self, client, test_project, mock_project_from_id, create_request
     ):
-        saved_code_tool.is_archived = True
-        saved_code_tool.save_to_file()
-        create_request["tool_function_name"] = saved_code_tool.tool_function_name
+        # Two allowlisted tools sharing a function name would make calls from
+        # sandboxed code ambiguous: rejected at creation.
+        allowlisted = []
+        for _ in range(2):
+            ct = CodeTool(
+                name="dup_tool",
+                tool_function_name="dup_tool",
+                tool_description="d",
+                parameters_schema=SIMPLE_SCHEMA,
+                code=SIMPLE_CODE,
+                parent=test_project,
+            )
+            ct.save_to_file()
+            allowlisted.append(f"kiln_tool::code::{ct.id}")
+
+        create_request["tool_allowlist"] = allowlisted
+        with patch(TRUST_PATCH, return_value=True):
+            response = client.post(
+                f"/api/projects/{test_project.id}/code_tools",
+                json=create_request,
+            )
+        assert response.status_code == 400
+        assert "share the same function name: dup_tool" in response.json()["message"]
+
+        # A single one of them is fine.
+        create_request["tool_allowlist"] = allowlisted[:1]
         with patch(TRUST_PATCH, return_value=True):
             response = client.post(
                 f"/api/projects/{test_project.id}/code_tools",
@@ -527,6 +547,31 @@ class TestAvailableToolsCodeGroup:
         tools = code_sets[0]["tools"]
         assert len(tools) == 1
         assert tools[0]["name"] == "my_tool"
+
+    def test_serves_display_name_and_function_name(
+        self, client, test_project, mock_project_from_id
+    ):
+        # name carries the user-facing display name, function_name the
+        # callable name — distinct values so a regression can't hide behind
+        # a fixture where they coincide.
+        ct = CodeTool(
+            name="My Fancy Tool",
+            tool_function_name="my_fancy_tool",
+            tool_description="Does something",
+            parameters_schema=SIMPLE_SCHEMA,
+            code=SIMPLE_CODE,
+            parent=test_project,
+        )
+        ct.save_to_file()
+
+        response = client.get(f"/api/projects/{test_project.id}/available_tools")
+        assert response.status_code == 200
+        tool_sets = response.json()
+        code_sets = [ts for ts in tool_sets if ts["type"] == "code"]
+        assert len(code_sets) == 1
+        [tool] = code_sets[0]["tools"]
+        assert tool["name"] == "My Fancy Tool"
+        assert tool["function_name"] == "my_fancy_tool"
 
     def test_excludes_archived_code_tools(
         self, client, test_project, mock_project_from_id, saved_code_tool

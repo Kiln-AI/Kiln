@@ -520,6 +520,17 @@
       }
     }
   }
+
+  // One source of truth for badge sizing/color, shared by the inline and
+  // below-label placements so they can't drift apart.
+  function badge_classes(
+    badge: string,
+    badge_color: string | undefined,
+  ): string {
+    const shape = badge.length <= 2 ? "rounded-full w-5 h-5" : "px-2"
+    const color = badge_color === "primary" ? "badge-primary" : "badge-ghost"
+    return `badge badge-sm text-xs ${shape} ${color}`
+  }
 </script>
 
 <div class="dropdown w-full relative">
@@ -729,18 +740,23 @@
                       <div class="flex-grow">
                         {item.label}
                       </div>
-                      {#if item.badge}
+                      {#if item.badge && item.badge_placement !== "below"}
                         <div
-                          class="badge badge-sm text-xs {item.badge.length <= 2
-                            ? 'rounded-full w-5 h-5'
-                            : 'px-2'} {item.badge_color === 'primary'
-                            ? 'badge-primary'
-                            : 'badge-ghost'}"
+                          class={badge_classes(item.badge, item.badge_color)}
                         >
                           {item.badge}
                         </div>
                       {/if}
                     </div>
+                    {#if item.badge && item.badge_placement === "below"}
+                      <div class="w-full">
+                        <div
+                          class={badge_classes(item.badge, item.badge_color)}
+                        >
+                          {item.badge}
+                        </div>
+                      </div>
+                    {/if}
                     {#if item.description}
                       <div
                         class="text-xs font-medium text-base-content/40 w-full line-clamp-3 whitespace-pre-line"

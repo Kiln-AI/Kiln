@@ -181,8 +181,9 @@
     test_panel_has_tested = false
   }
 
-  // Resolve the display name (which is the function name for code tools) from the
-  // available_tools store so the import comment uses the real function name.
+  // Resolve the callable function name (available_tools carries it in
+  // function_name, separate from the display name) so the import comment
+  // matches what the sandbox dispatches on.
   function resolve_tool_function_name(tool_id: string): string {
     const tool_sets = $available_tools[project_id]
     if (!tool_sets) return tool_id

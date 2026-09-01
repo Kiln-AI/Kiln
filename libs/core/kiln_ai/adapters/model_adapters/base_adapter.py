@@ -809,32 +809,59 @@ class BaseAdapter(metaclass=ABCMeta):
         if tool_config is None or tool_config.tools is None:
             return []
 
-        non_skill_tool_ids = [
-            tid for tid in tool_config.tools if not tid.startswith(SKILL_TOOL_ID_PREFIX)
-        ]
+        return await assemble_unique_agent_tools(
+            self.task, tool_config.tools, self._resolve_skills()
+        )
 
-        tools: list[KilnToolInterface] = [
-            tool_from_id(tool_id, self.task) for tool_id in non_skill_tool_ids
-        ]
 
-        skills = self._resolve_skills()
-        if skills:
-            seen_names: set[str] = set()
-            for skill in skills:
-                if skill.name in seen_names:
-                    raise ValueError(
-                        f"Duplicate skill name '{skill.name}'. Each skill must have a unique name."
-                    )
-                seen_names.add(skill.name)
-            tools.append(SkillTool(f"{SKILL_TOOL_ID_PREFIX}_combined", skills))
+async def assemble_unique_agent_tools(
+    task: Task, tool_ids: list[str], skills: list[Skill]
+) -> list[KilnToolInterface]:
+    """Resolve a run config's tool IDs into tool instances, rejecting name collisions.
 
-        tool_names = [await tool.name() for tool in tools]
-        if len(tool_names) != len(set(tool_names)):
-            raise ValueError(
-                "Each tool must have a unique name. Either de-select the duplicate tools, or modify their names to describe their unique purpose. Model will struggle if tools do not have descriptive names and tool execution will be undefined."
+    Names may repeat across a project, but within one run config every tool the
+    model sees must have a unique function name (and every attached skill a
+    unique skill name — skills are loaded by name through the single "skill"
+    tool). Shared by creation-time validation of run configs, which catches
+    collisions at selection time, and by the runtime adapter, which stays the
+    backstop for configs whose tools were renamed after creation (e.g. via
+    edit_kiln_task_tool) or that were created outside the API.
+    """
+    non_skill_tool_ids = [
+        tid for tid in tool_ids if not tid.startswith(SKILL_TOOL_ID_PREFIX)
+    ]
+
+    tools: list[KilnToolInterface] = [
+        tool_from_id(tool_id, task) for tool_id in non_skill_tool_ids
+    ]
+
+    if skills:
+        seen_names: set[str] = set()
+        for skill in skills:
+            if skill.name in seen_names:
+                raise ValueError(
+                    f"Duplicate skill name '{skill.name}'. Each skill must have a unique name."
+                )
+            seen_names.add(skill.name)
+        tools.append(SkillTool(f"{SKILL_TOOL_ID_PREFIX}_combined", skills))
+
+    tool_names = [await tool.name() for tool in tools]
+    if len(tool_names) != len(set(tool_names)):
+        duplicates = sorted({n for n in tool_names if tool_names.count(n) > 1})
+        message = (
+            f"Multiple selected tools share the same function name: {', '.join(duplicates)}. "
+            "Each tool must have a unique name. Either de-select the duplicate tools, or "
+            "modify their names to describe their unique purpose. The model will struggle "
+            "if tools do not have descriptive names and tool execution will be undefined."
+        )
+        if skills and "skill" in duplicates:
+            message += (
+                " The name 'skill' is reserved for the tool that loads skills, "
+                "so no other tool may use it while skills are selected."
             )
+        raise ValueError(message)
 
-        return tools
+    return tools
 
 
 class OpenAIStreamResult:

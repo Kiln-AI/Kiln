@@ -1128,11 +1128,15 @@ When generating ${task_type}, use these guidelines to create test cases that are
 
     if (!project_tools) return null
 
-    // Search through all tool sets to find the tool
+    // Search through all tool sets to find the tool. The template needs the
+    // callable function name the eval judge targets, not the display name.
     for (const tool_set of project_tools) {
       const tool = tool_set.tools.find((t) => t.id === tool_id)
       if (tool) {
-        return { name: tool.name, description: tool.description }
+        return {
+          name: tool.function_name ?? tool.name,
+          description: tool.description,
+        }
       }
     }
 
