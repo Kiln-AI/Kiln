@@ -338,9 +338,11 @@ async def author_judge_prompt(
 
     Thin remote passthrough: marshal → SDK call → map back. The authoring
     (LLM) runs on kiln_server and returns the PROMPT only — the judge model
-    stays the caller's choice. `trace_type` selects the rubric's framing:
-    full conversations (multi-turn) or one I/O pair (single-turn) — one
-    authoring path for both arms. `task_tools` / `task_skills` describe the
+    stays the caller's choice. `trace_type` selects which authoring prompt
+    the server uses. Both arms here judge a transcript, so both send
+    multi_turn, the transcript-aware one; single_turn resolves the server's
+    default, which is written for a bare input/output pair.
+    `task_tools` / `task_skills` describe the
     target task's capability surface so the rubric can reason about tool and
     skill use; None (the default) omits them and authors exactly as before.
     Authoring is REQUIRED for a drive: an error here surfaces to the client,

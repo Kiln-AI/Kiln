@@ -3461,10 +3461,10 @@ export interface paths {
          * Author Judge
          * @description Author a spec-tailored judge prompt for the review — both arms.
          *
-         *     Returns the PROMPT only — the judge model is the user's pick. The
-         *     rubric's framing follows the task's turn mode: full conversations
-         *     for multi-turn, one I/O pair for single-turn — derived here, not
-         *     client-sent, so it can never disagree with the task being judged.
+         *     Returns the PROMPT only — the judge model is the user's pick. Both
+         *     arms judge a transcript, so both rubrics are authored against one:
+         *     the rubric arrives knowing the role labels and tool-call blocks its
+         *     judge will meet, whatever the task's turn mode.
          *     Authoring is a REQUIRED step of the drive: an error here stops the
          *     drive on a retryable error client-side. There is no fallback judge.
          */
@@ -4544,9 +4544,9 @@ export interface components {
          * @description The spec + target-task prompt the judge author tailors its rubric to.
          *
          *     One authoring path for both arms: same two inputs, prompt-only output —
-         *     the judge model stays the caller's choice. The rubric's trace framing
-         *     (conversation vs I/O pair) is derived server-side from the task's turn
-         *     mode, never client-sent.
+         *     the judge model stays the caller's choice. Both arms judge a transcript,
+         *     so the rubric is always authored against one; the framing is fixed
+         *     server-side rather than client-sent.
          */
         AuthorJudgeApiInput: {
             /** Target Specification */

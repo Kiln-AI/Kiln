@@ -966,8 +966,11 @@ def _run_cost(run: TaskRun) -> float:
 
 def guard_single_turn(task: Task) -> None:
     """Reject early if the caller pointed the single-turn pipeline at a
-    multi-turn task: its judge and save contract are the final_answer ones,
-    and multi-turn conversations have their own drive (multi_turn_pipeline).
+    multi-turn task.
+
+    This pipeline runs the task once per generated input. A multi-turn task
+    needs a synthetic user to carry the conversation forward, which is a
+    different drive entirely (multi_turn_pipeline).
     """
     if task.turn_mode == TurnMode.multiturn:
         raise HTTPException(
@@ -1583,10 +1586,10 @@ def connect_eval_builder_api(app: FastAPI):
     ) -> AuthorJudgeApiOutput:
         """Author a spec-tailored judge prompt for the review — both arms.
 
-        Returns the PROMPT only — the judge model is the user's pick. The
-        rubric's framing follows the task's turn mode: full conversations
-        for multi-turn, one I/O pair for single-turn — derived here, not
-        client-sent, so it can never disagree with the task being judged.
+        Returns the PROMPT only — the judge model is the user's pick. Both
+        arms judge a transcript, so both rubrics are authored against one:
+        the rubric arrives knowing the role labels and tool-call blocks its
+        judge will meet, whatever the task's turn mode.
         Authoring is a REQUIRED step of the drive: an error here stops the
         drive on a retryable error client-side. There is no fallback judge.
         """
@@ -1594,15 +1597,18 @@ def connect_eval_builder_api(app: FastAPI):
         # a keyless caller gets a clean 401, not a deep upstream error.
         get_copilot_api_key()
         task = task_from_id(project_id, task_id)
-        # The task's tools and skills come from the task too, so the rubric can
-        # grade tool and skill use instead of guessing at it.
+        # The task is loaded for its tools and skills, so the rubric can grade
+        # tool and skill use instead of guessing at it.
         task_tools, task_skills = await task_capabilities_for_task(task)
         return await author_judge_prompt(
             target_specification=input.target_specification,
             target_task_prompt=input.target_task_prompt,
-            trace_type=(
-                "multi_turn" if task.turn_mode == TurnMode.multiturn else "single_turn"
-            ),
+            # Constant on purpose: both arms judge a transcript, so both
+            # rubrics are authored against one. "multi_turn" names the
+            # authoring prompt that teaches the transcript's vocabulary — the
+            # role labels, the tool-call blocks, and that a missing tool call
+            # is evidence — not the turn mode of the task being judged.
+            trace_type="multi_turn",
             task_tools=task_tools,
             task_skills=task_skills,
         )

@@ -218,9 +218,9 @@ class AuthorJudgeApiInput(BaseModel):
     """The spec + target-task prompt the judge author tailors its rubric to.
 
     One authoring path for both arms: same two inputs, prompt-only output —
-    the judge model stays the caller's choice. The rubric's trace framing
-    (conversation vs I/O pair) is derived server-side from the task's turn
-    mode, never client-sent.
+    the judge model stays the caller's choice. Both arms judge a transcript,
+    so the rubric is always authored against one; the framing is fixed
+    server-side rather than client-sent.
     """
 
     target_specification: str = Field(min_length=1)
