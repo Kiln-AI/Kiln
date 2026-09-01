@@ -1,6 +1,6 @@
 ---
 name: open-pr
-description: Open a pull request on the Kiln repo with a semantic-commit title and a structured description (one-line TLDR, summary, implementation bullets, warnings, optional Mermaid diagram, collapsible examples and screenshots). Also covers the short watch window for review-bot comments and CI. Use when the user asks to open, create, or raise a PR, or to write or rewrite a PR description.
+description: Open a pull request on the Kiln repo with a semantic-commit title and a structured description (one-line TLDR, summary, implementation bullets, warnings, optional Mermaid diagram, collapsible examples and screenshots). Also covers the short watch window for review-bot comments and CI. Use when the user asks to open, create, or raise a PR, to write or rewrite a PR description, or to update a PR after a push.
 ---
 
 # Open a Pull Request
@@ -255,7 +255,48 @@ Do not approve the PR. Do not merge the PR.
 
 ---
 
-## Step 6 — Ask about the watch window
+## Step 6 — Keep the title and the description true
+
+The description tells the reader what the PR contains now. It does not tell the history
+of the PR. Read the title and the description again each time you push a change.
+
+**Update them when the change is meaningful.** These changes are meaningful:
+
+- The PR does something new, or it stops doing something that it did before.
+- The reason for the PR changes.
+- The scope grows or becomes smaller.
+- A user sees a different behavior.
+- A new warning applies: a new merge order, a new dependency, or a new companion PR.
+- The base branch changes.
+- The type in the title is no longer correct, for example a `fix` that is now a `feat`.
+- A screenshot or an example no longer agrees with the code.
+
+**Keep them as they are for a small change.** These changes are small:
+
+- A typo, a comment, or a rename inside the implementation.
+- A lint fix or a format fix.
+- A new test for behavior that the description gives already.
+- A fix from a review comment that keeps the same behavior.
+
+The test: does the change make one sentence in the description false? Does it make the
+reader want a sentence that is not there? Update the description when one answer is yes.
+Keep the description when both answers are no. A rewrite that says the same thing in
+different words wastes the time of each reviewer who reads the PR again.
+
+When you update:
+
+- Edit the sections that are wrong. Keep the structure from Step 4.
+- Rewrite the TLDR only when the intent, the target branch, or a companion branch changes.
+  Keep it to one line.
+- Change the title when the subject or the type is no longer correct.
+- Keep each warning that still applies.
+- Do not add a list of your edits to the PR. The commit history holds that record.
+
+Use `mcp__github__update_pull_request` to write the new title and the new body.
+
+---
+
+## Step 7 — Ask about the watch window
 
 Kiln PRs have code review bots. The bots leave review comments after each push. The
 comments usually arrive in less than 30 minutes.
@@ -272,7 +313,7 @@ If the user says no, stop here.
 
 ---
 
-## Step 7 — The watch window
+## Step 8 — The watch window
 
 If the user agrees, watch the PR three times, and then stop:
 
@@ -322,7 +363,8 @@ Answer every new comment. Do not leave a thread open and silent.
 - If the failure comes from the base branch and not from your change, say so on the PR.
 
 **3. Push the fixes in one commit group.** A new push starts a new bot review. The next
-scheduled check reads those new comments.
+scheduled check reads those new comments. Then read the title and the description again,
+as Step 6 says.
 
 ### Rules for a reply
 
