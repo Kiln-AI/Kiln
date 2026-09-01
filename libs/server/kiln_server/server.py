@@ -90,6 +90,10 @@ tags_metadata = [
         "description": "AI copilot for spec generation, refinement, and data generation.",
     },
     {
+        "name": "Code Tools",
+        "description": "Create, test, and manage user-authored Python code tools.",
+    },
+    {
         "name": "Tools & MCP",
         "description": "Manage tool servers and MCP connections.",
     },

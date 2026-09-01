@@ -137,7 +137,7 @@
     >
       <button
         on:click={toggle_expansion}
-        class="btn btn-sm btn-outline pointer-events-auto bg-base-200 {hide_toggle
+        class="btn btn-xs btn-outline pointer-events-auto bg-base-200 {hide_toggle
           ? 'hidden'
           : ''}"
       >
@@ -149,7 +149,7 @@
   <!-- Hide toggle when expanded -->
   {#if max_height && is_expanded && !hide_toggle}
     <div class="flex justify-center pt-2 pb-2">
-      <button on:click={toggle_expansion} class="btn btn-sm btn-outline">
+      <button on:click={toggle_expansion} class="btn btn-xs btn-outline">
         Collapse
       </button>
     </div>

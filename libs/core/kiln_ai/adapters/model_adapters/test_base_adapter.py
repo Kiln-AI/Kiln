@@ -10,11 +10,13 @@ from litellm.types.utils import (
     StreamingChoices,
 )
 
+from kiln_ai.adapters.chat.chat_formatter import get_chat_formatter
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
     BaseAdapter,
     RunOutput,
+    assemble_unique_agent_tools,
 )
 from kiln_ai.adapters.model_adapters.stream_events import (
     AiSdkEventType,
@@ -1004,8 +1006,52 @@ async def test_available_tools_duplicate_names_raises_error(base_project):
         mock_tool_from_id.side_effect = [mock_tool1, mock_tool2]
 
         # Should raise ValueError when tools have duplicate names
-        with pytest.raises(ValueError, match="Each tool must have a unique name"):
+        with pytest.raises(
+            ValueError, match="share the same function name: duplicate_name"
+        ):
             await adapter.available_tools()
+
+
+async def test_assemble_unique_agent_tools_lists_colliding_names(base_project):
+    task = Task(name="test_task", instruction="test_instruction", parent=base_project)
+
+    def mock_tool(name: str) -> KilnToolInterface:
+        tool = MagicMock(spec=KilnToolInterface)
+        tool.name = AsyncMock(return_value=name)
+        return tool
+
+    with patch(
+        "kiln_ai.adapters.model_adapters.base_adapter.tool_from_id"
+    ) as mock_tool_from_id:
+        mock_tool_from_id.side_effect = [
+            mock_tool("dup_a"),
+            mock_tool("dup_a"),
+            mock_tool("dup_b"),
+            mock_tool("dup_b"),
+        ]
+        with pytest.raises(
+            ValueError, match="share the same function name: dup_a, dup_b"
+        ):
+            await assemble_unique_agent_tools(
+                task, ["id_1", "id_2", "id_3", "id_4"], []
+            )
+
+
+async def test_assemble_unique_agent_tools_reserved_skill_name(base_project):
+    task = Task(name="test_task", instruction="test_instruction", parent=base_project)
+    skill = Skill(name="my-skill", description="d", parent=base_project)
+
+    tool_named_skill = MagicMock(spec=KilnToolInterface)
+    tool_named_skill.name = AsyncMock(return_value="skill")
+
+    with patch(
+        "kiln_ai.adapters.model_adapters.base_adapter.tool_from_id",
+        return_value=tool_named_skill,
+    ):
+        with pytest.raises(ValueError) as exc_info:
+            await assemble_unique_agent_tools(task, ["id_1"], [skill])
+    assert "share the same function name: skill" in str(exc_info.value)
+    assert "reserved" in str(exc_info.value)
 
 
 async def test_custom_prompt_builder(base_task):
@@ -1295,7 +1341,7 @@ class TestAgentRunContextLifecycle:
                 "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
             ),
             patch(
-                "kiln_ai.adapters.model_adapters.base_adapter.MCPSessionManager"
+                "kiln_ai.tools.mcp_session_manager.MCPSessionManager"
             ) as mock_manager_class,
         ):
             mock_parser_factory.return_value = parser
@@ -1309,10 +1355,92 @@ class TestAgentRunContextLifecycle:
             # cleanup_session should have been called
             mock_manager.cleanup_session.assert_called_once()
             # The run ID should be a string that starts with "run_"
-            call_args = mock_manager.cleanup_session.call_args
-            assert call_args is not None
-            run_id = call_args[0][0] if call_args[0] else call_args[1]["run_id"]
+            run_id = mock_manager.cleanup_session.call_args[0][0]
             assert run_id.startswith("run_")
+
+    @staticmethod
+    def _fake_adapter_stream():
+        """A one-chunk stand-in for the model stream, so these tests exercise
+        the session scope around iteration rather than a real model path."""
+
+        class FakeAdapterStream:
+            async def __aiter__(self):
+                yield ModelResponseStream(
+                    id="test",
+                    choices=[
+                        StreamingChoices(
+                            index=0,
+                            delta=Delta(content="hi"),
+                            finish_reason=None,
+                        )
+                    ],
+                )
+
+        return FakeAdapterStream()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_session_called_after_openai_stream(
+        self, adapter, clear_context
+    ):
+        """The streaming path opens the same session scope as invoke, so a
+        consumed stream must close its sessions and release the run id too."""
+        from kiln_ai.run_context import get_agent_run_id
+
+        with (
+            patch.object(
+                adapter, "_prepare_stream", return_value=self._fake_adapter_stream()
+            ),
+            patch.object(
+                adapter, "_finalize_stream", return_value=MagicMock(spec=TaskRun)
+            ),
+            patch(
+                "kiln_ai.tools.mcp_session_manager.MCPSessionManager"
+            ) as mock_manager_class,
+        ):
+            mock_manager = MagicMock()
+            mock_manager_class.shared.return_value = mock_manager
+            mock_manager.cleanup_session = AsyncMock()
+
+            async for _chunk in adapter.invoke_openai_stream("test input"):
+                pass
+
+            mock_manager.cleanup_session.assert_called_once()
+            run_id = mock_manager.cleanup_session.call_args[0][0]
+            assert run_id.startswith("run_")
+            assert get_agent_run_id() is None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_session_called_after_ai_sdk_stream(
+        self, adapter, clear_context
+    ):
+        """Same guarantee for the AI SDK stream: it owns a scope of its own."""
+        from kiln_ai.run_context import get_agent_run_id
+
+        finalized_run = MagicMock(spec=TaskRun)
+        # Pins the finish branch: a bare mock is truthy here, which would
+        # silently route the stream down the tool-calls-pending path instead.
+        finalized_run.is_toolcall_pending = False
+
+        with (
+            patch.object(
+                adapter, "_prepare_stream", return_value=self._fake_adapter_stream()
+            ),
+            patch.object(adapter, "_finalize_stream", return_value=finalized_run),
+            patch(
+                "kiln_ai.tools.mcp_session_manager.MCPSessionManager"
+            ) as mock_manager_class,
+        ):
+            mock_manager = MagicMock()
+            mock_manager_class.shared.return_value = mock_manager
+            mock_manager.cleanup_session = AsyncMock()
+
+            async for _event in adapter.invoke_ai_sdk_stream("test input"):
+                pass
+
+            mock_manager.cleanup_session.assert_called_once()
+            run_id = mock_manager.cleanup_session.call_args[0][0]
+            assert run_id.startswith("run_")
+            assert get_agent_run_id() is None
 
 
 class TestStreamMethods:
@@ -1991,3 +2119,43 @@ class TestInputTransformIntegration:
 
         result_dict = adapter._apply_input_transform({"key": "val"})
         assert result_dict == {"key": "val"}
+
+
+@pytest.mark.parametrize("reasoning_capable", [True, False])
+def test_build_chat_formatter_forward_thinking_instructions(
+    base_task, reasoning_capable
+):
+    adapter = MockAdapter(
+        task=base_task,
+        run_config=KilnAgentRunConfigProperties(
+            model_name="test_model",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+        config=AdapterConfig(forward_thinking_instructions=True),
+    )
+    mock_prompt_builder = MagicMock()
+    mock_prompt_builder.chain_of_thought_prompt.return_value = "think step by step"
+    mock_prompt_builder.build_prompt.return_value = "system message"
+    adapter.prompt_builder = mock_prompt_builder
+
+    mock_provider = MagicMock()
+    mock_provider.tuned_chat_strategy = None
+    mock_provider.reasoning_capable = reasoning_capable
+    adapter.model_provider = MagicMock(return_value=mock_provider)
+
+    with patch(
+        "kiln_ai.adapters.model_adapters.base_adapter.get_chat_formatter",
+        wraps=get_chat_formatter,
+    ) as mock_gcf:
+        formatter = adapter.build_chat_formatter("test input")
+        mock_gcf.assert_called_once()
+        call_kwargs = mock_gcf.call_args
+        assert call_kwargs.kwargs.get("forward_thinking_instructions") is True
+
+    if reasoning_capable:
+        assert formatter.__class__.__name__ == "SingleTurnR1ThinkingFormatter"
+        assert formatter.forward_thinking_instructions is True
+    else:
+        assert formatter.__class__.__name__ == "TwoMessageCotFormatter"

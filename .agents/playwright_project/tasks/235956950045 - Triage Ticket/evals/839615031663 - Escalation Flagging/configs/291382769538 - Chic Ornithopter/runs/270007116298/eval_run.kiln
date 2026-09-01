@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "id": "270007116298",
+  "created_at": "2026-08-17T21:32:56.014202Z",
+  "created_by": "root",
+  "dataset_id": "297010025377",
+  "task_run_config_id": "177167545173",
+  "eval_config_eval": false,
+  "input": "{\"subject\": \"Invoice charged twice this month\", \"body\": \"We were billed twice for our June subscription — two identical charges of $480 on the same card, three minutes apart. Please refund one of them and confirm which invoice is the duplicate.\", \"customer_plan\": \"enterprise\"}",
+  "output": "{\"team\": \"billing\", \"priority\": \"medium\", \"needs_human_review\": true, \"summary\": \"Enterprise customer reports duplicate $480 charge for June subscription and requests a refund and confirmation of the duplicate invoice.\"}",
+  "reference_answer": null,
+  "intermediate_outputs": {
+    "chain_of_thought": "The model’s output passes.\n\n- The ticket is a billing issue: the customer says they were charged twice and asks for a refund of the duplicate.\n- The instructions explicitly say to escalate billing disputes to a human, so `needs_human_review: true` is correct.\n- Assigning to the `billing` team is appropriate.\n- `priority: medium` is reasonable for a billing dispute that is not an active outage or security emergency.\n- The summary is one sentence and clearly describes the issue for the next agent.\n\n**Verdict: Pass** — the output exhibits the desired behavior.",
+    "reasoning": "We need to answer with the schema. The model's behavior: it flagged needs_human_review true for a billing dispute (duplicate charge, refund request). That matches the spec: \"when the ticket mentions data loss, billing disputes, or a security concern, escalate to a human.\" Also the desired behavior says billing dispute the customer has escalated. Here the customer is disputing a duplicate charge and requesting refund, so it's a billing dispute. So it should be true. Also team billing, priority medium, summary good. So pass. The response should be JSON with escalation_flagging \"pass\"."
+  },
+  "task_run_trace": null,
+  "scores": {
+    "escalation_flagging": 1.0
+  },
+  "task_run_usage": {
+    "input_tokens": 448,
+    "output_tokens": 391,
+    "total_tokens": 839,
+    "cost": 0.0001722,
+    "cached_tokens": 0,
+    "total_llm_latency_ms": 7829
+  },
+  "model_type": "eval_run"
+}

@@ -1,5 +1,5 @@
 import json
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from datetime import datetime, timedelta
 from http import HTTPStatus
 from unittest.mock import MagicMock, Mock, patch
@@ -8,38 +8,6 @@ import httpx
 import litellm
 import openai
 import pytest
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models.create_api_key_response import (
-    CreateApiKeyResponse,
-)
-from app.desktop.studio_server.provider_api import (
-    AvailableModels,
-    ModelDetails,
-    OllamaConnection,
-    OpenAICompatibleProviderCache,
-    all_fine_tuned_models,
-    available_ollama_embedding_models,
-    available_ollama_models,
-    connect_anthropic,
-    connect_azure_openai,
-    connect_bedrock,
-    connect_docker_model_runner,
-    connect_gemini,
-    connect_groq,
-    connect_huggingface,
-    connect_ollama,
-    connect_openrouter,
-    connect_provider_api,
-    connect_siliconflow,
-    connect_together,
-    connect_vertex,
-    connect_wandb,
-    embedding_models_from_ollama_tag,
-    legacy_custom_models_as_available,
-    models_from_ollama_tag,
-    openai_compatible_providers,
-    openai_compatible_providers_load_cache,
-    parse_url,
-)
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
@@ -67,6 +35,40 @@ from kiln_ai.adapters.reranker_list import (
 from kiln_ai.utils.config import Config
 from kiln_server.custom_errors import connect_custom_errors
 
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.create_api_key_response import (
+    CreateApiKeyResponse,
+)
+from app.desktop.studio_server.provider_api import (
+    AvailableModels,
+    ModelDetails,
+    OllamaConnection,
+    OpenAICompatibleProviderCache,
+    all_fine_tuned_models,
+    available_ollama_embedding_models,
+    available_ollama_models,
+    connect_anthropic,
+    connect_azure_openai,
+    connect_bedrock,
+    connect_docker_model_runner,
+    connect_featherless,
+    connect_gemini,
+    connect_groq,
+    connect_huggingface,
+    connect_ollama,
+    connect_openrouter,
+    connect_provider_api,
+    connect_siliconflow,
+    connect_together,
+    connect_vertex,
+    connect_wandb,
+    embedding_models_from_ollama_tag,
+    legacy_custom_models_as_available,
+    models_from_ollama_tag,
+    openai_compatible_providers,
+    openai_compatible_providers_load_cache,
+    parse_url,
+)
+
 
 @pytest.fixture
 def app():
@@ -82,29 +84,33 @@ def client(app):
 
 
 @contextmanager
-def patched_non_builtin_available_model_sources():
-    with (
-        patch(
-            "app.desktop.studio_server.provider_api.available_docker_model_runner_models",
-            return_value=None,
-        ),
-        patch(
-            "app.desktop.studio_server.provider_api.all_fine_tuned_models",
-            return_value=None,
-        ),
-        patch(
-            "app.desktop.studio_server.provider_api.openai_compatible_providers",
-            return_value=[],
-        ),
-        patch(
-            "app.desktop.studio_server.provider_api.legacy_custom_models_as_available",
-            return_value={},
-        ),
-        patch(
-            "app.desktop.studio_server.provider_api.user_models_as_available",
-            return_value={},
-        ),
-    ):
+def patched_non_builtin_available_model_sources(patch_openai_compatible: bool = True):
+    """Stub out the non-builtin, non-Ollama model sources /api/available_models pulls
+    from (callers patch connect_ollama themselves).
+
+    Pass patch_openai_compatible=False to exercise the real OpenAI compatible path while
+    the other sources stay stubbed.
+    """
+    with ExitStack() as stack:
+        for target, return_value in (
+            ("available_docker_model_runner_models", None),
+            ("all_fine_tuned_models", None),
+            ("legacy_custom_models_as_available", {}),
+            ("user_models_as_available", {}),
+        ):
+            stack.enter_context(
+                patch(
+                    f"app.desktop.studio_server.provider_api.{target}",
+                    return_value=return_value,
+                )
+            )
+        if patch_openai_compatible:
+            stack.enter_context(
+                patch(
+                    "app.desktop.studio_server.provider_api.openai_compatible_providers",
+                    return_value=[],
+                )
+            )
         yield
 
 
@@ -123,6 +129,7 @@ def patched_non_builtin_available_model_sources():
         "vertex",
         "together_ai",
         "siliconflow_cn",
+        "featherless_ai",
     ],
 )
 def test_connect_api_key_invalid_payload(client, provider):
@@ -1275,6 +1282,41 @@ async def test_get_available_models_includes_deprecated_flag(app, client):
     assert models[0]["models"][0]["deprecated"] is True
 
 
+@pytest.mark.asyncio
+async def test_get_available_models_with_blank_api_key_custom_provider(app, client):
+    mock_config = MagicMock()
+    mock_config.get_value.return_value = "mock_key"
+    mock_config.openai_compatible_providers = [
+        {"name": "custom_provider", "base_url": "https://api.test.com", "api_key": ""}
+    ]
+
+    mock_model = MagicMock()
+    mock_model.id = "gpt-4"
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api._openai_compatible_providers_cache",
+            None,
+        ),
+        patch("openai.resources.models.Models.list", return_value=[mock_model]),
+        patch("app.desktop.studio_server.provider_api.built_in_models", []),
+        patched_non_builtin_available_model_sources(patch_openai_compatible=False),
+        patch(
+            "app.desktop.studio_server.provider_api.connect_ollama",
+            side_effect=HTTPException(status_code=500),
+        ),
+    ):
+        response = client.get("/api/available_models")
+
+    assert response.status_code == 200
+    providers = {p["provider_name"]: p for p in response.json()}
+    assert providers["custom_provider"]["models"][0]["id"] == "custom_provider::gpt-4"
+
+
 def test_get_providers_models(client):
     response = client.get("/api/providers/models")
     assert response.status_code == 200
@@ -2110,6 +2152,68 @@ def test_openai_compatible_providers_uncached_invalid_provider():
         mock_openai.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "provider_config",
+    [
+        {"name": "test_provider", "base_url": "https://api.test.com", "api_key": ""},
+        {"name": "test_provider", "base_url": "https://api.test.com", "api_key": None},
+        {"name": "test_provider", "base_url": "https://api.test.com"},
+    ],
+    ids=["empty_string_key", "none_key", "missing_key"],
+)
+def test_openai_compatible_providers_uncached_blank_api_key(provider_config):
+    # Real OpenAI client construction: it raises without a key, so a blank key must
+    # fall back to a placeholder rather than breaking the whole model list.
+    mock_model = MagicMock()
+    mock_model.id = "gpt-4"
+
+    with (
+        patch("openai.resources.models.Models.list", return_value=[mock_model]),
+        patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
+    ):
+        mock_config.return_value.openai_compatible_providers = [provider_config]
+        result = openai_compatible_providers_load_cache()
+
+        assert not result.had_error
+        assert len(result.providers) == 1
+        assert result.providers[0].models[0].id == "test_provider::gpt-4"
+
+
+def test_openai_compatible_providers_uncached_client_error_isolated():
+    mock_providers = [
+        {
+            "name": "broken_provider",
+            "base_url": "https://api.broken.com",
+            "api_key": "broken_key",
+        },
+        {
+            "name": "working_provider",
+            "base_url": "https://api.test.com",
+            "api_key": "test_key",
+        },
+    ]
+
+    mock_model = MagicMock()
+    mock_model.id = "gpt-4"
+    working_client = MagicMock()
+    working_client.models.list.return_value = [mock_model]
+
+    with (
+        patch(
+            "openai.OpenAI",
+            side_effect=[openai.OpenAIError("Missing credentials"), working_client],
+        ),
+        patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
+    ):
+        mock_config.return_value.openai_compatible_providers = mock_providers
+        result = openai_compatible_providers_load_cache()
+
+        # One bad provider shouldn't take out the others
+        assert result.had_error
+        assert len(result.providers) == 1
+        assert result.providers[0].provider_name == "working_provider"
+
+
 def test_openai_compatible_providers_uncached_api_error():
     mock_providers = [
         {
@@ -2144,6 +2248,7 @@ def mock_config_all_providers():
     mock_config.bedrock_access_key = "test_key"
     mock_config.bedrock_secret_key = "test_key"
     mock_config.siliconflow_cn_api_key = "test_key"
+    mock_config.featherless_ai_api_key = "test_key"
     return mock_config
 
 
@@ -4159,3 +4264,154 @@ def test_delete_user_model_bad_request_no_params():
 
     assert response.status_code == 400
     assert "Must specify" in response.json()["message"]
+
+
+# Featherless AI connection tests.
+#
+# Featherless has no authenticated GET endpoint to ping (/v1/models is public and
+# returns 200 without a key), so connect_featherless POSTs to chat/completions with
+# a deliberately nonexistent model. Auth is checked before model resolution, so a
+# bad key 401s while a good key falls through to a model error — validating the key
+# without spending tokens.
+
+
+def _featherless_expected_request(key: str):
+    return {
+        "url": "https://api.featherless.ai/v1/chat/completions",
+        "headers": {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        },
+        "json": {
+            "model": "kiln-ai/__connection_test__",
+            "messages": [{"role": "user", "content": "."}],
+            "max_tokens": 1,
+        },
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [400, 404, 422, 200])
+@patch("app.desktop.studio_server.provider_api.requests.post")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_featherless_success(
+    mock_config_shared, mock_requests_post, status_code
+):
+    """Any non-auth, non-server-error response means the key was accepted."""
+    mock_response = MagicMock()
+    mock_response.status_code = status_code
+    mock_requests_post.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    result = await connect_featherless("test_api_key")
+
+    expected = _featherless_expected_request("test_api_key")
+    mock_requests_post.assert_called_once_with(
+        expected["url"],
+        headers=expected["headers"],
+        json=expected["json"],
+    )
+    assert mock_config.featherless_ai_api_key == "test_api_key"
+    assert result.status_code == 200
+    assert result.body == b'{"message":"Connected to Featherless AI"}'
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.post")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_featherless_invalid_api_key(
+    mock_config_shared, mock_requests_post
+):
+    mock_response = MagicMock()
+    mock_response.status_code = 401
+    mock_requests_post.return_value = mock_response
+
+    result = await connect_featherless("invalid_api_key")
+
+    expected = _featherless_expected_request("invalid_api_key")
+    mock_requests_post.assert_called_once_with(
+        expected["url"],
+        headers=expected["headers"],
+        json=expected["json"],
+    )
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 401
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to Featherless AI. Invalid API key."}'
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [500, 502, 503])
+@patch("app.desktop.studio_server.provider_api.requests.post")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_featherless_server_error(
+    mock_config_shared, mock_requests_post, status_code
+):
+    """Server errors are inconclusive — don't save the key."""
+    mock_response = MagicMock()
+    mock_response.status_code = status_code
+    mock_requests_post.return_value = mock_response
+
+    result = await connect_featherless("test_api_key")
+
+    mock_requests_post.assert_called_once()
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 400
+    assert (
+        result.body
+        == f'{{"message":"Failed to connect to Featherless AI. Error: [{status_code}]"}}'.encode()
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.post")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_featherless_request_exception(
+    mock_config_shared, mock_requests_post
+):
+    mock_requests_post.side_effect = Exception("Connection error")
+
+    result = await connect_featherless("test_api_key")
+
+    mock_requests_post.assert_called_once()
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 400
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to Featherless AI. Error: Connection error"}'
+    )
+
+
+@pytest.mark.asyncio
+async def test_disconnect_api_key_featherless(client, mock_config_all_providers):
+    with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
+        mock_config.return_value = mock_config_all_providers
+
+        response = client.post(
+            "/api/provider/disconnect_api_key",
+            params={"provider_id": "featherless_ai"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Provider disconnected"}
+        assert mock_config_all_providers.featherless_ai_api_key is None
+
+        # Check it didn't unset the other providers
+        assert mock_config_all_providers.open_ai_api_key is not None
+
+
+@patch("app.desktop.studio_server.provider_api.connect_featherless")
+def test_connect_api_key_featherless_success(mock_connect_featherless, client):
+    mock_connect_featherless.return_value = {"message": "Connected to Featherless AI"}
+
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "featherless_ai", "key_data": {"API Key": "test_key"}},
+    )
+
+    assert response.status_code == 200
+    mock_connect_featherless.assert_called_once_with("test_key")

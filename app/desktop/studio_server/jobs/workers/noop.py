@@ -4,7 +4,11 @@ import asyncio
 
 from pydantic import BaseModel, Field
 
-from ..models import JobContext, JobDerivedState, JobWorker
+from app.desktop.studio_server.jobs.models import (
+    JobContext,
+    JobDerivedState,
+    JobWorker,
+)
 
 
 class NoopJobParams(BaseModel):
