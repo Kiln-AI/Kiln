@@ -109,6 +109,14 @@ describe("plan surface copy", () => {
     expect(normalize(plan_surface)).toContain('items_label="Items"')
     expect(normalize(plan_surface)).toContain("expanded_description={false}")
   })
+
+  it("names the rows' column for what this surface's rows hold", () => {
+    // The shared table's default header is "Prompt", which is right for
+    // /generate's generation prompts. These rows are per-item guidance, so
+    // this surface must override it; losing the override silently mislabels
+    // the column.
+    expect(normalize(plan_surface)).toContain('column_label="Item Guidance"')
+  })
 })
 
 describe("plan drafting screen", () => {
@@ -504,7 +512,7 @@ describe("Generation Settings dialog", () => {
   })
 })
 
-describe("New Batch Plan dialog", () => {
+describe("Refine Plan dialog", () => {
   it("replaces the native confirm on the regenerate button", () => {
     expect(normalize(plan_surface)).toContain(
       "on_regenerate={open_new_plan_dialog}",
@@ -517,9 +525,7 @@ describe("New Batch Plan dialog", () => {
     // borrow the drive's verb. The title says which plan it replaces; the
     // submit still echoes the shared regenerate button that opens it.
     expect(normalize(new_plan_dialog)).toContain('title="New Dataset Plan"')
-    expect(normalize(new_plan_dialog)).toContain(
-      'submit_label="New Batch Plan"',
-    )
+    expect(normalize(new_plan_dialog)).toContain('submit_label="Refine Plan"')
     expect(new_plan_dialog).not.toContain("Generate Batch")
     expect(new_plan_dialog).not.toContain("Generate Trace Batch")
     expect(new_plan_dialog).not.toContain("Generate Dataset")

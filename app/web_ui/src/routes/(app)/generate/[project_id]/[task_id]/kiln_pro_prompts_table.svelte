@@ -12,6 +12,9 @@
   // sentence, false renders no description, a string renders that string.
   // The render gate is falsy, so an empty string behaves the same as false.
   export let expanded_description: string | null | false = null
+  // Passed straight to the rows table: the header over its first column.
+  // Default matches that table's own, so /generate is unchanged.
+  export let column_label: string = "Prompt"
 
   const DEFAULT_EXPANDED_DESCRIPTION =
     "Each prompt below will be used to guide one dataset sample."
@@ -57,6 +60,6 @@
   </button>
 
   {#if show_prompts}
-    <KilnProPlansTable {prompts} {on_delete} />
+    <KilnProPlansTable {prompts} {on_delete} {column_label} />
   {/if}
 </div>

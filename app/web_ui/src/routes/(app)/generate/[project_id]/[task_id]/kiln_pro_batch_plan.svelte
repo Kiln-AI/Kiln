@@ -20,20 +20,23 @@
   // page, so only one solid primary shows at a time. Default keeps /generate
   // unchanged.
   export let generate_button_outline = false
-  // Header, its sub-line, and the regenerate button label. Defaults equal the
-  // /generate strings so that surface renders unchanged. The eval builder
-  // keeps the header and regenerate labels, and of these three overrides only
-  // the sub-line, which has to say what running its plan actually does; it
-  // renames the rows through the items_label/expanded_description props below.
+  // Header, its sub-line, and the regenerate button label. The regenerate
+  // default is shared copy both surfaces render, so neither overrides it. The
+  // eval builder overrides the header (what it lists is a proposed eval
+  // dataset) and the sub-line (which has to say what running its plan
+  // actually does); it renames the rows through the items_label /
+  // expanded_description props below.
   export let header_label = "Batch Plan"
   export let subheader =
     "Review the plan for generating your synthetic data batch."
-  export let regenerate_label = "New Batch Plan"
+  export let regenerate_label = "Refine Plan"
   // Passed straight to the prompts table: the noun for the plan's rows (which
-  // drives its header and aria-label together) and the sentence it shows when
-  // expanded. Defaults match the table's own, so /generate is unchanged.
+  // drives its header and aria-label together), the sentence it shows when
+  // expanded, and the header over the rows' first column. Defaults match the
+  // table's own, so /generate is unchanged.
   export let items_label = "Dataset Items"
   export let expanded_description: string | null | false = null
+  export let column_label = "Prompt"
 
   $: count = plan.prompts.length
 
@@ -85,5 +88,6 @@
     on_delete={on_delete_prompt}
     {items_label}
     {expanded_description}
+    {column_label}
   />
 </div>
