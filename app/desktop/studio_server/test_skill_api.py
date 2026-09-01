@@ -492,3 +492,420 @@ class TestAvailableToolsSkillIntegration:
         assert skill_set is not None
         assert len(skill_set["tools"]) == 1
         assert skill_set["tools"][0]["name"] == "active-skill"
+
+
+@pytest.fixture
+def saved_skill_with_resources(saved_skill):
+    (saved_skill.references_dir() / "guide.md").write_text("# Guide", encoding="utf-8")
+    (saved_skill.assets_dir() / "logo.png").write_bytes(b"\x89PNG\x00binary")
+    return saved_skill
+
+
+class TestCreateSkillWithFiles:
+    def test_create_with_files(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        import base64
+
+        sample_skill_data["files"] = [
+            {"path": "references/guide.md", "content": "# Guide"},
+            {
+                "path": "assets/logo.png",
+                "content": base64.b64encode(b"\x89PNG\x00").decode("ascii"),
+                "encoding": "base64",
+            },
+        ]
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        from kiln_ai.datamodel.skill import Skill
+
+        skill = Skill.from_id_and_parent_path(data["id"], test_project.path)
+        assert skill.read_reference("guide.md") == "# Guide"
+        assert skill.read_resource_bytes("assets/logo.png") == b"\x89PNG\x00"
+
+    def test_create_with_invalid_file_path_rejected(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        sample_skill_data["files"] = [
+            {"path": "scripts/run.py", "content": "# a script"}
+        ]
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 422
+        assert "must start with" in response.text
+
+    def test_create_with_invalid_base64_rejected(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        sample_skill_data["files"] = [
+            {
+                "path": "assets/logo.png",
+                "content": "not valid base64!!!",
+                "encoding": "base64",
+            }
+        ]
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 422
+        assert "base64" in response.text
+
+    def test_create_duplicate_name_allowed(
+        self, client, test_project, mock_project_from_id, sample_skill_data, saved_skill
+    ):
+        # Coexisting versions of a skill share a name and differ by id.
+        sample_skill_data["name"] = saved_skill.name
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 200
+        assert response.json()["id"] != saved_skill.id
+
+    def test_create_with_files_and_provenance(
+        self, client, test_project, mock_project_from_id, sample_skill_data, saved_skill
+    ):
+        # Provenance rides along with a bundle install: the atomic create path
+        # stamps it on the skill.kiln it commits.
+        sample_skill_data["files"] = [
+            {"path": "references/guide.md", "content": "# Guide"}
+        ]
+        sample_skill_data["provenance"] = {
+            "origin": "agent",
+            "derived_from_ids": [saved_skill.id],
+        }
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 200
+        from kiln_ai.datamodel.skill import Skill
+
+        skill = Skill.from_id_and_parent_path(response.json()["id"], test_project.path)
+        assert skill.provenance is not None
+        assert skill.provenance.origin == "agent"
+        assert skill.provenance.derived_from_ids == [saved_skill.id]
+        assert skill.read_reference("guide.md") == "# Guide"
+
+    def test_create_bad_lineage_installs_nothing(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        # Lineage is checked before staging, so a rejected create leaves no
+        # skill directory and no staging debris behind.
+        sample_skill_data["files"] = [
+            {"path": "references/guide.md", "content": "# Guide"}
+        ]
+        sample_skill_data["provenance"] = {
+            "origin": "human",
+            "derived_from_ids": ["does-not-exist"],
+        }
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 400
+        assert list(test_project.skills()) == []
+        assert not (test_project.path.parent / ".skill_staging").exists()
+
+
+class TestCloneSkillEndpoint:
+    def test_clone_copies_resources(
+        self, client, test_project, mock_project_from_id, saved_skill_with_resources
+    ):
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills/{saved_skill_with_resources.id}/clone",
+            json={"name": "cloned-skill", "description": "A clone."},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "cloned-skill"
+        from kiln_ai.datamodel.skill import Skill
+
+        clone = Skill.from_id_and_parent_path(data["id"], test_project.path)
+        assert clone.read_reference("guide.md") == "# Guide"
+        assert clone.read_resource_bytes("assets/logo.png") == b"\x89PNG\x00binary"
+        # Body defaults to the source skill's body
+        assert clone.body() == saved_skill_with_resources.body()
+
+    def test_clone_with_edited_body(
+        self, client, test_project, mock_project_from_id, saved_skill_with_resources
+    ):
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills/{saved_skill_with_resources.id}/clone",
+            json={
+                "name": "cloned-skill",
+                "description": "A clone.",
+                "body": "## Edited\n\nNew instructions.",
+            },
+        )
+        assert response.status_code == 200
+        from kiln_ai.datamodel.skill import Skill
+
+        clone = Skill.from_id_and_parent_path(response.json()["id"], test_project.path)
+        assert clone.body() == "## Edited\n\nNew instructions."
+
+    def test_clone_missing_source_404(self, client, test_project, mock_project_from_id):
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills/999999999999/clone",
+            json={"name": "cloned-skill", "description": "A clone."},
+        )
+        assert response.status_code == 404
+
+    def test_clone_may_reuse_source_name(
+        self, client, test_project, mock_project_from_id, saved_skill_with_resources
+    ):
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills/{saved_skill_with_resources.id}/clone",
+            json={
+                "name": saved_skill_with_resources.name,
+                "description": "A clone.",
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["id"] != saved_skill_with_resources.id
+
+    def test_clone_records_lineage(
+        self, client, test_project, mock_project_from_id, saved_skill_with_resources
+    ):
+        # A clone's provenance describes the clone, so the caller supplies it —
+        # including the derived_from_ids link back to the source.
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills/{saved_skill_with_resources.id}/clone",
+            json={
+                "name": "cloned-skill",
+                "description": "A clone.",
+                "provenance": {
+                    "origin": "human",
+                    "derived_from_ids": [saved_skill_with_resources.id],
+                },
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["provenance"]["derived_from_ids"] == [saved_skill_with_resources.id]
+        from kiln_ai.datamodel.skill import Skill
+
+        clone = Skill.from_id_and_parent_path(data["id"], test_project.path)
+        assert clone.provenance is not None
+        assert clone.provenance.origin == "human"
+        assert clone.read_reference("guide.md") == "# Guide"
+
+    def test_clone_without_provenance_is_none(
+        self, client, test_project, mock_project_from_id, saved_skill_with_resources
+    ):
+        # The source's provenance is never copied onto the clone.
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills/{saved_skill_with_resources.id}/clone",
+            json={"name": "cloned-skill", "description": "A clone."},
+        )
+        assert response.status_code == 200
+        assert response.json()["provenance"] is None
+
+    def test_clone_derived_from_unknown_sibling_400(
+        self, client, test_project, mock_project_from_id, saved_skill_with_resources
+    ):
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills/{saved_skill_with_resources.id}/clone",
+            json={
+                "name": "cloned-skill",
+                "description": "A clone.",
+                "provenance": {
+                    "origin": "human",
+                    "derived_from_ids": ["does-not-exist"],
+                },
+            },
+        )
+        assert response.status_code == 400
+        assert "unknown sibling" in response.json()["message"]
+
+
+class TestSkillResources:
+    def test_list_resources(
+        self, client, test_project, mock_project_from_id, saved_skill_with_resources
+    ):
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/{saved_skill_with_resources.id}/resources"
+        )
+        assert response.status_code == 200
+        resources = response.json()
+        assert [r["path"] for r in resources] == [
+            "assets/logo.png",
+            "references/guide.md",
+        ]
+        assert all(r["size_bytes"] > 0 for r in resources)
+
+    def test_list_resources_empty(
+        self, client, test_project, mock_project_from_id, saved_skill
+    ):
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/{saved_skill.id}/resources"
+        )
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_resource_content_text(
+        self, client, test_project, mock_project_from_id, saved_skill_with_resources
+    ):
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/{saved_skill_with_resources.id}/resource_content",
+            params={"path": "references/guide.md"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["encoding"] == "utf-8"
+        assert data["content"] == "# Guide"
+
+    def test_resource_content_binary(
+        self, client, test_project, mock_project_from_id, saved_skill_with_resources
+    ):
+        import base64
+
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/{saved_skill_with_resources.id}/resource_content",
+            params={"path": "assets/logo.png"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["encoding"] == "base64"
+        assert base64.b64decode(data["content"]) == b"\x89PNG\x00binary"
+
+    def test_resource_content_missing_404(
+        self, client, test_project, mock_project_from_id, saved_skill
+    ):
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/{saved_skill.id}/resource_content",
+            params={"path": "references/nope.md"},
+        )
+        assert response.status_code == 404
+
+    def test_resource_content_traversal_rejected(
+        self, client, test_project, mock_project_from_id, saved_skill
+    ):
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/{saved_skill.id}/resource_content",
+            params={"path": "references/../skill.kiln"},
+        )
+        assert response.status_code == 422
+
+
+class TestResourceEdgeCases:
+    def test_create_with_lone_surrogate_content_422(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        import json
+
+        # httpx refuses to encode lone surrogates, so send pre-encoded JSON
+        # (ensure_ascii escapes the surrogate; the server's json.loads
+        # reproduces it as a python str containing \ud800).
+        sample_skill_data["files"] = [{"path": "references/a.md", "content": "\ud800"}]
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            content=json.dumps(sample_skill_data),
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 422
+        # Rejected either at request parse (pydantic's string_unicode check)
+        # or by _decode_files — both are a 422 naming the encoding problem.
+        assert "UTF-8" in response.text or "unicode" in response.text.lower()
+
+    def test_decode_and_validation_errors_reported_together(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        # One request, one 422 carrying every failure: bad base64 and bad path.
+        sample_skill_data["files"] = [
+            {"path": "assets/a.png", "content": "not base64!!!", "encoding": "base64"},
+            {"path": "scripts/run.py", "content": "# a script"},
+        ]
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 422
+        assert "base64" in response.text
+        assert "must start with" in response.text
+
+    def test_wrapped_base64_accepted(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        import base64 as b64
+
+        wrapped = b64.encodebytes(b"\x89PNG\x00" * 100).decode("ascii")
+        assert "\n" in wrapped
+        sample_skill_data["files"] = [
+            {"path": "assets/logo.png", "content": wrapped, "encoding": "base64"}
+        ]
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 200
+
+    def test_duplicate_path_reported_even_when_first_decode_fails(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        sample_skill_data["files"] = [
+            {"path": "assets/a.png", "content": "bad!!", "encoding": "base64"},
+            {"path": "assets/a.png", "content": "aGVsbG8=", "encoding": "base64"},
+        ]
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 422
+        assert "base64" in response.text
+        assert "duplicate file path" in response.text
+
+    def test_file_content_over_char_cap_rejected_at_parse(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        from app.desktop.studio_server.skill_api import MAX_FILE_CONTENT_CHARS
+
+        sample_skill_data["files"] = [
+            {"path": "references/big.md", "content": "x" * (MAX_FILE_CONTENT_CHARS + 1)}
+        ]
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 422
+
+    def test_total_content_over_aggregate_cap_rejected_at_parse(
+        self, client, test_project, mock_project_from_id, sample_skill_data
+    ):
+        from app.desktop.studio_server.skill_api import (
+            MAX_FILE_CONTENT_CHARS,
+            MAX_TOTAL_CONTENT_CHARS,
+        )
+
+        per_file = MAX_FILE_CONTENT_CHARS - 1
+        count = MAX_TOTAL_CONTENT_CHARS // per_file + 1
+        sample_skill_data["files"] = [
+            {"path": f"references/f{i}.md", "content": "x" * per_file}
+            for i in range(count)
+        ]
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills",
+            json=sample_skill_data,
+        )
+        assert response.status_code == 422
+        assert "character cap" in response.text
+
+    def test_resource_content_over_size_limit_413(
+        self, client, test_project, mock_project_from_id, saved_skill
+    ):
+        from app.desktop.studio_server.skill_api import MAX_RESOURCE_CONTENT_BYTES
+
+        big = saved_skill.assets_dir() / "big.bin"
+        big.write_bytes(b"x" * (MAX_RESOURCE_CONTENT_BYTES + 1))
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/{saved_skill.id}/resource_content",
+            params={"path": "assets/big.bin"},
+        )
+        assert response.status_code == 413

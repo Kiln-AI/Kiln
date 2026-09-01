@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, List, Union
 
 import yaml
 from pydantic import Field
@@ -15,6 +16,12 @@ if TYPE_CHECKING:
 
 
 SKILL_MD_FILENAME = "SKILL.md"
+
+RESOURCE_DIR_NAMES = ("references", "assets")
+
+
+class ResourceTooLargeError(ValueError):
+    """A resource file exceeds the caller's size limit."""
 
 
 class Skill(KilnParentedModel):
@@ -91,10 +98,17 @@ class Skill(KilnParentedModel):
         """Read an asset file. Raises ValueError for path traversal, non-text, or if the path is a folder, FileNotFoundError if missing."""
         return self._read_resource(self.assets_dir(), relative_path)
 
-    def _read_resource(self, base_dir: Path, relative_path: str) -> str:
-        """Read a resource file, validating it resolves within base_dir and is readable text."""
+    def _resolve_resource(self, base_dir: Path, relative_path: str) -> Path:
+        """Resolve a resource path, validating it stays within base_dir and is not a folder."""
         if not relative_path or not relative_path.strip():
             raise ValueError("Path cannot be empty")
+
+        # A symlinked resource root would become the containment base after
+        # resolve(), silently exposing whatever it points at.
+        if base_dir.is_symlink():
+            raise ValueError(
+                f"Resource directory {base_dir.name!r} is a symlink, which is not allowed"
+            )
 
         target = base_dir / relative_path
         try:
@@ -106,6 +120,11 @@ class Skill(KilnParentedModel):
         if resolved.is_dir():
             raise ValueError(f"Path is a folder, not a file: {relative_path}")
 
+        return resolved
+
+    def _read_resource(self, base_dir: Path, relative_path: str) -> str:
+        """Read a resource file, validating it resolves within base_dir and is readable text."""
+        resolved = self._resolve_resource(base_dir, relative_path)
         try:
             return resolved.read_text(encoding="utf-8")
         except FileNotFoundError:
@@ -116,6 +135,94 @@ class Skill(KilnParentedModel):
             raise ValueError(
                 f"File is not a readable text file: {relative_path}"
             ) from None
+
+    def _resource_base_dir(self, prefixed_path: str) -> tuple[Path, str]:
+        """Split a 'references/…' or 'assets/…' path into (base_dir, relative_path)."""
+        prefix, sep, relative_path = prefixed_path.partition("/")
+        if prefix not in RESOURCE_DIR_NAMES or not sep or not relative_path:
+            raise ValueError(
+                f"Resource path must start with 'references/' or 'assets/' followed by a filename: {prefixed_path!r}"
+            )
+        # Explicit per-directory mapping — never fall back to a default dir, so
+        # a future addition to RESOURCE_DIR_NAMES fails loudly here instead of
+        # silently reading the wrong directory.
+        if prefix == "references":
+            base_dir = self.references_dir()
+        elif prefix == "assets":
+            base_dir = self.assets_dir()
+        else:
+            raise ValueError(f"Resource directory {prefix!r} has no reader configured")
+        return base_dir, relative_path
+
+    def read_resource_text(self, prefixed_path: str) -> str:
+        """Read a resource file as UTF-8 text.
+
+        prefixed_path must start with 'references/' or 'assets/'. Raises ValueError
+        for invalid paths, path traversal, or non-text content; FileNotFoundError
+        if missing.
+        """
+        base_dir, relative_path = self._resource_base_dir(prefixed_path)
+        return self._read_resource(base_dir, relative_path)
+
+    def read_resource_bytes(
+        self, prefixed_path: str, max_bytes: int | None = None
+    ) -> bytes:
+        """Read any resource file as bytes (binary-safe).
+
+        prefixed_path must start with 'references/' or 'assets/'. Raises ValueError
+        for invalid paths or path traversal, FileNotFoundError if missing, and
+        ResourceTooLargeError if max_bytes is set and the file exceeds it (checked
+        while reading, so a file growing mid-read cannot slip past the cap).
+        """
+        base_dir, relative_path = self._resource_base_dir(prefixed_path)
+        resolved = self._resolve_resource(base_dir, relative_path)
+        try:
+            if max_bytes is None:
+                return resolved.read_bytes()
+            with open(resolved, "rb") as file:
+                data = file.read(max_bytes + 1)
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"Resource file not found: {prefixed_path}"
+            ) from None
+        if len(data) > max_bytes:
+            raise ResourceTooLargeError(
+                f"Resource is over the {max_bytes} byte limit: {prefixed_path}"
+            )
+        return data
+
+    def list_resources_with_sizes(self) -> List[tuple[str, int]]:
+        """List every regular file under references/ and assets/ with its size
+        in bytes, as sorted ('references/…' / 'assets/…', size) pairs.
+        Symlinks are skipped."""
+        resources: List[tuple[str, int]] = []
+        for base_dir in (self.references_dir(), self.assets_dir()):
+            # Skip symlinked roots: walking one would list files outside the
+            # skill bundle.
+            if not base_dir.is_dir() or base_dir.is_symlink():
+                continue
+            for root, _dirs, files in os.walk(base_dir, followlinks=False):
+                root_path = Path(root)
+                for filename in files:
+                    file_path = root_path / filename
+                    try:
+                        if file_path.is_symlink() or not file_path.is_file():
+                            continue
+                        size = file_path.stat().st_size
+                    except OSError:
+                        # File vanished mid-walk (e.g. the user is editing the
+                        # folder directly) — skip it.
+                        continue
+                    relative = file_path.relative_to(base_dir).as_posix()
+                    try:
+                        relative.encode("utf-8")
+                    except UnicodeEncodeError:
+                        # A non-UTF-8 filename (surrogateescape-decoded) can't
+                        # be JSON-encoded or round-tripped through the API —
+                        # skip it rather than failing the whole listing.
+                        continue
+                    resources.append((f"{base_dir.name}/{relative}", size))
+        return sorted(resources)
 
     def save_skill_md(self, body: str) -> None:
         """Write SKILL.md with YAML frontmatter (name, description) + markdown body.

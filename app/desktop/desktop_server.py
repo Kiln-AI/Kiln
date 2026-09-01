@@ -16,6 +16,7 @@ from kiln_ai.adapters.remote_config import (
     refresh_model_list_background,
     should_skip_remote_model_list,
 )
+from kiln_ai.datamodel.skill_bundle import sweep_stale_skill_staging
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.logging import setup_litellm_logging
 
@@ -113,6 +114,9 @@ async def lifespan(app: FastAPI):
     # Set datamodel strict mode on startup
     original_strict_mode = datamodel_strict_mode.strict_mode()
     datamodel_strict_mode.set_strict_mode(True)
+
+    # Clean up skill staging debris orphaned by a hard crash (best-effort)
+    sweep_stale_skill_staging(Config.shared().projects or [])
 
     try:
         await _start_background_syncs()

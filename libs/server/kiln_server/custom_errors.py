@@ -11,6 +11,13 @@ from pydantic import ValidationError
 logger = logging.getLogger(__name__)
 
 
+def safe_str(value) -> str:
+    """Stringify for a JSON response: user input can contain lone surrogates,
+    which JSONResponse cannot encode as UTF-8 — echoing them back verbatim
+    would turn a 4xx into a 500 at response encoding."""
+    return str(value).encode("utf-8", errors="replace").decode("utf-8")
+
+
 def format_error_loc(loc: tuple):
     if not loc:
         return ""
@@ -56,15 +63,17 @@ def connect_custom_errors(app: FastAPI):
             if "String should match pattern '^[A-Za-z0-9 _-]+$'" == message:
                 message = "must consist of only letters, numbers, spaces, hyphens, and underscores"
 
-            error_messages.append(f"{format_error_loc(loc)}: {message}")
+            error_messages.append(safe_str(f"{format_error_loc(loc)}: {message}"))
 
         def serialize_error(error):
             return {
                 "type": error.get("type"),
-                "loc": [str(loc) for loc in error.get("loc", [])],
-                "msg": error.get("msg"),
-                "input": str(error.get("input")),
-                "ctx": {str(k): str(v) for k, v in error.get("ctx", {}).items()},
+                "loc": [safe_str(loc) for loc in error.get("loc", [])],
+                "msg": safe_str(error.get("msg")),
+                "input": safe_str(error.get("input")),
+                "ctx": {
+                    safe_str(k): safe_str(v) for k, v in error.get("ctx", {}).items()
+                },
             }
 
         serialized_errors = [serialize_error(error) for error in exc.errors()]
@@ -80,12 +89,26 @@ def connect_custom_errors(app: FastAPI):
         )
 
     # Wrap in a format that the client can understand (message, and error_messages)
+    def sanitize_detail(value):
+        # Details can be nested structures carrying request-derived strings
+        # (e.g. filenames); sanitize every string, preserve the shape.
+        if isinstance(value, str):
+            return safe_str(value)
+        if isinstance(value, dict):
+            return {
+                safe_str(k) if isinstance(k, str) else k: sanitize_detail(v)
+                for k, v in value.items()
+            }
+        if isinstance(value, (list, tuple)):
+            return [sanitize_detail(v) for v in value]
+        return value
+
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
         return JSONResponse(
             status_code=exc.status_code,
             headers={"Access-Control-Allow-Origin": "*"},
-            content={"message": exc.detail},
+            content={"message": sanitize_detail(exc.detail)},
         )
 
     @app.exception_handler(KilnRunError)

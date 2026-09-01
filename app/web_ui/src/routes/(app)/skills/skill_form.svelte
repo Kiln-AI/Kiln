@@ -67,23 +67,33 @@
     try {
       error = null
       submitting = true
-      const { data, error: api_error } = await client.POST(
-        "/api/projects/{project_id}/skills",
-        {
-          params: { path: { project_id } },
-          body: {
-            name,
-            description,
-            body,
-            // Stamp lineage: a clone derives from its source; a fresh create is
-            // human-origin with no parent. origin is required whenever provenance is set.
-            provenance:
-              clone_mode && skill_id
-                ? { origin: "human", derived_from_ids: [skill_id] }
-                : { origin: "human" },
-          },
-        },
-      )
+      // Clone uses a dedicated endpoint so the skill's reference and asset
+      // files are copied along with the SKILL.md content. Either way we stamp
+      // lineage: a clone derives from its source; a fresh create is
+      // human-origin with no parent. origin is required whenever provenance is set.
+      const { data, error: api_error } =
+        clone_mode && skill_id
+          ? await client.POST(
+              "/api/projects/{project_id}/skills/{skill_id}/clone",
+              {
+                params: { path: { project_id, skill_id } },
+                body: {
+                  name,
+                  description,
+                  body,
+                  provenance: { origin: "human", derived_from_ids: [skill_id] },
+                },
+              },
+            )
+          : await client.POST("/api/projects/{project_id}/skills", {
+              params: { path: { project_id } },
+              body: {
+                name,
+                description,
+                body,
+                provenance: { origin: "human" },
+              },
+            })
       if (api_error) {
         throw api_error
       }
