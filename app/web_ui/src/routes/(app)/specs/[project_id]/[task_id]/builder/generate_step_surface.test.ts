@@ -68,17 +68,20 @@ const drive_settings_dialog = region(
 )
 
 describe("plan surface copy", () => {
-  it("uses the shared component's default header and regenerate labels", () => {
-    // Deleted overrides, so the plan reads "Batch Plan" / "New Batch Plan" —
-    // the same words the synthetic data flow already shows.
-    expect(plan_surface).not.toContain("header_label=")
+  it("names the plan surface for the eval dataset it proposes", () => {
+    // The header is the one label this surface overrides: what it lists is a
+    // proposed eval dataset, not the synthetic data flow's batch. The
+    // regenerate button keeps the shared default, so no override there.
+    expect(normalize(plan_surface)).toContain(
+      'header_label="Eval Dataset Proposal"',
+    )
     expect(plan_surface).not.toContain("regenerate_label=")
   })
 
   it("renders the multi-turn subheader", () => {
     expect(
       contains(
-        "Kiln will run each item as a test conversation with your agent. Remove any you don't want before starting.",
+        "Here's the plan for your eval dataset. Kiln will run each item as a test conversation with your agent in the next step. Refine the plan if the coverage looks off.",
       ),
     ).toBe(true)
   })
@@ -86,7 +89,7 @@ describe("plan surface copy", () => {
   it("renders the single-turn subheader", () => {
     expect(
       contains(
-        "Kiln will run your task on each item. Remove any you don't want before starting.",
+        "Here's the plan for your eval dataset. Kiln will use this guidance to generate each item in the next step. Refine the plan if the coverage looks off.",
       ),
     ).toBe(true)
   })
@@ -94,7 +97,7 @@ describe("plan surface copy", () => {
   it("labels the primary button with the artifact noun and the count", () => {
     expect(
       contains(
-        "generate_button_label={`Generate Traces (${batch_plan.prompts.length})`}",
+        "generate_button_label={`Generate Dataset (${batch_plan.prompts.length} items)`}",
       ),
     ).toBe(true)
   })
@@ -114,23 +117,27 @@ describe("plan drafting screen", () => {
     "$: generate_animation_warning =",
   )
 
-  it("uses the synthetic data flow's title, with no arm-specific noun", () => {
-    expect(planning_copy).toContain(`? "Planning Batch"`)
+  it("names what is being planned, with no arm-specific noun", () => {
+    expect(planning_copy).toContain(`? "Planning Eval Dataset"`)
     expect(planning_copy).not.toContain("Drafting Scenarios")
     expect(planning_copy).not.toContain("Planning Test Inputs")
   })
 
-  it("describes the batch with each arm's artifact noun and the chosen count", () => {
+  it("describes the batch with each arm's artifact noun and no count", () => {
+    // The count is deliberately absent: the planner can return fewer lines
+    // than asked for, so quoting the request here would promise a size the
+    // plan screen then contradicts.
     expect(
       contains(
-        "`Kiln is planning a diverse batch of ${eval_input_count} traces, tailored to your task and guidance.`",
+        '"Kiln is planning a diverse batch of conversations, tailored to your task and guidance."',
       ),
     ).toBe(true)
     expect(
       contains(
-        "`Kiln is planning a diverse batch of ${eval_input_count} test inputs, tailored to your task and guidance.`",
+        '"Kiln is planning a diverse batch of eval data, tailored to your task and guidance."',
       ),
     ).toBe(true)
+    expect(planning_copy).not.toContain("${eval_input_count}")
   })
 })
 
@@ -164,7 +171,7 @@ describe("ruled vocabulary", () => {
 
   it("sends both arms back to the same plan screen", () => {
     expect(page_source).not.toContain("Back to Scenarios")
-    // One label for both arms, matching the Batch Plan surface it leads to.
+    // One label for both arms, matching the plan surface it leads to.
     expect(contains("Plan Batch")).toBe(true)
     expect(page_source).not.toContain("Plan Traces")
     expect(page_source).not.toContain("Plan Test Inputs")
@@ -415,7 +422,7 @@ describe("Generation Settings dialog", () => {
 
   it("submits with the artifact noun and the planned count", () => {
     expect(
-      contains("submit_label={`Generate Traces (${planned_total})`}"),
+      contains("submit_label={`Generate Dataset (${planned_total} items)`}"),
     ).toBe(true)
   })
 
@@ -505,19 +512,21 @@ describe("New Batch Plan dialog", () => {
     expect(mentions("on_new_plan_with_confirm")).toBe(0)
   })
 
-  it("names the action it performs, in both the title and the submit", () => {
-    // This dialog only re-plans — it generates nothing — so it echoes the
-    // button that opens it rather than borrowing the drive's verb.
-    expect(normalize(new_plan_dialog)).toContain('title="New Batch Plan"')
+  it("names the action it performs, never the drive's verb", () => {
+    // This dialog only re-plans — it generates nothing — so neither label may
+    // borrow the drive's verb. The title says which plan it replaces; the
+    // submit still echoes the shared regenerate button that opens it.
+    expect(normalize(new_plan_dialog)).toContain('title="New Dataset Plan"')
     expect(normalize(new_plan_dialog)).toContain(
       'submit_label="New Batch Plan"',
     )
     expect(new_plan_dialog).not.toContain("Generate Batch")
     expect(new_plan_dialog).not.toContain("Generate Trace Batch")
+    expect(new_plan_dialog).not.toContain("Generate Dataset")
   })
 
   it("wraps the shared batch form with the ruled count label", () => {
-    expect(normalize(new_plan_dialog)).toContain('count_label="Trace Count"')
+    expect(normalize(new_plan_dialog)).toContain('count_label="Item Count"')
     expect(normalize(new_plan_dialog)).toContain('guidance_id="plan_steer"')
   })
 

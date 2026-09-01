@@ -4106,12 +4106,13 @@
       case "refine":
         return "Check the details"
       case "generate":
-        return "Create eval data"
+        return "Creating Eval"
       case "review":
         // Verdict-neutral on purpose: half of every batch passes by design,
-        // so a fault-presuming headline would blame agents that behaved —
-        // and the reviewer grades the AGENT's work, never the judge.
-        return "Grade the results"
+        // so a fault-presuming headline would blame agents that behaved. The
+        // name points at the judge because that is what this step calibrates;
+        // each case's own verdict is still about the AGENT's work.
+        return "Validate the Judge"
       case "save":
         return "Save your eval"
       case "done":
@@ -4193,7 +4194,7 @@
   // arm-specific words for the arm-specific stages.
   $: generate_animation_title =
     generation_phase === "planning"
-      ? "Planning Batch"
+      ? "Planning Eval Dataset"
       : generation_phase === "authoring_judge"
         ? "Authoring Judge"
         : generation_phase === "preflight"
@@ -4204,8 +4205,8 @@
   $: generate_animation_description =
     generation_phase === "planning"
       ? is_multi_turn
-        ? `Kiln is planning a diverse batch of ${eval_input_count} traces, tailored to your task and guidance.`
-        : `Kiln is planning a diverse batch of ${eval_input_count} test inputs, tailored to your task and guidance.`
+        ? "Kiln is planning a diverse batch of conversations, tailored to your task and guidance."
+        : "Kiln is planning a diverse batch of eval data, tailored to your task and guidance."
       : generation_phase === "authoring_judge"
         ? "Authoring a judge rubric tailored to your eval."
         : generation_phase === "preflight"
@@ -4546,7 +4547,7 @@
             <svelte:component
               this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
               title="Preparing Review"
-              description={`Flagging possible mistakes in each ${judged_noun} for you to review.`}
+              description="Finding the examples where your judgment is most useful."
               warning={null}
             />
             <div class="flex flex-col items-center mt-2">
@@ -4648,17 +4649,18 @@
                  its cost warning. -->
             <KilnProBatchPlan
               plan={batch_plan}
+              header_label="Eval Dataset Proposal"
               summary_out_of_sync={batch_plan_edited}
               subheader={is_multi_turn
-                ? "Kiln will run each item as a test conversation with your agent. Remove any you don't want before starting."
-                : "Kiln will run your task on each item. Remove any you don't want before starting."}
+                ? "Here's the plan for your eval dataset. Kiln will run each item as a test conversation with your agent in the next step. Refine the plan if the coverage looks off."
+                : "Here's the plan for your eval dataset. Kiln will use this guidance to generate each item in the next step. Refine the plan if the coverage looks off."}
               on_generate_inputs={open_drive_settings}
               on_regenerate={open_new_plan_dialog}
               on_delete_prompt={on_delete_plan_prompt}
               hide_generate_button={has_data_accepted}
               generate_button_outline={has_driven_results &&
                 drive_stop !== null}
-              generate_button_label={`Generate Traces (${batch_plan.prompts.length})`}
+              generate_button_label={`Generate Dataset (${batch_plan.prompts.length} items)`}
               items_label="Items"
               expanded_description={false}
             />
@@ -4794,7 +4796,7 @@
             <svelte:component
               this={is_multi_turn ? ConversationAnimation : AnalyzingAnimation}
               title="Preparing Review"
-              description={`Flagging possible mistakes in each ${judged_noun} for you to review.`}
+              description="Finding the examples where your judgment is most useful."
               warning={null}
             />
             <div class="flex flex-col items-center mt-2">
@@ -4978,16 +4980,16 @@
 
 <!-- The New Batch Plan dialog: /generate's batch form rows (count stepper +
      guidance box) wrapped in a form this page owns, so the destructive
-     warning, the size and the steer are all settled by one click. Title and
-     submit both name the action, because that is all this dialog does: it
-     re-plans, it generates nothing. The guidance box starts EMPTY — a
-     prefilled template invites editing a prompt the user didn't write, and a
+     warning, the size and the steer are all settled by one click. The title
+     names the action, because that is all this dialog does: it re-plans, it
+     generates nothing. The guidance box starts EMPTY — a prefilled
+     template invites editing a prompt the user didn't write, and a
      blank steer costs the planner nothing. That empty box is a valid
      submission, so the guidance field is marked optional: without it the
      default "just re-plan" path would fail validation and never submit. -->
 <Dialog
   bind:this={new_plan_dialog}
-  title="New Batch Plan"
+  title="New Dataset Plan"
   on:close={discard_plan_steer_draft}
 >
   <FormContainer
@@ -4999,7 +5001,7 @@
     <KilnProBatchForm
       bind:count={eval_input_count}
       count_max={NUM_CASES_MAX}
-      count_label="Trace Count"
+      count_label="Item Count"
       bind:guidance={plan_steer}
       guidance_id="plan_steer"
       guidance_optional={true}
@@ -5022,7 +5024,7 @@
      the user returns) and submit refuses to start. -->
 <Dialog bind:this={drive_settings_dialog} title="Generation Settings">
   <FormContainer
-    submit_label={`Generate Traces (${planned_total})`}
+    submit_label={`Generate Dataset (${planned_total} items)`}
     bind:submitting={drive_settings_submitting}
     error={drive_settings_error}
     on:submit={submit_drive_settings}
