@@ -113,7 +113,7 @@
     if (stage === "planning") return
 
     // Going back is destructive at both stages, and every route out of them —
-    // the in-app Back button, "New Batch Plan", and the browser's own back
+    // the in-app Back button, "Refine Plan", and the browser's own back
     // button — pops history. So confirm here, once, at the point the pop
     // actually happens. popstate can't be cancelled, so on "stay" we push the
     // entry back to re-sync history with the UI the user is still looking at.

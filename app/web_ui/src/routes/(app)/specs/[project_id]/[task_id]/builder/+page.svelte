@@ -61,7 +61,7 @@
   // Step 4 plan approval reuses the /generate batch-plan components — one
   // plan-review surface across the app rather than a builder-local fork.
   import KilnProBatchPlan from "../../../../generate/[project_id]/[task_id]/kiln_pro_batch_plan.svelte"
-  // The New Batch Plan dialog reuses /generate's batch form rows (count
+  // The Refine Plan dialog reuses /generate's batch form rows (count
   // stepper + guidance box) so both flows ask for a batch the same way.
   import KilnProBatchForm from "../../../../generate/[project_id]/[task_id]/kiln_pro_batch_form.svelte"
   import {
@@ -429,7 +429,7 @@
   }
 
   // Restore silently — no resume prompt. The three-tier destructive-action
-  // confirms (New Batch Plan etc.) are the reset escape hatch, so a stale
+  // confirms (Refine Plan etc.) are the reset escape hatch, so a stale
   // draft never traps the user.
   async function restore_draft() {
     const { store, initialized, persist } = indexedDBStore(
@@ -950,7 +950,7 @@
 
   // Default size of one batch (conversations to drive, or single-turn inputs
   // to run) — what the first plan asks for before the user picks a size in
-  // the New Batch Plan dialog. The dialog's ceiling is the server's cap
+  // the Refine Plan dialog. The dialog's ceiling is the server's cap
   // (NUM_CASES_MAX in libs/core/kiln_ai/synthetic_user/runner.py, mirrored by
   // the batch-plan and pipeline routes), not this number.
   const NUM_CASES = 40
@@ -1245,8 +1245,8 @@
   // than return early while the lanes are still null.
   let lanes_prepopulated: Promise<void> | null = null
 
-  // ── New Batch Plan dialog. Replaces the native confirm on the regenerate
-  // button: the same warning now rides a form that also asks how many traces
+  // ── Refine Plan dialog. Replaces the native confirm on the regenerate
+  // button: the same warning now rides a form that also asks how many items
   // to plan and what to steer the planner toward.
   let new_plan_dialog: Dialog | null = null
   let new_plan_submitting = false
@@ -1802,7 +1802,7 @@
     batch_plan_edited = true
   }
 
-  // New Batch Plan ALWAYS warns — a plan alone costs minutes to make. The
+  // Refine Plan ALWAYS warns — a plan alone costs minutes to make. The
   // warning rides inside the dialog (above its submit) rather than a native
   // confirm, so the same click that accepts the loss also chooses the size
   // and steer of what replaces it.
@@ -2000,7 +2000,7 @@
       // config — so a re-drive with both byte-unchanged (the
       // fix-config-then-drive-again recovery loop) reuses the cached cases
       // instead of re-paying the multi-minute copilot call. Any plan edit
-      // or New Batch Plan misses the cache.
+      // or Refine Plan misses the cache.
       //
       // A batch whose every slot is filled but which is short of the plan
       // lost cases to upstream salvage. Retrying with the cached list would
@@ -4861,7 +4861,7 @@
   </AppPage>
 </div>
 
-<!-- The New Batch Plan dialog: /generate's batch form rows (count stepper +
+<!-- The Refine Plan dialog: /generate's batch form rows (count stepper +
      guidance box) wrapped in a form this page owns, so the destructive
      warning, the size and the steer are all settled by one click. The title
      names the action, because that is all this dialog does: it re-plans, it
