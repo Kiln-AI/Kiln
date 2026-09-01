@@ -3013,27 +3013,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/copilot/classify_spec_description": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Classify Spec Description
-         * @description Spec classification is not implemented; returns 501 so callers
-         *     can fall back to manual selection.
-         */
-        post: operations["classify_spec_description_api_copilot_classify_spec_description_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/copilot/clarify_spec": {
         parameters: {
             query?: never;
@@ -5282,48 +5261,6 @@ export interface components {
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
             judge_result: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
             sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi"];
-        };
-        /**
-         * ClassifySpecDescriptionInput
-         * @description Free-text description of an eval the user wants to build. The
-         *     endpoint maps it to a `SpecType` and pre-fills the property_values for
-         *     that type so the v2 builder can skip the template-carousel step
-         *     entirely.
-         */
-        ClassifySpecDescriptionInput: {
-            /**
-             * Description
-             * @description Free-text description of what the eval should check.
-             */
-            description: string;
-            /**
-             * Task Prompt
-             * @description Optional task prompt for context (improves classification accuracy when the spec relates to a specific task).
-             */
-            task_prompt?: string | null;
-        };
-        /**
-         * ClassifySpecDescriptionOutput
-         * @description Classified spec type + suggested name + spec_type-specific property
-         *     values. Keys in `property_values` correspond to `FieldConfig.key`
-         *     entries in `spec_field_configs[spec_type]` (see
-         *     app/web_ui/src/routes/(app)/specs/[project_id]/[task_id]/select_template/spec_templates.ts).
-         */
-        ClassifySpecDescriptionOutput: {
-            /** @description The classified spec type. */
-            spec_type: components["schemas"]["SpecType"];
-            /**
-             * Suggested Name
-             * @description A filename-safe name for the new spec, derived from the description.
-             */
-            suggested_name: string;
-            /**
-             * Property Values
-             * @description Pre-filled property values for the chosen spec_type. Keys correspond to the field_configs of that spec_type.
-             */
-            property_values: {
-                [key: string]: string;
-            };
         };
         /** ClientVersionPolicy */
         ClientVersionPolicy: {
@@ -11922,12 +11859,6 @@ export interface components {
              */
             target_specification: string;
         };
-        /**
-         * SpecType
-         * @description Defines the type of spec.
-         * @enum {string}
-         */
-        SpecType: "desired_behaviour" | "issue" | "tone" | "formatting" | "localization" | "appropriate_tool_use" | "reference_answer_accuracy" | "factual_correctness" | "hallucinations" | "completeness" | "toxicity" | "bias" | "maliciousness" | "nsfw" | "taboo" | "jailbreak" | "prompt_leakage";
         /**
          * SpecificationInput
          * @description The specification to refine.
@@ -20679,39 +20610,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PublicPromptOptimizationJobResultResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    classify_spec_description_api_copilot_classify_spec_description_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ClassifySpecDescriptionInput"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ClassifySpecDescriptionOutput"];
                 };
             };
             /** @description Validation Error */

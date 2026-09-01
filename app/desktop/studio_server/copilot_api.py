@@ -32,7 +32,7 @@ from kiln_ai.datamodel.spec import (
     SyntheticDataGenerationStepConfig,
     TaskSample,
 )
-from kiln_ai.datamodel.spec_properties import SpecProperties, SpecType
+from kiln_ai.datamodel.spec_properties import SpecProperties
 from kiln_ai.datamodel.task_output import TaskOutputRating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
@@ -190,40 +190,6 @@ async def copilot_passthrough_payload(
     payload = input.model_dump(exclude={"project_id", "task_id"})
     payload["target_task_info"] = task_info_payload(task_info)
     return payload
-
-
-class ClassifySpecDescriptionInput(BaseModel):
-    """Free-text description of an eval the user wants to build. The
-    endpoint maps it to a `SpecType` and pre-fills the property_values for
-    that type so the v2 builder can skip the template-carousel step
-    entirely.
-    """
-
-    description: str = Field(
-        description="Free-text description of what the eval should check."
-    )
-    task_prompt: str | None = Field(
-        default=None,
-        description="Optional task prompt for context (improves classification "
-        "accuracy when the spec relates to a specific task).",
-    )
-
-
-class ClassifySpecDescriptionOutput(BaseModel):
-    """Classified spec type + suggested name + spec_type-specific property
-    values. Keys in `property_values` correspond to `FieldConfig.key`
-    entries in `spec_field_configs[spec_type]` (see
-    app/web_ui/src/routes/(app)/specs/[project_id]/[task_id]/select_template/spec_templates.ts).
-    """
-
-    spec_type: SpecType = Field(description="The classified spec type.")
-    suggested_name: str = Field(
-        description="A filename-safe name for the new spec, derived from the description."
-    )
-    property_values: dict[str, str] = Field(
-        description="Pre-filled property values for the chosen spec_type. "
-        "Keys correspond to the field_configs of that spec_type."
-    )
 
 
 class MultiTurnSaveInfo(BaseModel):
@@ -783,24 +749,6 @@ def persist_spec_save(
 
 
 def connect_copilot_api(app: FastAPI):
-    @app.post(
-        "/api/copilot/classify_spec_description",
-        tags=["Copilot"],
-        openapi_extra=agent_policy_require_approval(
-            "Classify a free-text spec description?"
-        ),
-    )
-    async def classify_spec_description(
-        input: ClassifySpecDescriptionInput,
-    ) -> ClassifySpecDescriptionOutput:
-        """Spec classification is not implemented; returns 501 so callers
-        can fall back to manual selection.
-        """
-        raise HTTPException(
-            status_code=501,
-            detail="Spec classification isn't implemented yet.",
-        )
-
     @app.post(
         "/api/copilot/clarify_spec",
         tags=["Copilot"],

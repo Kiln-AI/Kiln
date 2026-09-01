@@ -957,18 +957,6 @@ class TestCreateSpecWithCopilot:
         assert task.eval_inputs() == []
 
 
-class TestClassifySpecDescription:
-    """Stub endpoint. Returns 501 until kiln_server ships the real classifier."""
-
-    def test_returns_501(self, client):
-        response = client.post(
-            "/api/copilot/classify_spec_description",
-            json={"description": "A classification request"},
-        )
-
-        assert response.status_code == 501
-
-
 class TestCreateSpecWithCopilotMultiTurn:
     """Multi-turn save path: tag existing chain leaves (golden/train) and mint
     EvalInputs from the driven cases instead of synthesising new examples.
