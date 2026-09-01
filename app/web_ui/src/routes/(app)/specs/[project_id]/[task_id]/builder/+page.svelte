@@ -372,7 +372,6 @@
     ? {
         description,
         continued_description,
-        spec_type,
         name,
         prefilled_name,
         property_values,
@@ -446,7 +445,6 @@
       // Pre-pairing drafts have no such key: null restores the "no Continue on
       // record" state, which the gate's fallback already covers.
       continued_description = saved.continued_description ?? null
-      spec_type = saved.spec_type
       name = saved.name
       // Pre-prefill-tracking drafts have no such key: null restores the "no
       // machine claim on record" state, so the saved name is left as the
@@ -577,9 +575,9 @@
 
   // ── Step 1 state
   let description = ""
-  // Defaulting to "issue" keeps the refine + save shapes valid even when
-  // classification fails or is unavailable.
-  let spec_type: SpecType = "issue"
+  // Every eval this builder authors is an issue spec; the refine and save
+  // shapes are built around that one type.
+  const spec_type: SpecType = "issue"
   let name = ""
   // The name the machine last wrote. While `name` still matches it — or the
   // field is empty — the field is machine-owned and a newer suggestion may
@@ -591,12 +589,10 @@
     issue_examples: "",
     non_issue_examples: "",
   }
-  let classifying = false
-  let classify_error: string | null = null
-  // The description the last Continue processed (the text classify ran on).
-  // Questions pair against this, not the live textarea, so a browser Forward
-  // past an edit the user never continued from keeps the question set that
-  // still matches the classified property_values.
+  // The description the last Continue processed. Questions pair against this,
+  // not the live textarea, so a browser Forward past an edit the user never
+  // continued from keeps the question set that still matches the
+  // property_values on record.
   let continued_description: string | null = null
   // The text questions are paired against; the live description only when no
   // Continue is on record (a first entry, or a draft saved before this key).
@@ -628,86 +624,20 @@
     }
   }
 
-  // Call classify_spec_description to map the free-text Step 1 description
-  // to a spec_type + suggested name + structured property_values. On error
-  // we keep the "issue" defaults so the user can still proceed and fill in
-  // property_values via the Q&A / Refine steps.
-  async function classify_then_continue() {
-    classifying = true
-    classify_error = null
-    // Pin the description this Continue is processing before any await, so the
-    // request and everything derived from it describe the same text even if the
-    // user edits the textarea mid-flight.
+  // Step 1's Continue: record the description as the issue text and move to
+  // the clarifying questions. The description is pinned to a local first so
+  // everything derived from this Continue describes the same text.
+  function continue_from_describe() {
     const source = description
-    try {
-      const { data, error } = await client.POST(
-        "/api/copilot/classify_spec_description",
-        {
-          body: {
-            description: source,
-            task_prompt: task?.instruction ?? null,
-          },
-          signal: new_copilot_abort_signal(),
-        },
-      )
-      if (error || !data) {
-        classify_error =
-          "Couldn't classify your description. Continuing with the default 'issue' type."
-        // Seed the "issue" fallback shape here rather than before the await:
-        // the success path replaces property_values wholesale, and seeding
-        // early would leak an edit into the effective spec text on a Continue
-        // that never lands (abort or network error).
-        property_values = {
-          ...property_values,
-          issue_description: source,
-        }
-        continued_description = source
-        // A new Continue is a fresh attempt: a stale question failure from the
-        // previous source must not block regeneration on this one.
-        questions_error = null
-        goto_step("clarify")
-        return
-      }
-      // Land the classified state and the pairing record together, before the
-      // name prefill's un-abortable await: a Forward during that window must
-      // not pair the old question set against this Continue.
-      spec_type = data.spec_type as SpecType
-      // The classifier returns the property_values dict already keyed for
-      // this spec_type. Cast to the looser Record shape consumed by
-      // Questions and the refine form.
-      property_values = data.property_values as Record<string, string | null>
-      continued_description = source
-      // A new Continue is a fresh attempt: a stale question failure from the
-      // previous source must not block regeneration on this one.
-      questions_error = null
-      // Prefill the Eval Name while the field is still machine-owned: a name
-      // this code wrote tracks the model's latest run, so rewriting the
-      // description and continuing again renames the eval after the new one.
-      // Typing in the field takes ownership and ends the tracking. The
-      // suggester is deterministic over similar descriptions, so a second eval
-      // on this task would regenerate a taken name — take the nearest available
-      // variant instead (best-effort).
-      // The server does not constrain the suggestion: an invalid one would land
-      // in the field and block the Step 3 gate, so it is dropped here the same
-      // way the refine prefill drops one.
-      if (
-        should_prefill_suggested_name(name, prefilled_name) &&
-        data.suggested_name &&
-        filename_string_short_validator(data.suggested_name) === null
-      ) {
-        name =
-          (await resolve_available_name(data.suggested_name))?.name ??
-          data.suggested_name
-        prefilled_name = name
-      }
-      goto_step("clarify")
-    } catch (e) {
-      if (is_abort_error(e)) return
-      classify_error =
-        e instanceof Error ? e.message : "Couldn't classify your description."
-    } finally {
-      classifying = false
+    property_values = {
+      ...property_values,
+      issue_description: source,
     }
+    continued_description = source
+    // A new Continue is a fresh attempt: a stale question failure from the
+    // previous source must not block regeneration on this one.
+    questions_error = null
+    goto_step("clarify")
   }
 
   // ── Step 2 state — questions
@@ -784,8 +714,8 @@
   // surface declared to the refine call. Edits for any other field are
   // discarded before they can reach the saved spec (the user never saw
   // them) and reported for telemetry.
-  // The builder is issue-type-only end to end (save also hardcodes the
-  // issue spec_type); this list must move with spec_type if that changes.
+  // The builder authors issue specs only, end to end: save hardcodes the
+  // issue spec_type, and issue_description is the one field it writes.
   const RENDERED_REFINE_FIELDS: readonly string[] = ["issue_description"]
   let refined_property_values: Record<string, string | null> = {}
   // Snapshot of refined_property_values as the CODE last wrote it (refine
@@ -794,19 +724,26 @@
   // only content a failed refine may discard. Null (draft-restored values)
   // reads as user-owned.
   let refined_values_programmatic_json: string | null = null
-  // Snapshot of the classified values that same write was derived from. A
+  // Snapshot of the Step 1/2 property_values that same write was derived from. A
   // failure only discards programmatic content once this no longer matches the
   // current property_values — otherwise the refined text still fits the
   // description on screen and is worth keeping.
   let refined_values_derived_from_json: string | null = null
   let suggested_edits: Record<string, SuggestedEdit> = {}
+  // The Issue Description field's info tooltip on Step 3. Says the text was
+  // rewritten and carries the model's own reason, so the "why" sits on the
+  // field it explains instead of a separate caption below it.
+  $: refine_info_description = suggested_edits.issue_description
+    ?.reason_for_edit
+    ? `We crafted this based on your answers.\n\n${suggested_edits.issue_description.reason_for_edit}`
+    : ""
   let refine_form_error: KilnError | null = null
   let refined_preview_loading = false
   // Non-blocking: refinement failing still lands the user on an editable
   // refine step, but they should know their answers weren't incorporated.
   let refine_warning: string | null = null
 
-  // The classified values as the refine form sees them. Every snapshot and
+  // The Step 1/2 property_values as the refine form sees them. Every snapshot and
   // compare of the form's source goes through here, so both sides of a byte
   // compare are built the same way and key order can never differ.
   function rendered_source_json(): string {
@@ -911,8 +848,9 @@
         refine_response.suggested_name &&
         filename_string_short_validator(refine_response.suggested_name) === null
       ) {
-        // Same deterministic-suggester hazard as the classify prefill: take
-        // the nearest available variant of the suggestion (best-effort).
+        // The suggester is deterministic over similar descriptions, so a
+        // second eval on this task would regenerate a taken name. Take the
+        // nearest available variant instead (best-effort).
         name =
           (await resolve_available_name(refine_response.suggested_name))
             ?.name ?? refine_response.suggested_name
@@ -942,8 +880,8 @@
         ...split.refined_edits,
       }
       refined_values_programmatic_json = JSON.stringify(refined_property_values)
-      // The classified values this refine ran against (property_values is not
-      // touched during the call), so a later failure can tell whether the
+      // The property_values this refine ran against (they are not touched
+      // during the call), so a later failure can tell whether the
       // description behind these values has since moved.
       refined_values_derived_from_json = rendered_source_json()
       suggested_edits = split.suggested_edits
@@ -1589,7 +1527,7 @@
       drive_settings_error = new KilnError(
         is_multi_turn
           ? "Select a model to play the user and a judge model to continue."
-          : "Select a model to write the test inputs and a judge model to continue.",
+          : "Select a model to write the eval data and a judge model to continue.",
       )
       return
     }
@@ -2488,7 +2426,7 @@
     )
     if (start.error || !start.data) {
       throw new KilnError(
-        `Couldn't start writing the test inputs: ${createKilnError(start.error).getMessage()}`,
+        `Couldn't start writing the eval data: ${createKilnError(start.error).getMessage()}`,
       )
     }
     const job_id = start.data.job_id
@@ -2507,7 +2445,7 @@
       minting_done = data.completed
       if (data.status === "error") {
         throw new KilnError(
-          `Writing the test inputs failed: ${data.error_message ?? "unknown error"}`,
+          `Writing the eval data failed: ${data.error_message ?? "unknown error"}`,
         )
       }
       if (data.status === "complete") {
@@ -2530,9 +2468,7 @@
           if (r.error) case_failure_messages.push(r.error)
         }
         if (inputs.length === 0) {
-          throw new KilnError(
-            "None of the test inputs could be written. Try again.",
-          )
+          throw new KilnError("No eval data could be written. Try again.")
         }
         return inputs
       }
@@ -3753,7 +3689,7 @@
       // proposed). spec_text() applies the same precedence, so the saved
       // definition equals what generation/review saw.
       // The fallback filters to rendered fields like every other path, so
-      // classifier-authored example values can never reach the saved spec.
+      // seeded example values the form never showed can't reach the saved spec.
       const final_values =
         Object.keys(refined_property_values).length > 0
           ? refined_property_values
@@ -4023,9 +3959,9 @@
     // navigates away while the modal is still on screen.
     if (document.querySelector("dialog[open]")) return
     if (current_step === "describe") {
-      if (description.trim() && !classifying) {
+      if (description.trim()) {
         event.preventDefault()
-        classify_then_continue()
+        continue_from_describe()
       }
     } else if (current_step === "refine" && !refined_preview_loading) {
       // Same validator gate as the Next button; the in-flight guard lives
@@ -4100,11 +4036,11 @@
   function step_name_for(step: BuilderStep): string {
     switch (step) {
       case "describe":
-        return "Describe your eval"
+        return "Describe Your Eval"
       case "clarify":
-        return "A few questions"
+        return "Answer a Few Questions"
       case "refine":
-        return "Check the details"
+        return "Check the Details"
       case "generate":
         return "Creating Eval"
       case "review":
@@ -4114,42 +4050,9 @@
         // each case's own verdict is still about the AGENT's work.
         return "Validate the Judge"
       case "save":
-        return "Save your eval"
+        return "Save Your Eval"
       case "done":
         return "Eval Created"
-    }
-  }
-
-  // Per-step description, shown under the step line. Lifted to AppPage so the
-  // heading lives in the standard page header, matching v1.
-  function page_subtitle_for(step: BuilderStep): string | undefined {
-    switch (step) {
-      case "describe":
-        return "Describe a behaviour to enforce or avoid for your task. We'll build your eval from it."
-      case "clarify":
-        // The Questions component carries its own heading + explainer —
-        // a page-level subtitle here would say the same thing twice.
-        return undefined
-      case "refine":
-        return "We've drafted your eval from your answers. Edit anything that's off."
-      case "generate":
-        return is_multi_turn
-          ? "Kiln simulates a user talking to your agent to build your eval's test data."
-          : "Kiln plans test inputs, runs your task on each, and judges the results."
-      case "review":
-        // ONE string for both arms: they review the same way, so the only
-        // difference is the word for what was judged. The mistake framing
-        // lives at the STEP level, where it's true of the batch (some cases
-        // failed); each case's own verdict card says which way that one went.
-        // ~Half of every batch passes by design (balanced plan + stratified
-        // sample), so the per-case surface stays verdict-neutral.
-        return `A judge reviewed each test ${
-          is_multi_turn ? "conversation" : "run"
-        } in your eval data and flagged possible mistakes. Keep the real ones, dismiss the false alarms. You're reviewing ${review_target_count} of ${trace_claims.length}. Click a citation number to see where it happened.`
-      case "save":
-        return "Saving your eval and its test data."
-      case "done":
-        return undefined
     }
   }
 
@@ -4177,7 +4080,6 @@
       : `Step ${STEP_INDEX[current_step]} of ${TOTAL_STEPS}: ${step_name_for(
           current_step,
         )}`
-  $: page_subtitle = page_subtitle_for(current_step)
   $: page_max_w = page_max_w_for(current_step)
 
   // Total assistant turns expected across the whole batch — the denominator
@@ -4200,7 +4102,7 @@
         : generation_phase === "preflight"
           ? "Checking Configuration"
           : generation_phase === "minting_inputs"
-            ? "Writing Test Inputs"
+            ? "Writing Eval Data"
             : "Creating Simulated Users"
   $: generate_animation_description =
     generation_phase === "planning"
@@ -4213,10 +4115,10 @@
           ? `Checking that your run config, the ${
               is_multi_turn
                 ? "model that plays the user"
-                : "model that writes the test inputs"
+                : "model that writes the eval data"
             }, and the judge all respond before creating your eval data.`
           : generation_phase === "minting_inputs"
-            ? `Writing ${planned_total} test inputs from the approved plan.`
+            ? `Writing ${planned_total} items from the approved plan.`
             : `Setting up ${planned_total} simulated users from the approved plan.`
 
   // The long-wait line, on exactly the stages that run one long request with
@@ -4252,7 +4154,6 @@
   <AppPage
     title={page_title}
     subtitle={page_step_line}
-    sub_subtitle={page_subtitle ?? ""}
     breadcrumbs={[{ label: "Evals", href: `/specs/${project_id}/${task_id}` }]}
     no_y_padding
     action_buttons={reset_available
@@ -4290,7 +4191,6 @@
             inputType="textarea"
             height="medium"
             bind:value={description}
-            error_message={classify_error}
           />
 
           <div class="flex justify-between mt-8">
@@ -4298,27 +4198,20 @@
               >Cancel</button
             >
             <!-- FormContainer's compact submit spec (wide primary + keyboard
-                 hint), hand-rolled because this row isn't a FormContainer.
-                 The hint hides while the request is in flight, matching the
-                 shared container's submitting state. -->
+                 hint), hand-rolled because this row isn't a FormContainer. -->
             <button
               class="relative btn btn-primary min-w-64 px-12"
-              on:click={classify_then_continue}
-              disabled={!description.trim() || classifying}
+              on:click={continue_from_describe}
+              disabled={!description.trim()}
             >
-              {#if classifying}
-                <span class="loading loading-dots loading-sm"></span>
-                Classifying…
-              {:else}
-                Next
-                <span class="absolute opacity-80 right-4 text-xs font-light">
-                  {#if isMacOS()}
-                    <span class="tracking-widest">⌘↵</span>
-                  {:else}
-                    <span>ctrl ↵</span>
-                  {/if}
-                </span>
-              {/if}
+              Next
+              <span class="absolute opacity-80 right-4 text-xs font-light">
+                {#if isMacOS()}
+                  <span class="tracking-widest">⌘↵</span>
+                {:else}
+                  <span>ctrl ↵</span>
+                {/if}
+              </span>
             </button>
           </div>
 
@@ -4399,17 +4292,8 @@
                 inputType="textarea"
                 height="large"
                 bind:value={refined_property_values.issue_description}
+                info_description={refine_info_description}
               />
-              {#if suggested_edits.issue_description?.reason_for_edit}
-                <div class="text-xs text-gray-500 italic mt-2">
-                  <span
-                    class="tooltip tooltip-top before:z-50 before:whitespace-normal"
-                    data-tip={suggested_edits.issue_description.reason_for_edit}
-                  >
-                    We updated this based on your answers.
-                  </span>
-                </div>
-              {/if}
             </div>
 
             {#if refine_form_error}
@@ -4523,7 +4407,7 @@
             {:else}
               <AnalyzingAnimation
                 title="Creating Eval Data"
-                description="Running your task on each test input and judging the result."
+                description="Running your task on each item and judging the result."
                 warning={null}
               />
               <div class="flex flex-col items-center mt-2">
@@ -5068,8 +4952,8 @@
       </div>
     {:else}
       <AvailableModelsDropdown
-        label="Model that writes the test inputs"
-        info_description="Writes one test input from each approved plan line; your task then runs on them."
+        label="Model that writes the eval data"
+        info_description="Writes one item from each approved plan line; your task then runs on them."
         bind:model={input_gen_model_combined}
         bind:model_name={input_gen_model_id}
         bind:provider_name={input_gen_provider_id}

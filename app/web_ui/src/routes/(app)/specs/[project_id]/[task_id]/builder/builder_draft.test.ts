@@ -28,7 +28,6 @@ const full_draft: BuilderDraft = {
   // keeps the fixture discriminating for any future test that drives the real
   // save and restore paths.
   continued_description: "The agent must not fabricate refund policies.",
-  spec_type: "issue",
   name: "no-fabrication",
   // Deliberately NOT equal to name: this fixture is a user who renamed. Same
   // reason as continued_description above — distinctness is what would let a

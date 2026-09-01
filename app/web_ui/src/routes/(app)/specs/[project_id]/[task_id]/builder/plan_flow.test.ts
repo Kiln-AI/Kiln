@@ -366,7 +366,7 @@ describe("drive_stop_banner — preflight stop", () => {
       "Polite Hawk",
     )
     expect(banner).toContain(
-      "The model that writes the test inputs failed a test call: NotFoundError: model retired (gpt_5_4_mini via openrouter).",
+      "The model that writes the eval data failed a test call: NotFoundError: model retired (gpt_5_4_mini via openrouter).",
     )
     expect(banner).toContain(
       "Creating your eval data requires your OpenRouter API key.",
@@ -737,7 +737,7 @@ describe("drive_cost_warning", () => {
     )
   })
 
-  it("counts test inputs on the single-turn arm", () => {
+  it("counts items on the single-turn arm", () => {
     expect(
       drive_cost_warning({
         is_multi_turn: false,
@@ -745,11 +745,11 @@ describe("drive_cost_warning", () => {
         turns_per_case: 5,
       }),
     ).toBe(
-      "This will run your task on 40 test inputs and may use considerable credits.",
+      "This will run your task on 40 items and may use considerable credits.",
     )
   })
 
-  it("says one test input, not 1 test inputs", () => {
+  it("says one item, not 1 items", () => {
     // A one-row plan is reachable: the user can delete rows down to one.
     expect(
       drive_cost_warning({
@@ -758,7 +758,7 @@ describe("drive_cost_warning", () => {
         turns_per_case: 5,
       }),
     ).toBe(
-      "This will run your task on 1 test input and may use considerable credits.",
+      "This will run your task on 1 item and may use considerable credits.",
     )
   })
 

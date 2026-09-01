@@ -291,7 +291,7 @@ export function drive_stop_banner(
       f.lane === "synthetic-user driver"
         ? "The model that plays the user"
         : f.lane === "input generator"
-          ? "The model that writes the test inputs"
+          ? "The model that writes the eval data"
           : "The judge model"
     const model_clause = f.model ? ` (${f.model})` : ""
     const requirement = f.provider
@@ -386,7 +386,7 @@ export function drive_cost_warning(args: {
   turns_per_case: number
 }): string {
   if (!args.is_multi_turn) {
-    return `This will run your task on ${args.count} test input${
+    return `This will run your task on ${args.count} item${
       args.count === 1 ? "" : "s"
     } and may use considerable credits.`
   }

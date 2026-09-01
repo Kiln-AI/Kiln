@@ -7,7 +7,6 @@
 // deliberately NOT persisted — it depends on disk state that can change
 // under a saved draft, so restore never lands past the plan screen.
 
-import type { SpecType } from "$lib/types"
 import type { ModelChoice } from "$lib/eval/default_judge"
 import type { SuggestedEdit } from "../spec_utils"
 
@@ -106,7 +105,7 @@ export function should_prefill_suggested_name(
 // Whether a failed refine may discard the refine form's current values.
 // Content the user may have edited is never discarded (current must still be
 // byte-equal to what the code last wrote); programmatic content is discarded
-// only when the classified values it was derived from have changed underneath
+// only when the source values it was derived from have changed underneath
 // it. A transient failure with an unchanged source therefore keeps the good
 // refinement, and a null snapshot (values restored from a saved draft, where
 // authorship is unknowable) always means keep.
@@ -132,7 +131,6 @@ export type BuilderDraft = {
   // to this, so a reload must not swap the pairing target to an un-Continued
   // edit; drafts written before this key restore it as null.
   continued_description: string | null
-  spec_type: SpecType
   name: string
   // Which name the machine last wrote, so a reload keeps a still-untouched
   // suggestion replaceable; drafts from before this key restore null, which
@@ -181,7 +179,6 @@ export type BuilderDraft = {
 export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   description: "",
   continued_description: null,
-  spec_type: "issue",
   name: "",
   prefilled_name: null,
   property_values: {},

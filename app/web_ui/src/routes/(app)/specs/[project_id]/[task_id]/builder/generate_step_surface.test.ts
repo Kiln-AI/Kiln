@@ -155,7 +155,7 @@ const QUOTED_STRING = /"[^"]*"|'[^']*'|`[^`]*`/g
 
 describe("ruled vocabulary", () => {
   it("leaves no user-facing scenario wording on the page", () => {
-    // Rows are "items" and the artifact is "traces" / "test inputs". Comments
+    // Rows are "items" and the artifact is "traces" / "eval data". Comments
     // may still say scenario (it is the planner's own term); a shipped string
     // may not.
     const shipped = normalize(strip_comments(page_source))
@@ -437,10 +437,10 @@ describe("Generation Settings dialog", () => {
     )
     expect(
       contains(
-        'info_description="Writes one test input from each approved plan line; your task then runs on them."',
+        'info_description="Writes one item from each approved plan line; your task then runs on them."',
       ),
     ).toBe(true)
-    expect(contains('label="Model that writes the test inputs"')).toBe(true)
+    expect(contains('label="Model that writes the eval data"')).toBe(true)
   })
 
   it("names the judge lane per arm", () => {
