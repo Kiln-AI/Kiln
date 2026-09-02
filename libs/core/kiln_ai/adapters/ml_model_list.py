@@ -169,6 +169,7 @@ class ModelName(str, Enum):
     gemini_3_1_flash_lite_preview = "gemini_3_1_flash_lite_preview"
     gemini_3_1_pro_preview = "gemini_3_1_pro_preview"
     gemini_3_pro_preview = "gemini_3_pro_preview"
+    gemini_3_8_flash = "gemini_3_8_flash"
     gemini_3_7_flash = "gemini_3_7_flash"
     gemini_3_6_flash = "gemini_3_6_flash"
     gemini_3_5_flash = "gemini_3_5_flash"
@@ -2663,6 +2664,111 @@ built_in_models: List[KilnModel] = [
                 model_id="claude-3-5-haiku",
                 deprecated=True,
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
+            ),
+        ],
+    ),
+    # Gemini 3.8 Flash
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_3_8_flash,
+        friendly_name="Gemini 3.8 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-3.8-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                # 3.8 Flash exposes low/medium/high thinking levels (default medium)
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-3.8-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-3.8-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="medium",
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    # MP3 and OGG excluded: Vertex's content filter stochastically blocks
+                    # this model's transcriptions of compressed audio (finish_reason
+                    # content_filter; mp3 ~90%, ogg ~50% of requests). WAV is unaffected,
+                    # as are all audio types on gemini_api.
+                    KilnMimeType.WAV,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
             ),
         ],
     ),
