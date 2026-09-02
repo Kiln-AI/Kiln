@@ -2096,7 +2096,8 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-fable-5.1",
-                structured_output_mode=StructuredOutputMode.json_schema,
+                # OpenRouter routes Claude Fable to Bedrock/Azure backends that ignore response_format json_schema while reasoning is on (returns prose); use prompt-injected JSON instructions instead.
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 openrouter_reasoning_object=True,
                 available_thinking_levels=CLAUDE_FABLE_5_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="high",
