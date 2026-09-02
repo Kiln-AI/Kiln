@@ -6118,6 +6118,10 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+            # Together AI hosts Qwen/Qwen3.8-Flash but only in streaming-only mode
+            # (returns HTTP 400 "This model only supports streaming", code
+            # streaming_required), which Kiln's non-streaming adapter can't use.
+            # Omitted until Together supports non-streaming.
         ],
     ),
     # Qwen 3.8 27B
@@ -8277,6 +8281,12 @@ built_in_models: List[KilnModel] = [
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="zai-org/GLM-5.3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
         ],
     ),
     # GLM 5.3 Flash
@@ -8306,6 +8316,12 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="zai-org/GLM-5.3-Flash",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
             ),
         ],
     ),
