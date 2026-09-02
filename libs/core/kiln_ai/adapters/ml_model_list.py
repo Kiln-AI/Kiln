@@ -2090,6 +2090,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.claude,
         name=ModelName.claude_fable_5_1,
         friendly_name="Claude Fable 5.1",
+        featured_rank=1,
         editorial_notes="Anthropic's most powerful publicly-available model (Mythos-class). State-of-the-art across software engineering, knowledge work, and vision.",
         providers=[
             KilnModelProvider(
