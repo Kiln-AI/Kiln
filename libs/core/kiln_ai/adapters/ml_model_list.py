@@ -215,6 +215,7 @@ class ModelName(str, Enum):
     qwen_3p5_122b_a10b = "qwen_3p5_122b_a10b"
     qwen_3p5_27b = "qwen_3p5_27b"
     qwen_3p5_35b_a3b = "qwen_3p5_35b_a3b"
+    qwen_3p8_max = "qwen_3p8_max"
     qwen_3p8_2p4t_a95b = "qwen_3p8_2p4t_a95b"
     qwen_3p8_flash = "qwen_3p8_flash"
     qwen_3p8_27b = "qwen_3p8_27b"
@@ -6060,6 +6061,31 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
+        ],
+    ),
+    # Qwen 3.8 Max
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p8_max,
+        friendly_name="Qwen 3.8 Max",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.8-max",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/qwen3p8-max",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_function_calling=True,
+            ),
+            # Together AI does not host Qwen3.8-Max: the API returns HTTP 404
+            # "model_not_available" (unlike Qwen 3.7 Max, which Together hosts
+            # streaming-only). Omitted until Together adds it.
         ],
     ),
     # Qwen 3.8 2.4T A95B
