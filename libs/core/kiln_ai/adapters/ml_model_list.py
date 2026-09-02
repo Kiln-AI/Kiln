@@ -8322,6 +8322,17 @@ built_in_models: List[KilnModel] = [
                 model_id="zai-org/GLM-5.3-Flash",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
