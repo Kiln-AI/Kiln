@@ -216,6 +216,7 @@ class ModelName(str, Enum):
     qwen_3p5_122b_a10b = "qwen_3p5_122b_a10b"
     qwen_3p5_27b = "qwen_3p5_27b"
     qwen_3p5_35b_a3b = "qwen_3p5_35b_a3b"
+    qwen_3p8_max = "qwen_3p8_max"
     qwen_3p8_2p4t_a95b = "qwen_3p8_2p4t_a95b"
     qwen_3p8_flash = "qwen_3p8_flash"
     qwen_3p8_27b = "qwen_3p8_27b"
@@ -6112,6 +6113,31 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Qwen 3.8 Max
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p8_max,
+        friendly_name="Qwen 3.8 Max",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.8-max",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/qwen3p8-max",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                supports_function_calling=True,
+            ),
+            # Together AI does not host Qwen3.8-Max: the API returns HTTP 404
+            # "model_not_available" (unlike Qwen 3.7 Max, which Together hosts
+            # streaming-only). Omitted until Together adds it.
+        ],
+    ),
     # Qwen 3.8 2.4T A95B
     KilnModel(
         family=ModelFamily.qwen,
@@ -6168,6 +6194,10 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+            # Together AI hosts Qwen/Qwen3.8-Flash but only in streaming-only mode
+            # (returns HTTP 400 "This model only supports streaming", code
+            # streaming_required), which Kiln's non-streaming adapter can't use.
+            # Omitted until Together supports non-streaming.
         ],
     ),
     # Qwen 3.8 27B
@@ -8327,6 +8357,12 @@ built_in_models: List[KilnModel] = [
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="zai-org/GLM-5.3",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
         ],
     ),
     # GLM 5.3 Flash
@@ -8356,6 +8392,23 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MOV,
                 ],
                 multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="zai-org/GLM-5.3-Flash",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
