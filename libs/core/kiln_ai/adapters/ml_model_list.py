@@ -6182,13 +6182,11 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 supports_function_calling=True,
             ),
-            KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                model_id="accounts/fireworks/models/qwen3p8-max",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_data_gen=True,
-                supports_function_calling=True,
-            ),
+            # Fireworks does not host a distinct Qwen 3.8 Max: the slug
+            # accounts/fireworks/models/qwen3p8-max is an alias whose catalog
+            # page is titled "Qwen3.8-2.4T-A95B" (canonical id
+            # accounts/fireworks/models/qwen3p8-2p4t-a95b), i.e. it resolves to
+            # the Qwen 3.8 2.4T A95B model, not Max. Omitted to avoid misrouting.
             # Together AI does not host Qwen3.8-Max: the API returns HTTP 404
             # "model_not_available" (unlike Qwen 3.7 Max, which Together hosts
             # streaming-only). Omitted until Together adds it.
@@ -6209,7 +6207,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
-                model_id="accounts/fireworks/models/qwen3p8-max",
+                model_id="accounts/fireworks/models/qwen3p8-2p4t-a95b",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_data_gen=True,
                 supports_function_calling=True,
