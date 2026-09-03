@@ -390,8 +390,14 @@ export function drive_cost_warning(args: {
       args.count === 1 ? "" : "s"
     } and may use considerable credits.`
   }
-  const total_turns = args.count * args.turns_per_case
-  return `This will run ${total_turns} model turns (${args.count} x ${args.turns_per_case}) and may use considerable credits.`
+  // Spelled out rather than "N x M": the multiplication told the reader the
+  // arithmetic but not what was being multiplied. "Up to", because the turn
+  // count is a cap the conversation can finish under, not a quota it fills.
+  return `This will run ${args.count} conversation${
+    args.count === 1 ? "" : "s"
+  } of up to ${args.turns_per_case} turn${
+    args.turns_per_case === 1 ? "" : "s"
+  } each. Running multi-turn data generation and evaluation can be expensive. Calculate your costs before proceeding.`
 }
 
 // ── The preparing-review gate ────────────────────────────────────────────

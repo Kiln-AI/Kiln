@@ -158,6 +158,14 @@ describe("review_target", () => {
     expect(review_target(1)).toBe(1)
     expect(review_target(0)).toBe(0)
   })
+
+  it("stops growing past ten, so a bigger batch is not more review", () => {
+    // The default batch is 80, where a quarter would be 20. Reviewing is human
+    // work that does not scale with the batch, so the ask stays at ten and the
+    // answer key is simply shorter than the server's 25% ceiling.
+    expect(review_target(80)).toBe(10)
+    expect(review_target(200)).toBe(10)
+  })
 })
 
 describe("select_review_subset", () => {

@@ -725,7 +725,7 @@ describe("compact_batch_slots", () => {
 })
 
 describe("drive_cost_warning", () => {
-  it("states the turn multiplication on the multi-turn arm", () => {
+  it("states the conversation count and the turn ceiling on the multi-turn arm", () => {
     expect(
       drive_cost_warning({
         is_multi_turn: true,
@@ -733,7 +733,7 @@ describe("drive_cost_warning", () => {
         turns_per_case: 5,
       }),
     ).toBe(
-      "This will run 200 model turns (40 x 5) and may use considerable credits.",
+      "This will run 40 conversations of up to 5 turns each. Running multi-turn data generation and evaluation can be expensive. Calculate your costs before proceeding.",
     )
   })
 
@@ -778,11 +778,19 @@ describe("drive_cost_warning", () => {
     expect(a).toBe(b)
   })
 
-  it("multiplies through a changed turns_per_case", () => {
+  it("restates a changed turns_per_case", () => {
     expect(
       drive_cost_warning({ is_multi_turn: true, count: 7, turns_per_case: 3 }),
     ).toBe(
-      "This will run 21 model turns (7 x 3) and may use considerable credits.",
+      "This will run 7 conversations of up to 3 turns each. Running multi-turn data generation and evaluation can be expensive. Calculate your costs before proceeding.",
+    )
+  })
+
+  it("says one conversation of one turn, not 1 conversations of 1 turns", () => {
+    expect(
+      drive_cost_warning({ is_multi_turn: true, count: 1, turns_per_case: 1 }),
+    ).toBe(
+      "This will run 1 conversation of up to 1 turn each. Running multi-turn data generation and evaluation can be expensive. Calculate your costs before proceeding.",
     )
   })
 })

@@ -818,12 +818,18 @@ export function blind_label_from_verdict(
 
 // ── Subset review (both arms) ────────────────────────────────────────────
 
-// How many traces the reviewer must rate: the human-rated golden answer key
-// is capped at 25% of the batch runs server-side, so rating N//4 fills it
-// exactly. Floor of 1 — a batch with no rated trace has no answer key.
+// How many traces the reviewer must rate. The human-rated golden answer key is
+// capped at 25% of the batch runs server-side, so N//4 is what would fill it
+// exactly — but rating is human work and does not get cheaper as the batch
+// grows, so it stops at REVIEW_TARGET_MAX. Past that the answer key is
+// deliberately smaller than the server would allow: the server never pads
+// golden with unrated items, so a short rated set simply yields a shorter key.
+// Floor of 1 — a batch with no rated trace has no answer key at all.
+const REVIEW_TARGET_MAX = 10
+
 export function review_target(total: number): number {
   if (total <= 0) return 0
-  return Math.max(1, Math.floor(total / 4))
+  return Math.min(REVIEW_TARGET_MAX, Math.max(1, Math.floor(total / 4)))
 }
 
 // The reviews the save gate demands during a calibration round: the standard

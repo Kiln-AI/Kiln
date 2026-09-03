@@ -279,19 +279,19 @@ describe("the turns knob", () => {
   it("renders the stepper row only on the multi-turn arm", () => {
     // A single-turn run is one shot per input — a length control there would
     // be a knob that changes nothing.
-    expect(multi_turn_branch).toContain("Turns per conversation")
-    expect(single_turn_branch).not.toContain("Turns per conversation")
+    expect(multi_turn_branch).toContain("Max turns per conversation")
+    expect(single_turn_branch).not.toContain("Max turns per conversation")
     expect(single_turn_branch).not.toContain("<IncrementUi")
   })
 
   it("labels the row and pins its explanation as a tooltip", () => {
     expect(normalize(multi_turn_branch)).toContain(
-      "<span>Turns per conversation</span>",
+      "<span>Max turns per conversation</span>",
     )
     expect(normalize(multi_turn_branch)).toContain("font-medium text-sm")
     expect(
       contains(
-        'tooltip_text="One turn is one exchange: the user sends a message and your agent replies. More turns test deeper behavior and cost more."',
+        'tooltip_text="One turn is one exchange: the user sends a message and your agent replies. A conversation stops early once the simulated user has what it came for, so this is a ceiling rather than a target. A higher ceiling tests deeper behavior and costs more."',
       ),
     ).toBe(true)
   })
@@ -337,7 +337,7 @@ describe("the turns knob", () => {
     // the stepper re-quotes the run before the user spends on it, even though
     // nothing is committed until submit.
     const dialog = normalize(drive_settings_dialog)
-    expect(dialog.indexOf("Turns per conversation")).toBeLessThan(
+    expect(dialog.indexOf("Max turns per conversation")).toBeLessThan(
       dialog.indexOf("warning_message={drive_cost_message}"),
     )
     expect(contains("turns_per_case: staged_drive_turns_per_case,")).toBe(true)

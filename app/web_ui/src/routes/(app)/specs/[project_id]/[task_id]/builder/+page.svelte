@@ -953,7 +953,12 @@
   // the Refine Plan dialog. The dialog's ceiling is the server's cap
   // (NUM_CASES_MAX in libs/core/kiln_ai/synthetic_user/runner.py, mirrored by
   // the batch-plan and pipeline routes), not this number.
-  const NUM_CASES = 40
+  // Sized so the batch is still useful once it is split: part becomes the
+  // human-rated answer key and the rest is dealt train:val, so a batch this
+  // size leaves enough in every slice to train on later rather than only
+  // evaluate once. Growing it does NOT grow the review ask — that is capped
+  // (review_target), so the reviewer's work stays flat as the batch scales.
+  const NUM_CASES = 80
   // The largest batch the server will plan or drive. Mirrors NUM_CASES_MAX in
   // libs/core/kiln_ai/synthetic_user/runner.py, which the batch-plan and
   // pipeline routes enforce — asking for more is rejected before anything
@@ -2975,9 +2980,10 @@
     trace_claims,
     selected_trace_indices,
   )
-  // Save gate (both arms): the human-rated golden answer key caps at 25% of
-  // the batch runs server-side, so the reviewer must rate at least N//4
-  // traces — reviewing more is welcome, fewer starves the answer key. Capped
+  // Save gate (both arms): the reviewer must rate at least review_target
+  // traces — N//4 of the batch, but never more than ten, because rating is
+  // human work that does not get cheaper as the batch grows. Reviewing more is
+  // welcome, fewer starves the answer key. Capped
   // by what the round actually surfaced, every round: a re-judge shortfall or
   // a failed claims build can leave fewer traces on screen than the standard
   // target, and the gate must never demand reviews of traces it didn't show.
@@ -4085,7 +4091,8 @@
   // climbs steadily where the case count would sit still then jump). Uses
   // the DRIVEN case count and the DRIVEN length: salvage can drive fewer cases
   // than the plan has, and the bar must not restate itself against a length
-  // the running batch isn't using.
+  // the running batch isn't using. This is the MOST turns the batch can spend,
+  // not the number it will: a conversation that ends early spends fewer.
   $: multi_turn_total_turns =
     pipeline_total_cases * (driven_turns_per_case ?? drive_turns_per_case)
 
@@ -4396,9 +4403,13 @@
                 ></progress>
                 <!-- Turns, not cases: cases finish in concurrency waves, so
                      the turn count is the one that actually moves while the
-                     batch runs. It's the only live count on this screen. -->
+                     batch runs. It's the only live count on this screen.
+                     The denominator is a ceiling, not a total: conversations
+                     that end early leave the bar short of full, so it can
+                     jump to done rather than creep there. -->
                 <div class="font-light text-xs text-center mt-1">
-                  {multi_turn_turns_done} of {multi_turn_total_turns} turns complete{#if pipeline_failed_count > 0},
+                  {multi_turn_turns_done} of up to {multi_turn_total_turns} turns
+                  complete{#if pipeline_failed_count > 0},
                     {pipeline_failed_count} failed{/if}
                 </div>
               </div>
@@ -4935,11 +4946,11 @@
            below restates the spend as it moves. -->
       <div class="flex flex-row items-center gap-4">
         <div class="flex flex-row items-center grow font-medium text-sm">
-          <span>Turns per conversation</span>
+          <span>Max turns per conversation</span>
           <span class="grow"></span>
           <div class="text-gray-500">
             <InfoTooltip
-              tooltip_text="One turn is one exchange: the user sends a message and your agent replies. More turns test deeper behavior and cost more."
+              tooltip_text="One turn is one exchange: the user sends a message and your agent replies. A conversation stops early once the simulated user has what it came for, so this is a ceiling rather than a target. A higher ceiling tests deeper behavior and costs more."
             />
           </div>
         </div>
@@ -4980,11 +4991,18 @@
       quiet_suggested={true}
     />
     <!-- What the run costs, last child of the form so it sits directly above
-         the submit row (run_eval's placement). -->
+         the submit row (run_eval's placement). Multi-turn gets a red mark
+         rather than the usual amber one: every case there is a whole
+         conversation billed per turn on both sides, so the same item count
+         costs many times what it does single-turn, and this sits directly
+         above the button that commits the spend. Filled rather than bigger:
+         the ring mark is mostly empty at this size, so the error colour reads
+         amber next to a real amber one, and Warning styles its mark, never
+         its text. -->
     <Warning
-      warning_color="warning"
+      warning_color={is_multi_turn ? "error" : "warning"}
+      filled_icon={is_multi_turn}
       warning_message={drive_cost_message}
-      tight={true}
     />
   </FormContainer>
 </Dialog>
