@@ -20,7 +20,7 @@
   export let submitting: boolean
   export let warn_before_unload: boolean
   // Overridable so consumers can match their flow's advance-button wording
-  // (the v2 builder uses "Next"); default preserves v1's label.
+  // (the eval builder uses "Next").
   export let submit_label = "Continue"
 
   // Track the selected option for each question (bound to parent to survive remounts)

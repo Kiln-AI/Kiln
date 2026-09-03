@@ -710,8 +710,8 @@
       // The builder's own create-manually link is their way to the carousel.
       goto(`/specs/${project_id}/${task_id}/builder`)
     } else {
-      // Everyone else starts at the template picker; the Pro-vs-Manual
-      // workflow screen appears later, only for templates Kiln Pro can assist with.
+      // Everyone else starts at the template picker, which leads to the
+      // manual spec builder.
       goto(`/specs/${project_id}/${task_id}/select_template`)
     }
   }
