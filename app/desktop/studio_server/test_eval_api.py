@@ -6678,6 +6678,33 @@ class TestTestV2EvalDraft:
         assert response.status_code == 200
         assert response.json()["scores"]["accuracy"] == 0.0
 
+    @pytest.mark.parametrize(
+        "final_message,expected_score",
+        [
+            # Same expression and same expected_value both times. The only
+            # difference is whether `user` is there, so the 0.0 can only come
+            # from the extraction failing -- not from a value that never matched.
+            ('{"user": {"status": "hello"}}', 1.0),
+            ('{"status": "hello"}', 0.0),
+        ],
+        ids=["field_present", "field_missing"],
+    )
+    def test_missing_nested_field_scores_fail(
+        self, client, mock_task, mock_task_from_id, final_message, expected_score
+    ):
+        # Reaching into a value that isn't there is a scored FAIL, not a request error.
+        mock_task_from_id.return_value = mock_task
+        payload = self._payload()
+        payload["properties"]["value_expression"] = (
+            "(final_message | fromjson).user.status"
+        )
+        payload["eval_input"]["final_message"] = final_message
+        response = client.post(self._url(), json=payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["scores"]["accuracy"] == expected_score
+        assert body["skipped_reason"] is None
+
     def test_nothing_is_persisted(self, client, mock_task, mock_task_from_id):
         mock_task_from_id.return_value = mock_task
         response = client.post(self._url(), json=self._payload())

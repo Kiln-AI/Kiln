@@ -170,6 +170,19 @@ class TestExtractOutputValue:
         assert value == "val"
         assert fail_result is None
 
+    def test_empty_trace_scores_fail_not_missing_trace_skip(self):
+        # A trace that exists but is empty is not a missing trace: the run did
+        # produce one, it just has nothing in it. That scores FAIL, so the
+        # missing-trace skip must key off `is None`, not falsiness.
+        inp = _make_input(trace=[])
+        value, fail_result = extract_output_value(
+            "trace[-1].tool_calls[0].function.name", inp, _SAMPLE_SCORES
+        )
+        assert value is None
+        assert fail_result is not None
+        assert fail_result.skipped_reason is None
+        assert fail_result.scores == {"s1": 0.0, "s2": 0.0}
+
 
 # ---------------------------------------------------------------------------
 # stringify_for_match
