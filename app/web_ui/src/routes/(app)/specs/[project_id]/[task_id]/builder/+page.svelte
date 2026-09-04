@@ -4386,7 +4386,7 @@
                 warning={generate_animation_warning}
               />
               {#if generation_phase === "minting_inputs"}
-                <div class="flex flex-col items-center mt-2">
+                <div class="flex flex-col items-center mt-6">
                   <progress
                     class="progress w-56 progress-success"
                     value={minting_done}
@@ -4414,7 +4414,7 @@
                 description="Simulating conversations with your agent and judging each one."
                 warning={null}
               />
-              <div class="flex flex-col items-center mt-2">
+              <div class="flex flex-col items-center mt-6">
                 <progress
                   class="progress w-56 progress-success"
                   value={multi_turn_turns_done}
@@ -4438,7 +4438,7 @@
                 description="Running your task on each item and judging the result."
                 warning={null}
               />
-              <div class="flex flex-col items-center mt-2">
+              <div class="flex flex-col items-center mt-6">
                 <progress
                   class="progress w-56 progress-success"
                   value={judged_case_count + pipeline_failed_count}
@@ -4462,7 +4462,7 @@
               description="Finding the examples where your judgment is most useful."
               warning={null}
             />
-            <div class="flex flex-col items-center mt-2">
+            <div class="flex flex-col items-center mt-6">
               <progress
                 class="progress w-56 progress-success"
                 value={selected_claims_resolved}
@@ -4692,7 +4692,7 @@
               description="Re-checking your eval data with the improved judge."
               warning={null}
             />
-            <div class="flex flex-col items-center mt-2">
+            <div class="flex flex-col items-center mt-6">
               <progress
                 class="progress w-56 progress-success"
                 value={rejudged_done + rejudge_failed_live}
@@ -4712,7 +4712,7 @@
               description="Finding the examples where your judgment is most useful."
               warning={null}
             />
-            <div class="flex flex-col items-center mt-2">
+            <div class="flex flex-col items-center mt-6">
               <progress
                 class="progress w-56 progress-success"
                 value={selected_claims_resolved}
