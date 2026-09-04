@@ -1,8 +1,9 @@
 <script lang="ts">
-  // Trace modal for Claim/Evidence review. Hidden by default; opened either to
-  // view a whole trace or jumped to a specific [n] citation, where it scrolls
-  // to and highlights the cited span. Most reviewers never need the full
-  // trace; this is the escape hatch for hard calls.
+  // Trace modal for the claim review. Hidden by default; opened either to
+  // view a whole trace or jumped to a specific [n] citation (from the overview
+  // or a claim, the same citation shape either way), where it scrolls to and
+  // highlights the cited span. Most reviewers never need the full trace; this
+  // is the escape hatch for hard calls.
   //
   // Two arms, and the review component tells this one which it is on:
   //

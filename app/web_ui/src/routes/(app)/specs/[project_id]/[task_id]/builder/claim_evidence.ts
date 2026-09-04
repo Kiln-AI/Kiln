@@ -1,62 +1,73 @@
-// Claim/Evidence review — client mirror of the kiln_server buildClaimEvidence
-// task contract. Hand-mirrored because the task lives outside this repo's
+// Claim review — client mirror of the kiln_server buildClaimEvidence task
+// contract. Hand-mirrored because the task lives outside this repo's
 // generated API schema.
 //
 // The server task is PER-TRACE: one call distills one trace (raw_input +
-// raw_output) plus the judge's decision into atomic claim/evidence pairs plus
-// ONE top-level final judgement. The reviewer agrees/disagrees with each
-// without reading the whole trace. The UI holds N of these (one per generated
-// trace) and manages trace identity itself, since the server output carries
-// no id.
+// raw_output) plus the judge's decision into an Overview the reviewer reads
+// first and a short list of claims, each one decision the judge made, written
+// so the reviewer can agree or disagree with it from the card alone. The UI
+// holds N of these (one per generated trace) and manages trace identity
+// itself, since the server output carries no id.
 
 import type { components } from "$lib/api_schema"
 import type { TraceMessage } from "$lib/types"
 
 export type CitationSource = "input" | "output"
 
-// The verdict an AGREE on a claim supports. On the final judgement this
-// always equals the judge's verdict (the server pins it deterministically);
-// on other claims it's a direction bit — claims pointing opposite the judge
-// are counter-evidence for catching a wrong judge.
-export type ExpectedResult = "pass" | "fail"
+// The judge's binary verdict, and the reviewer's overall call in the same
+// vocabulary.
+export type JudgeScore = "pass" | "fail"
 
 // A start+end anchor into raw_input/raw_output. The parser highlights the span
 // from the first occurrence of `from` through the end of `to`. Snippets (not
 // long quotes) keep the model fast — it doesn't recite verbatim text.
 export type Citation = {
-  marker: number // the [n] referenced inline in evidence
+  marker: number // the [n] referenced inline in the text
   source: CitationSource
   from: string
   to: string
 }
 
+// One decision the judge made, written so the reviewer can vote on it from
+// the card alone. `text` carries the claim, its evidence and its inline [n]
+// markers in one string; every marker resolves via `citations`. Grades have
+// one direction on every claim: agree means the judge got this decision
+// right, disagree means it got it wrong.
+//
+// `is_verdict` marks the claim that states the overall pass/fail. The builder
+// may omit it; when present it is the LAST claim. The studio sets the flag
+// from the builder's own opener convention, so nothing here parses prose to
+// find the verdict.
 export type Claim = {
-  claim: string
-  expected_result: ExpectedResult
-  // One sentence with inline [n] markers; counter-points folded into a
-  // "…, though …" clause. Markers resolve via `citations`.
-  evidence: string
+  text: string
+  citations: Citation[]
+  is_verdict: boolean
+}
+
+// The neutral summary the reviewer reads before the claims. Same prose shape
+// as a claim: [n] markers restart at [1] here and in each claim.
+export type Overview = {
+  text: string
   citations: Citation[]
 }
 
-// The one overall verdict entry — top-level, no longer a claim in the list.
-// Structurally identical to Claim; kept as an alias so call sites read right.
-export type FinalJudgement = Claim
-
-// What buildClaimEvidence returns for a single trace. `claims` may be EMPTY
-// (trivial single-property evals) — the final judgement always exists.
+// What buildClaimEvidence returns for a single trace: the overview, then one
+// to eight claims in reading order.
 export type BuildClaimEvidenceOutput = {
+  overview: Overview
   claims: Claim[]
-  final_judgement: FinalJudgement
 }
 
-// What buildClaimEvidence takes for a single trace.
+// What buildClaimEvidence takes for a single trace. The studio adds
+// task_instruction itself (context for what the task is, never a rubric);
+// the UI sends the rest.
 export type BuildClaimEvidenceInput = {
+  task_instruction: string
   raw_input: string
   raw_output: string
   eval_rubric: string
   judge_reasoning: string
-  judge_score: ExpectedResult
+  judge_score: JudgeScore
 }
 
 // ── Client-side per-trace bundle ─────────────────────────────────────────
@@ -72,16 +83,16 @@ export type ClaimsBuildState = "unbuilt" | "building" | "built" | "error"
 // from run_cases_batch, or the single-turn pipeline's persisted run — that
 // the save path writes the golden rating onto and calibration rounds
 // re-judge through; null/"" when the runner emitted no id for a case.
-// claims/final_judgement are null until claims_state is "built".
+// overview/claims are null until claims_state is "built".
 export type TraceClaims = {
   trace_id: string
   leaf_run_id: string | null
   raw_input: string
   raw_output: string
-  judge_score: ExpectedResult
+  judge_score: JudgeScore
   judge_reasoning: string
+  overview: Overview | null
   claims: Claim[] | null
-  final_judgement: FinalJudgement | null
   claims_state: ClaimsBuildState
   claims_error: string | null
   // The run's structured trace. On multi-turn it is what the judge saw and
@@ -95,7 +106,7 @@ export type TraceClaims = {
 // ── Human review (UI output) ─────────────────────────────────────────────
 
 // Server claims carry no id, so verdicts are positional (index into
-// TraceClaims.claims). The final judgement gets its own slot.
+// TraceClaims.claims).
 export type ClaimVerdict = {
   agrees: boolean | null // null = not yet reviewed
   why: string // required when the human disagrees — feeds the refine loop
@@ -104,7 +115,69 @@ export type ClaimVerdict = {
 export type TraceReview = {
   trace_id: string
   claim_verdicts: ClaimVerdict[]
-  final_judgement_verdict: ClaimVerdict
+  // The reviewer's overall call, asked outright ONLY when no claim is the
+  // verdict (the builder omitted it, or the build failed). When a verdict
+  // claim exists the overall call is derived from its grade and this stays
+  // null. See human_verdict.
+  overall: JudgeScore | null
+}
+
+// ── Claim text ───────────────────────────────────────────────────────────
+//
+// Claim and overview prose carries inline [n] markers. The card turns each
+// marker that resolves to a citation into a chip that opens the trace at the
+// cited span. A marker with NO citation stays as plain text: the model quotes
+// bracketed digits out of traces (a numbered list, a log line), and a chip
+// that opens nothing reads as evidence that is not there.
+
+export type ClaimTextToken =
+  | { kind: "text"; value: string }
+  | { kind: "cite"; n: number; citation: Citation }
+
+export function tokenize_claim_text(
+  text: string,
+  citations: Citation[],
+): ClaimTextToken[] {
+  const out: ClaimTextToken[] = []
+  let pending = ""
+  const flush = () => {
+    if (pending) out.push({ kind: "text", value: pending })
+    pending = ""
+  }
+  const re = /\[(\d+)\]/g
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    pending += text.slice(last, m.index)
+    const n = Number(m[1])
+    const citation = citations.find((c) => c.marker === n)
+    if (citation) {
+      flush()
+      out.push({ kind: "cite", n, citation })
+    } else {
+      pending += m[0]
+    }
+    last = m.index + m[0].length
+  }
+  pending += text.slice(last)
+  flush()
+  return out
+}
+
+// The builder's "Note:" convention: a blank line, then a paragraph opening
+// "Note:", trailing the claim. It renders apart from the claim and muted. The
+// body is everything else — the "We suggest …" sentence included, since that
+// is part of the ask, not an aside.
+export function split_claim_note(text: string): {
+  body: string
+  note: string | null
+} {
+  const at = text.search(/\n[ \t]*\n[ \t]*(?=Note:)/)
+  if (at < 0) return { body: text, note: null }
+  return {
+    body: text.slice(0, at).trimEnd(),
+    note: text.slice(at).trimStart(),
+  }
 }
 
 // ── Citation resolution ──────────────────────────────────────────────────
@@ -748,8 +821,8 @@ export function build_trace_reviews(traces: TraceClaims[]): TraceReview[] {
   // when their claims arrive (empty_claim_verdicts).
   return traces.map((t) => ({
     trace_id: t.trace_id,
-    claim_verdicts: (t.claims ?? []).map(() => ({ agrees: null, why: "" })),
-    final_judgement_verdict: { agrees: null, why: "" },
+    claim_verdicts: empty_claim_verdicts(t.claims ?? []),
+    overall: null,
   }))
 }
 
@@ -758,35 +831,39 @@ export function empty_claim_verdicts(claims: Claim[]): ClaimVerdict[] {
   return claims.map(() => ({ agrees: null, why: "" }))
 }
 
-// The blind final-judgement card for a trace whose claims build FAILED. The
-// distilled claims never arrived, but the overall pass/fail call is still
-// answerable from the transcript: judge_score pins the verdict headline and
-// judge_reasoning is the only context (no citations — there are no built
-// claim spans to anchor, so the reviewer opens the full trace to decide).
-// Grading this lets an errored trace count as reviewed (is_trace_reviewed
-// needs only the final judgement) and reach the save gate on the blind
-// verdict alone — the sole recovery short of a paid re-drive.
-export function blind_final_judgement(trace: TraceClaims): FinalJudgement {
-  return {
-    claim: trace.judge_reasoning,
-    expected_result: trace.judge_score,
-    evidence: "",
-    citations: [],
-  }
+// Index of the claim carrying the overall verdict, or -1 when the builder
+// omitted it. At most one claim is flagged (the studio flags only the last).
+export function verdict_claim_index(
+  trace: Pick<TraceClaims, "claims">,
+): number {
+  return (trace.claims ?? []).findIndex((c) => c.is_verdict)
 }
 
-// A trace is reviewed once the final judgement has an agree/disagree and
-// every disagreement (on any claim) carries a reason. Sub-claim verdicts are
-// optional — we force only the overall call plus reasons for dissent.
+export function has_verdict_claim(trace: Pick<TraceClaims, "claims">): boolean {
+  return verdict_claim_index(trace) >= 0
+}
+
+// A trace is reviewed once every claim on screen has a grade, every
+// disagreement carries a reason, and the overall call is known: derived from
+// the verdict claim's grade when the builder wrote one, otherwise answered
+// outright. A failed build has no claims, so only the outright answer counts.
+// Unbuilt and in-flight traces are never reviewed: nothing was presented.
 export function is_trace_reviewed(
   trace: TraceClaims,
   review: TraceReview | undefined,
 ): boolean {
   if (!review) return false
-  if (review.final_judgement_verdict.agrees === null) return false
-  return [...review.claim_verdicts, review.final_judgement_verdict].every(
+  if (trace.claims_state === "error") return review.overall !== null
+  if (trace.claims_state !== "built") return false
+  const claims = trace.claims ?? []
+  // Slots are sized when the claims arrive; until then nothing is gradable.
+  if (review.claim_verdicts.length !== claims.length) return false
+  const graded = review.claim_verdicts.every((v) => v.agrees !== null)
+  const reasoned = review.claim_verdicts.every(
     (v) => v.agrees !== false || v.why.trim().length > 0,
   )
+  if (!graded || !reasoned) return false
+  return has_verdict_claim(trace) || review.overall !== null
 }
 
 export function reviewed_trace_count(
@@ -796,24 +873,36 @@ export function reviewed_trace_count(
   return traces.filter((t, i) => is_trace_reviewed(t, reviews[i])).length
 }
 
-// ── Blind label ──────────────────────────────────────────────────────────
-
-export function blind_label_agrees(
-  judge_score: ExpectedResult,
-  user_says_pass: boolean,
-): boolean {
-  return user_says_pass === (judge_score === "pass")
+// The reviewer's overall call on a trace. When the builder wrote a verdict
+// claim, its grade IS the call: agree keeps the judge's verdict, disagree
+// flips it. When it omitted one, the call is the Pass/Fail the reviewer
+// answered outright. Null while unanswered.
+export function human_verdict(
+  trace: TraceClaims,
+  review: TraceReview,
+): JudgeScore | null {
+  const at = verdict_claim_index(trace)
+  if (at < 0) return review.overall
+  const agrees = review.claim_verdicts[at]?.agrees ?? null
+  if (agrees === null) return null
+  if (agrees) return trace.judge_score
+  return trace.judge_score === "pass" ? "fail" : "pass"
 }
 
-// That verdict read back as the reviewer's label. The verdict is what the
-// review state keeps, so a revisited trace can show the label its reviewer
-// already gave rather than a blank row. Null while the trace is ungraded.
-export function blind_label_from_verdict(
-  judge_score: ExpectedResult,
-  agrees: boolean | null,
-): boolean | null {
-  if (agrees === null) return null
-  return agrees === (judge_score === "pass")
+// The reviewer's overall verdict as the golden rating's boolean. Callers gate
+// on is_trace_reviewed; an unanswered call is refused rather than guessed,
+// because a guessed rating poisons the answer key silently.
+export function user_says_meets_spec(
+  trace: TraceClaims,
+  review: TraceReview,
+): boolean {
+  const verdict = human_verdict(trace, review)
+  if (verdict === null) {
+    throw new Error(
+      "Cannot read the reviewer's verdict before the trace is graded.",
+    )
+  }
+  return verdict === "pass"
 }
 
 // ── Subset review (both arms) ────────────────────────────────────────────
@@ -839,11 +928,13 @@ export function review_target(total: number): number {
 // reviewer was never shown. First-round subsets are sized to the target, so
 // this only ever bites mid-loop.
 // The subset the reviewer actually walks: the selected traces minus any whose
-// claims build FAILED. Such a trace carries nothing gradable — no distilled
-// claims, and an overall card that could only state the verdict the review is
-// built to withhold — so it drops out rather than becoming a dead screen.
-// Nothing is built to replace it: the claims gate has already finished paying
-// for the round's builds.
+// claims build FAILED. Such a trace carries no overview and no claims, so the
+// only grade it could take is the overall call answered from the raw
+// transcript, which is not the review this step is built around; it drops out
+// rather than becoming a transcript-reading exercise. Nothing is built to
+// replace it: the claims gate has already finished paying for the round's
+// builds. (The review component can still grade a trace that fails on screen
+// on its overall call; this filter is what keeps that off the wizard's path.)
 //
 // An excluded trace is an unselected one in every sense: never shown, so never
 // graded, so absent from the answer key and left to the train split unrated.
@@ -971,79 +1062,49 @@ export type GradedClaim = components["schemas"]["GradedClaim"]
 export type ClaimReviewPayload = components["schemas"]["ClaimReviewApi"]
 
 function graded_claim(claim: Claim, verdict: ClaimVerdict): GradedClaim {
+  // An ungraded claim has no honest encoding; refuse rather than write one.
+  if (verdict.agrees === null) {
+    throw new Error("Cannot record a grade the reviewer never gave.")
+  }
   return {
-    claim: claim.claim,
-    evidence: claim.evidence,
-    expected_result: claim.expected_result,
+    text: claim.text,
     human_grade: verdict.agrees ? "agree" : "disagree",
     human_feedback: verdict.why.trim() || null,
   }
 }
 
-// The final judgement the reviewer actually graded. Dispatches on the same
-// claims_state the review card renders from — "built" shows the distilled
-// judgement, "error" the blind verdict card — so the payload grades exactly
-// what was on screen. Null while the claims build is unbuilt or still
-// running: nothing was presented to grade yet.
-function reviewed_final_judgement(trace: TraceClaims): FinalJudgement | null {
-  if (trace.claims_state === "built") return trace.final_judgement
-  return trace.claims_state === "error" ? blind_final_judgement(trace) : null
-}
-
-// Build the persisted per-claim grades for one reviewed trace. Only claims
-// the reviewer actually graded are included (sub-claim verdicts are
-// optional). A trace reviewed on the blind verdict alone (a failed claims
-// build) grades that verdict with claims: [] — an absent claim is no signal,
-// never agreement. The save path deliberately diverges and persists
-// claim_review: null for those: the in-session refine loop consumes the blind
-// grade, but the persisted answer key records only reviews of built claims.
-// Throws while the claims build is unbuilt or still running.
+// Build the persisted grades for one reviewed trace: the overview the
+// reviewer read, every claim with its grade, and the overall call. Every
+// claim is graded by the time this runs (the gate demands it), so the record
+// never has to encode "not reviewed". Throws unless the claims are built and
+// the trace is fully graded: an invented grade would contradict the golden
+// rating written beside it. Callers gate on is_trace_reviewed.
 export function build_claim_review_payload(
   trace: TraceClaims,
   review: TraceReview,
 ): ClaimReviewPayload {
-  const final_judgement = reviewed_final_judgement(trace)
-  if (!final_judgement) {
+  if (trace.claims_state !== "built" || !trace.claims || !trace.overview) {
     throw new Error("Cannot build a claim review before claims are built.")
   }
-  // An ungraded overall call has no honest encoding: graded_claim would write
-  // it as "disagree" while user_says_meets_spec reads it as agreement, so the
-  // same record would contradict itself in the answer key. Callers gate on
-  // is_trace_reviewed; this refuses rather than guesses if one ever doesn't.
-  if (review.final_judgement_verdict.agrees === null) {
+  const verdict = human_verdict(trace, review)
+  if (!is_trace_reviewed(trace, review) || verdict === null) {
     throw new Error("Cannot build a claim review before the trace is graded.")
   }
   return {
     judge_score: trace.judge_score,
     judge_reasoning: trace.judge_reasoning,
-    claims: (trace.claims ?? [])
-      .map((claim, i) => ({ claim, verdict: review.claim_verdicts[i] }))
-      .filter(({ verdict }) => verdict && verdict.agrees !== null)
-      .map(({ claim, verdict }) => graded_claim(claim, verdict)),
-    final_judgement: graded_claim(
-      final_judgement,
-      review.final_judgement_verdict,
+    overview: trace.overview.text,
+    claims: trace.claims.map((claim, i) =>
+      graded_claim(claim, review.claim_verdicts[i]),
     ),
+    human_verdict: verdict,
   }
 }
 
-// The reviewer's overall verdict on a trace: the judge's verdict (the final
-// judgement's expected_result is pinned to judge_score server-side), flipped
-// when the human disagrees with the final judgement.
-export function user_says_meets_spec(
-  trace: TraceClaims,
-  review: TraceReview,
-): boolean {
-  const judge_passes = trace.judge_score === "pass"
-  return review.final_judgement_verdict.agrees === false
-    ? !judge_passes
-    : judge_passes
-}
-
-// Concatenated disagree-whys across all claims (incl. the final judgement) —
-// the legacy free-text feedback field alongside the structured grades.
+// Concatenated disagree-whys across the claims — the legacy free-text
+// feedback field alongside the structured grades.
 export function disagreement_feedback(review: TraceReview): string {
-  return [...review.claim_verdicts, review.final_judgement_verdict]
+  return review.claim_verdicts
     .filter((v) => v.agrees === false && v.why.trim())
     .map((v) => v.why.trim())
     .join(" ")
@@ -1066,15 +1127,11 @@ export type RefineJudgeProposal = {
 }
 
 // Build the graded-traces payload for the refine call from the in-session
-// review. Every reviewed trace contributes: one with built claims sends its
-// claim grades, one reviewed on the blind verdict alone sends that verdict
-// with claims: []. Leaving the blind ones out dropped their disagreements
-// from grade_disagreement_count, so a review that disputed only blind
-// verdicts saw the plain Save CTA and shipped an un-refined judge the
-// reviewer had contradicted (disagreed_trace_indices counted that same trace,
-// and an all-blind refine retry had no traces to send). Half-reviewed traces
-// are no signal and stay out; trace_label is the durable run id when present,
-// else the client trace id (opaque — the refine prompt tolerates that).
+// review. Only fully graded traces with BUILT claims contribute: a trace
+// graded on the overall call alone (a failed build) has no claim grade to
+// hand the refiner, and a half-graded trace is no signal. trace_label is the
+// durable run id when present, else the client trace id (opaque — the
+// refine prompt tolerates that).
 export function build_graded_traces(
   traces: TraceClaims[],
   reviews: TraceReview[],
@@ -1084,8 +1141,8 @@ export function build_graded_traces(
     .filter(
       ({ trace, review }) =>
         review &&
-        is_trace_reviewed(trace, review) &&
-        reviewed_final_judgement(trace) !== null,
+        trace.claims_state === "built" &&
+        is_trace_reviewed(trace, review),
     )
     .map(({ trace, review }) => ({
       trace_label: trace.leaf_run_id || trace.trace_id,
@@ -1093,24 +1150,22 @@ export function build_graded_traces(
     }))
 }
 
-// How many graded traces carry a disagreement (on any claim or the final
-// judgement). This is the loop's entry predicate as a count, so the review
-// CTA flips to its refine label precisely when a save click would start a
-// calibration round, and the tooltip can name the number honestly.
+// How many graded traces carry a disagreement on any claim. This is the
+// loop's entry predicate as a count, so the review CTA flips to its refine
+// label precisely when a save click would start a calibration round, and
+// the tooltip can name the number honestly.
 export function grade_disagreement_count(
-  graded: Pick<ClaimReviewPayload, "claims" | "final_judgement">[],
+  graded: Pick<ClaimReviewPayload, "claims">[],
 ): number {
-  return graded.filter(
-    (t) =>
-      t.final_judgement.human_grade === "disagree" ||
-      t.claims.some((c) => c.human_grade === "disagree"),
+  return graded.filter((t) =>
+    t.claims.some((c) => c.human_grade === "disagree"),
   ).length
 }
 
 // Whether the reviewer pushed back anywhere in the graded set — the signal
 // that the judge needs refining before it ships.
 export function has_grade_disagreement(
-  graded: Pick<ClaimReviewPayload, "claims" | "final_judgement">[],
+  graded: Pick<ClaimReviewPayload, "claims">[],
 ): boolean {
   return grade_disagreement_count(graded) > 0
 }
@@ -1127,15 +1182,13 @@ export function refine_judge_tooltip(
   return `You disagreed with the judge on ${num_disagreements} ${items}. Kiln will improve the judge from your feedback and re-check your eval data, then you'll review once more.`
 }
 
-// Indices of traces carrying any explicit disagreement (on a claim or the
-// final judgement) — the highest-priority stratum of the next round's subset.
+// Indices of traces carrying any explicit disagreement on a claim — the
+// highest-priority stratum of the next round's subset.
 export function disagreed_trace_indices(reviews: TraceReview[]): number[] {
   return reviews
     .map((review, i) => ({ review, i }))
     .filter(({ review }) =>
-      [...review.claim_verdicts, review.final_judgement_verdict].some(
-        (v) => v.agrees === false,
-      ),
+      review.claim_verdicts.some((v) => v.agrees === false),
     )
     .map(({ i }) => i)
 }
@@ -1157,7 +1210,7 @@ export function disagreed_trace_indices(reviews: TraceReview[]): number[] {
 // drive time, re-echoed so citations and the trace modal stay anchored to
 // exactly what this round's judge saw.
 export type RejudgeCaseResult = {
-  judge_score: ExpectedResult
+  judge_score: JudgeScore
   judge_reasoning: string
   raw_input: string
   raw_output: string
@@ -1198,8 +1251,8 @@ export function apply_rejudge_results(
       raw_input: result.raw_input,
       raw_output: result.raw_output,
       trace: result.trace ?? t.trace,
+      overview: null,
       claims: null,
-      final_judgement: null,
       claims_state: "unbuilt",
       claims_error: null,
     }
@@ -1293,17 +1346,4 @@ export function strip_wrapping_code_fence(prompt: string): string {
   const text = (prompt ?? "").trim()
   const wrapped = /^```[^\n`]*\n([\s\S]*)\n```$/.exec(text)
   return wrapped ? wrapped[1] : prompt
-}
-
-// ── The verdict card's reason line ────────────────────────────────────────
-
-// The reason under the verdict card's deterministic headline. The claim
-// builder's contract (kiln_server KIL-773) makes final_judgement.claim the
-// substantive one-line reason ONLY — no verdict phrasing, "" when the model
-// has nothing beyond the claims (including the server's synthesized
-// backstop) — so this renders it verbatim and the empty string is the
-// exact, non-heuristic signal for the card's evidence fallback. The old
-// prefix-strip and circular-reason detection died with that contract.
-export function final_judgement_reason(text: string): string {
-  return text.trim()
 }
