@@ -104,7 +104,7 @@ def _su_driver_with_replies(
 
 @pytest.mark.asyncio
 async def test_drive_case_runs_exactly_turns_iterations() -> None:
-    """No early termination — loop always completes `turns` iterations."""
+    """Without a sentinel, the loop runs the full `turns` ceiling."""
     invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3", "a4"])
     su = _su_driver_with_replies(["u2", "u3", "u4"])
 
