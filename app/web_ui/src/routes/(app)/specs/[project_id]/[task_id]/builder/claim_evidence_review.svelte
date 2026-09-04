@@ -7,7 +7,7 @@
   //
   // The overall pass/fail call is derived from the verdict claim's grade when
   // the builder wrote one (it is always the last claim). When the builder
-  // omitted it, a Pass/Fail row after the claims asks the call outright. Next
+  // omitted it, a Pass/Fail row after the claims asks the call outright. Continue
   // is gated on the whole trace being graded (is_trace_reviewed).
   //
   // Subset review: `selected_indices` is the judge-stratified sample the
@@ -45,7 +45,7 @@
   export let on_save: () => void = () => {}
   // The review gate, computed by the parent (enough traces reviewed). Drives
   // the Save button's VISIBILITY (not just its enabled state): Save is hidden
-  // until the gate is met, then takes the Next slot on the last conversation.
+  // until the gate is met, then takes the Continue slot on the last conversation.
   export let save_disabled = true
   // The primary action's label and optional tooltip, parent-owned so the
   // button can say what the click actually does (a review with disagreements
@@ -114,7 +114,7 @@
     if (verdicts[current_index]) verdicts[current_index].overall = value
   }
 
-  // Prev/Next walk the selected sequence.
+  // Prev/Continue walk the selected sequence.
   function go_prev() {
     const prior = selected.filter((i) => i < current_index)
     if (prior.length > 0) current_index = prior[prior.length - 1]
@@ -127,8 +127,8 @@
   $: has_next = selected.some((i) => i > current_index)
   $: on_last_trace = !has_next
 
-  // Next is gated on the CURRENT conversation being fully answered. Save
-  // takes the Next slot on the last conversation, but only once the overall
+  // Continue is gated on the CURRENT conversation being fully answered. Save
+  // takes the Continue slot on the last conversation, but only once the overall
   // gate is met.
   $: current_reviewed = is_trace_reviewed(current, current_verdicts)
 </script>
@@ -258,10 +258,10 @@
   {/if}
 
   <!-- Bottom nav: the review-order count inline beside a right-aligned
-       [Previous][Next] cluster. Wizard-step navigation is the browser's
+       [Previous][Continue] cluster. Wizard-step navigation is the browser's
        Back/Forward. Previous walks back whenever there's an earlier trace;
-       Next is gated on finishing the current one. On the last conversation
-       the Next slot becomes the primary action. -->
+       Continue is gated on finishing the current one. On the last conversation
+       the Continue slot becomes the primary action. -->
   <div class="flex flex-col items-end gap-1 mt-8">
     <div class="flex items-center gap-2">
       <!-- Count inline beside the controls — the run-control pattern
@@ -274,7 +274,7 @@
         on:click={go_prev}
         disabled={!has_prev}>Previous</button
       >
-      <!-- Next carries the wide primary spec (Previous stays small): it is the
+      <!-- Continue carries the wide primary spec (Previous stays small): it is the
            forward action on every trace but the last, where the same slot
            becomes the save. The ⌘↵ hint rides only the enabled save variant —
            the wizard's shortcut fires the save action, and only once the gate
@@ -283,10 +283,10 @@
         <button
           class="btn btn-primary min-w-64 px-12"
           on:click={go_next}
-          disabled={!current_reviewed}>Next</button
+          disabled={!current_reviewed}>Continue</button
         >
       {:else if !save_disabled}
-        <!-- Last conversation, gate met: the primary action replaces Next.
+        <!-- Last conversation, gate met: the primary action replaces Continue.
              The label is parent-owned (Save vs Refine Judge) so it never
              promises a save that a calibration round would intercept. -->
         {#if save_tooltip}
@@ -322,7 +322,7 @@
         {/if}
       {:else}
         <!-- Last conversation, gate not met: the same primary action, held
-             disabled with the reason on hover. A "Next" here would point at
+             disabled with the reason on hover. A "Continue" here would point at
              nothing, so the slot stays the save action throughout. No ⌘↵
              hint: the shortcut is gated on the same rule as this button. -->
         <div class="tooltip tooltip-left" data-tip={SAVE_GATE_TOOLTIP}>

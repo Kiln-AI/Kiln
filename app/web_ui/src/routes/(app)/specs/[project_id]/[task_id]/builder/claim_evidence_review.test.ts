@@ -149,7 +149,7 @@ async function agree_all(container: HTMLElement, count: number) {
 }
 
 function next_button(getByText: (t: string) => HTMLElement) {
-  return getByText("Next") as HTMLButtonElement
+  return getByText("Continue") as HTMLButtonElement
 }
 
 // The trace modal, picked out of the mounted dialogs by its title.
@@ -213,16 +213,16 @@ describe("ClaimEvidenceReview — overview and claims", () => {
   })
 })
 
-describe("ClaimEvidenceReview — Next gating", () => {
-  it("needs Agree or Disagree on every claim before Next opens", async () => {
+describe("ClaimEvidenceReview — Continue gating", () => {
+  it("needs Agree or Disagree on every claim before Continue opens", async () => {
     const { container, getByText } = render_review([
       built_trace("t0"),
       built_trace("t1"),
     ])
 
     expect(next_button(getByText).disabled).toBe(true)
-    // Next carries the step-4 forward spec (wide primary) but no keyboard
-    // hint: on this screen the shortcut fires Save, never Next.
+    // Continue carries the step-4 forward spec (wide primary) but no keyboard
+    // hint: on this screen the shortcut fires Save, never Continue.
     expect(next_button(getByText).className).toContain("min-w-64")
 
     await fireEvent.click(by_id(container, "claim-agree-0"))
@@ -231,7 +231,7 @@ describe("ClaimEvidenceReview — Next gating", () => {
     expect(next_button(getByText).disabled).toBe(false)
   })
 
-  it("holds Next until a Disagree carries a reason", async () => {
+  it("holds Continue until a Disagree carries a reason", async () => {
     const { container, getByText, verdicts } = render_review([
       built_trace("t0"),
       built_trace("t1"),
@@ -347,15 +347,15 @@ describe("ClaimEvidenceReview — failed claims build", () => {
 })
 
 describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
-  it("holds the Save slot disabled until the gate is met, never a dead Next", async () => {
+  it("holds the Save slot disabled until the gate is met, never a dead Continue", async () => {
     const traces = [built_trace("only")]
 
     // Gate not met: the same Save button holds the slot, disabled and
-    // explaining itself. No Next — there's nothing left to advance to.
+    // explaining itself. No Continue — there's nothing left to advance to.
     const gated = render_review(traces, { save_disabled: true })
     const blocked = gated.getByText("Save") as HTMLButtonElement
     expect(blocked.disabled).toBe(true)
-    expect(gated.queryByText("Next")).toBeNull()
+    expect(gated.queryByText("Continue")).toBeNull()
     expect(
       gated.container.querySelector(".tooltip")?.getAttribute("data-tip"),
     ).toContain("Finish grading")
@@ -365,7 +365,7 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
     const open = render_review(traces, { save_disabled: false })
     const live = open.getByText("Save") as HTMLButtonElement
     expect(live.disabled).toBe(false)
-    expect(open.queryByText("Next")).toBeNull()
+    expect(open.queryByText("Continue")).toBeNull()
     // The slot keeps one width across that flip, so it doesn't resize as the
     // gate completes.
     expect(live.className).toContain("min-w-64")

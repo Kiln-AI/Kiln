@@ -19,8 +19,7 @@
   export let error: KilnError | null
   export let submitting: boolean
   export let warn_before_unload: boolean
-  // Overridable so consumers can match their flow's advance-button wording
-  // (the eval builder uses "Next").
+  // Overridable so consumers can match their flow's advance-button wording.
   export let submit_label = "Continue"
 
   // Track the selected option for each question (bound to parent to survive remounts)
