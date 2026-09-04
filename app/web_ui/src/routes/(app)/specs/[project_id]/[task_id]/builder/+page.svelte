@@ -5075,11 +5075,13 @@
          above the button that commits the spend. Filled rather than bigger:
          the ring mark is mostly empty at this size, so the error colour reads
          amber next to a real amber one, and Warning styles its mark, never
-         its text. -->
+         its text. Tight because the form already spaces its children, and the
+         component's own top margin on top of that set this row apart. -->
     <Warning
       warning_color={is_multi_turn ? "error" : "warning"}
       filled_icon={is_multi_turn}
       warning_message={drive_cost_message}
+      tight={true}
     />
   </FormContainer>
 </Dialog>
