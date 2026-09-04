@@ -4,5 +4,185 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "input": {
+          "type": "string",
+          "title": "Input",
+          "description": "The input for the task run"
+        },
+        "output": {
+          "type": "string",
+          "title": "Output",
+          "description": "The output for the task run"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Tags",
+          "description": "Tags to apply to the task run",
+          "default": []
+        },
+        "rating": {
+          "anyOf": [
+            {
+              "properties": {
+                "v": {
+                  "type": "integer",
+                  "title": "V",
+                  "description": "Schema version for migration support.",
+                  "default": 1
+                },
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Id",
+                  "description": "Unique identifier for this record."
+                },
+                "path": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "path"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Path",
+                  "description": "File system path where the record is stored."
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "title": "Created At",
+                  "description": "Timestamp when the model was created. Timezone-aware; stores the writer's local offset."
+                },
+                "created_by": {
+                  "type": "string",
+                  "title": "Created By",
+                  "description": "User ID of the creator."
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "five_star",
+                    "pass_fail",
+                    "pass_fail_critical",
+                    "custom"
+                  ],
+                  "title": "TaskOutputRatingType",
+                  "description": "Defines the types of rating systems available for task outputs."
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Value",
+                  "description": "The rating value. Interpretation depends on rating type:\n- five_star: 1-5 stars\n- pass_fail: 1.0 (pass) or 0.0 (fail)\n- pass_fail_critical: 1.0 (pass), 0.0 (fail), or -1.0 (critical fail)"
+                },
+                "requirement_ratings": {
+                  "additionalProperties": {
+                    "properties": {
+                      "value": {
+                        "type": "number",
+                        "title": "Value",
+                        "description": "The rating value. Interpretation depends on rating type"
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "five_star",
+                          "pass_fail",
+                          "pass_fail_critical",
+                          "custom"
+                        ],
+                        "title": "TaskOutputRatingType",
+                        "description": "Defines the types of rating systems available for task outputs."
+                      }
+                    },
+                    "type": "object",
+                    "required": [
+                      "value",
+                      "type"
+                    ],
+                    "title": "RequirementRating",
+                    "description": "Rating for a specific requirement within a task output."
+                  },
+                  "type": "object",
+                  "title": "Requirement Ratings",
+                  "description": "The ratings of the requirements of the task. The ID can be either a task_requirement_id or a named rating for an eval_output_score name (in format 'named::<name>').",
+                  "default": {}
+                }
+              },
+              "type": "object",
+              "title": "TaskOutputRating",
+              "description": "A rating for a task output, including an overall rating and ratings for each requirement.\n\nSupports:\n- five_star: 1-5 star ratings\n- pass_fail: boolean pass/fail (1.0 = pass, 0.0 = fail)\n- pass_fail_critical: tri-state (1.0 = pass, 0.0 = fail, -1.0 = critical fail)"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional rating for the output"
+        },
+        "model_name": {
+          "type": "string",
+          "title": "Model Name",
+          "description": "The name of the model used to generate the data"
+        },
+        "model_provider": {
+          "type": "string",
+          "title": "Model Provider",
+          "description": "The provider of the model used to generate the data"
+        },
+        "adapter_name": {
+          "type": "string",
+          "title": "Adapter Name",
+          "description": "The name of the adapter used to generate the data"
+        }
+      },
+      "type": "object",
+      "required": [
+        "input",
+        "output",
+        "model_name",
+        "model_provider",
+        "adapter_name"
+      ],
+      "title": "CreateTaskRunRequest",
+      "description": "Request model for creating a synthetic TaskRun directly (without running a model)."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {}
   }
 }

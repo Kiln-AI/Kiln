@@ -4,5 +4,23 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {},
+    "query": {
+      "docker_model_runner_custom_url": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Custom URL for the Docker Model Runner.",
+        "title": "Docker Model Runner Custom Url"
+      }
+    }
   }
 }

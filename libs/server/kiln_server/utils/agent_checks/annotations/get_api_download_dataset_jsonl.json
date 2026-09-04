@@ -4,5 +4,77 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {},
+    "query": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      },
+      "dataset_id": {
+        "type": "string",
+        "description": "The unique identifier of the dataset split.",
+        "title": "Dataset Id"
+      },
+      "split_name": {
+        "type": "string",
+        "description": "The name of the split to download (e.g., 'train', 'test', 'validation').",
+        "title": "Split Name"
+      },
+      "format_type": {
+        "type": "string",
+        "description": "The format type for the JSONL output.",
+        "title": "Format Type"
+      },
+      "data_strategy": {
+        "type": "string",
+        "description": "The data strategy for formatting the output.",
+        "title": "Data Strategy"
+      },
+      "system_message_generator": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "The system message generator to use.",
+        "title": "System Message Generator"
+      },
+      "custom_system_message": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Custom system message if not using a generator.",
+        "title": "Custom System Message"
+      },
+      "custom_thinking_instructions": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Custom thinking instructions for thinking models.",
+        "title": "Custom Thinking Instructions"
+      }
+    }
   }
 }

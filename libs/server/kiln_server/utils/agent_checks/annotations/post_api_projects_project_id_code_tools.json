@@ -5,5 +5,86 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Allow agent to create and save a code tool (Python that runs on your machine)?"
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "Name",
+          "description": "User-facing display name."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description",
+          "description": "User-facing notes shown in the UI."
+        },
+        "tool_function_name": {
+          "type": "string",
+          "title": "Tool Function Name",
+          "description": "The function name exposed to the model."
+        },
+        "tool_description": {
+          "type": "string",
+          "minLength": 1,
+          "title": "Tool Description",
+          "description": "Shown to agents as the tool description."
+        },
+        "parameters_schema": {
+          "additionalProperties": true,
+          "type": "object",
+          "title": "Parameters Schema",
+          "description": "JSON Schema for the tool's parameters."
+        },
+        "code": {
+          "type": "string",
+          "title": "Code",
+          "description": "Inline Python source."
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1.0,
+          "title": "Timeout Seconds",
+          "description": "Wall-clock timeout.",
+          "default": 60
+        },
+        "tool_allowlist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Tool Allowlist",
+          "description": "Tools this code tool may call."
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "tool_function_name",
+        "tool_description",
+        "parameters_schema",
+        "code"
+      ],
+      "title": "CodeToolCreateRequest"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      }
+    },
+    "query": {}
   }
 }

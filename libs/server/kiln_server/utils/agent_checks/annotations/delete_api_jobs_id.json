@@ -5,5 +5,16 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Allow agent to control background jobs (pause, resume, cancel, delete)?"
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {
+      "id": {
+        "type": "string",
+        "description": "The job id.",
+        "title": "Id"
+      }
+    },
+    "query": {}
   }
 }
