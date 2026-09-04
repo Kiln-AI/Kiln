@@ -54,7 +54,10 @@ from kiln_ai.datamodel.task_run import EvalItemSource, TaskRun, Usage
 from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.synthetic_user import drive_case_for_eval
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult
-from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
+from kiln_ai.synthetic_user.models import (
+    TAG_SU_ENDED_CONVERSATION,
+    SyntheticUserDriverConfig,
+)
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam, serialize_trace
@@ -116,7 +119,10 @@ def _has_text_content(content: Any) -> bool:
 
 
 def conversation_health_problem(
-    trace: list[ChatCompletionMessageParam] | None, required_turns: int
+    trace: list[ChatCompletionMessageParam] | None,
+    required_turns: int,
+    *,
+    ended_by_su: bool = False,
 ) -> str | None:
     """Why `trace` is not a complete conversation for an item wanting `required_turns`
     turns, or None when it is complete.
@@ -124,19 +130,32 @@ def conversation_health_problem(
     Structural completeness only, never error-freeness: a conversation whose tool calls
     failed is a legitimate thing to evaluate (judging how an agent handles errors is a
     first-class eval), so error-bearing tool messages say nothing about health here. What
-    it does catch is a conversation that stopped short — a drive that ended early, or a
+    it does catch is a conversation that stopped short — a drive that died mid-way, or a
     partial record from an older writer — which would otherwise be judged as if the agent
     had simply finished.
 
     Health is a relationship between a trace and the item asking for it, not a property of
     the trace: the same conversation is complete for a two-turn item and short for a
     three-turn one, so the required count is always passed in by the caller.
+
+    `ended_by_su` says the synthetic user chose to end this conversation, which makes
+    `required_turns` a ceiling instead of an exact count: anything from one turn up to the
+    ceiling is a finished conversation, and only an empty one or one somehow longer than
+    the ceiling is a problem. It is for readers of a STORED trace, where all that survives
+    of the drive is a tag — a short conversation the synthetic user chose and one a crash
+    left behind look identical on disk, so the trace alone cannot say which it is. A caller
+    that still holds the drive knows how many turns actually ran and should pass that count
+    instead, keeping the exact check. The flag defaults to False so any caller that knows
+    nothing about early ending keeps the strict gate it had before.
     """
     messages = trace or []
     user_turns = sum(
         1 for message in messages if _message_field(message, "role") == "user"
     )
-    if user_turns != required_turns:
+    if ended_by_su:
+        if user_turns < 1 or user_turns > required_turns:
+            return f"expected 1 to {required_turns} user turns, found {user_turns}"
+    elif user_turns != required_turns:
         return f"expected {required_turns} user turns, found {user_turns}"
     if not messages:
         return "the conversation is empty"
@@ -303,7 +322,9 @@ class EvalRunner:
         Required turn counts come from the split's own items, so every candidate is judged
         against the item asking for it. Anything the map doesn't name — single-turn
         generations, and items outside this run's split — is accepted: neither has a turn
-        contract to fall short of.
+        contract to fall short of. A candidate tagged as one the synthetic user chose to
+        end is accepted at any length up to its item's turn count; the tag is the only
+        record of that choice by the time a later run reads the file.
         """
         if self.split is None:
             return None
@@ -322,7 +343,11 @@ class EvalRunner:
             turns = required_turns.get((source_type, source_id))
             if turns is None:
                 return None
-            return conversation_health_problem(trace.trace, turns)
+            return conversation_health_problem(
+                trace.trace,
+                turns,
+                ended_by_su=TAG_SU_ENDED_CONVERSATION in trace.tags,
+            )
 
         return vet_conversation
 
@@ -987,17 +1012,37 @@ class EvalRunner:
                     turns=drive_config.turns,
                     skills=self._skills,
                 )
+            turns_run = len(drive_result.chain)
+            ended_by_su = drive_result.ended_early(drive_config.turns)
+            if turns_run == 1 and drive_config.turns > 1:
+                # Not enforced: discarding a paid drive over a rule the synthetic
+                # user's prompt states but cannot guarantee would cost more than it
+                # saves. Logged because a one-turn conversation is a single-turn
+                # trace wearing a multi-turn label.
+                logger.warning(
+                    "The driven conversation for eval item %s ended on its first "
+                    "turn — the synthetic user ended it before the agent had "
+                    "answered a second message",
+                    eval_input.id,
+                )
             leaf_trace = drive_result.chain[-1].trace if drive_result.chain else None
-            problem = conversation_health_problem(leaf_trace, drive_config.turns)
+            # Gated on the turns that actually ran, not the item's ceiling: the drive
+            # is still in hand, so its own chain is the exact count the leaf's trace
+            # has to match. A conversation the synthetic user ended is shorter than
+            # the ceiling and still complete, while one whose trace lost turns the
+            # chain says it ran is a broken record either way.
+            problem = conversation_health_problem(leaf_trace, turns_run)
             if problem is not None:
-                # A drive that stopped short is a failed generation, not a cheap result:
-                # persisting it would index an incomplete conversation that every judge of
-                # this item reuses from then on. Retryable, so the job re-drives.
+                # Persisting it would index an incomplete conversation that every judge
+                # of this item reuses from then on, so it is a failed generation rather
+                # than a cheap result. Retryable, so the job re-drives.
                 raise RetryableError(
                     f"The driven conversation for eval item {eval_input.id} is "
                     f"incomplete ({problem}), so it was not saved."
                 )
-            return await self._persist_driven_conversation(key, drive_result, seed=seed)
+            return await self._persist_driven_conversation(
+                key, drive_result, seed=seed, ended_by_su=ended_by_su
+            )
 
         # A raising drive persists nothing, so the job's retry re-drives; a
         # successful one is on disk before the judge sees it, so a scoring
@@ -1009,7 +1054,12 @@ class EvalRunner:
         return await self._persist_judgment(job, trace, result)
 
     async def _persist_driven_conversation(
-        self, key: TraceKey, drive_result: DriveCaseResult, *, seed: str
+        self,
+        key: TraceKey,
+        drive_result: DriveCaseResult,
+        *,
+        seed: str,
+        ended_by_su: bool,
     ) -> TaskRun:
         """One standalone TaskRun holding a freshly driven multi-turn conversation.
 
@@ -1022,6 +1072,10 @@ class EvalRunner:
         Stamped from `key` rather than re-derived, for the same reason as
         `_generate_and_persist`: the run must file itself under exactly the key
         the index filed it under, or it is never found again.
+
+        `ended_by_su` is written as a tag rather than kept in memory because the
+        completeness gate that needs it runs again on every later reuse of this
+        file, when the drive that produced it is long gone.
         """
         source_type, source_id, run_config_id = key
         leaf = drive_result.chain[-1]
@@ -1056,6 +1110,7 @@ class EvalRunner:
             cumulative_usage=leaf.cumulative_usage
             or MessageUsage.from_trace(leaf.trace),
             eval_source=EvalItemSource(source_type=source_type, source_id=source_id),
+            tags=[TAG_SU_ENDED_CONVERSATION] if ended_by_su else [],
         )
         # The drive runs with allow_saving=False, so nothing touched disk before
         # this fully-stamped run — no crash window in which a driven conversation

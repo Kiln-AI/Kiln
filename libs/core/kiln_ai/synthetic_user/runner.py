@@ -27,7 +27,10 @@ from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.synthetic_user.case import SyntheticUserCase
 from kiln_ai.synthetic_user.drive_loop import TargetInvoker, drive_case
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
-from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
+from kiln_ai.synthetic_user.models import (
+    TAG_SU_ENDED_CONVERSATION,
+    SyntheticUserDriverConfig,
+)
 from kiln_ai.synthetic_user.parser import (
     SyntheticUserInfoParseError,
     parse_synthetic_user_info,
@@ -466,12 +469,26 @@ async def _drive_one_case_and_emit(
                 timeout=case_timeout_seconds,
             )
 
+        ended_by_su = result.ended_early(turns)
+        if len(result.chain) == 1 and turns > 1:
+            # Not enforced: killing a paid drive over a rule the prompt states
+            # but cannot guarantee would cost more than it saves. Logged
+            # because a one-turn conversation is a single-turn trace wearing a
+            # multi-turn label, which is worth knowing about when reading
+            # results back.
+            logger.warning(
+                "synthetic_user runner: case %d ended on its first turn — the "
+                "synthetic user ended the conversation before the target had "
+                "answered a second message",
+                case_index,
+            )
+
         # Tag the leaf so eval-time loaders can find it. Inside the try
         # so a tag-save failure (full disk, validator rejection on a
         # malformed batch_tag) surfaces as case_failed, not a silent drop.
         leaf = result.chain[-1]
         async with save_ctx():
-            _tag_leaf(leaf, batch_tag)
+            _tag_leaf(leaf, batch_tag, ended_by_su=ended_by_su)
 
         await queue.put(
             CaseCompletedEvent(
@@ -726,8 +743,13 @@ def _cumulative_cost(run: TaskRun) -> float:
     return float(getattr(usage, "cost", None) or 0.0)
 
 
-def _tag_leaf(leaf: TaskRun, batch_tag: str) -> None:
+def _tag_leaf(leaf: TaskRun, batch_tag: str, *, ended_by_su: bool) -> None:
     """Add the runner's discovery tags to the leaf TaskRun and persist.
+
+    `ended_by_su` says the synthetic user ended this conversation before the
+    turn ceiling, which earns the leaf TAG_SU_ENDED_CONVERSATION. The caller
+    decides — a short chain is the only evidence, and only the drive knows why
+    it is short.
 
     Tags are deduplicated (treated as a set then sorted) so re-runs
     against an already-tagged leaf are idempotent. A save_to_file
@@ -742,5 +764,7 @@ def _tag_leaf(leaf: TaskRun, batch_tag: str) -> None:
     tags = set(leaf.tags or [])
     tags.add(_TAG_SU_CASE)
     tags.add(f"{_TAG_PREFIX_SU_BATCH}{batch_tag}")
+    if ended_by_su:
+        tags.add(TAG_SU_ENDED_CONVERSATION)
     leaf.tags = sorted(tags)
     leaf.save_to_file()

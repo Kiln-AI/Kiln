@@ -69,12 +69,10 @@ class DriveCaseResult:
     `chain` is the list of TaskRuns the adapter produced (leaf last);
     whether they were persisted is the target_invoker's choice. It is
     shorter than `turns` when the SU ended the conversation early, which
-    `drive_case` treats as a normal completion. The eval runner does not:
-    its `conversation_health_problem` gate, applied to both re-drives and
-    stored traces offered for reuse, requires exactly `turns` user turns
-    and rejects anything shorter, so that gate has to be reconciled before
-    the prompt teaches the SU the sentinel. There is no
-    stop_reason field — `len(chain)` already distinguishes the two endings.
+    `drive_case` treats as a normal completion. There is no stop_reason
+    field — `ended_early` reads the two endings off the chain's length — and
+    callers that persist a chain record the distinction as a tag so a reader
+    of the stored trace can still tell an early ending from a truncated record.
 
     `su_usage` sums the SU driver model's usage across the case's turns.
     SU turns aren't persisted as TaskRuns, so this is the only place that
@@ -89,6 +87,18 @@ class DriveCaseResult:
 
     chain: list[TaskRun]
     su_usage: Usage | None
+
+    def ended_early(self, turns: int) -> bool:
+        """Whether the SU ended this conversation before the `turns` ceiling.
+
+        A completed drive appends exactly one TaskRun per turn it ran, and the
+        loop's only early exit is the SU's stopping sentinel — every other way
+        out raises, so no short chain is ever returned. A chain shorter than the
+        ceiling therefore means the SU chose to stop, which is why no
+        stop_reason field is needed. Pass the same `turns` the drive ran with;
+        a different ceiling answers a different question.
+        """
+        return len(self.chain) < turns
 
     @property
     def su_total_cost(self) -> float:
