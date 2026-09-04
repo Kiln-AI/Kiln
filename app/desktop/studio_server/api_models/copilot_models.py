@@ -81,29 +81,37 @@ class SampleApi(BaseModel):
 
 
 class ClaimReviewApi(BaseModel):
-    """The reviewer's grades on one trace's claim/evidence distillation.
+    """The reviewer's grades on one trace's claim summary.
 
-    Mirrors the persisted ClaimReview shape (judge verdict + per-claim
-    agree/disagree with optional whys) so the save path can write it onto
-    the golden TaskRun and judge refinement can consume it later.
+    Mirrors the persisted ClaimReview shape (judge verdict, the overview,
+    every claim with its agree/disagree and optional why, and the reviewer's
+    overall call) so the save path can write it onto the golden TaskRun and
+    judge refinement can consume it later.
     """
 
     judge_score: Literal["pass", "fail"]
     judge_reasoning: str
+    overview: str
     claims: list[GradedClaim]
-    final_judgement: GradedClaim
+    human_verdict: Literal["pass", "fail"]
 
-    @model_validator(mode="after")
-    def validate_final_judgement_pinned(self) -> Self:
-        # Same invariant the persisted ClaimReview enforces; checking here
-        # turns a corrupt payload into a 422 before any model is written.
-        if self.final_judgement.expected_result != self.judge_score:
-            raise ValueError(
-                "final_judgement.expected_result must equal judge_score "
-                f"(got {self.final_judgement.expected_result!r} vs "
-                f"{self.judge_score!r})"
-            )
-        return self
+
+def verdicts_must_agree(
+    user_says_meets_spec: bool, claim_review: ClaimReviewApi | None
+) -> None:
+    """The golden rating and the stored review record the same overall call.
+
+    Both come from one derivation in the UI, so a mismatch is a corrupt
+    payload; reject it up front rather than write an answer key that
+    contradicts the review saved beside it.
+    """
+    if claim_review is None:
+        return
+    if (claim_review.human_verdict == "pass") != user_says_meets_spec:
+        raise ValueError(
+            "user_says_meets_spec must match claim_review.human_verdict "
+            f"(got {user_says_meets_spec!r} vs {claim_review.human_verdict!r})"
+        )
 
 
 class ReviewedExample(BaseModel):
@@ -120,11 +128,16 @@ class ReviewedExample(BaseModel):
     feedback: str
     claim_review: ClaimReviewApi | None = Field(
         default=None,
-        description="Per-claim grades from the claim/evidence review, when "
-        "the example was reviewed that way (v2 builder).",
+        description="Per-claim grades from the claim review, when the example "
+        "was reviewed that way (v2 builder).",
     )
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def validate_verdicts_agree(self) -> Self:
+        verdicts_must_agree(self.user_says_meets_spec, self.claim_review)
+        return self
 
 
 class ReviewedChainApi(BaseModel):
@@ -139,6 +152,11 @@ class ReviewedChainApi(BaseModel):
     user_says_meets_spec: bool
     feedback: str = ""
     claim_review: ClaimReviewApi | None = None
+
+    @model_validator(mode="after")
+    def validate_verdicts_agree(self) -> Self:
+        verdicts_must_agree(self.user_says_meets_spec, self.claim_review)
+        return self
 
 
 class DrivenSyntheticCaseApi(BaseModel):

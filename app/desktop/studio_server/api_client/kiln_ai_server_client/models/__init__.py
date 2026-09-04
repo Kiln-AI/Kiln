@@ -32,6 +32,7 @@ from .check_entitlements_v1_check_entitlements_get_response_check_entitlements_v
 )
 from .check_model_supported_response import CheckModelSupportedResponse
 from .citation import Citation
+from .citation_1 import Citation1
 from .claim import Claim
 from .clarify_spec_input import ClarifySpecInput
 from .clarify_spec_output import ClarifySpecOutput
@@ -62,10 +63,8 @@ from .eval_item_source import EvalItemSource
 from .eval_item_source_source_type import EvalItemSourceSourceType
 from .examples_for_feedback_item import ExamplesForFeedbackItem
 from .examples_with_feedback_item import ExamplesWithFeedbackItem
-from .expected_result import ExpectedResult
 from .file import File
 from .file_file import FileFile
-from .final_judgement import FinalJudgement
 from .function import Function
 from .function_call import FunctionCall
 from .generate_batch_input import GenerateBatchInput
@@ -86,7 +85,6 @@ from .get_session_v1_chat_sessions_session_id_get_response_404 import GetSession
 from .get_session_v1_chat_sessions_session_id_get_response_426 import GetSessionV1ChatSessionsSessionIdGetResponse426
 from .get_session_v1_chat_sessions_session_id_get_response_500 import GetSessionV1ChatSessionsSessionIdGetResponse500
 from .graded_claim import GradedClaim
-from .graded_final_judgement import GradedFinalJudgement
 from .graded_trace import GradedTrace
 from .handle_chat_v1_chat_post_response_400 import HandleChatV1ChatPostResponse400
 from .handle_chat_v1_chat_post_response_404 import HandleChatV1ChatPostResponse404
@@ -95,6 +93,7 @@ from .handle_chat_v1_chat_post_response_500 import HandleChatV1ChatPostResponse5
 from .health_health_get_response_health_health_get import HealthHealthGetResponseHealthHealthGet
 from .http_validation_error import HTTPValidationError
 from .human_grade import HumanGrade
+from .human_verdict import HumanVerdict
 from .image_url import ImageURL
 from .image_url_detail import ImageURLDetail
 from .input_audio import InputAudio
@@ -120,6 +119,7 @@ from .model_provider_name import ModelProviderName
 from .new_proposed_spec_edit import NewProposedSpecEdit
 from .new_proposed_spec_edit_api import NewProposedSpecEditApi
 from .output_file_info import OutputFileInfo
+from .overview import Overview
 from .prompt_optimization_job_output import PromptOptimizationJobOutput
 from .prompt_optimization_job_result_response import PromptOptimizationJobResultResponse
 from .question import Question
@@ -194,6 +194,7 @@ __all__ = (
     "CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet",
     "CheckModelSupportedResponse",
     "Citation",
+    "Citation1",
     "Claim",
     "ClarifySpecInput",
     "ClarifySpecOutput",
@@ -216,10 +217,8 @@ __all__ = (
     "EvalItemSourceSourceType",
     "ExamplesForFeedbackItem",
     "ExamplesWithFeedbackItem",
-    "ExpectedResult",
     "File",
     "FileFile",
-    "FinalJudgement",
     "Function",
     "FunctionCall",
     "GenerateBatchInput",
@@ -238,7 +237,6 @@ __all__ = (
     "GetSessionV1ChatSessionsSessionIdGetResponse426",
     "GetSessionV1ChatSessionsSessionIdGetResponse500",
     "GradedClaim",
-    "GradedFinalJudgement",
     "GradedTrace",
     "HandleChatV1ChatPostResponse400",
     "HandleChatV1ChatPostResponse404",
@@ -247,6 +245,7 @@ __all__ = (
     "HealthHealthGetResponseHealthHealthGet",
     "HTTPValidationError",
     "HumanGrade",
+    "HumanVerdict",
     "ImageURL",
     "ImageURLDetail",
     "InputAudio",
@@ -272,6 +271,7 @@ __all__ = (
     "NewProposedSpecEdit",
     "NewProposedSpecEditApi",
     "OutputFileInfo",
+    "Overview",
     "PromptOptimizationJobOutput",
     "PromptOptimizationJobResultResponse",
     "Question",

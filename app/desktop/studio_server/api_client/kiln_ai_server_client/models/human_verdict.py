@@ -1,7 +1,7 @@
 from enum import Enum
 
 
-class ExpectedResult(str, Enum):
+class HumanVerdict(str, Enum):
     FAIL = "fail"
     PASS = "pass"
 

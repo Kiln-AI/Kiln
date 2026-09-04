@@ -6,7 +6,6 @@ from typing import Any, TypeVar, cast
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-from ..models.expected_result import ExpectedResult
 from ..models.human_grade import HumanGrade
 
 T = TypeVar("T", bound="GradedClaim")
@@ -16,28 +15,22 @@ T = TypeVar("T", bound="GradedClaim")
 class GradedClaim:
     """
     Attributes:
-        claim (str): The claim shown to the reviewer.
-        evidence (str): The one-sentence trace-grounded evidence shown to the reviewer; [n] citation markers may appear
-            but the underlying trace is not provided.
-        expected_result (ExpectedResult):
+        text (str): The claim exactly as shown to the reviewer. Every claim voices one decision the judge made. The text
+            may carry a '(possible judge error)' tag, a 'Disagree if …' sentence, an 'Agree only if …' sentence, a trailing
+            'Note: …' paragraph, or a closing "We suggest 'Agree' …" sentence; [n] citation markers may appear but the
+            underlying trace is not provided.
         human_grade (HumanGrade):
         human_feedback (None | str): The reviewer's optional plaintext 'why' — the richest alignment signal when
             present. Null if left blank.
     """
 
-    claim: str
-    evidence: str
-    expected_result: ExpectedResult
+    text: str
     human_grade: HumanGrade
     human_feedback: None | str
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        claim = self.claim
-
-        evidence = self.evidence
-
-        expected_result = self.expected_result.value
+        text = self.text
 
         human_grade = self.human_grade.value
 
@@ -48,9 +41,7 @@ class GradedClaim:
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "claim": claim,
-                "evidence": evidence,
-                "expected_result": expected_result,
+                "text": text,
                 "human_grade": human_grade,
                 "human_feedback": human_feedback,
             }
@@ -61,11 +52,7 @@ class GradedClaim:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        claim = d.pop("claim")
-
-        evidence = d.pop("evidence")
-
-        expected_result = ExpectedResult(d.pop("expected_result"))
+        text = d.pop("text")
 
         human_grade = HumanGrade(d.pop("human_grade"))
 
@@ -77,9 +64,7 @@ class GradedClaim:
         human_feedback = _parse_human_feedback(d.pop("human_feedback"))
 
         graded_claim = cls(
-            claim=claim,
-            evidence=evidence,
-            expected_result=expected_result,
+            text=text,
             human_grade=human_grade,
             human_feedback=human_feedback,
         )

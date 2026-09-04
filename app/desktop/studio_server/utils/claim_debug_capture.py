@@ -23,8 +23,8 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     BuildClaimsApiOutput,
     ClaimApi,
     ClaimDebugContext,
-    FinalJudgementApi,
     JudgeScoreLiteral,
+    OverviewApi,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,7 +51,8 @@ class ClaimDebug(BaseModel):
     string `content` to the content-parts branch of the union and fails.
     """
 
-    schema_version: int = 1
+    # 2: the overview-and-claims card replaced claims plus a final judgement.
+    schema_version: int = 2
     captured_at: datetime
     app_version: str
     source_run_id: str
@@ -64,8 +65,8 @@ class ClaimDebug(BaseModel):
     eval_rubric: str
     judge_score: JudgeScoreLiteral
     judge_reasoning: str
+    overview: OverviewApi
     claims: list[ClaimApi]
-    final_judgement: FinalJudgementApi
     # kiln_server does not echo the builder's model or prompt version yet, so
     # these carry an honest placeholder rather than a guess.
     claim_builder_model: str = "not echoed"
@@ -141,8 +142,8 @@ def capture_claim_debug(
             eval_rubric=input.eval_rubric,
             judge_score=input.judge_score,
             judge_reasoning=input.judge_reasoning,
+            overview=output.overview,
             claims=output.claims,
-            final_judgement=output.final_judgement,
         )
 
         capture_dir = task.path.parent / CAPTURE_DIR_NAME / CAPTURE_SUBDIR_NAME

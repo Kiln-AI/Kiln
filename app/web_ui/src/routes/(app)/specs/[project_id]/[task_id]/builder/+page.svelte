@@ -104,7 +104,7 @@
     user_says_meets_spec,
     validate_refined_judge_prompt,
     type Claim,
-    type FinalJudgement,
+    type Overview,
     type RefineJudgeProposal,
     type RejudgeCaseResult,
     type TraceClaims,
@@ -2251,8 +2251,8 @@
               raw_output: event.raw_output,
               judge_score: event.judge_score,
               judge_reasoning: event.judge_reasoning,
+              overview: null,
               claims: null,
-              final_judgement: null,
               claims_state: "unbuilt",
               claims_error: null,
               // The structured trace powers the modal's chat rendering;
@@ -2777,8 +2777,8 @@
               raw_output: event.raw_output,
               judge_score: event.judge_score,
               judge_reasoning: event.judge_reasoning,
+              overview: null,
               claims: null,
-              final_judgement: null,
               claims_state: "unbuilt",
               claims_error: null,
               // The run's structured trace (tool calls included) powers
@@ -3127,8 +3127,8 @@
       }
       const claims = (data.claims ?? []) as Claim[]
       patch_trace_claims(index, trace_id, {
+        overview: data.overview as Overview,
         claims,
-        final_judgement: data.final_judgement as FinalJudgement,
         claims_state: "built",
         claims_error: null,
       })
@@ -3786,9 +3786,8 @@
             leaf_run_id: tc.leaf_run_id as string,
             user_says_meets_spec: user_says_meets_spec(tc, review),
             feedback: disagreement_feedback(review),
-            // Claim grades ride along only where claims were built. A
-            // failed build leaves the review entirely, so this is a guard
-            // rather than a path.
+            // Claim grades ride along only where claims were built; a
+            // trace graded on the overall call alone has none to record.
             claim_review:
               tc.claims_state === "built"
                 ? build_claim_review_payload(tc, review)
@@ -3884,9 +3883,8 @@
           leaf_run_id: tc.leaf_run_id as string,
           user_says_meets_spec: user_says_meets_spec(tc, review),
           feedback: disagreement_feedback(review),
-          // Claim grades ride along only where claims were built. A failed
-          // build leaves the review entirely, so this is a guard rather than
-          // a path.
+          // Claim grades ride along only where claims were built; a trace
+          // graded on the overall call alone has none to record.
           claim_review:
             tc.claims_state === "built"
               ? build_claim_review_payload(tc, review)

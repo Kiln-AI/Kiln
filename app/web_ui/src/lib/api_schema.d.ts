@@ -4777,14 +4777,14 @@ export interface components {
         };
         /**
          * BuildClaimsApiOutput
-         * @description Claims for one trace (importance-ordered, may be empty) + the one
-         *     final judgement. Trivial single-property evals can carry everything in
-         *     the final judgement alone.
+         * @description The review card for one trace: the overview, then one to eight claims
+         *     in the order the reviewer reads them. The verdict claim, when the builder
+         *     wrote one, is the last claim and carries `is_verdict`.
          */
         BuildClaimsApiOutput: {
+            overview: components["schemas"]["OverviewApi"];
             /** Claims */
             claims: components["schemas"]["ClaimApi"][];
-            final_judgement: components["schemas"]["FinalJudgementApi"];
         };
         /**
          * BuildPromptRequest
@@ -5166,24 +5166,28 @@ export interface components {
         };
         /**
          * ClaimApi
-         * @description One atomic claim + its one-sentence evidence with [n] citation markers.
+         * @description One decision the judge made, written so the reviewer can vote on it.
          *
-         *     `expected_result` is the verdict a reviewer's AGREE on this claim supports —
-         *     a direction bit, not a re-judging: claims pointing opposite the judge's
-         *     verdict are counter-evidence the reviewer can use to catch a bad judge.
+         *     `text` carries the claim, its evidence and its [n] markers in one string;
+         *     every marker resolves through `citations`. Grades have one direction:
+         *     agree means the judge got this decision right, disagree means it got it
+         *     wrong.
+         *
+         *     `is_verdict` marks the claim that states the overall pass/fail. The claim
+         *     builder may omit it, and only the LAST claim can be one, so the UI needs a
+         *     flag rather than a guess: it decides whether to derive the reviewer's
+         *     overall call from that claim's grade or to ask for it outright. The studio
+         *     sets the flag from the builder's own convention (the verdict claim opens
+         *     "It passes" or "It fails", and no other claim may) so the UI never
+         *     pattern-matches prose.
          */
         ClaimApi: {
-            /** Claim */
-            claim: string;
-            /**
-             * Expected Result
-             * @enum {string}
-             */
-            expected_result: "pass" | "fail";
-            /** Evidence */
-            evidence: string;
+            /** Text */
+            text: string;
             /** Citations */
             citations: components["schemas"]["CitationApi"][];
+            /** Is Verdict */
+            is_verdict: boolean;
         };
         /**
          * ClaimDebugContext
@@ -5204,11 +5208,12 @@ export interface components {
         };
         /**
          * ClaimReviewApi
-         * @description The reviewer's grades on one trace's claim/evidence distillation.
+         * @description The reviewer's grades on one trace's claim summary.
          *
-         *     Mirrors the persisted ClaimReview shape (judge verdict + per-claim
-         *     agree/disagree with optional whys) so the save path can write it onto
-         *     the golden TaskRun and judge refinement can consume it later.
+         *     Mirrors the persisted ClaimReview shape (judge verdict, the overview,
+         *     every claim with its agree/disagree and optional why, and the reviewer's
+         *     overall call) so the save path can write it onto the golden TaskRun and
+         *     judge refinement can consume it later.
          */
         ClaimReviewApi: {
             /**
@@ -5218,9 +5223,15 @@ export interface components {
             judge_score: "pass" | "fail";
             /** Judge Reasoning */
             judge_reasoning: string;
+            /** Overview */
+            overview: string;
             /** Claims */
             claims: components["schemas"]["GradedClaim"][];
-            final_judgement: components["schemas"]["GradedClaim"];
+            /**
+             * Human Verdict
+             * @enum {string}
+             */
+            human_verdict: "pass" | "fail";
         };
         /**
          * ClarifySpecApiInput
@@ -7985,26 +7996,6 @@ export interface components {
             };
         };
         /**
-         * FinalJudgementApi
-         * @description The one overall verdict entry (top-level, not a claim in the list).
-         *
-         *     Its expected_result always equals the judge's verdict — the server pins it
-         *     deterministically, so the answer key can anchor to it.
-         */
-        FinalJudgementApi: {
-            /** Claim */
-            claim: string;
-            /**
-             * Expected Result
-             * @enum {string}
-             */
-            expected_result: "pass" | "fail";
-            /** Evidence */
-            evidence: string;
-            /** Citations */
-            citations: components["schemas"]["CitationApi"][];
-        };
-        /**
          * FineTuneParameter
          * @description A parameter for a fine-tune. Hyperparameters, etc.
          */
@@ -8532,29 +8523,19 @@ export interface components {
         };
         /**
          * GradedClaim
-         * @description One claim/evidence pair with a human grade on it.
+         * @description One claim with a human grade on it.
          *
-         *     `expected_result` is the verdict an AGREE on the claim supports, so a
-         *     grade is meaningful relative to a judge's verdict: agreeing with a claim
-         *     that points opposite the judge is evidence the judge was wrong.
+         *     A claim is one decision the judge made, written so the reviewer can vote
+         *     on it from the card alone. Grades have one direction on every claim:
+         *     agree means the judge got that decision right, disagree means it got it
+         *     wrong. The claim text carries its own evidence and citation markers.
          */
         GradedClaim: {
             /**
-             * Claim
-             * @description The claim that was graded.
+             * Text
+             * @description The claim as shown to the reviewer.
              */
-            claim: string;
-            /**
-             * Evidence
-             * @description The one-sentence evidence backing the claim.
-             */
-            evidence: string;
-            /**
-             * Expected Result
-             * @description The verdict an AGREE on this claim supports.
-             * @enum {string}
-             */
-            expected_result: "pass" | "fail";
+            text: string;
             /**
              * Human Grade
              * @description The human's grade on this claim.
@@ -8571,10 +8552,10 @@ export interface components {
          * GradedTraceApi
          * @description One human-reviewed trace's grades, shaped to feed judge refinement.
          *
-         *     Mirrors the persisted ClaimReview (judge verdict + per-claim
-         *     agree/disagree with optional whys) plus a `trace_label` the refine model
-         *     cites in its change rationales. Only the claims the reviewer actually
-         *     graded appear — an absent claim is "not reviewed", never agreement.
+         *     Mirrors the persisted ClaimReview (judge verdict, the overview, every
+         *     claim with its agree/disagree and optional why, and the reviewer's
+         *     overall call) plus a `trace_label` the refine model cites in its change
+         *     rationales.
          */
         GradedTraceApi: {
             /**
@@ -8589,9 +8570,15 @@ export interface components {
             judge_score: "pass" | "fail";
             /** Judge Reasoning */
             judge_reasoning: string;
+            /** Overview */
+            overview: string;
             /** Claims */
             claims: components["schemas"]["GradedClaim"][];
-            final_judgement: components["schemas"]["GradedClaim"];
+            /**
+             * Human Verdict
+             * @enum {string}
+             */
+            human_verdict: "pass" | "fail";
         };
         /** GuidePreviewInput */
         GuidePreviewInput: {
@@ -9901,6 +9888,19 @@ export interface components {
             error_message?: string | null;
         };
         /**
+         * OverviewApi
+         * @description The neutral summary of the trace the reviewer reads before the claims.
+         *
+         *     Same shape as a claim: prose with inline [n] markers resolved through
+         *     `citations`. Markers restart at [1] here and in every claim.
+         */
+        OverviewApi: {
+            /** Text */
+            text: string;
+            /** Citations */
+            citations: components["schemas"]["CitationApi"][];
+        };
+        /**
          * ParseImportFileApiOutput
          * @description Result of parsing an uploaded bulk-import file of input examples.
          *
@@ -11039,7 +11039,7 @@ export interface components {
             user_says_meets_spec: boolean;
             /** Feedback */
             feedback: string;
-            /** @description Per-claim grades from the claim/evidence review, when the example was reviewed that way (v2 builder). */
+            /** @description Per-claim grades from the claim review, when the example was reviewed that way (v2 builder). */
             claim_review?: components["schemas"]["ClaimReviewApi"] | null;
         };
         /** RunCasesBatchApiInput */

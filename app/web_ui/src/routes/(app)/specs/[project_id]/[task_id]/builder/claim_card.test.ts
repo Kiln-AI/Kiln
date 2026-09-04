@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach, vi } from "vitest"
+import { describe, it, expect, afterEach } from "vitest"
 import { render, fireEvent, cleanup } from "@testing-library/svelte"
 import ClaimCard from "./claim_card.svelte"
 import type { Citation, Claim, ClaimVerdict } from "./claim_evidence"
@@ -10,12 +10,11 @@ afterEach(() => {
 
 function claim(overrides: Partial<Claim> = {}): Claim {
   return {
-    claim: "The agent stated a return window as fact.",
-    expected_result: "fail",
-    evidence: "The reply gives 30 days [1].",
+    text: "The agent stated a return window as fact [1]. Disagree if the window is documented.",
     citations: [
       { marker: 1, source: "output", from: "30 days", to: "30 days" },
     ],
+    is_verdict: false,
     ...overrides,
   }
 }
@@ -24,201 +23,100 @@ function fresh_verdict(): ClaimVerdict {
   return { agrees: null, why: "" }
 }
 
-describe("ClaimCard — the Disagree toggle", () => {
-  it("flags a claim and opens the reason, then clears both on a second click", async () => {
+function by_id<T extends HTMLElement>(container: HTMLElement, id: string): T {
+  const found = container.querySelector<T>(`#${id}`)
+  if (!found) throw new Error(`no element with id ${id}`)
+  return found
+}
+
+describe("ClaimCard — Agree / Disagree", () => {
+  it("numbers the claim and records Agree without a reason box", async () => {
     const verdict = fresh_verdict()
-    const { container, getByText, queryByText } = render(ClaimCard, {
-      props: { claim: claim(), verdict },
+    const { container } = render(ClaimCard, {
+      props: { claim: claim(), index: 2, verdict },
     })
 
-    // There is no positive answer to give: an agreed claim carries no signal
-    // downstream, so the card offers the flag alone.
-    expect(queryByText("Correct")).toBeNull()
-    expect(queryByText("Incorrect")).toBeNull()
+    // The number is the one the builder's own cross-references use.
+    expect(by_id(container, "claim-card-2").textContent).toContain("#3")
 
-    await fireEvent.click(getByText("Disagree"))
+    await fireEvent.click(by_id(container, "claim-agree-2"))
+    expect(verdict.agrees).toBe(true)
+    expect(by_id(container, "claim-agree-2").className).toContain("btn-success")
+    expect(container.querySelector("#claim-why-2")).toBeNull()
+  })
+
+  it("Disagree opens the required reason box, and Agree drops the reason again", async () => {
+    const verdict = fresh_verdict()
+    const { container } = render(ClaimCard, {
+      props: { claim: claim(), index: 0, verdict },
+    })
+
+    await fireEvent.click(by_id(container, "claim-disagree-0"))
     expect(verdict.agrees).toBe(false)
-    // The word holds still; only the selection styling moves.
-    expect(getByText("Disagree").className).toContain("btn-error")
-    const why = container.querySelector("textarea") as HTMLTextAreaElement
-    expect(why).not.toBeNull()
+    expect(by_id(container, "claim-disagree-0").className).toContain(
+      "btn-error",
+    )
+    const why = by_id<HTMLTextAreaElement>(container, "claim-why-0")
+    expect(why.placeholder).toBe(
+      "Why is this wrong? Your reason helps improve the eval.",
+    )
+    // Required: flagged as an error until a reason is typed.
+    expect(why.className).toContain("textarea-error")
     await fireEvent.input(why, { target: { value: "The window is real." } })
     expect(verdict.why).toBe("The window is real.")
+    expect(why.className).not.toContain("textarea-error")
 
-    // Clicking again clears the flag and the reason under it, so the claim
-    // goes back to carrying no signal at all rather than a stale one.
-    await fireEvent.click(getByText("Disagree"))
-    expect(verdict.agrees).toBeNull()
-    expect(verdict.why).toBe("")
-    expect(container.querySelector("textarea")).toBeNull()
-    expect(getByText("Disagree").className).toContain("btn-outline")
+    // Switching to Agree hides the box and clears the reason typed under
+    // Disagree, so nothing stale rides the agree grade into the record.
+    await fireEvent.click(by_id(container, "claim-agree-0"))
+    expect(verdict).toEqual({ agrees: true, why: "" })
+    expect(container.querySelector("#claim-why-0")).toBeNull()
   })
 })
 
-describe("ClaimCard — final judgement evidence", () => {
-  it("renders clickable [n] chips for its evidence and no trace fallback", async () => {
-    // With the server-guaranteed inline citation, the final card's evidence
-    // sentence tokenizes to a clickable chip that opens the trace at the span.
+describe("ClaimCard — the claim text", () => {
+  it("chips a [n] that has a citation and leaves one without as plain text", async () => {
     let cited: Citation | undefined
-    const on_view_trace = vi.fn()
-    const { getByTitle, queryByText } = render(ClaimCard, {
+    const { container, getAllByTitle } = render(ClaimCard, {
       props: {
         claim: claim({
-          claim: "The bot resolved the issue.",
-          evidence: "It confirmed the fix [1].",
-          citations: [{ marker: 1, source: "output", from: "fix", to: "fix" }],
+          text: "The reply gives 30 days [1] and cites item [2] of the policy.",
         }),
+        index: 0,
         verdict: fresh_verdict(),
-        is_final_judgement: true,
         on_cite: (c: Citation) => (cited = c),
-        on_view_trace,
       },
     })
 
-    await fireEvent.click(getByTitle("View in trace"))
+    // Exactly one chip: [1] resolves, [2] is a number the model quoted out
+    // of the trace and must not become a dead button.
+    const chips = getAllByTitle("View in trace")
+    expect(chips.map((c) => c.textContent)).toEqual(["[1]"])
+    expect(container.textContent).toContain("cites item [2] of the policy")
 
+    await fireEvent.click(chips[0])
     expect(cited?.marker).toBe(1)
-    // A resolvable chip is the trace path, so no fallback link is offered.
-    expect(queryByText("View Full Trace")).toBeNull()
-    expect(on_view_trace).not.toHaveBeenCalled()
   })
 
-  it("renders both the reason and the evidence lines when they differ", () => {
-    const { getByText } = render(ClaimCard, {
+  it("renders the Note paragraph apart and muted, with We suggest inline", () => {
+    const { container } = render(ClaimCard, {
       props: {
         claim: claim({
-          claim: "The bot resolved the issue.",
-          evidence: "It confirmed the fix [1].",
-          citations: [{ marker: 1, source: "output", from: "fix", to: "fix" }],
+          text: "The joke retells a known one [1]. We suggest 'Agree', keeping this eval focused on safety.\n\nNote: the rubric never mentions originality.",
         }),
-        verdict: fresh_verdict(),
-        is_final_judgement: true,
-      },
-    })
-
-    expect(getByText("The bot resolved the issue.")).toBeTruthy()
-    // Evidence renders as its own line (text split around the [1] chip).
-    expect(getByText(/It confirmed the fix/)).toBeTruthy()
-  })
-
-  it("dedupes when the reason and evidence are the same sentence", () => {
-    // Same text in both slots must render once — through the tokenizer, so the
-    // chip stays clickable — not printed twice.
-    const same = "It confirmed the fix [1]."
-    const { getAllByText } = render(ClaimCard, {
-      props: {
-        claim: claim({
-          claim: same,
-          evidence: same,
-          citations: [{ marker: 1, source: "output", from: "fix", to: "fix" }],
-        }),
-        verdict: fresh_verdict(),
-        is_final_judgement: true,
-      },
-    })
-
-    // Only one rendering of the shared sentence's text.
-    expect(getAllByText(/It confirmed the fix/)).toHaveLength(1)
-  })
-
-  it("offers a trace fallback when it has no resolvable citation", async () => {
-    // Legacy pre-guarantee data: evidence without any [n]. The card surfaces a
-    // quiet link that opens the trace via the caller's hook.
-    const on_view_trace = vi.fn()
-    const { getByText, queryByTitle } = render(ClaimCard, {
-      props: {
-        claim: claim({
-          claim: "The bot failed.",
-          evidence: "It gave the wrong return window.",
-          citations: [],
-        }),
-        verdict: fresh_verdict(),
-        is_final_judgement: true,
-        on_view_trace,
-      },
-    })
-
-    expect(queryByTitle("View in trace")).toBeNull()
-    await fireEvent.click(getByText("View Full Trace"))
-    expect(on_view_trace).toHaveBeenCalledTimes(1)
-  })
-
-  it("shows no trace fallback on non-final cards", () => {
-    // The fallback is a final-judgement affordance only; a non-final card
-    // never renders the link even without a resolvable citation.
-    const { queryByText } = render(ClaimCard, {
-      props: {
-        claim: claim({ evidence: "No citation here.", citations: [] }),
+        index: 0,
         verdict: fresh_verdict(),
       },
     })
 
-    expect(queryByText("View Full Trace")).toBeNull()
-  })
-})
-
-describe("ClaimCard — the blind final judgement", () => {
-  it("records the label as agreement with the judge, inverting on a pass call", async () => {
-    // The judge passed this one, so "Pass" is the agreeing label and "Fail"
-    // is the contradiction — the mirror of a failed call. Agreement is
-    // computed, never asked, so the card writes the same verdict either way.
-    const verdict = fresh_verdict()
-    const { container, getByText, queryByText } = render(ClaimCard, {
-      props: {
-        claim: claim({
-          claim: "The bot answered from the policy page.",
-          expected_result: "pass",
-          evidence: "It linked the page [1].",
-          citations: [
-            { marker: 1, source: "output", from: "page", to: "page" },
-          ],
-        }),
-        verdict,
-        is_final_judgement: true,
-        blind: true,
-        judged_noun: "conversation",
-      },
-    })
-
-    expect(getByText("Does this conversation pass?")).toBeTruthy()
-    expect(queryByText("Correct")).toBeNull()
-
-    await fireEvent.click(getByText("Pass"))
-    expect(verdict.agrees).toBe(true)
-    expect(container.querySelector("textarea")).toBeNull()
-
-    await fireEvent.click(getByText("Fail"))
-    expect(verdict.agrees).toBe(false)
-    // The reveal names the judge's call, which is the opposite of the label
-    // just given.
-    expect(
-      getByText("The judge disagrees. It scored this as a pass."),
-    ).toBeTruthy()
-    expect(
-      (container.querySelector("textarea") as HTMLTextAreaElement).placeholder,
-    ).toBe(
-      "Describe why this fails. Detailed explanations will improve the judge.",
+    const note = container.querySelector("[data-claim-note]")
+    expect(note?.textContent?.trim()).toBe(
+      "Note: the rubric never mentions originality.",
     )
-  })
-})
-
-describe("ClaimCard — display only", () => {
-  it("renders the claim as reading material, with no way to grade it", () => {
-    // A disagreeing verdict is the state that renders both controls, so it is
-    // the one that proves display_only drops them. The claim and its evidence
-    // still render: this is the card as reading material for a surface that
-    // takes the grade somewhere else.
-    const verdict: ClaimVerdict = { agrees: false, why: "The window is real." }
-    const { container, getByText, queryByText, queryByTitle } = render(
-      ClaimCard,
-      {
-        props: { claim: claim(), verdict, display_only: true },
-      },
-    )
-
-    expect(getByText("The agent stated a return window as fact.")).toBeTruthy()
-    expect(queryByTitle("View in trace")).toBeTruthy()
-    expect(queryByText("Disagree")).toBeNull()
-    expect(container.querySelector("textarea")).toBeNull()
+    expect(note?.className).toContain("text-gray-500")
+    // The suggestion is part of the ask, so it stays in the claim body.
+    const body = container.querySelector("p")
+    expect(body?.textContent).toContain("We suggest 'Agree'")
+    expect(body?.textContent).not.toContain("Note:")
   })
 })

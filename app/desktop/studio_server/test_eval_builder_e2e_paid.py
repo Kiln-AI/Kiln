@@ -33,23 +33,24 @@ calls, so the harness starts at Step 4 with the spec text already "written":
                        but optional. Headless we review exactly the subset.)
   Step 5c  CLAIMS      POST .../eval_builder/build_claims  (per selected trace)
                        (UI: build_claims_for_index — kiln_server's claim
-                       builder distills the trace + verdict into
-                       claim/evidence pairs, built LAZILY only for the
+                       builder distills the trace + verdict into an overview
+                       and a short list of claims, built LAZILY only for the
                        traces the reviewer opens. The human then
-                       agrees/disagrees per claim — headless we agree with
-                       all but one final judgement, and that one
+                       agrees/disagrees with every claim — headless we agree
+                       with all but the last claim of one trace, and that one
                        disagreement is what the reviewer's Refine Judge
                        click feeds into the refine below.)
   Step 5r  REFINE      POST .../eval_builder/refine_judge
                        (UI: the calibration loop's refine step. The reviewer
-                       DISAGREES with one case's final judgement with a why and
-                       agrees with the rest; those grades feed the refine model
-                       and the REFINED judge re-checks the eval data, which the
-                       reviewer then re-grades before any save. The refined
-                       prompt is validated (plain text, no template syntax);
-                       on failure the round surfaces an inline error and
-                       nothing ships. This test exercises the refine call
-                       itself, not the loop's re-check and re-grade.)
+                       DISAGREES with one case's last claim with a why and
+                       agrees with every other claim; the graded cards feed
+                       the refine model and the REFINED judge re-checks the
+                       eval data, which the reviewer then re-grades before
+                       any save. The refined prompt is validated (plain text,
+                       no template syntax); on failure the round surfaces an
+                       inline error and nothing ships. This test exercises
+                       the refine call itself, not the loop's re-check and
+                       re-grade.)
   Step 6   SAVE        POST .../spec_with_copilot
                        (UI: on_save — persists the Spec, the Eval, the V2
                        judge config, and the answer key. Only REVIEWED
@@ -286,7 +287,7 @@ def _assert_pipeline_judged(
         )
         # No claims on the stream — they're built lazily via build_claims.
         _require(
-            "claims" not in event and "final_judgement" not in event,
+            "claims" not in event and "overview" not in event,
             f"case {index}: case_judged unexpectedly carries claims",
         )
 
@@ -511,8 +512,7 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
 
     # ── Step 5c — CLAIMS for the selected traces (UI: build_claims_for_
     # index). One build_claims call per reviewed trace; the rubric is the
-    # judge's actual prompt; the final judgement comes back pinned to the
-    # judge's verdict.
+    # judge's actual prompt; the task instruction is resolved studio-side.
     claims_by_case: dict[int, dict] = {}
     citation_total = 0
     citation_misses: list[str] = []
@@ -531,8 +531,14 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         _require(resp.status_code == 200, f"build_claims failed: {resp.text}")
         claims_output = resp.json()
         _require(
-            claims_output["final_judgement"]["expected_result"] == event["judge_score"],
-            f"trace {index}: final judgement not pinned to the judge's verdict",
+            1 <= len(claims_output["claims"]) <= 8,
+            f"trace {index}: expected 1 to 8 claims, got {len(claims_output['claims'])}",
+        )
+        # Only the last claim may be the verdict; the studio flags it and
+        # never any other.
+        _require(
+            not any(c["is_verdict"] for c in claims_output["claims"][:-1]),
+            f"trace {index}: a non-last claim is flagged as the verdict",
         )
         # Citations must anchor verbatim into the echoed text — the same
         # indexOf resolution the UI's highlighter performs. The builder LLM
@@ -541,8 +547,8 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         # individual misses WARN; a majority missing means the rendering or
         # anchoring contract itself broke, and that fails the gate.
         sources = {"input": event["raw_input"], "output": event["raw_output"]}
-        for claim in [*claims_output["claims"], claims_output["final_judgement"]]:
-            for citation in claim["citations"]:
+        for entry in [claims_output["overview"], *claims_output["claims"]]:
+            for citation in entry["citations"]:
                 text = sources[citation["source"]]
                 citation_total += 1
                 if not (citation["from"] in text and citation["to"] in text):
@@ -559,38 +565,51 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     )
 
     # ── Step 5r refine — REFINE THE JUDGE (UI: the calibration loop). The
-    # reviewer disagrees with one case's final judgement (with a why) and
-    # agrees with the rest of the REVIEWED SUBSET; the studio feeds those
-    # grades to the refine model. In the wizard the refined judge then
-    # re-checks the data for another review round; here we take the refined
-    # judge straight to save, since this test covers the refine contract.
+    # reviewer disagrees with the last claim of one case (with a why) and
+    # agrees with every other claim in the REVIEWED SUBSET; the studio feeds
+    # the graded cards to the refine model. In the wizard the refined judge
+    # then re-checks the data for another review round; here we take the
+    # refined judge straight to save, since this test covers the refine
+    # contract.
     dissent_index = review_indices[0]
     dissent_why = (
         "A polite, helpful reply that still states an unverified specific "
         "detail (a price, return window, or stock level) as fact must FAIL — "
         "being courteous does not excuse fabricating policy."
     )
-    # index -> human_grade for the reviewer's calls (disagree on one, agree rest).
-    grade_of = {
-        i: ("disagree" if i == dissent_index else "agree") for i in review_indices
-    }
+
+    def _graded_claims(index: int) -> list[dict]:
+        claims = claims_by_case[index]["claims"]
+        graded = []
+        for position, claim in enumerate(claims):
+            dissent = index == dissent_index and position == len(claims) - 1
+            graded.append(
+                {
+                    "text": claim["text"],
+                    "human_grade": "disagree" if dissent else "agree",
+                    "human_feedback": dissent_why if dissent else None,
+                }
+            )
+        return graded
+
+    def _human_verdict(index: int) -> str:
+        # The UI's user_says_meets_spec rule: disagreeing with the verdict
+        # claim flips the judge's call; disputing an ordinary claim does not.
+        judge_score = judged[index]["judge_score"]
+        last = claims_by_case[index]["claims"][-1]
+        if index == dissent_index and last["is_verdict"]:
+            return "pass" if judge_score == "fail" else "fail"
+        return judge_score
 
     def _graded_trace(index: int) -> dict:
         event = judged[index]
-        final_judgement = claims_by_case[index]["final_judgement"]
-        grade = grade_of[index]
         return {
             "trace_label": event["leaf_run_id"],
             "judge_score": event["judge_score"],
             "judge_reasoning": event["judge_reasoning"],
-            "claims": [],  # sub-claim grades optional; the final judgement carries it
-            "final_judgement": {
-                "claim": final_judgement["claim"],
-                "evidence": final_judgement["evidence"],
-                "expected_result": final_judgement["expected_result"],
-                "human_grade": grade,
-                "human_feedback": dissent_why if grade == "disagree" else None,
-            },
+            "overview": claims_by_case[index]["overview"]["text"],
+            "claims": _graded_claims(index),
+            "human_verdict": _human_verdict(index),
         }
 
     graded_traces = [_graded_trace(i) for i in review_indices]
@@ -624,12 +643,12 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             f"a proposed change is missing its text or rationale: {change}",
         )
     # The refined judge is what ships — persisted at save, no re-review.
-    refined_judge = {**JUDGE, "prompt": refined_prompt}
+    shipped_judge = {**JUDGE, "prompt": refined_prompt}
 
     # ── Step 6 — SAVE (UI: on_save, multi-turn branch) ──────────────────
     # The human's review rides in reviewed_chains, keyed by leaf run id.
-    # Headless stand-in for the reviewer: agree with every final judgement,
-    # so user_says_meets_spec == the judge's verdict (the UI's
+    # Headless stand-in for the reviewer: the grades built above, with
+    # user_says_meets_spec following the reviewer's overall call (the UI's
     # user_says_meets_spec/build_claim_review_payload helpers do the same
     # mapping for real reviews).
     #
@@ -639,30 +658,18 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     reviewed_chains = []
     for index in review_indices:
         event = judged[index]
-        final_judgement = claims_by_case[index]["final_judgement"]
-        grade = grade_of[index]
-        # Disagreeing with the final judgement flips the reviewer's verdict
-        # (user_says_meets_spec) away from the judge's (the UI's
-        # user_says_meets_spec helper does the same).
-        judge_passes = event["judge_score"] == "pass"
+        human_verdict = _human_verdict(index)
         reviewed_chains.append(
             {
                 "leaf_run_id": event["leaf_run_id"],
-                "user_says_meets_spec": (not judge_passes)
-                if grade == "disagree"
-                else judge_passes,
-                "feedback": dissent_why if grade == "disagree" else "",
+                "user_says_meets_spec": human_verdict == "pass",
+                "feedback": dissent_why if index == dissent_index else "",
                 "claim_review": {
                     "judge_score": event["judge_score"],
                     "judge_reasoning": event["judge_reasoning"],
-                    "claims": [],
-                    "final_judgement": {
-                        "claim": final_judgement["claim"],
-                        "evidence": final_judgement["evidence"],
-                        "expected_result": final_judgement["expected_result"],
-                        "human_grade": grade,
-                        "human_feedback": dissent_why if grade == "disagree" else None,
-                    },
+                    "overview": claims_by_case[index]["overview"]["text"],
+                    "claims": _graded_claims(index),
+                    "human_verdict": human_verdict,
                 },
             }
         )
@@ -676,7 +683,7 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             "reviewed_examples": [],
             # The refined judge is what ships: the wizard persists whichever
             # judge produced the verdicts the reviewer last graded.
-            "judge_info": refined_judge,
+            "judge_info": shipped_judge,
             "multi_turn": {
                 "batch_tag": batch_tag,
                 "reviewed_chains": reviewed_chains,
@@ -713,11 +720,11 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
     # REFINED judge prompt (which differs from the original, asserted above).
     # A distinctive interior slice of it survives verbatim in the template
     # (conditionally_raw_wrap only brackets the text, never rewrites it).
-    refined_marker = refined_prompt.strip()
-    refined_marker = refined_marker[len(refined_marker) // 3 :][:80]
+    shipped_marker = shipped_judge["prompt"].strip()
+    shipped_marker = shipped_marker[len(shipped_marker) // 3 :][:80]
     _require(
-        refined_marker in prompt_template,
-        "saved prompt_template does not contain the approved refined judge prompt",
+        shipped_marker in prompt_template,
+        "saved prompt_template does not contain the shipped judge prompt",
     )
 
     tags_tuple = generate_spec_eval_tags(SPEC_NAME)

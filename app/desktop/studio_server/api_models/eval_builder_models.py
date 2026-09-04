@@ -14,7 +14,7 @@ from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from pydantic import BaseModel, ConfigDict, Field
 
-# The binary verdict vocabulary, shared by every judge_score/expected_result
+# The binary verdict vocabulary, shared by every judge_score and human_verdict
 # field on this API surface (mirrors the server contract's enum).
 JudgeScoreLiteral = Literal["pass", "fail"]
 
@@ -65,31 +65,37 @@ class CitationApi(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class OverviewApi(BaseModel):
+    """The neutral summary of the trace the reviewer reads before the claims.
+
+    Same shape as a claim: prose with inline [n] markers resolved through
+    `citations`. Markers restart at [1] here and in every claim.
+    """
+
+    text: str
+    citations: list[CitationApi]
+
+
 class ClaimApi(BaseModel):
-    """One atomic claim + its one-sentence evidence with [n] citation markers.
+    """One decision the judge made, written so the reviewer can vote on it.
 
-    `expected_result` is the verdict a reviewer's AGREE on this claim supports —
-    a direction bit, not a re-judging: claims pointing opposite the judge's
-    verdict are counter-evidence the reviewer can use to catch a bad judge.
+    `text` carries the claim, its evidence and its [n] markers in one string;
+    every marker resolves through `citations`. Grades have one direction:
+    agree means the judge got this decision right, disagree means it got it
+    wrong.
+
+    `is_verdict` marks the claim that states the overall pass/fail. The claim
+    builder may omit it, and only the LAST claim can be one, so the UI needs a
+    flag rather than a guess: it decides whether to derive the reviewer's
+    overall call from that claim's grade or to ask for it outright. The studio
+    sets the flag from the builder's own convention (the verdict claim opens
+    "It passes" or "It fails", and no other claim may) so the UI never
+    pattern-matches prose.
     """
 
-    claim: str
-    expected_result: JudgeScoreLiteral
-    evidence: str
+    text: str
     citations: list[CitationApi]
-
-
-class FinalJudgementApi(BaseModel):
-    """The one overall verdict entry (top-level, not a claim in the list).
-
-    Its expected_result always equals the judge's verdict — the server pins it
-    deterministically, so the answer key can anchor to it.
-    """
-
-    claim: str
-    expected_result: JudgeScoreLiteral
-    evidence: str
-    citations: list[CitationApi]
+    is_verdict: bool
 
 
 # TODO(eval-v2): remove — ClaimDebugContext is temporary ClaimDebug capture
@@ -127,12 +133,12 @@ class BuildClaimsApiInput(BaseModel):
 
 
 class BuildClaimsApiOutput(BaseModel):
-    """Claims for one trace (importance-ordered, may be empty) + the one
-    final judgement. Trivial single-property evals can carry everything in
-    the final judgement alone."""
+    """The review card for one trace: the overview, then one to eight claims
+    in the order the reviewer reads them. The verdict claim, when the builder
+    wrote one, is the last claim and carries `is_verdict`."""
 
+    overview: OverviewApi
     claims: list[ClaimApi]
-    final_judgement: FinalJudgementApi
 
 
 # ── Run-config preflight ──────────────────────────────────────────────────
@@ -167,10 +173,10 @@ class PreflightModelApiOutput(BaseModel):
 class GradedTraceApi(BaseModel):
     """One human-reviewed trace's grades, shaped to feed judge refinement.
 
-    Mirrors the persisted ClaimReview (judge verdict + per-claim
-    agree/disagree with optional whys) plus a `trace_label` the refine model
-    cites in its change rationales. Only the claims the reviewer actually
-    graded appear — an absent claim is "not reviewed", never agreement.
+    Mirrors the persisted ClaimReview (judge verdict, the overview, every
+    claim with its agree/disagree and optional why, and the reviewer's
+    overall call) plus a `trace_label` the refine model cites in its change
+    rationales.
     """
 
     trace_label: str = Field(
@@ -179,8 +185,11 @@ class GradedTraceApi(BaseModel):
     )
     judge_score: JudgeScoreLiteral
     judge_reasoning: str
-    claims: list[GradedClaim]
-    final_judgement: GradedClaim
+    overview: str
+    # Never a subset: every claim on the card, graded. A card always carries
+    # at least one, and the refiner rejects an empty list.
+    claims: list[GradedClaim] = Field(min_length=1)
+    human_verdict: JudgeScoreLiteral
 
 
 class RefineJudgeApiInput(BaseModel):

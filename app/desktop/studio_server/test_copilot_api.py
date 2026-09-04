@@ -779,22 +779,20 @@ class TestCreateSpecWithCopilot:
                 "claim_review": {
                     "judge_score": "fail",
                     "judge_reasoning": "Judge reasoning here.",
+                    "overview": "The user asked about returns.",
                     "claims": [
                         {
-                            "claim": "The agent stated a return window.",
-                            "evidence": "Gives 30 days [1].",
-                            "expected_result": "fail",
+                            "text": "The agent stated a return window [1].",
                             "human_grade": "agree",
                             "human_feedback": None,
-                        }
+                        },
+                        {
+                            "text": "It fails because the window was invented [1].",
+                            "human_grade": "agree",
+                            "human_feedback": None,
+                        },
                     ],
-                    "final_judgement": {
-                        "claim": "Overall verdict.",
-                        "evidence": "Decisive fact [1].",
-                        "expected_result": "fail",
-                        "human_grade": "agree",
-                        "human_feedback": None,
-                    },
+                    "human_verdict": "fail",
                 },
             },
             {
@@ -1060,22 +1058,15 @@ class TestCreateSpecWithCopilotMultiTurn:
             "claim_review": {
                 "judge_score": "pass" if meets_spec else "fail",
                 "judge_reasoning": "Judge reasoning here.",
+                "overview": "The user asked about returns.",
                 "claims": [
                     {
-                        "claim": "The agent stated a return window.",
-                        "evidence": "Gives 30 days [1].",
-                        "expected_result": "fail",
+                        "text": "The agent stated a return window [1].",
                         "human_grade": "agree",
                         "human_feedback": None,
                     }
                 ],
-                "final_judgement": {
-                    "claim": "Overall verdict.",
-                    "evidence": "Decisive fact [1].",
-                    "expected_result": "pass" if meets_spec else "fail",
-                    "human_grade": "agree",
-                    "human_feedback": None,
-                },
+                "human_verdict": "pass" if meets_spec else "fail",
             },
         }
 
@@ -1214,7 +1205,7 @@ class TestCreateSpecWithCopilotMultiTurn:
         assert failed.feedback()[0].feedback == "Fabricated a return window."
         assert len(failed.claim_reviews()) == 1
         assert failed.claim_reviews()[0].judge_score == "fail"
-        assert failed.claim_reviews()[0].final_judgement.expected_result == "fail"
+        assert failed.claim_reviews()[0].human_verdict == "fail"
 
         passed = runs_by_id[synthetic_chain_leaves[1].id]
         assert passed.output.rating.requirement_ratings[rating_key].value == 1.0
@@ -1775,22 +1766,15 @@ class TestCreateSpecWithCopilotSingleTurnBatch:
             "claim_review": {
                 "judge_score": "pass" if meets_spec else "fail",
                 "judge_reasoning": "Judge reasoning here.",
+                "overview": "The user asked about returns.",
                 "claims": [
                     {
-                        "claim": "The agent stated a return window.",
-                        "evidence": "Gives 30 days [1].",
-                        "expected_result": "fail",
+                        "text": "The agent stated a return window [1].",
                         "human_grade": "agree",
                         "human_feedback": None,
                     }
                 ],
-                "final_judgement": {
-                    "claim": "Overall verdict.",
-                    "evidence": "Decisive fact [1].",
-                    "expected_result": "pass" if meets_spec else "fail",
-                    "human_grade": "agree",
-                    "human_feedback": None,
-                },
+                "human_verdict": "pass" if meets_spec else "fail",
             },
         }
 
@@ -2691,27 +2675,49 @@ class TestParseImportFile:
         assert "UTF-8" in response.json()["message"]
 
 
-def test_claim_review_api_rejects_unpinned_final_judgement():
-    """The request-model mirror of the persisted ClaimReview invariant: a
-    payload whose final judgement contradicts the judge's verdict 422s
-    before any model is written."""
+def test_claim_review_api_requires_the_overall_call():
+    """The request-model mirror of the persisted ClaimReview: the reviewer's
+    overall call is what the golden rating is built from, so a payload
+    without it is rejected before any model is written rather than defaulted
+    to the judge's verdict."""
     import pydantic
 
     from app.desktop.studio_server.api_models.copilot_models import ClaimReviewApi
 
-    with pytest.raises(pydantic.ValidationError, match="must equal judge_score"):
+    with pytest.raises(pydantic.ValidationError, match="human_verdict"):
         ClaimReviewApi(
             judge_score="pass",
             judge_reasoning="Fine.",
+            overview="Summary.",
             claims=[],
-            final_judgement={
-                "claim": "Overall verdict.",
-                "evidence": "Decisive fact [1].",
-                "expected_result": "fail",
-                "human_grade": "agree",
-                "human_feedback": None,
-            },
         )
+
+
+@pytest.mark.parametrize("model_name", ["ReviewedChainApi", "ReviewedExample"])
+def test_reviewed_item_rejects_a_rating_that_contradicts_its_review(model_name):
+    """The golden rating and the stored review carry the same overall call;
+    a payload where they differ is corrupt and 422s before anything is
+    written."""
+    import pydantic
+
+    from app.desktop.studio_server.api_models import copilot_models
+
+    model = getattr(copilot_models, model_name)
+    base = (
+        {"leaf_run_id": "run-1"}
+        if model_name == "ReviewedChainApi"
+        else {"input": "i", "output": "o", "model_says_meets_spec": True}
+    )
+    review = {
+        "judge_score": "pass",
+        "judge_reasoning": "Fine.",
+        "overview": "Summary.",
+        "claims": [],
+        "human_verdict": "pass",
+    }
+    model(**base, user_says_meets_spec=True, feedback="", claim_review=review)
+    with pytest.raises(pydantic.ValidationError, match="must match"):
+        model(**base, user_says_meets_spec=False, feedback="", claim_review=review)
 
 
 _QUESTION_SPEC_FN = (
