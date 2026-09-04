@@ -196,7 +196,8 @@
             <SettingsHeader title="LLM Judge" />
             <FormElement
               label="What should this eval check?"
-              description="Describe in plain language. We'll structure it for you."
+              description="Describe what to check in plain language. Kiln Pro writes the eval and generates the data to test it."
+              placeholder="e.g. The model should not hallucinate."
               id="eval_description"
               inputType="textarea"
               height="medium"

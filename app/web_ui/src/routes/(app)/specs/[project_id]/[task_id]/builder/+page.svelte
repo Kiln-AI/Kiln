@@ -286,7 +286,7 @@
     // Navigating away also cancels the preparing-review gate's ownership of
     // the advance: in-flight claim builds keep running (they belong to the
     // traces, not the screen), but the gate must not push the user into
-    // review from another step. Next re-enters it, resolving instantly
+    // review from another step. Continue re-enters it, resolving instantly
     // when everything already built.
     preparing_review = false
     claims_gate_error = null
@@ -802,7 +802,7 @@
     seed_refine_form_if_empty()
   }
 
-  // Called by Questions component on Next. Fires the refinement call and
+  // Called by Questions component on Continue. Fires the refinement call and
   // populates the refine form's state. Matches v1's flow:
   //   answer Qs → refining spinner → refine screen with editable suggestions.
   async function on_continue_from_clarify(
@@ -810,7 +810,7 @@
   ) {
     // FormContainer flips submitting=true on submit and leaves the reset to
     // us — clear it before advancing so browser Back to the clarify step
-    // doesn't find a permanently spinning Next button.
+    // doesn't find a permanently spinning Continue button.
     questions_submitting = false
     goto_step("refine")
     refined_preview_loading = true
@@ -908,7 +908,7 @@
     }
   }
 
-  // The refine form's Next action: advance to Step 4 generation with
+  // The refine form's Continue action: advance to Step 4 generation with
   // whatever refined_property_values the user finalized.
   // Reentry guard for the async submit below: a second activation during
   // the availability round trip (double-click, Cmd-Enter key-repeat) must
@@ -985,7 +985,7 @@
   // The summary isn't regenerated when the user edits/deletes prompts — flag
   // that it may no longer match (mirrors the /generate route's plan UI).
   let batch_plan_edited = false
-  // Snapshot of the prompts a drive actually ran — gates the Next-to-review
+  // Snapshot of the prompts a drive actually ran — gates the Continue-to-review
   // action so results are never presented for a plan edited after the drive.
   let driven_prompts_json: string | null = null
   // The plan's generated synthetic users, reused on a re-drive while the
@@ -1115,9 +1115,9 @@
   // Unified stop screen: set when a drive ends short of the approved plan
   // (post-retry case failures or upstream salvage drops). The plan screen
   // stops ONCE with an informational banner and the recovery actions —
-  // continue with the survivors via Next (iff any) or Drive again. No
+  // continue with the survivors via Continue (iff any) or Drive again. No
   // failure is shown without an action, and no failure silently shrinks the
-  // batch; all-failed is the same screen with Next naturally absent.
+  // batch; all-failed is the same screen with Continue naturally absent.
   let drive_stop: DriveStop | null = null
   // Per-case failure messages from the last drive's case_failed frames —
   // aggregated into the stop banner's "most common" diagnosis.
@@ -1763,8 +1763,8 @@
     trace_claims.length > 0 &&
     batch_plan !== null &&
     driven_prompts_json === JSON.stringify(batch_plan.prompts)
-  // Accepted has-data state (clean drive, or survivors accepted via Next):
-  // Drive is hidden — Next (to review) is the only forward action. On the
+  // Accepted has-data state (clean drive, or survivors accepted via Continue):
+  // Drive is hidden — Continue (to review) is the only forward action. On the
   // stop screen Drive stays visible as the re-drive recovery.
   $: has_data_accepted = has_driven_results && drive_stop === null
   // How many cases the last drive was asked to run — the denominator for
@@ -3987,7 +3987,7 @@
         continue_from_describe()
       }
     } else if (current_step === "refine" && !refined_preview_loading) {
-      // Same validator gate as the Next button; the in-flight guard lives
+      // Same validator gate as the Continue button; the in-flight guard lives
       // in on_refine_submit itself.
       if (
         filename_string_short_validator(name) === null &&
@@ -4020,7 +4020,7 @@
     } else if (current_step === "review") {
       // The gate/last-trace pair matches the Save button only within the review
       // component: the gate can be met several traces early, and the shortcut
-      // must not skip traces the reviewer still sees a Next button for. The
+      // must not skip traces the reviewer still sees a Continue button for. The
       // screen-level guards exclude the stale-results gate, the calibration
       // error screen, and in-flight calibration, where that component is
       // unmounted but its binds still hold their last values.
@@ -4208,17 +4208,15 @@
           <!-- ── Step 1 — Describe ── -->
           <FormElement
             label="What should this eval check?"
-            description="Describe in plain language. We'll structure it for you."
+            description="Describe what to check in plain language. Kiln Pro writes the eval and generates the data to test it."
+            placeholder="e.g. The model should not hallucinate."
             id="description"
             inputType="textarea"
             height="medium"
             bind:value={description}
           />
 
-          <div class="flex justify-between mt-8">
-            <button class="btn btn-outline" on:click={back_to_task}
-              >Cancel</button
-            >
+          <div class="flex justify-end mt-8">
             <!-- FormContainer's compact submit spec (wide primary + keyboard
                  hint), hand-rolled because this row isn't a FormContainer. -->
             <button
@@ -4226,7 +4224,7 @@
               on:click={continue_from_describe}
               disabled={!description.trim()}
             >
-              Next
+              Continue
               <span class="absolute opacity-80 right-4 text-xs font-light">
                 {#if isMacOS()}
                   <span class="tracking-widest">⌘↵</span>
@@ -4237,12 +4235,16 @@
             </button>
           </div>
 
-          <div class="text-center mt-6 text-sm text-gray-500">
-            Prefer to set it up yourself?
+          <!-- Reuses the Data Guide preview's secondary-action row (an "or"
+               joining a demoted link) so the two screens read alike. -->
+          <div class="flex flex-row gap-1 mt-4 justify-end">
+            <span class="text-sm text-gray-500 px-1">or</span>
             <button
-              class="link link-hover text-primary"
-              on:click={create_manually}>Create manually</button
+              class="link underline text-sm text-gray-500"
+              on:click={create_manually}
             >
+              Create Manually
+            </button>
           </div>
         {:else if current_step === "clarify"}
           <!-- ── Step 2 — Clarify (uses v1's Questions component) ── -->
@@ -4273,7 +4275,7 @@
               bind:error={questions_form_error}
               bind:submitting={questions_submitting}
               warn_before_unload={false}
-              submit_label="Next"
+              submit_label="Continue"
             />
           {/if}
         {:else if current_step === "refine"}
@@ -4320,7 +4322,7 @@
 
             {#if refine_form_error}
               <!-- The Step 3 gate errors (e.g. a taken eval name). Without
-                   this region the Next button silently does nothing. -->
+                   this region the Continue button silently does nothing. -->
               <div class="mt-4">
                 <Warning
                   warning_color="error"
@@ -4342,7 +4344,7 @@
                   filename_string_short_validator(name) !== null ||
                   !(refined_property_values.issue_description ?? "").trim()}
               >
-                Next
+                Continue
                 <span class="absolute opacity-80 right-4 text-xs font-light">
                   {#if isMacOS()}
                     <span class="tracking-widest">⌘↵</span>
@@ -4598,7 +4600,7 @@
                     class="relative btn btn-primary min-w-64 px-12"
                     on:click={on_continue_with_survivors}
                   >
-                    Next
+                    Continue
                     <span
                       class="absolute opacity-80 right-4 text-xs font-light"
                     >
@@ -4622,7 +4624,7 @@
                   class="relative btn btn-primary min-w-64 px-12"
                   on:click={continue_to_review}
                 >
-                  Next
+                  Continue
                   <span class="absolute opacity-80 right-4 text-xs font-light">
                     {#if isMacOS()}
                       <span class="tracking-widest">⌘↵</span>
@@ -4836,7 +4838,7 @@
                    data-guide refine flow): saves immediately with the judge
                    the reviewer graded — no dialog. Only offered where the
                    primary CTA itself renders — a refine on the last trace —
-                   so it never sits under a Next button, where one unconfirmed
+                   so it never sits under a Continue button, where one unconfirmed
                    click would save mid-review. -->
               <div class="flex flex-col items-end mt-2">
                 <button
@@ -5002,12 +5004,10 @@
       />
     {/if}
     <AvailableModelsDropdown
-      label={is_multi_turn
-        ? "Model that grades each conversation"
-        : "Model that grades each result"}
+      label="Judge Model"
       info_description={is_multi_turn
-        ? "Checks each conversation against your eval's criteria, then marks pass or fail."
-        : "Checks each result against your eval's criteria, then marks pass or fail."}
+        ? "Checks each conversation against your eval's criteria."
+        : "Checks each result against your eval's criteria."}
       bind:model={judge_model_combined}
       bind:model_name={judge_model_id}
       bind:provider_name={judge_provider_id}

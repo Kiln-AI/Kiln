@@ -110,8 +110,8 @@ describe("ClaimEvidenceReview — failed claims build", () => {
   })
 })
 
-describe("ClaimEvidenceReview — Next gating", () => {
-  it("disables Next until the current conversation is answered", async () => {
+describe("ClaimEvidenceReview — Continue gating", () => {
+  it("disables Continue until the current conversation is answered", async () => {
     const traces = [built_trace("t0"), built_trace("t1")]
     const verdicts = build_trace_reviews(traces)
     const { getByText, queryByText } = render(ClaimEvidenceReview, {
@@ -123,29 +123,29 @@ describe("ClaimEvidenceReview — Next gating", () => {
       },
     })
 
-    // On the first (unanswered) conversation: Next is present but disabled,
+    // On the first (unanswered) conversation: Continue is present but disabled,
     // and Save is nowhere (not the last conversation).
-    const next = getByText("Next") as HTMLButtonElement
-    expect(next.disabled).toBe(true)
+    const continue_button = getByText("Continue") as HTMLButtonElement
+    expect(continue_button.disabled).toBe(true)
     expect(queryByText("Save")).toBeNull()
-    // Next carries the step-4 forward spec (wide primary) but no keyboard
-    // hint: on this screen the shortcut fires Save, never Next.
-    expect(next.className).toContain("min-w-64")
-    expect(next.className).not.toContain("btn-sm")
+    // Continue carries the step-4 forward spec (wide primary) but no keyboard
+    // hint: on this screen the shortcut fires Save, never Continue.
+    expect(continue_button.className).toContain("min-w-64")
+    expect(continue_button.className).not.toContain("btn-sm")
 
-    // Answering the current conversation enables Next.
+    // Answering the current conversation enables Continue.
     await fireEvent.click(getByText("Pass"))
-    expect((getByText("Next") as HTMLButtonElement).disabled).toBe(false)
+    expect((getByText("Continue") as HTMLButtonElement).disabled).toBe(false)
   })
 })
 
 describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
-  it("holds the Save slot disabled until the gate is met, never a dead Next", async () => {
+  it("holds the Save slot disabled until the gate is met, never a dead Continue", async () => {
     const traces = [built_trace("only")]
     const verdicts = build_trace_reviews(traces)
 
     // Gate not met: the same Save button holds the slot, disabled and
-    // explaining itself. No Next — there's nothing left to advance to.
+    // explaining itself. No Continue — there's nothing left to advance to.
     const gated = render(ClaimEvidenceReview, {
       props: {
         traces,
@@ -157,7 +157,7 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
     })
     const blocked = gated.getByText("Save") as HTMLButtonElement
     expect(blocked.disabled).toBe(true)
-    expect(gated.queryByText("Next")).toBeNull()
+    expect(gated.queryByText("Continue")).toBeNull()
     expect(
       gated.container.querySelector(".tooltip")?.getAttribute("data-tip"),
     ).toContain("Finish grading")
@@ -175,7 +175,7 @@ describe("ClaimEvidenceReview — Save slot on the last conversation", () => {
     })
     const live = open.getByText("Save") as HTMLButtonElement
     expect(live.disabled).toBe(false)
-    expect(open.queryByText("Next")).toBeNull()
+    expect(open.queryByText("Continue")).toBeNull()
     // The slot keeps one width across that flip, so it doesn't resize as the
     // gate completes.
     expect(live.className).toContain("min-w-64")
@@ -750,13 +750,13 @@ describe("ClaimEvidenceReview — the claims-first arm asks the call first", () 
       },
     })
 
-    expect((getByText("Next") as HTMLButtonElement).disabled).toBe(true)
+    expect((getByText("Continue") as HTMLButtonElement).disabled).toBe(true)
     await fireEvent.click(getByText("Fail"))
     expect(verdicts[0].claim_verdicts.every((v) => v.agrees === null)).toBe(
       true,
     )
     expect(is_trace_reviewed(traces[0], verdicts[0])).toBe(true)
-    expect((getByText("Next") as HTMLButtonElement).disabled).toBe(false)
+    expect((getByText("Continue") as HTMLButtonElement).disabled).toBe(false)
   })
 })
 
@@ -771,7 +771,7 @@ describe("ClaimEvidenceReview — the claims disclosure folds on every move", ()
     expect(queryByText(/The main facts the judge used/)).toBeTruthy()
 
     await fireEvent.click(getByText("Pass"))
-    await fireEvent.click(getByText("Next"))
+    await fireEvent.click(getByText("Continue"))
     expect(queryByText(/The main facts the judge used/)).toBeNull()
   })
 
@@ -780,7 +780,7 @@ describe("ClaimEvidenceReview — the claims disclosure folds on every move", ()
     const { getByText, queryByText } = render_review(traces)
 
     await fireEvent.click(getByText("Pass"))
-    await fireEvent.click(getByText("Next"))
+    await fireEvent.click(getByText("Continue"))
     await fireEvent.click(getByText("Claims"))
     expect(queryByText(/The main facts the judge used/)).toBeTruthy()
 
@@ -826,7 +826,7 @@ describe("ClaimEvidenceReview — what a flagged claim records", () => {
   })
 
   it("blocks the conversation until a flagged claim carries a reason", async () => {
-    // The one place a claim verdict can still hold up Next: a disagreement
+    // The one place a claim verdict can still hold up Continue: a disagreement
     // without a reason is an incomplete review, flag-only control or not.
     const traces = [claims_first_trace(), claims_first_trace()]
     traces[1].trace_id = "mt_1"
@@ -841,23 +841,23 @@ describe("ClaimEvidenceReview — what a flagged claim records", () => {
     })
 
     await fireEvent.click(getByText("Fail"))
-    expect((getByText("Next") as HTMLButtonElement).disabled).toBe(false)
+    expect((getByText("Continue") as HTMLButtonElement).disabled).toBe(false)
 
     await expand_claims(container)
     await fireEvent.click(getAllByText("Disagree")[0])
-    expect((getByText("Next") as HTMLButtonElement).disabled).toBe(true)
+    expect((getByText("Continue") as HTMLButtonElement).disabled).toBe(true)
 
     await fireEvent.input(
       container.querySelectorAll("textarea")[0] as HTMLTextAreaElement,
       { target: { value: "The window is published." } },
     )
-    expect((getByText("Next") as HTMLButtonElement).disabled).toBe(false)
+    expect((getByText("Continue") as HTMLButtonElement).disabled).toBe(false)
 
     // Clearing the flag also clears the reason it demanded, and the
     // conversation is complete again on the overall call alone.
     await fireEvent.click(getAllByText("Disagree")[0])
     expect(verdicts[0].claim_verdicts[0]).toEqual({ agrees: null, why: "" })
-    expect((getByText("Next") as HTMLButtonElement).disabled).toBe(false)
+    expect((getByText("Continue") as HTMLButtonElement).disabled).toBe(false)
   })
 })
 

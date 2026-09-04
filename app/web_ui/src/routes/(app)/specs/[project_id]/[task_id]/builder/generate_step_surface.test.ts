@@ -1,5 +1,5 @@
-// Source assertions for Step 4's generate surface. The builder page is far too
-// large to mount, but the strings and the wiring below are contractual: the
+// Source assertions for the builder's wizard surfaces. The builder page is far
+// too large to mount, but the strings and the wiring below are contractual: the
 // ruled copy, and the rule that the Generation Settings dialog is the drive's
 // ONLY entrance. Reading the source is the house precedent for pinning facts a
 // render test can't reach (see lib/agent_coverage.test.ts).
@@ -60,12 +60,37 @@ function whole_word_mentions(symbol: string): number {
   return (page_source.match(pattern) ?? []).length
 }
 
+const describe_step = region(
+  '{:else if current_step === "describe"}',
+  '{:else if current_step === "clarify"}',
+)
 const plan_surface = region("<KilnProBatchPlan", "/>")
 const new_plan_dialog = region("bind:this={new_plan_dialog}", "</Dialog>")
 const drive_settings_dialog = region(
   "bind:this={drive_settings_dialog}",
   "</Dialog>",
 )
+
+describe("describe step action row", () => {
+  it("offers one forward action, with no Cancel beside it", () => {
+    // Leaving the wizard is the browser's Back. A Cancel button beside the
+    // primary made the row read as a two-way choice.
+    expect(describe_step).not.toContain(">Cancel<")
+    expect(describe_step).not.toContain("Cancel</button")
+  })
+
+  it("names the forward action Continue, like every other step", () => {
+    expect(normalize(describe_step)).toContain(
+      "on:click={continue_from_describe} disabled={!description.trim()} > Continue",
+    )
+  })
+
+  it("demotes the manual path to the secondary-action row", () => {
+    expect(normalize(describe_step)).toContain(
+      'class="link underline text-sm text-gray-500" on:click={create_manually} > Create Manually',
+    )
+  })
+})
 
 describe("plan surface copy", () => {
   it("names the plan surface for the eval dataset it proposes", () => {
@@ -451,19 +476,14 @@ describe("Generation Settings dialog", () => {
     expect(contains('label="Model that writes the eval data"')).toBe(true)
   })
 
-  it("names the judge lane per arm", () => {
-    expect(contains('"Model that grades each conversation"')).toBe(true)
-    expect(contains('"Model that grades each result"')).toBe(true)
+  it("names the judge lane once and explains it per arm", () => {
+    expect(contains('label="Judge Model"')).toBe(true)
     expect(
-      contains(
-        `"Checks each conversation against your eval's criteria, then marks pass or fail."`,
-      ),
+      contains(`"Checks each conversation against your eval's criteria."`),
     ).toBe(true)
-    expect(
-      contains(
-        `"Checks each result against your eval's criteria, then marks pass or fail."`,
-      ),
-    ).toBe(true)
+    expect(contains(`"Checks each result against your eval's criteria."`)).toBe(
+      true,
+    )
   })
 
   it("quiets the suggested-model advisory on every lane", () => {
