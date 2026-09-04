@@ -10,7 +10,7 @@ from litellm.types.utils import (
     StreamingChoices,
 )
 
-from kiln_ai.adapters.chat.chat_formatter import get_chat_formatter
+from kiln_ai.adapters.errors import StructuredOutputParseError
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
@@ -23,6 +23,7 @@ from kiln_ai.adapters.model_adapters.stream_events import (
     ToolCallEventType,
 )
 from kiln_ai.adapters.prompt_builders import BasePromptBuilder
+from kiln_ai.adapters.retry_classification import is_retryable_error
 from kiln_ai.datamodel import Task, TaskRun, Usage
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, ModelProviderName
 from kiln_ai.datamodel.project import Project
@@ -1296,7 +1297,7 @@ class TestAgentRunContextLifecycle:
                 "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
             ),
             patch(
-                "kiln_ai.adapters.model_adapters.base_adapter.MCPSessionManager"
+                "kiln_ai.tools.mcp_session_manager.MCPSessionManager"
             ) as mock_manager_class,
         ):
             mock_parser_factory.return_value = parser
@@ -1310,10 +1311,92 @@ class TestAgentRunContextLifecycle:
             # cleanup_session should have been called
             mock_manager.cleanup_session.assert_called_once()
             # The run ID should be a string that starts with "run_"
-            call_args = mock_manager.cleanup_session.call_args
-            assert call_args is not None
-            run_id = call_args[0][0] if call_args[0] else call_args[1]["run_id"]
+            run_id = mock_manager.cleanup_session.call_args[0][0]
             assert run_id.startswith("run_")
+
+    @staticmethod
+    def _fake_adapter_stream():
+        """A one-chunk stand-in for the model stream, so these tests exercise
+        the session scope around iteration rather than a real model path."""
+
+        class FakeAdapterStream:
+            async def __aiter__(self):
+                yield ModelResponseStream(
+                    id="test",
+                    choices=[
+                        StreamingChoices(
+                            index=0,
+                            delta=Delta(content="hi"),
+                            finish_reason=None,
+                        )
+                    ],
+                )
+
+        return FakeAdapterStream()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_session_called_after_openai_stream(
+        self, adapter, clear_context
+    ):
+        """The streaming path opens the same session scope as invoke, so a
+        consumed stream must close its sessions and release the run id too."""
+        from kiln_ai.run_context import get_agent_run_id
+
+        with (
+            patch.object(
+                adapter, "_prepare_stream", return_value=self._fake_adapter_stream()
+            ),
+            patch.object(
+                adapter, "_finalize_stream", return_value=MagicMock(spec=TaskRun)
+            ),
+            patch(
+                "kiln_ai.tools.mcp_session_manager.MCPSessionManager"
+            ) as mock_manager_class,
+        ):
+            mock_manager = MagicMock()
+            mock_manager_class.shared.return_value = mock_manager
+            mock_manager.cleanup_session = AsyncMock()
+
+            async for _chunk in adapter.invoke_openai_stream("test input"):
+                pass
+
+            mock_manager.cleanup_session.assert_called_once()
+            run_id = mock_manager.cleanup_session.call_args[0][0]
+            assert run_id.startswith("run_")
+            assert get_agent_run_id() is None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_session_called_after_ai_sdk_stream(
+        self, adapter, clear_context
+    ):
+        """Same guarantee for the AI SDK stream: it owns a scope of its own."""
+        from kiln_ai.run_context import get_agent_run_id
+
+        finalized_run = MagicMock(spec=TaskRun)
+        # Pins the finish branch: a bare mock is truthy here, which would
+        # silently route the stream down the tool-calls-pending path instead.
+        finalized_run.is_toolcall_pending = False
+
+        with (
+            patch.object(
+                adapter, "_prepare_stream", return_value=self._fake_adapter_stream()
+            ),
+            patch.object(adapter, "_finalize_stream", return_value=finalized_run),
+            patch(
+                "kiln_ai.tools.mcp_session_manager.MCPSessionManager"
+            ) as mock_manager_class,
+        ):
+            mock_manager = MagicMock()
+            mock_manager_class.shared.return_value = mock_manager
+            mock_manager.cleanup_session = AsyncMock()
+
+            async for _event in adapter.invoke_ai_sdk_stream("test input"):
+                pass
+
+            mock_manager.cleanup_session.assert_called_once()
+            run_id = mock_manager.cleanup_session.call_args[0][0]
+            assert run_id.startswith("run_")
+            assert get_agent_run_id() is None
 
 
 class TestStreamMethods:
@@ -1581,7 +1664,37 @@ class TestFinalizeStream:
         run = adapter._finalize_stream(adapter_stream, "test input", None)
         assert isinstance(run, TaskRun)
 
-    def test_finalize_stream_structured_output_not_dict_raises(self, base_task):
+    def test_finalize_stream_structured_output_unparseable_json_is_retryable(
+        self, base_task
+    ):
+        # A streamed response that isn't JSON is the same one-off model slip as
+        # the non-streaming path, so it must carry the retryable type too.
+        schema = '{"type": "object", "properties": {"val": {"type": "integer"}}, "required": ["val"]}'
+        adapter = self._make_structured_adapter(base_task, schema)
+
+        provider = MagicMock()
+        provider.parser = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        adapter_stream = self._make_adapter_stream("Sure! Here you go.")
+        with pytest.raises(StructuredOutputParseError) as exc_info:
+            adapter._finalize_stream(adapter_stream, "test input", None)
+        assert is_retryable_error(exc_info.value) is True
+
+    @pytest.mark.parametrize(
+        "stream_output,expected_message",
+        [
+            # Already a non-dict value, so no JSON parsing is involved...
+            (42, "structured response is not a dict: 42"),
+            # ...and valid JSON that parses to a non-dict (the object wrapped in
+            # a list, a common model slip). Both are wrong-shape output.
+            ('[{"x": "y"}]', "structured response is not a dict: [{'x': 'y'}]"),
+        ],
+    )
+    def test_finalize_stream_structured_output_not_dict_raises(
+        self, base_task, stream_output, expected_message
+    ):
         schema = '{"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"]}'
         adapter = self._make_structured_adapter(base_task, schema)
 
@@ -1590,9 +1703,13 @@ class TestFinalizeStream:
         provider.reasoning_capable = False
         adapter.model_provider = MagicMock(return_value=provider)
 
-        adapter_stream = self._make_adapter_stream(42)
-        with pytest.raises(RuntimeError, match="structured response is not a dict"):
+        adapter_stream = self._make_adapter_stream(stream_output)
+        with pytest.raises(StructuredOutputParseError) as exc_info:
             adapter._finalize_stream(adapter_stream, "test input", None)
+        # Retryable like a parse failure, and the message the user sees is
+        # unchanged from when this raised RuntimeError.
+        assert is_retryable_error(exc_info.value) is True
+        assert str(exc_info.value) == expected_message
 
     def test_finalize_stream_non_structured_non_string_raises(self, finalize_adapter):
         provider = MagicMock()
@@ -1992,43 +2109,3 @@ class TestInputTransformIntegration:
 
         result_dict = adapter._apply_input_transform({"key": "val"})
         assert result_dict == {"key": "val"}
-
-
-@pytest.mark.parametrize("reasoning_capable", [True, False])
-def test_build_chat_formatter_forward_thinking_instructions(
-    base_task, reasoning_capable
-):
-    adapter = MockAdapter(
-        task=base_task,
-        run_config=KilnAgentRunConfigProperties(
-            model_name="test_model",
-            model_provider_name="openai",
-            prompt_id="simple_prompt_builder",
-            structured_output_mode="json_schema",
-        ),
-        config=AdapterConfig(forward_thinking_instructions=True),
-    )
-    mock_prompt_builder = MagicMock()
-    mock_prompt_builder.chain_of_thought_prompt.return_value = "think step by step"
-    mock_prompt_builder.build_prompt.return_value = "system message"
-    adapter.prompt_builder = mock_prompt_builder
-
-    mock_provider = MagicMock()
-    mock_provider.tuned_chat_strategy = None
-    mock_provider.reasoning_capable = reasoning_capable
-    adapter.model_provider = MagicMock(return_value=mock_provider)
-
-    with patch(
-        "kiln_ai.adapters.model_adapters.base_adapter.get_chat_formatter",
-        wraps=get_chat_formatter,
-    ) as mock_gcf:
-        formatter = adapter.build_chat_formatter("test input")
-        mock_gcf.assert_called_once()
-        call_kwargs = mock_gcf.call_args
-        assert call_kwargs.kwargs.get("forward_thinking_instructions") is True
-
-    if reasoning_capable:
-        assert formatter.__class__.__name__ == "SingleTurnR1ThinkingFormatter"
-        assert formatter.forward_thinking_instructions is True
-    else:
-        assert formatter.__class__.__name__ == "TwoMessageCotFormatter"

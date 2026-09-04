@@ -1,7 +1,11 @@
 import json
 from typing import Tuple
 
-from kiln_ai.adapters.errors import KilnRunError, format_error_message
+from kiln_ai.adapters.errors import (
+    KilnRunError,
+    StructuredOutputParseError,
+    format_error_message,
+)
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, BaseAdapter
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.run_output import RunOutput
@@ -13,13 +17,8 @@ from kiln_ai.datamodel.json_schema import (
 )
 from kiln_ai.datamodel.run_config import McpRunConfigProperties
 from kiln_ai.datamodel.task import RunConfigProperties
-from kiln_ai.run_context import (
-    clear_agent_run_id,
-    generate_agent_run_id,
-    get_agent_run_id,
-    set_agent_run_id,
-)
-from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.datamodel.task_output import TASK_OUTPUT_SCHEMA_ERROR_PREFIX
+from kiln_ai.tools.mcp_session_manager import mcp_session_scope
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.open_ai_types import (
@@ -114,7 +113,10 @@ class MCPAdapter(BaseAdapter):
     ) -> Tuple[TaskRun, RunOutput]:
         """
         Runs the task and returns both the persisted TaskRun and raw RunOutput.
-        If this call is the root of a run, it creates an agent run context, ensures MCP tool calls have a valid session scope, and cleans up the session/context on completion.
+        The run executes inside an MCP session scope, so the tool call has a
+        valid session to reuse. If this call opened the scope, the sessions it
+        opened are cleaned up on completion; nested inside a caller's scope,
+        that caller owns the teardown.
         """
         if prior_trace or parent_task_run is not None:
             raise NotImplementedError(
@@ -122,24 +124,10 @@ class MCPAdapter(BaseAdapter):
                 "MCP tools are single-turn and do not maintain conversation state."
             )
 
-        is_root_agent = get_agent_run_id() is None
-
-        if is_root_agent:
-            run_id = generate_agent_run_id()
-            set_agent_run_id(run_id)
-
-        try:
+        async with mcp_session_scope():
             return await self._run_and_validate_output(
                 input, input_source, parent_task_run
             )
-        finally:
-            if is_root_agent:
-                try:
-                    run_id = get_agent_run_id()
-                    if run_id:
-                        await MCPSessionManager.shared().cleanup_session(run_id)
-                finally:
-                    clear_agent_run_id()
 
     async def _run_and_validate_output(
         self,
@@ -173,17 +161,25 @@ class MCPAdapter(BaseAdapter):
 
             if self.output_schema is not None:
                 if isinstance(run_output.output, str):
-                    parsed_output = parse_json_string(run_output.output)
+                    try:
+                        parsed_output = parse_json_string(run_output.output)
+                    except ValueError as e:
+                        # Re-type (message unchanged) so retries treat bad JSON
+                        # like a schema mismatch: a one-off model slip.
+                        raise StructuredOutputParseError(str(e)) from e
                 else:
                     parsed_output = run_output.output
                 if not isinstance(parsed_output, dict):
-                    raise RuntimeError(
+                    # Valid JSON of the wrong shape (often the object wrapped in
+                    # a list) is the same one-off model slip as bad JSON, so it
+                    # carries the retryable type too.
+                    raise StructuredOutputParseError(
                         f"structured response is not a dict: {parsed_output}"
                     )
                 validate_schema_with_value_error(
                     parsed_output,
                     self.output_schema,
-                    "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+                    TASK_OUTPUT_SCHEMA_ERROR_PREFIX,
                 )
                 run_output.output = parsed_output
             else:

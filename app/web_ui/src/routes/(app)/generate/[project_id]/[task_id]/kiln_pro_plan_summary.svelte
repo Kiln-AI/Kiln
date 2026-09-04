@@ -19,7 +19,7 @@
       >
         <StarsIcon />
       </span>
-      Batch Overview
+      Overview
     </div>
     {#if out_of_sync}
       <Warning

@@ -14,6 +14,11 @@
     judge_only_builder_url,
   } from "../spec_utils"
   import { agentInfo } from "$lib/agent"
+  import Collapse from "$lib/ui/collapse.svelte"
+  import Intro from "$lib/ui/intro.svelte"
+  import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
+  import { kilnCopilotConnected } from "$lib/stores/copilot_connection_store"
   import { getV2EvalTypeMetadata } from "$lib/utils/eval_types/registry"
   import type { V2EvalType } from "$lib/utils/eval_types/registry"
   import { getEvalTypeIconComponent } from "$lib/components/eval_types/eval_type_icon.svelte"
@@ -106,12 +111,48 @@
   function select_programmatic_option(id: string) {
     goto(judge_only_builder_url(project_id, task_id, id as V2EvalType))
   }
+
+  // PREVIEW (09-03): the entry restructure. Both user types land here instead
+  // of Pro users being sent straight to the builder, so the eval type and the
+  // free-text description are one decision rather than two screens.
+  //
+  // The textbox is the main UI for anyone with Copilot: it is the builder's
+  // first step, hoisted onto this page so the templates and the programmatic
+  // checks are visible beside it rather than behind a link that reads like
+  // opting out. Without Copilot there is nothing to describe to, so the
+  // template list stays the primary choice and this section is absent.
+  let description = ""
+
+  // Without Copilot the page opens on the offer rather than the templates.
+  // The Pro-vs-manual question is asked once, up front, instead of partway
+  // through after a template is already chosen. Choosing manual reveals the
+  // same picker a Copilot user sees folded under "See templates".
+  let chose_manual = false
+  // The offer is showing, as opposed to the picker behind it. Named once so
+  // the page title and the body can never describe different screens.
+  $: show_offer = $kilnCopilotConnected !== true && !chose_manual
+
+  function connect_kiln_pro() {
+    goto("/specs/pro_auth")
+  }
+
+  function continue_with_description() {
+    const text = description.trim()
+    if (!text) return
+    goto(
+      `/specs/${project_id}/${task_id}/builder?description=${encodeURIComponent(text)}`,
+    )
+  }
 </script>
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Select an Eval Type"
-    subtitle="Select a template for what you want this task to enforce or avoid."
+    title="Setup and Eval Type"
+    subtitle={show_offer
+      ? "Kiln Pro drafts the eval for you, or set one up yourself."
+      : $kilnCopilotConnected === true
+        ? "Describe what this eval should check, or pick a template or a programmatic check."
+        : "Pick a template or a programmatic check."}
     breadcrumbs={[
       {
         label: "Evals",
@@ -119,25 +160,92 @@
       },
     ]}
   >
-    <div class="pt-6 max-w-5xl flex flex-col gap-10">
-      <div class="flex flex-col gap-4">
-        <SettingsHeader title="LLM Judges" />
-        <OptionList
-          options={llm_options}
-          select_option={select_llm_option}
-          two_columns={true}
-          two_line_descriptions={true}
-        />
+    {#if show_offer}
+      <!-- The offer, before the templates. This is also the only place eval
+           creation pitches Kiln Pro: the screen that used to carry that pitch
+           sat partway through the old flow and is gone. -->
+      <div class="flex justify-center mt-[10vh]">
+        <Intro
+          title="Let Kiln Pro write the eval"
+          description_paragraphs={[
+            "Describe what to check in plain language. Kiln Pro writes the eval, generates test data to run it on, and checks its judge against your own review.",
+            "Or set one up yourself from a template.",
+          ]}
+          action_buttons={[
+            {
+              label: "Use Kiln Pro",
+              onClick: connect_kiln_pro,
+              is_primary: true,
+            },
+            {
+              label: "Set Up Manually",
+              onClick: () => (chose_manual = true),
+              is_primary: false,
+            },
+          ]}
+        >
+          <div slot="icon" class="h-12 w-12">
+            <EvalIcon />
+          </div>
+        </Intro>
       </div>
-      <div class="flex flex-col gap-4">
-        <SettingsHeader title="Programmatic Checks" />
-        <OptionList
-          options={programmatic_options}
-          select_option={select_programmatic_option}
-          two_columns={true}
-          two_line_descriptions={true}
-        />
+    {:else}
+      <div class="pt-6 max-w-5xl flex flex-col gap-10">
+        {#if $kilnCopilotConnected === true}
+          <div class="flex flex-col gap-4">
+            <SettingsHeader title="LLM Judge" />
+            <FormElement
+              label="What should this eval check?"
+              description="Describe what to check in plain language. Kiln Pro writes the eval and generates the data to test it."
+              placeholder="e.g. The model should not hallucinate."
+              id="eval_description"
+              inputType="textarea"
+              height="medium"
+              bind:value={description}
+            />
+            <div class="flex justify-end">
+              <button
+                class="btn btn-primary min-w-48"
+                disabled={!description.trim()}
+                on:click={continue_with_description}
+              >
+                Continue
+              </button>
+            </div>
+            <!-- The templates are the same list a user without Copilot gets as
+               their primary choice. Folded here so the description leads,
+               without hiding the option from someone who knows what they
+               want. -->
+            <Collapse title="See templates" outlined={true}>
+              <OptionList
+                options={llm_options}
+                select_option={select_llm_option}
+                two_columns={true}
+                two_line_descriptions={true}
+              />
+            </Collapse>
+          </div>
+        {:else}
+          <div class="flex flex-col gap-4">
+            <SettingsHeader title="LLM Judges" />
+            <OptionList
+              options={llm_options}
+              select_option={select_llm_option}
+              two_columns={true}
+              two_line_descriptions={true}
+            />
+          </div>
+        {/if}
+        <div class="flex flex-col gap-4">
+          <SettingsHeader title="Programmatic Checks" />
+          <OptionList
+            options={programmatic_options}
+            select_option={select_programmatic_option}
+            two_columns={true}
+            two_line_descriptions={true}
+          />
+        </div>
       </div>
-    </div>
+    {/if}
   </AppPage>
 </div>

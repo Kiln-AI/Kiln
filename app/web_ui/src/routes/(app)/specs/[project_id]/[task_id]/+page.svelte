@@ -3,10 +3,17 @@
   import { page } from "$app/stores"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { client } from "$lib/api_client"
+  import { onMount } from "svelte"
+  import { get } from "svelte/store"
+  import { indexedDBStore } from "$lib/stores/index_db_store"
+  import {
+    builder_draft_key,
+    create_eval_button_label,
+    draft_has_content,
+    EMPTY_BUILDER_DRAFT,
+  } from "./builder/builder_draft"
   import Intro from "$lib/ui/intro.svelte"
-  import type { Spec, SpecStatus, Eval, Priority, Task } from "$lib/types"
-  import { load_task } from "$lib/stores"
-  import Warning from "$lib/ui/warning.svelte"
+  import type { Spec, SpecStatus, Eval, Priority } from "$lib/types"
   import { goto, replaceState } from "$app/navigation"
   import Dialog from "$lib/ui/dialog.svelte"
   import FilterTagsDialog from "$lib/ui/filter_tags_dialog.svelte"
@@ -28,6 +35,7 @@
     type SortableColumn,
     type TableRow,
   } from "./spec_table"
+  import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Banner from "$lib/ui/banner.svelte"
@@ -51,14 +59,12 @@
   let evals_loading = true
   let eval_load_error_count = 0
 
-  // Evals aren't supported for multi-turn tasks, so the page needs the task's
-  // turn mode before it can decide between the table and the unsupported notice.
-  let task: Task | null = null
-  let task_loading = true
-  $: is_multiturn = task?.turn_mode === "multiturn"
+  let settings_loading = true
+  let settings_error: KilnError | null = null
+  let has_kiln_copilot = false
 
-  $: loading = specs_loading || evals_loading || task_loading
-  $: error = specs_error || evals_error
+  $: loading = specs_loading || evals_loading || settings_loading
+  $: error = specs_error || evals_error || settings_error
 
   // Eval lookup for spec rows; priority/status resolution lives in spec_table.ts.
   $: evals_by_id = new Map((evals || []).map((e) => [e.id ?? "", e]))
@@ -183,18 +189,44 @@
     load_specs(project_id, task_id)
     load_evals(project_id, task_id)
     load_judge_types(project_id, task_id)
-    load_task_for_page(project_id, task_id)
   }
 
-  async function load_task_for_page(
-    req_project_id: string,
-    req_task_id: string,
-  ) {
-    task_loading = true
-    const loaded = await load_task(req_project_id, req_task_id)
-    if (req_project_id !== project_id || req_task_id !== task_id) return
-    task = loaded
-    task_loading = false
+  // Whether the v2 builder has a resumable draft for this task — the
+  // create button advertises it ("Continue Eval Draft"). Read-only peek at
+  // the draft store; the builder owns all writes.
+  let has_eval_draft = false
+  async function check_eval_draft() {
+    try {
+      const { store, initialized } = indexedDBStore(
+        builder_draft_key(project_id, task_id),
+        EMPTY_BUILDER_DRAFT,
+      )
+      await initialized
+      has_eval_draft = draft_has_content(get(store))
+    } catch {
+      // No draft signal is ever worth an error surface here.
+      has_eval_draft = false
+    }
+  }
+  $: create_eval_label = create_eval_button_label(
+    has_kiln_copilot,
+    has_eval_draft,
+  )
+
+  onMount(async () => {
+    await Promise.all([load_has_kiln_copilot(), check_eval_draft()])
+  })
+
+  async function load_has_kiln_copilot() {
+    try {
+      settings_loading = true
+      settings_error = null
+      has_kiln_copilot = await checkKilnCopilotAvailable()
+    } catch (e) {
+      settings_error = createKilnError(e)
+    } finally {
+      settings_loading = false
+    }
   }
 
   async function load_specs(req_project_id: string, req_task_id: string) {
@@ -668,9 +700,16 @@
     updateEvalStatus(evaluator, value)
   }
 
-  // Every eval starts at the template picker; the Pro-vs-Manual workflow
-  // screen appears later, only for templates Kiln Pro can assist with.
   function create_eval() {
+    posthog.capture("eval_v2_cta_clicked", {
+      branch: has_kiln_copilot ? "v2" : "v1_manual",
+      has_pro: has_kiln_copilot,
+    })
+    // PREVIEW (09-03): the entry restructure. Both user types start on the
+    // eval-type page now. With Copilot it leads with the free-text box and
+    // folds the templates behind it; without, the templates are the choice.
+    // One page either way, so the eval type and the description are settled
+    // together instead of across two screens.
     goto(`/specs/${project_id}/${task_id}/select_template`)
   }
 </script>
@@ -681,11 +720,11 @@
   subtitle="Define the behaviours to enforce or avoid for your task, and automatically measure quality."
   sub_subtitle={"Read the Docs"}
   sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
-  action_buttons={is_empty || is_multiturn
+  action_buttons={is_empty
     ? []
     : [
         {
-          label: "Create Eval",
+          label: create_eval_label,
           handler: async () => {
             create_eval()
           },
@@ -709,14 +748,6 @@
       <div class="flex justify-center items-center h-full">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
-    {:else if is_multiturn}
-      <div class="flex flex-col items-center justify-center min-h-[60vh]">
-        <Warning
-          warning_message="Evals are not supported for multi-turn tasks."
-          warning_color="warning"
-          warning_icon="info"
-        />
-      </div>
     {:else if error}
       <div class="text-error text-sm">
         {error?.getMessage() || "An unknown error occurred"}
@@ -731,7 +762,7 @@
           ]}
           action_buttons={[
             {
-              label: "Create Eval",
+              label: create_eval_label,
               onClick: async () => {
                 create_eval()
               },

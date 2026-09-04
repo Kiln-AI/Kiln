@@ -22,7 +22,10 @@
   import Warning from "$lib/ui/warning.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
   import { mime_type_to_string } from "$lib/utils/formatters"
-  import type { ModelDropdownSettings } from "./model_dropdown_settings"
+  import {
+    show_suggested_advisory,
+    type ModelDropdownSettings,
+  } from "./model_dropdown_settings"
 
   const LOGPROBS_WARNING =
     "This model does not support logprobs. It will likely fail when running a G-eval or other logprob queries."
@@ -33,11 +36,24 @@
   export let description: string | undefined = undefined
   export let info_description: string | undefined = undefined
   export let settings: Partial<ModelDropdownSettings> = {}
+  // Suppresses the suggested-model advisory in its "all good" state only, for
+  // forms that stack several model lanes and would otherwise show a row of
+  // green checks. Warnings still render. Default keeps every other caller as
+  // it ships.
+  export let quiet_suggested: boolean = false
   export let error_message: string | null = null
   export let inline_action: InlineAction | null = null
   export let optional: boolean = false
   export let hide_optional_badge: boolean = false
   export let empty_label: string = "Select a model"
+  // Empty-dropdown affordance (fancy_select's built-in empty state). An
+  // empty model list means no connected provider offers a usable model, so
+  // every picker names the way out by default — a same-tab link, because
+  // connecting clears the models cache in this tab and the return trip
+  // refetches it (a new tab would strand this tab's stale cache).
+  export let empty_state_message: string = "No models available"
+  export let empty_state_subtitle: string | null = "Connect an AI provider"
+  export let empty_state_link: string | null = "/settings/providers"
 
   let default_model_dropdown_settings: ModelDropdownSettings = {
     filter_models_predicate: (_) => true,
@@ -344,6 +360,13 @@
   )
   $: selected_model_deprecated = selected_model_details?.deprecated ?? false
 
+  // The model list is what makes the suggested-for-X flags below knowable:
+  // while it is still loading every model reads as not-suggested, so a
+  // suggested one cannot be told apart from a genuinely unsuggested one. An
+  // empty list stays unknown — the fetch found or returned nothing, and the
+  // dropdown shows its own empty state instead.
+  $: suggestion_known = ($available_models || []).length > 0
+
   $: selected_model_suggested_data_gen =
     selected_model_details?.suggested_for_data_gen || false
 
@@ -366,6 +389,9 @@
     {optional}
     {hide_optional_badge}
     {empty_label}
+    {empty_state_message}
+    {empty_state_subtitle}
+    {empty_state_link}
     bind:value={model}
     id="model"
     inputType="fancy_select"
@@ -401,60 +427,68 @@
       />
     {/if}
   {:else if settings.suggested_mode === "data_gen"}
-    <Warning
-      warning_icon={!model
-        ? "info"
-        : selected_model_suggested_data_gen
-          ? "check"
-          : "exclaim"}
-      warning_color={!model
-        ? "gray"
-        : selected_model_suggested_data_gen
-          ? "success"
-          : "warning"}
-      warning_message={`For data gen we suggest using one of the models marked "Recommended" in the dropdown.`}
-    />
+    {#if show_suggested_advisory(!!model, selected_model_suggested_data_gen, quiet_suggested, suggestion_known)}
+      <Warning
+        warning_icon={!model
+          ? "info"
+          : selected_model_suggested_data_gen
+            ? "check"
+            : "exclaim"}
+        warning_color={!model
+          ? "gray"
+          : selected_model_suggested_data_gen
+            ? "success"
+            : "warning"}
+        warning_message={`For data gen we suggest using one of the models marked "Recommended" in the dropdown.`}
+      />
+    {/if}
   {:else if settings.suggested_mode === "uncensored_data_gen"}
-    <Warning
-      warning_icon={!model
-        ? "info"
-        : selected_model_suggested_uncensored_data_gen
-          ? "check"
-          : "exclaim"}
-      warning_color={!model
-        ? "gray"
-        : selected_model_suggested_uncensored_data_gen
-          ? "success"
-          : "warning"}
-      warning_message={`For this data gen template we suggest using one of the models marked "Recommended" in the dropdown.`}
-    />
+    {#if show_suggested_advisory(!!model, selected_model_suggested_uncensored_data_gen, quiet_suggested, suggestion_known)}
+      <Warning
+        warning_icon={!model
+          ? "info"
+          : selected_model_suggested_uncensored_data_gen
+            ? "check"
+            : "exclaim"}
+        warning_color={!model
+          ? "gray"
+          : selected_model_suggested_uncensored_data_gen
+            ? "success"
+            : "warning"}
+        warning_message={`For this data gen template we suggest using one of the models marked "Recommended" in the dropdown.`}
+      />
+    {/if}
   {:else if settings.suggested_mode === "evals"}
-    <Warning
-      warning_icon={!model
-        ? "info"
-        : selected_model_suggested_evals
-          ? "check"
-          : "exclaim"}
-      warning_color={!model
-        ? "gray"
-        : selected_model_suggested_evals
-          ? "success"
-          : "warning"}
-      warning_message={`For evals we suggest using one of the models marked "Recommended" in the dropdown.`}
-    />
+    {#if show_suggested_advisory(!!model, selected_model_suggested_evals, quiet_suggested, suggestion_known)}
+      <Warning
+        warning_icon={!model
+          ? "info"
+          : selected_model_suggested_evals
+            ? "check"
+            : "exclaim"}
+        warning_color={!model
+          ? "gray"
+          : selected_model_suggested_evals
+            ? "success"
+            : "warning"}
+        warning_message={`For evals we suggest using one of the models marked "Recommended" in the dropdown.`}
+      />
+    {/if}
   {:else if settings.suggested_mode === "doc_extraction"}
-    <Warning
-      warning_icon={!model
-        ? "info"
-        : selected_model_suggested_doc_extraction
-          ? "check"
-          : "exclaim"}
-      warning_color={!model
-        ? "gray"
-        : selected_model_suggested_doc_extraction
-          ? "success"
-          : "warning"}
-      warning_message={`For doc extraction we suggest using one of the models marked "Recommended" in the dropdown.`}
-    />
+    {#if show_suggested_advisory(!!model, selected_model_suggested_doc_extraction, quiet_suggested, suggestion_known)}
+      <Warning
+        warning_icon={!model
+          ? "info"
+          : selected_model_suggested_doc_extraction
+            ? "check"
+            : "exclaim"}
+        warning_color={!model
+          ? "gray"
+          : selected_model_suggested_doc_extraction
+            ? "success"
+            : "warning"}
+        warning_message={`For doc extraction we suggest using one of the models marked "Recommended" in the dropdown.`}
+      />
+    {/if}
   {/if}
 </div>

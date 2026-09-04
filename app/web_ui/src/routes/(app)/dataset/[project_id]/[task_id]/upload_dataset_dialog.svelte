@@ -1,17 +1,22 @@
 <script lang="ts">
   import { client } from "$lib/api_client"
   import { page } from "$app/stores"
-  import { current_task } from "$lib/stores"
+  import type { TurnMode } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
 
   export let onImportCompleted: () => void
   export let tag_splits: Record<string, number> | null = null
+  // The route's task turn mode, threaded in by the owning page. The CSV
+  // contract must match the task the import POSTs to (the route's task_id),
+  // not the global current-task store, which can be stale or for a different
+  // task and would document the wrong columns.
+  export let turn_mode: TurnMode | null = null
 
   let selected_file: File | null = null
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
-  $: is_multiturn = $current_task?.turn_mode === "multiturn"
+  $: is_multiturn = turn_mode === "multiturn"
   $: dialog_title = is_multiturn
     ? "Add Multiturn CSV to Dataset"
     : "Add CSV to Dataset"
