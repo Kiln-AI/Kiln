@@ -4785,6 +4785,37 @@ class TestValidateMultiTurnDriveReadiness:
         assert "chain of thought config" in str(raised.value)
         drive.assert_not_awaited()
 
+    def test_two_message_chain_of_thought_rejected_without_provider_keys(
+        self, mock_task, mock_v2_redrive_config, multi_turn_eval_input
+    ):
+        """The preflight reads the built-in model table, not the user's credentials,
+        so a machine with no provider keys refuses the same config a keyed one does.
+        A credentialed lookup would raise on the missing key, and swallowing that
+        error would let the two-message config through to the paid drives."""
+        cot_rc = TaskRunConfig(
+            name="chain of thought config",
+            description="thinking instructions on a model without native reasoning",
+            run_config_properties=KilnAgentRunConfigProperties(
+                model_name="gpt_4o",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id="simple_chain_of_thought_prompt_builder",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            parent=mock_task,
+        )
+        cot_rc.save_to_file()
+        runner = EvalRunner(
+            eval_configs=[mock_v2_redrive_config],
+            run_configs=[cot_rc],
+            eval_run_type="task_run_eval",
+            split=_test_split([mock_v2_redrive_config]),
+        )
+        with patch(
+            "kiln_ai.adapters.provider_tools.get_config_value", return_value=None
+        ):
+            with pytest.raises(ValueError, match="no reasoning step of its own"):
+                runner.validate_multi_turn_drive_readiness()
+
     @pytest.mark.parametrize(
         "model_name, provider, prompt_id",
         [
@@ -4828,7 +4859,10 @@ class TestValidateMultiTurnDriveReadiness:
             eval_run_type="task_run_eval",
             split=_test_split([mock_v2_redrive_config]),
         )
-        runner.validate_multi_turn_drive_readiness()
+        with patch(
+            "kiln_ai.adapters.provider_tools.get_config_value", return_value=None
+        ):
+            runner.validate_multi_turn_drive_readiness()
 
 
 class TestSupersededTombstoneDeletion:
