@@ -63,7 +63,6 @@ from .eval_item_source import EvalItemSource
 from .eval_item_source_source_type import EvalItemSourceSourceType
 from .examples_for_feedback_item import ExamplesForFeedbackItem
 from .examples_with_feedback_item import ExamplesWithFeedbackItem
-from .expected_result import ExpectedResult
 from .file import File
 from .file_file import FileFile
 from .function import Function
@@ -86,7 +85,6 @@ from .get_session_v1_chat_sessions_session_id_get_response_404 import GetSession
 from .get_session_v1_chat_sessions_session_id_get_response_426 import GetSessionV1ChatSessionsSessionIdGetResponse426
 from .get_session_v1_chat_sessions_session_id_get_response_500 import GetSessionV1ChatSessionsSessionIdGetResponse500
 from .graded_claim import GradedClaim
-from .graded_final_judgement import GradedFinalJudgement
 from .graded_trace import GradedTrace
 from .handle_chat_v1_chat_post_response_400 import HandleChatV1ChatPostResponse400
 from .handle_chat_v1_chat_post_response_404 import HandleChatV1ChatPostResponse404
@@ -95,6 +93,7 @@ from .handle_chat_v1_chat_post_response_500 import HandleChatV1ChatPostResponse5
 from .health_health_get_response_health_health_get import HealthHealthGetResponseHealthHealthGet
 from .http_validation_error import HTTPValidationError
 from .human_grade import HumanGrade
+from .human_verdict import HumanVerdict
 from .image_url import ImageURL
 from .image_url_detail import ImageURLDetail
 from .input_audio import InputAudio
@@ -218,7 +217,6 @@ __all__ = (
     "EvalItemSourceSourceType",
     "ExamplesForFeedbackItem",
     "ExamplesWithFeedbackItem",
-    "ExpectedResult",
     "File",
     "FileFile",
     "Function",
@@ -239,7 +237,6 @@ __all__ = (
     "GetSessionV1ChatSessionsSessionIdGetResponse426",
     "GetSessionV1ChatSessionsSessionIdGetResponse500",
     "GradedClaim",
-    "GradedFinalJudgement",
     "GradedTrace",
     "HandleChatV1ChatPostResponse400",
     "HandleChatV1ChatPostResponse404",
@@ -248,6 +245,7 @@ __all__ = (
     "HealthHealthGetResponseHealthHealthGet",
     "HTTPValidationError",
     "HumanGrade",
+    "HumanVerdict",
     "ImageURL",
     "ImageURLDetail",
     "InputAudio",

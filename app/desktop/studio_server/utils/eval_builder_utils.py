@@ -424,20 +424,6 @@ async def refine_judge_prompt_from_grades(
     runs on kiln_server. The returned prompt is a PROPOSAL — callers validate it
     and show it for approval before any write; it is never auto-applied.
     """
-    # TODO(eval-v2): the remote refineJudgePrompt task still takes the previous
-    # graded-claim shape (claim, evidence, expected_result). Mapping the new
-    # single-text claims onto it would mean inventing an evidence string and
-    # guessing a direction, which is a silently worse refinement. Refuse
-    # outright until the refiner task accepts the overview-and-claims grades,
-    # then delete this block and the passthrough below resumes as written.
-    raise HTTPException(
-        status_code=501,
-        detail={
-            "code": "refiner_contract_pending",
-            "message": "Judge refinement is not available for the new claim contract yet.",
-        },
-    )
-
     api_key = get_copilot_api_key()
     client = get_authenticated_client(api_key)
 

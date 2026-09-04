@@ -186,7 +186,9 @@ class GradedTraceApi(BaseModel):
     judge_score: JudgeScoreLiteral
     judge_reasoning: str
     overview: str
-    claims: list[GradedClaim]
+    # Never a subset: every claim on the card, graded. A card always carries
+    # at least one, and the refiner rejects an empty list.
+    claims: list[GradedClaim] = Field(min_length=1)
     human_verdict: JudgeScoreLiteral
 
 

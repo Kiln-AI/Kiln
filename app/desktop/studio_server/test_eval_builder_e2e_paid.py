@@ -41,12 +41,16 @@ calls, so the harness starts at Step 4 with the spec text already "written":
                        disagreement is what the reviewer's Refine Judge
                        click feeds into the refine below.)
   Step 5r  REFINE      POST .../eval_builder/refine_judge
-                       (UI: the calibration loop's refine step. Until the
-                       remote refiner accepts the overview-and-claims grades
-                       the studio answers 501 with a code the UI shows, and
-                       the reviewer saves without refining. This test pins
-                       that refusal; the save below ships the original judge,
-                       exactly as that path does.)
+                       (UI: the calibration loop's refine step. The reviewer
+                       DISAGREES with one case's last claim with a why and
+                       agrees with every other claim; the graded cards feed
+                       the refine model and the REFINED judge re-checks the
+                       eval data, which the reviewer then re-grades before
+                       any save. The refined prompt is validated (plain text,
+                       no template syntax); on failure the round surfaces an
+                       inline error and nothing ships. This test exercises
+                       the refine call itself, not the loop's re-check and
+                       re-grade.)
   Step 6   SAVE        POST .../spec_with_copilot
                        (UI: on_save — persists the Spec, the Eval, the V2
                        judge config, and the answer key. Only REVIEWED
@@ -94,8 +98,8 @@ Requirements (hard failures, never skips — a broken pipeline must be loud):
     driver, and judge all run locally on your keys.
 
 Cost per run: one plan, one SU batch call, the 4x2 drive + judge, one
-claim-builder call per reviewed-subset trace (4 // 4 = 1), plus the
-runner's work over the saved eval: a fresh 4x2 re-drive
+claim-builder call per reviewed-subset trace (4 // 4 = 1), one refine call
+at save, plus the runner's work over the saved eval: a fresh 4x2 re-drive
 per run config (two configs) with a judge call each, and the golden
 calibration judge calls — ~70 small model calls, still cents.
 
@@ -562,9 +566,11 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
 
     # ── Step 5r refine — REFINE THE JUDGE (UI: the calibration loop). The
     # reviewer disagrees with the last claim of one case (with a why) and
-    # agrees with every other claim in the REVIEWED SUBSET. The studio refuses
-    # the refine call until the remote refiner accepts these grades, so the
-    # wizard's save-without-refining path is what ships: the original judge.
+    # agrees with every other claim in the REVIEWED SUBSET; the studio feeds
+    # the graded cards to the refine model. In the wizard the refined judge
+    # then re-checks the data for another review round; here we take the
+    # refined judge straight to save, since this test covers the refine
+    # contract.
     dissent_index = review_indices[0]
     dissent_why = (
         "A polite, helpful reply that still states an unverified specific "
@@ -611,15 +617,33 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         "/api/projects/p/tasks/t/eval_builder/refine_judge",
         json={"judge_prompt": JUDGE["prompt"], "graded_traces": graded_traces},
     )
+    _require(resp.status_code == 200, f"refine_judge failed: {resp.text}")
+    proposal = resp.json()
+    refined_prompt = proposal["refined_judge_prompt"]
+    # Mirror the UI's mechanical validation (validate_refined_judge_prompt):
+    # only a usable, plain-text drop-in is applied; otherwise the save ships the
+    # original judge.
+    _require(bool(refined_prompt.strip()), "refined judge prompt is empty")
+    for token in ("{{", "}}", "{%", "%}", "```"):
+        _require(
+            token not in refined_prompt,
+            f"refined prompt contains template-unsafe {token!r}",
+        )
     _require(
-        resp.status_code == 501
-        and resp.json()["message"]["code"] == "refiner_contract_pending",
-        f"refine_judge should refuse until the refiner takes the new grades: {resp.text}",
+        isinstance(proposal["changes"], list) and len(proposal["changes"]) >= 1,
+        "refine proposed no changes despite a disagreement",
     )
-    # TODO(eval-v2): once the refiner task accepts the overview-and-claims
-    # grades, exercise the real call here again (validate the proposal, ship
-    # the refined judge) instead of pinning the refusal.
-    shipped_judge = JUDGE
+    _require(
+        refined_prompt.strip() != JUDGE["prompt"].strip(),
+        "refined prompt is identical to the original despite proposed changes",
+    )
+    for change in proposal["changes"]:
+        _require(
+            bool(change["change"].strip()) and bool(change["rationale"].strip()),
+            f"a proposed change is missing its text or rationale: {change}",
+        )
+    # The refined judge is what ships — persisted at save, no re-review.
+    shipped_judge = {**JUDGE, "prompt": refined_prompt}
 
     # ── Step 6 — SAVE (UI: on_save, multi-turn branch) ──────────────────
     # The human's review rides in reviewed_chains, keyed by leaf run id.
@@ -657,8 +681,8 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
             "properties": {"spec_type": "issue", "issue_description": SPEC_TEXT},
             "evaluate_full_trace": True,
             "reviewed_examples": [],
-            # The wizard persists whichever judge produced the verdicts the
-            # reviewer last graded: the original, since refining is refused.
+            # The refined judge is what ships: the wizard persists whichever
+            # judge produced the verdicts the reviewer last graded.
             "judge_info": shipped_judge,
             "multi_turn": {
                 "batch_tag": batch_tag,
@@ -692,8 +716,9 @@ def test_eval_builder_pipeline_e2e(preflight, temp_task, client):
         "{{ trace | format_trace }}" in prompt_template,
         "saved judge config does not render the canonical transcript",
     )
-    # The persisted prompt_template is built from the shipped judge prompt. A
-    # distinctive interior slice of it survives verbatim in the template
+    # The refine loop landed: the persisted prompt_template is built from the
+    # REFINED judge prompt (which differs from the original, asserted above).
+    # A distinctive interior slice of it survives verbatim in the template
     # (conditionally_raw_wrap only brackets the text, never rewrites it).
     shipped_marker = shipped_judge["prompt"].strip()
     shipped_marker = shipped_marker[len(shipped_marker) // 3 :][:80]

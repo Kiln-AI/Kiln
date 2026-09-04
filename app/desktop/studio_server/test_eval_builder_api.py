@@ -38,6 +38,9 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.build_cla
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.generate_judge_prompt_output import (
     GenerateJudgePromptOutput,
 )
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_judge_prompt_output import (
+    RefineJudgePromptOutput,
+)
 from app.desktop.studio_server.api_models.copilot_models import (
     TaskSkillInfoApi,
     TaskToolInfoApi,
@@ -804,23 +807,93 @@ def refine_judge_input():
 
 
 class TestRefineJudge:
-    def test_refine_judge_is_unavailable_until_the_refiner_takes_new_grades(
-        self, client, refine_judge_input, mock_api_key
-    ):
-        """The remote refiner still takes the old graded-claim shape. Rather
-        than map the new grades onto it with invented fields, the endpoint
-        refuses with a coded 501 the UI shows verbatim, and never reaches the
-        SDK."""
+    def test_refine_judge_no_api_key(self, client, refine_judge_input):
+        """Fail-fast: a keyless caller gets a clean 401 before the remote call."""
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+        ) as mock_config_shared:
+            mock_config = mock_config_shared.return_value
+            mock_config.kiln_copilot_api_key = None
+            response = client.post(REFINE_JUDGE_URL, json=refine_judge_input)
+            assert response.status_code == 401
+            assert "API key not configured" in response.json()["message"]
+
+    def test_refine_judge_success(self, client, refine_judge_input, mock_api_key):
+        mock_output = MagicMock(spec=RefineJudgePromptOutput)
+        mock_output.to_dict.return_value = {
+            "refined_judge_prompt": "The agent must not fabricate policies. A specific unverified detail stated as fact is a FAILURE.",
+            "changes": [
+                {
+                    "change": "Made an unverified detail stated as fact an explicit failure.",
+                    "rationale": "trace leaf-abc: reviewer disagreed with the fail on a documented window.",
+                }
+            ],
+            "not_incorporated_feedback": None,
+        }
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = mock_output
+
         with patch(
             "app.desktop.studio_server.utils.eval_builder_utils.refine_judge_prompt_v1_copilot_refine_judge_prompt_post.asyncio_detailed",
             new_callable=AsyncMock,
+            return_value=mock_response,
         ) as sdk_call:
             response = client.post(REFINE_JUDGE_URL, json=refine_judge_input)
-            assert response.status_code == 501
-            detail = response.json()["message"]
-            assert detail["code"] == "refiner_contract_pending"
-            assert "not available" in detail["message"]
-            sdk_call.assert_not_called()
+            assert response.status_code == 200
+            result = response.json()
+            assert "FAILURE" in result["refined_judge_prompt"]
+            assert len(result["changes"]) == 1
+            assert result["changes"][0]["rationale"].startswith("trace leaf-abc")
+            assert result["not_incorporated_feedback"] is None
+
+            # The graded card reaches the refiner whole: the overview, every
+            # claim with its grade (a blank why as an explicit null), and the
+            # reviewer's overall call.
+            sent = sdk_call.call_args.kwargs["body"].to_dict()["graded_traces"][0]
+            expected = refine_judge_input["graded_traces"][0]
+            assert sent["overview"] == expected["overview"]
+            assert sent["human_verdict"] == expected["human_verdict"]
+            assert [c["text"] for c in sent["claims"]] == [
+                c["text"] for c in expected["claims"]
+            ]
+            assert sent["claims"][0]["human_feedback"] is None
+
+    def test_refine_judge_remote_error_surfaces_upstream_message(
+        self, client, refine_judge_input, mock_api_key
+    ):
+        """A remote failure propagates the upstream status + message (the
+        custom error handler renders it as {"message": ...} for the UI)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 502
+        mock_response.content = b'{"message": "upstream refused"}'
+        mock_response.parsed = None
+
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.refine_judge_prompt_v1_copilot_refine_judge_prompt_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            response = client.post(REFINE_JUDGE_URL, json=refine_judge_input)
+            assert response.status_code == 502
+            assert "upstream refused" in response.json()["message"]
+
+    def test_refine_judge_no_response_is_500(
+        self, client, refine_judge_input, mock_api_key
+    ):
+        """A 2xx with no parsed body surfaces as a 500 with a clear message."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.parsed = None
+
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.refine_judge_prompt_v1_copilot_refine_judge_prompt_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            response = client.post(REFINE_JUDGE_URL, json=refine_judge_input)
+            assert response.status_code == 500
+            assert "Failed to refine the judge prompt" in response.json()["message"]
 
     def test_refine_judge_rejects_empty_graded_traces(self, client, mock_api_key):
         """graded_traces must be non-empty (min_length=1) — a 422 before any
@@ -829,6 +902,16 @@ class TestRefineJudge:
             REFINE_JUDGE_URL,
             json={"judge_prompt": "p", "graded_traces": []},
         )
+        assert response.status_code == 422
+
+    def test_refine_judge_rejects_a_trace_with_no_claims(
+        self, client, refine_judge_input, mock_api_key
+    ):
+        """A graded trace carries every claim on its card, never a subset, and
+        a card always has at least one; an empty list is a 422 here rather
+        than a rejection from the refiner."""
+        refine_judge_input["graded_traces"][0]["claims"] = []
+        response = client.post(REFINE_JUDGE_URL, json=refine_judge_input)
         assert response.status_code == 422
 
 

@@ -1642,8 +1642,7 @@ def connect_eval_builder_api(app: FastAPI):
         """
         # Remote failures propagate as HTTPExceptions with the upstream's
         # message (custom_errors renders {"message": ...} for the UI), same as
-        # the build_claims primitive. The key check lives inside the call, so
-        # its own refusal (the feature being unavailable) comes first.
+        # the build_claims primitive.
         return await refine_judge_prompt_from_grades(
             judge_prompt=input.judge_prompt,
             graded_traces=input.graded_traces,
