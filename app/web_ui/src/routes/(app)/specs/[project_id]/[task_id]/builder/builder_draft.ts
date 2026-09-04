@@ -8,6 +8,7 @@
 // under a saved draft, so restore never lands past the plan screen.
 
 import type { ModelChoice } from "$lib/eval/default_judge"
+import type { KilnAgentRunConfigProperties } from "$lib/types"
 import type { SuggestedEdit } from "../spec_utils"
 
 // A generated synthetic-user case as the wire carries it: the seed message,
@@ -44,19 +45,48 @@ export function reusable_cached_cases(
   return cache.cases
 }
 
+// A run config as a cache key: object keys sorted and the tool list ordered,
+// so two configs that would generate the same data key the same however they
+// were assembled. Every field of the config counts, because every field
+// reaches the generation call.
+export function run_config_cache_key(
+  properties: KilnAgentRunConfigProperties,
+): string {
+  const ordered_tools = {
+    ...properties,
+    tools_config: {
+      ...properties.tools_config,
+      tools: [...(properties.tools_config?.tools ?? [])].sort(),
+    },
+  }
+  return JSON.stringify(ordered_tools, (_key, value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(
+          Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+            a < b ? -1 : a > b ? 1 : 0,
+          ),
+        )
+      : value,
+  )
+}
+
 // The single-turn arm's minted test inputs, cached against exactly what
-// produced them: the approved plan prompts, the input-generator model, and
-// the grounding data-guide the mint ran under (the spec plays no part — it
-// already shaped the PLAN). A re-run with all three unchanged reuses the
-// inputs instead of re-paying one generation call per prompt, which makes
-// the fix-config-then-run-again recovery loop fast.
+// produced them: the approved plan prompts, the whole run config the input
+// generator ran under, and the grounding data-guide the mint ran under (the
+// spec plays no part — it already shaped the PLAN). A re-run with all three
+// unchanged reuses the inputs instead of re-paying one generation call per
+// prompt, which makes the fix-config-then-run-again recovery loop fast.
 export type CachedMintedInputs = {
   prompts_json: string
-  model_name: string
-  model_provider: string
   // The grounding guide passed to the mint (null = ungrounded). Pre-guide
   // drafts restore without the key and simply miss the cache.
   data_guide?: string | null
+  // run_config_cache_key of the config the mint ran under. Model, tools,
+  // skills and sampling all change what gets written, so the key is the whole
+  // config rather than a few fields of it. Drafts written before the input
+  // lane carried a config restore without the key and miss the cache, which
+  // re-mints rather than serving inputs we can no longer describe.
+  run_config_json?: string
   // Each input as the string the pipeline runs on (structured-task inputs
   // are JSON strings — the same encoding the saved eval's items store).
   inputs: string[]
@@ -65,14 +95,12 @@ export type CachedMintedInputs = {
 export function reusable_minted_inputs(
   cache: CachedMintedInputs | null,
   approved_prompts: string[],
-  model_name: string,
-  model_provider: string,
   data_guide: string | null,
+  run_config_json: string,
 ): string[] | null {
   if (!cache || cache.inputs.length === 0) return null
-  if (cache.model_name !== model_name) return null
-  if (cache.model_provider !== model_provider) return null
   if ((cache.data_guide ?? null) !== data_guide) return null
+  if (cache.run_config_json !== run_config_json) return null
   if (cache.prompts_json !== JSON.stringify(approved_prompts)) return null
   return cache.inputs
 }
@@ -167,6 +195,13 @@ export type BuilderDraft = {
   // drafts restore these as null (?? below) and fall back to pre-population.
   su_driver: ModelChoice | null
   input_generator: ModelChoice | null
+  // The whole run config the input generator was last committed with: model,
+  // tools, skills and sampling. Kept beside the model lane because every part
+  // of it changes what gets written, and because a restored session must be
+  // able to run again without reopening Generation Settings. Drafts written
+  // before the input lane carried a config restore this as null, which reads
+  // as "nothing chosen".
+  input_gen_run_config: KilnAgentRunConfigProperties | null
   judge_model: ModelChoice | null
   // The Generation Settings conversation length (multi-turn). Persisted for
   // the same reason as the lanes above: a reload should not silently put the
@@ -194,6 +229,7 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   undeleted_batch_tags: [],
   su_driver: null,
   input_generator: null,
+  input_gen_run_config: null,
   judge_model: null,
   turns_per_case: null,
 }
