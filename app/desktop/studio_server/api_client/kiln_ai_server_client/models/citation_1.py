@@ -1,44 +1,50 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import Any, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-if TYPE_CHECKING:
-    from ..models.citation_1 import Citation1
+from ..models.source import Source
 
-
-T = TypeVar("T", bound="Claim")
+T = TypeVar("T", bound="Citation1")
 
 
 @_attrs_define
-class Claim:
+class Citation1:
     """
     Attributes:
-        text (str):
-        citations (list[Citation1]):
+        marker (int): The [n] used in the text.
+        source (Source):
+        from_ (str): Short verbatim snippet marking the start of the span. Located by first occurrence; must be unique
+            in its source.
+        to (str): Short verbatim snippet marking the end of the span. May equal from.
     """
 
-    text: str
-    citations: list[Citation1]
+    marker: int
+    source: Source
+    from_: str
+    to: str
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        text = self.text
+        marker = self.marker
 
-        citations = []
-        for citations_item_data in self.citations:
-            citations_item = citations_item_data.to_dict()
-            citations.append(citations_item)
+        source = self.source.value
+
+        from_ = self.from_
+
+        to = self.to
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "text": text,
-                "citations": citations,
+                "marker": marker,
+                "source": source,
+                "from": from_,
+                "to": to,
             }
         )
 
@@ -46,25 +52,24 @@ class Claim:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.citation_1 import Citation1
-
         d = dict(src_dict)
-        text = d.pop("text")
+        marker = d.pop("marker")
 
-        citations = []
-        _citations = d.pop("citations")
-        for citations_item_data in _citations:
-            citations_item = Citation1.from_dict(citations_item_data)
+        source = Source(d.pop("source"))
 
-            citations.append(citations_item)
+        from_ = d.pop("from")
 
-        claim = cls(
-            text=text,
-            citations=citations,
+        to = d.pop("to")
+
+        citation_1 = cls(
+            marker=marker,
+            source=source,
+            from_=from_,
+            to=to,
         )
 
-        claim.additional_properties = d
-        return claim
+        citation_1.additional_properties = d
+        return citation_1
 
     @property
     def additional_keys(self) -> list[str]:

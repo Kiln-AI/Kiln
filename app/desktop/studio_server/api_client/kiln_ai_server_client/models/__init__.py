@@ -32,6 +32,7 @@ from .check_entitlements_v1_check_entitlements_get_response_check_entitlements_v
 )
 from .check_model_supported_response import CheckModelSupportedResponse
 from .citation import Citation
+from .citation_1 import Citation1
 from .claim import Claim
 from .clarify_spec_input import ClarifySpecInput
 from .clarify_spec_output import ClarifySpecOutput
@@ -65,7 +66,6 @@ from .examples_with_feedback_item import ExamplesWithFeedbackItem
 from .expected_result import ExpectedResult
 from .file import File
 from .file_file import FileFile
-from .final_judgement import FinalJudgement
 from .function import Function
 from .function_call import FunctionCall
 from .generate_batch_input import GenerateBatchInput
@@ -120,6 +120,7 @@ from .model_provider_name import ModelProviderName
 from .new_proposed_spec_edit import NewProposedSpecEdit
 from .new_proposed_spec_edit_api import NewProposedSpecEditApi
 from .output_file_info import OutputFileInfo
+from .overview import Overview
 from .prompt_optimization_job_output import PromptOptimizationJobOutput
 from .prompt_optimization_job_result_response import PromptOptimizationJobResultResponse
 from .question import Question
@@ -194,6 +195,7 @@ __all__ = (
     "CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet",
     "CheckModelSupportedResponse",
     "Citation",
+    "Citation1",
     "Claim",
     "ClarifySpecInput",
     "ClarifySpecOutput",
@@ -219,7 +221,6 @@ __all__ = (
     "ExpectedResult",
     "File",
     "FileFile",
-    "FinalJudgement",
     "Function",
     "FunctionCall",
     "GenerateBatchInput",
@@ -272,6 +273,7 @@ __all__ = (
     "NewProposedSpecEdit",
     "NewProposedSpecEditApi",
     "OutputFileInfo",
+    "Overview",
     "PromptOptimizationJobOutput",
     "PromptOptimizationJobResultResponse",
     "Question",

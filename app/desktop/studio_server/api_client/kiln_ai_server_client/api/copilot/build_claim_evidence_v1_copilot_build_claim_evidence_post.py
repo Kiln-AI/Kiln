@@ -73,7 +73,7 @@ def sync_detailed(
 ) -> Response[BuildClaimEvidenceOutput | HTTPValidationError | UnauthorizedResponse]:
     """Build Claim Evidence
 
-     Build claim/evidence pairs for a single eval trace + judge decision.
+     Build a review card (overview plus claims) for one eval trace + judge decision.
 
     Args:
         body (BuildClaimEvidenceInput):
@@ -104,7 +104,7 @@ def sync(
 ) -> BuildClaimEvidenceOutput | HTTPValidationError | UnauthorizedResponse | None:
     """Build Claim Evidence
 
-     Build claim/evidence pairs for a single eval trace + judge decision.
+     Build a review card (overview plus claims) for one eval trace + judge decision.
 
     Args:
         body (BuildClaimEvidenceInput):
@@ -130,7 +130,7 @@ async def asyncio_detailed(
 ) -> Response[BuildClaimEvidenceOutput | HTTPValidationError | UnauthorizedResponse]:
     """Build Claim Evidence
 
-     Build claim/evidence pairs for a single eval trace + judge decision.
+     Build a review card (overview plus claims) for one eval trace + judge decision.
 
     Args:
         body (BuildClaimEvidenceInput):
@@ -159,7 +159,7 @@ async def asyncio(
 ) -> BuildClaimEvidenceOutput | HTTPValidationError | UnauthorizedResponse | None:
     """Build Claim Evidence
 
-     Build claim/evidence pairs for a single eval trace + judge decision.
+     Build a review card (overview plus claims) for one eval trace + judge decision.
 
     Args:
         body (BuildClaimEvidenceInput):
