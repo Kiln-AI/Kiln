@@ -294,7 +294,7 @@ export function drive_stop_banner(
       f.lane === "synthetic-user driver"
         ? "The model that plays the user"
         : f.lane === "input generator"
-          ? "The model that writes the eval data"
+          ? "The eval data generation model"
           : "The judge model"
     const model_clause = f.model ? ` (${f.model})` : ""
     const requirement = f.provider

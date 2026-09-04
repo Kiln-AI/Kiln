@@ -10,13 +10,29 @@ import {
   restore_step,
   reusable_cached_cases,
   reusable_minted_inputs,
+  run_config_cache_key,
   should_invalidate_refined_values,
   should_prefill_suggested_name,
   EMPTY_BUILDER_DRAFT,
   type BuilderDraft,
   type CachedSuCases,
 } from "./builder_draft"
+import type { KilnAgentRunConfigProperties } from "$lib/types"
 import { restore_turns_per_case } from "./plan_flow"
+
+// The input generator's committed run config, as the component hands it over.
+const INPUT_GEN_RUN_CONFIG: KilnAgentRunConfigProperties = {
+  type: "kiln_agent",
+  model_name: "gpt_5_4_mini",
+  model_provider_name: "openai",
+  prompt_id: "simple_prompt_builder",
+  temperature: 1.0,
+  top_p: 1.0,
+  structured_output_mode: "json_schema",
+  thinking_level: "medium",
+  input_transform: null,
+  tools_config: { tools: ["kiln_tool::search", "skill::triage"] },
+}
 
 // A draft with every field populated — the round-trip and resolution
 // fixtures below carve it down.
@@ -76,8 +92,7 @@ const full_draft: BuilderDraft = {
       "Customer asks about a return window.",
       "Warranty question.",
     ]),
-    model_name: "gpt_5_4_mini",
-    model_provider: "openai",
+    run_config_json: run_config_cache_key(INPUT_GEN_RUN_CONFIG),
     inputs: ["What's your return window?", "Is my laptop under warranty?"],
   },
   grounding_sample: {
@@ -95,6 +110,7 @@ const full_draft: BuilderDraft = {
     model_name: "gpt_5_4_mini",
     model_provider: "openai",
   },
+  input_gen_run_config: INPUT_GEN_RUN_CONFIG,
   judge_model: {
     model_name: "gpt_5_4",
     model_provider: "openai",
@@ -393,33 +409,76 @@ describe("reset_draft_keeping_tags", () => {
   })
 })
 
+describe("run_config_cache_key", () => {
+  it("keys the same config the same however it was assembled", () => {
+    // Object key order and tool selection order are assembly detail, not a
+    // difference in what gets generated.
+    const reordered: KilnAgentRunConfigProperties = {
+      tools_config: { tools: ["skill::triage", "kiln_tool::search"] },
+      top_p: 1.0,
+      temperature: 1.0,
+      input_transform: null,
+      thinking_level: "medium",
+      structured_output_mode: "json_schema",
+      prompt_id: "simple_prompt_builder",
+      model_provider_name: "openai",
+      model_name: "gpt_5_4_mini",
+      type: "kiln_agent",
+    }
+    expect(run_config_cache_key(reordered)).toBe(
+      run_config_cache_key(INPUT_GEN_RUN_CONFIG),
+    )
+  })
+
+  it("separates configs that differ in any field that reaches the call", () => {
+    const fields: Partial<KilnAgentRunConfigProperties>[] = [
+      { model_name: "gpt_5_4" },
+      { model_provider_name: "openrouter" },
+      { temperature: 0.7 },
+      { top_p: 0.9 },
+      { structured_output_mode: "json_mode" },
+      { thinking_level: "high" },
+      { tools_config: { tools: ["kiln_tool::search"] } },
+    ]
+    for (const field of fields) {
+      expect(
+        run_config_cache_key({ ...INPUT_GEN_RUN_CONFIG, ...field }),
+      ).not.toBe(run_config_cache_key(INPUT_GEN_RUN_CONFIG))
+    }
+  })
+
+  it("reads a config with no tools block as one with no tools", () => {
+    const { tools_config: _dropped, ...no_tools_block } = INPUT_GEN_RUN_CONFIG
+    expect(run_config_cache_key(no_tools_block)).toBe(
+      run_config_cache_key({ ...no_tools_block, tools_config: { tools: [] } }),
+    )
+  })
+})
+
 describe("reusable_minted_inputs — single-turn input reuse", () => {
   const prompts = ["input plan a", "input plan b"]
   const guide = "A real example input from this task's dataset..."
+  const config_key = run_config_cache_key(INPUT_GEN_RUN_CONFIG)
   const cache = {
     prompts_json: JSON.stringify(prompts),
-    model_name: "gpt_5_4_mini",
-    model_provider: "openai",
     data_guide: guide,
+    run_config_json: config_key,
     inputs: ["What's your return window?", "Is my laptop under warranty?"],
   }
 
-  it("reuses when plan, input-generator model, and guide are byte-unchanged", () => {
+  it("reuses when plan, run config, and guide are byte-unchanged", () => {
     expect(
       reusable_minted_inputs(
         cache,
         ["input plan a", "input plan b"],
-        "gpt_5_4_mini",
-        "openai",
         guide,
+        config_key,
       ),
     ).toBe(cache.inputs)
   })
 
   it("misses with no cache", () => {
-    expect(
-      reusable_minted_inputs(null, prompts, "gpt_5_4_mini", "openai", guide),
-    ).toBeNull()
+    expect(reusable_minted_inputs(null, prompts, guide, config_key)).toBeNull()
   })
 
   it("misses when a prompt was edited or deleted", () => {
@@ -427,61 +486,58 @@ describe("reusable_minted_inputs — single-turn input reuse", () => {
       reusable_minted_inputs(
         cache,
         ["input plan a EDITED", "input plan b"],
-        "gpt_5_4_mini",
-        "openai",
         guide,
+        config_key,
       ),
     ).toBeNull()
     expect(
-      reusable_minted_inputs(
-        cache,
-        ["input plan a"],
-        "gpt_5_4_mini",
-        "openai",
-        guide,
-      ),
+      reusable_minted_inputs(cache, ["input plan a"], guide, config_key),
     ).toBeNull()
   })
 
-  it("misses when the input-generator model or provider changed", () => {
-    expect(
-      reusable_minted_inputs(cache, prompts, "other_model", "openai", guide),
-    ).toBeNull()
-    expect(
-      reusable_minted_inputs(
-        cache,
-        prompts,
-        "gpt_5_4_mini",
-        "openrouter",
-        guide,
-      ),
-    ).toBeNull()
+  it("misses when any part of the run config changed", () => {
+    // Model, tools and sampling all change what the generator writes, so each
+    // has to re-mint rather than serve the old inputs.
+    const changed: Partial<KilnAgentRunConfigProperties>[] = [
+      { model_name: "gpt_5_4" },
+      { model_provider_name: "openrouter" },
+      { temperature: 0.7 },
+      { structured_output_mode: "json_mode" },
+      { thinking_level: "high" },
+      { tools_config: { tools: [] } },
+      { tools_config: { tools: ["kiln_tool::search", "skill::escalate"] } },
+    ]
+    for (const field of changed) {
+      expect(
+        reusable_minted_inputs(
+          cache,
+          prompts,
+          guide,
+          run_config_cache_key({ ...INPUT_GEN_RUN_CONFIG, ...field }),
+        ),
+      ).toBeNull()
+    }
   })
 
   it("misses when the grounding guide changed (a different sample minted these)", () => {
-    expect(
-      reusable_minted_inputs(cache, prompts, "gpt_5_4_mini", "openai", null),
-    ).toBeNull()
+    expect(reusable_minted_inputs(cache, prompts, null, config_key)).toBeNull()
     // An ungrounded cache reuses only for an ungrounded mint; a pre-guide
     // draft (no key at all) behaves the same via the ?? null read.
     const ungrounded = { ...cache, data_guide: null }
+    expect(reusable_minted_inputs(ungrounded, prompts, null, config_key)).toBe(
+      ungrounded.inputs,
+    )
     expect(
-      reusable_minted_inputs(
-        ungrounded,
-        prompts,
-        "gpt_5_4_mini",
-        "openai",
-        null,
-      ),
-    ).toBe(ungrounded.inputs)
+      reusable_minted_inputs(ungrounded, prompts, guide, config_key),
+    ).toBeNull()
+  })
+
+  it("misses on a cache from before the input lane carried a config", () => {
+    // We cannot say what those inputs were generated with, so they are not
+    // reusable under any config.
+    const { run_config_json: _dropped, ...pre_config } = cache
     expect(
-      reusable_minted_inputs(
-        ungrounded,
-        prompts,
-        "gpt_5_4_mini",
-        "openai",
-        guide,
-      ),
+      reusable_minted_inputs(pre_config, prompts, guide, config_key),
     ).toBeNull()
   })
 
@@ -490,9 +546,8 @@ describe("reusable_minted_inputs — single-turn input reuse", () => {
       reusable_minted_inputs(
         { ...cache, inputs: [] },
         prompts,
-        "gpt_5_4_mini",
-        "openai",
         guide,
+        config_key,
       ),
     ).toBeNull()
   })

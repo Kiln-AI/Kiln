@@ -71,6 +71,18 @@ const drive_settings_dialog = region(
   "</Dialog>",
 )
 
+// The Generation Settings dialog's single-turn input-generator lane.
+function input_gen_lane(): string {
+  const start = drive_settings_dialog.indexOf("<RunConfigComponent")
+  if (start < 0) throw new Error("input generator lane not found")
+  return normalize(
+    drive_settings_dialog.slice(
+      start,
+      drive_settings_dialog.indexOf("/>", start),
+    ),
+  )
+}
+
 describe("describe step action row", () => {
   it("offers one forward action, with no Cancel beside it", () => {
     // Leaving the wizard is the browser's Back. A Cancel button beside the
@@ -470,10 +482,83 @@ describe("Generation Settings dialog", () => {
     )
     expect(
       contains(
-        'info_description="Writes one item from each approved plan line; your task then runs on them."',
+        'model_info_description="Writes one item from each approved plan line; your task then runs on them."',
       ),
     ).toBe(true)
-    expect(contains('label="Model that writes the eval data"')).toBe(true)
+    expect(contains('model_label="Eval Data Generation Model"')).toBe(true)
+  })
+
+  it("gives the input generator the same control synthetic data generation uses", () => {
+    // Tools and skills change what the eval data looks like, so this lane is
+    // the full run config picker rather than a bare model dropdown.
+    const lane = input_gen_lane()
+    expect(lane).toContain("hide_prompt_selector={true}")
+    expect(lane).toContain("show_tools_selector_in_advanced={true}")
+    expect(lane).toContain("show_name_field={false}")
+  })
+
+  it("gives the lane no task, so its tools stay out of the app-wide store", () => {
+    // The tool and skill pickers seed from, and mirror every change into,
+    // tools_store keyed by task id — a parent's write counts the same as a
+    // user's click. With no task they skip that store entirely and are still
+    // fully populated from the project. Passing a task here would let this
+    // dialog's tools overwrite the ones chosen on Run and Synthetic Data, and
+    // let those overwrite a restored draft's.
+    const lane = input_gen_lane()
+    expect(lane).not.toContain("current_task")
+    expect(lane).not.toContain("bind:tools")
+    expect(lane).not.toContain("bind:skills")
+  })
+
+  it("seeds the lane from the config it last committed", () => {
+    // The component stays mounted between opens, so both a restored draft and
+    // a visit abandoned by Cancel have to be seeded back to the committed
+    // config rather than left showing stale edits.
+    expect(input_gen_lane()).toContain(
+      "initial_run_config_properties={input_gen_run_config}",
+    )
+    const open = normalize(
+      function_body("async function open_drive_settings() {"),
+    )
+    expect(open).toContain(
+      "input_gen_config_component?.apply_run_config_properties( input_gen_run_config, )",
+    )
+    // Nothing committed yet still has to reseed: the lane goes back to the
+    // defaults a first open shows, or an abandoned visit's edits survive it.
+    expect(open).toContain("input_gen_config_component?.reset_run_options()")
+  })
+
+  it("carries the committed config on the draft so a reload can still run", () => {
+    // Without it a restored session would be bounced back into the dialog
+    // before it could drive.
+    const mirror = region("$: current_draft = draft_ready", "    : null")
+    expect(normalize(mirror)).toContain("input_gen_run_config,")
+    expect(
+      normalize(function_body("async function restore_draft() {")),
+    ).toContain("input_gen_run_config = saved.input_gen_run_config ?? null")
+  })
+
+  it("sends the committed run config to the minting route, not a rebuilt one", () => {
+    // Tools and skills only reach the generator if the whole config the user
+    // configured is what gets sent.
+    const mint = normalize(
+      function_body("async function mint_inputs_from_plan("),
+    )
+    expect(mint).toContain("run_config_properties: input_gen_config,")
+    expect(mint).not.toContain('prompt_id: "simple_prompt_builder"')
+  })
+
+  it("keys the minted-inputs cache on the config it sends", () => {
+    // Sampling and tools are both editable in this lane and both change what
+    // is written, so the key is the whole config, derived from the very
+    // object the request carries.
+    const drive = normalize(
+      function_body("async function on_drive_single_turn() {"),
+    )
+    expect(drive).toContain(
+      "const input_gen_config_key = run_config_cache_key(chosen_input_config)",
+    )
+    expect(drive).toContain("run_config_json: input_gen_config_key,")
   })
 
   it("names the judge lane once and explains it per arm", () => {
@@ -486,20 +571,22 @@ describe("Generation Settings dialog", () => {
     )
   })
 
-  it("quiets the suggested-model advisory on every lane", () => {
-    // Three lanes stacked in one dialog, each confirming a good default, is a
-    // wall of green checks. The flag drops only that confirmation; a lane on a
-    // model we don't suggest still says so.
+  it("quiets the suggested-model advisory on the model-only lanes", () => {
+    // Lanes stacked in one dialog, each confirming a good default, is a wall
+    // of green checks. The flag drops only that confirmation; a lane on a
+    // model we don't suggest still says so. The input generator keeps the
+    // advisory, matching the same control in synthetic data generation.
     const lanes = drive_settings_dialog
       .split("<AvailableModelsDropdown")
       .slice(1)
       // Bound each chunk at its own tag close, or a flag on the last lane would
       // satisfy the assertion for every earlier one.
       .map((chunk) => chunk.slice(0, chunk.indexOf("/>")))
-    expect(lanes.length).toBe(3)
+    expect(lanes.length).toBe(2)
     for (const lane of lanes) {
       expect(normalize(lane)).toContain("quiet_suggested={true}")
     }
+    expect(input_gen_lane()).not.toContain("quiet_suggested")
   })
 
   it("puts the cost warning immediately before the submit", () => {

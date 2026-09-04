@@ -15,6 +15,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
+  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { build_suggested_models } from "$lib/ui/run_config_component/suggested_models"
   import {
     available_models,
@@ -43,6 +44,7 @@
     reusable_minted_inputs,
     should_invalidate_refined_values,
     should_prefill_suggested_name,
+    run_config_cache_key,
     EMPTY_BUILDER_DRAFT,
     type BuilderDraft,
     type CachedMintedInputs,
@@ -179,6 +181,7 @@
     QuestionSet,
     QuestionWithAnswer,
     SpecType,
+    KilnAgentRunConfigProperties,
   } from "$lib/types"
   import posthog from "posthog-js"
 
@@ -388,6 +391,7 @@
         undeleted_batch_tags,
         su_driver,
         input_generator,
+        input_gen_run_config,
         judge_model,
         turns_per_case,
       }
@@ -478,6 +482,10 @@
       // Model lanes: pre-Drive-Settings drafts have no such keys.
       su_driver = saved.su_driver ?? null
       input_generator = saved.input_generator ?? null
+      // Drafts written before the input lane carried a config restore null,
+      // which reads as nothing chosen: the dialog then falls back to
+      // pre-population, exactly like a lane with no model on record.
+      input_gen_run_config = saved.input_gen_run_config ?? null
       judge_model = saved.judge_model ?? null
       // Conversation length: no key, no choice on record, or a stored value
       // that isn't a number restores the default; a real number is clamped in
@@ -1236,17 +1244,25 @@
   // draft; the builder has no hardcoded model or provider anywhere.
   let su_driver: ModelChoice | null = null
   let input_generator: ModelChoice | null = null
+  // The input generator's committed run config: model, tools, skills and
+  // sampling. Set by the dialog's submit and sent verbatim to the minting
+  // route, so what runs is what the user configured. Rides the draft, so a
+  // restored session can run again without reopening the dialog.
+  let input_gen_run_config: KilnAgentRunConfigProperties | null = null
   let judge_model: ModelChoice | null = null
   let drive_settings_dialog: Dialog | null = null
-  // Dropdown bindings: the combined "provider_id/model_id" string plus the
-  // parsed ids the dropdown maintains. Committed to the lanes on submit —
-  // closing the dialog without submitting discards dropdown changes.
+  // Model-only lane bindings: the combined "provider_id/model_id" string plus
+  // the parsed ids the dropdown maintains. Committed to the lanes on submit —
+  // closing the dialog without submitting discards dropdown changes. The
+  // input generator binds only the combined string; its run config component
+  // owns the rest, and submit reads the whole config back off it.
   let su_model_combined: string | null = null
   let su_model_id: string | null = null
   let su_provider_id: string | null = null
   let input_gen_model_combined: string | null = null
-  let input_gen_model_id: string | null = null
-  let input_gen_provider_id: string | null = null
+  // The input lane's run config component, read on submit for the config it
+  // holds and reseeded on open from the config last committed.
+  let input_gen_config_component: RunConfigComponent | null = null
   let judge_model_combined: string | null = null
   let judge_model_id: string | null = null
   let judge_provider_id: string | null = null
@@ -1407,6 +1423,19 @@
     judge_model_combined = judge_model
       ? `${judge_model.model_provider}/${judge_model.model_name}`
       : judge_model_combined
+    // The input lane holds more than a model, and its component stays mounted
+    // between opens, so reseed the whole lane: a visit abandoned by Esc or
+    // Cancel must not leave its tool and sampling edits on the next one. With
+    // nothing committed yet the lane goes back to its defaults, which is what
+    // a first open shows. The model set above and the config applied here come
+    // from the same committed object, so they cannot disagree.
+    if (input_gen_run_config) {
+      input_gen_config_component?.apply_run_config_properties(
+        input_gen_run_config,
+      )
+    } else {
+      input_gen_config_component?.reset_run_options()
+    }
   }
 
   // The authored multi-turn judge prompt, cached against BOTH authoring
@@ -1536,22 +1565,39 @@
   // here; we stop with a visible error instead.
   async function submit_drive_settings() {
     drive_settings_submitting = false
+    // The input lane's run config comes out of its component whole. Only a
+    // kiln_agent config with a model on it can mint, so anything else is
+    // treated as an unset lane.
+    const input_gen_rcp = is_multi_turn
+      ? null
+      : input_gen_config_component?.run_options_as_run_config_properties() ??
+        null
+    const input_gen_config =
+      input_gen_rcp &&
+      isKilnAgentRunConfig(input_gen_rcp) &&
+      input_gen_rcp.model_name &&
+      input_gen_rcp.model_provider_name
+        ? input_gen_rcp
+        : null
     const su_ok = !is_multi_turn || (su_model_id && su_provider_id)
-    const input_gen_ok =
-      is_multi_turn || (input_gen_model_id && input_gen_provider_id)
+    const input_gen_ok = is_multi_turn || input_gen_config
     if (!su_ok || !input_gen_ok || !judge_model_id || !judge_provider_id) {
       drive_settings_error = new KilnError(
         is_multi_turn
           ? "Select a model to play the user and a judge model to continue."
-          : "Select a model to write the eval data and a judge model to continue.",
+          : "Select an eval data generation model and a judge model to continue.",
       )
       return
     }
     if (is_multi_turn && su_model_id && su_provider_id) {
       su_driver = model_choice(su_model_id, su_provider_id)
     }
-    if (!is_multi_turn && input_gen_model_id && input_gen_provider_id) {
-      input_generator = model_choice(input_gen_model_id, input_gen_provider_id)
+    if (!is_multi_turn && input_gen_config) {
+      input_gen_run_config = input_gen_config
+      input_generator = model_choice(
+        input_gen_config.model_name,
+        input_gen_config.model_provider_name,
+      )
     }
     judge_model = model_choice(judge_model_id, judge_provider_id)
     // Commit the staged length. Clamped on the way in so the committed value —
@@ -2408,7 +2454,7 @@
   // survivor accounting. Throws on job-level failure or zero survivors.
   async function mint_inputs_from_plan(
     approved_prompts: string[],
-    input_gen: ModelChoice,
+    input_gen_config: KilnAgentRunConfigProperties,
     data_guide: string | null,
     signal: AbortSignal,
   ): Promise<string[]> {
@@ -2424,18 +2470,11 @@
           // minted inputs match the dataset's real format and voice — and
           // the cache key above can't drift from what actually minted.
           data_guide,
-          run_config_properties: {
-            type: "kiln_agent" as const,
-            model_name: input_gen.model_name,
-            model_provider_name: input_gen.model_provider,
-            // Input generation runs its own purpose-built prompt server-side
-            // and the sampling knobs are the datamodel defaults; these
-            // fields just complete the run-config shape.
-            prompt_id: "simple_prompt_builder",
-            structured_output_mode: "default" as const,
-            top_p: 1.0,
-            temperature: 1.0,
-          },
+          // The config the Generation Settings dialog committed, verbatim:
+          // model, provider, tools, skills, and sampling. Input generation
+          // runs its own purpose-built prompt server-side, so the config's
+          // prompt is unused (the lane hides the prompt picker).
+          run_config_properties: input_gen_config,
         },
         signal,
       },
@@ -2511,11 +2550,15 @@
     // Backstop for an unset lane — ask, don't guess: send the user back to
     // the dialog rather than run on a null model.
     const chosen_input_gen = input_generator
+    const chosen_input_config = input_gen_run_config
     const chosen_judge_model = judge_model
-    if (!chosen_input_gen || !chosen_judge_model) {
+    if (!chosen_input_gen || !chosen_input_config || !chosen_judge_model) {
       open_drive_settings()
       return
     }
+    // The cache key for the config the mint will run under, derived from the
+    // very object the request sends, so key and request cannot drift.
+    const input_gen_config_key = run_config_cache_key(chosen_input_config)
     const approved_prompts = batch_plan.prompts
     generation_loading = true
     generation_error = null
@@ -2588,19 +2631,18 @@
       // 4. Preflight passed. Mint the test inputs BEFORE committing to a
       // run shape: the drive plan below compares them to the current batch
       // to pick top-off vs fresh, and a minting failure here leaves the
-      // previous run's results intact. Their generation depends only on
-      // the plan, the input-generator model, and the grounding guide —
-      // never the run config — so a re-run with all byte-unchanged (the
-      // fix-config-then-run-again recovery loop) reuses the cached inputs
-      // instead of re-paying one generation call per prompt. Any plan edit
-      // or new plan misses the cache.
+      // previous run's results intact. Their generation depends on the
+      // plan, the input generator's whole run config, and the grounding
+      // guide — never the task's own run config — so a re-run with all
+      // byte-unchanged (the fix-config-then-run-again recovery loop) reuses
+      // the cached inputs instead of re-paying one generation call per
+      // prompt. Any plan edit or new plan misses the cache.
       const mint_data_guide = grounding_data_guide(grounding_sample)
       let inputs = reusable_minted_inputs(
         cached_minted_inputs,
         approved_prompts,
-        chosen_input_gen.model_name,
-        chosen_input_gen.model_provider,
         mint_data_guide,
+        input_gen_config_key,
       )
       if (inputs) {
         posthog.capture("eval_v2_minted_inputs_reused", {
@@ -2610,7 +2652,7 @@
         generation_phase = "minting_inputs"
         inputs = await mint_inputs_from_plan(
           approved_prompts,
-          chosen_input_gen,
+          chosen_input_config,
           mint_data_guide,
           new_copilot_abort_signal(),
         )
@@ -2621,9 +2663,8 @@
         if (inputs.length === approved_prompts.length) {
           cached_minted_inputs = {
             prompts_json: JSON.stringify(approved_prompts),
-            model_name: chosen_input_gen.model_name,
-            model_provider: chosen_input_gen.model_provider,
             data_guide: mint_data_guide,
+            run_config_json: input_gen_config_key,
             inputs,
           }
         }
@@ -4135,7 +4176,7 @@
           ? `Checking that your run config, the ${
               is_multi_turn
                 ? "model that plays the user"
-                : "model that writes the eval data"
+                : "eval data generation model"
             }, and the judge all respond before creating your eval data.`
           : generation_phase === "minting_inputs"
             ? `Writing ${planned_total} items from the approved plan.`
@@ -4934,13 +4975,20 @@
 <!-- Generation Settings: the drive's single entrance. Every run passes
      through here, which is what puts the lanes it will spend on and the
      cost of spending them in front of the one button that starts it.
-     Model-only lanes — the user-simulator, input generator, and judge are
-     fixed-prompt internal roles, so no run-config extras. Each lane's
-     explanation is pinned to its label as a tooltip (the RunConfigComponent
-     idiom) rather than set below it, so three lanes and a warning still read
-     as a short form. Lane filters: the simulator and input generator want a
-     data-gen model (SDG's settings); judge needs structured output (v1 judge
-     form's settings). With no usable model, the dropdowns' own empty state
+     The input generator is the same run-config lane synthetic data
+     generation uses, so tools and skills are available to whatever writes
+     the eval data. It is given no task: the tool and skill pickers mirror
+     their selection into an app-wide store keyed by task id, and this lane's
+     tools belong to the eval it is building, not to the task. The
+     user-simulator and judge are fixed-prompt internal roles, so they stay
+     model-only. Each lane's explanation is pinned to its label as a tooltip
+     rather than set below it, so the lanes and a warning still read as a
+     short form. Lane filters: the simulator and input generator want a
+     data-gen model (SDG's settings); the input generator also wants
+     structured output, and tool support once tools are chosen; judge needs
+     structured output (v1 judge form's settings). A model that fails a
+     filter is never cleared: it moves into the dropdown's "Not Recommended"
+     group and the lane explains why. With no usable model, the empty state
      links to provider settings (same-tab, so the models list is fresh when
      the user returns) and submit refuses to start. -->
 <Dialog bind:this={drive_settings_dialog} title="Generation Settings">
@@ -4988,17 +5036,21 @@
         />
       </div>
     {:else}
-      <AvailableModelsDropdown
-        label="Model that writes the eval data"
-        info_description="Writes one item from each approved plan line; your task then runs on them."
+      <RunConfigComponent
+        bind:this={input_gen_config_component}
+        {project_id}
+        model_label="Eval Data Generation Model"
+        model_info_description="Writes one item from each approved plan line; your task then runs on them."
         bind:model={input_gen_model_combined}
-        bind:model_name={input_gen_model_id}
-        bind:provider_name={input_gen_provider_id}
-        settings={{
+        initial_run_config_properties={input_gen_run_config}
+        requires_structured_output={true}
+        hide_prompt_selector={true}
+        show_tools_selector_in_advanced={true}
+        show_name_field={false}
+        model_dropdown_settings={{
           requires_data_gen: true,
           suggested_mode: "data_gen",
         }}
-        quiet_suggested={true}
       />
     {/if}
     <AvailableModelsDropdown
