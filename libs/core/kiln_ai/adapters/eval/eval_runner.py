@@ -13,6 +13,7 @@ from kiln_ai.adapters.eval.registry import (
     v2_eval_type_available,
 )
 from kiln_ai.adapters.eval.trace_index import TraceIndex, TraceKey, trace_key
+from kiln_ai.adapters.ml_model_list import built_in_models_from_provider
 from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.adapters.provider_tools import kiln_model_provider_from
@@ -179,21 +180,26 @@ def _splits_a_turn_into_two_messages(
     synthetic user as if the user had written it.
 
     The strategy is resolved from the same prompt builder and model provider the adapter
-    reads, so the answer here is the one the drive would get. A config that cannot be
-    resolved answers False: the drive fails on the identical lookup before it spends
-    anything, and one unresolvable config must not block the run configs beside it.
+    reads, so the answer here is the one the drive would get. Built-in models are read
+    straight from the model table rather than through the credentialed provider lookup:
+    this preflight runs before any paid call and must give the same answer on a machine
+    with no provider keys, and the two fields it needs are static entries in that table.
+    Custom, fine-tuned and litellm models are not in the table, so they keep the
+    credentialed lookup. A config that cannot be resolved answers False: the drive
+    fails on the identical lookup before it spends anything, and one unresolvable
+    config must not block the run configs beside it.
     """
     try:
         cot_prompt = prompt_builder_from_id(
             properties.prompt_id, task
         ).chain_of_thought_prompt()
-        provider = (
-            kiln_model_provider_from(
+        provider = None
+        if cot_prompt:
+            provider = built_in_models_from_provider(
+                properties.model_provider_name, properties.model_name
+            ) or kiln_model_provider_from(
                 properties.model_name, properties.model_provider_name
             )
-            if cot_prompt
-            else None
-        )
     except Exception as error:
         logger.warning(
             "Could not resolve the chat strategy for model '%s' with prompt '%s' (%s); "
