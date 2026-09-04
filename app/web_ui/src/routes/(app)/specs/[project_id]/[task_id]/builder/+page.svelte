@@ -56,6 +56,7 @@
   // Claim/Evidence replaces the read-the-trace pass/fail review: the reviewer
   // agrees/disagrees with distilled claims; the trace stays hidden in a modal.
   import ClaimEvidenceReview from "./claim_evidence_review.svelte"
+  import ReviewIntro from "./review_intro.svelte"
   // Multi-turn Step 4 is plan-first: the batch planner drafts one scenario
   // per conversation for approval before any conversation is driven.
   // Step 4 plan approval reuses the /generate batch-plan components — one
@@ -2963,6 +2964,12 @@
   // ── Step 5 state — Claim/Evidence review.
   // Generated traces are distilled into claims (per-trace server claim builder)
   // that the reviewer agrees/disagrees with; the trace stays hidden in a modal.
+  // Step 5 opens on an entry screen instead of dropping the reviewer straight
+  // into grading, so the step states what it is for once before asking for
+  // anything. Per arrival, not persisted: a reviewer who returns mid-round has
+  // already read it, but one who reloads has lost the context with the page.
+  let review_intro_dismissed = false
+
   let trace_claims: TraceClaims[] = []
   let trace_reviews: TraceReview[] = []
   // Which traces the reviewer is asked to review (indices into trace_claims):
@@ -4776,24 +4783,34 @@
             <!-- Keyed per round: a new round replaces the subset and resets
                  every grade, so the review component restarts on the new
                  selection instead of pointing at a stale index. -->
-            {#key calibration_rounds_completed}
-              <ClaimEvidenceReview
-                traces={trace_claims}
-                bind:verdicts={trace_reviews}
-                selected_indices={reviewable_trace_indices}
+            {#if !review_intro_dismissed}
+              <ReviewIntro
                 {judged_noun}
-                {on_open_trace}
-                on_save={on_advance_to_save}
-                save_disabled={!save_gate_met}
-                save_label={review_cta_state === "refine"
-                  ? "Refine Judge"
-                  : "Save"}
-                save_tooltip={review_cta_state === "refine"
-                  ? refine_judge_tooltip(review_disagreement_count, judged_noun)
-                  : null}
-                bind:on_last_trace={review_on_last_trace}
+                on_start={() => (review_intro_dismissed = true)}
               />
-            {/key}
+            {:else}
+              {#key calibration_rounds_completed}
+                <ClaimEvidenceReview
+                  traces={trace_claims}
+                  bind:verdicts={trace_reviews}
+                  selected_indices={reviewable_trace_indices}
+                  {judged_noun}
+                  {on_open_trace}
+                  on_save={on_advance_to_save}
+                  save_disabled={!save_gate_met}
+                  save_label={review_cta_state === "refine"
+                    ? "Refine Judge"
+                    : "Save"}
+                  save_tooltip={review_cta_state === "refine"
+                    ? refine_judge_tooltip(
+                        review_disagreement_count,
+                        judged_noun,
+                      )
+                    : null}
+                  bind:on_last_trace={review_on_last_trace}
+                />
+              {/key}
+            {/if}
             {#if calibration_refine_error}
               <!-- A failed refine attempt, reported inline under the review
                    actions. Rendered independently of the opt-out link below:
