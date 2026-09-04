@@ -1499,7 +1499,11 @@ def connect_eval_builder_api(app: FastAPI):
         subset review most traces are never opened). Also used by the refine
         loop to regenerate claims without re-running the judge.
         """
+        # The builder reads the task's own instruction as context for what the
+        # task is; the endpoint resolves it here so the client never sends it.
+        task = task_from_id(project_id, task_id)
         output = await build_claims_for_trace(
+            task_instruction=task.instruction,
             raw_input=input.raw_input,
             raw_output=input.raw_output,
             eval_rubric=input.eval_rubric,
@@ -1636,12 +1640,10 @@ def connect_eval_builder_api(app: FastAPI):
         The refined prompt is a PROPOSAL — the UI validates it and shows the
         changes for approval; it is never auto-applied.
         """
-        # Fail fast on a missing copilot key before the remote refine call:
-        # a keyless caller gets a clean 401, not a deep upstream error.
-        get_copilot_api_key()
         # Remote failures propagate as HTTPExceptions with the upstream's
         # message (custom_errors renders {"message": ...} for the UI), same as
-        # the build_claims primitive.
+        # the build_claims primitive. The key check lives inside the call, so
+        # its own refusal (the feature being unavailable) comes first.
         return await refine_judge_prompt_from_grades(
             judge_prompt=input.judge_prompt,
             graded_traces=input.graded_traces,

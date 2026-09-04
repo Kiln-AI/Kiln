@@ -38,9 +38,6 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.build_cla
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.generate_judge_prompt_output import (
     GenerateJudgePromptOutput,
 )
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_judge_prompt_output import (
-    RefineJudgePromptOutput,
-)
 from app.desktop.studio_server.api_models.copilot_models import (
     TaskSkillInfoApi,
     TaskToolInfoApi,
@@ -49,8 +46,8 @@ from app.desktop.studio_server.api_models.eval_builder_models import (
     BuildClaimsApiOutput,
     CitationApi,
     ClaimApi,
-    FinalJudgementApi,
     JudgeConfig,
+    OverviewApi,
 )
 from app.desktop.studio_server.eval_builder_api import (
     JUDGE_MAX_RETRIES,
@@ -105,36 +102,44 @@ def _parse_sse(response_text: str) -> list[dict | str]:
     return events
 
 
-def _claim_with_citation() -> ClaimApi:
-    return ClaimApi(
-        claim="The agent stated a specific 30-day return window as fact.",
-        expected_result="fail",
-        evidence="The reply gives a window of 30 days from purchase [1].",
-        citations=[
-            CitationApi.model_validate(
-                {"marker": 1, "source": "output", "from": "30 days", "to": "purchase"}
-            )
-        ],
+def _citation(to: str = "purchase") -> CitationApi:
+    return CitationApi.model_validate(
+        {"marker": 1, "source": "output", "from": "30 days", "to": to}
     )
 
 
-def _final_judgement() -> FinalJudgementApi:
-    return FinalJudgementApi(
-        claim="Fails Eval: the agent fabricated an unverified policy.",
-        expected_result="fail",
-        evidence="It asserts a return window it never verified [1].",
-        citations=[
-            CitationApi.model_validate(
-                {"marker": 1, "source": "output", "from": "30 days", "to": "purchase"}
-            )
-        ],
+def _overview() -> OverviewApi:
+    return OverviewApi(
+        text="The user asked about returning opened electronics and the "
+        "agent quoted a 30-day window [1].",
+        citations=[_citation()],
+    )
+
+
+def _claim_with_citation() -> ClaimApi:
+    return ClaimApi(
+        text="The agent stated a specific 30-day return window as fact [1]. "
+        "Disagree if the window is documented policy.",
+        citations=[_citation()],
+        is_verdict=False,
+    )
+
+
+def _verdict_claim() -> ClaimApi:
+    return ClaimApi(
+        text="It fails because the agent asserted a return window it never "
+        "verified [1].",
+        citations=[_citation("full refund")],
+        is_verdict=True,
     )
 
 
 def _claims_output(claims: list[ClaimApi] | None = None) -> BuildClaimsApiOutput:
     return BuildClaimsApiOutput(
-        claims=claims if claims is not None else [_claim_with_citation()],
-        final_judgement=_final_judgement(),
+        overview=_overview(),
+        claims=claims
+        if claims is not None
+        else [_claim_with_citation(), _verdict_claim()],
     )
 
 
@@ -365,8 +370,43 @@ def build_claims_input():
     }
 
 
+@pytest.fixture
+def build_claims_task():
+    """The task the endpoint resolves for its instruction (the URL's ids name
+    no real task)."""
+    with patch(
+        "app.desktop.studio_server.eval_builder_api.task_from_id",
+        return_value=Mock(instruction="Answer questions about return policy."),
+    ) as task_from_id_mock:
+        yield task_from_id_mock
+
+
+def _sdk_card(claim_texts: list[str]) -> dict:
+    """What the SDK's to_dict() hands back: the wire card, citations under the
+    `from` key, no verdict flag (the studio adds it)."""
+    citation = {"marker": 1, "source": "output", "from": "30 days", "to": "purchase"}
+    return {
+        "overview": {
+            "text": "The agent quoted a 30-day window [1].",
+            "citations": [citation],
+        },
+        "claims": [{"text": text, "citations": [citation]} for text in claim_texts],
+    }
+
+
+def _sdk_response(card: dict) -> MagicMock:
+    mock_output = MagicMock(spec=BuildClaimEvidenceOutput)
+    mock_output.to_dict.return_value = card
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.parsed = mock_output
+    return mock_response
+
+
 class TestBuildClaims:
-    def test_build_claims_no_api_key(self, client, build_claims_input):
+    def test_build_claims_no_api_key(
+        self, client, build_claims_input, build_claims_task
+    ):
         with patch(
             "app.desktop.studio_server.utils.copilot_utils.Config.shared"
         ) as mock_config_shared:
@@ -376,67 +416,88 @@ class TestBuildClaims:
             assert response.status_code == 401
             assert "API key not configured" in response.json()["message"]
 
-    def test_build_claims_success(self, client, build_claims_input, mock_api_key):
-        mock_output = MagicMock(spec=BuildClaimEvidenceOutput)
-        # to_dict() mirrors the SDK: citations carry the wire key `from`.
-        mock_output.to_dict.return_value = {
-            "claims": [
-                {
-                    "claim": "The agent stated a specific 30-day return window as fact.",
-                    "expected_result": "fail",
-                    "evidence": "The reply gives a window of 30 days from purchase [1].",
-                    "citations": [
-                        {
-                            "marker": 1,
-                            "source": "output",
-                            "from": "30 days",
-                            "to": "purchase",
-                        }
-                    ],
-                },
-            ],
-            "final_judgement": {
-                "claim": "Fails Eval: the agent fabricated an unverified policy.",
-                "expected_result": "fail",
-                "evidence": "It asserts a return window it never verified [1].",
-                "citations": [
-                    {
-                        "marker": 1,
-                        "source": "output",
-                        "from": "30 days",
-                        "to": "full refund",
-                    }
-                ],
-            },
-        }
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.parsed = mock_output
-
+    def test_build_claims_success(
+        self, client, build_claims_input, mock_api_key, build_claims_task
+    ):
+        card = _sdk_card(
+            [
+                "The agent stated a 30-day window as fact [1].",
+                "It fails because the window was never verified [1].",
+            ]
+        )
         with patch(
             "app.desktop.studio_server.utils.eval_builder_utils.build_claim_evidence_v1_copilot_build_claim_evidence_post.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_response,
-        ):
+            return_value=_sdk_response(card),
+        ) as sdk_call:
             response = client.post(BUILD_CLAIMS_URL, json=build_claims_input)
             assert response.status_code == 200
             result = response.json()
-            assert len(result["claims"]) == 1
-            assert result["claims"][0]["expected_result"] == "fail"
-            assert result["final_judgement"]["expected_result"] == "fail"
 
-            # The regression that matters: serialized citation key must be `from`
-            # — on claims AND on the top-level final judgement.
-            citation = result["claims"][0]["citations"][0]
-            assert "from" in citation and "from_" not in citation
-            assert citation["from"] == "30 days"
-            assert citation["to"] == "purchase"
-            assert citation["source"] == "output"
-            fj_citation = result["final_judgement"]["citations"][0]
-            assert "from" in fj_citation and "from_" not in fj_citation
-            assert fj_citation["to"] == "full refund"
+            # The task's own instruction rides to the builder as context; the
+            # client never sends it.
+            body = sdk_call.call_args.kwargs["body"]
+            assert body.task_instruction == "Answer questions about return policy."
+            assert body.raw_input == build_claims_input["raw_input"]
 
-    def test_build_claims_no_response(self, client, build_claims_input, mock_api_key):
+            assert result["overview"]["text"] == card["overview"]["text"]
+            assert [c["text"] for c in result["claims"]] == [
+                c["text"] for c in card["claims"]
+            ]
+            # The verdict flag is the studio's: the last claim opens with the
+            # verdict phrasing, the first does not.
+            assert [c["is_verdict"] for c in result["claims"]] == [False, True]
+
+            # The regression that matters: the serialized citation key must be
+            # `from` on the overview AND on every claim.
+            for entry in [result["overview"], *result["claims"]]:
+                citation = entry["citations"][0]
+                assert "from" in citation and "from_" not in citation
+                assert citation["from"] == "30 days"
+                assert citation["source"] == "output"
+
+    @pytest.mark.parametrize(
+        "claim_texts,expected_flags",
+        [
+            # Verdict phrasing on a non-last claim never flags it; a last claim
+            # without the phrasing is an ordinary claim (the builder omitted
+            # the verdict).
+            (
+                ["It fails because of the window [1].", "The tone was polite [1]."],
+                [False, False],
+            ),
+            # Only the last claim is checked, and leading whitespace does not
+            # hide the opener.
+            (
+                ["The tone was polite [1].", "  It passes despite the window [1]."],
+                [False, True],
+            ),
+            # A one-claim card whose only claim is the verdict.
+            (["It passes [1]."], [True]),
+        ],
+    )
+    def test_build_claims_flags_only_the_last_verdict_claim(
+        self,
+        client,
+        build_claims_input,
+        mock_api_key,
+        build_claims_task,
+        claim_texts,
+        expected_flags,
+    ):
+        with patch(
+            "app.desktop.studio_server.utils.eval_builder_utils.build_claim_evidence_v1_copilot_build_claim_evidence_post.asyncio_detailed",
+            new_callable=AsyncMock,
+            return_value=_sdk_response(_sdk_card(claim_texts)),
+        ):
+            response = client.post(BUILD_CLAIMS_URL, json=build_claims_input)
+            assert response.status_code == 200
+            flags = [c["is_verdict"] for c in response.json()["claims"]]
+            assert flags == expected_flags
+
+    def test_build_claims_no_response(
+        self, client, build_claims_input, mock_api_key, build_claims_task
+    ):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.parsed = None
@@ -451,7 +512,7 @@ class TestBuildClaims:
             assert "Failed to build claims" in response.json()["message"]
 
     def test_build_claims_validation_error(
-        self, client, build_claims_input, mock_api_key
+        self, client, build_claims_input, mock_api_key, build_claims_task
     ):
         mock_response = MagicMock()
         mock_response.status_code = 422
@@ -723,103 +784,43 @@ def refine_judge_input():
                 "trace_label": "leaf-abc",
                 "judge_score": "fail",
                 "judge_reasoning": "Stated a return window as fact.",
+                "overview": "The user asked about returns and the agent quoted a window.",
                 "claims": [
                     {
-                        "claim": "The agent stated an unverified return window as fact.",
-                        "evidence": "The reply gives 30 days [1].",
-                        "expected_result": "fail",
+                        "text": "The agent stated an unverified return window as fact [1].",
                         "human_grade": "agree",
                         "human_feedback": None,
-                    }
+                    },
+                    {
+                        "text": "It fails because the window was never verified [1].",
+                        "human_grade": "disagree",
+                        "human_feedback": "The window is actually documented, so this should pass.",
+                    },
                 ],
-                "final_judgement": {
-                    "claim": "Fails Eval.",
-                    "evidence": "Asserts an unverified window [1].",
-                    "expected_result": "fail",
-                    "human_grade": "disagree",
-                    "human_feedback": "The window is actually documented, so this should pass.",
-                },
+                "human_verdict": "pass",
             }
         ],
     }
 
 
 class TestRefineJudge:
-    def test_refine_judge_no_api_key(self, client, refine_judge_input):
-        """Fail-fast: a keyless caller gets a clean 401 before the remote call."""
-        with patch(
-            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
-        ) as mock_config_shared:
-            mock_config = mock_config_shared.return_value
-            mock_config.kiln_copilot_api_key = None
-            response = client.post(REFINE_JUDGE_URL, json=refine_judge_input)
-            assert response.status_code == 401
-            assert "API key not configured" in response.json()["message"]
-
-    def test_refine_judge_success(self, client, refine_judge_input, mock_api_key):
-        mock_output = MagicMock(spec=RefineJudgePromptOutput)
-        mock_output.to_dict.return_value = {
-            "refined_judge_prompt": "The agent must not fabricate policies. A specific unverified detail stated as fact is a FAILURE.",
-            "changes": [
-                {
-                    "change": "Made an unverified detail stated as fact an explicit failure.",
-                    "rationale": "trace leaf-abc: reviewer disagreed with the fail on a documented window.",
-                }
-            ],
-            "not_incorporated_feedback": None,
-        }
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.parsed = mock_output
-
-        with patch(
-            "app.desktop.studio_server.utils.eval_builder_utils.refine_judge_prompt_v1_copilot_refine_judge_prompt_post.asyncio_detailed",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ):
-            response = client.post(REFINE_JUDGE_URL, json=refine_judge_input)
-            assert response.status_code == 200
-            result = response.json()
-            assert "FAILURE" in result["refined_judge_prompt"]
-            assert len(result["changes"]) == 1
-            assert result["changes"][0]["rationale"].startswith("trace leaf-abc")
-            assert result["not_incorporated_feedback"] is None
-
-    def test_refine_judge_remote_error_surfaces_upstream_message(
+    def test_refine_judge_is_unavailable_until_the_refiner_takes_new_grades(
         self, client, refine_judge_input, mock_api_key
     ):
-        """A remote failure propagates the upstream status + message (the
-        custom error handler renders it as {"message": ...} for the UI)."""
-        mock_response = MagicMock()
-        mock_response.status_code = 502
-        mock_response.content = b'{"message": "upstream refused"}'
-        mock_response.parsed = None
-
+        """The remote refiner still takes the old graded-claim shape. Rather
+        than map the new grades onto it with invented fields, the endpoint
+        refuses with a coded 501 the UI shows verbatim, and never reaches the
+        SDK."""
         with patch(
             "app.desktop.studio_server.utils.eval_builder_utils.refine_judge_prompt_v1_copilot_refine_judge_prompt_post.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_response,
-        ):
+        ) as sdk_call:
             response = client.post(REFINE_JUDGE_URL, json=refine_judge_input)
-            assert response.status_code == 502
-            assert "upstream refused" in response.json()["message"]
-
-    def test_refine_judge_no_response_is_500(
-        self, client, refine_judge_input, mock_api_key
-    ):
-        """A 2xx with no parsed body surfaces as a 500 with a clear message."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.parsed = None
-
-        with patch(
-            "app.desktop.studio_server.utils.eval_builder_utils.refine_judge_prompt_v1_copilot_refine_judge_prompt_post.asyncio_detailed",
-            new_callable=AsyncMock,
-            return_value=mock_response,
-        ):
-            response = client.post(REFINE_JUDGE_URL, json=refine_judge_input)
-            assert response.status_code == 500
-            assert "Failed to refine the judge prompt" in response.json()["message"]
+            assert response.status_code == 501
+            detail = response.json()["message"]
+            assert detail["code"] == "refiner_contract_pending"
+            assert "not available" in detail["message"]
+            sdk_call.assert_not_called()
 
     def test_refine_judge_rejects_empty_graded_traces(self, client, mock_api_key):
         """graded_traces must be non-empty (min_length=1) — a 422 before any
@@ -1136,7 +1137,7 @@ class TestMultiTurnPipeline:
             # raw_input = the conversation's opening user message.
             assert e["raw_input"] == f"question {e['case_index']}"
             # No claims on the stream: they're built lazily via build_claims.
-            assert "claims" not in e and "final_judgement" not in e
+            assert "claims" not in e and "overview" not in e
             # The structured trace rides along (additive): the same real
             # trace the judge saw, so the client can render the chat UI and
             # remap citation spans instead of parsing the flattened string.
@@ -1761,7 +1762,7 @@ class TestJudgeTraces:
             assert "<tool_tool_message>" in e["raw_output"]
             assert e["raw_input"] == f"question {e['case_index']}"
             # No claims on the stream: they're built lazily via build_claims.
-            assert "claims" not in e and "final_judgement" not in e
+            assert "claims" not in e and "overview" not in e
             # The structured trace rides along for chat rendering/citations.
             assert e["trace"] == _real_trace(e["case_index"])
 
@@ -2771,6 +2772,7 @@ def capture_seams():
         )
 
 
+@pytest.mark.usefixtures("build_claims_task")
 class TestClaimDebugCapture:
     def test_capture_failure_still_returns_claims(
         self, client, build_claims_input, capture_seams
@@ -2863,8 +2865,8 @@ class TestClaimDebugCapture:
         assert record.raw_input == build_claims_input["raw_input"]
         assert record.eval_rubric == build_claims_input["eval_rubric"]
         assert record.judge_score == "fail"
+        assert record.overview == _claims_output().overview
         assert record.claims == _claims_output().claims
-        assert record.final_judgement == _claims_output().final_judgement
         assert record.debug_context is not None
         assert record.debug_context.turns == 5
         assert record.debug_context.synthetic_user_model == "openai/gpt_5_5"
@@ -2872,8 +2874,9 @@ class TestClaimDebugCapture:
         assert record.debug_context.judge.model_name == "claude_sonnet_4_6"
 
         # Citations must keep the `from` wire key on disk, not `from_`.
-        citation = on_disk["claims"][0]["citations"][0]
-        assert "from" in citation and "from_" not in citation
+        for entry in [on_disk["overview"], *on_disk["claims"]]:
+            citation = entry["citations"][0]
+            assert "from" in citation and "from_" not in citation
 
         # A refine-round rebuild appends a new file rather than overwriting.
         with capture_seams(task):

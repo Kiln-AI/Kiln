@@ -292,23 +292,45 @@ async def run_judge_for_trace(
     )
 
 
+# How the claim builder marks its verdict claim: the LAST claim opens with one
+# of these, and its instruction forbids the opener on any other claim. Text is
+# left-stripped first so a leading blank cannot hide the verdict.
+VERDICT_CLAIM_OPENERS = ("It passes", "It fails")
+
+
+def _is_verdict_claim(text: str) -> bool:
+    return text.lstrip().startswith(VERDICT_CLAIM_OPENERS)
+
+
 async def build_claims_for_trace(
+    task_instruction: str,
     raw_input: str,
     raw_output: str,
     eval_rubric: str,
     judge_score: JudgeScoreLiteral,
     judge_reasoning: str,
 ) -> BuildClaimsApiOutput:
-    """Distill one trace + verdict into claims + a final judgement via kiln_server.
+    """Distill one trace + verdict into an overview and claims via kiln_server.
 
     Thin remote passthrough: marshal → SDK call → map back. The claim generation
     (LLM) runs on kiln_server. Preserves the `from` citation alias for the UI.
+
+    `task_instruction` is context for the builder (what the task is), never a
+    rubric: it does not override the judge or the eval rubric.
+
+    The verdict flag is decided HERE, not in the UI: the builder's contract
+    says the verdict claim is the last claim and is the only one that may
+    open "It passes" / "It fails", so the flag is a property of the contract
+    and the studio is the layer that owns it. Only the last claim is ever
+    checked. A UI that regexed the prose itself would re-derive the contract
+    on every render and drift the moment the wording moved.
     """
     api_key = get_copilot_api_key()
     client = get_authenticated_client(api_key)
 
     body = BuildClaimEvidenceInput.from_dict(
         {
+            "task_instruction": task_instruction,
             "raw_input": raw_input,
             "raw_output": raw_output,
             "eval_rubric": eval_rubric,
@@ -329,7 +351,13 @@ async def build_claims_for_trace(
     # result.to_dict() emits citations with the `from` key; CitationApi's alias
     # preserves it on the studio response (the UI greps that literal key).
     if isinstance(result, BuildClaimEvidenceOutput):
-        return BuildClaimsApiOutput.model_validate(result.to_dict())
+        card = result.to_dict()
+        claims = card["claims"]
+        for index, claim in enumerate(claims):
+            claim["is_verdict"] = index == len(claims) - 1 and _is_verdict_claim(
+                claim["text"]
+            )
+        return BuildClaimsApiOutput.model_validate(card)
 
     raise HTTPException(status_code=500, detail="Unknown error building claims.")
 
@@ -396,6 +424,20 @@ async def refine_judge_prompt_from_grades(
     runs on kiln_server. The returned prompt is a PROPOSAL — callers validate it
     and show it for approval before any write; it is never auto-applied.
     """
+    # TODO(eval-v2): the remote refineJudgePrompt task still takes the previous
+    # graded-claim shape (claim, evidence, expected_result). Mapping the new
+    # single-text claims onto it would mean inventing an evidence string and
+    # guessing a direction, which is a silently worse refinement. Refuse
+    # outright until the refiner task accepts the overview-and-claims grades,
+    # then delete this block and the passthrough below resumes as written.
+    raise HTTPException(
+        status_code=501,
+        detail={
+            "code": "refiner_contract_pending",
+            "message": "Judge refinement is not available for the new claim contract yet.",
+        },
+    )
+
     api_key = get_copilot_api_key()
     client = get_authenticated_client(api_key)
 

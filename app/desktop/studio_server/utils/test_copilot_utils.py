@@ -547,22 +547,20 @@ def _claim_review_api(judge_score: str = "fail") -> ClaimReviewApi:
     return ClaimReviewApi(
         judge_score=judge_score,
         judge_reasoning="Stated an unverified policy as fact.",
+        overview="The user asked about returns and the agent quoted a window.",
         claims=[
             GradedClaim(
-                claim="The agent stated a specific return window as fact.",
-                evidence="The reply gives a window of 30 days [1].",
-                expected_result="fail",
+                text="The agent stated a specific return window as fact [1].",
+                human_grade="disagree",
+                human_feedback="The policy quoted is actually correct.",
+            ),
+            GradedClaim(
+                text="It fails because the window was never verified [1].",
                 human_grade="agree",
                 human_feedback=None,
-            )
+            ),
         ],
-        final_judgement=GradedClaim(
-            claim="Fails Eval: fabricated policy.",
-            evidence="Asserts a window it never verified [1].",
-            expected_result="fail",
-            human_grade="disagree",
-            human_feedback="The policy quoted is actually correct.",
-        ),
+        human_verdict=judge_score,
     )
 
 
@@ -629,11 +627,13 @@ class TestRateMultiTurnChainLeaves:
         reviews = leaves[0].claim_reviews()
         assert len(reviews) == 1
         assert reviews[0].judge_score == "fail"
-        assert reviews[0].final_judgement.human_grade == "disagree"
+        assert reviews[0].overview.startswith("The user asked")
+        assert reviews[0].claims[0].human_grade == "disagree"
         assert (
-            reviews[0].final_judgement.human_feedback
+            reviews[0].claims[0].human_feedback
             == "The policy quoted is actually correct."
         )
+        assert reviews[0].human_verdict == "fail"
 
         # Leaf 1: PASS rating, no feedback/claim-review children.
         rating = leaves[1].output.rating
@@ -755,8 +755,8 @@ class TestSavePendingChildren:
         reviews = run.claim_reviews()
         assert len(reviews) == 1
         assert reviews[0].judge_score == "fail"
-        assert len(reviews[0].claims) == 1
-        assert reviews[0].claims[0].human_grade == "agree"
+        assert [c.human_grade for c in reviews[0].claims] == ["disagree", "agree"]
+        assert reviews[0].human_verdict == "fail"
 
 
 def _make_su_leaves(task: Task, n: int) -> list[TaskRun]:
