@@ -8,6 +8,7 @@ ordering / per-case bookkeeping.
 """
 
 import asyncio
+import logging
 import re
 from typing import Any
 from unittest.mock import AsyncMock, Mock
@@ -27,7 +28,11 @@ from kiln_ai.datamodel.usage import Usage
 from kiln_ai.synthetic_user import runner as runner_mod
 from kiln_ai.synthetic_user.case import SyntheticUserCase
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
-from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
+from kiln_ai.synthetic_user.models import (
+    EARLY_STOP_SENTINEL,
+    TAG_SU_ENDED_CONVERSATION,
+    SyntheticUserDriverConfig,
+)
 from kiln_ai.synthetic_user.runner import (
     NUM_CASES_MAX,
     BatchCompletedEvent,
@@ -339,6 +344,66 @@ async def test_leaf_is_tagged_with_synthetic_user_case_and_batch_tag(
     assert "synthetic_user_case" in leaf.tags
     assert "synthetic_user_batch:abc123" in leaf.tags
     leaf.save_to_file.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_leaf_is_tagged_when_the_su_ends_the_conversation_early(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch, caplog
+) -> None:
+    """The tag is the only durable record that this conversation is short because
+    the synthetic user finished, not because the drive broke — the eval runner's
+    completeness gate reads it back off disk long afterwards.
+    """
+    leaf = _fake_run("leaf")
+    _patch_adapter_for_task(monkeypatch, [leaf])
+    _patch_su_driver(monkeypatch, replies_per_case=[EARLY_STOP_SENTINEL])
+
+    with caplog.at_level(logging.WARNING, logger="kiln_ai.synthetic_user.runner"):
+        events = await _collect(
+            run_cases_batch(
+                cases=[_case()],
+                target_task=fake_task,
+                target_run_config=_target_run_config(),
+                su_driver_config=_su_driver_config(),
+                turns=3,
+                batch_tag="abc123",
+            )
+        )
+
+    completed = next(e for e in events if isinstance(e, CaseCompletedEvent))
+    assert completed.total_turns == 1
+    assert TAG_SU_ENDED_CONVERSATION in leaf.tags
+    # Ending on the very first turn leaves a single-turn conversation under a
+    # multi-turn batch. It is kept, but it is worth a line in the log.
+    assert any(
+        "ended on its first turn" in record.getMessage() for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_full_length_drive_is_not_tagged_as_ended_by_the_su(
+    fake_task: Mock, monkeypatch: pytest.MonkeyPatch, caplog
+) -> None:
+    """A conversation that used its whole turn ceiling must not carry the tag, or
+    the tag would say nothing about any conversation."""
+    runs = [_fake_run("r1"), _fake_run("leaf")]
+    _patch_adapter_for_task(monkeypatch, runs)
+    _patch_su_driver(monkeypatch, replies_per_case=["keep going"])
+
+    with caplog.at_level(logging.WARNING, logger="kiln_ai.synthetic_user.runner"):
+        await _collect(
+            run_cases_batch(
+                cases=[_case()],
+                target_task=fake_task,
+                target_run_config=_target_run_config(),
+                su_driver_config=_su_driver_config(),
+                turns=2,
+                batch_tag="abc123",
+            )
+        )
+
+    assert TAG_SU_ENDED_CONVERSATION not in runs[-1].tags
+    assert caplog.records == []
 
 
 @pytest.mark.asyncio

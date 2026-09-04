@@ -27,7 +27,10 @@ from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.synthetic_user.case import SyntheticUserCase
 from kiln_ai.synthetic_user.drive_loop import TargetInvoker, drive_case
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
-from kiln_ai.synthetic_user.models import SyntheticUserDriverConfig
+from kiln_ai.synthetic_user.models import (
+    TAG_SU_ENDED_CONVERSATION,
+    SyntheticUserDriverConfig,
+)
 from kiln_ai.synthetic_user.parser import (
     SyntheticUserInfoParseError,
     parse_synthetic_user_info,
@@ -86,8 +89,10 @@ class TurnCompletedEvent:
     # read this rather than count events — a retried case restarts at 1.
     turn_index: int
     assistant_run_id: str
-    # The SU reply that seeds the next turn. None on the case's final turn:
-    # the drive loop skips the SU call when no target turn will consume it.
+    # The SU reply that seeds the next turn. None on the case's last turn:
+    # either the drive loop hit the turn ceiling and skipped the SU call
+    # because no target turn would consume it, or the SU ended the
+    # conversation and there is no next message to seed.
     su_next_message: str | None
     cumulative_cost: float
     # Cumulative OpenAI-format trace at this point (system + all turns so far).
@@ -170,7 +175,7 @@ async def run_cases_batch(
     `case_timeout_seconds` optionally bounds each case's drive; a case that
     exceeds it fails with `case_timeout` and frees its concurrency slot while
     the batch continues. The default (None) is unbounded: termination is
-    guaranteed by structural bounds instead — the exact turn count, the
+    guaranteed by structural bounds instead — the turn ceiling, the
     adapter's per-turn tool-call cap, and the model client's per-request
     timeout — and a case running past a soft threshold logs a warning
     rather than being killed.
@@ -448,7 +453,7 @@ async def _drive_one_case_and_emit(
 
         # Unbounded by default (timeout=None): a hung provider call is
         # bounded by the model client's per-request timeout, and the drive
-        # terminates structurally (exact turn count, per-turn tool-call cap).
+        # terminates structurally (turn ceiling, per-turn tool-call cap).
         # An explicit case_timeout_seconds still bounds the whole drive when
         # a caller sets one; either way the watchdog makes a pathologically
         # slow case visible in logs without killing a healthy run.
@@ -464,12 +469,26 @@ async def _drive_one_case_and_emit(
                 timeout=case_timeout_seconds,
             )
 
+        ended_by_su = result.ended_early(turns)
+        if len(result.chain) == 1 and turns > 1:
+            # Not enforced: killing a paid drive over a rule the prompt states
+            # but cannot guarantee would cost more than it saves. Logged
+            # because a one-turn conversation is a single-turn trace wearing a
+            # multi-turn label, which is worth knowing about when reading
+            # results back.
+            logger.warning(
+                "synthetic_user runner: case %d ended on its first turn — the "
+                "synthetic user ended the conversation before the target had "
+                "answered a second message",
+                case_index,
+            )
+
         # Tag the leaf so eval-time loaders can find it. Inside the try
         # so a tag-save failure (full disk, validator rejection on a
         # malformed batch_tag) surfaces as case_failed, not a silent drop.
         leaf = result.chain[-1]
         async with save_ctx():
-            _tag_leaf(leaf, batch_tag)
+            _tag_leaf(leaf, batch_tag, ended_by_su=ended_by_su)
 
         await queue.put(
             CaseCompletedEvent(
@@ -628,9 +647,9 @@ def _make_target_invoker(
     Concurrency: the returned closure is NOT safe to invoke concurrently.
     `nonlocal turn_index` is incremented per call; concurrent callers
     would race on the increment and the resulting `is_root` flag.
-    `drive_case` calls it sequentially within a single case (the
-    `for _ in range(turns)` loop), which is the contract; cases are
-    isolated by having their own closure with their own `turn_index`.
+    `drive_case` calls it sequentially within a single case (the per-turn
+    loop), which is the contract; cases are isolated by having their own
+    closure with their own `turn_index`.
     """
     adapter = adapter_for_task(
         target_task,
@@ -724,8 +743,13 @@ def _cumulative_cost(run: TaskRun) -> float:
     return float(getattr(usage, "cost", None) or 0.0)
 
 
-def _tag_leaf(leaf: TaskRun, batch_tag: str) -> None:
+def _tag_leaf(leaf: TaskRun, batch_tag: str, *, ended_by_su: bool) -> None:
     """Add the runner's discovery tags to the leaf TaskRun and persist.
+
+    `ended_by_su` says the synthetic user ended this conversation before the
+    turn ceiling, which earns the leaf TAG_SU_ENDED_CONVERSATION. The caller
+    decides — a short chain is the only evidence, and only the drive knows why
+    it is short.
 
     Tags are deduplicated (treated as a set then sorted) so re-runs
     against an already-tagged leaf are idempotent. A save_to_file
@@ -740,5 +764,7 @@ def _tag_leaf(leaf: TaskRun, batch_tag: str) -> None:
     tags = set(leaf.tags or [])
     tags.add(_TAG_SU_CASE)
     tags.add(f"{_TAG_PREFIX_SU_BATCH}{batch_tag}")
+    if ended_by_su:
+        tags.add(TAG_SU_ENDED_CONVERSATION)
     leaf.tags = sorted(tags)
     leaf.save_to_file()

@@ -1,12 +1,11 @@
 """Unit tests for the persona-playing system prompt template.
 
 These are structural assertions — we don't check exact wording (that's
-allowed to drift as we tune the persona prompt) but we DO check the
-prompt has every required section and is free of the removed termination
-guidance.
+allowed to drift as we tune the persona prompt) but we DO check the prompt
+has every required section and teaches the early-stop sentinel.
 """
 
-from kiln_ai.synthetic_user.models import SyntheticUserInfo
+from kiln_ai.synthetic_user.models import EARLY_STOP_SENTINEL, SyntheticUserInfo
 from kiln_ai.synthetic_user.prompt import render_system_prompt
 
 
@@ -49,15 +48,25 @@ def test_includes_conventions_block() -> None:
     assert "Conversation style" in rendered
 
 
-def test_does_not_include_termination_sentinels() -> None:
-    # Decision: drive loop runs for fixed `turns`; SU must NOT try to end
-    # the conversation. The template should carry no <DONE> / <CANCEL>
-    # guidance.
+def test_includes_early_stop_sentinel() -> None:
     rendered = render_system_prompt(_full_info())
-    assert "<DONE>" not in rendered
+    assert EARLY_STOP_SENTINEL in rendered
+
+
+def test_does_not_include_cancel_sentinel() -> None:
+    # Ending is the only control signal the SU has; a second sentinel in the
+    # prompt would be one the drive loop does not act on.
+    rendered = render_system_prompt(_full_info())
     assert "<CANCEL>" not in rendered
-    assert "DONE" not in rendered  # also no bare-word leak
-    assert "CANCEL" not in rendered
+
+
+def test_early_stop_sentinel_comes_after_behavior_guidance() -> None:
+    # The ending rules come after the persona sections so they get the last
+    # word, including the bullet that defers to behavior guidance.
+    info = _full_info()
+    rendered = render_system_prompt(info)
+    assert info.behavior_guidance is not None
+    assert rendered.index(EARLY_STOP_SENTINEL) > rendered.index("How you behave")
 
 
 def test_section_order_opening_persona_goal_behavior_conventions() -> None:

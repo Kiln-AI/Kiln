@@ -589,8 +589,7 @@ class MultiTurnDriveConfig(BaseModel):
     turns: int = Field(
         ge=1,
         le=20,
-        description="Exact number of assistant turns per re-driven conversation "
-        "(the drive loop has no early termination).",
+        description="Ceiling on the assistant turns per re-driven conversation.",
     )
 
 

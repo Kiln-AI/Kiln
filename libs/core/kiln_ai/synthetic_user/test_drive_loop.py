@@ -14,6 +14,7 @@ from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.datamodel.usage import Usage
 from kiln_ai.synthetic_user.drive_loop import DriveCaseResult, drive_case
 from kiln_ai.synthetic_user.driver import SyntheticUserDriver
+from kiln_ai.synthetic_user.models import EARLY_STOP_SENTINEL
 
 # ───────────────────────── helpers / fixtures ─────────────────────────
 
@@ -103,7 +104,7 @@ def _su_driver_with_replies(
 
 @pytest.mark.asyncio
 async def test_drive_case_runs_exactly_turns_iterations() -> None:
-    """No early termination — loop always completes `turns` iterations."""
+    """Without a sentinel, the loop runs the full `turns` ceiling."""
     invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3", "a4"])
     su = _su_driver_with_replies(["u2", "u3", "u4"])
 
@@ -351,6 +352,127 @@ async def test_drive_case_works_without_on_turn_hook() -> None:
     )
 
     assert len(result.chain) == 1
+
+
+# ───────────────────────── early stop ─────────────────────────
+
+
+@pytest.mark.parametrize(
+    "turns",
+    # 4: the sentinel arrives mid-conversation. 3: it arrives on the case's
+    # last SU call, which can end the case one turn short too.
+    [4, 3],
+    ids=["mid_conversation", "last_su_call"],
+)
+@pytest.mark.asyncio
+async def test_drive_case_stops_when_su_returns_sentinel(turns: int) -> None:
+    """The sentinel ends the case: the turn it arrived on is complete and kept,
+    and nothing is called after it."""
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3", "a4"])
+    # A reply after the sentinel is queued so a loop that ignored it would run
+    # on and fail these assertions, rather than dying on an exhausted driver.
+    su = _su_driver_with_replies(["u2", EARLY_STOP_SENTINEL, "u4"])
+
+    result = await drive_case(
+        seed_prompt="u1",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=turns,
+    )
+
+    assert len(result.chain) == 2
+    assert len(invoker.calls) == 2
+    assert su.respond.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_drive_case_hook_fires_for_stopping_turn_with_no_su_message() -> None:
+    """The stopping turn still gets its on_turn event — it was produced and paid
+    for — but the sentinel is a control signal, so it never rides the hook."""
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3"])
+    su = _su_driver_with_replies(["u2", EARLY_STOP_SENTINEL])
+
+    captured: list[tuple[TaskRun, str | None]] = []
+
+    async def _hook(*, run: TaskRun, su_message: str | None, su_cost: float) -> None:
+        captured.append((run, su_message))
+
+    result = await drive_case(
+        seed_prompt="u1",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=3,
+        on_turn=_hook,
+    )
+
+    assert [msg for _, msg in captured] == ["u2", None]
+    # The stopping turn's event carries the run that turn produced — the one
+    # the chain ends on, not a stale earlier turn.
+    assert captured[-1][0] is result.chain[-1]
+
+
+@pytest.mark.asyncio
+async def test_drive_case_counts_su_spend_of_the_stopping_call() -> None:
+    """The respond() call that returned the sentinel cost money, so its usage is
+    summed and its cost reaches the hook like any other turn's."""
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3"])
+    su = _su_driver_with_replies(["u2", EARLY_STOP_SENTINEL], cost_per_reply=0.02)
+
+    captured_costs: list[float] = []
+
+    async def _hook(*, run: TaskRun, su_message: str | None, su_cost: float) -> None:
+        captured_costs.append(su_cost)
+
+    result = await drive_case(
+        seed_prompt="u1",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=3,
+        on_turn=_hook,
+    )
+
+    assert captured_costs == [pytest.approx(0.02), pytest.approx(0.02)]
+    assert result.su_total_cost == pytest.approx(0.04)
+
+
+@pytest.mark.asyncio
+async def test_drive_case_stops_when_sentinel_has_surrounding_whitespace() -> None:
+    """Models pad their output; the match is on the trimmed message."""
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3"])
+    # A second reply is queued so a loop that failed to trim would run on and
+    # fail these assertions, rather than dying on an exhausted driver.
+    su = _su_driver_with_replies([f"  {EARLY_STOP_SENTINEL}\n", "u3"])
+
+    result = await drive_case(
+        seed_prompt="u1",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=3,
+    )
+
+    assert len(result.chain) == 1
+    # The padded sentinel is not forwarded as a turn of its own.
+    assert len(invoker.calls) == 1
+    assert su.respond.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_drive_case_does_not_stop_on_sentinel_amid_prose() -> None:
+    """Only a message that is nothing but the sentinel stops the case — a user
+    who quotes it mid-sentence gets an ordinary turn, forwarded verbatim."""
+    quoting_reply = f"ok thanks {EARLY_STOP_SENTINEL}"
+    invoker = _FakeInvoker(assistant_replies=["a1", "a2", "a3"])
+    su = _su_driver_with_replies([quoting_reply, "u3"])
+
+    result = await drive_case(
+        seed_prompt="u1",
+        target_invoker=invoker,
+        su_driver=su,
+        turns=3,
+    )
+
+    assert len(result.chain) == 3
+    assert invoker.calls[1]["input"] == quoting_reply
 
 
 # ───────────────────────── invariants ─────────────────────────
