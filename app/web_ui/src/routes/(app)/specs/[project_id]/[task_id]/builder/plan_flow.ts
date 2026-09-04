@@ -166,11 +166,11 @@ export function plan_drive<T, R>(args: {
 
 // Whether the current batch was produced under the same drive settings this
 // attempt would run with. A changed judge — or, on multi-turn, a changed
-// synthetic-user model or conversation length — forces a fresh batch instead
-// of a top-off: one review may not mix two judges' verdicts, and the saved
-// drive stamp must describe every conversation in the batch. `su` and `turns`
-// are omitted entirely on the single-turn arm, which has neither a
-// synthetic-user lane nor conversations to length.
+// synthetic-user model or conversation-length ceiling — forces a fresh batch
+// instead of a top-off: one review may not mix two judges' verdicts, and the
+// saved drive stamp must describe the settings every conversation in the
+// batch ran under. `su` and `turns` are omitted entirely on the single-turn
+// arm, which has neither a synthetic-user lane nor conversations to length.
 export function drive_lanes_unchanged(args: {
   judge: unknown
   batch_judge: unknown | null
@@ -188,9 +188,12 @@ export function drive_lanes_unchanged(args: {
     if (JSON.stringify(args.su) !== JSON.stringify(args.batch_su)) return false
   }
   if (args.turns !== undefined) {
-    // Topping off at a different length would leave one batch holding
-    // conversations of two lengths, under a single stamp that can only name
-    // one of them.
+    // `turns` is a ceiling, so a batch legitimately holds conversations of
+    // several lengths — the synthetic user can end one early. What has to
+    // match is the ceiling they all ran under, which is what the stamp
+    // records. Comparing the conversations' observed lengths instead would
+    // wrongly reject a top-off onto any batch where a conversation ended
+    // early.
     if (args.batch_turns === null || args.batch_turns === undefined) {
       return false
     }

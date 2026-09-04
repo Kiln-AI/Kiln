@@ -970,7 +970,7 @@ class EvalRunner:
 
         async def drive_and_persist() -> TaskRun:
             # No app-level timeout on the re-drive: it terminates
-            # structurally (exact turn count, the adapter's tool-call cap,
+            # structurally (the turn ceiling, the adapter's tool-call cap,
             # the model client's per-request timeout). This path runs as a
             # background job, so the watchdog log is how a pathologically
             # slow drive gets noticed.

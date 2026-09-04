@@ -16,6 +16,13 @@ from kiln_ai.datamodel.eval import SyntheticUserInfo as SyntheticUserInfo
 
 VisibleMessageRole = Literal["user", "assistant"]
 
+# The exact message the SU sends to end a conversation before the turn ceiling
+# is reached. It lives in this leaf module so the drive loop that acts on it
+# and the prompt that will teach it can share one string without importing
+# each other. Nothing teaches it yet, so today every case still runs the full
+# `turns`.
+EARLY_STOP_SENTINEL = "<DONE>"
+
 
 class SyntheticUserDriverConfig(BaseModel):
     """Per-eval runtime config for the SU's LLM driver.

@@ -9647,7 +9647,7 @@ export interface components {
             model_provider: string;
             /**
              * Turns
-             * @description Exact number of assistant turns per re-driven conversation (the drive loop has no early termination).
+             * @description Ceiling on the assistant turns per re-driven conversation.
              */
             turns: number;
         };
@@ -9686,7 +9686,7 @@ export interface components {
             }[];
             /**
              * Turns
-             * @description Exact number of assistant turns to produce per case. The drive loop has no early termination.
+             * @description Ceiling on the assistant turns produced per case.
              * @default 5
              */
             turns: number;
@@ -11063,7 +11063,7 @@ export interface components {
             }[];
             /**
              * Turns
-             * @description Exact number of assistant turns to produce per case. The drive loop has no early termination.
+             * @description Ceiling on the assistant turns produced per case.
              * @default 5
              */
             turns: number;

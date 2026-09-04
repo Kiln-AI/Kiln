@@ -86,8 +86,10 @@ class TurnCompletedEvent:
     # read this rather than count events — a retried case restarts at 1.
     turn_index: int
     assistant_run_id: str
-    # The SU reply that seeds the next turn. None on the case's final turn:
-    # the drive loop skips the SU call when no target turn will consume it.
+    # The SU reply that seeds the next turn. None on the case's last turn:
+    # either the drive loop hit the turn ceiling and skipped the SU call
+    # because no target turn would consume it, or the SU ended the
+    # conversation and there is no next message to seed.
     su_next_message: str | None
     cumulative_cost: float
     # Cumulative OpenAI-format trace at this point (system + all turns so far).
@@ -170,7 +172,7 @@ async def run_cases_batch(
     `case_timeout_seconds` optionally bounds each case's drive; a case that
     exceeds it fails with `case_timeout` and frees its concurrency slot while
     the batch continues. The default (None) is unbounded: termination is
-    guaranteed by structural bounds instead — the exact turn count, the
+    guaranteed by structural bounds instead — the turn ceiling, the
     adapter's per-turn tool-call cap, and the model client's per-request
     timeout — and a case running past a soft threshold logs a warning
     rather than being killed.
@@ -448,7 +450,7 @@ async def _drive_one_case_and_emit(
 
         # Unbounded by default (timeout=None): a hung provider call is
         # bounded by the model client's per-request timeout, and the drive
-        # terminates structurally (exact turn count, per-turn tool-call cap).
+        # terminates structurally (turn ceiling, per-turn tool-call cap).
         # An explicit case_timeout_seconds still bounds the whole drive when
         # a caller sets one; either way the watchdog makes a pathologically
         # slow case visible in logs without killing a healthy run.
@@ -628,9 +630,9 @@ def _make_target_invoker(
     Concurrency: the returned closure is NOT safe to invoke concurrently.
     `nonlocal turn_index` is incremented per call; concurrent callers
     would race on the increment and the resulting `is_root` flag.
-    `drive_case` calls it sequentially within a single case (the
-    `for _ in range(turns)` loop), which is the contract; cases are
-    isolated by having their own closure with their own `turn_index`.
+    `drive_case` calls it sequentially within a single case (the per-turn
+    loop), which is the contract; cases are isolated by having their own
+    closure with their own `turn_index`.
     """
     adapter = adapter_for_task(
         target_task,

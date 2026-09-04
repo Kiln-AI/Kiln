@@ -50,9 +50,10 @@ def test_includes_conventions_block() -> None:
 
 
 def test_does_not_include_termination_sentinels() -> None:
-    # Decision: drive loop runs for fixed `turns`; SU must NOT try to end
-    # the conversation. The template should carry no <DONE> / <CANCEL>
-    # guidance.
+    # The drive loop can already stop on a sentinel, but this prompt
+    # deliberately does not teach the SU about one yet, so the template must
+    # carry no <DONE> / <CANCEL> guidance. This test is the guard to update
+    # when the sentinel is turned on in the prompt.
     rendered = render_system_prompt(_full_info())
     assert "<DONE>" not in rendered
     assert "<CANCEL>" not in rendered

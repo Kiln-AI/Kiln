@@ -1,9 +1,11 @@
 """Persona-playing system prompt rendered per request for the synthetic user.
 
 The prompt is built once per case (when the driver is constructed) and
-reused across all turns. No early-termination guidance — the drive loop
-runs for a fixed number of turns; the SU is told to stay engaged across
-the whole conversation rather than try to wrap up early.
+reused across all turns. It carries no early-termination guidance: the
+drive loop honours `EARLY_STOP_SENTINEL` from `models`, but this prompt
+deliberately does not teach the SU about it yet and still tells it to stay
+engaged across the whole conversation, so every case runs to the turn
+ceiling. Teaching the sentinel is a separate change.
 """
 
 from kiln_ai.synthetic_user.models import SyntheticUserInfo

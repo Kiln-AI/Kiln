@@ -187,10 +187,7 @@ class RunCasesBatchApiInput(TargetRunConfigFields):
         default=MAX_TURNS_DEFAULT,
         ge=1,
         le=20,
-        description=(
-            "Exact number of assistant turns to produce per case. The drive "
-            "loop has no early termination."
-        ),
+        description="Ceiling on the assistant turns produced per case.",
     )
     su_driver: SyntheticUserDriverSpec
     batch_tag: str | None = Field(
