@@ -196,7 +196,7 @@
             <SettingsHeader title="LLM Judge" />
             <FormElement
               label="What should this eval check?"
-              description="Describe in plain language. Kiln asks a few questions, then builds the eval and its judge."
+              description="Describe in plain language. We'll structure it for you."
               id="eval_description"
               inputType="textarea"
               height="medium"
