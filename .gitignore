@@ -42,3 +42,4 @@ reviews/
 # ActRight discover local state
 .act_right
 
+.playwright-mcp/

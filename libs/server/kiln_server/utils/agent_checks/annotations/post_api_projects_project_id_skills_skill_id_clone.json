@@ -1,0 +1,8 @@
+{
+  "method": "post",
+  "path": "/api/projects/{project_id}/skills/{skill_id}/clone",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

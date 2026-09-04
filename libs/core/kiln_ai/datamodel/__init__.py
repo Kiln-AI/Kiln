@@ -35,6 +35,7 @@ from kiln_ai.datamodel.dataset_split import DatasetSplit, DatasetSplitDefinition
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.feedback import Feedback
 from kiln_ai.datamodel.finetune import Finetune
+from kiln_ai.datamodel.memory import Memory
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.prompt_id import (
@@ -43,6 +44,10 @@ from kiln_ai.datamodel.prompt_id import (
     prompt_generator_values,
 )
 from kiln_ai.datamodel.prompt_optimization_job import PromptOptimizationJob
+from kiln_ai.datamodel.provenance import (
+    KilnArtifactProvenance,
+    validate_derived_from_ids,
+)
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import Task, TaskRequirement
 from kiln_ai.datamodel.task_output import (
@@ -75,6 +80,8 @@ __all__ = [
     "FeedbackSource",
     "FineTuneStatusType",
     "Finetune",
+    "KilnArtifactProvenance",
+    "Memory",
     "MessageUsage",
     "Priority",
     "Project",
@@ -102,4 +109,5 @@ __all__ = [
     "rag",
     "reranker",
     "strict_mode",
+    "validate_derived_from_ids",
 ]

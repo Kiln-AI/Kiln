@@ -1,6 +1,6 @@
 {
   "method": "get",
-  "path": "/api/jobs/{id}/wait",
+  "path": "/api/projects/{project_id}/skills/{skill_id}/resources",
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false

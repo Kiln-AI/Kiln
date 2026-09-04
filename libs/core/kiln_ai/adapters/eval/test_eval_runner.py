@@ -1256,8 +1256,8 @@ async def test_run_job_wrapped_rate_limit_raises_retryable_with_detail(
 
 def test_is_retryable_error_unwraps_nested_kiln_run_error():
     # Not produced by the current adapter chain (it passes through already-wrapped
-    # errors), but the unwrap walks nested wrappers so classification can't
-    # silently break if that ever changes.
+    # errors), but the unwrap walks nested wrappers so classification and error
+    # detail can't silently diverge if that ever changes.
     nested = KilnRunError(
         message="Rate limit exceeded. Wait a moment and try again.",
         partial_trace=None,
@@ -1268,6 +1268,38 @@ def test_is_retryable_error_unwraps_nested_kiln_run_error():
         ),
     )
     assert _is_retryable_error(nested) is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "run_kwargs,expected_max_retries,expected_retry_delay",
+    [
+        ({}, 2, 1.0),
+        ({"max_retries": 4, "retry_delay": 5.0}, 4, 5.0),
+    ],
+)
+async def test_run_threads_retry_config_to_async_job_runner(
+    mock_eval_runner, run_kwargs, expected_max_retries, expected_retry_delay
+):
+    # The historical default (2 retries) is kept for existing callers; background
+    # jobs override it, and the values must reach the AsyncJobRunner doing the
+    # retrying.
+    captured: dict = {}
+
+    class FakeRunner:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        async def run(self):
+            for _ in ():
+                yield  # pragma: no cover — typed as a generator, never yields
+
+    with patch("kiln_ai.adapters.eval.eval_runner.AsyncJobRunner", FakeRunner):
+        async for _ in mock_eval_runner.run(**run_kwargs):
+            pass
+
+    assert captured["max_retries"] == expected_max_retries
+    assert captured["retry_delay"] == expected_retry_delay
 
 
 # --- save_context tests ---

@@ -1,8 +1,11 @@
 import type { components } from "$lib/api_schema"
 import {
   chatGenerateId,
+  normalizeContextUsage,
   type ChatMessage,
   type ChatMessagePart,
+  type ContextUsage,
+  type SubagentReportInfo,
 } from "./streaming_chat"
 
 type TraceMessage = components["schemas"]["TraceMessage"]
@@ -23,8 +26,88 @@ function extractTextContent(content: TraceMessage["content"]): string {
 const APP_UI_CONTEXT_RE =
   /<new_app_ui_context>[\s\S]*?<\/new_app_ui_context>\s*/g
 
+// Auto mode wraps a message injected mid-burst in a <system-reminder> "side
+// note" (see _SIDE_NOTE_REMINDER in the auto runner) before sending it upstream,
+// so the framing is persisted in the trace. Strip it on hydration so a reloaded
+// transcript shows the user's actual message — matching the live echo, which
+// renders the raw content.
+const SYSTEM_REMINDER_RE = /<system-reminder>[\s\S]*?<\/system-reminder>\s*/g
+
 export function stripAppUiContext(text: string): string {
   return text.replace(APP_UI_CONTEXT_RE, "")
+}
+
+// Strip the internal framing the client/runner prepend to a user message before
+// sending it to the model (app-UI context header + auto-mode side-note), so the
+// hydrated transcript shows what the user actually typed.
+export function stripInternalFraming(text: string): string {
+  return text.replace(APP_UI_CONTEXT_RE, "").replace(SYSTEM_REMINDER_RE, "")
+}
+
+// A sub-agent completion report the server injected into the parent
+// conversation as a user-role message (format_subagent_report server-side).
+// The whole message is the frame: attributes then the report body. The open
+// tag is matched attribute-by-attribute (not ``[^>]*``) because attribute
+// values may contain a literal ``>`` — the server escapes ``"`` but not ``>``.
+const SUBAGENT_REPORT_RE =
+  /^\s*<subagent_report((?:\s+\w+="[^"]*")*)\s*>\n?([\s\S]*?)\n?<\/subagent_report>\s*$/
+
+// Reverse of the server's _escape_attr (&amp; last so escaped entities in the
+// original text don't double-unescape).
+function unescapeReportAttr(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&amp;/g, "&")
+}
+
+/**
+ * Parse a ``<subagent_report …>`` frame. Returns the parsed attributes plus the
+ * inner report body, or ``null`` when the text is not a report frame (a normal
+ * user message). The transcript renders matches as a collapsed report chip.
+ */
+export function parseSubagentReport(
+  text: string,
+): { info: SubagentReportInfo; body: string } | null {
+  const match = SUBAGENT_REPORT_RE.exec(text)
+  if (!match) return null
+  const attrs: Record<string, string> = {}
+  const attrRe = /(\w+)="([^"]*)"/g
+  let attrMatch: RegExpExecArray | null
+  while ((attrMatch = attrRe.exec(match[1])) !== null) {
+    attrs[attrMatch[1]] = unescapeReportAttr(attrMatch[2])
+  }
+  return {
+    info: {
+      id: attrs.id ?? "",
+      agentType: attrs.agent_type ?? "",
+      status: attrs.status ?? "",
+      title: attrs.title ?? "",
+    },
+    body: match[2],
+  }
+}
+
+/**
+ * Build the UI message for a user-role trace entry: a report chip message when
+ * the content is a sub-agent report frame, otherwise a plain user message.
+ * Shared by hydration (below) and the live ``user-message`` echo path.
+ */
+export function userChatMessageFromContent(
+  content: string,
+  echoId?: string,
+): ChatMessage {
+  const report = parseSubagentReport(content)
+  if (report) {
+    return {
+      id: chatGenerateId(),
+      role: "user",
+      content: report.body,
+      subagentReport: report.info,
+      echoId,
+    }
+  }
+  return { id: chatGenerateId(), role: "user", content, echoId }
 }
 
 function traceToolCallToPart(tc: TraceToolCall): ChatMessagePart {
@@ -44,9 +127,6 @@ function traceToolCallToPart(tc: TraceToolCall): ChatMessagePart {
 
 function buildAssistantParts(msg: TraceMessage): ChatMessagePart[] {
   const parts: ChatMessagePart[] = []
-  if (msg.reasoning_content) {
-    parts.push({ type: "reasoning", reasoning: msg.reasoning_content })
-  }
   const text = extractTextContent(msg.content)
   if (text) {
     parts.push({ type: "text", text })
@@ -61,12 +141,18 @@ function buildAssistantParts(msg: TraceMessage): ChatMessagePart[] {
 
 /**
  * Converts a typed ChatSessionSnapshot into UI messages.
- * Sets ``traceId`` on the last assistant message so
- * ``traceIdForNextChatRequest`` can continue the thread.
+ *
+ * Phase 5: the snapshot's leaf-shaped ``id`` is no longer surfaced — the
+ * browser keys conversations on SESSION ids (functional spec §4) and the
+ * desktop resolves the current leaf on every hydration fetch. ``rootId`` is
+ * the session's durable id (``session_meta.root_id``, passed through by the
+ * desktop proxy), which the session store persists as its restart-recovery
+ * key; null for legacy sessions without meta.
  */
 export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
   messages: ChatMessage[]
-  continuationTraceId: string
+  rootId: string | null
+  contextUsage: ContextUsage | null
 } {
   const trace = snapshot.task_run.trace ?? []
   const messages: ChatMessage[] = []
@@ -74,11 +160,11 @@ export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
   for (const msg of trace) {
     switch (msg.role) {
       case "user": {
-        messages.push({
-          id: chatGenerateId(),
-          role: "user",
-          content: stripAppUiContext(extractTextContent(msg.content)),
-        })
+        messages.push(
+          userChatMessageFromContent(
+            stripInternalFraming(extractTextContent(msg.content)),
+          ),
+        )
         break
       }
       case "assistant": {
@@ -115,12 +201,13 @@ export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
     }
   }
 
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === "assistant") {
-      messages[i] = { ...messages[i], traceId: snapshot.id }
-      break
-    }
+  // Phase 5 note: the old world stamped the last assistant message with the
+  // snapshot's trace id here (feeding traceIdForNextChatRequest, the
+  // browser's continuation key). Both died with the trace-keyed surface —
+  // the desktop record's own leaf is authoritative for continuations.
+  return {
+    messages,
+    rootId: snapshot.root_id ?? null,
+    contextUsage: normalizeContextUsage(snapshot.context_usage),
   }
-
-  return { messages, continuationTraceId: snapshot.id }
 }
