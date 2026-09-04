@@ -705,15 +705,12 @@
       branch: has_kiln_copilot ? "v2" : "v1_manual",
       has_pro: has_kiln_copilot,
     })
-    if (has_kiln_copilot) {
-      // Pro users land on the v2 builder, where the copilot drafts the spec.
-      // The builder's own create-manually link is their way to the carousel.
-      goto(`/specs/${project_id}/${task_id}/builder`)
-    } else {
-      // Everyone else starts at the template picker, which leads to the
-      // manual spec builder.
-      goto(`/specs/${project_id}/${task_id}/select_template`)
-    }
+    // PREVIEW (09-03): the entry restructure. Both user types start on the
+    // eval-type page now. With Copilot it leads with the free-text box and
+    // folds the templates behind it; without, the templates are the choice.
+    // One page either way, so the eval type and the description are settled
+    // together instead of across two screens.
+    goto(`/specs/${project_id}/${task_id}/select_template`)
   }
 </script>
 

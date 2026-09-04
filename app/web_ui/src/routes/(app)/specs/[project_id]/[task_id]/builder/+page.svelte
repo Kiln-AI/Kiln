@@ -563,6 +563,16 @@
       if (!builder_mock_active()) {
         await restore_draft()
       }
+      // The eval type page hands the description over: it holds the textbox
+      // now, so step 1 is already answered and showing the same box again
+      // would ask twice. Read after the draft restore, not before, because a
+      // restored draft wins — someone resuming has typed more than a link can
+      // carry — and before this point `description` is empty either way.
+      const handed_over = $page.url.searchParams.get("description")
+      if (handed_over && !description.trim()) {
+        description = handed_over
+        continue_from_describe()
+      }
     } catch (e) {
       task_error = e instanceof Error ? e.message : "Failed to load task."
     } finally {
