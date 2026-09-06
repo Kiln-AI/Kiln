@@ -183,14 +183,16 @@ describe.each(MODES)(
       expect(container.querySelector(".text-warning")).toBeNull()
     })
 
-    it("still renders mid-load for a non-quiet caller", async () => {
+    it("shows nothing for a chosen model while the list is loading, quiet or not", async () => {
+      // Same reason as above: a non-quiet caller would otherwise flash the
+      // amber note and swap it for the green check when the list arrives.
       mock_available_models.set([])
       set_selection(flag, true)
       const { container } = await render_dropdown({
         model: "openai/gpt-4o",
         settings: { suggested_mode },
       })
-      expect(container.textContent).toContain(message)
+      expect(container.textContent).not.toContain(message)
     })
   },
 )

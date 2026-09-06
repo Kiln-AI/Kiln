@@ -1031,7 +1031,7 @@
                         warning_message={`${leaf_topics_missing_inputs} ${leaf_topics_missing_inputs === 1 ? "topic has" : "topics have"} no inputs`}
                         warning_color="warning"
                         warning_icon="exclaim"
-                        tight
+                        inline={true}
                       />
                     </div>
                   {/if}
@@ -1080,7 +1080,7 @@
                           warning_message="No inputs available. Return to step 2 to add inputs."
                           warning_color="error"
                           warning_icon="exclaim"
-                          tight
+                          inline={true}
                         />
                       </button>
                     </div>
@@ -1118,7 +1118,7 @@
                             ? "warning"
                             : "error"}
                           warning_icon="exclaim"
-                          tight
+                          inline={true}
                         />
                       </button>
                     </div>
@@ -1129,7 +1129,7 @@
                           warning_message="No items to save. Return to step 2 to generate data."
                           warning_color="error"
                           warning_icon="exclaim"
-                          tight
+                          inline={true}
                         />
                       </button>
                     </div>
@@ -1147,7 +1147,7 @@
                         warning_message="All items saved into the dataset!"
                         warning_color="success"
                         warning_icon="check"
-                        tight
+                        inline={true}
                       />
                     </div>
                   {/if}

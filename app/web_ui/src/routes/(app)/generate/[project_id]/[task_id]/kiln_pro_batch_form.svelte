@@ -53,7 +53,7 @@
   label="Guidance"
   description={`This allows you to control the dataset you are generating. For example, "10% of the dataset should be in Spanish."`}
   inputType="textarea"
-  height="xl"
+  height="medium"
   optional={guidance_optional}
   placeholder={guidance_placeholder}
   bind:value={guidance}
@@ -63,4 +63,4 @@
         label: "Reset",
       }
     : null}
-/><Warning {warning_message} warning_color="warning" tight={true} />
+/><Warning {warning_message} warning_color="warning" />

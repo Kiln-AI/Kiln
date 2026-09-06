@@ -25,17 +25,16 @@ export interface ModelDropdownSettings {
 // render.
 //
 // `suggestion_known` is false while the model list is still loading: until it
-// arrives, a chosen model reads as "not suggested" whatever it really is. Quiet
-// callers wait that out rather than flash a warning that a suggested model then
-// removes, which would shift the rows under it. Non-quiet callers are
-// unaffected — they render in every state anyway.
+// arrives, a chosen model reads as "not suggested" whatever it really is. Every
+// caller waits that out rather than flash an amber warning that turns green a
+// moment later and shifts the rows under it.
 export function show_suggested_advisory(
   model_selected: boolean,
   model_is_suggested: boolean,
   quiet_suggested: boolean,
   suggestion_known: boolean,
 ): boolean {
-  if (quiet_suggested && model_selected && !suggestion_known) {
+  if (model_selected && !suggestion_known) {
     return false
   }
   return !(quiet_suggested && model_selected && model_is_suggested)

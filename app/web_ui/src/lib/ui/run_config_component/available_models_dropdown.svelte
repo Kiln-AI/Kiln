@@ -40,6 +40,8 @@
   // forms that stack several model lanes and would otherwise show a row of
   // green checks. Warnings still render. Default keeps every other caller as
   // it ships.
+  // No caller in the app sets this today; it stays as the documented way for
+  // a screen that stacks several lanes to drop the all-good confirmation.
   export let quiet_suggested: boolean = false
   export let error_message: string | null = null
   export let inline_action: InlineAction | null = null
@@ -380,7 +382,7 @@
     selected_model_details?.suggested_for_doc_extraction || false
 </script>
 
-<div>
+<div class="flex flex-col gap-2">
   <FormElement
     {label}
     {description}

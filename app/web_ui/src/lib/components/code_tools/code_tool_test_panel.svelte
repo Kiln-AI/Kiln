@@ -307,7 +307,7 @@
     <div data-testid="test-error">
       <Warning
         warning_color="error"
-        tight
+        inline={true}
         warning_message={test_error.getMessage()}
       />
     </div>
@@ -339,7 +339,7 @@
       {#if input_error}
         <Warning
           warning_color="error"
-          tight
+          inline={true}
           warning_message={input_error.getMessage()}
         />
       {/if}

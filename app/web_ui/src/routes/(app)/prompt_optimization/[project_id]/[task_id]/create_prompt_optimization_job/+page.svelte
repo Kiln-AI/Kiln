@@ -1197,7 +1197,7 @@
                       <Warning
                         warning_color="error"
                         warning_icon="exclaim"
-                        tight={true}
+                        inline={true}
                         warning_message="No evaluators selected. Please select at least one evaluator."
                       />
                     </div>

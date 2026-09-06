@@ -571,20 +571,21 @@ describe("Generation Settings dialog", () => {
     )
   })
 
-  it("quiets the suggested-model advisory on the model-only lanes", () => {
-    // Lanes stacked in one dialog, each confirming a good default, is a wall
-    // of green checks. The flag drops only that confirmation; a lane on a
-    // model we don't suggest still says so. The input generator keeps the
-    // advisory, matching the same control in synthetic data generation.
+  it("shows the suggested-model advisory on every lane", () => {
+    // Each lane says what the models dropdown says everywhere else: a green
+    // check on a recommended model, an amber note on one outside the set. No
+    // lane quiets the check, so the judge and user-model lanes read like the
+    // input generator, which matches the same control in synthetic data
+    // generation. The grep below guards against a lane quieting it again.
     const lanes = drive_settings_dialog
       .split("<AvailableModelsDropdown")
       .slice(1)
-      // Bound each chunk at its own tag close, or a flag on the last lane would
-      // satisfy the assertion for every earlier one.
+      // Bound each chunk at its own tag close so a flag on a later lane can
+      // never stand in for an earlier one.
       .map((chunk) => chunk.slice(0, chunk.indexOf("/>")))
     expect(lanes.length).toBe(2)
     for (const lane of lanes) {
-      expect(normalize(lane)).toContain("quiet_suggested={true}")
+      expect(normalize(lane)).not.toContain("quiet_suggested")
     }
     expect(input_gen_lane()).not.toContain("quiet_suggested")
   })
