@@ -4242,7 +4242,9 @@
             <div class="loading loading-spinner loading-lg"></div>
           </div>
         {:else if task_error}
-          <Warning warning_color="error" warning_message={task_error} />
+          <div class="mt-2">
+            <Warning warning_color="error" warning_message={task_error} />
+          </div>
         {:else if current_step === "describe"}
           <!-- ── Step 1 — Describe ── -->
           <FormElement
@@ -4293,7 +4295,12 @@
               description="Analyzing your criteria for areas that could use more clarity."
             />
           {:else if questions_error}
-            <Warning warning_color="error" warning_message={questions_error} />
+            <div class="mt-2">
+              <Warning
+                warning_color="error"
+                warning_message={questions_error}
+              />
+            </div>
             <div class="text-center py-4 flex justify-center gap-2">
               <button class="btn btn-primary" on:click={() => load_questions()}>
                 Retry
@@ -4326,7 +4333,7 @@
             />
           {:else}
             {#if refine_warning}
-              <div class="mb-4">
+              <div class="mt-2 mb-4">
                 <Warning
                   warning_color="warning"
                   warning_message={refine_warning}
@@ -4397,11 +4404,13 @@
         {:else if current_step === "generate"}
           <!-- ── Step 4 — Generate ── -->
           {#if fallback_run_config_name}
-            <Warning
-              warning_color="primary"
-              warning_icon="info"
-              warning_message={`Using run config ${fallback_run_config_name}. Set a default in task settings to silence this notice.`}
-            />
+            <div class="mt-2">
+              <Warning
+                warning_color="primary"
+                warning_icon="info"
+                warning_message={`Using run config ${fallback_run_config_name}. Set a default in task settings to silence this notice.`}
+              />
+            </div>
           {/if}
           {#if generation_loading && !pipeline_running}
             <!-- Plan, SU generation, and input minting are each one long
@@ -4519,10 +4528,12 @@
           {#if claims_gate_error}
             <!-- Config-class build failure — same error+retry surface as
                  the wizard's other loading stages. -->
-            <Warning
-              warning_color="error"
-              warning_message={claims_gate_error}
-            />
+            <div class="mt-2">
+              <Warning
+                warning_color="error"
+                warning_message={claims_gate_error}
+              />
+            </div>
             <div class="text-center py-4 flex justify-center gap-2">
               <button
                 class="btn btn-outline"
@@ -4540,7 +4551,12 @@
               </button>
             </div>
           {:else if generation_error}
-            <Warning warning_color="error" warning_message={generation_error} />
+            <div class="mt-2">
+              <Warning
+                warning_color="error"
+                warning_message={generation_error}
+              />
+            </div>
             <div class="text-center py-4 flex justify-center gap-2">
               {#if batch_plan !== null}
                 <!-- Drive failed after approval — let the user rework the plan
@@ -4572,7 +4588,7 @@
                    errors — same surface, message and actions scale with what
                    happened. trusted+markdown for the in-message /run
                    deeplink (renders target=_blank, wizard state survives). -->
-              <div class="mb-4">
+              <div class="mt-2 mb-4">
                 <Warning
                   warning_color={drive_stop.survivors > 0 &&
                   !drive_stop.aborted_error &&
@@ -4702,10 +4718,12 @@
                  review exactly; only the explicit action discards. Derived
                  state, so this also covers browser Forward straight into
                  the review step. -->
-            <Warning
-              warning_color="warning"
-              warning_message="Your eval's description changed since this eval data was created and reviewed. The judge was built from the previous description, so the results below no longer match. Revert the description (Back) to continue reviewing, or discard the results and create your eval data again."
-            />
+            <div class="mt-2">
+              <Warning
+                warning_color="warning"
+                warning_message="Your eval's description changed since this eval data was created and reviewed. The judge was built from the previous description, so the results below no longer match. Revert the description (Back) to continue reviewing, or discard the results and create your eval data again."
+              />
+            </div>
             <div class="flex justify-center gap-2 py-4">
               <button class="btn btn-outline" on:click={() => history.back()}>
                 Back
@@ -4769,10 +4787,12 @@
                  a failure that repeats every round (a case the re-check can
                  never complete) would otherwise leave Retry as the only
                  visible move. -->
-            <Warning
-              warning_color="error"
-              warning_message={`${calibration_error.trimEnd().replace(/\.$/, "")}. You can also go back to review and save without refining further.`}
-            />
+            <div class="mt-2">
+              <Warning
+                warning_color="error"
+                warning_message={`${calibration_error.trimEnd().replace(/\.$/, "")}. You can also go back to review and save without refining further.`}
+              />
+            </div>
             <div class="text-center py-4 flex justify-center gap-2">
               <button
                 class="btn btn-outline"
@@ -4793,23 +4813,27 @@
             <!-- Browser Forward can land here after results were cleared
                  (plan regenerated / drive restarted). Browser Back returns to
                  generation rather than showing an empty review. -->
-            <Warning
-              warning_color="warning"
-              warning_message="There is nothing to review yet. Create your eval data first."
-            />
+            <div class="mt-2">
+              <Warning
+                warning_color="warning"
+                warning_message="There is nothing to review yet. Create your eval data first."
+              />
+            </div>
           {:else if reviewable_trace_indices.length === 0}
             <!-- Every selected trace failed its claims build, so the subset
                  emptied. Say so: an empty review would leave a save gate that
                  can never be met and no explanation for it. -->
-            <Warning
-              warning_color="warning"
-              warning_message={`Couldn't analyze any of these ${judged_noun}s. Create your eval data again.`}
-            />
+            <div class="mt-2">
+              <Warning
+                warning_color="warning"
+                warning_message={`Couldn't analyze any of these ${judged_noun}s. Create your eval data again.`}
+              />
+            </div>
           {:else}
             {#if calibration_rounds_completed > 0 && rejudge_shortfall_notice(calibration_failed_count, case_noun)}
               <!-- Cases without a fresh verdict sat the round out — say so
                    instead of letting the smaller subset pass unremarked. -->
-              <div class="mb-4">
+              <div class="mt-2 mb-4">
                 <Warning
                   warning_color="primary"
                   warning_icon="info"
@@ -4823,7 +4847,7 @@
             {#if calibration_declined_feedback_notice}
               <!-- Feedback the refine declined, said out loud over the round
                    it produced — a note silently dropped reads as ignored. -->
-              <div class="mb-4">
+              <div class="mt-2 mb-4">
                 <Warning
                   warning_color="primary"
                   warning_icon="info"
@@ -4898,7 +4922,9 @@
               description={save_animation_description}
             />
           {:else if save_error}
-            <Warning warning_color="error" warning_message={save_error} />
+            <div class="mt-2">
+              <Warning warning_color="error" warning_message={save_error} />
+            </div>
             <div class="text-center py-4">
               <button class="btn btn-primary" on:click={on_save}>Retry</button>
             </div>

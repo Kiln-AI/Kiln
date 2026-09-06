@@ -403,7 +403,7 @@
   }
 </script>
 
-<div>
+<div class="flex flex-col gap-2">
   <FormElement
     label={title}
     {description}
@@ -415,12 +415,12 @@
     {inline_action}
   />
   {#if save_config_error}
-    <div class="text-error text-sm text-right mt-2">
+    <div class="text-error text-sm text-right">
       {save_config_error.getMessage() || "An unknown error occurred"}
     </div>
   {/if}
   {#if set_default_error}
-    <div class="text-error text-sm text-right mt-2">
+    <div class="text-error text-sm text-right">
       {set_default_error.getMessage() || "An unknown error occurred"}
     </div>
   {/if}
