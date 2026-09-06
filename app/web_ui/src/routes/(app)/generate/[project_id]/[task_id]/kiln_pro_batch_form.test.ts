@@ -86,9 +86,10 @@ describe("KilnProBatchForm", () => {
     expect(guidance_box.getAttribute("aria-label")).toBe("Guidance")
     expect(container.textContent).toContain(GUIDANCE_DESCRIPTION)
     // The id the generate page's label and autofill hooks rely on, and the
-    // extra-large box height the shipped page renders.
+    // medium box height: tall enough for a few lines of steer, short enough
+    // that the plan dialog keeps its submit button on screen.
     expect(guidance_box.id).toBe("batch_guidance")
-    expect(guidance_box.className).toContain("h-96")
+    expect(guidance_box.className).toContain("h-36")
   })
 
   it("leaves the guidance box on FormElement's label placeholder by default", () => {
@@ -151,15 +152,17 @@ describe("KilnProBatchForm", () => {
     expect(container.querySelector("svg.text-warning")).toBeNull()
   })
 
-  it("renders a tight amber warning after the rows when warning_message is set", () => {
+  it("renders an amber warning after the rows when warning_message is set", () => {
     const { container } = setup({ warning_message: "This costs money." })
     const warning = container.lastElementChild as HTMLElement
     expect(warning.textContent).toContain("This costs money.")
-    // Amber, and tight so it sits flush above the caller's submit button.
     expect(warning.querySelector("svg.text-warning")).not.toBeNull()
-    expect(warning.className).not.toContain("mt-2")
+    // Warning carries no margin of its own: the caller's form column spaces
+    // it above the submit button. Its text sits at the default indent so it
+    // lines up with the field labels above it.
+    expect(warning.className).not.toMatch(/\bm[tby]-\d/)
     expect((warning.lastElementChild as HTMLElement).className).toContain(
-      "pl-1",
+      "pl-4",
     )
   })
 

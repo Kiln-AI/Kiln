@@ -5036,7 +5036,6 @@
           requires_data_gen: true,
           suggested_mode: "data_gen",
         }}
-        quiet_suggested={true}
       />
       <!-- Conversation length, in the synthetic data dialog's stepper-row
            shape: label left, its tooltip pinned to the right of the label,
@@ -5091,7 +5090,6 @@
         requires_structured_output: true,
         suggested_mode: "evals",
       }}
-      quiet_suggested={true}
     />
     <!-- What the run costs, last child of the form so it sits directly above
          the submit row (run_eval's placement). Multi-turn gets a red mark
@@ -5101,13 +5099,12 @@
          above the button that commits the spend. Filled rather than bigger:
          the ring mark is mostly empty at this size, so the error colour reads
          amber next to a real amber one, and Warning styles its mark, never
-         its text. Tight because the form already spaces its children, and the
-         component's own top margin on top of that set this row apart. -->
+         its text. The form's gap spaces it like every lane above it, and the
+         default indent keeps its text on the lanes' label line. -->
     <Warning
       warning_color={is_multi_turn ? "error" : "warning"}
       filled_icon={is_multi_turn}
       warning_message={drive_cost_message}
-      inline={true}
     />
   </FormContainer>
 </Dialog>
