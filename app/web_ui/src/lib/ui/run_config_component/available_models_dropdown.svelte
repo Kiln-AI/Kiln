@@ -380,7 +380,7 @@
     selected_model_details?.suggested_for_doc_extraction || false
 </script>
 
-<div>
+<div class="flex flex-col gap-2">
   <FormElement
     {label}
     {description}
