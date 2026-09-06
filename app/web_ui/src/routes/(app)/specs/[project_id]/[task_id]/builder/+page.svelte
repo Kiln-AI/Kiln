@@ -5081,7 +5081,7 @@
       warning_color={is_multi_turn ? "error" : "warning"}
       filled_icon={is_multi_turn}
       warning_message={drive_cost_message}
-      tight={true}
+      inline={true}
     />
   </FormContainer>
 </Dialog>

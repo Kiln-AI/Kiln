@@ -559,7 +559,7 @@
           warning_message={active_warning.message}
           warning_color={active_warning.color}
           warning_icon={active_warning.icon}
-          tight
+          inline={true}
         />
         {#if active_warning.retry && !saving}
           <button

@@ -15,7 +15,12 @@
   // outrank the ones next to it without growing.
   export let filled_icon: boolean = false
   export let large_icon: boolean = false
-  export let tight: boolean = false
+  // Warning owns no outer margin: the container it sits in owns the spacing
+  // around it, so the same Warning reads the same in a form column, a dialog,
+  // or a table cell. The text indent is the one explicit variant: `inline`
+  // narrows the icon-to-text gap to 4px for a warning inside a prose column
+  // or a table cell; the default 16px matches a form's label-to-field rhythm.
+  export let inline: boolean = false
   export let trusted: boolean = false
   export let outline: boolean = false
   export let text_size: "xs" | "sm" | "base" | "lg" = "sm"
@@ -76,9 +81,7 @@
   <div
     class="{text_size_class} text-gray-500 flex flex-row items-center {outline
       ? `border-2 ${border_color_class} rounded-lg px-4 py-2 mb-6`
-      : tight
-        ? ''
-        : 'mt-2'}"
+      : ''}"
   >
     {#if warning_icon === "exclaim" || warning_icon === "info"}
       <svg
@@ -127,7 +130,7 @@
       </svg>
     {/if}
 
-    <div class="{tight ? 'pl-1' : 'pl-4'} flex flex-col gap-2">
+    <div class="{inline ? 'pl-1' : 'pl-4'} flex flex-col gap-2">
       {#if markdown && trusted}
         <MarkdownBlock markdown_text={warning_message} />
       {:else if trusted}

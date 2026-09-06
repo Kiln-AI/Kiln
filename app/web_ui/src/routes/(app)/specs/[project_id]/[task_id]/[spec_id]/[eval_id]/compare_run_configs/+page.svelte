@@ -546,7 +546,7 @@
                   <Warning
                     warning_message="No default judge selected. We recommend using 'Compare Judges' and selecting the best as the default."
                     warning_color="warning"
-                    tight={true}
+                    inline={true}
                   />
                 </div>
               {:else if has_default_eval_config && evaluator.current_config_id != current_eval_config_id}
@@ -556,7 +556,7 @@
                       ? "The currently selected judge is not the default. You can change the default with 'Set as default' above."
                       : "The currently selected judge is not the default. You can change the default in 'Compare Judges'."}
                     warning_color="warning"
-                    tight={true}
+                    inline={true}
                   />
                 </div>
               {/if}

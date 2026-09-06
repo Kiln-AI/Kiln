@@ -824,7 +824,7 @@
               warning_message="For 1-click fine-tuning connect Fireworks, Together, or Google Vertex."
               warning_icon="info"
               warning_color="success"
-              tight={true}
+              inline={true}
             />
           </button>
         </div>

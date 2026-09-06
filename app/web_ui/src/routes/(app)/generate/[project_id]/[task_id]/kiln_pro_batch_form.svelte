@@ -63,4 +63,4 @@
         label: "Reset",
       }
     : null}
-/><Warning {warning_message} warning_color="warning" tight={true} />
+/><Warning {warning_message} warning_color="warning" inline={true} />

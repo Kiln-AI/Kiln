@@ -27,7 +27,7 @@
         warning_color="warning"
         warning_icon="exclaim"
         text_size="xs"
-        tight
+        inline={true}
       />
     {/if}
   </div>
