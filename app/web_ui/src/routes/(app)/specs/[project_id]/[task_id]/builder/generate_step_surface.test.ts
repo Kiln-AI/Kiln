@@ -572,10 +572,11 @@ describe("Generation Settings dialog", () => {
   })
 
   it("shows the suggested-model advisory on every lane", () => {
-    // Each lane says what the models dropdown says everywhere else: nothing
-    // on a recommended model, a note on one outside the set. No lane quiets
-    // that, so the judge and user-model lanes read like the input generator,
-    // which matches the same control in synthetic data generation.
+    // Each lane says what the models dropdown says everywhere else: a green
+    // check on a recommended model, an amber note on one outside the set. No
+    // lane quiets the check, so the judge and user-model lanes read like the
+    // input generator, which matches the same control in synthetic data
+    // generation. The grep below guards against a lane quieting it again.
     const lanes = drive_settings_dialog
       .split("<AvailableModelsDropdown")
       .slice(1)

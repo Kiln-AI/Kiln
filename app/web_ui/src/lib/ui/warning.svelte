@@ -17,7 +17,8 @@
   export let large_icon: boolean = false
   // Warning owns no outer margin: the container it sits in owns the spacing
   // around it, so the same Warning reads the same in a form column, a dialog,
-  // or a table cell. The text indent is the one explicit variant: `inline`
+  // or a table cell. The one exception is `outline`, a bordered callout that
+  // still carries its own bottom margin. The text indent is the one explicit variant: `inline`
   // narrows the icon-to-text gap to 4px for a warning inside a prose column
   // or a table cell; the default 16px matches a form's label-to-field rhythm.
   export let inline: boolean = false

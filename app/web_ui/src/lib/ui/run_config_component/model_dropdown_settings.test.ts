@@ -2,20 +2,29 @@ import { describe, it, expect } from "vitest"
 import { show_suggested_advisory } from "./model_dropdown_settings"
 
 describe("show_suggested_advisory", () => {
-  it("always renders when the caller is not quiet", () => {
+  it("renders in every state for a non-quiet caller once the list is known", () => {
     for (const model_selected of [true, false]) {
       for (const model_is_suggested of [true, false]) {
-        for (const suggestion_known of [true, false]) {
-          expect(
-            show_suggested_advisory(
-              model_selected,
-              model_is_suggested,
-              false,
-              suggestion_known,
-            ),
-          ).toBe(true)
-        }
+        expect(
+          show_suggested_advisory(
+            model_selected,
+            model_is_suggested,
+            false,
+            true,
+          ),
+        ).toBe(true)
       }
+    }
+  })
+
+  it("waits for the model list before judging a chosen model, quiet or not", () => {
+    // Until the list lands a chosen model reads as unsuggested whatever it is,
+    // so rendering now would flash amber and turn green a moment later.
+    for (const quiet of [true, false]) {
+      expect(show_suggested_advisory(true, true, quiet, false)).toBe(false)
+      expect(show_suggested_advisory(true, false, quiet, false)).toBe(false)
+      // No model chosen: nothing to misjudge, the prompt to choose one shows.
+      expect(show_suggested_advisory(false, false, quiet, false)).toBe(true)
     }
   })
 
