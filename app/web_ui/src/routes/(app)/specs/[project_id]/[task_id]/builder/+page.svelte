@@ -67,6 +67,20 @@
   // The Refine Plan dialog reuses /generate's batch form rows (count
   // stepper + guidance box) so both flows ask for a batch the same way.
   import KilnProBatchForm from "../../../../generate/[project_id]/[task_id]/kiln_pro_batch_form.svelte"
+  // The Data Guide offer and checkbox are synthetic data generation's own,
+  // shared: the single-turn arm generates task inputs for the same reason
+  // SDG does, so it opens by offering a guide and lets Refine Plan turn one
+  // off, in SDG's words and SDG's controls.
+  import DataGuideOffer from "../../../../generate/[project_id]/[task_id]/data_guide_offer.svelte"
+  import SynthDataGuide, {
+    open_data_guide_in_new_tab,
+  } from "../../../../generate/[project_id]/[task_id]/synth_data_guide.svelte"
+  import {
+    data_guide_decision_pending,
+    data_guide_offer_open,
+    plan_used_data_guide,
+    type DataGuideRead,
+  } from "./data_guide_flow"
   import {
     compose_plan_guidance,
     grounding_data_guide,
@@ -389,6 +403,8 @@
         grounding_sample,
         data_guide_text,
         use_data_guide,
+        data_guide_skipped,
+        data_guide_offer_pending,
         multi_turn_batch_tag,
         single_turn_batch_tag,
         undeleted_batch_tags,
@@ -482,6 +498,7 @@
       // Drafts from before guides were read here restore as no guide, off.
       data_guide_text = saved.data_guide_text ?? null
       use_data_guide = saved.use_data_guide ?? false
+      data_guide_skipped = saved.data_guide_skipped ?? false
       multi_turn_batch_tag = saved.multi_turn_batch_tag
       single_turn_batch_tag = saved.single_turn_batch_tag ?? null
       undeleted_batch_tags = saved.undeleted_batch_tags
@@ -576,6 +593,15 @@
       // writes either.
       if (!builder_mock_active()) {
         await restore_draft()
+        // A draft that was waiting on the Data Guide offer restores onto
+        // Step 4 with no plan: re-enter the step, so the guide is read again
+        // (the user may have just saved one) and the flow resumes where it
+        // paused — the plan fires under the new guide, or the offer reopens.
+        if (current_step === "generate" && batch_plan === null) {
+          if (await copilot_connection_resolved()) {
+            void plan_or_offer_data_guide()
+          }
+        }
       }
       // The eval type page hands the description over: it holds the textbox
       // now, so step 1 is already answered and showing the same box again
@@ -1018,21 +1044,43 @@
   // was drafted under. Null when the task has no runs — grounding is
   // best-effort, never a gate.
   let grounding_sample: TaskSampleExample | null = null
-  // The task's saved Data Guide (single-turn only): what realistic inputs to
-  // the task look like, written by the user for synthetic data generation.
-  // Read once when Step 4 is entered without a plan, best-effort — a failed
-  // read plans without it, like a task that has none — and carried on the
-  // draft so a restored session mints under the text its plan was drafted
-  // with. On by default when it exists; the Refine Plan dialog can turn it
-  // off, which re-plans without it. Multi-turn plans conversation scenarios,
-  // not task inputs, so it never reads the guide.
+  // The task's saved Data Guide (single-turn only), as read when Step 4 was
+  // entered without a plan; rides the draft so a restore mints under the
+  // text its plan was drafted with. Multi-turn never reads it.
   let data_guide_text: string | null = null
   let use_data_guide = false
-  // True while the Step 4 entry read is in flight. Nothing on the step
-  // renders under it: the automatic plan must fire with the guide already
-  // known, and a Plan button shown before then would let a click plan
-  // without it.
-  let data_guide_loading = false
+  // Continue Without Data Guide: the plan fires without one, now and on
+  // every re-plan and reload of this draft. Rides the draft.
+  let data_guide_skipped = false
+  // Where the Step 4 entry read stands. Nothing on the step renders while
+  // it is "reading": the automatic plan must fire with the guide known.
+  let data_guide_read: DataGuideRead = "unread"
+  $: data_guide_decision_state = {
+    on_generate_step: current_step === "generate",
+    is_multi_turn,
+    read: data_guide_read,
+    skipped: data_guide_skipped,
+    has_plan: batch_plan !== null,
+    has_results: trace_claims.length > 0,
+    planning: generation_loading,
+  }
+  // Step 4 is waiting on the guide (reading it, or offering one). Persisted
+  // so a reload, or a return from setting the guide up, lands back here.
+  $: data_guide_offer_pending = data_guide_decision_pending(
+    data_guide_decision_state,
+  )
+  // The offer on screen (SDG's "Create a Data Guide"); the plan waits for
+  // the user's choice.
+  $: data_guide_offer_shown = data_guide_offer_open(data_guide_decision_state)
+  // The proposal's note that the plan was drafted under the guide. The
+  // committed on/off state always describes the plan on screen, because
+  // every change to it re-plans.
+  $: plan_drafted_with_data_guide = plan_used_data_guide({
+    is_multi_turn,
+    has_plan: batch_plan !== null,
+    use_data_guide,
+    has_guide: data_guide_text !== null,
+  })
   // Approved plan length drives the batch size; before a plan exists it is
   // the size that was requested, which the user may have changed.
   $: planned_total = batch_plan?.prompts.length ?? eval_input_count
@@ -1317,6 +1365,9 @@
   // without submitting resets it to the committed steer, so a typed-then-
   // cancelled steer never rides a later request.
   let plan_steer = ""
+  // The dialog's Data Guide checkbox, a draft until submit like the steer:
+  // closing the dialog any other way puts it back to the committed state.
+  let use_data_guide_draft = false
 
   // Judge lane from the task's LAST SAVED eval — the replay-what-worked
   // tier of pre-population. The judge lives on the eval's current config
@@ -1901,6 +1952,7 @@
     // attempt failed) eval_input_count still holds the size that attempt
     // asked for, so the dialog and Retry never disagree about it.
     if (batch_plan) eval_input_count = batch_plan.prompts.length
+    use_data_guide_draft = use_data_guide
     new_plan_dialog?.show()
   }
 
@@ -1910,6 +1962,7 @@
   // restores verbatim.
   function discard_plan_steer_draft() {
     plan_steer = pending_plan_steer
+    use_data_guide_draft = use_data_guide
   }
 
   function submit_new_plan() {
@@ -1917,6 +1970,9 @@
     // Commit the typed steer: from here it survives failed attempts (Retry
     // re-sends it) until a plan actually arrives.
     pending_plan_steer = plan_steer
+    // Off plus Refine Plan re-plans without the guide; the mint follows the
+    // plan, since both send the same value.
+    use_data_guide = use_data_guide_draft
     new_plan_dialog?.close()
     void on_plan_batch()
   }
@@ -3002,10 +3058,50 @@
   async function on_advance_to_generate() {
     goto_step("generate")
     if (batch_plan !== null) return
-    if (!is_multi_turn) {
-      await read_data_guide()
+    await plan_or_offer_data_guide()
+  }
+
+  // Resolves once the Copilot connection check has an answer, so a plan the
+  // restore fires waits behind the same gate every clicked plan sits behind.
+  function copilot_connection_resolved(): Promise<boolean> {
+    return new Promise((resolve) => {
+      let settled = false
+      const unsubscribe = kilnCopilotConnected.subscribe((connected) => {
+        if (connected === null || settled) return
+        settled = true
+        resolve(connected)
+        queueMicrotask(() => unsubscribe())
+      })
+    })
+  }
+
+  // Step 4 without a plan. Multi-turn plans at once. Single-turn reads the
+  // guide first and then either plans under it, plans without it (the user
+  // continued without one), or shows the offer and leaves the plan to the
+  // user's choice: Continue Without fires it here; Set Up leaves for the
+  // setup chain, which returns to this step with the guide saved.
+  async function plan_or_offer_data_guide() {
+    if (is_multi_turn) {
+      on_plan_batch()
+      return
     }
+    // A failed plan's error belongs to that attempt, not to this entry.
+    generation_error = null
+    await read_data_guide()
+    // Back during the read: the read was aborted with it, and a plan must
+    // not fire for a step the user has left.
+    if (current_step !== "generate" || data_guide_read === "reading") return
+    if (data_guide_read === "none" && !data_guide_skipped) return
     on_plan_batch()
+  }
+
+  function skip_data_guide() {
+    data_guide_skipped = true
+    on_plan_batch()
+  }
+
+  function set_up_data_guide() {
+    goto(`/generate/${project_id}/${task_id}/data_guide_chooser`)
   }
 
   // The single-turn data-guide param, one expression for both the plan and
@@ -3019,24 +3115,39 @@
     )
   }
 
-  // Reads the task's saved Data Guide for Step 4. Best-effort: no guide, a
-  // blank one, and a failed read all plan without it. A guide that exists is
-  // on by default, as it is in synthetic data generation.
+  // Reads the task's saved Data Guide for Step 4. Best-effort: a blank guide
+  // is none, and a failed read plans without one. A guide found for the
+  // first time is on, as in synthetic data generation; a guide read again
+  // (Back, then Continue) keeps the choice the user last committed. Runs
+  // under the copilot abort signal, so Back cancels it like a plan request.
   async function read_data_guide(): Promise<void> {
-    data_guide_loading = true
+    const had_guide = data_guide_text !== null
+    data_guide_read = "reading"
     try {
-      const { data } = await client.GET(
+      const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
-        { params: { path: { project_id, task_id } } },
+        {
+          params: { path: { project_id, task_id } },
+          signal: new_copilot_abort_signal(),
+        },
       )
+      if (error) throw error
       data_guide_text = data?.guide?.trim() ? data.guide : null
+      data_guide_read = data_guide_text === null ? "none" : "found"
     } catch (e) {
+      if (is_abort_error(e)) {
+        data_guide_read = "unread"
+        return
+      }
       console.warn("Could not read the Data Guide:", e)
       data_guide_text = null
-    } finally {
-      data_guide_loading = false
+      data_guide_read = "failed"
     }
-    use_data_guide = data_guide_text !== null
+    if (data_guide_text === null) {
+      use_data_guide = false
+    } else if (!had_guide) {
+      use_data_guide = true
+    }
   }
 
   // Same pattern for Review (5) → Save (6): land on Save with the request
@@ -4094,7 +4205,8 @@
       // Mirrors the step's own screen states: the keyboard fires whichever
       // forward primary is on screen, and nothing while a stage is running or
       // an error is holding the screen (those offer retry, not forward).
-      if (generation_loading || preparing_review || data_guide_loading) return
+      if (generation_loading || preparing_review || data_guide_offer_pending)
+        return
       if (show_plan_approval && batch_plan) {
         // The plan surface's own generate button belongs to the shared
         // component and has no keyboard path; only the continue-to-results
@@ -4291,8 +4403,11 @@
       />
     {:else}
       <div class="py-6">
-        {#if task_loading}
-          <!-- Same page-level loading block as the copilot check above. -->
+        {#if task_loading || data_guide_read === "reading"}
+          <!-- Same page-level loading block as the copilot check above. The
+               Step 4 entry read of the task's Data Guide holds the page the
+               same way: nothing on the step can render until the plan
+               knows its guide. -->
           <div class="w-full min-h-[50vh] flex justify-center items-center">
             <div class="loading loading-spinner loading-lg"></div>
           </div>
@@ -4458,21 +4573,21 @@
           {/if}
         {:else if current_step === "generate"}
           <!-- ── Step 4 — Generate ── -->
-          {#if fallback_run_config_name}
+          {#if data_guide_offer_shown}
+            <!-- SDG's offer, before the automatic plan fires: the plan is
+                 drafted under whatever the user decides here. -->
+            <DataGuideOffer
+              surface="builder"
+              on_set_up={set_up_data_guide}
+              on_skip={skip_data_guide}
+            />
+          {:else if fallback_run_config_name}
             <div class="mt-2">
               <Warning
                 warning_color="primary"
                 warning_icon="info"
                 warning_message={`Using run config ${fallback_run_config_name}. Set a default in task settings to silence this notice.`}
               />
-            </div>
-          {/if}
-          {#if data_guide_loading}
-            <!-- The Step 4 entry read of the task's Data Guide: the same
-                 page-level spinner as the task load, because nothing on
-                 this step can render until the plan knows its guide. -->
-            <div class="w-full min-h-[50vh] flex justify-center items-center">
-              <div class="loading loading-spinner loading-lg"></div>
             </div>
           {/if}
           {#if generation_loading && !pipeline_running}
@@ -4694,7 +4809,29 @@
               items_label="Items"
               expanded_description={false}
               column_label="Item Guidance"
-            />
+            >
+              <!-- The first plan fires without a form, so the proposal says
+                   what it was drafted under; View is the checkbox's own
+                   opener (a new tab, so the plan stays on screen). -->
+              <svelte:fragment slot="under_subheader">
+                {#if plan_drafted_with_data_guide}
+                  <div
+                    id="data_guide_plan_note"
+                    class="text-sm font-light text-gray-500"
+                  >
+                    Planned using your Data Guide.
+                    <button
+                      type="button"
+                      class="link"
+                      on:click={() =>
+                        open_data_guide_in_new_tab(project_id, task_id)}
+                    >
+                      View
+                    </button>
+                  </div>
+                {/if}
+              </svelte:fragment>
+            </KilnProBatchPlan>
             <!-- Wizard chrome stays outside the shared component (it has no
                  slots): once this exact plan has driven results, offer the
                  way forward to review. Stepping back is the browser's Back. -->
@@ -4732,7 +4869,7 @@
                 </div>
               </div>
             {/if}
-          {:else if !generation_loading && !generation_error && !preparing_review && !claims_gate_error && !data_guide_loading}
+          {:else if !generation_loading && !generation_error && !preparing_review && !claims_gate_error && !data_guide_offer_pending}
             <div class="flex justify-end mt-8">
               {#if trace_claims.length > 0}
                 <!-- Generation already ran (navigated back into this step) —
@@ -5057,7 +5194,19 @@
       guidance_id="plan_steer"
       guidance_optional={true}
       warning_message={new_plan_warning}
-    />
+    >
+      <!-- SDG's checkbox after the rows, where SDG puts it. Single-turn
+           only: multi-turn never sends the guide. Renders nothing when the
+           task has no guide. -->
+      {#if !is_multi_turn}
+        <SynthDataGuide
+          {project_id}
+          {task_id}
+          data_guide={data_guide_text ?? ""}
+          bind:use_data_guide={use_data_guide_draft}
+        />
+      {/if}
+    </KilnProBatchForm>
   </FormContainer>
 </Dialog>
 

@@ -23,10 +23,10 @@ ${sample.input}
 // like), then the grounding sample (it shows the format), each under a plain
 // section header so the planner can tell the two apart. Blank text counts as
 // absent. With only one source that source is returned byte-identical and
-// untrimmed, so a task with no guide sends exactly what it sent before guides
-// were read here, and a task with no runs sends the bare guide. The plan and
-// the mint must both send this same value: the minted-input cache is keyed on
-// it, and a mint keyed differently from its plan would never hit.
+// untrimmed: a task with no guide sends the bare grounding sample, a task
+// with no runs the bare guide. The plan and the mint must both send this same
+// value: the minted-input cache is keyed on it, and a mint keyed differently
+// from its plan would never hit.
 export function join_data_guides(
   data_guide: string | null,
   grounding: string | null,

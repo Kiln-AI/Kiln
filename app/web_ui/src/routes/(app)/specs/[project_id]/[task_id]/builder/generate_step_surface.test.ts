@@ -64,7 +64,7 @@ const describe_step = region(
   '{:else if current_step === "describe"}',
   '{:else if current_step === "clarify"}',
 )
-const plan_surface = region("<KilnProBatchPlan", "/>")
+const plan_surface = region("<KilnProBatchPlan", "</KilnProBatchPlan>")
 const new_plan_dialog = region("bind:this={new_plan_dialog}", "</Dialog>")
 const drive_settings_dialog = region(
   "bind:this={drive_settings_dialog}",

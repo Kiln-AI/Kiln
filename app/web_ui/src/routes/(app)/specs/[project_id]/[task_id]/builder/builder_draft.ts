@@ -191,6 +191,16 @@ export type BuilderDraft = {
   // written before guides were read here restore as no guide, off.
   data_guide_text: string | null
   use_data_guide: boolean
+  // The user chose Continue Without Data Guide on this draft: Step 4 plans
+  // without offering one again, on this session and on a reload.
+  data_guide_skipped: boolean
+  // The offer was on screen when the draft was last written: Step 4 had
+  // been reached and was waiting on the user's choice, with no plan yet.
+  // A restore lands such a draft back on Step 4, where the guide is read
+  // again (the user may have just saved one) and the flow resumes. Every
+  // other draft without a plan restores no further than the refine step,
+  // as before.
+  data_guide_offer_pending: boolean
   // Batch-tag bookkeeping — a CORRECTNESS carry, not convenience: these
   // name runs already on disk. The per-arm live-batch tag plus
   // undeleted_batch_tags, the delete-on-next-drive cleanup list (shared —
@@ -234,6 +244,8 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   grounding_sample: null,
   data_guide_text: null,
   use_data_guide: false,
+  data_guide_skipped: false,
+  data_guide_offer_pending: false,
   multi_turn_batch_tag: null,
   single_turn_batch_tag: null,
   undeleted_batch_tags: [],
@@ -284,6 +296,8 @@ export function draft_has_content(draft: BuilderDraft): boolean {
 // screen (step 4), and never into review: review state isn't persisted, and
 // presenting stale results would be worse than replaying a drive.
 //   - a plan exists → the plan screen ("generate")
+//   - the Data Guide offer was open → the plan screen, where the offer
+//     re-opens (or, once a guide exists, the plan fires under it)
 //   - refine output exists → "refine" (clarify Q&A isn't persisted, so a
 //     draft that died mid-clarify restarts from the description)
 //   - otherwise → "describe" with the description prefilled
@@ -291,6 +305,9 @@ export type RestoreStep = "describe" | "refine" | "generate"
 
 export function restore_step(draft: BuilderDraft): RestoreStep {
   if (draft.batch_plan !== null && draft.batch_plan.prompts.length > 0) {
+    return "generate"
+  }
+  if (draft.data_guide_offer_pending) {
     return "generate"
   }
   if (

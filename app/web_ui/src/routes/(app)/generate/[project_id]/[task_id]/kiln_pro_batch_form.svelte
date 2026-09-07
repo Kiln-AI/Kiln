@@ -37,6 +37,11 @@
   // renders nothing at all, not a stray whitespace node.
   export let warning_message: string | null = null
 
+  // Slot content lands between the rows and the warning, so a surface that
+  // adds a field (the eval builder's Data Guide checkbox) keeps the warning
+  // directly above its submit. Written flush like the warning, so with no
+  // content nothing renders.
+
   function reset_guidance() {
     if (guidance_template !== null) {
       guidance = guidance_template
@@ -63,4 +68,4 @@
         label: "Reset",
       }
     : null}
-/><Warning {warning_message} warning_color="warning" />
+/><slot /><Warning {warning_message} warning_color="warning" />

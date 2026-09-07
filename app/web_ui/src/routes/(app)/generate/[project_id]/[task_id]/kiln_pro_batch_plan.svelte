@@ -51,6 +51,10 @@
       <div class="text-sm font-light text-gray-500">
         {subheader}
       </div>
+      <!-- Optional per-consumer line under the sub-line (the eval builder's
+      note that the plan used the task's Data Guide). Nothing renders with
+      no consumer content, so /generate stays byte-identical. -->
+      <slot name="under_subheader" />
     </div>
     <div class="flex flex-row gap-2 shrink-0">
       <button class="btn btn-md" on:click={on_regenerate}

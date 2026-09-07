@@ -101,6 +101,8 @@ const full_draft: BuilderDraft = {
   },
   data_guide_text: "# Reference Inputs\n\nShort support questions.",
   use_data_guide: true,
+  data_guide_skipped: false,
+  data_guide_offer_pending: false,
   multi_turn_batch_tag: "multi_turn_batch_1234",
   single_turn_batch_tag: "single_turn_batch_5678",
   undeleted_batch_tags: ["multi_turn_batch_1200", "multi_turn_batch_1234"],
@@ -204,6 +206,43 @@ describe("restore_step resolution", () => {
     expect(["describe", "refine", "generate"]).toContain(
       restore_step(full_draft),
     )
+  })
+
+  it("an open Data Guide offer restores to the plan screen with no plan", () => {
+    expect(
+      restore_step({
+        ...EMPTY_BUILDER_DRAFT,
+        description: "d",
+        refined_property_values: { issue_description: "x" },
+        data_guide_offer_pending: true,
+      }),
+    ).toBe("generate")
+  })
+
+  it("a skipped guide alone does not restore past refine — the plan fires from Continue", () => {
+    expect(
+      restore_step({
+        ...EMPTY_BUILDER_DRAFT,
+        refined_property_values: { issue_description: "x" },
+        data_guide_skipped: true,
+      }),
+    ).toBe("refine")
+  })
+
+  it("the Data Guide fields survive a round trip on a pending draft", () => {
+    const pending: BuilderDraft = {
+      ...full_draft,
+      batch_plan: null,
+      data_guide_text: null,
+      use_data_guide: false,
+      data_guide_skipped: true,
+      data_guide_offer_pending: true,
+    }
+    const restored = JSON.parse(JSON.stringify(pending)) as BuilderDraft
+    expect(restored.data_guide_skipped).toBe(true)
+    expect(restored.data_guide_offer_pending).toBe(true)
+    expect(restored.data_guide_text).toBeNull()
+    expect(restore_step(restored)).toBe("generate")
   })
 
   it("a plan with no prompts falls back to the earlier steps", () => {
