@@ -183,6 +183,14 @@ export type BuilderDraft = {
   // minting — persisted beside the plan it grounded, so a restored session
   // mints with the same grounding (and saves the same provenance record).
   grounding_sample: { input: string; output: string } | null
+  // The task's saved Data Guide as it read when Step 4 was entered (null when
+  // the task had none, or the read failed), and whether the user keeps it in
+  // the single-turn requests. Persisted beside the plan for the same reason as
+  // the grounding sample: a restored session must mint under exactly what its
+  // plan was drafted with, not under whatever the guide says by then. Drafts
+  // written before guides were read here restore as no guide, off.
+  data_guide_text: string | null
+  use_data_guide: boolean
   // Batch-tag bookkeeping — a CORRECTNESS carry, not convenience: these
   // name runs already on disk. The per-arm live-batch tag plus
   // undeleted_batch_tags, the delete-on-next-drive cleanup list (shared —
@@ -224,6 +232,8 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   cached_su_cases: null,
   cached_minted_inputs: null,
   grounding_sample: null,
+  data_guide_text: null,
+  use_data_guide: false,
   multi_turn_batch_tag: null,
   single_turn_batch_tag: null,
   undeleted_batch_tags: [],

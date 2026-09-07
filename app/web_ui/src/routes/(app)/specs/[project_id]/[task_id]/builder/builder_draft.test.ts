@@ -99,6 +99,8 @@ const full_draft: BuilderDraft = {
     input: "What's your return policy on opened electronics?",
     output: "Opened electronics can be returned within 14 days.",
   },
+  data_guide_text: "# Reference Inputs\n\nShort support questions.",
+  use_data_guide: true,
   multi_turn_batch_tag: "multi_turn_batch_1234",
   single_turn_batch_tag: "single_turn_batch_5678",
   undeleted_batch_tags: ["multi_turn_batch_1200", "multi_turn_batch_1234"],

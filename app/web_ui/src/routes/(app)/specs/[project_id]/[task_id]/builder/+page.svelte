@@ -70,6 +70,7 @@
   import {
     compose_plan_guidance,
     grounding_data_guide,
+    join_data_guides,
     multiturn_plan_guidance,
     single_turn_plan_guidance,
   } from "./batch_plan_guidance"
@@ -386,6 +387,8 @@
         cached_su_cases,
         cached_minted_inputs,
         grounding_sample,
+        data_guide_text,
+        use_data_guide,
         multi_turn_batch_tag,
         single_turn_batch_tag,
         undeleted_batch_tags,
@@ -476,6 +479,9 @@
       cached_su_cases = saved.cached_su_cases ?? null
       cached_minted_inputs = saved.cached_minted_inputs ?? null
       grounding_sample = saved.grounding_sample ?? null
+      // Drafts from before guides were read here restore as no guide, off.
+      data_guide_text = saved.data_guide_text ?? null
+      use_data_guide = saved.use_data_guide ?? false
       multi_turn_batch_tag = saved.multi_turn_batch_tag
       single_turn_batch_tag = saved.single_turn_batch_tag ?? null
       undeleted_batch_tags = saved.undeleted_batch_tags
@@ -943,7 +949,7 @@
         )
         return
       }
-      on_advance_to_generate()
+      void on_advance_to_generate()
     } finally {
       refine_submit_in_flight = false
     }
@@ -1012,6 +1018,21 @@
   // was drafted under. Null when the task has no runs — grounding is
   // best-effort, never a gate.
   let grounding_sample: TaskSampleExample | null = null
+  // The task's saved Data Guide (single-turn only): what realistic inputs to
+  // the task look like, written by the user for synthetic data generation.
+  // Read once when Step 4 is entered without a plan, best-effort — a failed
+  // read plans without it, like a task that has none — and carried on the
+  // draft so a restored session mints under the text its plan was drafted
+  // with. On by default when it exists; the Refine Plan dialog can turn it
+  // off, which re-plans without it. Multi-turn plans conversation scenarios,
+  // not task inputs, so it never reads the guide.
+  let data_guide_text: string | null = null
+  let use_data_guide = false
+  // True while the Step 4 entry read is in flight. Nothing on the step
+  // renders under it: the automatic plan must fire with the guide already
+  // known, and a Plan button shown before then would let a click plan
+  // without it.
+  let data_guide_loading = false
   // Approved plan length drives the batch size; before a plan exists it is
   // the size that was requested, which the user may have changed.
   $: planned_total = batch_plan?.prompts.length ?? eval_input_count
@@ -1765,11 +1786,10 @@
               pending_plan_steer,
             ),
             count: eval_input_count,
-            // The grounding sample rides the planner's data-guide param
-            // (multi-turn plans scenarios, not inputs — no guide there).
-            data_guide: is_multi_turn
-              ? null
-              : grounding_data_guide(grounding_sample),
+            // The Data Guide and the grounding sample ride the planner's
+            // data-guide param (multi-turn plans scenarios, not inputs — no
+            // guide there).
+            data_guide: is_multi_turn ? null : single_turn_data_guide(),
           },
           signal: new_copilot_abort_signal(),
         },
@@ -2637,7 +2657,7 @@
       // byte-unchanged (the fix-config-then-run-again recovery loop) reuses
       // the cached inputs instead of re-paying one generation call per
       // prompt. Any plan edit or new plan misses the cache.
-      const mint_data_guide = grounding_data_guide(grounding_sample)
+      const mint_data_guide = single_turn_data_guide()
       let inputs = reusable_minted_inputs(
         cached_minted_inputs,
         approved_prompts,
@@ -2979,9 +2999,44 @@
   // immediately (planning needs no model choice); an existing plan renders
   // for re-approval instead. Model choices are confirmed one step later, in
   // the Generation Settings dialog the plan's primary button opens.
-  function on_advance_to_generate() {
+  async function on_advance_to_generate() {
     goto_step("generate")
-    if (batch_plan === null) on_plan_batch()
+    if (batch_plan !== null) return
+    if (!is_multi_turn) {
+      await read_data_guide()
+    }
+    on_plan_batch()
+  }
+
+  // The single-turn data-guide param, one expression for both the plan and
+  // the mint so the minted-input cache (keyed on it) cannot drift from what
+  // the plan was drafted under: the saved Data Guide when it is on, joined
+  // with the grounding sample.
+  function single_turn_data_guide(): string | null {
+    return join_data_guides(
+      use_data_guide ? data_guide_text : null,
+      grounding_data_guide(grounding_sample),
+    )
+  }
+
+  // Reads the task's saved Data Guide for Step 4. Best-effort: no guide, a
+  // blank one, and a failed read all plan without it. A guide that exists is
+  // on by default, as it is in synthetic data generation.
+  async function read_data_guide(): Promise<void> {
+    data_guide_loading = true
+    try {
+      const { data } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
+        { params: { path: { project_id, task_id } } },
+      )
+      data_guide_text = data?.guide?.trim() ? data.guide : null
+    } catch (e) {
+      console.warn("Could not read the Data Guide:", e)
+      data_guide_text = null
+    } finally {
+      data_guide_loading = false
+    }
+    use_data_guide = data_guide_text !== null
   }
 
   // Same pattern for Review (5) → Save (6): land on Save with the request
@@ -4039,7 +4094,7 @@
       // Mirrors the step's own screen states: the keyboard fires whichever
       // forward primary is on screen, and nothing while a stage is running or
       // an error is holding the screen (those offer retry, not forward).
-      if (generation_loading || preparing_review) return
+      if (generation_loading || preparing_review || data_guide_loading) return
       if (show_plan_approval && batch_plan) {
         // The plan surface's own generate button belongs to the shared
         // component and has no keyboard path; only the continue-to-results
@@ -4412,6 +4467,14 @@
               />
             </div>
           {/if}
+          {#if data_guide_loading}
+            <!-- The Step 4 entry read of the task's Data Guide: the same
+                 page-level spinner as the task load, because nothing on
+                 this step can render until the plan knows its guide. -->
+            <div class="w-full min-h-[50vh] flex justify-center items-center">
+              <div class="loading loading-spinner loading-lg"></div>
+            </div>
+          {/if}
           {#if generation_loading && !pipeline_running}
             <!-- Plan, SU generation, and input minting are each one long
                  request/job (minutes at a full batch) — the standard
@@ -4669,7 +4732,7 @@
                 </div>
               </div>
             {/if}
-          {:else if !generation_loading && !generation_error && !preparing_review && !claims_gate_error}
+          {:else if !generation_loading && !generation_error && !preparing_review && !claims_gate_error && !data_guide_loading}
             <div class="flex justify-end mt-8">
               {#if trace_claims.length > 0}
                 <!-- Generation already ran (navigated back into this step) —

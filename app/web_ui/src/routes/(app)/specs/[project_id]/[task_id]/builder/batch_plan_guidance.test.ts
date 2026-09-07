@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
   compose_plan_guidance,
+  grounding_data_guide,
+  join_data_guides,
   multiturn_plan_guidance,
   single_turn_plan_guidance,
 } from "./batch_plan_guidance"
@@ -47,5 +49,45 @@ describe("compose_plan_guidance", () => {
       "More edge cases.",
     )
     expect(multi).not.toContain("one single-turn task input")
+  })
+})
+
+describe("join_data_guides", () => {
+  const guide = "# Reference Inputs\n\nShort support questions.\n"
+  const grounding = grounding_data_guide({
+    input: "  Where is my order?  ",
+  }) as string
+
+  it("puts the guide first and the grounding second under two headers", () => {
+    const joined = join_data_guides(guide, grounding) as string
+    expect(joined.startsWith("Data Guide:\n")).toBe(true)
+    expect(joined.indexOf(guide)).toBeLessThan(joined.indexOf(grounding))
+    expect(joined).toContain("\n\nGrounding Example:\n")
+    expect(joined).toContain(guide)
+    expect(joined).toContain(grounding)
+  })
+
+  it("sends a lone guide byte-identical and untrimmed", () => {
+    expect(join_data_guides(guide, null)).toBe(guide)
+    expect(join_data_guides(guide, "")).toBe(guide)
+    expect(join_data_guides(guide, "   \n")).toBe(guide)
+  })
+
+  it("sends a lone grounding sample byte-identical — what a task with no guide sent before", () => {
+    expect(join_data_guides(null, grounding)).toBe(grounding)
+    expect(join_data_guides("", grounding)).toBe(grounding)
+    expect(join_data_guides(" \t ", grounding)).toBe(grounding)
+  })
+
+  it("treats blank on both sides as no guide at all", () => {
+    expect(join_data_guides(null, null)).toBeNull()
+    expect(join_data_guides("", "")).toBeNull()
+    expect(join_data_guides("  ", null)).toBeNull()
+  })
+
+  it("keeps the dataset sample's own wrapper intact inside the join", () => {
+    const joined = join_data_guides(guide, grounding) as string
+    expect(joined).toContain("<example_input>")
+    expect(joined).toContain("</example_input>")
   })
 })
