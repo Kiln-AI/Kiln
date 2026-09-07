@@ -26,8 +26,7 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { split_tool_and_skill_ids } from "$lib/stores/tools_store"
-  import Intro from "$lib/ui/intro.svelte"
-  import NotebookIcon from "$lib/ui/icons/notebook_icon.svelte"
+  import DataGuideOffer from "../data_guide_offer.svelte"
   import { agentInfo } from "$lib/agent"
   import { goto } from "$app/navigation"
   import SynthBatchChooser from "../synth_batch_chooser.svelte"
@@ -876,43 +875,12 @@
     {:else if task}
       <DataGenDescription bind:guidance_data />
       {#if is_empty && is_setup && !data_guide && !guide_loading && !skip_data_guide}
-        <div
-          class="flex flex-col items-center justify-center min-h-[50vh] mt-12"
-        >
-          <Intro
-            title="Create a Data Guide"
-            description_paragraphs={[
-              "A Data Guide tells us what realistic inputs to your task look like. Without one, the model might guess.",
-              "Add examples, rate the data we generate, and we'll refine the guide from there.",
-            ]}
-            action_buttons={[
-              {
-                label: "Set Up Data Guide",
-                is_primary: true,
-                onClick: () => {
-                  posthog.capture("data_guide_intro_clicked", {
-                    choice: "set_up",
-                  })
-                  goto(`/generate/${project_id}/${task_id}/data_guide_chooser`)
-                },
-              },
-              {
-                label: "Continue Without Data Guide",
-                is_primary: false,
-                onClick: () => {
-                  posthog.capture("data_guide_intro_clicked", {
-                    choice: "skip",
-                  })
-                  advance_synth_step("guide", "skip")
-                },
-              },
-            ]}
-          >
-            <div slot="icon" class="h-12 w-12">
-              <NotebookIcon />
-            </div>
-          </Intro>
-        </div>
+        <DataGuideOffer
+          surface="synth"
+          on_set_up={() =>
+            goto(`/generate/${project_id}/${task_id}/data_guide_chooser`)}
+          on_skip={() => advance_synth_step("guide", "skip")}
+        />
       {:else if is_empty && is_setup && !guide_loading && (data_guide || skip_data_guide) && batch_mode === null}
         <SynthBatchChooser
           on_manual={() => {

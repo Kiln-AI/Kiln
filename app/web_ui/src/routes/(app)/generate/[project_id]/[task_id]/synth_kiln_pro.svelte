@@ -26,6 +26,8 @@
   export let session_id: string | null = null
 
   const selected_template = guidance_data.selected_template
+  const data_guide_store = guidance_data.data_guide
+  const use_data_guide_store = guidance_data.use_data_guide
   $: task = guidance_data.task
 
   let inputs_dialog: Dialog | null = null
@@ -260,7 +262,12 @@
         bind:guidance={batch_guidance}
         guidance_template={batch_guidance_template}
       />
-      <SynthDataGuide {guidance_data} />
+      <SynthDataGuide
+        {project_id}
+        {task_id}
+        data_guide={$data_guide_store}
+        bind:use_data_guide={$use_data_guide_store}
+      />
     </FormContainer>
     {#if plan_error}
       <div class="text-error text-sm mt-4">
