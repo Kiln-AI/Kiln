@@ -538,63 +538,74 @@
   {:else if runs}
     <div class="mb-4">
       <div
-        class="flex flex-row items-center justify-end py-2 gap-3 {select_mode
+        class="flex flex-row items-center justify-between py-2 gap-3 {select_mode
           ? 'sticky top-0 z-10 backdrop-blur'
           : ''}"
       >
-        {#if select_mode}
-          <div class="font-light text-sm">
-            {selected_runs.size} selected
-          </div>
-          {#if selected_runs.size > 0}
-            <div class="dropdown dropdown-end">
-              <div tabindex="0" role="button" class="btn btn-mid !px-3">
-                <img alt="tags" src="/images/tag.svg" class="w-5 h-5" />
-              </div>
-              <ul
-                class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
-              >
-                <li>
-                  <button tabindex="0" on:click={() => show_add_tags_modal()}>
-                    Add Tags
-                  </button>
-                </li>
-                <li>
-                  <button
-                    tabindex="0"
-                    on:click={() => show_remove_tags_modal()}
-                  >
-                    Remove Tags
-                  </button>
-                </li>
-              </ul>
+        <div class="text-sm text-gray-500 font-medium">
+          {#if filtered_runs && runs}
+            {#if filtered_runs.length === runs.length}
+              {runs.length} {runs.length === 1 ? "run" : "runs"}
+            {:else}
+              {filtered_runs.length} of {runs.length} runs
+            {/if}
+          {/if}
+        </div>
+        <div class="flex flex-row items-center gap-3">
+          {#if select_mode}
+            <div class="font-light text-sm">
+              {selected_runs.size} selected
             </div>
+            {#if selected_runs.size > 0}
+              <div class="dropdown dropdown-end">
+                <div tabindex="0" role="button" class="btn btn-mid !px-3">
+                  <img alt="tags" src="/images/tag.svg" class="w-5 h-5" />
+                </div>
+                <ul
+                  class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
+                >
+                  <li>
+                    <button tabindex="0" on:click={() => show_add_tags_modal()}>
+                      Add Tags
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      tabindex="0"
+                      on:click={() => show_remove_tags_modal()}
+                    >
+                      Remove Tags
+                    </button>
+                  </li>
+                </ul>
+              </div>
+              <button
+                class="btn btn-mid !px-3"
+                on:click={() => show_delete_modal()}
+              >
+                <img alt="delete" src="/images/delete.svg" class="w-5 h-5" />
+              </button>
+            {/if}
+            <button class="btn btn-mid" on:click={() => (select_mode = false)}>
+              Cancel Selection
+            </button>
+          {:else}
+            <button class="btn btn-mid" on:click={() => (select_mode = true)}>
+              Select
+            </button>
             <button
               class="btn btn-mid !px-3"
-              on:click={() => show_delete_modal()}
+              on:click={() => filter_tags_dialog?.show()}
             >
-              <img alt="delete" src="/images/delete.svg" class="w-5 h-5" />
+              <img alt="filter" src="/images/filter.svg" class="w-5 h-5" />
+              {#if filter_tags.length > 0}
+                <span class="badge badge-primary badge-sm"
+                  >{filter_tags.length}</span
+                >
+              {/if}
             </button>
           {/if}
-          <button class="btn btn-mid" on:click={() => (select_mode = false)}>
-            Cancel Selection
-          </button>
-        {:else}
-          <button class="btn btn-mid" on:click={() => (select_mode = true)}>
-            Select
-          </button>
-          <button
-            class="btn btn-mid !px-3"
-            on:click={() => filter_tags_dialog?.show()}
-          >
-            <img alt="filter" src="/images/filter.svg" class="w-5 h-5" />
-            {#if filter_tags.length > 0}
-              <span class="badge badge-primary badge-sm"
-                >{filter_tags.length}</span
-              >
-            {/if}
-          </button>
-        {/if}
+        </div>
       </div>
       <div class="overflow-x-auto rounded-lg border">
         <table class="table">
