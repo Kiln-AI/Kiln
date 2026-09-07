@@ -81,6 +81,7 @@
     plan_used_data_guide,
     type DataGuideRead,
   } from "./data_guide_flow"
+  import { with_data_guide_caller } from "$lib/utils/data_guide_return"
   import {
     compose_plan_guidance,
     grounding_data_guide,
@@ -3100,8 +3101,16 @@
     on_plan_batch()
   }
 
+  // The setup chain returns here (breadcrumbs, and the saved screen's
+  // Continue), onto this step with the draft intact, and plans under the
+  // new guide. Same tab, like SDG: only View opens a new one.
   function set_up_data_guide() {
-    goto(`/generate/${project_id}/${task_id}/data_guide_chooser`)
+    goto(
+      with_data_guide_caller(
+        `/generate/${project_id}/${task_id}/data_guide_chooser`,
+        "builder",
+      ),
+    )
   }
 
   // The single-turn data-guide param, one expression for both the plan and
