@@ -745,7 +745,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_6_sol,
         friendly_name="GPT-5.6 Sol",
-        featured_rank=3,
+        featured_rank=4,
         editorial_notes="OpenAI's most capable GPT model. Powerful reasoning and multimodal.",
         providers=[
             KilnModelProvider(
@@ -2245,7 +2245,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.claude,
         name=ModelName.claude_opus_5,
         friendly_name="Claude Opus 5",
-        featured_rank=5,
+        featured_rank=3,
         editorial_notes="Anthropic's best Claude model. Expensive, but often the best.",
         providers=[
             KilnModelProvider(
@@ -9022,7 +9022,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.kimi,
         name=ModelName.kimi_k3,
         friendly_name="Kimi K3",
-        featured_rank=4,
+        featured_rank=5,
         editorial_notes="Open, state-of-the-art model from Moonshot AI. 2.8T-parameter MoE with a 1M token context, configurable reasoning, and strong agentic performance.",
         providers=[
             KilnModelProvider(
