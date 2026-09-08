@@ -5,7 +5,12 @@ import type { AvailableModels, ModelDetails } from "$lib/types"
 function model(
   id: string,
   flags: Partial<
-    Pick<ModelDetails, "suggested_for_evals" | "suggested_for_data_gen">
+    Pick<
+      ModelDetails,
+      | "suggested_for_evals"
+      | "suggested_for_data_gen"
+      | "suggested_for_synthetic_user"
+    >
   > = {},
 ): ModelDetails {
   return {
@@ -16,6 +21,7 @@ function model(
     supports_logprobs: false,
     suggested_for_data_gen: false,
     suggested_for_evals: false,
+    suggested_for_synthetic_user: false,
     uncensored: false,
     suggested_for_uncensored_data_gen: false,
     task_filter: null,
@@ -47,6 +53,7 @@ describe("build_suggested_models", () => {
       provider("openrouter", [
         model("judge_only", { suggested_for_evals: true }),
         model("sdg_only", { suggested_for_data_gen: true }),
+        model("su_only", { suggested_for_synthetic_user: true }),
         model("neither"),
       ]),
     ]
@@ -56,6 +63,11 @@ describe("build_suggested_models", () => {
     expect(
       build_suggested_models(providers, "data_gen").map((m) => m.model_id),
     ).toEqual(["sdg_only"])
+    expect(
+      build_suggested_models(providers, "synthetic_user").map(
+        (m) => m.model_id,
+      ),
+    ).toEqual(["su_only"])
   })
 
   it("keeps first-appearance order — the first entry is the pre-selection", () => {

@@ -258,7 +258,9 @@
           (settings.suggested_mode === "uncensored_data_gen" &&
             model.suggested_for_uncensored_data_gen) ||
           (settings.suggested_mode === "doc_extraction" &&
-            model.suggested_for_doc_extraction)
+            model.suggested_for_doc_extraction) ||
+          (settings.suggested_mode === "synthetic_user" &&
+            model.suggested_for_synthetic_user)
         ) {
           badge = "Recommended"
         }
@@ -380,6 +382,9 @@
 
   $: selected_model_suggested_doc_extraction =
     selected_model_details?.suggested_for_doc_extraction || false
+
+  $: selected_model_suggested_synthetic_user =
+    selected_model_details?.suggested_for_synthetic_user || false
 </script>
 
 <div class="flex flex-col gap-2">
@@ -490,6 +495,22 @@
             ? "success"
             : "warning"}
         warning_message={`For doc extraction we suggest using one of the models marked "Recommended" in the dropdown.`}
+      />
+    {/if}
+  {:else if settings.suggested_mode === "synthetic_user"}
+    {#if show_suggested_advisory(!!model, selected_model_suggested_synthetic_user, quiet_suggested, suggestion_known)}
+      <Warning
+        warning_icon={!model
+          ? "info"
+          : selected_model_suggested_synthetic_user
+            ? "check"
+            : "exclaim"}
+        warning_color={!model
+          ? "gray"
+          : selected_model_suggested_synthetic_user
+            ? "success"
+            : "warning"}
+        warning_message={`For the simulated user we suggest using one of the models marked "Recommended" in the dropdown.`}
       />
     {/if}
   {/if}

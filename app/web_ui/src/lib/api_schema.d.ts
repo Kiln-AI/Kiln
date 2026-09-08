@@ -9564,6 +9564,8 @@ export interface components {
             supports_logprobs: boolean;
             /** Suggested For Evals */
             suggested_for_evals: boolean;
+            /** Suggested For Synthetic User */
+            suggested_for_synthetic_user: boolean;
             /** Supports Function Calling */
             supports_function_calling: boolean;
             /** Uncensored */

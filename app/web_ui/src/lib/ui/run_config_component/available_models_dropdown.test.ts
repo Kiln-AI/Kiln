@@ -59,6 +59,11 @@ const MODES = [
     flag: "suggested_for_doc_extraction",
     message: `For doc extraction we suggest using one of the models marked "Recommended" in the dropdown.`,
   },
+  {
+    suggested_mode: "synthetic_user",
+    flag: "suggested_for_synthetic_user",
+    message: `For the simulated user we suggest using one of the models marked "Recommended" in the dropdown.`,
+  },
 ] as const
 
 // One provider entry: enough for the component to read the model list as

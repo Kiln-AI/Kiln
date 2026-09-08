@@ -14,6 +14,7 @@ export interface ModelDropdownSettings {
     | "evals"
     | "uncensored_data_gen"
     | "doc_extraction"
+    | "synthetic_user"
     | null
 }
 
