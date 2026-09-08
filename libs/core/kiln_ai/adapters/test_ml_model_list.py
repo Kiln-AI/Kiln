@@ -213,6 +213,18 @@ class TestThinkingLevelMetadata:
             )
 
 
+# Models we route to /v1/responses because OpenAI rejects tools alongside
+# reasoning_effort on /v1/chat/completions for them.
+RESPONSES_API_MODELS = [
+    ModelName.gpt_6_astra,
+    ModelName.gpt_5_6_sol,
+    ModelName.gpt_5_6_terra,
+    ModelName.gpt_5_6_luna,
+    ModelName.gpt_5_5,
+    ModelName.gpt_5_4,
+]
+
+
 class TestOpenAIResponsesApi:
     def test_openai_responses_api_allowed_on_openai(self):
         provider = KilnModelProvider(
@@ -237,19 +249,25 @@ class TestOpenAIResponsesApi:
                 openai_responses_api=True,
             )
 
-    def test_built_in_models_with_flag_are_openai_and_support_tools(self):
+    def test_built_in_models_with_flag_support_tools(self):
         """Routing to /v1/responses exists so these models can use tools. If one of them
         ever ships with function calling disabled again, the workaround has returned."""
         for model in built_in_models:
             for provider in model.providers:
                 if not provider.openai_responses_api:
                     continue
-                assert provider.name == ModelProviderName.openai, (
-                    f"{model.name} has openai_responses_api on {provider.name}"
-                )
                 assert provider.supports_function_calling is True, (
                     f"{model.name} routes to /v1/responses but disables function calling"
                 )
+
+    @pytest.mark.parametrize("model_name", RESPONSES_API_MODELS)
+    def test_reasoning_models_route_to_responses_api(self, model_name):
+        provider = built_in_models_from_provider(
+            provider_name=ModelProviderName.openai,
+            model_name=model_name,
+        )
+        assert provider is not None
+        assert provider.openai_responses_api is True
 
 
 class TestBuiltInModelsFromProvider:
