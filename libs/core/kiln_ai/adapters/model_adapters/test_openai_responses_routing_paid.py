@@ -348,7 +348,6 @@ async def test_openai_tools_with_thinking_level_routing(
     ctx = build_context(
         model_name, provider_name, thinking_level, request_log, error, run, tool_called
     )
-    print(ctx)
 
     expected_path_fragment = (
         "/responses" if expect_responses_endpoint else "/chat/completions"
@@ -458,7 +457,6 @@ async def test_openai_responses_drops_custom_sampling_params(tmp_path, model_nam
     ctx = build_context(
         model_name, provider_name, thinking_level, request_log, error, run, tool_called
     )
-    print(ctx)
 
     assert request_log.requests, f"No provider request was recorded at all.{ctx}"
 
