@@ -438,7 +438,8 @@
 
   // Start the wizard over: wipe the draft but CARRY the batch tags (they
   // name chains on disk that only delete-on-next-drive cleans up), then
-  // reload into a fresh mount — SDG's clear-and-reload move.
+  // start over on the Setup and Eval Type page — SDG's clear-and-reload
+  // move, aimed at where eval creation begins.
   async function reset_draft_with_confirm() {
     const msg =
       trace_claims.length > 0
@@ -457,9 +458,13 @@
     } catch (e) {
       console.error("Failed to persist the reset draft:", e)
     }
-    // The reset is persisted — suppress both guards for the reload.
+    // The reset is persisted — suppress both guards for the navigation.
+    // Start over where eval creation starts, on the Setup and Eval Type
+    // page, rather than reloading this URL: it can carry the description
+    // that page handed over, which a reload would apply again and walk
+    // straight back into Step 2.
     leave_guard_suppressed = true
-    window.location.reload()
+    window.location.href = `/specs/${project_id}/${task_id}/select_template`
   }
 
   // Restore silently — no resume prompt. The three-tier destructive-action

@@ -728,3 +728,16 @@ describe("Data Guide skip and Back", () => {
     )
   })
 })
+
+describe("Reset", () => {
+  const reset = region("async function reset_draft_with_confirm", "\n  }\n")
+
+  it("starts over on the Setup and Eval Type page, not by reloading a URL that may carry a description", () => {
+    expect(normalize(reset)).toContain(
+      normalize(
+        "window.location.href = `/specs/${project_id}/${task_id}/select_template`",
+      ),
+    )
+    expect(reset).not.toContain("window.location.reload()")
+  })
+})
