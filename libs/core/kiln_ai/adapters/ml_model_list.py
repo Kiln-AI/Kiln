@@ -741,6 +741,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_6_sol,
         friendly_name="GPT-5.6 Sol",
+        featured_rank=1,
         editorial_notes="OpenAI's most capable GPT model. Powerful reasoning and multimodal.",
         providers=[
             KilnModelProvider(
