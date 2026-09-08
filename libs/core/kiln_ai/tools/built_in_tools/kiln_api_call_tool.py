@@ -2,6 +2,7 @@
 
 import json
 from typing import Any
+from urllib.parse import unquote
 
 import httpx
 import jq
@@ -21,6 +22,15 @@ READ_TIMEOUT_SECONDS = 900.0
 # Short connection/setup timeout — server should accept quickly even when the
 # body will then stream for a long time.
 CONNECT_TIMEOUT_SECONDS = 30.0
+
+# The base URL is the server root, and that server also hosts the web app and
+# FastAPI's own doc routes. So a mistyped path does not 404 as JSON — it returns
+# a web page, and thousands of tokens of HTML land in the model's context. Every
+# Kiln API route lives under /api/ apart from /ping, so hold the tool to that.
+API_PATH_PREFIX = "/api/"
+ALLOWED_EXACT_PATHS = frozenset({"/ping"})
+# Paths that a "did you mean /api<path>?" hint would only mislead on.
+_NON_API_PATHS = frozenset({"/", "/docs", "/redoc", "/scalar"})
 
 
 class KilnApiCallTool(KilnTool):
@@ -104,6 +114,9 @@ For SSE endpoints (text/event-stream), the tool consumes the stream until it clo
 
         if not url_path.startswith("/"):
             raise ValueError(f"url_path must start with '/', got: {url_path}")
+
+        if not _is_allowed_path(url_path):
+            raise ValueError(_disallowed_path_message(url_path))
 
         if "?" in url_path or "#" in url_path:
             raise ValueError(
@@ -197,6 +210,86 @@ For SSE endpoints (text/event-stream), the tool consumes the stream until it clo
 
         result = {"status_code": status_code, "body": response_body}
         return ToolCallResult(output=json.dumps(result, ensure_ascii=False))
+
+
+def _path_without_query(url_path: str) -> str:
+    """The path portion alone.
+
+    The query string is ignored by the path checks: a url_path carrying one is
+    rejected by its own check, and stripping it first keeps those errors about
+    the path.
+    """
+    return url_path.split("?", 1)[0].split("#", 1)[0]
+
+
+def _has_dot_segment(path_only: str) -> bool:
+    """True when any segment is '.' or '..', encoded or not.
+
+    A prefix check alone is not enough, because the string we validate is not
+    the path that gets sent. httpx resolves dot segments, so '/api/../docs'
+    leaves as '/docs' and '/api/a/../../openapi.json' leaves as
+    '/openapi.json' — both past a guard that only looked at the '/api/' at the
+    front.
+
+    Segments are decoded one at a time rather than decoding the whole path,
+    then split again on any slash the decoding revealed. That catches an
+    encoded '%2e%2e', and an encoded slash used to hide one ('%2e%2e%2f'),
+    without treating an encoded slash as a separator in its own right — httpx
+    leaves those encoded, so '/api/x%2Fy' is one segment and stays under
+    '/api/'.
+    """
+    return any(
+        part in {".", ".."}
+        for segment in path_only.split("/")
+        for part in unquote(segment).split("/")
+    )
+
+
+def _is_allowed_path(url_path: str) -> bool:
+    """True when url_path addresses the Kiln REST API rather than the web app."""
+    path_only = _path_without_query(url_path)
+    if _has_dot_segment(path_only):
+        return False
+    return path_only in ALLOWED_EXACT_PATHS or path_only.startswith(API_PATH_PREFIX)
+
+
+def _disallowed_path_message(url_path: str) -> str:
+    path_only = _path_without_query(url_path)
+    if _has_dot_segment(path_only):
+        # A separate message: "must start with /api/" reads as nonsense for a
+        # path that plainly does start with it.
+        return (
+            "url_path must not contain '.' or '..' path segments, encoded or "
+            f"not — they resolve elsewhere before the request is sent. Got: "
+            f"'{url_path}'. Write the full path. Correct paths are in the "
+            "endpoint documentation."
+        )
+
+    # A near miss on an exact allowed path — a trailing slash, say — is
+    # corrected to that path. Prefixing it instead would name a second wrong
+    # call: '/api/ping/' is no more a route than '/ping/' is.
+    near_miss = path_only.rstrip("/")
+    if near_miss in ALLOWED_EXACT_PATHS:
+        hint = f" Did you mean '{near_miss}'?"
+    else:
+        # Suggest the prefixed form only where it could plausibly be the fix.
+        # A dot in the final segment means a filename, not an endpoint, and
+        # "/api/openapi.json" is no more callable than "/openapi.json".
+        looks_like_a_file = "." in path_only.rsplit("/", 1)[-1]
+        suggest = (
+            not path_only.startswith("/api")
+            and path_only not in _NON_API_PATHS
+            and not looks_like_a_file
+        )
+        hint = f" Did you mean '/api{path_only}'?" if suggest else ""
+    # Name the exceptions. The rule alone reads as "/ping is impossible",
+    # which would stop a caller retrying the one path that does work.
+    exceptions = ", ".join(f"'{path}'" for path in sorted(ALLOWED_EXACT_PATHS))
+    return (
+        f"url_path must start with '{API_PATH_PREFIX}', or be exactly "
+        f"{exceptions}. Got: '{url_path}'.{hint} "
+        "Correct paths are in the endpoint documentation."
+    )
 
 
 async def _consume_sse(response: httpx.Response) -> int:

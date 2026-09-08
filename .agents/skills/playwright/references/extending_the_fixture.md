@@ -13,7 +13,9 @@ many times you stop and start. Use `reset` when you want the committed fixture
 back, or after pulling a branch whose fixture differs.
 
 It deletes the whole sandbox home, `settings.yaml` included — so any provider you
-connected by hand goes with it, and you will need to paste the key again.
+connected by hand goes with it, and you will need to paste the key again. The
+seed's own OpenRouter key comes back on its own, since reseeding re-reads
+`OPENROUTER_QA_KEY` from the environment.
 
 ## `playwright_server.sh snapshot` — improve the fixture
 

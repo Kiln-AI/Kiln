@@ -24,9 +24,9 @@ PRERELEASE_CHAT_MODELS: list[tuple[str, str]] = [
     ("gemini_3_flash", ModelProviderName.gemini_api.value),
     ("claude_sonnet_4_6", ModelProviderName.openrouter.value),
     ("gpt_5_4_mini", ModelProviderName.openrouter.value),
-    ("llama_3_3_70b", ModelProviderName.groq.value),
-    ("qwen_3p6_plus", ModelProviderName.fireworks_ai.value),
-    ("minimax_m2_7", ModelProviderName.together_ai.value),
+    ("gpt_oss_20b", ModelProviderName.groq.value),
+    ("qwen_3p7_plus", ModelProviderName.fireworks_ai.value),
+    ("deepseek_4_flash", ModelProviderName.together_ai.value),
 ]
 
 # (model_name, provider_name) — used by the embedding prerelease smoke tests

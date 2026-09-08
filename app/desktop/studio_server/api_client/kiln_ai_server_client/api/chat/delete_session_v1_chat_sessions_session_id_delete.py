@@ -19,6 +19,7 @@ from ...models.delete_session_v1_chat_sessions_session_id_delete_response_500 im
     DeleteSessionV1ChatSessionsSessionIdDeleteResponse500,
 )
 from ...models.http_validation_error import HTTPValidationError
+from ...models.unauthorized_response import UnauthorizedResponse
 from ...types import Response
 
 
@@ -45,6 +46,7 @@ def _parse_response(
     | DeleteSessionV1ChatSessionsSessionIdDeleteResponse426
     | DeleteSessionV1ChatSessionsSessionIdDeleteResponse500
     | HTTPValidationError
+    | UnauthorizedResponse
     | None
 ):
     if response.status_code == 204:
@@ -55,6 +57,11 @@ def _parse_response(
         response_400 = DeleteSessionV1ChatSessionsSessionIdDeleteResponse400.from_dict(response.json())
 
         return response_400
+
+    if response.status_code == 401:
+        response_401 = UnauthorizedResponse.from_dict(response.json())
+
+        return response_401
 
     if response.status_code == 404:
         response_404 = DeleteSessionV1ChatSessionsSessionIdDeleteResponse404.from_dict(response.json())
@@ -91,6 +98,7 @@ def _build_response(
     | DeleteSessionV1ChatSessionsSessionIdDeleteResponse426
     | DeleteSessionV1ChatSessionsSessionIdDeleteResponse500
     | HTTPValidationError
+    | UnauthorizedResponse
 ]:
     return Response(
         status_code=HTTPStatus(response.status_code),
@@ -111,6 +119,7 @@ def sync_detailed(
     | DeleteSessionV1ChatSessionsSessionIdDeleteResponse426
     | DeleteSessionV1ChatSessionsSessionIdDeleteResponse500
     | HTTPValidationError
+    | UnauthorizedResponse
 ]:
     """Delete Session
 
@@ -122,7 +131,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | DeleteSessionV1ChatSessionsSessionIdDeleteResponse400 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse404 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse426 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse500 | HTTPValidationError]
+        Response[Any | DeleteSessionV1ChatSessionsSessionIdDeleteResponse400 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse404 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse426 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse500 | HTTPValidationError | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -147,6 +156,7 @@ def sync(
     | DeleteSessionV1ChatSessionsSessionIdDeleteResponse426
     | DeleteSessionV1ChatSessionsSessionIdDeleteResponse500
     | HTTPValidationError
+    | UnauthorizedResponse
     | None
 ):
     """Delete Session
@@ -159,7 +169,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | DeleteSessionV1ChatSessionsSessionIdDeleteResponse400 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse404 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse426 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse500 | HTTPValidationError
+        Any | DeleteSessionV1ChatSessionsSessionIdDeleteResponse400 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse404 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse426 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse500 | HTTPValidationError | UnauthorizedResponse
     """
 
     return sync_detailed(
@@ -179,6 +189,7 @@ async def asyncio_detailed(
     | DeleteSessionV1ChatSessionsSessionIdDeleteResponse426
     | DeleteSessionV1ChatSessionsSessionIdDeleteResponse500
     | HTTPValidationError
+    | UnauthorizedResponse
 ]:
     """Delete Session
 
@@ -190,7 +201,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | DeleteSessionV1ChatSessionsSessionIdDeleteResponse400 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse404 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse426 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse500 | HTTPValidationError]
+        Response[Any | DeleteSessionV1ChatSessionsSessionIdDeleteResponse400 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse404 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse426 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse500 | HTTPValidationError | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs(
@@ -213,6 +224,7 @@ async def asyncio(
     | DeleteSessionV1ChatSessionsSessionIdDeleteResponse426
     | DeleteSessionV1ChatSessionsSessionIdDeleteResponse500
     | HTTPValidationError
+    | UnauthorizedResponse
     | None
 ):
     """Delete Session
@@ -225,7 +237,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | DeleteSessionV1ChatSessionsSessionIdDeleteResponse400 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse404 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse426 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse500 | HTTPValidationError
+        Any | DeleteSessionV1ChatSessionsSessionIdDeleteResponse400 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse404 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse426 | DeleteSessionV1ChatSessionsSessionIdDeleteResponse500 | HTTPValidationError | UnauthorizedResponse
     """
 
     return (

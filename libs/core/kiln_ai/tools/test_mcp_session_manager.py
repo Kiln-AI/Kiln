@@ -12,11 +12,17 @@ from kiln_ai.datamodel.external_tool_server import (
     ExternalToolServer,
     ToolServerType,
 )
+from kiln_ai.run_context import (
+    clear_agent_run_id,
+    get_agent_run_id,
+    set_agent_run_id,
+)
 from kiln_ai.tools.mcp_session_manager import (
     MCP_SESSION_CACHE_KEY_DELIMITER,
     KilnMCPError,
     MCPSessionManager,
     build_mcp_session_cache_key,
+    mcp_session_scope,
     parse_mcp_session_cache_session_id,
 )
 from kiln_ai.utils.config import MCP_SECRETS_KEY
@@ -1963,6 +1969,84 @@ class TestMCPSessionCaching:
             assert all(r is mock_session_instance for r in results)
             assert creation_count > 1, "Delay should cause multiple creation attempts"
             assert len(manager._session_cache) == 1
+
+
+class TestMCPSessionScope:
+    """Unit tests for the mcp_session_scope context manager."""
+
+    @pytest.fixture
+    def clear_context(self):
+        """Clear the agent run context before and after each test."""
+        clear_agent_run_id()
+        yield
+        clear_agent_run_id()
+
+    @pytest.fixture
+    def cleanup_mock(self):
+        """Replace the session manager the scope tears down with, so tests can
+        see which run id cleanup was aimed at without opening real sessions."""
+        mock = AsyncMock()
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.MCPSessionManager"
+        ) as mock_manager_class:
+            mock_manager_class.shared.return_value.cleanup_session = mock
+            yield mock
+
+    @pytest.mark.asyncio
+    async def test_sets_run_id_and_cleans_up_on_success(
+        self, clear_context, cleanup_mock
+    ):
+        async with mcp_session_scope():
+            run_id = get_agent_run_id()
+            assert run_id is not None
+            assert run_id.startswith("run_")
+
+        cleanup_mock.assert_called_once_with(run_id)
+        assert get_agent_run_id() is None
+
+    @pytest.mark.asyncio
+    async def test_cleans_up_when_body_raises(self, clear_context, cleanup_mock):
+        run_id = None
+
+        with pytest.raises(ValueError, match="boom"):
+            async with mcp_session_scope():
+                run_id = get_agent_run_id()
+                raise ValueError("boom")
+
+        # Guards the sentinel: without this a scope that never set an id would
+        # satisfy the cleanup assert below with None.
+        assert run_id is not None
+        cleanup_mock.assert_called_once_with(run_id)
+        assert get_agent_run_id() is None
+
+    @pytest.mark.asyncio
+    async def test_nested_scope_does_not_own_sessions(
+        self, clear_context, cleanup_mock
+    ):
+        """Inside an open scope the sessions belong to whoever opened it, so a
+        nested scope must not tear them down or release the run id."""
+        set_agent_run_id("caller_run_id")
+
+        async with mcp_session_scope():
+            assert get_agent_run_id() == "caller_run_id"
+
+        cleanup_mock.assert_not_called()
+        assert get_agent_run_id() == "caller_run_id"
+
+    @pytest.mark.asyncio
+    async def test_cleanup_targets_the_id_the_scope_created(
+        self, clear_context, cleanup_mock
+    ):
+        """Cleanup uses the id this scope created, not the current context
+        value, so code inside the block cannot redirect the teardown and leak
+        the sessions it actually opened."""
+        async with mcp_session_scope():
+            created_run_id = get_agent_run_id()
+            set_agent_run_id("hijacked")
+
+        assert created_run_id is not None
+        cleanup_mock.assert_called_once_with(created_run_id)
+        assert get_agent_run_id() is None
 
 
 class TestMCPSessionCacheKeyHelpers:
