@@ -18,6 +18,33 @@ ${sample.input}
 </example_input>`
 }
 
+// The single-turn data-guide param when the task has a saved Data Guide: the
+// guide first (it sets the frame: what realistic inputs to this task look
+// like), then the grounding sample (it shows the format), each under a plain
+// section header so the planner can tell the two apart. Blank text counts as
+// absent. With only one source that source is returned byte-identical and
+// untrimmed: a task with no guide sends the bare grounding sample, a task
+// with no runs the bare guide. The plan and the mint must both send this same
+// value: the minted-input cache is keyed on it, and a mint keyed differently
+// from its plan would never hit.
+export function join_data_guides(
+  data_guide: string | null,
+  grounding: string | null,
+): string | null {
+  const has_guide = data_guide !== null && data_guide.trim() !== ""
+  const has_grounding = grounding !== null && grounding.trim() !== ""
+  if (has_guide && has_grounding) {
+    return `Data Guide:
+${data_guide}
+
+Grounding Example:
+${grounding}`
+  }
+  if (has_guide) return data_guide
+  if (has_grounding) return grounding
+  return null
+}
+
 // Single-turn: each planned prompt mints ONE task input, run once locally
 // and judged against the specification.
 export function single_turn_plan_guidance(spec: string): string {

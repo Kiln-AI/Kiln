@@ -3,8 +3,10 @@ import {
   builder_draft_key,
   builder_mock_active,
   create_eval_button_label,
+  create_eval_destination,
   draft_after_save_keeping_stranded_tags,
   draft_has_content,
+  draft_is_resumable,
   questions_are_current,
   reset_draft_keeping_tags,
   restore_step,
@@ -99,6 +101,10 @@ const full_draft: BuilderDraft = {
     input: "What's your return policy on opened electronics?",
     output: "Opened electronics can be returned within 14 days.",
   },
+  data_guide_text: "# Reference Inputs\n\nShort support questions.",
+  use_data_guide: true,
+  data_guide_skipped: false,
+  data_guide_offer_pending: false,
   multi_turn_batch_tag: "multi_turn_batch_1234",
   single_turn_batch_tag: "single_turn_batch_5678",
   undeleted_batch_tags: ["multi_turn_batch_1200", "multi_turn_batch_1234"],
@@ -202,6 +208,43 @@ describe("restore_step resolution", () => {
     expect(["describe", "refine", "generate"]).toContain(
       restore_step(full_draft),
     )
+  })
+
+  it("an open Data Guide offer restores to the plan screen with no plan", () => {
+    expect(
+      restore_step({
+        ...EMPTY_BUILDER_DRAFT,
+        description: "d",
+        refined_property_values: { issue_description: "x" },
+        data_guide_offer_pending: true,
+      }),
+    ).toBe("generate")
+  })
+
+  it("a skipped guide alone does not restore past refine — the plan fires from Continue", () => {
+    expect(
+      restore_step({
+        ...EMPTY_BUILDER_DRAFT,
+        refined_property_values: { issue_description: "x" },
+        data_guide_skipped: true,
+      }),
+    ).toBe("refine")
+  })
+
+  it("the Data Guide fields survive a round trip on a pending draft", () => {
+    const pending: BuilderDraft = {
+      ...full_draft,
+      batch_plan: null,
+      data_guide_text: null,
+      use_data_guide: false,
+      data_guide_skipped: true,
+      data_guide_offer_pending: true,
+    }
+    const restored = JSON.parse(JSON.stringify(pending)) as BuilderDraft
+    expect(restored.data_guide_skipped).toBe(true)
+    expect(restored.data_guide_offer_pending).toBe(true)
+    expect(restored.data_guide_text).toBeNull()
+    expect(restore_step(restored)).toBe("generate")
   })
 
   it("a plan with no prompts falls back to the earlier steps", () => {
@@ -796,5 +839,67 @@ describe("conversation length (turns_per_case)", () => {
 
   it("reset drops the choice back to the default", () => {
     expect(reset_draft_keeping_tags(full_draft).turns_per_case).toBeNull()
+  })
+})
+
+describe("create_eval_destination — where the Evals page's button goes", () => {
+  it("continues a draft in the builder, which restores it", () => {
+    expect(create_eval_destination(true, true)).toBe("builder")
+  })
+
+  it("starts on the Setup and Eval Type page otherwise", () => {
+    expect(create_eval_destination(true, false)).toBe("select_template")
+    expect(create_eval_destination(false, true)).toBe("select_template")
+    expect(create_eval_destination(false, false)).toBe("select_template")
+  })
+
+  it("agrees with the label: 'Continue Eval Draft' always means the builder", () => {
+    for (const has_copilot of [true, false]) {
+      for (const has_draft of [true, false]) {
+        const continues =
+          create_eval_button_label(has_copilot, has_draft) ===
+          "Continue Eval Draft"
+        expect(
+          create_eval_destination(has_copilot, has_draft) === "builder",
+        ).toBe(continues)
+      }
+    }
+  })
+})
+
+describe("draft_is_resumable — what the Evals page offers to continue", () => {
+  it("is false for the empty draft", () => {
+    expect(draft_is_resumable(EMPTY_BUILDER_DRAFT)).toBe(false)
+  })
+
+  it("is false for cleanup tags alone — a Reset leaves exactly this behind", () => {
+    const after_reset = reset_draft_keeping_tags(full_draft)
+    expect(draft_has_content(after_reset)).toBe(true)
+    expect(draft_is_resumable(after_reset)).toBe(false)
+  })
+
+  it("is true for a description, a name, refined values, or a plan", () => {
+    expect(
+      draft_is_resumable({ ...EMPTY_BUILDER_DRAFT, description: "d" }),
+    ).toBe(true)
+    expect(draft_is_resumable({ ...EMPTY_BUILDER_DRAFT, name: "n" })).toBe(true)
+    expect(
+      draft_is_resumable({
+        ...EMPTY_BUILDER_DRAFT,
+        refined_property_values: { issue_description: "x" },
+      }),
+    ).toBe(true)
+    expect(
+      draft_is_resumable({
+        ...EMPTY_BUILDER_DRAFT,
+        batch_plan: { prompts: ["p"], summary: "s" },
+      }),
+    ).toBe(true)
+  })
+
+  it("never claims more than draft_has_content does", () => {
+    for (const draft of [EMPTY_BUILDER_DRAFT, full_draft]) {
+      if (draft_is_resumable(draft)) expect(draft_has_content(draft)).toBe(true)
+    }
   })
 })

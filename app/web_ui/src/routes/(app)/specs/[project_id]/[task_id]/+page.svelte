@@ -9,7 +9,8 @@
   import {
     builder_draft_key,
     create_eval_button_label,
-    draft_has_content,
+    create_eval_destination,
+    draft_is_resumable,
     EMPTY_BUILDER_DRAFT,
   } from "./builder/builder_draft"
   import Intro from "$lib/ui/intro.svelte"
@@ -202,7 +203,7 @@
         EMPTY_BUILDER_DRAFT,
       )
       await initialized
-      has_eval_draft = draft_has_content(get(store))
+      has_eval_draft = draft_is_resumable(get(store))
     } catch {
       // No draft signal is ever worth an error surface here.
       has_eval_draft = false
@@ -709,8 +710,14 @@
     // eval-type page now. With Copilot it leads with the free-text box and
     // folds the templates behind it; without, the templates are the choice.
     // One page either way, so the eval type and the description are settled
-    // together instead of across two screens.
-    goto(`/specs/${project_id}/${task_id}/select_template`)
+    // together instead of across two screens. A draft in progress skips it:
+    // the builder restores the draft on entry, which is what the button
+    // promised.
+    const destination = create_eval_destination(
+      has_kiln_copilot,
+      has_eval_draft,
+    )
+    goto(`/specs/${project_id}/${task_id}/${destination}`)
   }
 </script>
 

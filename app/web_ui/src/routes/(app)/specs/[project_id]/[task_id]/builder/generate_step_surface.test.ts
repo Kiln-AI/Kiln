@@ -64,7 +64,7 @@ const describe_step = region(
   '{:else if current_step === "describe"}',
   '{:else if current_step === "clarify"}',
 )
-const plan_surface = region("<KilnProBatchPlan", "/>")
+const plan_surface = region("<KilnProBatchPlan", "</KilnProBatchPlan>")
 const new_plan_dialog = region("bind:this={new_plan_dialog}", "</Dialog>")
 const drive_settings_dialog = region(
   "bind:this={drive_settings_dialog}",
@@ -709,5 +709,35 @@ describe("Refine Plan dialog", () => {
       "if (batch_plan) eval_input_count = batch_plan.prompts.length",
     )
     expect(open).not.toContain("NUM_CASES")
+  })
+})
+
+describe("Data Guide skip and Back", () => {
+  // Back out of an unplanned Step 4 must re-offer, as it does on the
+  // synthetic data page; the reset lives in the history handler.
+  const handler = region(
+    "function sync_step_from_history",
+    "current_step = step",
+  )
+
+  it("clears the skip when Back leaves Step 4 without a plan", () => {
+    expect(normalize(handler)).toContain(
+      normalize(
+        'if (current_step === "generate" && batch_plan === null) { data_guide_skipped = false }',
+      ),
+    )
+  })
+})
+
+describe("Reset", () => {
+  const reset = region("async function reset_draft_with_confirm", "\n  }\n")
+
+  it("starts over on the Setup and Eval Type page, not by reloading a URL that may carry a description", () => {
+    expect(normalize(reset)).toContain(
+      normalize(
+        "window.location.href = `/specs/${project_id}/${task_id}/select_template`",
+      ),
+    )
+    expect(reset).not.toContain("window.location.reload()")
   })
 })

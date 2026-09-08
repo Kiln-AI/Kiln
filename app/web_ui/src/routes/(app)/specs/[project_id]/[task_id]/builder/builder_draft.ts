@@ -183,6 +183,24 @@ export type BuilderDraft = {
   // minting — persisted beside the plan it grounded, so a restored session
   // mints with the same grounding (and saves the same provenance record).
   grounding_sample: { input: string; output: string } | null
+  // The task's saved Data Guide as it read when Step 4 was entered (null when
+  // the task had none, or the read failed), and whether the user keeps it in
+  // the single-turn requests. Persisted beside the plan for the same reason as
+  // the grounding sample: a restored session must mint under exactly what its
+  // plan was drafted with, not under whatever the guide says by then. Drafts
+  // written before guides were read here restore as no guide, off.
+  data_guide_text: string | null
+  use_data_guide: boolean
+  // The user chose Continue Without Data Guide on this draft: Step 4 plans
+  // without offering one again, on this session and on a reload.
+  data_guide_skipped: boolean
+  // The offer was on screen when the draft was last written: Step 4 had
+  // been reached and was waiting on the user's choice, with no plan yet.
+  // A restore lands such a draft back on Step 4, where the guide is read
+  // again (the user may have just saved one) and the flow resumes. Every
+  // other draft without a plan restores no further than the refine step,
+  // as before.
+  data_guide_offer_pending: boolean
   // Batch-tag bookkeeping — a CORRECTNESS carry, not convenience: these
   // name runs already on disk. The per-arm live-batch tag plus
   // undeleted_batch_tags, the delete-on-next-drive cleanup list (shared —
@@ -224,6 +242,10 @@ export const EMPTY_BUILDER_DRAFT: BuilderDraft = {
   cached_su_cases: null,
   cached_minted_inputs: null,
   grounding_sample: null,
+  data_guide_text: null,
+  use_data_guide: false,
+  data_guide_skipped: false,
+  data_guide_offer_pending: false,
   multi_turn_batch_tag: null,
   single_turn_batch_tag: null,
   undeleted_batch_tags: [],
@@ -270,10 +292,28 @@ export function draft_has_content(draft: BuilderDraft): boolean {
   )
 }
 
+// Whether a stored draft has authoring work to resume: the spec fields or a
+// plan. Batch tags alone do not count here, unlike draft_has_content: a Reset
+// keeps them for cleanup, and a draft that is only cleanup bookkeeping is
+// nothing to continue. Drives the Evals page's button and the builder's
+// Reset, both of which speak to the user about their work.
+export function draft_is_resumable(draft: BuilderDraft): boolean {
+  return (
+    draft.description.trim() !== "" ||
+    draft.name.trim() !== "" ||
+    record_has_content(draft.property_values) ||
+    record_has_content(draft.refined_property_values) ||
+    Object.keys(draft.suggested_edits).length > 0 ||
+    draft.batch_plan !== null
+  )
+}
+
 // The furthest SAFE step a restored draft can land on — never past the plan
 // screen (step 4), and never into review: review state isn't persisted, and
 // presenting stale results would be worse than replaying a drive.
 //   - a plan exists → the plan screen ("generate")
+//   - the Data Guide offer was open → the plan screen, where the offer
+//     re-opens (or, once a guide exists, the plan fires under it)
 //   - refine output exists → "refine" (clarify Q&A isn't persisted, so a
 //     draft that died mid-clarify restarts from the description)
 //   - otherwise → "describe" with the description prefilled
@@ -281,6 +321,9 @@ export type RestoreStep = "describe" | "refine" | "generate"
 
 export function restore_step(draft: BuilderDraft): RestoreStep {
   if (draft.batch_plan !== null && draft.batch_plan.prompts.length > 0) {
+    return "generate"
+  }
+  if (draft.data_guide_offer_pending) {
     return "generate"
   }
   if (
@@ -334,4 +377,14 @@ export function create_eval_button_label(
   has_draft: boolean,
 ): string {
   return has_copilot && has_draft ? "Continue Eval Draft" : "Create Eval"
+}
+
+// Where that button goes. A draft continues in the builder, which restores
+// it on entry; everything else starts on the Setup and Eval Type page. Kept
+// beside the label so the two cannot promise different things.
+export function create_eval_destination(
+  has_copilot: boolean,
+  has_draft: boolean,
+): "builder" | "select_template" {
+  return has_copilot && has_draft ? "builder" : "select_template"
 }
