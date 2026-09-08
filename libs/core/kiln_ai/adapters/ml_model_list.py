@@ -70,6 +70,7 @@ class ModelName(str, Enum):
     llama_3_3_70b = "llama_3_3_70b"
     llama_4_maverick = "llama_4_maverick"
     llama_4_scout = "llama_4_scout"
+    gpt_6_astra = "gpt_6_astra"
     gpt_5_6_sol = "gpt_5_6_sol"
     gpt_5_6_terra = "gpt_5_6_terra"
     gpt_5_6_luna = "gpt_5_6_luna"
@@ -498,6 +499,17 @@ GPT_5_4_PRO_OPENAI_THINKING_LEVELS = {
     "Extra High": "xhigh",
 }
 
+# GPT-6 Astra supports reasoning effort levels low/medium/high/xhigh/max with a
+# default of medium. Unlike the GPT-5.x models it does NOT support `none` or
+# `minimal`, and it adds a new `max` level, so it needs its own constant.
+GPT_6_ASTRA_OPENAI_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
+}
+
 GPT_5_1_OPENAI_THINKING_LEVELS = {
     "Off/None": "none",
     "Low": "low",
@@ -668,12 +680,67 @@ QWEN_3P6_GROQ_THINKING_LEVELS = {
 
 
 built_in_models: List[KilnModel] = [
+    # GPT 6 Astra
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_6_astra,
+        friendly_name="GPT-6 Astra",
+        featured_rank=1,
+        editorial_notes="OpenAI's flagship GPT-6 model. Powerful reasoning and multimodal.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-6-astra",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
+                # for gpt-5.4+. Disable function calling until Kiln routes these
+                # models to /v1/responses.
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-6-astra",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
+                # Use OpenRouter's reasoning object so reasoning is preserved
+                # when tools are sent (the bare reasoning_effort param is
+                # silently dropped on tool calls for these models).
+                openrouter_reasoning_object=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # GPT 5.6 Sol
     KilnModel(
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_6_sol,
         friendly_name="GPT-5.6 Sol",
-        featured_rank=1,
         editorial_notes="OpenAI's most capable GPT model. Powerful reasoning and multimodal.",
         providers=[
             KilnModelProvider(
