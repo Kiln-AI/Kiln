@@ -292,6 +292,22 @@ export function draft_has_content(draft: BuilderDraft): boolean {
   )
 }
 
+// Whether a stored draft has authoring work to resume: the spec fields or a
+// plan. Batch tags alone do not count here, unlike draft_has_content: a Reset
+// keeps them for cleanup, and a draft that is only cleanup bookkeeping is
+// nothing to continue. Drives the Evals page's button and the builder's
+// Reset, both of which speak to the user about their work.
+export function draft_is_resumable(draft: BuilderDraft): boolean {
+  return (
+    draft.description.trim() !== "" ||
+    draft.name.trim() !== "" ||
+    record_has_content(draft.property_values) ||
+    record_has_content(draft.refined_property_values) ||
+    Object.keys(draft.suggested_edits).length > 0 ||
+    draft.batch_plan !== null
+  )
+}
+
 // The furthest SAFE step a restored draft can land on — never past the plan
 // screen (step 4), and never into review: review state isn't persisted, and
 // presenting stale results would be worse than replaying a drive.

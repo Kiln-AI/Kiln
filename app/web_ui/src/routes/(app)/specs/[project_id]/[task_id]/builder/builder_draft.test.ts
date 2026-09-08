@@ -6,6 +6,7 @@ import {
   create_eval_destination,
   draft_after_save_keeping_stranded_tags,
   draft_has_content,
+  draft_is_resumable,
   questions_are_current,
   reset_draft_keeping_tags,
   restore_step,
@@ -862,6 +863,43 @@ describe("create_eval_destination — where the Evals page's button goes", () =>
           create_eval_destination(has_copilot, has_draft) === "builder",
         ).toBe(continues)
       }
+    }
+  })
+})
+
+describe("draft_is_resumable — what the Evals page offers to continue", () => {
+  it("is false for the empty draft", () => {
+    expect(draft_is_resumable(EMPTY_BUILDER_DRAFT)).toBe(false)
+  })
+
+  it("is false for cleanup tags alone — a Reset leaves exactly this behind", () => {
+    const after_reset = reset_draft_keeping_tags(full_draft)
+    expect(draft_has_content(after_reset)).toBe(true)
+    expect(draft_is_resumable(after_reset)).toBe(false)
+  })
+
+  it("is true for a description, a name, refined values, or a plan", () => {
+    expect(
+      draft_is_resumable({ ...EMPTY_BUILDER_DRAFT, description: "d" }),
+    ).toBe(true)
+    expect(draft_is_resumable({ ...EMPTY_BUILDER_DRAFT, name: "n" })).toBe(true)
+    expect(
+      draft_is_resumable({
+        ...EMPTY_BUILDER_DRAFT,
+        refined_property_values: { issue_description: "x" },
+      }),
+    ).toBe(true)
+    expect(
+      draft_is_resumable({
+        ...EMPTY_BUILDER_DRAFT,
+        batch_plan: { prompts: ["p"], summary: "s" },
+      }),
+    ).toBe(true)
+  })
+
+  it("never claims more than draft_has_content does", () => {
+    for (const draft of [EMPTY_BUILDER_DRAFT, full_draft]) {
+      if (draft_is_resumable(draft)) expect(draft_has_content(draft)).toBe(true)
     }
   })
 })

@@ -37,6 +37,7 @@
     builder_mock_active,
     draft_after_save_keeping_stranded_tags,
     draft_has_content,
+    draft_is_resumable,
     questions_are_current,
     reset_draft_keeping_tags,
     restore_step,
@@ -427,11 +428,13 @@
   }
 
   // The header Reset button (SDG's is_setup pattern): appears once the
-  // draft carries anything and stays through every step — the confirm's
-  // wording, not the button's visibility, is what escalates with the
-  // stakes. Absent under the mock (draft_ready never flips there).
+  // draft carries work to discard and stays through every step — the
+  // confirm's wording, not the button's visibility, is what escalates with
+  // the stakes. Cleanup tags alone do not show it: they survive a Reset by
+  // design, and a second Reset would have nothing to discard. Absent under
+  // the mock (draft_ready never flips there).
   $: reset_available =
-    current_draft !== null && draft_has_content(current_draft)
+    current_draft !== null && draft_is_resumable(current_draft)
 
   // Start the wizard over: wipe the draft but CARRY the batch tags (they
   // name chains on disk that only delete-on-next-drive cleans up), then
