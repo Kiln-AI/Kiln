@@ -711,3 +711,20 @@ describe("Refine Plan dialog", () => {
     expect(open).not.toContain("NUM_CASES")
   })
 })
+
+describe("Data Guide skip and Back", () => {
+  // Back out of an unplanned Step 4 must re-offer, as it does on the
+  // synthetic data page; the reset lives in the history handler.
+  const handler = region(
+    "function sync_step_from_history",
+    "current_step = step",
+  )
+
+  it("clears the skip when Back leaves Step 4 without a plan", () => {
+    expect(normalize(handler)).toContain(
+      normalize(
+        'if (current_step === "generate" && batch_plan === null) { data_guide_skipped = false }',
+      ),
+    )
+  })
+})

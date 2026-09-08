@@ -320,6 +320,12 @@
     // The declined-feedback notice belongs to the round the reviewer was in;
     // leaving review retires it rather than re-opening it later out of context.
     calibration_declined_feedback_notice = null
+    // Leaving Step 4 with no plan undoes a Continue Without Data Guide, as
+    // Back does on the synthetic data page: the next entry offers again.
+    // With a plan, the skip stands; the plan is what the next entry shows.
+    if (current_step === "generate" && batch_plan === null) {
+      data_guide_skipped = false
+    }
     current_step = step
   }
   $: sync_step_from_history(
