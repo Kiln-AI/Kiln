@@ -227,7 +227,7 @@ class TestBuiltInModelsFromProvider:
         assert result.name == ModelProviderName.openai
         assert result.model_id == "gpt-4.1"
         assert result.supports_logprobs is True
-        assert result.suggested_for_data_gen is True
+        assert result.suggested_for_data_gen is False
 
     def test_valid_model_different_provider_returns_correct_provider(self):
         """Test that different providers for the same model return different configurations"""
