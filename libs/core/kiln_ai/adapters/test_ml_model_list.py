@@ -213,6 +213,45 @@ class TestThinkingLevelMetadata:
             )
 
 
+class TestOpenAIResponsesApi:
+    def test_openai_responses_api_allowed_on_openai(self):
+        provider = KilnModelProvider(
+            name=ModelProviderName.openai,
+            model_id="gpt-5.4",
+            openai_responses_api=True,
+        )
+        assert provider.openai_responses_api is True
+
+    @pytest.mark.parametrize(
+        "provider_name",
+        [ModelProviderName.openrouter, ModelProviderName.azure_openai],
+    )
+    def test_openai_responses_api_requires_openai(self, provider_name):
+        with pytest.raises(
+            ValueError,
+            match="openai_responses_api can only be true when provider is openai",
+        ):
+            KilnModelProvider(
+                name=provider_name,
+                model_id="gpt-5.4",
+                openai_responses_api=True,
+            )
+
+    def test_built_in_models_with_flag_are_openai_and_support_tools(self):
+        """Routing to /v1/responses exists so these models can use tools. If one of them
+        ever ships with function calling disabled again, the workaround has returned."""
+        for model in built_in_models:
+            for provider in model.providers:
+                if not provider.openai_responses_api:
+                    continue
+                assert provider.name == ModelProviderName.openai, (
+                    f"{model.name} has openai_responses_api on {provider.name}"
+                )
+                assert provider.supports_function_calling is True, (
+                    f"{model.name} routes to /v1/responses but disables function calling"
+                )
+
+
 class TestBuiltInModelsFromProvider:
     """Test cases for built_in_models_from_provider function"""
 

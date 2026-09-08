@@ -652,17 +652,27 @@ class LiteLlmAdapter(BaseAdapter):
         if self._litellm_model_id:
             return self._litellm_model_id
 
-        litellm_provider_info = get_litellm_provider_info(self.model_provider())
+        provider = self.model_provider()
+        litellm_provider_info = get_litellm_provider_info(provider)
         if litellm_provider_info.is_custom and self._api_base is None:
             raise ValueError(
                 "Explicit Base URL is required for OpenAI compatible APIs (custom models, ollama, fine tunes, and custom registry models)"
             )
 
-        self._litellm_model_id = litellm_provider_info.litellm_model_id
+        litellm_model_id = litellm_provider_info.litellm_model_id
+        if provider.openai_responses_api:
+            # litellm bridges `openai/responses/<model>` to OpenAI's /v1/responses
+            # endpoint: the only one that accepts tools alongside reasoning effort
+            # for these models.
+            litellm_model_id = (
+                f"{litellm_provider_info.provider_name}/responses/{provider.model_id}"
+            )
+
+        self._litellm_model_id = litellm_model_id
         return self._litellm_model_id
 
     def _allowed_openai_params_for_completion_kwargs(
-        self, completion_kwargs: dict[str, Any]
+        self, completion_kwargs: dict[str, Any], provider: KilnModelProvider
     ) -> list[str]:
         """
         LiteLLM drops params it thinks are not supported by the model when drop_params is True. Sometimes it is wrong
@@ -693,6 +703,11 @@ class LiteLlmAdapter(BaseAdapter):
             automatic_allowed_params.append("tools")
         if "tool_choice" in completion_kwargs:
             automatic_allowed_params.append("tool_choice")
+        if provider.openai_responses_api and "reasoning_effort" in completion_kwargs:
+            # litellm's param map doesn't list reasoning_effort for every model we
+            # route to /v1/responses (eg gpt-6-astra), and drop_params would silently
+            # strip it, making the thinking level a no-op.
+            automatic_allowed_params.append("reasoning_effort")
 
         return list(set(explicit_allowed_params_validated + automatic_allowed_params))
 
@@ -737,6 +752,17 @@ class LiteLlmAdapter(BaseAdapter):
             completion_kwargs["tools"] = tool_calls
             completion_kwargs["tool_choice"] = "auto"
 
+        # OpenAI's reasoning models reject top_p, and any temperature other than the
+        # default 1.0, once a reasoning effort is in play. litellm drops both for the
+        # gpt-5.x family, but only matches names containing "gpt-5", so models like
+        # gpt-6-astra reach /v1/responses verbatim and 400. Dropping temperature is
+        # equivalent to sending the only value these models accept.
+        if provider.openai_responses_api and completion_kwargs.get(
+            "reasoning_effort"
+        ) not in (None, "none"):
+            completion_kwargs.pop("top_p", None)
+            completion_kwargs.pop("temperature", None)
+
         # Special condition for Claude Opus 4.1 and Sonnet 4.5, where we can only specify top_p or temp, not both.
         # Remove default values (1.0) prioritizing anything the user customized, then error with helpful message if they are both custom.
         if provider.temp_top_p_exclusive:
@@ -771,7 +797,7 @@ class LiteLlmAdapter(BaseAdapter):
 
         # any params listed in this list will be passed to the model regardless of LiteLLM's own validation
         allowed_openai_params = self._allowed_openai_params_for_completion_kwargs(
-            completion_kwargs
+            completion_kwargs, provider
         )
         if len(allowed_openai_params) > 0:
             completion_kwargs["allowed_openai_params"] = allowed_openai_params

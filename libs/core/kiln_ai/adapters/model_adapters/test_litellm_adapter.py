@@ -375,11 +375,40 @@ def test_litellm_model_id_standard_providers(
     mock_provider = Mock()
     mock_provider.name = provider_name
     mock_provider.model_id = "test-model"
+    mock_provider.openai_responses_api = False
 
     with patch.object(adapter, "model_provider", return_value=mock_provider):
         model_id = adapter.litellm_model_id()
 
     assert model_id == f"{expected_prefix}/test-model"
+    # Verify caching works
+    assert adapter._litellm_model_id == model_id
+
+
+@pytest.mark.parametrize(
+    "openai_responses_api,expected_model_id",
+    [
+        (True, "openai/responses/test-model"),
+        (False, "openai/test-model"),
+    ],
+)
+def test_litellm_model_id_openai_responses_api(
+    config, mock_task, openai_responses_api, expected_model_id
+):
+    """Providers with openai_responses_api use litellm's `openai/responses/<model>`
+    bridge, which calls OpenAI's /v1/responses endpoint instead of chat completions."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    provider = KilnModelProvider(
+        name=ModelProviderName.openai,
+        model_id="test-model",
+        openai_responses_api=openai_responses_api,
+    )
+
+    with patch.object(adapter, "model_provider", return_value=provider):
+        model_id = adapter.litellm_model_id()
+
+    assert model_id == expected_model_id
     # Verify caching works
     assert adapter._litellm_model_id == model_id
 
@@ -401,6 +430,7 @@ def test_litellm_model_id_custom_providers(config, mock_task, provider_name):
     mock_provider = Mock()
     mock_provider.name = provider_name
     mock_provider.model_id = "custom-model"
+    mock_provider.openai_responses_api = False
 
     with patch.object(adapter, "model_provider", return_value=mock_provider):
         model_id = adapter.litellm_model_id()
@@ -829,6 +859,7 @@ async def test_build_completion_kwargs(
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     mock_provider = Mock()
     mock_provider.temp_top_p_exclusive = False
+    mock_provider.openai_responses_api = False
     messages = [{"role": "user", "content": "Hello"}]
 
     with (
@@ -1092,6 +1123,23 @@ async def test_litellm_tools_returns_empty_list_without_tools(config, mock_task)
     assert tools == []
 
 
+@pytest.fixture
+def plain_provider():
+    return KilnModelProvider(
+        name=ModelProviderName.openai,
+        model_id="test-model",
+    )
+
+
+@pytest.fixture
+def responses_api_provider():
+    return KilnModelProvider(
+        name=ModelProviderName.openai,
+        model_id="test-model",
+        openai_responses_api=True,
+    )
+
+
 @pytest.mark.parametrize(
     "kwargs_in,expected",
     [
@@ -1104,29 +1152,58 @@ async def test_litellm_tools_returns_empty_list_without_tools(config, mock_task)
             {"tools": [], "allowed_openai_params": ["custom_param"]},
             ["custom_param", "tools"],
         ),
+        # reasoning_effort is only allow-listed for providers routed to /v1/responses
+        ({"reasoning_effort": "high"}, []),
     ],
 )
 def test_allowed_openai_params_for_completion_kwargs_independent_keys(
-    config, mock_task, kwargs_in, expected
+    config, mock_task, plain_provider, kwargs_in, expected
 ):
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
-    result = adapter._allowed_openai_params_for_completion_kwargs(kwargs_in)
+    result = adapter._allowed_openai_params_for_completion_kwargs(
+        kwargs_in, plain_provider
+    )
     assert sorted(result) == sorted(expected)
 
 
-def test_allowed_openai_params_raises_for_non_list(config, mock_task):
+@pytest.mark.parametrize(
+    "kwargs_in,expected",
+    [
+        ({}, []),
+        ({"reasoning_effort": "high"}, ["reasoning_effort"]),
+        (
+            {"tools": [], "tool_choice": "auto", "reasoning_effort": "high"},
+            ["tools", "tool_choice", "reasoning_effort"],
+        ),
+    ],
+)
+def test_allowed_openai_params_for_completion_kwargs_openai_responses_api(
+    config, mock_task, responses_api_provider, kwargs_in, expected
+):
+    """litellm's param map is missing reasoning_effort for some responses-routed models
+    (eg gpt-6-astra), so drop_params would silently strip it without the allow-list."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    result = adapter._allowed_openai_params_for_completion_kwargs(
+        kwargs_in, responses_api_provider
+    )
+    assert sorted(result) == sorted(expected)
+
+
+def test_allowed_openai_params_raises_for_non_list(config, mock_task, plain_provider):
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     with pytest.raises(ValueError, match="expected list"):
         adapter._allowed_openai_params_for_completion_kwargs(
-            {"allowed_openai_params": "not_a_list"}
+            {"allowed_openai_params": "not_a_list"}, plain_provider
         )
 
 
-def test_allowed_openai_params_raises_for_non_string_items(config, mock_task):
+def test_allowed_openai_params_raises_for_non_string_items(
+    config, mock_task, plain_provider
+):
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
     with pytest.raises(ValueError, match="items are not strings"):
         adapter._allowed_openai_params_for_completion_kwargs(
-            {"allowed_openai_params": ["valid", 123]}
+            {"allowed_openai_params": ["valid", 123]}, plain_provider
         )
 
 
@@ -1162,6 +1239,54 @@ async def test_build_completion_kwargs_includes_tools(
         assert "type" in tool
         assert tool["type"] == "function"
         assert "function" in tool
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "openai_responses_api,thinking_level,temperature,expect_sampling_params",
+    [
+        (True, "high", 1.0, False),
+        (True, "high", 0.4, False),
+        # both are legal for these models when no thinking is requested
+        (True, "none", 0.4, True),
+        (False, "high", 0.4, True),
+    ],
+)
+async def test_build_completion_kwargs_drops_sampling_params_for_openai_responses_api(
+    config,
+    mock_task,
+    openai_responses_api,
+    thinking_level,
+    temperature,
+    expect_sampling_params,
+):
+    """OpenAI's reasoning models reject top_p, and any temperature but the default,
+    once a reasoning effort is in play. litellm only strips them for models it
+    recognises as gpt-5.x, so /v1/responses returns a 400 for the others (eg
+    gpt-6-astra) unless we drop them ourselves."""
+    config.run_config_properties.thinking_level = thinking_level
+    config.run_config_properties.temperature = temperature
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    provider = KilnModelProvider(
+        name=ModelProviderName.openai,
+        model_id="test-model",
+        openai_responses_api=openai_responses_api,
+        available_thinking_levels={"Off/None": "none", "High": "high"},
+        default_thinking_level="none",
+    )
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=[]),
+    ):
+        kwargs = await adapter.build_completion_kwargs(provider, messages, None)
+
+    assert ("top_p" in kwargs) is expect_sampling_params
+    assert ("temperature" in kwargs) is expect_sampling_params
 
 
 @pytest.mark.asyncio
