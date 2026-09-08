@@ -9,6 +9,7 @@
   import {
     builder_draft_key,
     create_eval_button_label,
+    create_eval_destination,
     draft_has_content,
     EMPTY_BUILDER_DRAFT,
   } from "./builder/builder_draft"
@@ -709,8 +710,14 @@
     // eval-type page now. With Copilot it leads with the free-text box and
     // folds the templates behind it; without, the templates are the choice.
     // One page either way, so the eval type and the description are settled
-    // together instead of across two screens.
-    goto(`/specs/${project_id}/${task_id}/select_template`)
+    // together instead of across two screens. A draft in progress skips it:
+    // the builder restores the draft on entry, which is what the button
+    // promised.
+    const destination = create_eval_destination(
+      has_kiln_copilot,
+      has_eval_draft,
+    )
+    goto(`/specs/${project_id}/${task_id}/${destination}`)
   }
 </script>
 

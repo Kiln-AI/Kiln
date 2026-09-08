@@ -362,3 +362,13 @@ export function create_eval_button_label(
 ): string {
   return has_copilot && has_draft ? "Continue Eval Draft" : "Create Eval"
 }
+
+// Where that button goes. A draft continues in the builder, which restores
+// it on entry; everything else starts on the Setup and Eval Type page. Kept
+// beside the label so the two cannot promise different things.
+export function create_eval_destination(
+  has_copilot: boolean,
+  has_draft: boolean,
+): "builder" | "select_template" {
+  return has_copilot && has_draft ? "builder" : "select_template"
+}

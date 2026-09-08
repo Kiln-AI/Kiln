@@ -3,6 +3,7 @@ import {
   builder_draft_key,
   builder_mock_active,
   create_eval_button_label,
+  create_eval_destination,
   draft_after_save_keeping_stranded_tags,
   draft_has_content,
   questions_are_current,
@@ -837,5 +838,30 @@ describe("conversation length (turns_per_case)", () => {
 
   it("reset drops the choice back to the default", () => {
     expect(reset_draft_keeping_tags(full_draft).turns_per_case).toBeNull()
+  })
+})
+
+describe("create_eval_destination — where the Evals page's button goes", () => {
+  it("continues a draft in the builder, which restores it", () => {
+    expect(create_eval_destination(true, true)).toBe("builder")
+  })
+
+  it("starts on the Setup and Eval Type page otherwise", () => {
+    expect(create_eval_destination(true, false)).toBe("select_template")
+    expect(create_eval_destination(false, true)).toBe("select_template")
+    expect(create_eval_destination(false, false)).toBe("select_template")
+  })
+
+  it("agrees with the label: 'Continue Eval Draft' always means the builder", () => {
+    for (const has_copilot of [true, false]) {
+      for (const has_draft of [true, false]) {
+        const continues =
+          create_eval_button_label(has_copilot, has_draft) ===
+          "Continue Eval Draft"
+        expect(
+          create_eval_destination(has_copilot, has_draft) === "builder",
+        ).toBe(continues)
+      }
+    }
   })
 })
