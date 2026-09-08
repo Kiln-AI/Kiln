@@ -685,11 +685,13 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_6_astra,
         friendly_name="GPT-6 Astra",
-        featured_rank=1,
+        featured_rank=2,
         editorial_notes="OpenAI's flagship GPT-6 model. Powerful reasoning and multimodal.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="gpt-6-astra",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
@@ -713,6 +715,8 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
                 model_id="openai/gpt-6-astra",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_6_ASTRA_OPENAI_THINKING_LEVELS,
@@ -741,7 +745,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_6_sol,
         friendly_name="GPT-5.6 Sol",
-        featured_rank=2,
+        featured_rank=3,
         editorial_notes="OpenAI's most capable GPT model. Powerful reasoning and multimodal.",
         providers=[
             KilnModelProvider(
@@ -801,7 +805,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_6_terra,
         friendly_name="GPT-5.6 Terra",
-        featured_rank=8,
+        featured_rank=9,
         editorial_notes="OpenAI's balanced GPT-5.6 model. Strong reasoning and multimodal at a lower cost.",
         providers=[
             KilnModelProvider(
@@ -857,7 +861,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_6_luna,
         friendly_name="GPT-5.6 Luna",
-        featured_rank=12,
+        featured_rank=13,
         editorial_notes="OpenAI's fast, cost-efficient GPT-5.6 model. Optimized for speed and high-volume tasks.",
         providers=[
             KilnModelProvider(
@@ -2241,7 +2245,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.claude,
         name=ModelName.claude_opus_5,
         friendly_name="Claude Opus 5",
-        featured_rank=4,
+        featured_rank=5,
         editorial_notes="Anthropic's best Claude model. Expensive, but often the best.",
         providers=[
             KilnModelProvider(
@@ -2510,7 +2514,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.claude,
         name=ModelName.claude_sonnet_5,
         friendly_name="Claude 5 Sonnet",
-        featured_rank=9,
+        featured_rank=10,
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -2767,7 +2771,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemini,
         name=ModelName.gemini_3_8_flash,
         friendly_name="Gemini 3.8 Flash",
-        featured_rank=11,
+        featured_rank=12,
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -5469,7 +5473,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.deepseek,
         name=ModelName.deepseek_4_pro,
         friendly_name="DeepSeek V4 Pro",
-        featured_rank=7,
+        featured_rank=8,
         editorial_notes="Open source flagship with 1.6T params (49B activated). 1M context, configurable reasoning.",
         providers=[
             KilnModelProvider(
@@ -5514,7 +5518,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.deepseek,
         name=ModelName.deepseek_4_flash,
         friendly_name="DeepSeek V4 Flash",
-        featured_rank=10,
+        featured_rank=11,
         editorial_notes="Faster V4 variant with 284B params (13B activated). 1M context, same reasoning capabilities.",
         providers=[
             KilnModelProvider(
@@ -6244,7 +6248,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.qwen,
         name=ModelName.qwen_3p8_max,
         friendly_name="Qwen 3.8 Max",
-        featured_rank=5,
+        featured_rank=6,
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -8480,7 +8484,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_5_3,
         friendly_name="GLM 5.3",
-        featured_rank=6,
+        featured_rank=7,
         editorial_notes="Z.ai's newest flagship, with a 1M token context window and configurable reasoning. Strong long-horizon agentic and coding performance.",
         providers=[
             KilnModelProvider(
@@ -9018,7 +9022,7 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.kimi,
         name=ModelName.kimi_k3,
         friendly_name="Kimi K3",
-        featured_rank=3,
+        featured_rank=4,
         editorial_notes="Open, state-of-the-art model from Moonshot AI. 2.8T-parameter MoE with a 1M token context, configurable reasoning, and strong agentic performance.",
         providers=[
             KilnModelProvider(
