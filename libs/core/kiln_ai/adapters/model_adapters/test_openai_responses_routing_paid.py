@@ -405,6 +405,21 @@ async def test_openai_tools_with_thinking_level_routing(
     assert run.usage.cost is not None, f"No cost recorded on the run.{ctx}"
     assert run.usage.output_tokens, f"No output tokens recorded on the run.{ctx}"
 
+    # 8. The responses API returns no reasoning unless a summary is requested, so Kiln
+    #    asks for one on every call. Whether the model then emits a summary is its own
+    #    decision (it usually declines on a prompt this trivial), so the assertion is
+    #    on what Kiln controls. `ctx` reports whether reasoning came back either way.
+    if expect_responses_endpoint:
+        missing_summary = [
+            r
+            for r in request_log.requests
+            if (r.body or {}).get("reasoning", {}).get("summary") != "auto"
+        ]
+        assert not missing_summary, (
+            f"Expected every request to ask for a reasoning summary, but "
+            f"{len(missing_summary)} of {len(request_log.requests)} did not.{ctx}"
+        )
+
 
 # Proving the sampling-param drop costs real calls, so cover only gpt-6 (which litellm
 # does not recognise as a reasoning model) and one gpt-5.x (which it does).

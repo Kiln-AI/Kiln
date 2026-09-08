@@ -568,6 +568,11 @@ class LiteLlmAdapter(BaseAdapter):
                 pass
             else:
                 extra_body["reasoning_effort"] = thinking_level
+                if provider.openai_responses_api and thinking_level != "none":
+                    # litellm folds this into reasoning={"effort": ..., "summary": ...}
+                    # for the responses bridge, and fills message.reasoning_content from
+                    # the summary. Without it these models surface no reasoning at all.
+                    extra_body["reasoning_summary"] = "auto"
                 # Opus 4.7/4.8 default thinking display to "omitted", returning empty
                 # thinking text. Request the summary so reasoning is surfaced. litellm
                 # still maps reasoning_effort to output_config.effort; this only adds the

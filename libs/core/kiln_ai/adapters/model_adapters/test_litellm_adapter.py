@@ -616,6 +616,38 @@ def test_build_extra_body_thinking_level_anthropic_summarized_thinking(
     assert extra_body.get("thinking") == {"type": "adaptive", "display": "summarized"}
 
 
+@pytest.mark.parametrize(
+    "openai_responses_api,thinking_level,expected_summary",
+    [
+        (True, "high", "auto"),
+        # "none" disables reasoning, so there is no summary to ask for
+        (True, "none", None),
+        (False, "high", None),
+    ],
+)
+def test_build_extra_body_reasoning_summary_for_openai_responses_api(
+    config, mock_task, openai_responses_api, thinking_level, expected_summary
+):
+    """The responses API returns no reasoning unless a summary is requested. litellm
+    folds reasoning_summary into reasoning={"effort": ..., "summary": ...} and fills
+    message.reasoning_content from what comes back."""
+    config.run_config_properties.thinking_level = thinking_level
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    provider = KilnModelProvider(
+        name=ModelProviderName.openai,
+        model_id="test-model",
+        openai_responses_api=openai_responses_api,
+        available_thinking_levels={"Off/None": "none", "High": "high"},
+        default_thinking_level="none",
+    )
+
+    extra_body = adapter.build_extra_body(provider)
+
+    assert extra_body.get("reasoning_effort") == thinking_level
+    assert extra_body.get("reasoning_summary") == expected_summary
+
+
 def test_build_extra_body_thinking_level_anthropic_none(config, mock_task):
     """Anthropic's native API has no reasoning_effort="none" (litellm crashes on it),
     so a "none" thinking level must omit reasoning_effort entirely to disable thinking."""
