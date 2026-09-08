@@ -1,5 +1,5 @@
 import json
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from datetime import datetime, timedelta
 from http import HTTPStatus
 from unittest.mock import MagicMock, Mock, patch
@@ -84,29 +84,33 @@ def client(app):
 
 
 @contextmanager
-def patched_non_builtin_available_model_sources():
-    with (
-        patch(
-            "app.desktop.studio_server.provider_api.available_docker_model_runner_models",
-            return_value=None,
-        ),
-        patch(
-            "app.desktop.studio_server.provider_api.all_fine_tuned_models",
-            return_value=None,
-        ),
-        patch(
-            "app.desktop.studio_server.provider_api.openai_compatible_providers",
-            return_value=[],
-        ),
-        patch(
-            "app.desktop.studio_server.provider_api.legacy_custom_models_as_available",
-            return_value={},
-        ),
-        patch(
-            "app.desktop.studio_server.provider_api.user_models_as_available",
-            return_value={},
-        ),
-    ):
+def patched_non_builtin_available_model_sources(patch_openai_compatible: bool = True):
+    """Stub out the non-builtin, non-Ollama model sources /api/available_models pulls
+    from (callers patch connect_ollama themselves).
+
+    Pass patch_openai_compatible=False to exercise the real OpenAI compatible path while
+    the other sources stay stubbed.
+    """
+    with ExitStack() as stack:
+        for target, return_value in (
+            ("available_docker_model_runner_models", None),
+            ("all_fine_tuned_models", None),
+            ("legacy_custom_models_as_available", {}),
+            ("user_models_as_available", {}),
+        ):
+            stack.enter_context(
+                patch(
+                    f"app.desktop.studio_server.provider_api.{target}",
+                    return_value=return_value,
+                )
+            )
+        if patch_openai_compatible:
+            stack.enter_context(
+                patch(
+                    "app.desktop.studio_server.provider_api.openai_compatible_providers",
+                    return_value=[],
+                )
+            )
         yield
 
 
@@ -1278,6 +1282,41 @@ async def test_get_available_models_includes_deprecated_flag(app, client):
     assert models[0]["models"][0]["deprecated"] is True
 
 
+@pytest.mark.asyncio
+async def test_get_available_models_with_blank_api_key_custom_provider(app, client):
+    mock_config = MagicMock()
+    mock_config.get_value.return_value = "mock_key"
+    mock_config.openai_compatible_providers = [
+        {"name": "custom_provider", "base_url": "https://api.test.com", "api_key": ""}
+    ]
+
+    mock_model = MagicMock()
+    mock_model.id = "gpt-4"
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api._openai_compatible_providers_cache",
+            None,
+        ),
+        patch("openai.resources.models.Models.list", return_value=[mock_model]),
+        patch("app.desktop.studio_server.provider_api.built_in_models", []),
+        patched_non_builtin_available_model_sources(patch_openai_compatible=False),
+        patch(
+            "app.desktop.studio_server.provider_api.connect_ollama",
+            side_effect=HTTPException(status_code=500),
+        ),
+    ):
+        response = client.get("/api/available_models")
+
+    assert response.status_code == 200
+    providers = {p["provider_name"]: p for p in response.json()}
+    assert providers["custom_provider"]["models"][0]["id"] == "custom_provider::gpt-4"
+
+
 def test_get_providers_models(client):
     response = client.get("/api/providers/models")
     assert response.status_code == 200
@@ -2111,6 +2150,68 @@ def test_openai_compatible_providers_uncached_invalid_provider():
         result = openai_compatible_providers_load_cache()
         assert result.providers == []
         mock_openai.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "provider_config",
+    [
+        {"name": "test_provider", "base_url": "https://api.test.com", "api_key": ""},
+        {"name": "test_provider", "base_url": "https://api.test.com", "api_key": None},
+        {"name": "test_provider", "base_url": "https://api.test.com"},
+    ],
+    ids=["empty_string_key", "none_key", "missing_key"],
+)
+def test_openai_compatible_providers_uncached_blank_api_key(provider_config):
+    # Real OpenAI client construction: it raises without a key, so a blank key must
+    # fall back to a placeholder rather than breaking the whole model list.
+    mock_model = MagicMock()
+    mock_model.id = "gpt-4"
+
+    with (
+        patch("openai.resources.models.Models.list", return_value=[mock_model]),
+        patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
+    ):
+        mock_config.return_value.openai_compatible_providers = [provider_config]
+        result = openai_compatible_providers_load_cache()
+
+        assert not result.had_error
+        assert len(result.providers) == 1
+        assert result.providers[0].models[0].id == "test_provider::gpt-4"
+
+
+def test_openai_compatible_providers_uncached_client_error_isolated():
+    mock_providers = [
+        {
+            "name": "broken_provider",
+            "base_url": "https://api.broken.com",
+            "api_key": "broken_key",
+        },
+        {
+            "name": "working_provider",
+            "base_url": "https://api.test.com",
+            "api_key": "test_key",
+        },
+    ]
+
+    mock_model = MagicMock()
+    mock_model.id = "gpt-4"
+    working_client = MagicMock()
+    working_client.models.list.return_value = [mock_model]
+
+    with (
+        patch(
+            "openai.OpenAI",
+            side_effect=[openai.OpenAIError("Missing credentials"), working_client],
+        ),
+        patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config,
+    ):
+        mock_config.return_value.openai_compatible_providers = mock_providers
+        result = openai_compatible_providers_load_cache()
+
+        # One bad provider shouldn't take out the others
+        assert result.had_error
+        assert len(result.providers) == 1
+        assert result.providers[0].provider_name == "working_provider"
 
 
 def test_openai_compatible_providers_uncached_api_error():

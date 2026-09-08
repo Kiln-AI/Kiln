@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     HTTPValidationError,
+    UnauthorizedResponse,
 )
 from app.desktop.studio_server.utils.response_utils import (
     check_response_error,
@@ -36,7 +37,12 @@ def test_2xx_does_not_raise(status_code: HTTPStatus):
 
 @pytest.mark.parametrize(
     "status_code",
-    [HTTPStatus.BAD_REQUEST, HTTPStatus.INTERNAL_SERVER_ERROR, HTTPStatus.FORBIDDEN],
+    [
+        HTTPStatus.BAD_REQUEST,
+        HTTPStatus.UNAUTHORIZED,
+        HTTPStatus.FORBIDDEN,
+        HTTPStatus.INTERNAL_SERVER_ERROR,
+    ],
 )
 def test_non_200_with_json_message(status_code: HTTPStatus):
     body = json.dumps({"message": "Something went wrong"}).encode()
@@ -126,6 +132,32 @@ def test_unwrap_allow_none_raises_on_validation_error():
         unwrap_response_allow_none(resp)
 
 
+def test_unwrap_allow_none_raises_on_unauthorized_response():
+    resp = _make_response(
+        HTTPStatus.OK,
+        b"",
+        parsed=UnauthorizedResponse(message="Invalid API key", trace_id="trace-123"),
+    )
+
+    with pytest.raises(RuntimeError, match="unknown error"):
+        unwrap_response_allow_none(resp)
+
+
+def test_unwrap_allow_none_raises_401_with_server_message():
+    body = json.dumps({"message": "Invalid API key"}).encode()
+    resp = _make_response(
+        HTTPStatus.UNAUTHORIZED,
+        body,
+        parsed=UnauthorizedResponse(message="Invalid API key", trace_id="trace-123"),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        unwrap_response_allow_none(resp)
+
+    assert exc_info.value.status_code == HTTPStatus.UNAUTHORIZED
+    assert exc_info.value.detail == "Invalid API key"
+
+
 # -- unwrap_response tests --
 
 
@@ -179,3 +211,29 @@ def test_unwrap_raises_on_validation_error():
 
     with pytest.raises(RuntimeError, match="unknown error"):
         unwrap_response(resp)
+
+
+def test_unwrap_raises_on_unauthorized_response():
+    resp = _make_response(
+        HTTPStatus.OK,
+        b"",
+        parsed=UnauthorizedResponse(message="Invalid API key", trace_id="trace-123"),
+    )
+
+    with pytest.raises(RuntimeError, match="unknown error"):
+        unwrap_response(resp)
+
+
+def test_unwrap_raises_401_with_server_message():
+    body = json.dumps({"message": "Invalid API key"}).encode()
+    resp = _make_response(
+        HTTPStatus.UNAUTHORIZED,
+        body,
+        parsed=UnauthorizedResponse(message="Invalid API key", trace_id="trace-123"),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        unwrap_response(resp)
+
+    assert exc_info.value.status_code == HTTPStatus.UNAUTHORIZED
+    assert exc_info.value.detail == "Invalid API key"

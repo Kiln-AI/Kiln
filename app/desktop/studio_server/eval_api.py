@@ -6,6 +6,7 @@ from typing import Annotated, Any, Dict, List, Set, Tuple, Type, TypeVar
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import StreamingResponse
+from kiln_ai.adapters.adapter_registry import validate_run_config_tool_names
 from kiln_ai.adapters.eval.base_eval import (
     DEFAULT_SYSTEM_PROMPT,
     build_default_llm_judge_prompt,
@@ -1376,6 +1377,23 @@ def compute_score_summary(
     )
 
 
+async def validate_run_config_tools(
+    task: Task, run_config_properties: RunConfigProperties
+) -> None:
+    """Reject a run config whose tools or skills would collide at runtime.
+
+    Tool and skill names may repeat across a project, but within one run
+    config every tool must expose a unique function name and every skill a
+    unique skill name. Validating here catches collisions at selection time,
+    instead of at inference time; the runtime check remains the backstop for
+    tools renamed after the run config was created.
+    """
+    try:
+        await validate_run_config_tool_names(task, run_config_properties)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
 def connect_evals_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
@@ -1670,6 +1688,7 @@ def connect_evals_api(app: FastAPI):
     ) -> TaskRunConfig:
         task = task_from_id(project_id, task_id)
         name = request.name or generate_memorable_name()
+        await validate_run_config_tools(task, request.run_config_properties)
 
         parent_project = task.parent_project()
         if parent_project is None:

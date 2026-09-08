@@ -10,15 +10,11 @@ from kiln_ai.adapters.eval.v2_eval_code_eval import has_add_code_trust
 from kiln_ai.datamodel.code_tool import CodeTool
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.tool_id import ToolId
-from kiln_ai.run_context import (
-    clear_agent_run_id,
-    generate_agent_run_id,
-    set_agent_run_id,
-)
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.code_tool import ChildOutcome, PythonCodeTool
-from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.tools.mcp_session_manager import mcp_session_scope
 from kiln_ai.tools.sandbox_bridge import ToolCallLogEntry
+from kiln_ai.tools.tool_registry import validate_unique_allowlist_tool_names
 from kiln_server.project_api import project_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -225,18 +221,8 @@ def connect_code_tool_api(app: FastAPI):
         if not has_add_code_trust(str(project.path)):
             return CodeToolCreateResponse(not_trusted=True)
 
-        existing = project.code_tools(readonly=True)
-        for ct in existing:
-            if (
-                not ct.is_archived
-                and ct.tool_function_name == request.tool_function_name
-            ):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"A non-archived code tool with function name '{request.tool_function_name}' already exists.",
-                )
-
         try:
+            await validate_unique_allowlist_tool_names(request.tool_allowlist, project)
             code_tool = CodeTool(
                 name=request.name,
                 description=request.description,
@@ -298,9 +284,7 @@ def connect_code_tool_api(app: FastAPI):
             raise HTTPException(status_code=400, detail=str(e))
 
         tool_call_log: list[ToolCallLogEntry] = []
-        run_id = generate_agent_run_id()
-        set_agent_run_id(run_id)
-        try:
+        async with mcp_session_scope():
             tool = PythonCodeTool(
                 transient_tool,
                 project,
@@ -311,11 +295,6 @@ def connect_code_tool_api(app: FastAPI):
                 ToolCallContext(allow_saving=False), request.params
             )
             return _outcome_to_test_response(outcome, tool_call_log)
-        finally:
-            try:
-                await MCPSessionManager.shared().cleanup_session(run_id)
-            finally:
-                clear_agent_run_id()
 
     @app.get(
         "/api/projects/{project_id}/code_tools",

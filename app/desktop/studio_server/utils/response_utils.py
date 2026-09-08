@@ -5,6 +5,7 @@ from typing_extensions import TypeVar
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     HTTPValidationError,
+    UnauthorizedResponse,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import Response
 
@@ -33,7 +34,7 @@ T = TypeVar("T")
 
 
 def unwrap_response_allow_none(
-    response: Response[T | HTTPValidationError],
+    response: Response[T | HTTPValidationError | UnauthorizedResponse],
     default_detail: str = "Unknown error.",
 ) -> T | None:
     """
@@ -44,16 +45,16 @@ def unwrap_response_allow_none(
     check_response_error(response, default_detail=default_detail)
 
     parsed_response = response.parsed
-    # we must check for this to narrow down the type, but this should never
-    # happen since check_response_error should raise if it is a validation error
-    if isinstance(parsed_response, HTTPValidationError):
+    # we must check for these to narrow down the type, but this should never
+    # happen since check_response_error should raise on any non-2xx response
+    if isinstance(parsed_response, (HTTPValidationError, UnauthorizedResponse)):
         raise RuntimeError("An unknown error occurred.")
 
     return parsed_response
 
 
 def unwrap_response(
-    response: Response[T | HTTPValidationError],
+    response: Response[T | HTTPValidationError | UnauthorizedResponse],
     default_detail: str = "Unknown error.",
     none_detail: str = "An unknown error occurred.",
 ) -> T:

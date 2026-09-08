@@ -8,6 +8,10 @@
     skills_store,
     skills_store_initialized,
   } from "$lib/stores/skills_store"
+  import {
+    duplicate_tool_names,
+    tool_display_name,
+  } from "$lib/stores/tools_store"
   import { goto } from "$app/navigation"
   import type { SkillsSelectorSettings } from "./skills_selector_settings"
 
@@ -182,10 +186,15 @@
     )
 
     if (skill_sets.length > 0) {
+      // Skill names may repeat across a project (coexisting versions), so an
+      // ambiguous one is qualified by its id — otherwise the rows are
+      // indistinguishable and the duplicate-name rejection at save has no
+      // row to point at.
+      const duplicate_names = duplicate_tool_names(skill_sets)
       const skill_options = skill_sets.flatMap((ts) =>
         ts.tools.map((tool) => ({
           value: tool.id,
-          label: tool.name,
+          label: tool_display_name(tool, duplicate_names),
           description: tool.description ? tool.description.trim() : undefined,
           disabled: resolved.mandatory_skills
             ? resolved.mandatory_skills.includes(tool.id)

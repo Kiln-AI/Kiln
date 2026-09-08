@@ -6,6 +6,7 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.client_version_policy import ClientVersionPolicy
+from ...models.unauthorized_response import UnauthorizedResponse
 from ...types import Response
 
 
@@ -19,11 +20,18 @@ def _get_kwargs() -> dict[str, Any]:
     return _kwargs
 
 
-def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> ClientVersionPolicy | None:
+def _parse_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> ClientVersionPolicy | UnauthorizedResponse | None:
     if response.status_code == 200:
         response_200 = ClientVersionPolicy.from_dict(response.json())
 
         return response_200
+
+    if response.status_code == 401:
+        response_401 = UnauthorizedResponse.from_dict(response.json())
+
+        return response_401
 
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
@@ -31,7 +39,9 @@ def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Res
         return None
 
 
-def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Response[ClientVersionPolicy]:
+def _build_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> Response[ClientVersionPolicy | UnauthorizedResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -43,7 +53,7 @@ def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Res
 def sync_detailed(
     *,
     client: AuthenticatedClient,
-) -> Response[ClientVersionPolicy]:
+) -> Response[ClientVersionPolicy | UnauthorizedResponse]:
     """Get Client Version Policy
 
      Report the version verdict for this client without rejecting it.
@@ -57,7 +67,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ClientVersionPolicy]
+        Response[ClientVersionPolicy | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs()
@@ -72,7 +82,7 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient,
-) -> ClientVersionPolicy | None:
+) -> ClientVersionPolicy | UnauthorizedResponse | None:
     """Get Client Version Policy
 
      Report the version verdict for this client without rejecting it.
@@ -86,7 +96,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ClientVersionPolicy
+        ClientVersionPolicy | UnauthorizedResponse
     """
 
     return sync_detailed(
@@ -97,7 +107,7 @@ def sync(
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
-) -> Response[ClientVersionPolicy]:
+) -> Response[ClientVersionPolicy | UnauthorizedResponse]:
     """Get Client Version Policy
 
      Report the version verdict for this client without rejecting it.
@@ -111,7 +121,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ClientVersionPolicy]
+        Response[ClientVersionPolicy | UnauthorizedResponse]
     """
 
     kwargs = _get_kwargs()
@@ -124,7 +134,7 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient,
-) -> ClientVersionPolicy | None:
+) -> ClientVersionPolicy | UnauthorizedResponse | None:
     """Get Client Version Policy
 
      Report the version verdict for this client without rejecting it.
@@ -138,7 +148,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ClientVersionPolicy
+        ClientVersionPolicy | UnauthorizedResponse
     """
 
     return (
