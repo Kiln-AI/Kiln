@@ -94,6 +94,10 @@ tags_metadata = [
         "description": "Create, test, and manage user-authored Python code tools.",
     },
     {
+        "name": "Synthetic Worlds",
+        "description": "Manage synthetic worlds: replicas of an agent's tool set, their fixtures, and the synthetic tools that stand in for real ones during evals.",
+    },
+    {
         "name": "Tools & MCP",
         "description": "Manage tool servers and MCP connections.",
     },
