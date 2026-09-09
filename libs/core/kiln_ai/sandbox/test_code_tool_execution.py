@@ -1520,9 +1520,8 @@ class TestSyntheticInstanceHandoff:
         instance = SyntheticInstance(
             instance_id="inst_abc",
             world_id="w",
-            fixture_id="f",
             path=str(tmp_path / "inst"),
-            fixture_data_path=str(tmp_path / "fixture"),
+            source_path=str(tmp_path / "fixture"),
         )
         result = await tool.run(ToolCallContext(synthetic_instance=instance), x="a")
         assert result.is_error is False
@@ -1563,9 +1562,8 @@ class TestSyntheticInstanceHandoff:
         instance = SyntheticInstance(
             instance_id="inst_lib",
             world_id="w",
-            fixture_id="f",
             path=str(tmp_path / "inst"),
-            fixture_data_path=str(tmp_path / "fixture"),
+            source_path=str(tmp_path / "fixture"),
             world_lib_path=str(lib),
         )
         result = await tool.run(ToolCallContext(synthetic_instance=instance), x="a")

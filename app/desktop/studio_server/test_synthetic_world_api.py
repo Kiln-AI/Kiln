@@ -79,16 +79,22 @@ class TestWorlds:
         got = client.get(f"/api/projects/p1/synthetic_worlds/{world_id}").json()
         assert got["name"] == "World A"
         assert got["framework_content_hash"] == "eng1"
-        assert got["tool_count"] == 0 and got["fixture_count"] == 0
+        assert got["launcher"] == "local_files"
+        assert got["tool_count"] == 0
 
     def test_update(self, client, world_id):
         r = client.patch(
             f"/api/projects/p1/synthetic_worlds/{world_id}",
-            json={"strict": True, "description": "d"},
+            json={
+                "strict": True,
+                "description": "d",
+                "launcher_config": {"image": "x"},
+            },
         )
         assert r.status_code == 200
         assert r.json()["strict"] is True
         assert r.json()["description"] == "d"
+        assert r.json()["launcher_config"] == {"image": "x"}
         r = client.patch(
             f"/api/projects/p1/synthetic_worlds/{world_id}", json={"unknown": 1}
         )
@@ -227,33 +233,36 @@ class TestFixtures:
     def test_create_upload_list_delete(self, client, project, world_id):
         frozen = datetime(2026, 7, 14, tzinfo=timezone.utc)
         r = client.post(
-            f"/api/projects/p1/synthetic_worlds/{world_id}/fixtures",
-            json={"name": "Fixture A", "frozen_time": frozen.isoformat()},
+            f"/api/projects/p1/synthetic_worlds/{world_id}/fixtures/alpha",
+            json={"manifest": {"frozen_time": frozen.isoformat()}},
         )
         assert r.status_code == 200, r.text
-        fixture_id = r.json()["id"]
-        assert r.json()["data_files"] == []
-        assert datetime.fromisoformat(r.json()["frozen_time"]) == frozen
+        assert r.json() == {
+            "fixture_id": "alpha",
+            "manifest": {"frozen_time": frozen.isoformat()},
+            "data_files": [],
+        }
 
         r = client.post(
-            f"/api/projects/p1/synthetic_worlds/{world_id}/fixtures/{fixture_id}/data",
+            f"/api/projects/p1/synthetic_worlds/{world_id}/fixtures/alpha/data",
             files={"file": ("fixture.db", b"sqlite bytes", "application/octet-stream")},
         )
         assert r.status_code == 200, r.text
         assert r.json()["data_files"] == ["fixture.db"]
 
         world = SyntheticWorld.from_id_and_parent_path(world_id, project.path)
-        fixture = world.fixture_by_id(fixture_id)
-        assert (fixture.data_dir() / "fixture.db").read_bytes() == b"sqlite bytes"
+        assert (
+            world.world_dir() / "fixtures" / "alpha" / "fixture.db"
+        ).read_bytes() == (b"sqlite bytes")
 
         listed = client.get(
             f"/api/projects/p1/synthetic_worlds/{world_id}/fixtures"
         ).json()
-        assert [f["id"] for f in listed] == [fixture_id]
+        assert [f["fixture_id"] for f in listed] == ["alpha"]
 
         assert (
             client.delete(
-                f"/api/projects/p1/synthetic_worlds/{world_id}/fixtures/{fixture_id}"
+                f"/api/projects/p1/synthetic_worlds/{world_id}/fixtures/alpha"
             ).status_code
             == 200
         )
@@ -262,28 +271,44 @@ class TestFixtures:
             == []
         )
 
-    def test_upload_rejects_traversal_names(self, client, world_id):
-        fixture_id = client.post(
-            f"/api/projects/p1/synthetic_worlds/{world_id}/fixtures", json={"name": "F"}
-        ).json()["id"]
+    def test_duplicate_fixture_rejected(self, client, world_id):
+        url = f"/api/projects/p1/synthetic_worlds/{world_id}/fixtures/alpha"
+        assert client.post(url, json={}).status_code == 200
+        assert client.post(url, json={}).status_code == 400
+
+    @pytest.mark.parametrize("bad", ["..", "a%2F..%2Fb", "%2E"])
+    def test_fixture_id_cannot_escape(self, client, world_id, bad):
         r = client.post(
-            f"/api/projects/p1/synthetic_worlds/{world_id}/fixtures/{fixture_id}/data",
-            files={"file": (".hidden", b"x", "application/octet-stream")},
+            f"/api/projects/p1/synthetic_worlds/{world_id}/fixtures/{bad}", json={}
+        )
+        assert r.status_code in (400, 404, 405)
+
+    def test_upload_rejects_hidden_and_manifest_names(self, client, world_id):
+        client.post(
+            f"/api/projects/p1/synthetic_worlds/{world_id}/fixtures/alpha", json={}
+        )
+        url = f"/api/projects/p1/synthetic_worlds/{world_id}/fixtures/alpha/data"
+        r = client.post(
+            url, files={"file": (".hidden", b"x", "application/octet-stream")}
         )
         assert r.status_code == 400
         r = client.post(
-            f"/api/projects/p1/synthetic_worlds/{world_id}/fixtures/{fixture_id}/data",
-            files={"file": ("../escape.db", b"x", "application/octet-stream")},
+            url, files={"file": ("fixture.yaml", b"x", "application/octet-stream")}
+        )
+        assert r.status_code == 400
+        r = client.post(
+            url, files={"file": ("../escape.db", b"x", "application/octet-stream")}
         )
         assert r.status_code == 200
         assert r.json()["data_files"] == ["escape.db"]
 
-    def test_naive_frozen_time_rejected(self, client, world_id):
-        r = client.post(
-            f"/api/projects/p1/synthetic_worlds/{world_id}/fixtures",
-            json={"name": "F", "frozen_time": "2026-07-14T00:00:00"},
+    def test_fixture_endpoints_only_for_local_files_worlds(self, client, world_id):
+        client.patch(
+            f"/api/projects/p1/synthetic_worlds/{world_id}", json={"launcher": "matrix"}
         )
+        r = client.get(f"/api/projects/p1/synthetic_worlds/{world_id}/fixtures")
         assert r.status_code == 400
+        assert "matrix" in r.json()["message"]
 
     def test_missing_fixture(self, client, world_id):
         assert (

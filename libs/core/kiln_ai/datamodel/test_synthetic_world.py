@@ -1,4 +1,4 @@
-"""Tests for the synthetic world datamodel: world, tools, fixtures, instance records."""
+"""Tests for the synthetic world datamodel: world, tools, environment refs, instance records."""
 
 from datetime import datetime, timezone
 
@@ -14,13 +14,13 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.synthetic_world import (
-    FIXTURE_DATA_DIRNAME,
+    LOCAL_FILES_LAUNCHER,
     SyntheticEnvironment,
-    SyntheticFixture,
     SyntheticInstance,
     SyntheticInstanceInfo,
     SyntheticTool,
     SyntheticWorld,
+    canonical_json,
     synthetic_fingerprint,
 )
 from kiln_ai.datamodel.task import Task
@@ -69,16 +69,6 @@ def _tool(world, replaces="kiln_tool::code::real1", fn="lookup", **overrides):
     return t
 
 
-def _fixture(world, name="Fixture A", frozen_time=NOW, files=("fixture.db",)):
-    f = SyntheticFixture(name=name, parent=world, frozen_time=frozen_time)
-    f.save_to_file()
-    data = f.data_dir()
-    data.mkdir()
-    for fname in files:
-        (data / fname).write_bytes(b"data for " + fname.encode())
-    return f
-
-
 class TestOnDiskLayout:
     def test_world_under_project(self, project, world):
         assert world.path == (
@@ -88,6 +78,26 @@ class TestOnDiskLayout:
             / "synthetic_world.kiln"
         )
         assert [w.id for w in project.synthetic_worlds()] == [world.id]
+        assert world.world_dir() == world.path.parent
+        assert world.lib_dir() == world.path.parent / "lib"
+
+    def test_world_defaults(self, world):
+        loaded = SyntheticWorld.load_from_file(world.path)
+        assert loaded.launcher == LOCAL_FILES_LAUNCHER
+        assert loaded.launcher_config == {}
+        assert loaded.strict is False
+
+    def test_world_launcher_round_trip(self, project):
+        w = SyntheticWorld(
+            name="hosted",
+            parent=project,
+            launcher="matrix",
+            launcher_config={"server": "https://matrix.example", "image": "acme:1"},
+        )
+        w.save_to_file()
+        loaded = SyntheticWorld.load_from_file(w.path)
+        assert loaded.launcher == "matrix"
+        assert loaded.launcher_config["image"] == "acme:1"
 
     def test_tool_under_world_with_sibling_code(self, world):
         t = _tool(world)
@@ -98,17 +108,6 @@ class TestOnDiskLayout:
         assert loaded.code == CODE
         assert loaded.replaces_tool_id == "kiln_tool::code::real1"
 
-    def test_fixture_under_world(self, world):
-        f = _fixture(world)
-        assert f.path.name == "synthetic_fixture.kiln"
-        assert f.data_dir() == f.path.parent / FIXTURE_DATA_DIRNAME
-        loaded = world.fixtures()[0]
-        assert loaded.frozen_time == NOW
-        assert world.fixture_by_id(f.id).id == f.id
-
-    def test_lib_dir(self, world):
-        assert world.lib_dir() == world.path.parent / "lib"
-
     def test_synthetic_tools_are_not_project_code_tools(self, project, world):
         _tool(world)
         assert project.code_tools() == []
@@ -117,11 +116,7 @@ class TestOnDiskLayout:
 class TestSyntheticTool:
     @pytest.mark.parametrize(
         "bad",
-        [
-            "kiln_tool::synthetic::w::t",
-            "kiln_tool::skill::s1",
-            "kiln_unmanaged::slug",
-        ],
+        ["kiln_tool::synthetic::w::t", "kiln_tool::skill::s1", "kiln_unmanaged::slug"],
     )
     def test_replaces_must_be_a_real_tool(self, world, bad):
         with pytest.raises(ValidationError, match="real, registry-resolvable"):
@@ -233,43 +228,17 @@ class TestBindings:
         assert world.validate_bindings(project) == []
 
 
-class TestFixture:
-    def test_frozen_time_must_be_tz_aware(self, world):
-        with pytest.raises(ValidationError, match="timezone-aware"):
-            SyntheticFixture(name="f", parent=world, frozen_time=datetime(2026, 1, 1))
-
-    def test_require_data_dir(self, world):
-        f = SyntheticFixture(name="empty", parent=world)
-        f.save_to_file()
-        with pytest.raises(ValueError, match="has no data/"):
-            f.require_data_dir()
-        f.data_dir().mkdir()
-        with pytest.raises(ValueError, match="empty data/"):
-            f.require_data_dir()
-        (f.data_dir() / "x.db").write_bytes(b"x")
-        assert f.require_data_dir() == f.data_dir()
-
-    def test_resolve_data_file_guards_traversal(self, world):
-        f = _fixture(world)
-        assert f.resolve_data_file("fixture.db").name == "fixture.db"
-        with pytest.raises(ValueError, match="traversal"):
-            f.resolve_data_file("../synthetic_fixture.kiln")
-        with pytest.raises(ValueError, match="empty"):
-            f.resolve_data_file(" ")
-
-    def test_unsaved_fixture_has_no_data_dir(self, world):
-        with pytest.raises(ValueError, match="saved"):
-            SyntheticFixture(name="f", parent=world).data_dir()
-
-
 class TestEnvironmentAndInstance:
-    def test_environment_requires_ids(self):
+    def test_environment_requires_world_id(self):
         with pytest.raises(ValidationError):
-            SyntheticEnvironment(world_id="", fixture_id="f")
-        with pytest.raises(ValidationError, match="timezone-aware"):
-            SyntheticEnvironment(
-                world_id="w", fixture_id="f", frozen_time=datetime(2026, 1, 1)
-            )
+            SyntheticEnvironment(world_id="")
+        assert SyntheticEnvironment(world_id="w").config == {}
+
+    def test_environment_config_is_opaque_json(self):
+        env = SyntheticEnvironment(
+            world_id="w", config={"fixture_id": "f", "seed": 42, "opts": {"a": [1, 2]}}
+        )
+        assert env.config["opts"] == {"a": [1, 2]}
 
     def test_eval_input_round_trips_environment(self, project):
         task = Task(name="t", instruction="i", parent=project)
@@ -278,14 +247,14 @@ class TestEnvironmentAndInstance:
             parent=task,
             data=SingleTurnEvalInputData(user_message=UserMessage(text="hi")),
             synthetic_environment=SyntheticEnvironment(
-                world_id="w1", fixture_id="f1", frozen_time=NOW
+                world_id="w1",
+                config={"fixture_id": "f1", "frozen_time": NOW.isoformat()},
             ),
         )
         ei.save_to_file()
         loaded = task.eval_inputs()[0]
         assert loaded.synthetic_environment is not None
-        assert loaded.synthetic_environment.fixture_id == "f1"
-        assert loaded.synthetic_environment.frozen_time == NOW
+        assert loaded.synthetic_environment.config["fixture_id"] == "f1"
 
     def test_eval_input_defaults_to_no_environment(self):
         ei = EvalInput(
@@ -293,36 +262,45 @@ class TestEnvironmentAndInstance:
         )
         assert ei.synthetic_environment is None
 
-    def _instance(self, unchanged=False):
-        return SyntheticInstance(
+    def _instance(self, **overrides):
+        base = dict(
             instance_id="inst_1",
             world_id="w1",
-            fixture_id="f1",
+            config={"fixture_id": "f1"},
             path="/cache/inst_1",
-            fixture_data_path="/proj/fixtures/f1/data",
+            source_path="/proj/fixtures/f1",
             world_lib_path="/proj/lib",
-            frozen_time=NOW,
+            metadata={"fixture_id": "f1", "frozen_time": NOW.isoformat()},
             framework_content_hash="eng1",
-            unchanged=unchanged,
         )
+        base.update(overrides)
+        return SyntheticInstance(**base)
 
     def test_effective_path_follows_unchanged(self):
         assert self._instance().effective_path == "/cache/inst_1"
-        assert self._instance(unchanged=True).effective_path == "/proj/fixtures/f1/data"
+        assert self._instance(unchanged=True).effective_path == "/proj/fixtures/f1"
+        hosted = self._instance(path=None, source_path=None, endpoint="http://h/1")
+        assert hosted.effective_path is None
+        assert hosted.endpoint == "http://h/1"
 
-    def test_sandbox_dict_is_plain_values(self):
+    def test_sandbox_dict_is_plain_json(self):
         d = self._instance().to_sandbox_dict()
         assert d["path"] == "/cache/inst_1"
-        assert d["frozen_time"] == "2026-07-14T00:00:00+00:00"
+        assert d["config"] == {"fixture_id": "f1"}
+        assert d["metadata"]["frozen_time"] == NOW.isoformat()
         assert d["world_lib_path"] == "/proj/lib"
-        assert all(isinstance(v, (str, bool)) or v is None for v in d.values())
+        canonical_json(d)  # JSON-serializable
 
-    def test_info_has_no_paths(self):
+    def test_info_has_no_locations(self):
         info = SyntheticInstanceInfo.from_instance(self._instance())
         assert info.instance_id == "inst_1"
-        assert "path" not in SyntheticInstanceInfo.model_fields
-        assert "path" not in EvalTaskInput.model_json_schema()["properties"]
-        assert "synthetic_instance" in EvalTaskInput.model_json_schema()["properties"]
+        assert info.metadata["fixture_id"] == "f1"
+        for field in ("path", "endpoint", "source_path"):
+            assert field not in SyntheticInstanceInfo.model_fields
+        props = EvalTaskInput.model_json_schema()["properties"]
+        assert "synthetic_instance" in props
+        defs = EvalTaskInput.model_json_schema().get("$defs", {})
+        assert "path" not in defs["SyntheticInstanceInfo"]["properties"]
 
     def test_task_run_persists_instance_and_variant(self, project):
         task = Task(name="t", instruction="i", parent=project)
@@ -343,17 +321,17 @@ class TestEnvironmentAndInstance:
                 ),
             ),
             eval_source=EvalItemSource(
-                source_type="eval_input", source_id="i1", variant="syn1:x"
+                source_type="eval_input", source_id="i1", variant="syn2:x"
             ),
             synthetic_instance=self._instance(),
         )
         run.save_to_file()
         loaded = TaskRun.load_from_file(run.path)
-        assert loaded.eval_source.variant == "syn1:x"
+        assert loaded.eval_source.variant == "syn2:x"
         assert loaded.synthetic_instance.instance_id == "inst_1"
         eti = EvalTaskInput.from_task_run(loaded)
         assert eti.synthetic_instance is not None
-        assert eti.synthetic_instance.fixture_id == "f1"
+        assert eti.synthetic_instance.config == {"fixture_id": "f1"}
 
     def test_from_trace_without_instance(self, project):
         task = Task(name="t", instruction="i", parent=project)
@@ -372,10 +350,17 @@ class TestEnvironmentAndInstance:
 
 class TestFingerprint:
     def test_fingerprint_changes_with_each_input(self):
-        base = synthetic_fingerprint("w", "f", NOW, "eng1")
-        assert base.startswith("syn1:")
-        assert synthetic_fingerprint("w", "f", NOW, "eng1") == base
-        assert synthetic_fingerprint("w", "f2", NOW, "eng1") != base
-        assert synthetic_fingerprint("w", "f", None, "eng1") != base
-        assert synthetic_fingerprint("w", "f", NOW, "eng2") != base
-        assert synthetic_fingerprint("w2", "f", NOW, "eng1") != base
+        base = synthetic_fingerprint("w", {"fixture_id": "f"}, "eng1")
+        assert base.startswith("syn2:")
+        assert synthetic_fingerprint("w", {"fixture_id": "f"}, "eng1") == base
+        assert synthetic_fingerprint("w", {"fixture_id": "f2"}, "eng1") != base
+        assert (
+            synthetic_fingerprint("w", {"fixture_id": "f", "seed": 1}, "eng1") != base
+        )
+        assert synthetic_fingerprint("w", {"fixture_id": "f"}, "eng2") != base
+        assert synthetic_fingerprint("w2", {"fixture_id": "f"}, "eng1") != base
+
+    def test_fingerprint_is_order_independent(self):
+        assert synthetic_fingerprint(
+            "w", {"a": 1, "b": 2}, None
+        ) == synthetic_fingerprint("w", {"b": 2, "a": 1}, None)

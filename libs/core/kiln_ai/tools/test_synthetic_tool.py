@@ -78,9 +78,8 @@ def _instance(tmp_path) -> SyntheticInstance:
     return SyntheticInstance(
         instance_id="inst_test",
         world_id="w",
-        fixture_id="f",
         path=str(tmp_path / "inst"),
-        fixture_data_path=str(tmp_path / "fixture"),
+        source_path=str(tmp_path / "fixture"),
     )
 
 
