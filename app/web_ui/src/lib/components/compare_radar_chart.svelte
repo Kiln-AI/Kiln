@@ -37,6 +37,9 @@
   // the "Full Scale" axis mode. Keys without an entry (unbounded custom scores)
   // fall back to the data-relative max.
   export let scoreAxisMaxes: Record<string, number> = {}
+  // Display names the user has given rows in the table, by key. They win over the
+  // usage axis names below too, so a renamed cost row is renamed on its axis.
+  export let metricLabels: Record<string, string> = {}
 
   // Axis scaling mode. Relative scales each axis to the best value across the selected
   // run configs, which is the better lens for spotting differences between configs.
@@ -171,6 +174,7 @@ Cost, latency and token axes score each run config against the others, so they s
 
   // Get labels for radar indicators
   function getKeyLabel(dataKey: string): string {
+    if (metricLabels[dataKey]) return metricLabels[dataKey]
     if (USAGE_LABELS[dataKey]) return USAGE_LABELS[dataKey]
     for (const feature of comparisonFeatures) {
       const item = feature.items.find((i) => i.key === dataKey)
