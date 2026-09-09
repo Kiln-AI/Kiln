@@ -2732,6 +2732,7 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_synthetic_user=True,
                 model_id="anthropic/claude-haiku-4.5",
                 structured_output_mode=StructuredOutputMode.function_calling,
                 openrouter_reasoning_object=True,
@@ -2740,6 +2741,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
+                suggested_for_synthetic_user=True,
                 model_id="claude-haiku-4-5-20251001",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
@@ -8527,6 +8529,7 @@ built_in_models: List[KilnModel] = [
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
+                suggested_for_synthetic_user=True,
                 model_id="z-ai/glm-5.3-flash",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=False,
@@ -8549,6 +8552,7 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
+                suggested_for_synthetic_user=True,
                 model_id="zai-org/GLM-5.3-Flash",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=False,
