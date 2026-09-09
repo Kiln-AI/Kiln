@@ -3,9 +3,11 @@
 import pytest
 
 from kiln_ai.datamodel.code_tool import CodeTool
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.synthetic_world import (
     SyntheticInstance,
+    SyntheticInstanceConnection,
     SyntheticTool,
     SyntheticWorld,
 )
@@ -19,7 +21,8 @@ from kiln_ai.run_context import (
 from kiln_ai.tools.base_tool import ToolCallContext
 from kiln_ai.tools.built_in_tools.math_tools import AddTool
 from kiln_ai.tools.code_tool import PythonCodeTool
-from kiln_ai.tools.synthetic_tool import SyntheticToolProxy
+from kiln_ai.tools.mcp_server_tool import MCPServerTool
+from kiln_ai.tools.synthetic_tool import SyntheticServerToolProxy, SyntheticToolProxy
 from kiln_ai.tools.tool_registry import (
     SyntheticWorldStrictError,
     tool_from_id_and_project,
@@ -203,3 +206,134 @@ class TestProxyExecution:
         tool = tool_from_id_and_project(build_code_tool_id(real_tool.id), project)
         result = await tool.run(ToolCallContext(), x="q")
         assert result.output == "real:q"
+
+
+@pytest.fixture
+def mcp_server(project):
+    server = ExternalToolServer(
+        name="ticketing",
+        parent=project,
+        type=ToolServerType.remote_mcp,
+        properties={"server_url": "https://real.example.com/mcp", "headers": {}},
+    )
+    server.save_to_file()
+    return server
+
+
+def _hosted_instance(connection: SyntheticInstanceConnection | None):
+    return SyntheticInstance(
+        instance_id="inst_hosted", world_id="w", connection=connection
+    )
+
+
+class TestServerLevelSwap:
+    """A world that replaces a whole MCP server: every tool of that server resolves to
+    the same-named tool on the launched instance, under the real id."""
+
+    def _activate(self, world, instance):
+        return set_synthetic_instance(
+            SyntheticInstanceContext(
+                instance=instance, world=world, bindings=world.bindings()
+            )
+        )
+
+    async def test_http_instance_serves_the_servers_tools(
+        self, project, world, mcp_server
+    ):
+        world.replaces_tool_server_id = mcp_server.id
+        world.save_to_file()
+        real_id = f"mcp::remote::{mcp_server.id}::search_tickets"
+        connection = SyntheticInstanceConnection(
+            url="http://127.0.0.1:9000/w/x/i/inst_hosted/mcp",
+            headers={"Authorization": "Bearer per-instance"},
+        )
+        token = self._activate(world, _hosted_instance(connection))
+        try:
+            tool = tool_from_id_and_project(real_id, project)
+        finally:
+            reset_synthetic_instance(token)
+        assert isinstance(tool, SyntheticServerToolProxy)
+        assert await tool.id() == real_id
+        assert await tool.name() == "search_tickets"
+        server = tool.tool_server
+        assert server.type == ToolServerType.remote_mcp
+        assert server.name == "ticketing"
+        assert server.properties["server_url"] == connection.url
+        assert server.properties["headers"] == {"Authorization": "Bearer per-instance"}
+        assert server.id != mcp_server.id, "sessions are cached per instance"
+        assert server.path is None, "never saved"
+
+    async def test_stdio_instance_becomes_a_local_server(
+        self, project, world, mcp_server
+    ):
+        world.replaces_tool_server_id = mcp_server.id
+        world.save_to_file()
+        connection = SyntheticInstanceConnection(
+            transport="stdio",
+            command="world-server",
+            args=["--instance", "inst_hosted"],
+            env={"WORLD_TOKEN": "s3cret"},
+        )
+        token = self._activate(world, _hosted_instance(connection))
+        try:
+            tool = tool_from_id_and_project(
+                f"mcp::remote::{mcp_server.id}::search_tickets", project
+            )
+        finally:
+            reset_synthetic_instance(token)
+        assert isinstance(tool, SyntheticServerToolProxy)
+        server = tool.tool_server
+        assert server.type == ToolServerType.local_mcp
+        assert server.properties["command"] == "world-server"
+        assert server.properties["args"] == ["--instance", "inst_hosted"]
+        assert server.properties["env_vars"] == {"WORLD_TOKEN": "s3cret"}
+
+    async def test_other_servers_and_no_context_are_untouched(
+        self, project, world, mcp_server
+    ):
+        world.replaces_tool_server_id = "some-other-server"
+        world.save_to_file()
+        real_id = f"mcp::remote::{mcp_server.id}::search_tickets"
+        connection = SyntheticInstanceConnection(url="http://127.0.0.1:9000/mcp")
+        token = self._activate(world, _hosted_instance(connection))
+        try:
+            tool = tool_from_id_and_project(real_id, project)
+        finally:
+            reset_synthetic_instance(token)
+        assert isinstance(tool, MCPServerTool)
+        assert not isinstance(tool, SyntheticServerToolProxy)
+        assert isinstance(tool_from_id_and_project(real_id, project), MCPServerTool)
+
+    async def test_instance_without_connection_is_an_error(
+        self, project, world, mcp_server
+    ):
+        world.replaces_tool_server_id = mcp_server.id
+        world.save_to_file()
+        token = self._activate(world, _hosted_instance(None))
+        try:
+            with pytest.raises(ValueError, match="has no connection"):
+                tool_from_id_and_project(
+                    f"mcp::remote::{mcp_server.id}::search_tickets", project
+                )
+        finally:
+            reset_synthetic_instance(token)
+
+    async def test_strict_world_counts_the_server_as_bound(
+        self, project, world, mcp_server
+    ):
+        world.replaces_tool_server_id = mcp_server.id
+        world.strict = True
+        world.save_to_file()
+        connection = SyntheticInstanceConnection(url="http://127.0.0.1:9000/mcp")
+        token = self._activate(world, _hosted_instance(connection))
+        try:
+            assert isinstance(
+                tool_from_id_and_project(
+                    f"mcp::remote::{mcp_server.id}::search_tickets", project
+                ),
+                SyntheticServerToolProxy,
+            )
+            with pytest.raises(SyntheticWorldStrictError):
+                tool_from_id_and_project("mcp::remote::other::search", project)
+        finally:
+            reset_synthetic_instance(token)

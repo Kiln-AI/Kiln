@@ -17,6 +17,7 @@ from kiln_ai.datamodel.synthetic_world import (
     LOCAL_FILES_LAUNCHER,
     SyntheticEnvironment,
     SyntheticInstance,
+    SyntheticInstanceConnection,
     SyntheticInstanceInfo,
     SyntheticTool,
     SyntheticWorld,
@@ -48,7 +49,7 @@ def project(tmp_path) -> Project:
 
 @pytest.fixture
 def world(project) -> SyntheticWorld:
-    w = SyntheticWorld(name="Acme World", parent=project, framework_content_hash="eng1")
+    w = SyntheticWorld(name="Acme World", parent=project, content_version="eng1")
     w.save_to_file()
     return w
 
@@ -223,6 +224,19 @@ class TestBindings:
             "kiln_tool::code::nope: real code tool not found in project"
         ]
 
+    def test_replaces_server_of_matches_only_that_servers_tools(self, world):
+        assert world.replaces_server_of("mcp::remote::srv1::search") is False
+        world.replaces_tool_server_id = "srv1"
+        assert world.replaces_server_of("mcp::remote::srv1::search") is True
+        assert world.replaces_server_of("mcp::local::srv1::search") is True
+        assert world.replaces_server_of("mcp::remote::srv2::search") is False
+        assert world.replaces_server_of("kiln_tool::code::srv1") is False
+
+    def test_validate_bindings_warns_on_missing_replaced_server(self, project, world):
+        world.replaces_tool_server_id = "srv-missing"
+        warnings = world.validate_bindings(project)
+        assert any("srv-missing" in w and "not found" in w for w in warnings)
+
     def test_validate_bindings_never_contacts_mcp(self, project, world):
         _tool(world, replaces="mcp::remote::srv::x", fn="x")
         assert world.validate_bindings(project) == []
@@ -271,7 +285,7 @@ class TestEnvironmentAndInstance:
             source_path="/proj/fixtures/f1",
             world_lib_path="/proj/lib",
             metadata={"fixture_id": "f1", "frozen_time": NOW.isoformat()},
-            framework_content_hash="eng1",
+            content_version="eng1",
         )
         base.update(overrides)
         return SyntheticInstance(**base)
@@ -279,9 +293,55 @@ class TestEnvironmentAndInstance:
     def test_effective_path_follows_unchanged(self):
         assert self._instance().effective_path == "/cache/inst_1"
         assert self._instance(unchanged=True).effective_path == "/proj/fixtures/f1"
-        hosted = self._instance(path=None, source_path=None, endpoint="http://h/1")
+        hosted = self._instance(
+            path=None,
+            source_path=None,
+            connection=SyntheticInstanceConnection(
+                url="http://h/1", headers={"Authorization": "Bearer s3cret"}
+            ),
+        )
         assert hosted.effective_path is None
-        assert hosted.endpoint == "http://h/1"
+        assert hosted.connection is not None and hosted.connection.url == "http://h/1"
+
+    def test_connection_credentials_never_serialize(self):
+        hosted = self._instance(
+            path=None,
+            connection=SyntheticInstanceConnection(
+                transport="stdio",
+                command="world-server",
+                args=["--inst", "1"],
+                env={"TOKEN": "s3cret"},
+                headers={"Authorization": "Bearer s3cret"},
+            ),
+        )
+        dumped = hosted.model_dump()["connection"]
+        assert dumped["command"] == "world-server" and dumped["args"] == ["--inst", "1"]
+        assert "headers" not in dumped and "env" not in dumped
+        assert "s3cret" not in hosted.model_dump_json()
+        reloaded = SyntheticInstance.model_validate_json(hosted.model_dump_json())
+        assert reloaded.connection is not None
+        assert reloaded.connection.headers == {} and reloaded.connection.env == {}
+        # The in-memory record handed to tools keeps them.
+        sandbox = hosted.to_sandbox_dict()["connection"]
+        assert isinstance(sandbox, dict)
+        assert sandbox["env"] == {"TOKEN": "s3cret"}
+        assert sandbox["headers"] == {"Authorization": "Bearer s3cret"}
+
+    def test_changes_and_validity_round_trip(self):
+        inst = self._instance(
+            changes={"rows": [{"table": "t", "op": "update"}]},
+            valid=False,
+            invalid_reason="world gap on tool x",
+        )
+        again = SyntheticInstance.model_validate(inst.model_dump())
+        assert again.changes == {"rows": [{"table": "t", "op": "update"}]}
+        assert again.valid is False and again.invalid_reason == "world gap on tool x"
+        info = SyntheticInstanceInfo.from_instance(inst)
+        assert info.valid is False and info.invalid_reason == "world gap on tool x"
+        assert "changes" not in SyntheticInstanceInfo.model_fields
+        assert inst.to_sandbox_dict()["changes"] == {
+            "rows": [{"table": "t", "op": "update"}]
+        }
 
     def test_sandbox_dict_is_plain_json(self):
         d = self._instance().to_sandbox_dict()
@@ -295,7 +355,7 @@ class TestEnvironmentAndInstance:
         info = SyntheticInstanceInfo.from_instance(self._instance())
         assert info.instance_id == "inst_1"
         assert info.metadata["fixture_id"] == "f1"
-        for field in ("path", "endpoint", "source_path"):
+        for field in ("path", "connection", "source_path", "changes"):
             assert field not in SyntheticInstanceInfo.model_fields
         props = EvalTaskInput.model_json_schema()["properties"]
         assert "synthetic_instance" in props

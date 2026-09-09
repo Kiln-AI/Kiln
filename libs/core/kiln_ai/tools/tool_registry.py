@@ -63,6 +63,31 @@ def tool_from_id_and_project(
             from kiln_ai.tools.synthetic_tool import SyntheticToolProxy
 
             return SyntheticToolProxy(tool_id, binding, project, task)
+        if synthetic_ctx.world.replaces_server_of(tool_id):
+            # The instance serves the whole server: same tool names, its own address.
+            if synthetic_ctx.instance.connection is None:
+                raise ValueError(
+                    f"Synthetic world '{synthetic_ctx.world.name}' replaces tool server "
+                    f"{synthetic_ctx.world.replaces_tool_server_id}, but instance "
+                    f"{synthetic_ctx.instance.instance_id} has no connection to serve it"
+                )
+            if project is None:
+                raise ValueError(
+                    f"Unable to resolve synthetic server tool for {tool_id}: requires a parent project/task."
+                )
+            server_id, tool_name = mcp_server_and_tool_name_from_id(tool_id)
+            real_server = next(
+                (s for s in project.external_tool_servers() if s.id == server_id),
+                None,
+            )
+            from kiln_ai.tools.synthetic_tool import SyntheticServerToolProxy
+
+            return SyntheticServerToolProxy(
+                tool_id,
+                tool_name,
+                synthetic_ctx.instance,
+                real_server.name if real_server is not None else server_id,
+            )
         if (
             synthetic_ctx.world.strict
             and tool_id not in [member.value for member in KilnBuiltInToolId]

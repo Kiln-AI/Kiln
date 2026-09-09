@@ -847,7 +847,7 @@ class EvalRunner:
         if environment is not None:
             if job.task_run_config is None:
                 raise ValueError("A task_run_eval job requires a run config")
-            target = self._resolve_synthetic_target(environment)
+            target = await self._resolve_synthetic_target(environment)
             if is_multi_turn_input:
                 assert isinstance(job.item, EvalInput)
                 assert isinstance(job.item.data, MultiTurnSyntheticEvalInputData)
@@ -935,10 +935,11 @@ class EvalRunner:
         Generation runs under the trace index's per-key lock with a freshly launched
         instance in context, so racing judges of one item share a single generation and
         a single instance, and every turn of a multi-turn drive sees the same instance.
-        Grading then runs with the context rebuilt from whatever the trace recorded —
-        the same record for a reused trace — so scorers read the state the generation
-        actually left. The context is reset in `finally` both times: worker tasks are
-        reused across jobs.
+        The launcher finalizes the instance before the lock is released. Grading then
+        runs with the context rebuilt from whatever the trace recorded — the same
+        record for a reused trace — so scorers read the state the generation actually
+        left. The context is reset in `finally` both times: worker tasks are reused
+        across jobs.
         """
 
         async def generate() -> TaskRun:
@@ -949,18 +950,34 @@ class EvalRunner:
                 )
             )
             try:
-                return await generation.generate()
+                run = await generation.generate()
             finally:
                 reset_synthetic_instance(token)
+            # Finalize before anyone grades: the launcher records what graders will
+            # need (unchanged, changes, validity) and the trace persists it, so a
+            # concurrent judge reusing this generation sees the settled record.
+            finalized = await target.launcher.finalize(instance)
+            if finalized != instance:
+                run.synthetic_instance = finalized
+                async with self._save_context():
+                    run.save_to_file()
+            if finalized.unchanged:
+                self._unchanged_instances.append((target.launcher, finalized))
+            return run
 
-        trace, was_generated = await self._trace_index.get_or_create(
-            generation.key, generate
-        )
+        trace, _ = await self._trace_index.get_or_create(generation.key, generate)
         instance = trace.synthetic_instance
         if instance is None:
             raise ValueError(
                 f"Eval trace {trace.id} was generated for a synthetic environment but "
                 "records no synthetic instance"
+            )
+        if target.world.strict and not instance.valid:
+            return await self._persist_skip(
+                job,
+                SkippedReason.synthetic_instance_invalid,
+                f"Synthetic instance {instance.instance_id} was judged invalid by its "
+                f"launcher: {instance.invalid_reason or 'no reason given'}",
             )
         state_unavailable = (
             instance.path is not None
@@ -985,20 +1002,11 @@ class EvalRunner:
         try:
             eval_task_input = EvalTaskInput.from_trace(trace, job.item)
             result = await evaluator.evaluate(eval_task_input)
-            persisted = await self._persist_judgment(job, trace, result)
+            return await self._persist_judgment(job, trace, result)
         finally:
             reset_synthetic_instance(token)
 
-        if was_generated:
-            finalized = await target.launcher.finalize(instance)
-            if finalized.unchanged and not instance.unchanged:
-                trace.synthetic_instance = finalized
-                async with self._save_context():
-                    trace.save_to_file()
-                self._unchanged_instances.append((target.launcher, finalized))
-        return persisted
-
-    def _resolve_synthetic_target(
+    async def _resolve_synthetic_target(
         self, environment: SyntheticEnvironment
     ) -> "_SyntheticTarget":
         """The world an input names, its launcher, and the trace variant — or an error:
@@ -1023,7 +1031,9 @@ class EvalRunner:
             config=environment.config,
             bindings=world.bindings(),
             variant=synthetic_fingerprint(
-                world.id or "", environment.config, world.framework_content_hash
+                world.id or "",
+                environment.config,
+                await launcher.content_version(world, environment.config),
             ),
         )
 

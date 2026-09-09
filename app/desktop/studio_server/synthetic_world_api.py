@@ -48,7 +48,8 @@ class SyntheticWorldCreateRequest(BaseModel):
     launcher: str = LOCAL_FILES_LAUNCHER
     launcher_config: dict[str, JsonValue] = Field(default_factory=dict)
     strict: bool = False
-    framework_content_hash: str | None = None
+    content_version: str | None = None
+    replaces_tool_server_id: str | None = None
 
 
 class SyntheticWorldUpdateRequest(BaseModel):
@@ -59,7 +60,8 @@ class SyntheticWorldUpdateRequest(BaseModel):
     launcher: str | None = None
     launcher_config: dict[str, JsonValue] | None = None
     strict: bool | None = None
-    framework_content_hash: str | None = None
+    content_version: str | None = None
+    replaces_tool_server_id: str | None = None
 
 
 class SyntheticWorldResponse(BaseModel):
@@ -69,7 +71,8 @@ class SyntheticWorldResponse(BaseModel):
     launcher: str
     launcher_config: dict[str, JsonValue] = Field(default_factory=dict)
     strict: bool = False
-    framework_content_hash: str | None = None
+    content_version: str | None = None
+    replaces_tool_server_id: str | None = None
     tool_count: int = 0
     created_at: datetime | None = None
     created_by: str | None = None
@@ -172,7 +175,8 @@ def _world_response(world: SyntheticWorld) -> SyntheticWorldResponse:
         launcher=world.launcher,
         launcher_config=world.launcher_config,
         strict=world.strict,
-        framework_content_hash=world.framework_content_hash,
+        content_version=world.content_version,
+        replaces_tool_server_id=world.replaces_tool_server_id,
         tool_count=len(world.tools(readonly=True)),
         created_at=world.created_at,
         created_by=world.created_by,
@@ -240,7 +244,8 @@ def connect_synthetic_world_api(app: FastAPI):
                 launcher=request.launcher,
                 launcher_config=request.launcher_config,
                 strict=request.strict,
-                framework_content_hash=request.framework_content_hash,
+                content_version=request.content_version,
+                replaces_tool_server_id=request.replaces_tool_server_id,
                 parent=project,
             )
         except (ValueError, PydanticValidationError) as e:

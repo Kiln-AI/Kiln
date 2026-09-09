@@ -92,7 +92,7 @@ def real_tool(project):
 
 @pytest.fixture
 def world(project, real_tool):
-    w = SyntheticWorld(name="World", parent=project, framework_content_hash="eng1")
+    w = SyntheticWorld(name="World", parent=project, content_version="eng1")
     w.save_to_file()
     SyntheticTool(
         name="synthetic note",
@@ -341,7 +341,8 @@ async def test_full_run_isolates_and_records_instances(
     assert inst_a.config == {"fixture_id": "a"} and inst_b.config == {"fixture_id": "b"}
     assert inst_a.metadata["frozen_time"] == CLOCK_A.isoformat()
     assert inst_b.metadata["frozen_time"] == CLOCK_B.isoformat()
-    assert inst_a.framework_content_hash == "eng1"
+    assert inst_a.content_version is not None
+    assert inst_a.content_version.startswith("local:")
     # Both runs wrote, so both copies are kept and hold only their own note.
     assert inst_a.unchanged is False and inst_b.unchanged is False
     assert (Path(inst_a.path) / "counter.txt").read_text() == "note for a\n"
@@ -753,3 +754,122 @@ async def test_multi_turn_skip_creates_no_instance(
     await _drain(_runner([cfg], run_config, provider))
     assert cfg.runs(readonly=True)[0].skipped_reason == "missing_drive_config"
     assert not provider.cache_root.exists()
+
+
+class RecordingLauncher(LocalFilesLauncher):
+    """A launcher that, at finalize, records what the run changed and judges runs
+    that wrote anything as invalid — the shape a hosted framework's launcher takes."""
+
+    async def finalize(self, instance):
+        settled = await super().finalize(instance)
+        counter = Path(settled.effective_path or "") / "counter.txt"
+        lines = counter.read_text().splitlines() if counter.exists() else []
+        return settled.model_copy(
+            update={
+                "changes": {"counter_lines": lines},
+                "valid": not lines,
+                "invalid_reason": "run wrote to the counter" if lines else None,
+            }
+        )
+
+
+CHANGES_SCORER = (
+    "def score(output, synthetic_instance):\n"
+    "    lines = synthetic_instance['changes']['counter_lines']\n"
+    "    return {'accuracy': float(len(lines))}\n"
+)
+
+
+async def test_finalize_settles_record_before_grading(
+    project, task, world, fixtures, real_tool, run_config, eval_, tmp_path
+):
+    """The launcher's finalize runs after generation and before any grader: scorers
+    read what it recorded (`changes`), judges see its validity verdict, and the trace
+    persists the settled record. A non-strict world still grades an invalid run."""
+    _input(task, "note", _env(world, "a"), id="ei_a")
+    judge = _config(eval_, ExactMatchProperties(expected_value="x"), name="judge")
+    scorer = _config(
+        eval_, CodeEvalProperties(code=CHANGES_SCORER, timeout_seconds=30), name="s"
+    )
+    launcher = RecordingLauncher(cache_root=tmp_path / "cache", max_bytes=10**9)
+    generator = ToolCallingGenerator(task, build_code_tool_id(real_tool.id))
+    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
+        await _drain(_runner([scorer], run_config, launcher))
+
+    (trace,) = _traces(task)
+    assert trace.synthetic_instance is not None
+    assert trace.synthetic_instance.changes == {"counter_lines": ["note"]}
+    assert trace.synthetic_instance.valid is False
+    assert trace.synthetic_instance.invalid_reason == "run wrote to the counter"
+
+    scorer_run = scorer.runs(readonly=True)[0]
+    assert scorer_run.skipped_reason is None
+    assert scorer_run.scores == {"accuracy": 1.0}
+
+    # A judge reusing the trace sees the launcher's verdict, and nothing else.
+    with (
+        patch.object(BaseV2EvalBridge, "run_task", new=generator),
+        patch(
+            "kiln_ai.adapters.eval.registry.v2_eval_adapter_from_config",
+            side_effect=lambda config, *args, **kwargs: RecordingJudge(config),
+        ),
+    ):
+        await _drain(_runner([judge], run_config, launcher))
+    assert len(_traces(task)) == 1
+    judge_run = judge.runs(readonly=True)[0]
+    assert judge_run.skipped_reason is None
+    (seen,) = RecordingJudge.seen
+    assert seen.synthetic_instance is not None
+    assert seen.synthetic_instance.valid is False
+    assert seen.synthetic_instance.invalid_reason == "run wrote to the counter"
+
+
+async def test_strict_world_skips_grading_an_invalid_run(
+    project, task, world, fixtures, real_tool, run_config, eval_, tmp_path
+):
+    world.strict = True
+    world.save_to_file()
+    _input(task, "note", _env(world, "a"), id="ei_a")
+    judge = _config(eval_, ExactMatchProperties(expected_value="x"), name="judge")
+    launcher = RecordingLauncher(cache_root=tmp_path / "cache", max_bytes=10**9)
+    generator = ToolCallingGenerator(task, build_code_tool_id(real_tool.id))
+    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
+        await _drain(_runner([judge], run_config, launcher))
+
+    assert len(_traces(task)) == 1, "the generation is kept; only grading is skipped"
+    run = judge.runs(readonly=True)[0]
+    assert run.skipped_reason == SkippedReason.synthetic_instance_invalid.value
+    assert "run wrote to the counter" in (run.skipped_detail or "")
+    assert RecordingJudge.seen == []
+
+    # A later judge on the same trace is skipped the same way, without regenerating.
+    later = _config(eval_, ExactMatchProperties(expected_value="x"), name="later")
+    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
+        await _drain(_runner([later], run_config, launcher))
+    assert len(_traces(task)) == 1
+    assert (
+        later.runs(readonly=True)[0].skipped_reason
+        == SkippedReason.synthetic_instance_invalid.value
+    )
+
+
+async def test_regenerated_fixture_bytes_regenerate_the_trace(
+    project, task, world, fixtures, real_tool, run_config, eval_, provider
+):
+    """Same fixture id, different bytes: the launcher's content version moves, so the
+    trace variant moves and the item is generated again rather than reused."""
+    _input(task, "note", _env(world, "a"), id="ei_a")
+    first = _config(eval_, ExactMatchProperties(expected_value="x"), name="first")
+    generator = ToolCallingGenerator(task, build_code_tool_id(real_tool.id))
+    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
+        await _drain(_runner([first], run_config, provider))
+    assert len(_traces(task)) == 1
+
+    (fixtures["a"] / "fixture.db").write_bytes(b"a-data-regenerated")
+    second = _config(eval_, ExactMatchProperties(expected_value="x"), name="second")
+    with patch.object(BaseV2EvalBridge, "run_task", new=generator):
+        await _drain(_runner([second], run_config, provider))
+    traces = _traces(task)
+    assert len(traces) == 2
+    assert len({t.eval_source.variant for t in traces}) == 2
+    assert len({t.synthetic_instance.content_version for t in traces}) == 2

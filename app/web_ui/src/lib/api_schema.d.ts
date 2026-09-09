@@ -12292,9 +12292,11 @@ export interface components {
          *
          *     Persisted on `TaskRun.synthetic_instance` so graders (including judges added
          *     later, which reuse the same trace) can find the state the run left behind.
-         *     Exactly what a launcher returns; `path` is local to the machine that ran the eval.
+         *     Exactly what a launcher returns; `path` is local to the machine that ran the eval,
+         *     `connection` is how to reach a hosted instance while it is alive, and `changes` is
+         *     what a launcher records at finalize for graders that outlive the instance.
          */
-        SyntheticInstance: {
+        "SyntheticInstance-Input": {
             /** Instance Id */
             instance_id: string;
             /** World Id */
@@ -12311,11 +12313,8 @@ export interface components {
              * @description Local directory holding this instance's state, for file-backed launchers.
              */
             path?: string | null;
-            /**
-             * Endpoint
-             * @description Address of a hosted instance, for launchers that serve it over the network.
-             */
-            endpoint?: string | null;
+            /** @description How to reach a hosted instance, for launchers that serve it over the network or as a subprocess. */
+            connection?: components["schemas"]["SyntheticInstanceConnection-Input"] | null;
             /**
              * Source Path
              * @description For file-backed launchers: the read-only original the instance was copied from; what readers use once `unchanged` is set.
@@ -12334,10 +12333,10 @@ export interface components {
                 [key: string]: components["schemas"]["JsonValue"];
             };
             /**
-             * Framework Content Hash
-             * @description Hash of the world engine that backed this run, copied from the world.
+             * Content Version
+             * @description The launcher's identity for the content this instance started from (world code plus fixture bytes, or a framework's world and fixture versions). Part of the trace fingerprint.
              */
-            framework_content_hash?: string | null;
+            content_version?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -12349,13 +12348,178 @@ export interface components {
              * @default false
              */
             unchanged: boolean;
+            /**
+             * Changes
+             * @description What the run changed, as recorded by the launcher at finalize (a changeset, a diff, a summary). Handed to code scorers; the durable record for launchers whose instances are short-lived.
+             */
+            changes?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Valid
+             * @description False when the launcher judged the run not transferable: the instance served an unfaithful tool surface, or the run hit gaps in the world. Strict worlds skip grading such runs.
+             * @default true
+             */
+            valid: boolean;
+            /** Invalid Reason */
+            invalid_reason?: string | null;
+        };
+        /**
+         * SyntheticInstance
+         * @description One launched instance, recorded on the trace it was generated for.
+         *
+         *     Persisted on `TaskRun.synthetic_instance` so graders (including judges added
+         *     later, which reuse the same trace) can find the state the run left behind.
+         *     Exactly what a launcher returns; `path` is local to the machine that ran the eval,
+         *     `connection` is how to reach a hosted instance while it is alive, and `changes` is
+         *     what a launcher records at finalize for graders that outlive the instance.
+         */
+        "SyntheticInstance-Output": {
+            /** Instance Id */
+            instance_id: string;
+            /** World Id */
+            world_id: string;
+            /**
+             * Config
+             * @description The launch config this instance was created from.
+             */
+            config?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Path
+             * @description Local directory holding this instance's state, for file-backed launchers.
+             */
+            path?: string | null;
+            /** @description How to reach a hosted instance, for launchers that serve it over the network or as a subprocess. */
+            connection?: components["schemas"]["SyntheticInstanceConnection-Output"] | null;
+            /**
+             * Source Path
+             * @description For file-backed launchers: the read-only original the instance was copied from; what readers use once `unchanged` is set.
+             */
+            source_path?: string | null;
+            /**
+             * World Lib Path
+             * @description The world's shared lib/ directory, put on the sandbox import path.
+             */
+            world_lib_path?: string | null;
+            /**
+             * Metadata
+             * @description Facts the launcher reports about the instance, e.g. frozen_time or fixture_id. Scalar entries are exported to tools as KILN_SYNTHETIC_<KEY>.
+             */
+            metadata?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Content Version
+             * @description The launcher's identity for the content this instance started from (world code plus fixture bytes, or a framework's world and fixture versions). Part of the trace fingerprint.
+             */
+            content_version?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Unchanged
+             * @description True once the run was found to have left the instance identical to its source; the copy is released and readers use source_path.
+             * @default false
+             */
+            unchanged: boolean;
+            /**
+             * Changes
+             * @description What the run changed, as recorded by the launcher at finalize (a changeset, a diff, a summary). Handed to code scorers; the durable record for launchers whose instances are short-lived.
+             */
+            changes?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Valid
+             * @description False when the launcher judged the run not transferable: the instance served an unfaithful tool surface, or the run hit gaps in the world. Strict worlds skip grading such runs.
+             * @default true
+             */
+            valid: boolean;
+            /** Invalid Reason */
+            invalid_reason?: string | null;
+        };
+        /**
+         * SyntheticInstanceConnection
+         * @description How to reach a hosted instance: an HTTP endpoint or a stdio command.
+         *
+         *     `headers` and `env` hold per-instance credentials. They are excluded from
+         *     serialization, so they never land on the trace, in an API response, or in a judge
+         *     prompt; only the in-memory record handed to tools during the run carries them.
+         */
+        "SyntheticInstanceConnection-Input": {
+            /**
+             * Transport
+             * @description 'http' for a URL the instance serves (MCP or REST), 'stdio' for a command to spawn, or a launcher-defined name.
+             * @default http
+             */
+            transport: string;
+            /**
+             * Url
+             * @description Address of an HTTP instance.
+             */
+            url?: string | null;
+            /**
+             * Headers
+             * @description Request headers for an HTTP instance, typically a per-instance bearer token. Never persisted.
+             */
+            headers?: {
+                [key: string]: string;
+            };
+            /**
+             * Command
+             * @description Executable of a stdio instance.
+             */
+            command?: string | null;
+            /** Args */
+            args?: string[];
+            /**
+             * Env
+             * @description Environment for a stdio instance. Never persisted.
+             */
+            env?: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * SyntheticInstanceConnection
+         * @description How to reach a hosted instance: an HTTP endpoint or a stdio command.
+         *
+         *     `headers` and `env` hold per-instance credentials. They are excluded from
+         *     serialization, so they never land on the trace, in an API response, or in a judge
+         *     prompt; only the in-memory record handed to tools during the run carries them.
+         */
+        "SyntheticInstanceConnection-Output": {
+            /**
+             * Transport
+             * @description 'http' for a URL the instance serves (MCP or REST), 'stdio' for a command to spawn, or a launcher-defined name.
+             * @default http
+             */
+            transport: string;
+            /**
+             * Url
+             * @description Address of an HTTP instance.
+             */
+            url?: string | null;
+            /**
+             * Command
+             * @description Executable of a stdio instance.
+             */
+            command?: string | null;
+            /** Args */
+            args?: string[];
         };
         /**
          * SyntheticInstanceInfo
-         * @description The grader-facing view of an instance: identity and reported facts, no locations.
+         * @description The grader-facing view of an instance: identity and reported facts, no locations
+         *     or credentials, and no changeset (it can be large; code scorers get it through the
+         *     sandbox inputs instead).
          *
-         *     `EvalTaskInput` is a FastAPI request body, so paths and endpoints must not travel
-         *     on it; code-eval scorers get the full record through the sandbox inputs instead.
+         *     `EvalTaskInput` is a FastAPI request body, so paths and connections must not travel
+         *     on it.
          */
         SyntheticInstanceInfo: {
             /** Instance Id */
@@ -12370,8 +12534,15 @@ export interface components {
             metadata?: {
                 [key: string]: components["schemas"]["JsonValue"];
             };
-            /** Framework Content Hash */
-            framework_content_hash?: string | null;
+            /** Content Version */
+            content_version?: string | null;
+            /**
+             * Valid
+             * @default true
+             */
+            valid: boolean;
+            /** Invalid Reason */
+            invalid_reason?: string | null;
         };
         /** SyntheticToolCreateRequest */
         SyntheticToolCreateRequest: {
@@ -12499,8 +12670,10 @@ export interface components {
              * @default false
              */
             strict: boolean;
-            /** Framework Content Hash */
-            framework_content_hash?: string | null;
+            /** Content Version */
+            content_version?: string | null;
+            /** Replaces Tool Server Id */
+            replaces_tool_server_id?: string | null;
         };
         /** SyntheticWorldResponse */
         SyntheticWorldResponse: {
@@ -12521,8 +12694,10 @@ export interface components {
              * @default false
              */
             strict: boolean;
-            /** Framework Content Hash */
-            framework_content_hash?: string | null;
+            /** Content Version */
+            content_version?: string | null;
+            /** Replaces Tool Server Id */
+            replaces_tool_server_id?: string | null;
             /**
              * Tool Count
              * @default 0
@@ -12547,8 +12722,10 @@ export interface components {
             } | null;
             /** Strict */
             strict?: boolean | null;
-            /** Framework Content Hash */
-            framework_content_hash?: string | null;
+            /** Content Version */
+            content_version?: string | null;
+            /** Replaces Tool Server Id */
+            replaces_tool_server_id?: string | null;
         };
         /** SyntheticWorldValidationResponse */
         SyntheticWorldValidationResponse: {
@@ -13036,7 +13213,7 @@ export interface components {
             /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
             eval_source?: components["schemas"]["EvalItemSource"] | null;
             /** @description Set when this run was generated against a synthetic world instance. Records where the instance's state lives so graders can inspect it. */
-            synthetic_instance?: components["schemas"]["SyntheticInstance"] | null;
+            synthetic_instance?: components["schemas"]["SyntheticInstance-Input"] | null;
         };
         /**
          * TaskRun
@@ -13121,7 +13298,7 @@ export interface components {
             /** @description Set when this run was generated by an eval. Names the eval dataset item it was generated for. None for ordinary dataset runs. Runs with this set are excluded from Task.runs() by default, so they do not appear on dataset surfaces. */
             eval_source?: components["schemas"]["EvalItemSource"] | null;
             /** @description Set when this run was generated against a synthetic world instance. Records where the instance's state lives so graders can inspect it. */
-            synthetic_instance?: components["schemas"]["SyntheticInstance"] | null;
+            synthetic_instance?: components["schemas"]["SyntheticInstance-Output"] | null;
             /** Model Type */
             readonly model_type: string;
         };
